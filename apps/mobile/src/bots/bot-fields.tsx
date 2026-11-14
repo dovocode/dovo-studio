@@ -24,14 +24,14 @@ export function BotFields({
 
   return (
     <View style={{ gap: 16 }}>
-      <Field label="Bot name" value={name} onChangeText={onName} editable={!disabled} />
+      <Field label={uiText('Bot name')} value={name} onChangeText={onName} editable={!disabled} />
       <Field
         label={uiText('Role')}
         maxLength={120}
         value={role}
         onChangeText={onRole}
         editable={!disabled}
-        hint="Describe the assistant’s purpose."
+        hint={uiText('Describe the assistant’s purpose.')}
       />
       <Field
         label={uiText('Responsibilities')}
@@ -40,7 +40,7 @@ export function BotFields({
         onChangeText={onResponsibilities}
         multiline
         editable={!disabled}
-        hint="Describe the work this assistant should do."
+        hint={uiText('Describe the work this assistant should do.')}
       />
     </View>
   )

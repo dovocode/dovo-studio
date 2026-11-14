@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import * as DocumentPicker from 'expo-document-picker'
@@ -21,6 +22,8 @@ import { CodeThemeBrowser } from './code-theme-browser'
 import { useSettingsTheme } from './settings-theme'
 
 export function CodeThemeSettings() {
+  const uiText = useInterfaceText()
+
   const { codeTheme, importedCodeThemes } = useMobilePreferences()
   const { styles } = useSettingsTheme()
   const [error, setError] = useState('')
@@ -34,7 +37,7 @@ export function CodeThemeSettings() {
     setError('')
   }
   const items = [
-    { id: 'app', name: 'Follow app' },
+    { id: 'app', name: uiText('Follow app') },
     ...studioThemeIds.map((id) => ({ id, name: studioThemes[id].name })),
     ...importedCodeThemes.map((theme) => ({
       id: theme.name,
@@ -62,11 +65,13 @@ export function CodeThemeSettings() {
   }
   return (
     <SettingsGroup
-      title="Editors & diffs"
-      footer="Follow app uses the app palette. Browse Open VSX or import a standalone VS Code JSON/JSONC theme. Native syntax uses matching token-category colors; semantic-only rules are not used."
+      title={uiText('Editors & diffs')}
+      footer={uiText(
+        'Follow app uses the app palette. Browse Open VSX or import a standalone VS Code JSON/JSONC theme. Native syntax uses matching token-category colors; semantic-only rules are not used.',
+      )}
     >
       <SettingsChoice
-        label="Code theme"
+        label={uiText('Code theme')}
         value={items.some((item) => item.id === codeTheme) ? codeTheme : 'app'}
         items={items}
         onChange={(codeTheme) => {
@@ -74,17 +79,22 @@ export function CodeThemeSettings() {
         }}
       />
       <View style={{ paddingHorizontal: 12, paddingVertical: 4 }}>
-        <SettingsAction secondary label="Browse VS Code themes" onPress={() => setBrowse(true)} />
         <SettingsAction
           secondary
-          label="Import VS Code theme"
+          label={uiText('Browse VS Code themes')}
+          onPress={() => setBrowse(true)}
+        />
+        <SettingsAction
+          secondary
+          label={uiText('Import VS Code theme')}
           disabled={busy}
           onPress={() => void importFile()}
         />
         {importedCodeThemes.some((theme) => theme.name === codeTheme) && (
           <SettingsAction
+            destructive
             secondary
-            label="Remove theme"
+            label={uiText('Remove theme')}
             disabled={busy}
             onPress={() =>
               updateMobilePreferences({

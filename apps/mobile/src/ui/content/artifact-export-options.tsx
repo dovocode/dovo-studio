@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -27,6 +28,8 @@ export function ArtifactExportOptions({
   onPdf: (options: ArtifactPdfOptions) => void
   onPng: (width: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [format, setFormat] = useState('pdf')
   const [paperSize, setPaperSize] = useState<string>(artifactPdfDefaults.paperSize)
@@ -50,11 +53,11 @@ export function ArtifactExportOptions({
     >
       <Choice
         row
-        label="Format"
+        label={uiText('Format')}
         value={format}
         items={[
-          { id: 'pdf', name: 'PDF document' },
-          { id: 'png', name: 'PNG image' },
+          { id: 'pdf', name: uiText('PDF document') },
+          { id: 'png', name: uiText('PNG image') },
         ]}
         onChange={setFormat}
         disabled={busy}
@@ -63,7 +66,7 @@ export function ArtifactExportOptions({
         <>
           <Choice
             row
-            label="Paper size"
+            label={uiText('Paper size')}
             value={paperSize}
             items={artifactPdfPaperChoices.map((choice) => ({
               id: choice.value,
@@ -74,11 +77,11 @@ export function ArtifactExportOptions({
           />
           <Choice
             row
-            label="Orientation"
+            label={uiText('Orientation')}
             value={orientation}
             items={[
-              { id: 'portrait', name: 'Portrait' },
-              { id: 'landscape', name: 'Landscape' },
+              { id: 'portrait', name: uiText('Portrait') },
+              { id: 'landscape', name: uiText('Landscape') },
             ]}
             onChange={setOrientation}
             disabled={busy}
@@ -86,7 +89,7 @@ export function ArtifactExportOptions({
           <View style={{ flexDirection: 'row', gap: 12 }}>
             <View style={{ flex: 1 }}>
               <Field
-                label="Margins (mm)"
+                label={uiText('Margins (mm)')}
                 keyboardType="decimal-pad"
                 value={margin}
                 onChangeText={setMargin}
@@ -95,7 +98,7 @@ export function ArtifactExportOptions({
             </View>
             <View style={{ flex: 1 }}>
               <Field
-                label="Scale (%)"
+                label={uiText('Scale (%)')}
                 keyboardType="decimal-pad"
                 value={scale}
                 onChangeText={setScale}
@@ -111,9 +114,11 @@ export function ArtifactExportOptions({
               gap: 8,
             }}
           >
-            <Text style={[styles.text, { flex: 1 }]}>Include backgrounds</Text>
+            <Text style={[styles.text, { flex: 1 }]}>
+              <InterfaceText>{'Include backgrounds'}</InterfaceText>
+            </Text>
             <Switch
-              accessibilityLabel="Include backgrounds"
+              accessibilityLabel={uiText('Include backgrounds')}
               value={background}
               onValueChange={setBackground}
               disabled={busy}
@@ -122,7 +127,7 @@ export function ArtifactExportOptions({
         </>
       ) : (
         <Field
-          label="Width (px)"
+          label={uiText('Width (px)')}
           keyboardType="number-pad"
           value={width}
           onChangeText={setWidth}
@@ -132,19 +137,21 @@ export function ArtifactExportOptions({
       <Text style={styles.muted}>
         {format === 'pdf'
           ? paperSize === 'auto'
-            ? 'Automatic keeps any page size and orientation defined by the artifact. A4 is the fallback.'
-            : 'Print layout with your selected page size and orientation.'
-          : 'Full page at this width. Height adjusts to the content.'}
+            ? uiText(
+                'Automatic keeps any page size and orientation defined by the artifact. A4 is the fallback.',
+              )
+            : uiText('Print layout with your selected page size and orientation.')
+          : uiText('Full page at this width. Height adjusts to the content.')}
       </Text>
       {!valid && (
         <Text accessibilityRole="alert" style={styles.error}>
           {format === 'pdf'
-            ? 'Enter margins from 0–50 mm and a scale from 10–200%.'
-            : 'Enter a whole width from 320–4096 px.'}
+            ? uiText('Enter margins from 0–50 mm and a scale from 10–200%.')
+            : uiText('Enter a whole width from 320–4096 px.')}
         </Text>
       )}
       <Action
-        label={`Export ${format.toUpperCase()}`}
+        label={uiText('Export {value0}', { value0: format.toUpperCase() })}
         disabled={disabled || busy || !valid}
         onPress={() => {
           if (format === 'pdf' && options) onPdf(options)

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import {
@@ -79,6 +80,8 @@ export function PullStatus({
   reviewsReady?: boolean
   onOpen: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const reviews = latestPullReviews(detail.comments)
@@ -94,13 +97,15 @@ export function PullStatus({
           accessibilityRole="header"
           style={[styles.muted, { fontWeight: '600', marginBottom: 4 }]}
         >
-          Checks · {checks.length}
+          <InterfaceText values={{ value0: checks.length }}>{'Checks · {value0}'}</InterfaceText>
         </Text>
         {!checks.length && (
           <Text style={styles.muted}>
             {pullChecksPending(detail.pull)
-              ? 'CI is pending. Waiting for the pipeline to report its checks for this commit.'
-              : 'No checks returned. See any loading warnings above.'}
+              ? uiText(
+                  'CI is pending. Waiting for the pipeline to report its checks for this commit.',
+                )
+              : uiText('No checks returned. See any loading warnings above.')}
           </Text>
         )}
         {checks.map((check, index) => (
@@ -108,7 +113,7 @@ export function PullStatus({
             <Pressable
               testID={`Open ${check.name}`}
               accessibilityRole={check.url ? 'link' : 'text'}
-              accessibilityLabel={`${check.name}, ${checkSignal(check.status).label}${check.url ? '. Open on server' : ''}`}
+              accessibilityLabel={`${check.name}, ${checkSignal(check.status).label}${check.url ? uiText('. Open on server') : ''}`}
               disabled={!check.url}
               onPress={() => check.url && onOpen(check.url)}
               style={({ pressed }) => [
@@ -149,16 +154,21 @@ export function PullStatus({
           accessibilityRole="header"
           style={[styles.muted, { fontWeight: '600', marginBottom: 4 }]}
         >
-          Review decisions
+          <InterfaceText>{'Review decisions'}</InterfaceText>
         </Text>
         {!reviewsReady ? (
-          <Text style={styles.muted}>Reviews have not loaded yet.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Reviews have not loaded yet.'}</InterfaceText>
+          </Text>
         ) : reviews.length ? (
           reviews.map((review) => (
             <Pressable
               key={review.author}
               accessibilityRole="link"
-              accessibilityLabel={`${review.author}: ${pullCommentSignal(review).label}. Open review on server`}
+              accessibilityLabel={uiText('{value0}: {value1}. Open review on server', {
+                value0: review.author,
+                value1: pullCommentSignal(review).label,
+              })}
               onPress={() => onOpen(review.url)}
               style={({ pressed }) => [
                 styles.row,
@@ -177,7 +187,9 @@ export function PullStatus({
                 <PullCommentLabel comment={review} />
                 {!!review.commitId && (
                   <Text selectable style={styles.muted}>
-                    Reviewed {review.commitId.slice(0, 8)}
+                    <InterfaceText values={{ value0: review.commitId.slice(0, 8) }}>
+                      {'Reviewed {value0}'}
+                    </InterfaceText>
                   </Text>
                 )}
               </View>
@@ -185,17 +197,23 @@ export function PullStatus({
             </Pressable>
           ))
         ) : (
-          <Text style={styles.muted}>No review decision yet.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'No review decision yet.'}</InterfaceText>
+          </Text>
         )}
         {!!detail.pull.reviewers.length && (
           <Text style={[styles.muted, { marginTop: 8 }]}>
-            Requested: {detail.pull.reviewers.join(', ')}
+            <InterfaceText values={{ value0: detail.pull.reviewers.join(', ') }}>
+              {'Requested: {value0}'}
+            </InterfaceText>
           </Text>
         )}
         <Signal signal={pullMergeability(detail.pull)} />
         {detail.pull.autoMergeEnabled && (
           <Text style={[styles.muted, { marginTop: 8 }]}>
-            Auto-merge enabled · merges when GitHub’s requirements pass.
+            <InterfaceText>
+              {'Auto-merge enabled · merges when GitHub’s requirements pass.'}
+            </InterfaceText>
           </Text>
         )}
       </View>

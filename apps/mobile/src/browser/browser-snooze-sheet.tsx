@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Action } from '../ui/controls/action'
@@ -26,8 +27,12 @@ export function BrowserSnoozeSheet({
   })
   const [error, setError] = useState('')
   return (
-    <Sheet ref={sheet} title={`Snooze ${title}`} onClose={onClose}>
-      <Text>Choose a future date and time. Times use this device’s time zone.</Text>
+    <Sheet ref={sheet} title={uiText('Snooze {value0}', { value0: title })} onClose={onClose}>
+      <Text>
+        <InterfaceText>
+          {'Choose a future date and time. Times use this device’s time zone.'}
+        </InterfaceText>
+      </Text>
       <DateTimePicker
         value={value}
         onChange={(date) => {
@@ -37,10 +42,10 @@ export function BrowserSnoozeSheet({
       />
       {!!error && <Text accessibilityRole="alert">{error}</Text>}
       <Action
-        label="Snooze"
+        label={uiText('Snooze')}
         onPress={() => {
           if (!Number.isFinite(value.getTime()) || value.getTime() <= Date.now()) {
-            setError('Choose a valid date and time in the future.')
+            setError(uiText('Choose a valid date and time in the future.'))
             return
           }
           try {

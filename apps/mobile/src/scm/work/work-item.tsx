@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useIssueDiscussion } from './use-issue-discussion'
 import { usePipelineSections } from './use-pipeline-sections'
@@ -357,7 +358,7 @@ function WorkItemContent({
                   setError(
                     cause instanceof Error
                       ? cause.message
-                      : 'Saved details could not be read from this device.',
+                      : uiText('Saved details could not be read from this device.'),
                   )
               }),
             ),
@@ -431,7 +432,8 @@ function WorkItemContent({
               ),
               Effect.catch(() =>
                 nativeEffect(() => {
-                  if (valid()) setError('Details loaded, but could not be saved for offline use.')
+                  if (valid())
+                    setError(uiText('Details loaded, but could not be saved for offline use.'))
                 }),
               ),
             )
@@ -490,7 +492,8 @@ function WorkItemContent({
           }).pipe(
             Effect.catch(() =>
               nativeEffect(() => {
-                if (valid()) setError('Details loaded, but could not be saved for offline use.')
+                if (valid())
+                  setError(uiText('Details loaded, but could not be saved for offline use.'))
               }),
             ),
           )
@@ -568,7 +571,7 @@ function WorkItemContent({
       }).pipe(
         Effect.catch(() =>
           nativeEffect(() =>
-            setError('Updated details could not be cleared from offline storage.'),
+            setError(uiText('Updated details could not be cleared from offline storage.')),
           ),
         ),
         Effect.ensuring(
@@ -635,7 +638,8 @@ function WorkItemContent({
             }).pipe(
               Effect.catch((_error) =>
                 nativeEffect(() => {
-                  if (current()) setError('Details loaded, but could not be saved for offline use.')
+                  if (current())
+                    setError(uiText('Details loaded, but could not be saved for offline use.'))
                 }),
               ),
             )
@@ -685,26 +689,26 @@ function WorkItemContent({
     ...(issue
       ? [
           {
-            label: 'Edit issue',
+            label: uiText('Edit issue'),
             disabled: mutationDisabled,
             onPress: () => openForm('edit'),
           },
           {
-            label: 'Comment',
+            label: uiText('Comment'),
             disabled: mutationDisabled,
             onPress: () => openForm('comment'),
           },
           ...(options?.provider === 'jira'
             ? [
                 {
-                  label: 'Change status',
+                  label: uiText('Change status'),
                   disabled: mutationDisabled,
                   onPress: () => openForm('transition'),
                 },
               ]
             : []),
           {
-            label: 'Open on server',
+            label: uiText('Open on server'),
             onPress: () => open(issue.issue.url),
           },
         ]
@@ -712,13 +716,13 @@ function WorkItemContent({
     ...(pipeline
       ? [
           {
-            label: 'Open run and logs',
+            label: uiText('Open run and logs'),
             onPress: () => open(pipeline.run.url),
           },
           ...(options?.pipelineActions.includes('run')
             ? [
                 {
-                  label: 'Run pipeline',
+                  label: uiText('Run pipeline'),
                   disabled: mutationDisabled,
                   onPress: () => openForm('run'),
                 },
@@ -741,7 +745,7 @@ function WorkItemContent({
         ]
       : []),
     {
-      label: 'Refresh details',
+      label: uiText('Refresh details'),
       disabled: !connected || busy,
       onPress: () => reload((value) => value + 1),
     },
@@ -752,8 +756,8 @@ function WorkItemContent({
         <ScreenHeader
           title={
             mode === 'issues'
-              ? `Issue ${issueLabel(selected)}`
-              : `Run #${pipeline?.run.number ?? selected}`
+              ? uiText('Issue {value0}', { value0: issueLabel(selected) })
+              : uiText('Run #{value0}', { value0: pipeline?.run.number ?? selected })
           }
           subtitle={[
             jiraSource?.name || jiraSource?.project || repository?.name,
@@ -765,7 +769,7 @@ function WorkItemContent({
             <IconButton
               icon="back"
               variant="glass"
-              label={mode === 'issues' ? 'Back to issues' : 'Back to PR runs'}
+              label={mode === 'issues' ? uiText('Back to issues') : uiText('Back to PR runs')}
               onPress={onBack}
             />
           }
@@ -797,10 +801,16 @@ function WorkItemContent({
           />
         }
       >
-        {!connected && <Text style={styles.muted}>Offline · showing last loaded {mode}.</Text>}
+        {!connected && (
+          <Text style={styles.muted}>
+            <InterfaceText values={{ value0: mode }}>
+              {'Offline · showing last loaded {value0}.'}
+            </InterfaceText>
+          </Text>
+        )}
         {/different account/.test(error) && (
           <Action
-            label="Use current account"
+            label={uiText('Use current account')}
             secondary
             disabled={!connected || busy}
             onPress={() => {
@@ -833,23 +843,27 @@ function WorkItemContent({
         {!issue && !pipeline && expectedURL && (
           <Action
             secondary
-            label="Open original source on server"
+            label={uiText('Open original source on server')}
             onPress={() => open(expectedURL)}
           />
         )}
         {stale && connected && !!(issue || pipeline) && (
           <Text style={styles.muted}>
-            {busy ? 'Updating…' : 'Cached results. Refresh before making changes.'}
+            {busy ? uiText('Updating…') : uiText('Cached results. Refresh before making changes.')}
           </Text>
         )}
         {!!message && <Text style={styles.muted}>{message}</Text>}
         {!issue && !pipeline && !busy && (
           <Text style={styles.muted}>
             {(mode === 'issues' ? options?.issueNotice : options?.pipelineNotice) ??
-              'Details are not available. Reconnect or refresh to try again.'}
+              uiText('Details are not available. Reconnect or refresh to try again.')}
           </Text>
         )}
-        {!issue && !pipeline && busy && <Text style={styles.muted}>Loading details…</Text>}
+        {!issue && !pipeline && busy && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Loading details…'}</InterfaceText>
+          </Text>
+        )}
         {issue && (
           <>
             <Text
@@ -890,7 +904,11 @@ function WorkItemContent({
                 {issue.issue.state}
               </Text>
               <Text style={styles.muted}>· {issue.issue.type}</Text>
-              {jiraSourceId && <Text style={styles.muted}>· Jira</Text>}
+              {jiraSourceId && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'· Jira'}</InterfaceText>
+                </Text>
+              )}
             </View>
             <View
               style={{
@@ -903,33 +921,62 @@ function WorkItemContent({
               }}
             >
               <Text style={styles.muted}>
-                Assigned to{' '}
-                <Text style={styles.text}>
-                  {(issue.issue.assigneeNames ?? issue.issue.assignees).join(', ') || 'Unassigned'}
-                </Text>
+                <InterfaceText
+                  values={{
+                    value0: (
+                      <Text style={styles.text}>
+                        {(issue.issue.assigneeNames ?? issue.issue.assignees).join(', ') ||
+                          uiText('Unassigned')}
+                      </Text>
+                    ),
+                  }}
+                >
+                  {'Assigned to {value0}'}
+                </InterfaceText>
               </Text>
               {issue.issue.priority && (
                 <Text style={styles.muted}>
-                  Priority <Text style={styles.text}>{issue.issue.priority}</Text>
+                  <InterfaceText
+                    values={{ value0: <Text style={styles.text}>{issue.issue.priority}</Text> }}
+                  >
+                    {'Priority {value0}'}
+                  </InterfaceText>
                 </Text>
               )}
               {!!issue.issue.author && (
                 <Text style={styles.muted}>
-                  Reported by <Text style={styles.text}>{issue.issue.author}</Text>
+                  <InterfaceText
+                    values={{ value0: <Text style={styles.text}>{issue.issue.author}</Text> }}
+                  >
+                    {'Reported by {value0}'}
+                  </InterfaceText>
                 </Text>
               )}
               <Text style={styles.muted}>
                 {jiraSourceId && !discussion.ready
-                  ? 'Loading discussion…'
-                  : `${issue.comments.length}${issue.next ? '+' : ''} comments loaded`}
+                  ? uiText('Loading discussion…')
+                  : uiText('{value0}{value1} comments loaded', {
+                      value0: issue.comments.length,
+                      value1: issue.next ? '+' : '',
+                    })}
               </Text>
               {!!issue.issue.labels.length && (
                 <Text style={styles.muted}>
-                  Labels <Text style={styles.text}>{issue.issue.labels.join(' · ')}</Text>
+                  <InterfaceText
+                    values={{
+                      value0: <Text style={styles.text}>{issue.issue.labels.join(' · ')}</Text>,
+                    }}
+                  >
+                    {'Labels {value0}'}
+                  </InterfaceText>
                 </Text>
               )}
               {issue.issue.updatedAt && !Number.isNaN(Date.parse(issue.issue.updatedAt)) && (
-                <Text style={styles.muted}>Updated {formatDateTime(issue.issue.updatedAt)}</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText values={{ value0: formatDateTime(issue.issue.updatedAt) }}>
+                    {'Updated {value0}'}
+                  </InterfaceText>
+                </Text>
               )}
             </View>
             <View style={[styles.card, { padding: 16, borderRadius: 14, gap: 12 }]}>
@@ -946,7 +993,9 @@ function WorkItemContent({
                 {uiText('Description')}
               </Text>
               {!issue.issue.body && !issue.issue.preview && (
-                <Text style={styles.muted}>No description provided.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No description provided.'}</InterfaceText>
+                </Text>
               )}
               {!!issue.issue.bodyNotice && (
                 <Text style={styles.muted}>{issue.issue.bodyNotice}</Text>
@@ -984,24 +1033,35 @@ function WorkItemContent({
                 },
               ]}
             >
-              Discussion · {issue.comments.length}
-              {issue.next ? '+' : ''}
+              <InterfaceText
+                values={{ value0: issue.comments.length, value1: issue.next ? '+' : '' }}
+              >
+                {'Discussion · {value0}{value1}'}
+              </InterfaceText>
             </Text>
             <Action
               secondary
-              label="Add comment"
+              label={uiText('Add comment')}
               disabled={mutationDisabled}
               onPress={() => openForm('comment')}
             />
             {jiraSourceId && (
-              <PipelineSectionStatus label="Discussion" state={discussion} connected={connected} />
+              <PipelineSectionStatus
+                label={uiText('Discussion')}
+                state={discussion}
+                connected={connected}
+              />
             )}
             {jiraSourceId && workOptionsError && (
               <View style={styles.card}>
-                <Text style={styles.error}>Issue actions: {workOptionsError}</Text>
+                <Text style={styles.error}>
+                  <InterfaceText values={{ value0: workOptionsError }}>
+                    {'Issue actions: {value0}'}
+                  </InterfaceText>
+                </Text>
                 <Action
                   secondary
-                  label="Retry actions"
+                  label={uiText('Retry actions')}
                   onPress={() => reloadOptions((value) => value + 1)}
                 />
               </View>
@@ -1009,7 +1069,9 @@ function WorkItemContent({
             {!issue.comments.length &&
               !issue.discussionNotice &&
               (!jiraSourceId || (discussion.ready && !discussion.error)) && (
-                <Text style={styles.muted}>No comments yet.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No comments yet.'}</InterfaceText>
+                </Text>
               )}
             {!!options?.issueNotice && <Text style={styles.muted}>{options.issueNotice}</Text>}
             {!!issue.discussionNotice && <Text style={styles.muted}>{issue.discussionNotice}</Text>}
@@ -1037,7 +1099,7 @@ function WorkItemContent({
             ))}
             {issue.next && (
               <Action
-                label="More comments"
+                label={uiText('More comments')}
                 secondary
                 disabled={(jiraSourceId ? discussion.busy : busy) || !connected}
                 onPress={() => void more()}
@@ -1058,12 +1120,12 @@ function WorkItemContent({
               disabled={mutationDisabled}
             />
             <PipelineSectionStatus
-              label="Jobs"
+              label={uiText('Jobs')}
               state={pipelineSections.jobs}
               connected={connected}
             />
             <PipelineSectionStatus
-              label="Workflow"
+              label={uiText('Workflow')}
               state={pipelineSections.graph}
               connected={connected}
             />
@@ -1082,7 +1144,7 @@ function WorkItemContent({
             )}
             {pipeline.next && (
               <Action
-                label="More jobs"
+                label={uiText('More jobs')}
                 secondary
                 disabled={pipelineSections.jobs.busy || !connected}
                 onPress={() => void more()}
@@ -1106,15 +1168,19 @@ function WorkItemContent({
       )}
       {confirm && confirmed && (
         <Sheet
-          title={`${confirm[0]!.toUpperCase() + confirm.slice(1)} pipeline?`}
+          title={uiText('{value0} pipeline?', {
+            value0: confirm[0]!.toUpperCase() + confirm.slice(1),
+          })}
           onClose={() => setConfirm(null)}
           busy={busy}
         >
           <Text style={styles.muted}>
-            {confirmed.run.title}. This changes the pipeline on its server.
+            <InterfaceText values={{ value0: confirmed.run.title }}>
+              {'{value0}. This changes the pipeline on its server.'}
+            </InterfaceText>
           </Text>
           <Action
-            label={`Confirm ${confirm}`}
+            label={uiText('Confirm {value0}', { value0: confirm })}
             disabled={mutationDisabled || !confirmAllowed}
             onPress={() => {
               if (pending.current || mutationDisabled || !confirmAllowed) return

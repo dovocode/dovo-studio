@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ArtifactReference } from '@dovo/protocol'
 import { useEncryptedPublication } from '@dovo/studio-core'
 import { useMobileAccount } from '../../runtime/connection/account-provider'
@@ -9,6 +10,8 @@ export function ArtifactSharedBadge({
 }: {
   artifact: Pick<ArtifactReference, 'id' | 'revision'>
 }) {
+  const uiText = useInterfaceText()
+
   const account = useMobileAccount()
   const encrypted = useEncryptedPublication(
     account.client,
@@ -35,19 +38,21 @@ export function ArtifactSharedBadge({
       ]}
       accessibilityLabel={
         encrypted.shared
-          ? `Version ${artifact.revision} is shared with end-to-end encryption`
+          ? uiText('Version {value0} is shared with end-to-end encryption', {
+              value0: artifact.revision,
+            })
           : current
-            ? `Version ${artifact.revision} is shared`
-            : `Version ${latest} is shared; this version is local`
+            ? uiText('Version {value0} is shared', { value0: artifact.revision })
+            : uiText('Version {value0} is shared; this version is local', { value0: latest })
       }
     >
       {encrypted.shared
-        ? 'Shared · Encrypted'
+        ? uiText('Shared · Encrypted')
         : current
-          ? `Shared · v${artifact.revision}`
+          ? uiText('Shared · v{value0}', { value0: artifact.revision })
           : latest < artifact.revision
-            ? `Shared version is older · v${latest}`
-            : `Shared v${latest} · This version is local`}
+            ? uiText('Shared version is older · v{value0}', { value0: latest })
+            : uiText('Shared v{value0} · This version is local', { value0: latest })}
     </Text>
   )
 }

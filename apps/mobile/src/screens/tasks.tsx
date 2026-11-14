@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { CreateBot } from '../bots/bot-create'
 import { BotStrip } from '../bots/bot-strip'
@@ -349,7 +350,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     const pinned = tasks.filter(({ task }) => task.pinned)
     const pinnedItems: TaskListItem[] = pinned.length
       ? [
-          { kind: 'group', key: 'pinned', name: 'Pinned', count: pinned.length },
+          { kind: 'group', key: 'pinned', name: uiText('Pinned'), count: pinned.length },
           ...(collapsed.has('pinned')
             ? []
             : pinned.map((entry): TaskListItem => ({ kind: 'task', entry }))),
@@ -360,7 +361,12 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     )
     const attentionItems: TaskListItem[] = attention.length
       ? [
-          { kind: 'group', key: 'needs-input', name: 'Needs input', count: attention.length },
+          {
+            kind: 'group',
+            key: 'needs-input',
+            name: uiText('Needs input'),
+            count: attention.length,
+          },
           ...(collapsed.has('needs-input')
             ? []
             : attention.map((entry): TaskListItem => ({ kind: 'task', entry }))),
@@ -381,7 +387,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     const unsettled = active.filter((entry) => !workingKeys.has(entry.key))
     const workingItems: TaskListItem[] = working.length
       ? [
-          { kind: 'group', key: 'working', name: 'Working', count: working.length },
+          { kind: 'group', key: 'working', name: uiText('Working'), count: working.length },
           ...(collapsed.has('working')
             ? []
             : working.map((entry): TaskListItem => ({ kind: 'task', entry }))),
@@ -398,7 +404,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     )
     const waitingItems: TaskListItem[] = waiting.length
       ? [
-          { kind: 'group', key: 'waiting', name: 'Waiting', count: waiting.length },
+          { kind: 'group', key: 'waiting', name: uiText('Waiting'), count: waiting.length },
           ...(collapsed.has('waiting')
             ? []
             : waiting.map((entry): TaskListItem => ({ kind: 'task', entry }))),
@@ -411,7 +417,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     const settled = tasks.filter(({ task }) => !task.pinned && task.archived)
     const snoozedItems: TaskListItem[] = snoozed.length
       ? [
-          { kind: 'group', key: 'snoozed', name: 'Snoozed', count: snoozed.length },
+          { kind: 'group', key: 'snoozed', name: uiText('Snoozed'), count: snoozed.length },
           ...(collapsed.has('snoozed')
             ? []
             : snoozed.map((entry): TaskListItem => ({ kind: 'task', entry }))),
@@ -423,7 +429,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             {
               kind: 'group',
               key: 'settled',
-              name: 'Settled',
+              name: uiText('Settled'),
               count: settled.length + omittedSettled,
             },
             ...(collapsed.has('settled')
@@ -464,7 +470,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           key: 'active',
           items: unsettled.length
             ? ([
-                { kind: 'group', key: 'active', name: 'Open', count: unsettled.length },
+                { kind: 'group', key: 'active', name: uiText('Open'), count: unsettled.length },
                 ...unsettled.map((entry): TaskListItem => ({ kind: 'task', entry })),
               ] satisfies TaskListItem[])
             : [],
@@ -475,7 +481,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     if (grouping === 'status') {
       groups.push({
         key: 'active',
-        name: 'Open',
+        name: uiText('Open'),
         tasks: unsettled.filter(({ task }) => !task.pinned),
       })
     } else {
@@ -485,7 +491,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             ({ runtimeId, repository }) =>
               [
                 runtimeResourceKey(runtimeId, repository.id),
-                { key: group.key, name: repository.kind === 'scratch' ? 'No Project' : group.name },
+                {
+                  key: group.key,
+                  name: repository.kind === 'scratch' ? uiText('No Project') : group.name,
+                },
               ] as const,
           ),
         ),
@@ -538,6 +547,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     selecting,
     preferences.workingSection,
     preferences.threadSectionOrder,
+    uiText,
   ])
   const sectionKey = (key: string) =>
     ['settled', 'snoozed', 'working', 'waiting', 'needs-input', 'active'].includes(key)
@@ -557,7 +567,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   const renderSectionHeader = (item: Extract<TaskListItem, { kind: 'group' }>) => (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`${item.name}, ${item.count} tasks`}
+      accessibilityLabel={uiText('{value0}, {value1} tasks', {
+        value0: item.name,
+        value1: item.count,
+      })}
       accessibilityState={{
         expanded: !collapsed.has(sectionKey(item.key)),
       }}
@@ -632,7 +645,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       }
       setSelected(new Set())
     } catch (cause) {
-      Alert.alert('Bulk action stopped', cause instanceof Error ? cause.message : String(cause))
+      Alert.alert(
+        uiText('Bulk action stopped'),
+        cause instanceof Error ? cause.message : String(cause),
+      )
     } finally {
       await refreshAll().catch(() => undefined)
       setBulkBusy(false)
@@ -643,11 +659,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       return chooseSnoozeDuration('Snooze selected threads', (until) => void bulk(action, until))
     if (action === 'delete')
       Alert.alert(
-        'Delete selected threads?',
-        `${selected.size} threads will be deleted. This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.`,
+        uiText('Delete selected threads?'),
+        uiText(
+          '{value0} threads will be deleted. This cannot be undone. Clean Dovo-created worktrees follow each computer’s cleanup setting.',
+          { value0: selected.size },
+        ),
         [
-          { text: 'Cancel', style: 'cancel' },
-          { text: 'Delete', style: 'destructive', onPress: () => void bulk(action) },
+          { text: uiText('Cancel'), style: 'cancel' },
+          { text: uiText('Delete'), style: 'destructive', onPress: () => void bulk(action) },
         ],
       )
     else void bulk(action)
@@ -705,7 +724,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={archived ? 'Archived threads' : 'Threads'}
+        title={archived ? uiText('Archived threads') : uiText('Threads')}
         titleContent={
           !car ? (
             <View
@@ -713,8 +732,8 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             >
               <SearchField
                 inputRef={searchInput}
-                label={archived ? 'Search archived threads' : 'Search threads'}
-                placeholder="Search threads"
+                label={archived ? uiText('Search archived threads') : uiText('Search threads')}
+                placeholder={uiText('Search threads')}
                 style={{ fontSize: 15 }}
                 clearButtonMode="while-editing"
                 returnKeyType="search"
@@ -731,7 +750,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           archived
             ? [
                 {
-                  label: 'Filters',
+                  label: uiText('Filters'),
                   icon: 'filters',
                   selected: filtersActive,
                   onPress: () => setFiltering(true),
@@ -742,7 +761,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   ? []
                   : [
                       {
-                        label: 'Filters',
+                        label: uiText('Filters'),
                         icon: 'filters' as const,
                         selected: filtersActive,
                         onPress: () => setFiltering(true),
@@ -760,7 +779,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 ...(car
                   ? [
                       {
-                        label: 'Exit car mode',
+                        label: uiText('Exit car mode'),
                         icon: 'car' as const,
                         selected: true,
                         onPress: () => updateMobilePreferences({ carMode: false }),
@@ -778,7 +797,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     ]
                   : []),
                 {
-                  label: 'Quick task',
+                  label: uiText('Quick task'),
                   icon: 'jobs',
                   overflow: true,
                   onPress: () => router.push('/launch'),
@@ -799,7 +818,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             backgroundColor: colors.background,
           }}
         >
-          <Text style={[styles.muted, { flex: 1, fontSize: 12 }]}>{selected.size} selected</Text>
+          <Text style={[styles.muted, { flex: 1, fontSize: 12 }]}>
+            <InterfaceText values={{ value0: selected.size }}>{'{value0} selected'}</InterfaceText>
+          </Text>
           {(archived
             ? (['restore', 'delete'] as const)
             : (['archive', 'snooze', 'pin', 'delete'] as const)
@@ -807,7 +828,16 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             <Action
               key={action}
               secondary
-              label={action[0].toUpperCase() + action.slice(1) + ' selected tasks'}
+              label={
+                {
+                  archive: uiText('Archive selected tasks'),
+                  restore: uiText('Restore selected tasks'),
+                  snooze: uiText('Snooze selected tasks'),
+                  pin: uiText('Pin selected tasks'),
+                  delete: uiText('Delete selected tasks'),
+                }[action]
+              }
+              destructive={action === 'delete'}
               icon={
                 (
                   {
@@ -824,7 +854,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             />
           ))}
           <IconButton
-            label="Clear task selection"
+            label={uiText('Clear task selection')}
             icon="close"
             disabled={bulkBusy}
             onPress={() => setSelected(new Set())}
@@ -832,7 +862,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         </View>
       )}
       {filtering && !car && (
-        <Sheet ref={filterSheet} title="Filter threads" onClose={() => setFiltering(false)}>
+        <Sheet
+          ref={filterSheet}
+          title={uiText('Filter threads')}
+          onClose={() => setFiltering(false)}
+        >
           {!archived && (
             <>
               <ProjectThreadFilter
@@ -856,7 +890,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           {filtersActive && (
             <Action
               secondary
-              label="Clear filters"
+              label={uiText('Clear filters')}
               onPress={() => {
                 scrollOffset.current = 0
                 setView((current) => ({ ...current, search: '', project: '', source: 'all' }))
@@ -866,9 +900,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           {!archived && (
             <>
               <Choice
-                label="Sort by"
+                label={uiText('Sort by')}
                 value={preferences.taskSort}
-                items={sortOptions}
+                items={sortOptions.map((option) => ({ ...option, name: uiText(option.name) }))}
                 onChange={(value) => {
                   const option = sortOptions.find((option) => option.id === value)
                   if (!option) return
@@ -878,9 +912,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 }}
               />
               <Choice
-                label="Group by"
+                label={uiText('Group by')}
                 value={preferences.taskGrouping}
-                items={[...taskGroupOptions]}
+                items={taskGroupOptions.map((option) => ({ ...option, name: uiText(option.name) }))}
                 onChange={(value) => {
                   const option = taskGroupOptions.find((option) => option.id === value)
                   if (!option) return
@@ -890,7 +924,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               />
               <Action
                 secondary
-                label="Organize sections"
+                label={uiText('Organize sections')}
                 onPress={() => filterSheet.current?.dismiss(() => setOrganizing(true))}
               />
             </>
@@ -978,22 +1012,33 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             )}
             {historySearch.loading && (
               <Text accessibilityRole="status" style={styles.muted}>
-                Searching conversation history…
+                <InterfaceText>{'Searching conversation history…'}</InterfaceText>
               </Text>
             )}
             {historySearch.offline && (
               <Text style={styles.muted}>
-                Offline computers: searching saved thread details only.
+                <InterfaceText>
+                  {'Offline computers: searching saved thread details only.'}
+                </InterfaceText>
               </Text>
             )}
             {!!query && !!messageHits.length && (
-              <View accessibilityLabel="Message results" style={{ gap: 6, paddingVertical: 10 }}>
-                <Text style={{ color: colors.text, fontWeight: '600' }}>Messages</Text>
+              <View
+                accessibilityLabel={uiText('Message results')}
+                style={{ gap: 6, paddingVertical: 10 }}
+              >
+                <Text style={{ color: colors.text, fontWeight: '600' }}>
+                  <InterfaceText>{'Messages'}</InterfaceText>
+                </Text>
                 {messageHits.map((hit) => (
                   <Pressable
                     key={JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open ${hit.role} message in ${hit.task?.title ?? 'thread'} on ${hit.owner.profile.name}`}
+                    accessibilityLabel={uiText('Open {value0} message in {value1} on {value2}', {
+                      value0: hit.role,
+                      value1: hit.task?.title ?? 'thread',
+                      value2: hit.owner.profile.name,
+                    })}
                     disabled={!hit.owner.connected}
                     onPress={() => openMessage(hit)}
                     style={{
@@ -1006,11 +1051,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                     }}
                   >
                     <Text numberOfLines={1} style={{ color: colors.text, fontWeight: '600' }}>
-                      {hit.task?.title ?? 'Thread'}
+                      {hit.task?.title ?? uiText('Thread')}
                     </Text>
                     <Text style={styles.muted}>
                       {hit.owner.profile.name} · {hit.role}
-                      {hit.task?.delegation || hit.task?.spawnParent ? ' · Child thread' : ''}
+                      {hit.task?.delegation || hit.task?.spawnParent
+                        ? uiText(' · Child thread')
+                        : ''}
                     </Text>
                     <Text numberOfLines={3} style={{ color: colors.text }}>
                       {hit.snippet}
@@ -1027,11 +1074,11 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               label={
                 showAllSettled
                   ? omittedSettled
-                    ? 'Load more settled threads'
-                    : 'Show fewer settled threads'
+                    ? uiText('Load more settled threads')
+                    : uiText('Show fewer settled threads')
                   : omittedSettled
-                    ? 'Show more settled threads'
-                    : `Show all ${item.count} settled threads`
+                    ? uiText('Show more settled threads')
+                    : uiText('Show all {value0} settled threads', { value0: item.count })
               }
               onPress={() => {
                 if (!showAllSettled) setShowAllSettled(true)
@@ -1097,7 +1144,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         ListFooterComponentStyle={{ flexGrow: 1, justifyContent: 'flex-end' }}
         ListFooterComponent={
           collapsedHeaders.length ? (
-            <View accessibilityLabel="Collapsed thread categories">
+            <View accessibilityLabel={uiText('Collapsed thread categories')}>
               {collapsedHeaders.map((item) => (
                 <View key={item.key}>{renderSectionHeader(item)}</View>
               ))}
@@ -1108,17 +1155,19 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           listItems.length || historySearch.loading ? undefined : archived ? (
             <EmptyState
               icon="archive"
-              title={search ? 'No matching archived threads' : 'No archived threads'}
+              title={
+                search ? uiText('No matching archived threads') : uiText('No archived threads')
+              }
               description={
                 search
-                  ? 'Try a different search.'
-                  : 'Archived threads appear here. Restore them from the three-dot menu.'
+                  ? uiText('Try a different search.')
+                  : uiText('Archived threads appear here. Restore them from the three-dot menu.')
               }
               action={
                 !!search && (
                   <Action
                     secondary
-                    label="Clear search"
+                    label={uiText('Clear search')}
                     onPress={() => setView((current) => ({ ...current, search: '' }))}
                   />
                 )
@@ -1129,22 +1178,22 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
               icon="tasks"
               title={
                 filtersActive
-                  ? 'No matching threads'
+                  ? uiText('No matching threads')
                   : entries.some((entry) => !entry.snapshot)
-                    ? 'Waiting for your computers'
-                    : 'Ready for your next idea'
+                    ? uiText('Waiting for your computers')
+                    : uiText('Ready for your next idea')
               }
               description={
                 filtersActive
-                  ? 'Try a different search or clear your filters.'
+                  ? uiText('Try a different search or clear your filters.')
                   : entries.some((entry) => !entry.snapshot)
-                    ? 'Threads will appear when your computer connects.'
-                    : 'Start with a question, a fix, or something you want to build.'
+                    ? uiText('Threads will appear when your computer connects.')
+                    : uiText('Start with a question, a fix, or something you want to build.')
               }
               action={
                 filtersActive ? (
                   <Action
-                    label="Clear filters"
+                    label={uiText('Clear filters')}
                     secondary
                     onPress={() => {
                       scrollOffset.current = 0
@@ -1164,20 +1213,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
         }
       />
       {detail && (
-        <Sheet title="Task details" onClose={() => setDetails('')}>
+        <Sheet title={uiText('Task details')} onClose={() => setDetails('')}>
           <Text style={styles.title}>{detail.task.title}</Text>
           <Text style={styles.muted}>
             {detail.projectName}
             {rowData.get(detail.key)?.owner.repository?.kind !== 'scratch' &&
-              ` · ${detail.task.checkoutBranch ?? 'Project checkout'}`}
+              ` · ${detail.task.checkoutBranch ?? uiText('Project checkout')}`}
           </Text>
           <Text style={styles.muted}>
             {detail.runtimeName} ·{' '}
             {detail.online
-              ? 'Online'
+              ? uiText('Online')
               : detail.reachability === 'offline'
-                ? 'Offline'
-                : 'Connecting…'}
+                ? uiText('Offline')
+                : uiText('Connecting…')}
           </Text>
           {!!detailAgent && (
             <Text style={styles.muted}>
@@ -1186,12 +1235,18 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             </Text>
           )}
           <Text style={styles.muted}>
-            {taskRowStatus(detail.task, detail.needsInput, detail.online, now)} ·{' '}
-            {detail.task.queue?.length ?? 0} queued messages
+            <InterfaceText
+              values={{
+                value0: taskRowStatus(detail.task, detail.needsInput, detail.online, now),
+                value1: detail.task.queue?.length ?? 0,
+              }}
+            >
+              {'{value0} · {value1} queued messages'}
+            </InterfaceText>
           </Text>
           <LifecycleActions task={detail.task} runtimeId={detail.runtimeId} allowReadState />
           {detail.runtimeId !== activeId && (
-            <Action label="Open task" onPress={() => openTask(detail)} />
+            <Action label={uiText('Open task')} onPress={() => openTask(detail)} />
           )}
         </Sheet>
       )}
@@ -1228,21 +1283,26 @@ function Welcome() {
             <Icon name="device" size={30} color={colors.accent} />
           </View>
           <Text style={[styles.largeTitle, { fontSize: 26, textAlign: 'center' }]}>
-            Connect your computer
+            <InterfaceText>{'Connect your computer'}</InterfaceText>
           </Text>
           <Text style={[styles.muted, { fontSize: 15, lineHeight: 21, textAlign: 'center' }]}>
-            Dovo runs your agents on your own computer. Pair this phone once to follow tasks, answer
-            questions and review changes from anywhere on your Wi-Fi or VPN.
+            <InterfaceText>
+              {
+                'Dovo runs your agents on your own computer. Pair this phone once to follow tasks, answer questions and review changes from anywhere on your Wi-Fi or VPN.'
+              }
+            </InterfaceText>
           </Text>
         </View>
         <View style={{ gap: 10 }}>
           <Action
             wide
-            label="Connect a computer"
+            label={uiText('Connect a computer')}
             onPress={() => router.push({ pathname: '/settings/devices', params: { pair: '1' } })}
           />
           <Text style={[styles.muted, { textAlign: 'center' }]}>
-            You’ll need Dovo open on your computer to get a pairing code.
+            <InterfaceText>
+              {'You’ll need Dovo open on your computer to get a pairing code.'}
+            </InterfaceText>
           </Text>
         </View>
       </ScrollView>

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useEffect } from 'react'
@@ -21,6 +22,8 @@ export function PhysicalControls({
   device: PreviewDevice
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { profile, profiles, connected, callEffect } = useRuntime(),
@@ -82,7 +85,7 @@ export function PhysicalControls({
     )
   return (
     <Sheet
-      title={`Device controls · ${device.hostName ?? 'Local runtime'}`}
+      title={uiText('Device controls · {value0}', { value0: device.hostName ?? 'Local runtime' })}
       busy={busy}
       onClose={onClose}
     >
@@ -93,15 +96,21 @@ export function PhysicalControls({
         }}
       >
         <Text style={styles.muted}>
-          Tap, swipe, hold, and type directly on the phone preview. No Device Hub window needed.
+          <InterfaceText>
+            {
+              'Tap, swipe, hold, and type directly on the phone preview. No Device Hub window needed.'
+            }
+          </InterfaceText>
         </Text>
         {!connected && (
           <Text style={styles.muted}>
-            The current runtime is offline. Reconnect to control this device.
+            <InterfaceText>
+              {'The current runtime is offline. Reconnect to control this device.'}
+            </InterfaceText>
           </Text>
         )}
         <Choice
-          label="Developer app"
+          label={uiText('Developer app')}
           value={selected}
           items={apps.map((app) => ({
             id: app.bundleId,
@@ -112,11 +121,15 @@ export function PhysicalControls({
         />
         <Action
           secondary
-          label="Refresh developer apps"
+          label={uiText('Refresh developer apps')}
           disabled={disabled}
           onPress={() => setRetry((value) => value + 1)}
         />
-        {!apps.length && !busy && <Text style={styles.muted}>No developer apps installed.</Text>}
+        {!apps.length && !busy && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'No developer apps installed.'}</InterfaceText>
+          </Text>
+        )}
         <View
           style={{
             flexDirection: 'row',
@@ -125,28 +138,28 @@ export function PhysicalControls({
           }}
         >
           <Action
-            label="Launch"
+            label={uiText('Launch')}
             disabled={disabled || !selected}
             onPress={() => command('launch')}
           />
           <Action
-            label="Relaunch"
+            label={uiText('Relaunch')}
             secondary
             disabled={disabled || !selected}
             onPress={() => command('relaunch')}
           />
         </View>
         <Field
-          label="Open URL on phone"
+          label={uiText('Open URL on phone')}
           value={url}
           onChangeText={setUrl}
           editable={!disabled}
-          placeholder="HTTP or HTTPS URL reachable from the phone"
+          placeholder={uiText('HTTP or HTTPS URL reachable from the phone')}
           autoCapitalize="none"
           keyboardType="url"
         />
         <Action
-          label="Open URL"
+          label={uiText('Open URL')}
           secondary
           disabled={disabled || !url.trim()}
           onPress={() => command('open')}

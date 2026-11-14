@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName, runtimeResourceKey } from '@dovo/protocol'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -20,6 +21,8 @@ import { useListScroll } from '../ui/layout/use-list-scroll'
 import { automationHref } from '../shell/source-route'
 import { useNavigation } from '../shell/navigation'
 export default function JobsScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { overviews, refreshAll } = useRuntime()
@@ -70,11 +73,11 @@ export default function JobsScreen() {
   return (
     <SettingsPage>
       <ScreenHeader
-        title="Automations"
+        title={uiText('Automations')}
         testID="Automations heading"
         buttons={[
           {
-            label: 'New automation',
+            label: uiText('New automation'),
             icon: 'add',
             disabled: !focused || !connected,
             onPress: () => setCreating(true),
@@ -118,21 +121,23 @@ export default function JobsScreen() {
                 style={entry.error ? styles.error : styles.muted}
               >
                 {runtimeComputerName(entry)} ·{' '}
-                {entry.error || 'Offline · Showing saved automations'}
+                {entry.error || uiText('Offline · Showing saved automations')}
               </Text>
             ))}
             {(refreshError || failedSources.length > 0) && (
               <Action
                 secondary
-                label="Retry loading automations"
+                label={uiText('Retry loading automations')}
                 disabled={refreshing}
                 onPress={refresh}
               />
             )}
-            <Text style={styles.muted}>All computers</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'All computers'}</InterfaceText>
+            </Text>
             <SearchField
-              label="Search automations"
-              placeholder="Search automations"
+              label={uiText('Search automations')}
+              placeholder={uiText('Search automations')}
               value={query}
               onChangeText={setQuery}
             />
@@ -184,7 +189,7 @@ export default function JobsScreen() {
                   },
                 ]}
               >
-                {connected ? 'Create an automation' : 'Connect a computer'}
+                {connected ? uiText('Create an automation') : uiText('Connect a computer')}
               </Text>
               <Text
                 style={[
@@ -195,17 +200,21 @@ export default function JobsScreen() {
                 ]}
               >
                 {connected
-                  ? 'Run repeatable tasks manually or on a schedule, with review steps when you need them.'
-                  : 'Reconnect a computer to load its automations.'}
+                  ? uiText(
+                      'Run repeatable tasks manually or on a schedule, with review steps when you need them.',
+                    )
+                  : uiText('Reconnect a computer to load its automations.')}
               </Text>
             </View>
           ) : (
-            <Text style={styles.muted}>No matching automations.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'No matching automations.'}</InterfaceText>
+            </Text>
           )
         }
       />
       {creating && (
-        <CreationTarget title="New automation" onClose={() => setCreating(false)}>
+        <CreationTarget title={uiText('New automation')} onClose={() => setCreating(false)}>
           {() => <AutomationEditor onClose={() => setCreating(false)} />}
         </CreationTarget>
       )}

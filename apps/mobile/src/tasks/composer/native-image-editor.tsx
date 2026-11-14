@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useReducer, useRef, useState } from 'react'
 import {
   ActivityIndicator,
@@ -62,6 +63,8 @@ export function NativeImageEditor({
   image: EditableImage
   onFinish: (asset: AttachmentAsset | null) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [history, dispatch] = useReducer(editHistory, {
     steps: [{ crop: { x: 0, y: 0, width: image.width, height: image.height }, marks: [] }],
@@ -265,7 +268,9 @@ export function NativeImageEditor({
         }}
       >
         {button('Cancel', () => onFinish(null), saving)}
-        <Text style={styles.title}>Edit image</Text>
+        <Text style={styles.title}>
+          <InterfaceText>{'Edit image'}</InterfaceText>
+        </Text>
         {button('Done', () => void save(), saving || !ready || !!draft || !!selection)}
       </View>
       <ScrollView
@@ -331,9 +336,9 @@ export function NativeImageEditor({
           </View>
           <View style={{ flexDirection: 'row', justifyContent: 'center' }}>
             {[
-              { label: 'Thin', size: 3 },
-              { label: 'Medium', size: 6 },
-              { label: 'Thick', size: 10 },
+              { label: uiText('Thin'), size: 3 },
+              { label: uiText('Medium'), size: 6 },
+              { label: uiText('Thick'), size: 10 },
             ].map((item) =>
               button(item.label, () => setSize(item.size), saving, size === item.size),
             )}
@@ -344,8 +349,10 @@ export function NativeImageEditor({
         style={[styles.muted, { textAlign: 'center', paddingHorizontal: 12, paddingVertical: 6 }]}
       >
         {tool === 'crop'
-          ? 'Drag across the area to keep. Undo to restore.'
-          : `${tools.find((item) => item.tool === tool)?.label} · Draw on the image. Tap Done to attach.`}
+          ? uiText('Drag across the area to keep. Undo to restore.')
+          : uiText('{value0} · Draw on the image. Tap Done to attach.', {
+              value0: tools.find((item) => item.tool === tool)?.label,
+            })}
       </Text>
       <View style={{ flex: 1, padding: 12 }}>
         <View
@@ -354,7 +361,7 @@ export function NativeImageEditor({
         >
           {layout.width > 24 && layout.height > 24 && (
             <View
-              accessibilityLabel="Image drawing area"
+              accessibilityLabel={uiText('Image drawing area')}
               style={{ width: display.width, height: display.height }}
               onStartShouldSetResponder={() => ready && !saving}
               onMoveShouldSetResponder={() => ready && !saving}
@@ -401,7 +408,7 @@ export function NativeImageEditor({
           )}
           {!ready && (
             <ActivityIndicator
-              accessibilityLabel="Loading image"
+              accessibilityLabel={uiText('Loading image')}
               style={{ position: 'absolute' }}
             />
           )}
@@ -421,7 +428,7 @@ export function NativeImageEditor({
       ) : null}
       <View style={{ alignItems: 'center', paddingBottom: 8 }}>
         {saving ? (
-          <ActivityIndicator accessibilityLabel="Saving image" />
+          <ActivityIndicator accessibilityLabel={uiText('Saving image')} />
         ) : (
           button('Use original', () => onFinish(image.asset))
         )}

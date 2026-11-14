@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, ScrollView, View, useWindowDimensions } from 'react-native'
 import { responses } from '@dovo/protocol'
@@ -16,6 +17,8 @@ export function TaskVisualization({
   path: string
   label: string
 }) {
+  const uiText = useInterfaceText()
+
   const { read, connected, connection } = useRuntime()
   const { styles, colors } = useTheme()
   const { height } = useWindowDimensions()
@@ -44,11 +47,16 @@ export function TaskVisualization({
   }, [read, connected, taskId, path, key, content])
   const preview = () =>
     (!connected || !taskId) && content === undefined ? (
-      <Text style={styles.muted}>Reconnect to the computer to load this visualization.</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Reconnect to the computer to load this visualization.'}</InterfaceText>
+      </Text>
     ) : error ? (
       <View style={{ padding: 16, gap: 8 }}>
         <Text style={styles.error}>{error}</Text>
-        <Action label="Retry visualization" onPress={() => setReload((value) => value + 1)} />
+        <Action
+          label={uiText('Retry visualization')}
+          onPress={() => setReload((value) => value + 1)}
+        />
       </View>
     ) : content === undefined ? (
       <ActivityIndicator color={colors.accent} />
@@ -59,7 +67,10 @@ export function TaskVisualization({
         </Text>
       </ScrollView>
     ) : (
-      <ArtifactWebView content={content} onError={() => setError('Could not load visualization')} />
+      <ArtifactWebView
+        content={content}
+        onError={() => setError(uiText('Could not load visualization'))}
+      />
     )
   return (
     <View
@@ -76,24 +87,26 @@ export function TaskVisualization({
         <View style={{ flexDirection: 'row', gap: 8, flexWrap: 'wrap' }}>
           <Action
             secondary
-            label={expanded ? 'Collapse visualization' : 'Expand visualization'}
+            label={expanded ? uiText('Collapse visualization') : uiText('Expand visualization')}
             onPress={() => setExpanded((value) => !value)}
           />
           <Action
             secondary
-            label="Refresh visualization"
+            label={uiText('Refresh visualization')}
             disabled={!connected || !taskId}
             onPress={() => setReload((value) => value + 1)}
           />
           <Action
             secondary
-            label={source ? 'Show preview' : 'View source'}
+            label={source ? uiText('Show preview') : uiText('View source')}
             onPress={() => setSource((value) => !value)}
           />
         </View>
       </View>
       {!connected && content !== undefined && (
-        <Text style={styles.muted}>Computer offline · Showing loaded preview</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Computer offline · Showing loaded preview'}</InterfaceText>
+        </Text>
       )}
       <View style={{ height: expanded ? Math.max(360, height * 0.8) : 360 }}>{preview()}</View>
     </View>

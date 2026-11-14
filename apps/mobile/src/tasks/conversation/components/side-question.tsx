@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AgentSideChats } from './agent-side-chats'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
@@ -100,7 +101,7 @@ function ReadOnlySideQuestion({
   }
   return (
     <Sheet
-      title="Read-only chat"
+      title={uiText('Read-only chat')}
       onClose={onClose}
       busy={busy}
       footer={
@@ -108,7 +109,7 @@ function ReadOnlySideQuestion({
           {chat && (
             <>
               <Field
-                label="Question"
+                label={uiText('Question')}
                 value={question}
                 onChangeText={(value) => setDrafts((current) => ({ ...current, [chat.id]: value }))}
                 multiline
@@ -117,7 +118,7 @@ function ReadOnlySideQuestion({
                 editable={!disabled && !asking}
               />
               <Action
-                label={pending[chat.id] ? 'Asking…' : 'Ask'}
+                label={pending[chat.id] ? uiText('Asking…') : uiText('Ask')}
                 disabled={
                   disabled ||
                   !!pending[chat.id] ||
@@ -149,7 +150,7 @@ function ReadOnlySideQuestion({
               />
               <Action
                 secondary
-                label="Save draft"
+                label={uiText('Save draft')}
                 disabled={disabled || asking}
                 onPress={() =>
                   act(() =>
@@ -166,15 +167,18 @@ function ReadOnlySideQuestion({
         </>
       }
     >
-      <Action secondary label="Agent side chats" onPress={onAgents} />
+      <Action secondary label={uiText('Agent side chats')} onPress={onAgents} />
       <Text style={styles.muted}>
-        Ask about this thread and its checkout without changing files. Your coding agent keeps
-        working.
+        <InterfaceText>
+          {
+            'Ask about this thread and its checkout without changing files. Your coding agent keeps working.'
+          }
+        </InterfaceText>
       </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
         {!!chats.length && (
           <Choice
-            label="Side chat"
+            label={uiText('Side chat')}
             hideLabel
             compact
             value={chat?.id ?? ''}
@@ -183,7 +187,7 @@ function ReadOnlySideQuestion({
           />
         )}
         <Action
-          label="New read-only chat"
+          label={uiText('New read-only chat')}
           disabled={disabled}
           onPress={() =>
             act(() =>
@@ -194,11 +198,15 @@ function ReadOnlySideQuestion({
           }
         />
       </View>
-      {awaitingChat && <Text style={styles.muted}>Loading side chat…</Text>}
+      {awaitingChat && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Loading side chat…'}</InterfaceText>
+        </Text>
+      )}
       {chat && (
         <Action
           secondary
-          label="Rename side chat"
+          label={uiText('Rename side chat')}
           disabled={disabled}
           onPress={() => {
             setTitle(chat.title)
@@ -208,17 +216,18 @@ function ReadOnlySideQuestion({
       )}
       {chat && (
         <Action
+          destructive
           secondary
-          label="Delete side chat"
+          label={uiText('Delete side chat')}
           disabled={disabled}
           onPress={() =>
             Alert.alert(
-              'Delete this side chat?',
-              'Its saved questions and answers will be removed.',
+              uiText('Delete this side chat?'),
+              uiText('Its saved questions and answers will be removed.'),
               [
-                { text: 'Cancel', style: 'cancel' },
+                { text: uiText('Cancel'), style: 'cancel' },
                 {
-                  text: 'Delete',
+                  text: uiText('Delete'),
                   style: 'destructive',
                   onPress: () =>
                     act(() =>
@@ -236,9 +245,14 @@ function ReadOnlySideQuestion({
       )}
       {chat && renaming && (
         <View style={{ gap: 8 }}>
-          <Field label="Side chat name" value={title} onChangeText={setTitle} maxLength={80} />
+          <Field
+            label={uiText('Side chat name')}
+            value={title}
+            onChangeText={setTitle}
+            maxLength={80}
+          />
           <Action
-            label="Save name"
+            label={uiText('Save name')}
             disabled={disabled || !title.trim()}
             onPress={() =>
               act(() =>
@@ -263,18 +277,26 @@ function ReadOnlySideQuestion({
           >
             {entry.question}
           </Text>
-          <Action secondary label="Add question to thread" onPress={() => add(entry.question)} />
+          <Action
+            secondary
+            label={uiText('Add question to thread')}
+            onPress={() => add(entry.question)}
+          />
           {entry.answer && (
             <>
               <ThreadMarkdown taskId={task.id} text={entry.answer} variant="chat" />
               <Action
                 secondary
-                label="Add answer to thread"
+                label={uiText('Add answer to thread')}
                 onPress={() => add(entry.answer ?? '')}
               />
             </>
           )}
-          {entry.status === 'pending' && <Text style={styles.muted}>Asking…</Text>}
+          {entry.status === 'pending' && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Asking…'}</InterfaceText>
+            </Text>
+          )}
           {entry.error && <Text style={styles.error}>{entry.error}</Text>}
         </View>
       ))}

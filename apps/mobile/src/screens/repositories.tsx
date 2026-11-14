@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import { EmptyState } from '../ui/content/empty-state'
@@ -41,7 +42,7 @@ export default function RepositoriesScreen() {
         onBack={() => backToCollection('/')}
         buttons={[
           {
-            label: 'Add project',
+            label: uiText('Add project'),
             icon: 'add',
             disabled: !overviews.some((entry) => entry.connected && entry.snapshot),
             onPress: () => setAdding(true),
@@ -54,7 +55,7 @@ export default function RepositoriesScreen() {
         keyboardDismissMode="on-drag"
       >
         {adding && (
-          <CreationTarget title="Add project" onClose={() => setAdding(false)}>
+          <CreationTarget title={uiText('Add project')} onClose={() => setAdding(false)}>
             {() => <AddProject onClose={() => setAdding(false)} />}
           </CreationTarget>
         )}
@@ -62,9 +63,16 @@ export default function RepositoriesScreen() {
         {!overviews.length && (
           <EmptyState
             icon="projects"
-            title="Connect a computer"
-            description="Link a computer to see its projects and start working with files and threads."
-            action={<Action label="Open computer settings" onPress={() => navigate('settings')} />}
+            title={uiText('Connect a computer')}
+            description={uiText(
+              'Link a computer to see its projects and start working with files and threads.',
+            )}
+            action={
+              <Action
+                label={uiText('Open computer settings')}
+                onPress={() => navigate('settings')}
+              />
+            }
           />
         )}
 
@@ -72,7 +80,7 @@ export default function RepositoriesScreen() {
           <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
             <Text accessibilityRole="header" style={styles.muted}>
               {runtimeComputerName(entry)}
-              {entry.connected ? '' : ' · Offline'}
+              {entry.connected ? '' : uiText(' · Offline')}
             </Text>
             {!entry.snapshot?.workspace.repositories.length && (
               <EmptyState
@@ -80,22 +88,24 @@ export default function RepositoriesScreen() {
                 title={
                   entry.connected
                     ? entry.snapshot
-                      ? 'No projects yet'
-                      : 'Loading projects…'
-                    : 'Projects unavailable'
+                      ? uiText('No projects yet')
+                      : uiText('Loading projects…')
+                    : uiText('Projects unavailable')
                 }
                 description={
                   entry.connected && entry.snapshot
-                    ? 'Add a project to start working with files and threads on this computer.'
+                    ? uiText(
+                        'Add a project to start working with files and threads on this computer.',
+                      )
                     : entry.connected
-                      ? 'Loading projects from this computer.'
-                      : 'Connect this computer to load its projects.'
+                      ? uiText('Loading projects from this computer.')
+                      : uiText('Connect this computer to load its projects.')
                 }
                 action={
                   entry.connected &&
                   !!entry.snapshot &&
                   overviews.length === 1 && (
-                    <Action label="Add project" onPress={() => setAdding(true)} />
+                    <Action label={uiText('Add project')} onPress={() => setAdding(true)} />
                   )
                 }
               />
@@ -122,6 +132,8 @@ export function AddProject({
   initialSource?: 'dovo' | 'local' | 'github'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { profile, snapshot, connected, connection, callEffect } = useRuntime(),
@@ -140,10 +152,10 @@ export function AddProject({
       scrollable={picker !== 'directory'}
       title={
         picker === 'directory'
-          ? 'Choose folder'
+          ? uiText('Choose folder')
           : picker === 'github'
-            ? 'Choose repository'
-            : 'Add project'
+            ? uiText('Choose repository')
+            : uiText('Add project')
       }
       busy={busy}
       onClose={onClose}
@@ -174,13 +186,13 @@ export function AddProject({
           <Text style={styles.muted}>{runtimeComputerName({ profile, snapshot })}</Text>
           <View style={[styles.row, { flexWrap: 'wrap' }]}>
             <Action
-              label="Dovo Project"
+              label={uiText('Dovo Project')}
               secondary={source !== 'dovo'}
               disabled={busy}
               onPress={() => setSource('dovo')}
             />
             <Action
-              label="Local path"
+              label={uiText('Local path')}
               secondary={source !== 'local'}
               disabled={busy}
               onPress={() => setSource('local')}
@@ -194,22 +206,29 @@ export function AddProject({
           </View>
           <Text style={styles.muted}>
             {source === 'dovo'
-              ? 'Dovo creates a folder in ~/.dovo/projects on this computer. Chats in this project share its files. No Git setup needed.'
-              : 'Choose a folder on this computer.'}
+              ? uiText(
+                  'Dovo creates a folder in ~/.dovo/projects on this computer. Chats in this project share its files. No Git setup needed.',
+                )
+              : uiText('Choose a folder on this computer.')}
           </Text>
-          <Field label="Project name" value={name} onChangeText={setName} editable={!busy} />
+          <Field
+            label={uiText('Project name')}
+            value={name}
+            onChangeText={setName}
+            editable={!busy}
+          />
           {source === 'github' && (
             <>
               <Field
-                label="GitHub repository"
+                label={uiText('GitHub repository')}
                 value={repository}
                 onChangeText={setRepository}
                 editable={!busy}
                 autoCorrect={false}
-                placeholder="owner/repo or https://github.com/owner/repo"
+                placeholder={uiText('owner/repo or https://github.com/owner/repo')}
               />
               <Action
-                label="Choose from GitHub…"
+                label={uiText('Choose from GitHub…')}
                 secondary
                 disabled={!connected || busy}
                 onPress={() => setPicker('github')}
@@ -221,8 +240,8 @@ export function AddProject({
               <Field
                 label={
                   source === 'local'
-                    ? 'Local path on runtime host'
-                    : 'Clone parent folder on runtime host'
+                    ? uiText('Local path on runtime host')
+                    : uiText('Clone parent folder on runtime host')
                 }
                 value={source === 'local' ? path : directory}
                 onChangeText={source === 'local' ? setPath : setDirectory}
@@ -231,7 +250,7 @@ export function AddProject({
                 placeholder={source === 'local' ? '~/Code/my-project' : '~/Code'}
               />
               <Action
-                label="Browse runtime folders…"
+                label={uiText('Browse runtime folders…')}
                 secondary
                 disabled={!connected || busy}
                 onPress={() => setPicker('directory')}
@@ -240,8 +259,11 @@ export function AddProject({
           )}
           {source === 'github' && (
             <Text style={styles.muted}>
-              Creates a new folder named after the repository inside this existing parent folder.
-              Private repositories require Git credentials on the host.
+              <InterfaceText>
+                {
+                  'Creates a new folder named after the repository inside this existing parent folder. Private repositories require Git credentials on the host.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {!!error && (
@@ -252,12 +274,12 @@ export function AddProject({
           <Action
             label={
               busy
-                ? 'Working…'
+                ? uiText('Working…')
                 : source === 'dovo'
-                  ? 'Create project'
+                  ? uiText('Create project')
                   : source === 'github'
-                    ? 'Clone and add repository'
-                    : 'Add repository'
+                    ? uiText('Clone and add repository')
+                    : uiText('Add repository')
             }
             disabled={
               !connected ||

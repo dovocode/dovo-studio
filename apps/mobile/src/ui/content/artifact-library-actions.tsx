@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
@@ -99,9 +100,11 @@ export function ArtifactLibraryActions({
           paddingBottom: 4,
         }}
       >
-        {onOpenSource && <Action secondary label="Open source thread" onPress={onOpenSource} />}
+        {onOpenSource && (
+          <Action secondary label={uiText('Open source thread')} onPress={onOpenSource} />
+        )}
         <IconButton
-          label={`Artifact actions ${artifact.title}`}
+          label={uiText('Artifact actions {value0}', { value0: artifact.title })}
           icon="more"
           onPress={() => setMenu(true)}
         />
@@ -110,7 +113,7 @@ export function ArtifactLibraryActions({
         <Sheet ref={sheet} title={artifact.title} onClose={() => setMenu(false)}>
           <Action
             secondary
-            label="Add to thread"
+            label={uiText('Add to thread')}
             disabled={!runtime?.connected}
             onPress={() => {
               sheet.current?.dismiss(() => {
@@ -123,8 +126,9 @@ export function ArtifactLibraryActions({
             }}
           />
           <Action
+            destructive
             secondary
-            label="Delete artifact"
+            label={uiText('Delete artifact')}
             disabled={!runtime?.connected}
             onPress={() => {
               sheet.current?.dismiss(() => {
@@ -137,10 +141,12 @@ export function ArtifactLibraryActions({
       )}
       {!!added && (
         <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}>
-          <Text style={styles.muted}>Added to thread.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Added to thread.'}</InterfaceText>
+          </Text>
           <Action
             secondary
-            label="Open thread"
+            label={uiText('Open thread')}
             onPress={() => navigate('tasks', added, profile.id)}
           />
         </View>
@@ -154,26 +160,31 @@ export function ArtifactLibraryActions({
       >
         <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
           <Text style={[styles.text, { fontSize: 20, fontWeight: '600' }]}>
-            {action === 'delete' ? 'Delete artifact?' : 'Add artifact to a thread'}
+            {action === 'delete' ? uiText('Delete artifact?') : uiText('Add artifact to a thread')}
           </Text>
           <Text style={styles.muted}>
             {action === 'delete'
-              ? `“${artifact.title}” and all its saved versions will be permanently deleted. Copies in other threads are kept.`
-              : `Copy “${artifact.title}” into a thread on this computer. The original stays here.`}
+              ? uiText(
+                  '“{value0}” and all its saved versions will be permanently deleted. Copies in other threads are kept.',
+                  { value0: artifact.title },
+                )
+              : uiText('Copy “{value0}” into a thread on this computer. The original stays here.', {
+                  value0: artifact.title,
+                })}
           </Text>
           {action === 'add' && (
             <>
               <SearchField
-                label="Search destination threads"
-                placeholder="Search threads…"
+                label={uiText('Search destination threads')}
+                placeholder={uiText('Search threads…')}
                 value={query}
                 onChangeText={setQuery}
               />
               <Choice
-                label="Destination thread"
+                label={uiText('Destination thread')}
                 value={target}
                 items={[
-                  { id: '', name: 'Choose a thread…' },
+                  { id: '', name: uiText('Choose a thread…') },
                   ...tasks.map((task) => ({
                     id: task.id,
                     name: `${task.title} · ${projectDisplayName(runtime?.snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId))}`,
@@ -182,20 +193,35 @@ export function ArtifactLibraryActions({
                 onChange={setTarget}
               />
               {!!query.trim() && !tasks.length && (
-                <Action secondary label="Clear thread search" onPress={() => setQuery('')} />
+                <Action
+                  secondary
+                  label={uiText('Clear thread search')}
+                  onPress={() => setQuery('')}
+                />
               )}
               {!tasks.length && (
                 <Text style={styles.muted}>
                   {query.trim()
-                    ? 'No threads match this search. Clear the search to see available threads.'
-                    : 'No writable threads. Create or reopen a thread on this computer first.'}
+                    ? uiText(
+                        'No threads match this search. Clear the search to see available threads.',
+                      )
+                    : uiText(
+                        'No writable threads. Create or reopen a thread on this computer first.',
+                      )}
                 </Text>
               )}
             </>
           )}
           {!!error && <Text style={styles.error}>{error}</Text>}
           <Action
-            label={busy ? 'Saving…' : action === 'delete' ? 'Delete artifact' : 'Add to thread'}
+            destructive={busy ? false : action === 'delete' ? true : false}
+            label={
+              busy
+                ? uiText('Saving…')
+                : action === 'delete'
+                  ? uiText('Delete artifact')
+                  : uiText('Add to thread')
+            }
             disabled={
               busy ||
               !runtime?.connected ||

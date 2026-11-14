@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useEffectEvent, useState } from 'react'
 import { AddPullsToThread } from '../list/add-to-thread'
 import type { PullSummary } from '@dovo/protocol'
@@ -11,6 +12,8 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 
 export function PullLinkedThreads({ pull }: { pull: PullSummary }) {
+  const uiText = useInterfaceText()
+
   const [linking, setLinking] = useState(false)
   const { overviews } = useRuntime()
   const { navigate } = useNavigation()
@@ -31,15 +34,19 @@ export function PullLinkedThreads({ pull }: { pull: PullSummary }) {
     })),
   )
   return (
-    <View accessibilityLabel="Linked Studio threads" style={{ gap: 8 }}>
-      <Text style={styles.muted}>Linked threads · {threads.length}</Text>
-      <Action secondary label="Link thread" onPress={() => setLinking(true)} />
+    <View accessibilityLabel={uiText('Linked Studio threads')} style={{ gap: 8 }}>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: threads.length }}>
+          {'Linked threads · {value0}'}
+        </InterfaceText>
+      </Text>
+      <Action secondary label={uiText('Link thread')} onPress={() => setLinking(true)} />
       {linking && <AddPullsToThread pulls={[pull]} onClose={() => setLinking(false)} />}
       {threads.map(({ task, runtime }) => (
         <Action
           key={JSON.stringify([runtime.profile.id, task.id])}
           secondary
-          label={`${task.title} · ${runtimeComputerName(runtime)}${runtime.connected ? '' : ' · Offline'}`}
+          label={`${task.title} · ${runtimeComputerName(runtime)}${runtime.connected ? '' : uiText(' · Offline')}`}
           onPress={() => navigateAfterSheet(() => navigate('tasks', task.id, runtime.profile.id))}
         />
       ))}

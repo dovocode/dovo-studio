@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { View } from 'react-native'
@@ -23,9 +24,11 @@ export default function Screen() {
       ]}
     >
       <ScreenHeader title={uiText('Threads')} hidden />
-      <Text style={styles.title}>Select a thread</Text>
+      <Text style={styles.title}>
+        <InterfaceText>{'Select a thread'}</InterfaceText>
+      </Text>
       <Text style={[styles.muted, { textAlign: 'center' }]}>
-        Open a thread from the list, or start something new.
+        <InterfaceText>{'Open a thread from the list, or start something new.'}</InterfaceText>
       </Text>
       <Action
         label={uiText('New thread')}

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Effect } from 'effect'
@@ -97,6 +98,8 @@ export function TaskProjectSheet({
   onBrowser?: (url: string) => void
   onShare?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile, connected, callEffect } = useRuntime()
   const { colors, styles } = useTheme()
   const { act, busy, error } = useAction()
@@ -118,7 +121,11 @@ export function TaskProjectSheet({
   const dismissThen = (action: () => void) => (inline ? action() : sheet.current?.dismiss(action))
   const sections = {
     sharing: !task.example && onShare && (
-      <ProjectRow label="Share thread" icon="share" onPress={() => dismissThen(onShare)} />
+      <ProjectRow
+        label={uiText('Share thread')}
+        icon="share"
+        onPress={() => dismissThen(onShare)}
+      />
     ),
     settings: (
       <>
@@ -131,7 +138,7 @@ export function TaskProjectSheet({
               </Text>
             </View>
             <ProjectRow
-              label={modelSettings ? 'Hide agent & model' : 'Agent & model'}
+              label={modelSettings ? uiText('Hide agent & model') : uiText('Agent & model')}
               icon="agents"
               disabled={settingsBusy}
               onPress={() => setModelSettings(!modelSettings)}
@@ -162,7 +169,9 @@ export function TaskProjectSheet({
       <>
         {show('project') && (
           <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-            {repository?.kind === 'scratch' ? 'No Project' : (repository?.name ?? 'No Project')}
+            {repository?.kind === 'scratch'
+              ? uiText('No Project')
+              : (repository?.name ?? uiText('No Project'))}
           </Text>
         )}
         {show('project') && (
@@ -171,7 +180,7 @@ export function TaskProjectSheet({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Icon name="changes" color={colors.muted} />
               <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-                {task.checkoutBranch || repository?.branch || 'Project checkout'}
+                {task.checkoutBranch || repository?.branch || uiText('Project checkout')}
               </Text>
             </View>
             {branchActions.map((action) => (
@@ -190,7 +199,7 @@ export function TaskProjectSheet({
           <>
             <ProjectRow
               secondary
-              label={icons ? 'Hide project icon' : 'Project icon'}
+              label={icons ? uiText('Hide project icon') : uiText('Project icon')}
               icon="projects"
               onPress={() => setIcons((value) => !value)}
             />
@@ -229,7 +238,7 @@ export function TaskProjectSheet({
             ))}
             <ProjectRow
               secondary
-              label={scripts.length ? 'Edit project scripts' : 'Add project script'}
+              label={scripts.length ? uiText('Edit project scripts') : uiText('Add project script')}
               icon="add"
               disabled={!repository || !connected}
               onPress={() => {
@@ -246,7 +255,7 @@ export function TaskProjectSheet({
         {show('git') && !repository?.kind && (
           <ProjectRow
             secondary
-            label={git ? 'Hide commit controls' : 'Commit & push'}
+            label={git ? uiText('Hide commit controls') : uiText('Commit & push')}
             icon="changes"
             disabled={!repository}
             onPress={() => setGit((value) => !value)}
@@ -260,7 +269,7 @@ export function TaskProjectSheet({
         {show('changes') && (
           <ProjectRow
             secondary
-            label={`Changes (${task.files.length})`}
+            label={uiText('Changes ({value0})', { value0: task.files.length })}
             icon="changes"
             onPress={() => dismissThen(onChanges)}
           />
@@ -274,13 +283,19 @@ export function TaskProjectSheet({
             <ProjectRow
               label={
                 (task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length
-                  ? `Linked projects (${(task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length})`
-                  : 'Link projects'
+                  ? uiText('Linked projects ({value0})', {
+                      value0: (task.pendingLinkedCheckouts ?? task.linkedCheckouts)?.length,
+                    })
+                  : uiText('Link projects')
               }
               icon="projects"
               onPress={() => dismissThen(onProjects)}
             />
-            <Text style={styles.muted}>Use project checkouts or worktrees on this computer.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>
+                {'Use project checkouts or worktrees on this computer.'}
+              </InterfaceText>
+            </Text>
           </>
         )}
       </>
@@ -289,8 +304,10 @@ export function TaskProjectSheet({
       <>
         {show('lineage') && <TaskSource task={task} />}
         {show('lineage') && !!agents.length && (
-          <View style={{ gap: 8 }} accessibilityLabel="Working subagents">
-            <Text style={styles.muted}>Working agents</Text>
+          <View style={{ gap: 8 }} accessibilityLabel={uiText('Working subagents')}>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Working agents'}</InterfaceText>
+            </Text>
             {agents.map((agent) => (
               <ProjectRow
                 key={`${agent.provider}:${agent.id}`}
@@ -315,11 +332,13 @@ export function TaskProjectSheet({
   return (
     <ProjectPanelFrame inline={inline} sheet={sheet} busy={busy || settingsBusy} onClose={onClose}>
       <View
-        accessibilityLabel="Thread info sections"
+        accessibilityLabel={uiText('Thread info sections')}
         style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
       >
         {inline && (
-          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>Thread info</Text>
+          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
+            <InterfaceText>{'Thread info'}</InterfaceText>
+          </Text>
         )}
         <ThreadInfoCustomization />
 
@@ -339,11 +358,15 @@ export function TaskProjectSheet({
         )}
       </View>
       {editingScripts && repository && (
-        <Sheet title="Project scripts" busy={busy} onClose={() => setEditingScripts(false)}>
+        <Sheet
+          title={uiText('Project scripts')}
+          busy={busy}
+          onClose={() => setEditingScripts(false)}
+        >
           {drafts.map((draft, index) => (
             <View key={draft.id} style={styles.card}>
               <Field
-                label={`Script ${index + 1} name`}
+                label={uiText('Script {value0} name', { value0: index + 1 })}
                 value={draft.name}
                 editable={!busy}
                 onChangeText={(name) =>
@@ -353,7 +376,7 @@ export function TaskProjectSheet({
                 }
               />
               <Field
-                label={`Script ${index + 1} command`}
+                label={uiText('Script {value0} command', { value0: index + 1 })}
                 value={draft.command}
                 multiline
                 editable={!busy}
@@ -364,8 +387,9 @@ export function TaskProjectSheet({
                 }
               />
               <Action
+                destructive
                 secondary
-                label={`Remove script ${index + 1}`}
+                label={uiText('Remove script {value0}', { value0: index + 1 })}
                 disabled={busy}
                 onPress={() =>
                   setDrafts((current) => current.filter((item) => item.id !== draft.id))
@@ -375,14 +399,14 @@ export function TaskProjectSheet({
           ))}
           <Action
             secondary
-            label="Add script"
+            label={uiText('Add script')}
             disabled={busy}
             onPress={() =>
               setDrafts((current) => [...current, { id: randomUUID(), name: '', command: '' }])
             }
           />
           <Action
-            label="Save scripts"
+            label={uiText('Save scripts')}
             disabled={
               !connected ||
               busy ||
@@ -438,16 +462,18 @@ function ProjectPanelFrame({
   onClose: () => void
   children: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   if (!inline)
     return (
-      <Sheet ref={sheet} title="Thread info" busy={busy} onClose={onClose}>
+      <Sheet ref={sheet} title={uiText('Thread info')} busy={busy} onClose={onClose}>
         {children}
       </Sheet>
     )
   return (
     <View
-      accessibilityLabel="Thread info"
+      accessibilityLabel={uiText('Thread info')}
       style={{ maxHeight: '42%', borderBottomWidth: 1, borderBottomColor: colors.border }}
     >
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 12 }}>

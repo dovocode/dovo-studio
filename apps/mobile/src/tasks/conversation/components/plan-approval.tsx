@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { IMPLEMENT_PLAN_PROMPT, planAwaitingApproval, responses, type Task } from '@dovo/protocol'
@@ -9,6 +10,8 @@ import { useTheme } from '../../../ui/theme'
 
 /** After a plan-mode reply: approve with one tap, or reply with changes. */
 export function PlanApproval({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -22,10 +25,12 @@ export function PlanApproval({ task }: { task: Task }) {
       ]}
     >
       <Text style={styles.text}>
-        The agent proposed a plan. Implement it, or reply with changes.
+        <InterfaceText>
+          {'The agent proposed a plan. Implement it, or reply with changes.'}
+        </InterfaceText>
       </Text>
       <Action
-        label="Implement plan"
+        label={uiText('Implement plan')}
         disabled={!connected || busy}
         onPress={() =>
           act(() =>

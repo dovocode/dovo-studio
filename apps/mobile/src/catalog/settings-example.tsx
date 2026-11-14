@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
@@ -56,19 +57,24 @@ export function SettingsExample({
       <ScrollView contentContainerStyle={{ padding: 12, paddingBottom: 28, gap: 20 }}>
         <View style={{ gap: 4, paddingHorizontal: 12 }}>
           <Text style={styles.title}>
-            {section === 'index' ? 'Settings' : 'Runtime connection'}
+            {section === 'index' ? uiText('Settings') : uiText('Runtime connection')}
           </Text>
           <Text style={styles.muted}>
-            {section === 'index' ? 'This device · local preview' : 'Edit a local example address.'}
+            {section === 'index'
+              ? uiText('This device · local preview')
+              : uiText('Edit a local example address.')}
           </Text>
         </View>
 
         {section === 'index' ? (
           <>
-            <SettingsGroup title="Workspace" description="Computer and project connections">
+            <SettingsGroup
+              title={uiText('Workspace')}
+              description={uiText('Computer and project connections')}
+            >
               <SettingsRow
-                title="Runtime address"
-                subtitle="LAN and VPN connections support HTTP. HTTPS is optional."
+                title={uiText('Runtime address')}
+                subtitle={uiText('LAN and VPN connections support HTTP. HTTPS is optional.')}
                 value={savedAddress || 'Not configured'}
                 icon="device"
                 onPress={() => {
@@ -78,8 +84,8 @@ export function SettingsExample({
                 }}
               />
               <SettingsRow
-                title="Connection security"
-                subtitle="Pairing codes and device tokens stay required."
+                title={uiText('Connection security')}
+                subtitle={uiText('Pairing codes and device tokens stay required.')}
                 value="Pairing enabled"
                 icon="web"
                 disabled
@@ -88,12 +94,12 @@ export function SettingsExample({
               />
             </SettingsGroup>
             <SettingsGroup
-              title="Device preferences"
-              footer="These switches update local story state only."
+              title={uiText('Device preferences')}
+              footer={uiText('These switches update local story state only.')}
             >
               <SettingsSwitchRow
                 first
-                label="Show connection notifications"
+                label={uiText('Show connection notifications')}
                 value={!offline}
                 onValueChange={(value) => setOffline(!value)}
               />
@@ -102,22 +108,26 @@ export function SettingsExample({
         ) : (
           <>
             <SettingsGroup
-              title="Connection"
-              description="Choose where this address is saved and update the local preview."
-              footer="HTTP remains supported on LAN and VPN addresses. The preview does not connect to this address."
+              title={uiText('Connection')}
+              description={uiText(
+                'Choose where this address is saved and update the local preview.',
+              )}
+              footer={uiText(
+                'HTTP remains supported on LAN and VPN addresses. The preview does not connect to this address.',
+              )}
             >
               <Choice
-                label="Save location"
+                label={uiText('Save location')}
                 value={scope}
                 disabled={offline || state === 'saving'}
                 items={[
-                  { id: 'device', name: 'This device' },
-                  { id: 'workspace', name: 'Workspace default' },
+                  { id: 'device', name: uiText('This device') },
+                  { id: 'workspace', name: uiText('Workspace default') },
                 ]}
                 onChange={setScope}
               />
               <Field
-                label="Runtime address"
+                label={uiText('Runtime address')}
                 value={address}
                 onChangeText={(value) => {
                   setAddress(value)
@@ -125,13 +135,13 @@ export function SettingsExample({
                 }}
                 autoCapitalize="none"
                 autoCorrect={false}
-                hint="Example: http://studio.local:51464"
+                hint={uiText('Example: http://studio.local:51464')}
                 editable={!offline && state !== 'saving'}
-                accessibilityHint="LAN and VPN runtime addresses may use HTTP."
+                accessibilityHint={uiText('LAN and VPN runtime addresses may use HTTP.')}
               />
               <SettingsSwitchRow
                 first
-                label="Allow local preview save"
+                label={uiText('Allow local preview save')}
                 value={!offline}
                 onValueChange={(value) => {
                   setOffline(!value)
@@ -142,23 +152,32 @@ export function SettingsExample({
 
             {state === 'error' && (
               <Text accessibilityRole="alert" style={styles.error}>
-                The local preview could not save this setting. Your draft is still here.
+                <InterfaceText>
+                  {'The local preview could not save this setting. Your draft is still here.'}
+                </InterfaceText>
               </Text>
             )}
             {state === 'saving' && (
               <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                Saving this setting in the local preview…
+                <InterfaceText>{'Saving this setting in the local preview…'}</InterfaceText>
               </Text>
             )}
             {state === 'saved' && (
               <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                Saved in this local preview for{' '}
-                {scope === 'device' ? 'this device' : 'the workspace'}.
+                <InterfaceText
+                  values={{
+                    value0: scope === 'device' ? uiText('this device') : uiText('the workspace'),
+                  }}
+                >
+                  {'Saved in this local preview for {value0}.'}
+                </InterfaceText>
               </Text>
             )}
             {offline && (
               <Text accessibilityRole="alert" style={styles.error}>
-                Local saving is unavailable. Re-enable it before retrying.
+                <InterfaceText>
+                  {'Local saving is unavailable. Re-enable it before retrying.'}
+                </InterfaceText>
               </Text>
             )}
             <View style={{ gap: 8 }}>
@@ -166,10 +185,10 @@ export function SettingsExample({
                 wide
                 label={
                   state === 'saving'
-                    ? 'Complete local save'
+                    ? uiText('Complete local save')
                     : state === 'error'
-                      ? 'Retry save'
-                      : 'Save changes'
+                      ? uiText('Retry save')
+                      : uiText('Save changes')
                 }
                 disabled={offline || !address.trim()}
                 onPress={save}
@@ -185,40 +204,53 @@ export function SettingsExample({
                   }}
                 />
                 <Action
+                  destructive
                   secondary
-                  label="Forget saved connection"
+                  label={uiText('Forget saved connection')}
                   onPress={() => setConfirmation(true)}
                 />
               </View>
               <Action
                 secondary
-                label={state === 'saving' ? 'Cancel simulated loading' : 'Simulate loading'}
+                label={
+                  state === 'saving'
+                    ? uiText('Cancel simulated loading')
+                    : uiText('Simulate loading')
+                }
                 onPress={() => setState((current) => (current === 'saving' ? 'idle' : 'saving'))}
               />
               <Action
                 secondary
-                label={failNextSave ? 'Allow next save' : 'Make next save fail'}
+                label={failNextSave ? uiText('Allow next save') : uiText('Make next save fail')}
                 onPress={() => setFailNextSave((current) => !current)}
               />
-              <Action secondary label="Back to settings" onPress={() => setSection('index')} />
+              <Action
+                secondary
+                label={uiText('Back to settings')}
+                onPress={() => setSection('index')}
+              />
             </View>
           </>
         )}
       </ScrollView>
       {confirmation && (
         <SettingsSheet
-          title="Forget saved connection?"
+          title={uiText('Forget saved connection?')}
           presentation="dialog"
           onClose={() => setConfirmation(false)}
         >
           <View style={{ gap: 12 }}>
             <Text style={styles.muted}>
-              This clears the address from this local preview. It does not affect a connected
-              computer.
+              <InterfaceText>
+                {
+                  'This clears the address from this local preview. It does not affect a connected computer.'
+                }
+              </InterfaceText>
             </Text>
             <Action
+              destructive
               wide
-              label="Forget saved connection"
+              label={uiText('Forget saved connection')}
               onPress={() => {
                 setAddress('')
                 setSavedAddress('')

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { EmptyState } from '../ui/content/empty-state'
 import { contentColumn } from '../ui/layout/content-column'
@@ -92,7 +93,7 @@ export default function PullsScreen() {
   const setRepository = (value: string) => {
     void chooseSource(value)
       .then(() => setField('repositoryId', value))
-      .catch((error: unknown) => Alert.alert('Could not choose source', String(error)))
+      .catch((error: unknown) => Alert.alert(uiText('Could not choose source'), String(error)))
   }
   const setState = (value: string) => setField('state', value)
   const setSearch = (value: string) => setField('search', value)
@@ -167,16 +168,21 @@ export default function PullsScreen() {
     <View style={styles.screen}>
       <ScreenHeader
         title={uiText('Pull requests')}
-        subtitle={`${!connected ? 'Offline · ' : ''}${pulls.length} pull request${pulls.length === 1 ? '' : 's'}${!connected ? ' saved' : busy && pulls.length ? ' · Updating' : ''}`}
+        subtitle={uiText('{value0}{value1} pull request{value2}{value3}', {
+          value0: !connected ? 'Offline · ' : '',
+          value1: pulls.length,
+          value2: pulls.length === 1 ? '' : 's',
+          value3: !connected ? ' saved' : busy && pulls.length ? ' · Updating' : '',
+        })}
         buttons={[
           {
-            label: 'Create PR',
+            label: uiText('Create PR'),
             icon: 'add',
             disabled: !connected,
             onPress: () => setCreating(true),
           },
           {
-            label: 'PR filters',
+            label: uiText('PR filters'),
             icon: 'filters',
             selected: filters || filtersActive,
             onPress: () => setFilters(true),
@@ -195,16 +201,16 @@ export default function PullsScreen() {
       {!!marked.length && (
         <View style={[styles.row, { paddingHorizontal: 16 }]}>
           <Action
-            label={`Add ${marked.length} PRs to thread`}
+            label={uiText('Add {value0} PRs to thread', { value0: marked.length })}
             onPress={() =>
               setAdding(pulls.filter((pull) => marked.includes(`${pull.sourceKey}-${pull.number}`)))
             }
           />
-          <Action label="Clear selection" secondary onPress={() => setMarked([])} />
+          <Action label={uiText('Clear selection')} secondary onPress={() => setMarked([])} />
         </View>
       )}
       {creating && (
-        <CreationTarget title="Create pull request" onClose={() => setCreating(false)}>
+        <CreationTarget title={uiText('Create pull request')} onClose={() => setCreating(false)}>
           {(runtimeId) => (
             <CreatePull
               repositoryId={
@@ -251,10 +257,10 @@ export default function PullsScreen() {
             }}
           >
             <SearchField
-              label="Search PRs"
+              label={uiText('Search PRs')}
               clearButtonMode="while-editing"
               returnKeyType="search"
-              placeholder="Title, repository, branch or author…"
+              placeholder={uiText('Title, repository, branch or author…')}
               value={search}
               onChangeText={(value) => {
                 setMarked([])
@@ -282,13 +288,15 @@ export default function PullsScreen() {
               >
                 {repositoryId
                   ? (sources.find((source) => source.key === repositoryId)?.repository.name ??
-                    'Selected repository')
-                  : 'All repositories'}
+                    uiText('Selected repository'))
+                  : uiText('All repositories')}
               </Text>
               {(attentionCount > 0 || attention) && state === 'open' && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={attention ? 'Show all PRs' : 'Show PRs needing attention'}
+                  accessibilityLabel={
+                    attention ? uiText('Show all PRs') : uiText('Show PRs needing attention')
+                  }
                   accessibilityState={{
                     selected: attention,
                   }}
@@ -319,7 +327,11 @@ export default function PullsScreen() {
                       },
                     ]}
                   >
-                    {attentionCount} need{attentionCount === 1 ? 's' : ''} attention
+                    <InterfaceText
+                      values={{ value0: attentionCount, value1: attentionCount === 1 ? 's' : '' }}
+                    >
+                      {'{value0} need{value1} attention'}
+                    </InterfaceText>
                   </Text>
                   {attention && <Icon name="check" size={14} color={colors.accent} />}
                 </Pressable>
@@ -333,10 +345,10 @@ export default function PullsScreen() {
                     attention ? 'Needs attention' : '',
                   ]
                     .filter(Boolean)
-                    .join(' · ') || 'Filtered results'}
+                    .join(' · ') || uiText('Filtered results')}
                 </Text>
                 {pulls.length > 0 && (
-                  <Action secondary label="Clear filters" onPress={clearFilters} />
+                  <Action secondary label={uiText('Clear filters')} onPress={clearFilters} />
                 )}
               </View>
             )}
@@ -354,19 +366,19 @@ export default function PullsScreen() {
                 items={[
                   {
                     id: 'open',
-                    name: 'Open',
+                    name: uiText('Open'),
                   },
                   {
                     id: 'merged',
-                    name: 'Merged',
+                    name: uiText('Merged'),
                   },
                   {
                     id: 'closed',
-                    name: 'Closed',
+                    name: uiText('Closed'),
                   },
                   {
                     id: 'all',
-                    name: 'All',
+                    name: uiText('All'),
                   },
                 ]}
               />
@@ -374,7 +386,7 @@ export default function PullsScreen() {
             {!!failedPages.length && (
               <Action
                 secondary
-                label={`Sources · ${failedPages.length} pending`}
+                label={uiText('Sources · {value0} pending', { value0: failedPages.length })}
                 onPress={() => setSourceStatus(!sourceStatus)}
               />
             )}
@@ -385,11 +397,16 @@ export default function PullsScreen() {
                     {page.name} · {page.runtimeName}: {page.error}
                   </Text>
                   {!sources.some((source) => source.key === page.sourceKey && source.connected) && (
-                    <Text style={styles.muted}>Reconnect this source to retry.</Text>
+                    <Text style={styles.muted}>
+                      <InterfaceText>{'Reconnect this source to retry.'}</InterfaceText>
+                    </Text>
                   )}
                   <Action
                     secondary
-                    label={`Retry · ${page.name} · ${page.runtimeName}`}
+                    label={uiText('Retry · {value0} · {value1}', {
+                      value0: page.name,
+                      value1: page.runtimeName,
+                    })}
                     disabled={
                       busy ||
                       !sources.some((source) => source.key === page.sourceKey && source.connected)
@@ -406,7 +423,27 @@ export default function PullsScreen() {
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
-            accessibilityLabel={`${p.runtimeName}${p.online ? '' : ', offline'}, ${p.repositoryName}, PR ${p.number}. ${p.title}. ${pullState(p).label}. ${p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : ''}${p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : ''} ${p.head} into ${p.base}. ${p.state === 'open' ? pullNextStep(p).label : ''}. ${p.additions != null ? `${p.additions} lines added. ` : ''}${p.deletions != null ? `${p.deletions} lines deleted. ` : ''}${p.commentCount != null ? `${p.commentCount} comments.` : ''}`}
+            accessibilityLabel={uiText(
+              '{value0}{value1}, {value2}, PR {value3}. {value4}. {value5}. {value6}{value7} {value8} into {value9}. {value10}. {value11}{value12}{value13}',
+              {
+                value0: p.runtimeName,
+                value1: p.online ? '' : ', offline',
+                value2: p.repositoryName,
+                value3: p.number,
+                value4: p.title,
+                value5: pullState(p).label,
+                value6:
+                  p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : '',
+                value7:
+                  p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : '',
+                value8: p.head,
+                value9: p.base,
+                value10: p.state === 'open' ? pullNextStep(p).label : '',
+                value11: p.additions != null ? `${p.additions} lines added. ` : '',
+                value12: p.deletions != null ? `${p.deletions} lines deleted. ` : '',
+                value13: p.commentCount != null ? `${p.commentCount} comments.` : '',
+              },
+            )}
             onPress={() => {
               const key = `${p.sourceKey}-${p.number}`
               if (marked.length)
@@ -420,11 +457,11 @@ export default function PullsScreen() {
             onLongPress={() =>
               Alert.alert(p.title, `#${p.number} · ${p.repositoryName}`, [
                 {
-                  text: 'Open details',
+                  text: uiText('Open details'),
                   onPress: () => openPull(p.runtimeId, p.repositoryId, p.number),
                 },
                 {
-                  text: 'Add to thread',
+                  text: uiText('Add to thread'),
                   onPress: () =>
                     setAdding(
                       marked.includes(`${p.sourceKey}-${p.number}`)
@@ -435,7 +472,9 @@ export default function PullsScreen() {
                     ),
                 },
                 {
-                  text: marked.includes(`${p.sourceKey}-${p.number}`) ? 'Deselect PR' : 'Select PR',
+                  text: marked.includes(`${p.sourceKey}-${p.number}`)
+                    ? uiText('Deselect PR')
+                    : uiText('Select PR'),
                   onPress: () => {
                     const key = `${p.sourceKey}-${p.number}`
                     setMarked((current) =>
@@ -446,19 +485,21 @@ export default function PullsScreen() {
                   },
                 },
                 {
-                  text: `Open on ${forgeLabels[p.provider ?? 'github']}`,
+                  text: uiText('Open on {value0}', { value0: forgeLabels[p.provider ?? 'github'] }),
                   onPress: () => {
                     void runClientEffect(
                       nativeEffect(() => openAppLink(p.url, true)).pipe(
                         Effect.catch((error) =>
-                          nativeEffect(() => Alert.alert('Could not open PR', String(error))),
+                          nativeEffect(() =>
+                            Alert.alert(uiText('Could not open PR'), String(error)),
+                          ),
                         ),
                       ),
                     )
                   },
                 },
                 {
-                  text: 'Cancel',
+                  text: uiText('Cancel'),
                   style: 'cancel',
                 },
               ])
@@ -529,13 +570,13 @@ export default function PullsScreen() {
             <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
               <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, minWidth: 0 }]}>
                 {p.runtimeName}
-                {!p.online ? ' · Offline' : ''}
+                {!p.online ? uiText(' · Offline') : ''}
               </Text>
               {(p.additions != null || p.deletions != null || p.commentCount != null) && (
                 <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
                   {p.additions != null && (
                     <Text
-                      accessibilityLabel={`${p.additions} lines added`}
+                      accessibilityLabel={uiText('{value0} lines added', { value0: p.additions })}
                       style={[
                         styles.muted,
                         { color: colors.success, fontVariant: ['tabular-nums'] },
@@ -546,7 +587,7 @@ export default function PullsScreen() {
                   )}
                   {p.deletions != null && (
                     <Text
-                      accessibilityLabel={`${p.deletions} lines deleted`}
+                      accessibilityLabel={uiText('{value0} lines deleted', { value0: p.deletions })}
                       style={[styles.muted, { color: colors.error, fontVariant: ['tabular-nums'] }]}
                     >
                       −{p.deletions.toLocaleString()}
@@ -555,7 +596,10 @@ export default function PullsScreen() {
                   {p.commentCount != null && (
                     <View style={[styles.row, { gap: 4 }]}>
                       <Icon name="chat" size={12} color={colors.muted} />
-                      <Text accessibilityLabel={`${p.commentCount} comments`} style={styles.muted}>
+                      <Text
+                        accessibilityLabel={uiText('{value0} comments', { value0: p.commentCount })}
+                        style={styles.muted}
+                      >
                         {p.commentCount.toLocaleString()}
                       </Text>
                     </View>
@@ -569,7 +613,7 @@ export default function PullsScreen() {
                 <Text style={[styles.muted, { color: colors.accent }]}>
                   {pullStackLabel(p.stack)}
                   {p.stack.nativeNumber
-                    ? ` · Stack #${p.stack.nativeNumber}`
+                    ? uiText(' · Stack #{value0}', { value0: p.stack.nativeNumber })
                     : p.stack.rootNumber
                       ? ` · #${p.stack.rootNumber}`
                       : ''}
@@ -578,9 +622,9 @@ export default function PullsScreen() {
                   {p.stack.parentNumber
                     ? `#${p.stack.parentNumber} → #${p.number}`
                     : p.stack.position === 1
-                      ? 'Base PR'
+                      ? uiText('Base PR')
                       : p.stack.baseRef
-                        ? `onto ${p.stack.baseRef}`
+                        ? uiText('onto {value0}', { value0: p.stack.baseRef })
                         : ''}
                 </Text>
               </View>
@@ -596,7 +640,10 @@ export default function PullsScreen() {
               </View>
             )}
             {!!p.labels.length && (
-              <View accessibilityLabel="Labels" style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}>
+              <View
+                accessibilityLabel={uiText('Labels')}
+                style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}
+              >
                 {p.labels.slice(0, 2).map((label) => (
                   <View
                     key={label}
@@ -625,33 +672,35 @@ export default function PullsScreen() {
               accessibilityLiveRegion="polite"
               style={[styles.empty, styles.muted, { textAlign: 'center' }]}
             >
-              Loading pull requests…
+              <InterfaceText>{'Loading pull requests…'}</InterfaceText>
             </Text>
           ) : (
             <EmptyState
               icon="pulls"
               title={
                 unavailable
-                  ? 'Waiting for project sources'
+                  ? uiText('Waiting for project sources')
                   : filtersActive
-                    ? 'No matching pull requests'
+                    ? uiText('No matching pull requests')
                     : connected
-                      ? 'No pull requests to show'
-                      : 'Connect to a computer'
+                      ? uiText('No pull requests to show')
+                      : uiText('Connect to a computer')
               }
               description={
                 unavailable
-                  ? 'Sources refresh automatically. Pull down to check again.'
+                  ? uiText('Sources refresh automatically. Pull down to check again.')
                   : failedPages.length
-                    ? 'No matches in the available results.'
+                    ? uiText('No matches in the available results.')
                     : filtersActive
-                      ? 'Try another search or clear your filters.'
+                      ? uiText('Try another search or clear your filters.')
                       : connected
-                        ? 'Pull down to refresh, or create a pull request.'
-                        : 'Your saved pull requests will appear here when available.'
+                        ? uiText('Pull down to refresh, or create a pull request.')
+                        : uiText('Your saved pull requests will appear here when available.')
               }
               action={
-                filtersActive && <Action secondary label="Clear filters" onPress={clearFilters} />
+                filtersActive && (
+                  <Action secondary label={uiText('Clear filters')} onPress={clearFilters} />
+                )
               }
             />
           )
@@ -672,7 +721,10 @@ export default function PullsScreen() {
                 {page.hasMore && !page.error && (
                   <Action
                     secondary
-                    label={`Load more · ${page.name} · ${page.runtimeName}`}
+                    label={uiText('Load more · {value0} · {value1}', {
+                      value0: page.name,
+                      value1: page.runtimeName,
+                    })}
                     disabled={busy || !page.readConnected}
                     onPress={() => void more(page.sourceKey)}
                   />
@@ -683,23 +735,31 @@ export default function PullsScreen() {
         }
       />
       {filters && (
-        <Sheet title="PR filters" onClose={() => setFilters(false)}>
-          <Text style={styles.text}>Projects in overview</Text>
+        <Sheet title={uiText('PR filters')} onClose={() => setFilters(false)}>
+          <Text style={styles.text}>
+            <InterfaceText>{'Projects in overview'}</InterfaceText>
+          </Text>
           <Text style={styles.muted}>
-            Choose which PRs appear for each project on this device. My PRs uses the project
-            account. Hidden projects remain available in the repository picker.
+            <InterfaceText>
+              {
+                'Choose which PRs appear for each project on this device. My PRs uses the project account. Hidden projects remain available in the repository picker.'
+              }
+            </InterfaceText>
           </Text>
           {sources.map((source) => {
             const key = pullRepositoryKey(source.repository, source.key)
             return (
               <Choice
                 key={source.key}
-                label={`PR visibility for ${source.repository.name} · ${source.computerName}`}
+                label={uiText('PR visibility for {value0} · {value1}', {
+                  value0: source.repository.name,
+                  value1: source.computerName,
+                })}
                 value={pullProjectVisibility[key] ?? 'all'}
                 items={[
-                  { id: 'all', name: 'All PRs' },
-                  { id: 'mine', name: 'My PRs' },
-                  { id: 'hidden', name: 'Hidden' },
+                  { id: 'all', name: uiText('All PRs') },
+                  { id: 'mine', name: uiText('My PRs') },
+                  { id: 'hidden', name: uiText('Hidden') },
                 ]}
                 onChange={(value) => {
                   if (value !== 'all' && value !== 'mine' && value !== 'hidden') return
@@ -714,7 +774,7 @@ export default function PullsScreen() {
           {Object.values(pullProjectVisibility).some((value) => value !== 'all') && (
             <Action
               secondary
-              label="Show all projects"
+              label={uiText('Show all projects')}
               onPress={() => {
                 setMarked([])
                 updateMobilePreferences({ pullProjectVisibility: {} })
@@ -722,7 +782,7 @@ export default function PullsScreen() {
             />
           )}
           <Choice
-            label="Repository"
+            label={uiText('Repository')}
             value={repositoryId}
             onChange={(value) => {
               setMarked([])
@@ -731,7 +791,7 @@ export default function PullsScreen() {
             items={[
               {
                 id: '',
-                name: 'All repositories',
+                name: uiText('All repositories'),
               },
               ...collectionSources(overviews).map((source) => ({
                 id: source.key,
@@ -740,7 +800,7 @@ export default function PullsScreen() {
             ]}
           />
           <Choice
-            label="Draft status"
+            label={uiText('Draft status')}
             value={draft}
             onChange={(value) => {
               setMarked([])
@@ -749,20 +809,20 @@ export default function PullsScreen() {
             items={[
               {
                 id: 'all',
-                name: 'Draft + ready',
+                name: uiText('Draft + ready'),
               },
               {
                 id: 'draft',
-                name: 'Drafts',
+                name: uiText('Drafts'),
               },
               {
                 id: 'ready',
-                name: 'Ready for review',
+                name: uiText('Ready for review'),
               },
             ]}
           />
           <Choice
-            label="Attention"
+            label={uiText('Attention')}
             value={attention ? 'attention' : 'all'}
             onChange={(value) => {
               setMarked([])
@@ -771,41 +831,43 @@ export default function PullsScreen() {
             items={[
               {
                 id: 'all',
-                name: 'All PRs',
+                name: uiText('All PRs'),
               },
               {
                 id: 'attention',
-                name: 'Needs attention',
+                name: uiText('Needs attention'),
               },
             ]}
           />
           <Text style={styles.muted}>
-            Your review requests, blocked PRs, and your approved PRs with passing checks.
+            <InterfaceText>
+              {'Your review requests, blocked PRs, and your approved PRs with passing checks.'}
+            </InterfaceText>
           </Text>
           <Choice
-            label="Sort PRs"
+            label={uiText('Sort PRs')}
             value={sort}
             onChange={setSort}
             items={[
               {
                 id: 'attention',
-                name: 'Attention first',
+                name: uiText('Attention first'),
               },
               {
                 id: 'updated',
-                name: 'Recently updated',
+                name: uiText('Recently updated'),
               },
             ]}
           />
           <Action
             secondary
-            label="Reset PR filters"
+            label={uiText('Reset PR filters')}
             onPress={() => {
               clearFilters()
               setSort('attention')
             }}
           />
-          <Action label="Show pull requests" onPress={() => setFilters(false)} />
+          <Action label={uiText('Show pull requests')} onPress={() => setFilters(false)} />
         </Sheet>
       )}
     </View>

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { usePreviewActive } from '../preview/use-preview-active'
 import { useCallback, useState } from 'react'
 import { Pressable, View, ActivityIndicator } from 'react-native'
@@ -11,6 +12,8 @@ import { openAppLink } from '../../ui/content/open-link'
 import { useLinkOrigin } from '../../ui/content/link-origin'
 
 export function TaskPipelineProgress({ taskId, active }: { taskId: string; active: boolean }) {
+  const uiText = useInterfaceText()
+
   const { call, connected, connection } = useRuntime()
   const foreground = usePreviewActive()
   const { colors, styles } = useTheme()
@@ -31,8 +34,13 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
   const pipelines = data?.dependencies.filter((item) => item.kind === 'pipeline') ?? []
   if (!pipelines.length) return null
   return (
-    <View accessibilityLabel="Pipeline progress" style={[styles.card, { padding: 16, gap: 12 }]}>
-      <Text style={[styles.text, { fontWeight: '600' }]}>Watching pipelines</Text>
+    <View
+      accessibilityLabel={uiText('Pipeline progress')}
+      style={[styles.card, { padding: 16, gap: 12 }]}
+    >
+      <Text style={[styles.text, { fontWeight: '600' }]}>
+        <InterfaceText>{'Watching pipelines'}</InterfaceText>
+      </Text>
       {pipelines.map((item) => {
         const progress = item.progress
         const measured = progress && progress.total > 0 && !progress.partial
@@ -53,12 +61,17 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
             </Pressable>
             {!measured && <ActivityIndicator size="small" color={colors.accent} />}
             <Text style={styles.muted}>
-              {measured ? `${progress.completed}/${progress.total} jobs · ` : ''}
+              {measured
+                ? uiText('{value0}/{value1} jobs · ', {
+                    value0: progress.completed,
+                    value1: progress.total,
+                  })
+                : ''}
               {pipelineSignal(item.status).label}
             </Text>
             <View
               accessibilityRole="progressbar"
-              accessibilityLabel={`${item.label} jobs`}
+              accessibilityLabel={uiText('{value0} jobs', { value0: item.label })}
               accessibilityValue={
                 measured
                   ? { min: 0, max: progress.total, now: progress.completed }
@@ -84,7 +97,7 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
             {(!connected || error || item.error || item.pausedReason) && (
               <Text style={styles.muted}>
                 {!connected
-                  ? 'Offline · Last known progress'
+                  ? uiText('Offline · Last known progress')
                   : error || item.pausedReason || item.error}
               </Text>
             )}

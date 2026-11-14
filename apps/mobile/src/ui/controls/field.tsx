@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { designTokens } from '@dovo/design'
 import { FieldValidationContext } from './validation-fields'
 import { Pressable, TextInput, View, type TextInputProps } from 'react-native'
@@ -16,6 +17,8 @@ export function SearchField({
   inputRef,
   ...props
 }: TextInputProps & { label: string; inputRef?: Ref<ComponentRef<typeof TextInput>> }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const input = useRef<ComponentRef<typeof TextInput>>(null)
   const clearable = !!value && !!onChangeText && editable !== false && clearButtonMode !== 'never'
@@ -70,7 +73,7 @@ export function SearchField({
         {clearable && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Clear ${label.toLowerCase()}`}
+            accessibilityLabel={uiText('Clear {value0}', { value0: label.toLowerCase() })}
             onPress={() => {
               onChangeText?.('')
               input.current?.focus()

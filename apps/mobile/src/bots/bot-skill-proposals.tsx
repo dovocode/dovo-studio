@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -13,6 +14,8 @@ export function BotSkillProposals({
   task: Task
   onSaved?: (result: typeof botResultSchema.Type) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { callEffect, connected } = useRuntime()
   const [selected, setSelected] = useState('')
   const [ack, setAck] = useState<{ before: string; result: typeof botResultSchema.Type }>()
@@ -42,24 +45,35 @@ export function BotSkillProposals({
               {p.skill.name} · {p.skill.description}
             </Text>
             <Action
-              label="Review skill diff"
+              label={uiText('Review skill diff')}
               secondary
               onPress={() => setSelected(selected === p.id ? '' : p.id)}
             />
             {selected === p.id && (
               <>
-                <Text>From a completed turn. Applies only to this Bot’s future turns.</Text>
+                <Text>
+                  <InterfaceText>
+                    {'From a completed turn. Applies only to this Bot’s future turns.'}
+                  </InterfaceText>
+                </Text>
                 <Text selectable>{p.patch}</Text>
                 <Text>
-                  Description: {p.before?.description ?? '(new skill)'} → {p.skill.description}
+                  <InterfaceText
+                    values={{
+                      value0: p.before?.description ?? uiText('(new skill)'),
+                      value1: p.skill.description,
+                    }}
+                  >
+                    {'Description: {value0} → {value1}'}
+                  </InterfaceText>
                 </Text>
                 <Action
-                  label="Apply skill"
+                  label={uiText('Apply skill')}
                   disabled={!connected || busy}
                   onPress={() => decide(p.id, true)}
                 />
                 <Action
-                  label="Reject proposal"
+                  label={uiText('Reject proposal')}
                   secondary
                   disabled={!connected || busy}
                   onPress={() => decide(p.id, false)}

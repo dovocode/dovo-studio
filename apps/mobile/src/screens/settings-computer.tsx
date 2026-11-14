@@ -22,6 +22,8 @@ function ComputerSettingsPage({
   title: string
   section: RuntimePreferencesSection
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const confirmNavigation = useConfirmSettingsNavigation()
   const { overviews, activeId } = useRuntime()
@@ -40,7 +42,7 @@ function ComputerSettingsPage({
         <View style={{ gap: 10 }}>
           {overviews.length > 1 && (
             <SettingsChoice
-              label="Computer"
+              label={uiText('Computer')}
               value={selected ?? ''}
               items={overviews.map((item) => ({
                 id: item.profile.id,
@@ -51,10 +53,12 @@ function ComputerSettingsPage({
           )}
           <Text style={[styles.muted, { paddingHorizontal: 16 }]}>
             {entry
-              ? `Saved on ${runtimeComputerName(entry)}. Changes are shared with its paired devices.`
+              ? uiText('Saved on {value0}. Changes are shared with its paired devices.', {
+                  value0: runtimeComputerName(entry),
+                })
               : overviews.length
-                ? 'This computer is unavailable. Choose another computer above.'
-                : 'Connect a computer to configure its settings.'}
+                ? uiText('This computer is unavailable. Choose another computer above.')
+                : uiText('Connect a computer to configure its settings.')}
           </Text>
         </View>
         {entry && (
@@ -68,16 +72,24 @@ function ComputerSettingsPage({
 }
 
 export function TaskBehaviorSettingsScreen() {
-  return <ComputerSettingsPage title="Running tasks" section="tasks" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Running tasks')} section="tasks" />
 }
 export function PullSettingsScreen() {
-  return <ComputerSettingsPage title="Pull requests & pipelines" section="pulls" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Pull requests & pipelines')} section="pulls" />
 }
 export function RuntimeToolsSettingsScreen() {
-  return <ComputerSettingsPage title="Runtime tools" section="tools" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Runtime tools')} section="tools" />
 }
 export function ArtifactSettingsScreen() {
-  return <ComputerSettingsPage title="Artifacts" section="artifacts" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Artifacts')} section="artifacts" />
 }
 export function MemorySettingsScreen() {
   const uiText = useInterfaceText()
@@ -85,8 +97,12 @@ export function MemorySettingsScreen() {
   return <ComputerSettingsPage title={uiText('Memory')} section="memory" />
 }
 export function WorktreeSettingsScreen() {
-  return <ComputerSettingsPage title="Worktrees" section="worktrees" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Worktrees')} section="worktrees" />
 }
 export function ActivitySettingsScreen() {
-  return <ComputerSettingsPage title="Activity retention" section="activity" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Activity retention')} section="activity" />
 }

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSoftwareKeyboard } from './use-software-keyboard'
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
@@ -105,7 +106,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.pulls} renderingMode="template" />
-        <NativeTabs.Trigger.Label>PRs</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{uiText('PRs')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="browser"
@@ -172,7 +173,9 @@ function WorkbenchNotices() {
             },
           ]}
         >
-          Shared input saved on this phone. Pair or reconnect to review it.
+          <InterfaceText>
+            {'Shared input saved on this phone. Pair or reconnect to review it.'}
+          </InterfaceText>
         </Text>
       )}
       {!!context?.error && (
@@ -616,7 +619,7 @@ export function Workbench() {
         )
     }
     return content
-  }, [screens, runtime.ready, runtime.activeId, keyboard, hasOnlineComputer, newThread])
+  }, [screens, runtime.ready, runtime.activeId, keyboard, hasOnlineComputer, newThread, uiText])
   const content =
     hasOnlineComputer && shortcuts.input
       ? {
@@ -627,8 +630,8 @@ export function Workbench() {
               key={shortcuts.input.id}
               title={
                 shortcuts.input.source === 'share'
-                  ? 'New thread from share'
-                  : 'New thread from Shortcut'
+                  ? uiText('New thread from share')
+                  : uiText('New thread from Shortcut')
               }
               onClose={() => {
                 void finishShortcut()

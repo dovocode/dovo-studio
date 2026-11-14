@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { defaultThreadSectionOrder, moveThreadSection, threadSections } from '@dovo/protocol'
 import { View } from 'react-native'
 import {
@@ -11,6 +12,8 @@ import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 
 export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const preferences = useMobilePreferences()
   const order = [
@@ -20,11 +23,14 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
     ),
   ]
   return (
-    <Sheet title="Organize sections" onClose={onClose}>
+    <Sheet title={uiText('Organize sections')} onClose={onClose}>
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
-          Pinned threads stay first, followed by Needs input. Change the order of other thread
-          categories. Empty sections stay hidden. Project and ungrouped threads use Open’s position.
+          <InterfaceText>
+            {
+              'Pinned threads stay first, followed by Needs input. Change the order of other thread categories. Empty sections stay hidden. Project and ungrouped threads use Open’s position.'
+            }
+          </InterfaceText>
         </Text>
         {order.map((id, index) => (
           <View key={id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -33,7 +39,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
             </Text>
             <IconButton
               icon="send"
-              label={`Move ${id === 'active' ? 'open' : id} up`}
+              label={uiText('Move {value0} up', { value0: id === 'active' ? 'open' : id })}
               disabled={id === 'pinned' || index <= 1}
               onPress={() =>
                 updateMobilePreferences({ threadSectionOrder: moveThreadSection(order, id, -1) })
@@ -41,7 +47,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
             />
             <IconButton
               icon="down"
-              label={`Move ${id === 'active' ? 'open' : id} down`}
+              label={uiText('Move {value0} down', { value0: id === 'active' ? 'open' : id })}
               disabled={id === 'pinned' || index === order.length - 1}
               onPress={() =>
                 updateMobilePreferences({ threadSectionOrder: moveThreadSection(order, id, 1) })
@@ -51,7 +57,7 @@ export function SectionOrderSheet({ onClose }: { onClose: () => void }) {
         ))}
         <Action
           secondary
-          label="Reset section order"
+          label={uiText('Reset section order')}
           onPress={() =>
             updateMobilePreferences({ threadSectionOrder: [...defaultThreadSectionOrder] })
           }

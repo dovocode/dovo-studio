@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { checkpointFiles, sideThreadChangesResultSchema } from '@dovo/protocol'
@@ -14,6 +15,8 @@ type SideThreadChanges = Schema.Schema.Type<typeof sideThreadChangesResultSchema
 
 /** Compare against the child's creation snapshot so inherited parent edits are excluded. */
 export function SideThreadChanges({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { read, connected, profile, snapshot } = useRuntime()
   const { styles } = useTheme()
   const scope = JSON.stringify([
@@ -60,19 +63,26 @@ export function SideThreadChanges({ taskId, onClose }: { taskId: string; onClose
   const files = current?.value ? checkpointFiles(current.value) : []
   const file = files.find((item) => item.path === selected) ?? files[0]
   return (
-    <Sheet title="Side-chat changes" onClose={onClose} scrollable={false}>
+    <Sheet title={uiText('Side-chat changes')} onClose={onClose} scrollable={false}>
       <View style={{ flex: 1, gap: 12 }}>
         <Text style={styles.muted}>
-          Changes since this side chat started. Parent edits from its starting snapshot are
-          excluded.
+          <InterfaceText>
+            {
+              'Changes since this side chat started. Parent edits from its starting snapshot are excluded.'
+            }
+          </InterfaceText>
         </Text>
         <Action
           secondary
-          label={current?.busy ? 'Refreshing changes…' : 'Refresh changes'}
+          label={current?.busy ? uiText('Refreshing changes…') : uiText('Refresh changes')}
           disabled={!connected || !!current?.busy}
           onPress={() => setAttempt((value) => value + 1)}
         />
-        {!connected && <Text style={styles.muted}>Connect to refresh these changes.</Text>}
+        {!connected && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Connect to refresh these changes.'}</InterfaceText>
+          </Text>
+        )}
         {!!current?.error && (
           <Text accessibilityRole="alert" style={styles.error}>
             {current.error}
@@ -80,14 +90,16 @@ export function SideThreadChanges({ taskId, onClose }: { taskId: string; onClose
         )}
         {!current?.value ? (
           <Text style={styles.muted}>
-            {current?.busy ? 'Loading side-chat changes…' : 'No snapshot loaded.'}
+            {current?.busy ? uiText('Loading side-chat changes…') : uiText('No snapshot loaded.')}
           </Text>
         ) : !files.length ? (
-          <Text style={styles.muted}>No changes since this side chat started.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'No changes since this side chat started.'}</InterfaceText>
+          </Text>
         ) : file ? (
           <>
             <Choice
-              label="Changed file"
+              label={uiText('Changed file')}
               value={file.path}
               items={files.map((item) => ({ id: item.path, name: item.path }))}
               onChange={setSelected}

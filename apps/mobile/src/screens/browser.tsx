@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { router } from 'expo-router'
@@ -24,14 +25,21 @@ function BrowserRoute({ enabled }: { enabled: boolean }) {
       <View style={{ flex: 1 }}>
         <ScreenHeader title={uiText('Browser')} />
         <View style={[styles.content, { gap: 12 }]}>
-          <Text>Experimental Browser is off.</Text>
+          <Text>
+            <InterfaceText>{'Experimental Browser is off.'}</InterfaceText>
+          </Text>
           {!!native.error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {native.error}
             </Text>
           )}
-          <Text style={styles.muted}>Enable it in Settings → General → Experimental.</Text>
-          <Action label="Open settings" onPress={() => router.push('/settings/general')} />
+          <Text style={styles.muted}>
+            <InterfaceText>{'Enable it in Settings → General → Experimental.'}</InterfaceText>
+          </Text>
+          <Action
+            label={uiText('Open settings')}
+            onPress={() => router.push('/settings/general')}
+          />
         </View>
       </View>
     )

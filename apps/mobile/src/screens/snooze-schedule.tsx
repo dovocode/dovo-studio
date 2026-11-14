@@ -1,3 +1,8 @@
+import {
+  InterfaceText,
+  useInterfaceText,
+  useInterfaceLanguage,
+} from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -22,6 +27,9 @@ export function SnoozeSchedule({
   schedule: TaskSnoozeSchedule
   ready: boolean
 }) {
+  const language = useInterfaceLanguage()
+  const uiText = useInterfaceText()
+
   const [draft, setDraft] = useState(schedule)
   const [error, setError] = useState('')
   const { styles } = useSettingsTheme()
@@ -36,7 +44,7 @@ export function SnoozeSchedule({
   return (
     <View style={{ gap: 8, padding: 12 }}>
       <Field
-        label="Morning time"
+        label={uiText('Morning time')}
         placeholder="09:00"
         value={draft.morningTime}
         editable={ready}
@@ -45,7 +53,7 @@ export function SnoozeSchedule({
         onChangeText={(morningTime) => setDraft({ ...draft, morningTime })}
       />
       <Field
-        label="Evening time"
+        label={uiText('Evening time')}
         placeholder="18:00"
         value={draft.eveningTime}
         editable={ready}
@@ -54,14 +62,23 @@ export function SnoozeSchedule({
         onChangeText={(eveningTime) => setDraft({ ...draft, eveningTime })}
       />
       <SettingsChoice
-        label="Next week starts on"
+        label={uiText('Next week starts on')}
         value={String(draft.weekStartsOn)}
-        items={taskSnoozeWeekdays}
+        items={taskSnoozeWeekdays.map((day, index) => ({
+          ...day,
+          name: new Date(2024, 0, 7 + index).toLocaleDateString(
+            language === 'auto' ? undefined : language,
+            { weekday: 'long' },
+          ),
+        }))}
         onChange={(day) => setDraft({ ...draft, weekStartsOn: Number(day) })}
       />
       <Text style={styles.muted}>
-        24-hour local times. Calendar shortcuts appear before durations, in this order. Later today
-        appears until the evening time.
+        <InterfaceText>
+          {
+            '24-hour local times. Calendar shortcuts appear before durations, in this order. Later today appears until the evening time.'
+          }
+        </InterfaceText>
       </Text>
       {presets.map((id) => {
         const label = taskSnoozeCalendarPresets.find(([key]) => key === id)![1]
@@ -89,7 +106,10 @@ export function SnoozeSchedule({
                 <IconButton
                   key={direction}
                   icon={direction === -1 ? 'moveUp' : 'moveDown'}
-                  label={`Move ${label} ${direction === -1 ? 'up' : 'down'}`}
+                  label={uiText('Move {value0} {value1}', {
+                    value0: label,
+                    value1: direction === -1 ? 'up' : 'down',
+                  })}
                   disabled={
                     !ready ||
                     index < 0 ||
@@ -110,7 +130,7 @@ export function SnoozeSchedule({
         )
       })}
       <SettingsAction
-        label="Save calendar shortcuts"
+        label={uiText('Save calendar shortcuts')}
         disabled={!ready || JSON.stringify(draft) === JSON.stringify(schedule)}
         onPress={() => {
           try {
@@ -123,7 +143,7 @@ export function SnoozeSchedule({
       />
       <SettingsAction
         secondary
-        label="Reset calendar shortcuts"
+        label={uiText('Reset calendar shortcuts')}
         disabled={!ready}
         onPress={() => {
           const defaults = {

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useMemo, useSyncExternalStore } from 'react'
 import { AppState, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -12,6 +13,8 @@ import { mobileBotCallAudio } from './bot-call-audio'
 import { useTheme } from '../ui/theme'
 
 export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { call: request, connected, snapshot, profile } = useRuntime()
   const scope = JSON.stringify([
@@ -85,7 +88,7 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
               ? 'Call ended'
               : state.phase[0].toUpperCase() + state.phase.slice(1)
   return (
-    <Sheet title={`Call ${task.title}`} onClose={close}>
+    <Sheet title={uiText('Call {value0}', { value0: task.title })} onClose={close}>
       <View style={{ gap: 16, alignItems: 'center', paddingVertical: 24 }}>
         <BotAvatar avatar={task.bot?.avatar} name={task.title} size={96} />
         <Text style={styles.text} accessibilityLiveRegion="polite">
@@ -95,13 +98,15 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
       </View>
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
-          Uses this Bot’s conversation and permissions, with this device’s speech service. Keep Dovo
-          open. Continuous listening lets speech interrupt a reply. It is experimental. Use
-          headphones if playback causes false interruptions.
+          <InterfaceText>
+            {
+              'Uses this Bot’s conversation and permissions, with this device’s speech service. Keep Dovo open. Continuous listening lets speech interrupt a reply. It is experimental. Use headphones if playback causes false interruptions.'
+            }
+          </InterfaceText>
         </Text>
         {!!state.heard && (
           <Text style={styles.text} selectable>
-            You: {state.heard}
+            <InterfaceText values={{ value0: state.heard }}>{'You: {value0}'}</InterfaceText>
           </Text>
         )}
         {!!state.reply && (
@@ -110,7 +115,9 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
           </Text>
         )}
         {!snapshot?.queuePausePreservationSupported && (
-          <Text style={styles.muted}>Update this Bot’s computer before calling.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Update this Bot’s computer before calling.'}</InterfaceText>
+          </Text>
         )}
         {!!state.error && (
           <Text style={styles.error} accessibilityRole="alert">
@@ -119,19 +126,23 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
         )}
         {state.phase === 'idle' || state.phase === 'ended' ? (
           <Action
-            label="Start call"
+            label={uiText('Start call')}
             disabled={!available || needsInput}
             onPress={() => call.start()}
           />
         ) : (
           <>
-            <Action secondary label={state.muted ? 'Unmute' : 'Mute'} onPress={() => call.mute()} />
+            <Action
+              secondary
+              label={state.muted ? uiText('Unmute') : uiText('Mute')}
+              onPress={() => call.mute()}
+            />
             {state.phase === 'speaking' && (
-              <Action secondary label="Interrupt" onPress={() => call.interrupt()} />
+              <Action secondary label={uiText('Interrupt')} onPress={() => call.interrupt()} />
             )}
             {state.phase === 'error' && (
               <Action
-                label={state.retrySend ? 'Retry same message' : 'Resume call'}
+                label={state.retrySend ? uiText('Retry same message') : uiText('Resume call')}
                 disabled={!available || needsInput}
                 onPress={() => call.retry()}
               />
@@ -140,14 +151,21 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
         )}
         <Action
           secondary
-          label={state.continuous ? 'Continuous listening on' : 'Continuous listening off'}
+          label={
+            state.continuous
+              ? uiText('Continuous listening on')
+              : uiText('Continuous listening off')
+          }
           onPress={() => call.setContinuous(!state.continuous)}
         />
-        <Action label="End call" onPress={close} />
-        {needsInput && <Action secondary label="Review in chat" onPress={close} />}
+        <Action label={uiText('End call')} onPress={close} />
+        {needsInput && <Action secondary label={uiText('Review in chat')} onPress={close} />}
         <Text style={styles.muted}>
-          Your messages and full replies stay in the chat. End call stops audio and keeps work
-          already started.
+          <InterfaceText>
+            {
+              'Your messages and full replies stay in the chat. End call stops audio and keeps work already started.'
+            }
+          </InterfaceText>
         </Text>
       </View>
     </Sheet>

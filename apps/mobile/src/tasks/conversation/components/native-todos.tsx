@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -40,14 +41,25 @@ export function NativeTodos({
         <Pressable
           accessibilityRole="button"
           accessibilityState={{ expanded: open }}
-          accessibilityLabel={`Checklist, ${summary.completed} of ${summary.total} done${summary.unfinished ? ', unfinished' : ''}`}
+          accessibilityLabel={uiText('Checklist, {value0} of {value1} done{value2}', {
+            value0: summary.completed,
+            value1: summary.total,
+            value2: summary.unfinished ? uiText(', unfinished') : '',
+          })}
           onPress={() => setOpen((value) => !value)}
           style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 32 }}
         >
           <Icon name="checklist" size={15} color={colors.muted} />
           <Text style={[styles.text, { fontWeight: '600', flexShrink: 1 }]}>
-            Checklist · {summary.completed} of {summary.total} done
-            {summary.unfinished ? ' · Unfinished' : ''}
+            <InterfaceText
+              values={{
+                value0: summary.completed,
+                value1: summary.total,
+                value2: summary.unfinished ? uiText(' · Unfinished') : '',
+              }}
+            >
+              {'Checklist · {value0} of {value1} done{value2}'}
+            </InterfaceText>
           </Text>
           {!!summary.active && !open && (
             <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
@@ -58,7 +70,7 @@ export function NativeTodos({
       )}
       <View
         accessibilityRole="progressbar"
-        accessibilityLabel="Checklist completion"
+        accessibilityLabel={uiText('Checklist completion')}
         accessibilityValue={{ min: 0, max: summary.total, now: summary.completed }}
         style={{
           ...(embedded ? { position: 'absolute', width: 1, height: 1, opacity: 0 } : { height: 4 }),
@@ -79,7 +91,7 @@ export function NativeTodos({
         <ScrollView
           style={{ maxHeight: 180 }}
           contentContainerStyle={{ gap: 8 }}
-          accessibilityLabel="Checklist items"
+          accessibilityLabel={uiText('Checklist items')}
           nestedScrollEnabled
         >
           {todos.map((todo, index) => (
@@ -105,7 +117,7 @@ export function NativeTodos({
                 }
               />
               <Text
-                accessibilityLabel={`${todo.text}, ${todo.status !== 'completed' && summary.unfinished ? 'unfinished' : todo.status.replace('-', ' ')}`}
+                accessibilityLabel={`${todo.text}, ${todo.status !== 'completed' && summary.unfinished ? uiText('unfinished') : todo.status.replace('-', ' ')}`}
                 style={[
                   styles.text,
                   { flex: 1 },
@@ -124,16 +136,23 @@ export function NativeTodos({
       )}
       {summary.unfinished && (
         <Text style={styles.muted}>
-          Work stopped with {summary.total - summary.completed}{' '}
-          {summary.total - summary.completed === 1 ? 'item' : 'items'} left. Continue the thread to
-          pick them up.
+          <InterfaceText
+            values={{
+              value0: summary.total - summary.completed,
+              value1: summary.total - summary.completed === 1 ? uiText('item') : uiText('items'),
+            }}
+          >
+            {'Work stopped with {value0} {value1} left. Continue the thread to pick them up.'}
+          </InterfaceText>
         </Text>
       )}
       {onClear && (open || embedded) && (
         <View style={{ gap: 8 }}>
           {confirmation && (
             <Text style={styles.muted}>
-              Clear all {confirmation.length} checklist items, including unfinished work?
+              <InterfaceText values={{ value0: confirmation.length }}>
+                {'Clear all {value0} checklist items, including unfinished work?'}
+              </InterfaceText>
             </Text>
           )}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
@@ -166,10 +185,10 @@ export function NativeTodos({
             >
               <Text style={styles.muted}>
                 {clearing
-                  ? 'Clearing…'
+                  ? uiText('Clearing…')
                   : confirmation
-                    ? 'Confirm clear checklist'
-                    : 'Clear checklist'}
+                    ? uiText('Confirm clear checklist')
+                    : uiText('Clear checklist')}
               </Text>
             </Pressable>
             {confirmation && (

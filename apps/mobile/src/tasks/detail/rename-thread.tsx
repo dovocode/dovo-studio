@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect, Schema } from 'effect'
 import { mutableStruct, type Task } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -10,16 +11,23 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function RenameThread({ task, onClose }: { task: Task; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
   const [title, setTitle] = useApplicationState(task.title)
   const { act, busy, error } = useAction()
   return (
-    <Sheet title="Rename thread" busy={busy} onClose={onClose}>
-      <Field label="Thread title" value={title} editable={!busy} onChangeText={setTitle} />
+    <Sheet title={uiText('Rename thread')} busy={busy} onClose={onClose}>
+      <Field
+        label={uiText('Thread title')}
+        value={title}
+        editable={!busy}
+        onChangeText={setTitle}
+      />
       <Action
-        label="Save title"
+        label={uiText('Save title')}
         disabled={!connected || busy || !title.trim()}
         onPress={() =>
           act(() =>

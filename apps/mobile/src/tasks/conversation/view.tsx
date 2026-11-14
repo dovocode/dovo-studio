@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadActionCards } from './components/thread-actions'
 import { useMessageReveal, consumeMessageReveal } from './message-reveal'
 import { FailedTaskRetry } from './components/failed-task-retry'
@@ -116,6 +117,8 @@ function TurnSummaryPart({ data }: DataMessagePartProps<unknown>) {
   return <Text style={[styles.muted, { fontSize: 12 }]}>{decode(Schema.String, data)}</Text>
 }
 function CompactionPart({ data }: DataMessagePartProps<unknown>) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const item = decode(
@@ -124,8 +127,14 @@ function CompactionPart({ data }: DataMessagePartProps<unknown>) {
   )
   return (
     <Text accessibilityRole="text" style={[styles.muted, { fontSize: 12 }]}>
-      Context compacted {formatTime(new Date(item.at), { hour: '2-digit', minute: '2-digit' })} ·{' '}
-      {item.trigger === 'auto' ? 'Automatic' : 'Manual'}
+      <InterfaceText
+        values={{
+          value0: formatTime(new Date(item.at), { hour: '2-digit', minute: '2-digit' }),
+          value1: item.trigger === 'auto' ? uiText('Automatic') : uiText('Manual'),
+        }}
+      >
+        {'Context compacted {value0} · {value1}'}
+      </InterfaceText>
     </Text>
   )
 }
@@ -151,6 +160,8 @@ function CheckpointRow({
   openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   turn: TaskTurn | undefined
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { collapseChangedFiles } = useMobilePreferences()
@@ -177,15 +188,20 @@ function CheckpointRow({
         value={kind}
         onChange={setKind}
         testID={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
-        accessibilityLabel={`Turn changes · ${checkpoint.files} ${checkpoint.files === 1 ? 'file' : 'files'}`}
+        accessibilityLabel={uiText('Turn changes · {value0} {value1}', {
+          value0: checkpoint.files,
+          value1: checkpoint.files === 1 ? 'file' : 'files',
+        })}
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Open turn diff"
+          accessibilityLabel={uiText('Open turn diff')}
           onPress={() => openCheckpoint(checkpoint.turnId)}
           style={{ minHeight: 44, justifyContent: 'center' }}
         >
-          <Text style={styles.muted}>Open diff</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Open diff'}</InterfaceText>
+          </Text>
         </Pressable>
         <CheckpointFiles
           kind={kind}
@@ -196,8 +212,15 @@ function CheckpointRow({
         {turn?.checkpoint?.linked?.map((link) => (
           <View key={link.checkoutId} style={{ gap: 4 }}>
             <Text style={styles.muted}>
-              {link.repositoryName ?? link.repositoryId} · {link.branch ?? 'Linked checkout'} ·{' '}
-              {checkpointFiles(link).length} changed files
+              <InterfaceText
+                values={{
+                  value0: link.repositoryName ?? link.repositoryId,
+                  value1: link.branch ?? uiText('Linked checkout'),
+                  value2: checkpointFiles(link).length,
+                }}
+              >
+                {'{value0} · {value1} · {value2} changed files'}
+              </InterfaceText>
             </Text>
             <CheckpointFiles
               kind={kind}
@@ -253,7 +276,7 @@ function WorkingIndicator({ turn }: { turn: TaskTurn }) {
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
       <ActivityIndicator size="small" color={colors.muted} />
       <Text accessibilityRole="text" style={[styles.muted, { fontSize: 13 }]}>
-        Working for {duration}
+        <InterfaceText values={{ value0: duration }}>{'Working for {value0}'}</InterfaceText>
       </Text>
     </View>
   )
@@ -394,6 +417,8 @@ function AssistantParts({ footer = false }: { footer?: boolean }) {
   )
 }
 function Message() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const id = useAuiState((state) => state.message.id)
@@ -460,7 +485,7 @@ function Message() {
           accessible={user}
           testID={user ? 'User message bubble' : undefined}
           onPress={() => setShowActions((value) => !value)}
-          accessibilityHint="Tap to show message actions and time"
+          accessibilityHint={uiText('Tap to show message actions and time')}
           style={
             user
               ? {
@@ -479,7 +504,11 @@ function Message() {
                 }
           }
         >
-          {childResult && <Text style={[styles.muted, { fontSize: 11 }]}>Dovo child result</Text>}
+          {childResult && (
+            <Text style={[styles.muted, { fontSize: 11 }]}>
+              <InterfaceText>{'Dovo child result'}</InterfaceText>
+            </Text>
+          )}
           {user ? <MessagePrimitive.Parts components={userParts} /> : <AssistantParts />}
         </Pressable>
       )}
@@ -489,10 +518,10 @@ function Message() {
           style={[styles.muted, { fontSize: 12, paddingHorizontal: 8 }]}
         >
           {pendingMessage.state === 'failed'
-            ? 'Not confirmed · retry from the composer'
+            ? uiText('Not confirmed · retry from the composer')
             : pendingMessage.state === 'saved'
-              ? 'Saved · pending delivery'
-              : 'Sending…'}
+              ? uiText('Saved · pending delivery')
+              : uiText('Sending…')}
         </Text>
       )}
       {showContent && (showActions || !!watch) && !car && (user || !streaming) && (
@@ -535,6 +564,8 @@ export function Conversation({
   startModes?: ReactNode
   children?: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles, reduceMotion } = useTheme()
 
   const history = useConversationSelector((value) => value.history)
@@ -911,14 +942,16 @@ export function Conversation({
           horizontal
           showsHorizontalScrollIndicator={false}
           style={{ flexGrow: 0, flexShrink: 0 }}
-          accessibilityLabel="Bookmarked replies"
+          accessibilityLabel={uiText('Bookmarked replies')}
           contentContainerStyle={{ gap: 6, paddingHorizontal: 12, paddingVertical: 5 }}
         >
           {bookmarks.map((messageId, position) => (
             <Pressable
               key={messageId}
               accessibilityRole="button"
-              accessibilityLabel={`Jump to bookmarked reply ${position + 1}`}
+              accessibilityLabel={uiText('Jump to bookmarked reply {value0}', {
+                value0: position + 1,
+              })}
               onPress={() => {
                 cancelRestore()
                 cancelMove()
@@ -1071,7 +1104,9 @@ export function Conversation({
                     <View style={{ gap: 8, padding: 16 }}>
                       <Text style={styles.title}>{task.title}</Text>
                       <Text>{task.bot.role}</Text>
-                      <Text>Send a message to this Bot to start work.</Text>
+                      <Text>
+                        <InterfaceText>{'Send a message to this Bot to start work.'}</InterfaceText>
+                      </Text>
                     </View>
                   ) : (
                     <TaskEmptyState
@@ -1086,7 +1121,9 @@ export function Conversation({
               <View style={{ padding: 12, minHeight: 44, alignItems: 'center' }}>
                 {!task.bot && task.autoProjectFallback && (
                   <Text style={[styles.muted, { fontSize: 12 }]}>
-                    Scope found no matching project; continued without a project.
+                    <InterfaceText>
+                      {'Scope found no matching project; continued without a project.'}
+                    </InterfaceText>
                   </Text>
                 )}
                 {history.busy && (!following || !messageCount) && (
@@ -1095,7 +1132,7 @@ export function Conversation({
                 {history.hasMore && !!history.error && (
                   <IconButton
                     icon="history"
-                    label="Retry loading earlier messages"
+                    label={uiText('Retry loading earlier messages')}
                     variant="plain"
                     color={colors.accent}
                     disabled={history.busy || !connected}
@@ -1138,7 +1175,12 @@ export function Conversation({
       >
         <ConnectionPill runtimeId={activeId} />
         {!following && (
-          <Pill testID="Latest message" icon="down" label="Latest message" onPress={latest} />
+          <Pill
+            testID="Latest message"
+            icon="down"
+            label={uiText('Latest message')}
+            onPress={latest}
+          />
         )}
       </View>
     </ThreadPrimitive.Root>

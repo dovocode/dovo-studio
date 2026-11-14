@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useState } from 'react'
 import { compareBotActivity } from '@dovo/protocol'
@@ -69,11 +70,14 @@ export default function BotsScreen() {
         ]}
       />
       <View style={{ paddingHorizontal: 16, gap: 8 }}>
-        <SearchField label="Search Bots" value={query} onChangeText={setQuery} />
+        <SearchField label={uiText('Search Bots')} value={query} onChangeText={setQuery} />
         {!supported && (
           <Text style={styles.muted}>
-            Connect a computer with a runtime that supports Bots. Update older runtimes to create
-            lasting assistants.
+            <InterfaceText>
+              {
+                'Connect a computer with a runtime that supports Bots. Update older runtimes to create lasting assistants.'
+              }
+            </InterfaceText>
           </Text>
         )}
         {!!error && (
@@ -91,8 +95,10 @@ export default function BotsScreen() {
         ListEmptyComponent={
           <Text style={styles.muted}>
             {query
-              ? 'No matching Bots.'
-              : 'No Bots yet. Create an assistant with a lasting role and responsibilities.'}
+              ? uiText('No matching Bots.')
+              : uiText(
+                  'No Bots yet. Create an assistant with a lasting role and responsibilities.',
+                )}
           </Text>
         }
         renderItem={({ item }) => (

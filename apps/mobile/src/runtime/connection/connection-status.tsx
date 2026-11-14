@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ConnectionProgress } from './connection-progress'
 import { runtimeSyncStatus, retryRuntimeSync, runtimeComputerName } from '@dovo/protocol'
 import { attachmentUploadSchema, decodeResult } from '@dovo/protocol'
@@ -19,6 +20,8 @@ import { useTheme } from '../../ui/theme'
 /** Floating connection indicator: one quiet pill instead of a full-width banner. Tap to
  * reconnect; if the computer is still unreachable, the next tap explains why. */
 export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const runtime = useRuntime()
@@ -105,8 +108,8 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
         busy={busy}
         accessibilityHint={
           attempted || revoked.length
-            ? 'Shows connection details'
-            : 'Reconnects. Touch and hold for details'
+            ? uiText('Shows connection details')
+            : uiText('Reconnects. Touch and hold for details')
         }
         onPress={() =>
           attempted || revoked.length || hasSaved || fallback.length
@@ -120,7 +123,7 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
         onLongPress={() => setDetails(true)}
       />
       {details && (
-        <Sheet title="Connection" onClose={() => setDetails(false)}>
+        <Sheet title={uiText('Connection')} onClose={() => setDetails(false)}>
           {!!error && (
             <Text selectable style={styles.error}>
               {error}
@@ -128,10 +131,16 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
           )}
           <Text style={styles.text}>
             {revoked.length
-              ? 'This phone is no longer paired with a computer below. It was removed on that computer, or the runtime was reset. Pair it again from Devices in Settings.'
+              ? uiText(
+                  'This phone is no longer paired with a computer below. It was removed on that computer, or the runtime was reset. Pair it again from Devices in Settings.',
+                )
               : fallback.length && !unavailable.length
-                ? 'Connected using HTTP updates. Live streaming is reconnecting or unavailable. Reconnect to retry it.'
-                : 'Saved work stays available. Reconnect a computer to send messages or run commands there.'}
+                ? uiText(
+                    'Connected using HTTP updates. Live streaming is reconnecting or unavailable. Reconnect to retry it.',
+                  )
+                : uiText(
+                    'Saved work stays available. Reconnect a computer to send messages or run commands there.',
+                  )}
           </Text>
           {saved.map((entry) => {
             const status = runtime.mutationStatus(entry.profile)
@@ -139,7 +148,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
             return (
               <View key={`saved:${entry.profile.id}`} style={{ gap: 6 }}>
                 <Text style={styles.title}>
-                  {runtimeComputerName(entry)} · {status.pending} saved actions
+                  <InterfaceText
+                    values={{ value0: runtimeComputerName(entry), value1: status.pending }}
+                  >
+                    {'{value0} · {value1} saved actions'}
+                  </InterfaceText>
                 </Text>
                 {!!status.error && (
                   <Text selectable style={styles.error}>
@@ -151,9 +164,16 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                     <Text style={styles.title}>{action.label}</Text>
                     {!!action.taskId && (
                       <Text style={styles.muted}>
-                        Thread:{' '}
-                        {entry.snapshot?.workspace.tasks.find((task) => task.id === action.taskId)
-                          ?.title || action.taskId}
+                        <InterfaceText
+                          values={{
+                            value0:
+                              entry.snapshot?.workspace.tasks.find(
+                                (task) => task.id === action.taskId,
+                              )?.title || action.taskId,
+                          }}
+                        >
+                          {'Thread: {value0}'}
+                        </InterfaceText>
                       </Text>
                     )}
                     {!!action.preview && (
@@ -163,11 +183,13 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                     )}
                     {action.reviewRequired && (
                       <Text style={styles.error}>
-                        Computer access changed. This action may already have run.
+                        <InterfaceText>
+                          {'Computer access changed. This action may already have run.'}
+                        </InterfaceText>
                       </Text>
                     )}
                     <Action
-                      label="Retry action"
+                      label={uiText('Retry action')}
                       disabled={busy || !entry.connected}
                       onPress={() => {
                         const retry = () =>
@@ -176,28 +198,33 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                           )
                         if (action.reviewRequired)
                           Alert.alert(
-                            'Retry this action?',
-                            'Computer access changed. This action may already have run; retrying could repeat it. Check the computer before continuing.',
+                            uiText('Retry this action?'),
+                            uiText(
+                              'Computer access changed. This action may already have run; retrying could repeat it. Check the computer before continuing.',
+                            ),
                             [
-                              { text: 'Cancel', style: 'cancel' },
-                              { text: 'Retry action', onPress: retry },
+                              { text: uiText('Cancel'), style: 'cancel' },
+                              { text: uiText('Retry action'), onPress: retry },
                             ],
                           )
                         else retry()
                       }}
                     />
                     <Action
-                      label="Discard action"
+                      destructive
+                      label={uiText('Discard action')}
                       secondary
                       disabled={busy}
                       onPress={() =>
                         Alert.alert(
-                          'Discard this action?',
-                          'Unsent work will be removed from this phone. Actions already applied on the computer remain applied.',
+                          uiText('Discard this action?'),
+                          uiText(
+                            'Unsent work will be removed from this phone. Actions already applied on the computer remain applied.',
+                          ),
                           [
-                            { text: 'Cancel', style: 'cancel' },
+                            { text: uiText('Cancel'), style: 'cancel' },
                             {
-                              text: 'Discard action',
+                              text: uiText('Discard action'),
                               style: 'destructive',
                               onPress: () =>
                                 act(() => runtime.discardMutations(entry.profile, action.id)),
@@ -210,17 +237,21 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 ))}
                 {status.pending > uploads.length && (
                   <Action
-                    label="Retry saved actions"
+                    label={uiText('Retry saved actions')}
                     disabled={busy || !entry.connected}
                     onPress={() =>
                       status.reviewRequired
                         ? Alert.alert(
-                            `Retry saved actions on ${runtimeComputerName(entry)}?`,
-                            'Access to this computer was renewed. Some saved actions may already have run and retrying could repeat them. Check the computer before continuing. Messages keep their original delivery identity.',
+                            uiText('Retry saved actions on {value0}?', {
+                              value0: runtimeComputerName(entry),
+                            }),
+                            uiText(
+                              'Access to this computer was renewed. Some saved actions may already have run and retrying could repeat them. Check the computer before continuing. Messages keep their original delivery identity.',
+                            ),
                             [
-                              { text: 'Cancel', style: 'cancel' },
+                              { text: uiText('Cancel'), style: 'cancel' },
                               {
-                                text: 'Retry actions',
+                                text: uiText('Retry actions'),
                                 onPress: () =>
                                   act(() => runtime.retryMutations(entry.profile, true)),
                               },
@@ -232,16 +263,19 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 )}
                 {status.pending > uploads.length && (
                   <Action
-                    label="Discard saved actions"
+                    destructive
+                    label={uiText('Discard saved actions')}
                     disabled={busy}
                     onPress={() =>
                       Alert.alert(
-                        'Discard saved actions?',
-                        'Actions already applied on the computer will remain applied. Unsent actions will be removed from this phone.',
+                        uiText('Discard saved actions?'),
+                        uiText(
+                          'Actions already applied on the computer will remain applied. Unsent actions will be removed from this phone.',
+                        ),
                         [
-                          { text: 'Cancel', style: 'cancel' },
+                          { text: uiText('Cancel'), style: 'cancel' },
                           {
-                            text: 'Discard',
+                            text: uiText('Discard'),
                             style: 'destructive',
                             onPress: () => act(() => runtime.discardMutations(entry.profile)),
                           },
@@ -261,24 +295,29 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                     <View key={item.id} style={{ gap: 6 }}>
                       <Text selectable>
                         {input
-                          ? `${input.name}${title ? ` · ${title}` : ''}${input.queuedMessageId ? ' · queued edit' : ''}`
-                          : 'Saved attachment'}
+                          ? `${input.name}${title ? ` · ${title}` : ''}${input.queuedMessageId ? uiText(' · queued edit') : ''}`
+                          : uiText('Saved attachment')}
                       </Text>
                       <Text style={styles.muted}>
-                        Attach to the task’s current draft or discard the upload. Existing files
-                        remain unchanged.
+                        <InterfaceText>
+                          {
+                            'Attach to the task’s current draft or discard the upload. Existing files remain unchanged.'
+                          }
+                        </InterfaceText>
                       </Text>
                       <Action
-                        label="Attach to current task draft"
+                        label={uiText('Attach to current task draft')}
                         disabled={busy || !entry.connected || !input}
                         onPress={() =>
                           Alert.alert(
-                            'Attach saved file?',
-                            'This adds the saved file to the current draft of its original task. It does not modify a queued message.',
+                            uiText('Attach saved file?'),
+                            uiText(
+                              'This adds the saved file to the current draft of its original task. It does not modify a queued message.',
+                            ),
                             [
-                              { text: 'Cancel', style: 'cancel' },
+                              { text: uiText('Cancel'), style: 'cancel' },
                               {
-                                text: 'Attach',
+                                text: uiText('Attach'),
                                 onPress: () =>
                                   act(() => runtime.recoverAttachment(entry.profile, item.id)),
                               },
@@ -287,16 +326,19 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                         }
                       />
                       <Action
-                        label="Discard saved upload"
+                        destructive
+                        label={uiText('Discard saved upload')}
                         disabled={busy || !entry.connected}
                         onPress={() =>
                           Alert.alert(
-                            'Discard saved upload?',
-                            'This permanently abandons this upload. An attachment already saved in a message or draft is not removed.',
+                            uiText('Discard saved upload?'),
+                            uiText(
+                              'This permanently abandons this upload. An attachment already saved in a message or draft is not removed.',
+                            ),
                             [
-                              { text: 'Cancel', style: 'cancel' },
+                              { text: uiText('Cancel'), style: 'cancel' },
                               {
-                                text: 'Discard',
+                                text: uiText('Discard'),
                                 style: 'destructive',
                                 onPress: () =>
                                   act(() => runtime.discardAttachment(entry.profile, item.id)),
@@ -322,7 +364,11 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
                 {entry.profile.connection.address}
               </Text>
               {!!entry.lastSeen && (
-                <Text style={styles.muted}>Last connected {formatDateTime(entry.lastSeen)}</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText values={{ value0: formatDateTime(entry.lastSeen) }}>
+                    {'Last connected {value0}'}
+                  </InterfaceText>
+                </Text>
               )}
               {!!entry.error && (
                 <Text selectable style={styles.error}>
@@ -331,14 +377,16 @@ export function ConnectionPill({ runtimeId }: { runtimeId?: string | null }) {
               )}
               {!!account?.recovery?.[entry.profile.id]?.error && (
                 <Text selectable style={styles.error}>
-                  Dovo Connect: {account.recovery[entry.profile.id]?.error}
+                  <InterfaceText values={{ value0: account.recovery[entry.profile.id]?.error }}>
+                    {'Dovo Connect: {value0}'}
+                  </InterfaceText>
                 </Text>
               )}
             </View>
           ))}
-          <Action wide label="Reconnect" disabled={busy} onPress={reconnect} />
+          <Action wide label={uiText('Reconnect')} disabled={busy} onPress={reconnect} />
           <Action
-            label={revoked.length ? 'Pair again' : 'Open settings'}
+            label={revoked.length ? uiText('Pair again') : uiText('Open settings')}
             secondary
             disabled={busy}
             onPress={() => {

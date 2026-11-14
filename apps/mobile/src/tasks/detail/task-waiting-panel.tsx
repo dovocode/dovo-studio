@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { usePreviewActive } from '../preview/use-preview-active'
 import { taskHref } from '../../shell/task-route'
 import { useLinkOrigin } from '../../ui/content/link-origin'
@@ -23,6 +24,8 @@ export function TaskWaitingPanel({
   taskId: string
   onPull?: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const active = usePreviewActive()
   const origin = useLinkOrigin(taskId)
   const { call, connected, connection, activeId, snapshot, profiles, overviews } = useRuntime()
@@ -86,7 +89,7 @@ export function TaskWaitingPanel({
     return null
   return (
     <View
-      accessibilityLabel="Related items and watchers"
+      accessibilityLabel={uiText('Related items and watchers')}
       style={{
         paddingHorizontal: 12,
         paddingVertical: 6,
@@ -99,8 +102,10 @@ export function TaskWaitingPanel({
       {!connected && (
         <Text style={styles.muted}>
           {data
-            ? 'Offline · showing last loaded waiting items. Connect this computer to refresh or stop watching.'
-            : 'Offline · connect this computer to load waiting items.'}
+            ? uiText(
+                'Offline · showing last loaded waiting items. Connect this computer to refresh or stop watching.',
+              )
+            : uiText('Offline · connect this computer to load waiting items.')}
         </Text>
       )}
       {linkError && (
@@ -114,13 +119,15 @@ export function TaskWaitingPanel({
         </Text>
       )}
       {!!related.length && (
-        <Text style={[styles.muted, { width: '100%' }]}>Related to this thread</Text>
+        <Text style={[styles.muted, { width: '100%' }]}>
+          <InterfaceText>{'Related to this thread'}</InterfaceText>
+        </Text>
       )}
       {related.map((item) => (
         <Pressable
           key={item.url}
           accessibilityRole="link"
-          accessibilityLabel={`Open ${item.label}`}
+          accessibilityLabel={uiText('Open {value0}', { value0: item.label })}
           onPress={() => open(item.url)}
           style={{
             borderWidth: 1,
@@ -138,7 +145,7 @@ export function TaskWaitingPanel({
       ))}
       {!!data?.dependencies.length && (
         <Text style={[styles.muted, { width: '100%' }]}>
-          Watching · Dovo monitors these for updates
+          <InterfaceText>{'Watching · Dovo monitors these for updates'}</InterfaceText>
         </Text>
       )}
       {data?.dependencies.map((item) => (
@@ -155,7 +162,10 @@ export function TaskWaitingPanel({
         >
           <Pressable
             accessibilityRole={item.kind === 'thread' ? 'button' : 'link'}
-            accessibilityLabel={`Open ${item.label}${item.pausedReason ? `, ${item.pausedReason}` : ''}`}
+            accessibilityLabel={uiText('Open {value0}{value1}', {
+              value0: item.label,
+              value1: item.pausedReason ? `, ${item.pausedReason}` : '',
+            })}
             onPress={() => {
               if (item.kind !== 'thread') {
                 open(item.url, item)
@@ -181,7 +191,7 @@ export function TaskWaitingPanel({
                     taskId,
                     title:
                       snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title ??
-                      'Parent thread',
+                      uiText('Parent thread'),
                   }),
                 ),
               )
@@ -204,25 +214,27 @@ export function TaskWaitingPanel({
               {item.kind === 'pipeline' && (
                 <Text numberOfLines={1} style={[styles.muted, { fontSize: 10 }]}>
                   {item.lastSuccessAt
-                    ? `Last successful poll ${new Date(item.lastSuccessAt).toLocaleString()}`
-                    : 'No recorded successful poll'}
+                    ? uiText('Last successful poll {value0}', {
+                        value0: new Date(item.lastSuccessAt).toLocaleString(),
+                      })
+                    : uiText('No recorded successful poll')}
                 </Text>
               )}
             </View>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Stop watching ${item.label}`}
+            accessibilityLabel={uiText('Stop watching {value0}', { value0: item.label })}
             disabled={!connected || busy}
             style={{ padding: 12, opacity: busy || !connected ? 0.4 : 1 }}
             onPress={() =>
               Alert.alert(
-                `Stop watching ${item.label}?`,
-                'This stops monitoring this item for this thread.',
+                uiText('Stop watching {value0}?', { value0: item.label }),
+                uiText('This stops monitoring this item for this thread.'),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Stop watching',
+                    text: uiText('Stop watching'),
                     style: 'destructive',
                     onPress: () =>
                       void refresh({
@@ -240,7 +252,7 @@ export function TaskWaitingPanel({
           </Pressable>
           {item.pausedReason && (
             <Text accessibilityLabel={item.pausedReason} style={styles.muted}>
-              Paused
+              <InterfaceText>{'Paused'}</InterfaceText>
             </Text>
           )}
           {item.error && (
@@ -252,7 +264,7 @@ export function TaskWaitingPanel({
       ))}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Refresh waiting items"
+        accessibilityLabel={uiText('Refresh waiting items')}
         disabled={!connected || busy}
         onPress={() => void refresh()}
         style={{ padding: 10 }}

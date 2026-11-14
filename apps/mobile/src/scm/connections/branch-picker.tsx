@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -19,6 +20,8 @@ export function BranchPicker({
   taskId?: string
   onChanged?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -76,7 +79,7 @@ export function BranchPicker({
     >
       <Action
         secondary
-        label="Branches"
+        label={uiText('Branches')}
         disabled={!connected || busy}
         onPress={() => {
           setOpen(!open)
@@ -92,15 +95,19 @@ export function BranchPicker({
             },
           ]}
         >
-          <Text style={styles.text}>Current: {data?.current ?? 'Loading…'}</Text>
+          <Text style={styles.text}>
+            <InterfaceText values={{ value0: data?.current ?? uiText('Loading…') }}>
+              {'Current: {value0}'}
+            </InterfaceText>
+          </Text>
           <Choice
-            label="Target branch"
+            label={uiText('Target branch')}
             value={selected}
             onChange={setSelected}
             items={[
               {
                 id: '',
-                name: 'Choose branch',
+                name: uiText('Choose branch'),
               },
               ...(data?.branches ?? [])
                 .filter((b) => b.remote || !b.checkedOut)
@@ -111,25 +118,28 @@ export function BranchPicker({
             ]}
           />
           <Action
-            label="Switch branch"
+            label={uiText('Switch branch')}
             disabled={!connected || busy || !selected}
             onPress={() => void act('switch')}
           />
-          <Field label="New branch name" value={name} onChangeText={setName} />
+          <Field label={uiText('New branch name')} value={name} onChangeText={setName} />
           <Action
-            label="Create branch"
+            label={uiText('Create branch')}
             disabled={!connected || busy || !name.trim() || !data}
             onPress={() => void act('create')}
           />
           <Action
             secondary
-            label="Refresh branches"
+            label={uiText('Refresh branches')}
             disabled={!connected || busy}
             onPress={() => void act()}
           />
           <Text style={styles.muted}>
-            Commit or stash changes first. Switching starts fresh agent sessions and pauses queued
-            work.
+            <InterfaceText>
+              {
+                'Commit or stash changes first. Switching starts fresh agent sessions and pauses queued work.'
+              }
+            </InterfaceText>
           </Text>
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>

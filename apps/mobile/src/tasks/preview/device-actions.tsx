@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Switch } from '../../ui/controls/switch'
 import { useEffect } from 'react'
 import { View } from 'react-native'
@@ -36,6 +37,8 @@ export function DeviceActions({
   onUrl: (url: string) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { connected, profiles, call } = useRuntime()
   const { act, busy, error } = useAction()
@@ -69,20 +72,24 @@ export function DeviceActions({
   }
   return (
     <SettingsSheet
-      title={`Device actions · ${device.hostName ?? 'Local runtime'}`}
+      title={uiText('Device actions · {value0}', { value0: device.hostName ?? 'Local runtime' })}
       busy={busy}
       onClose={onClose}
     >
       <Text style={styles.text}>{device.name}</Text>
       {!connected && (
         <Text accessibilityRole="alert" style={styles.muted}>
-          The current runtime is offline. Reconnect to perform device actions.
+          <InterfaceText>
+            {'The current runtime is offline. Reconnect to perform device actions.'}
+          </InterfaceText>
         </Text>
       )}
       <View style={styles.card}>
-        <Text style={styles.text}>Install app</Text>
+        <Text style={styles.text}>
+          <InterfaceText>{'Install app'}</InterfaceText>
+        </Text>
         <Field
-          label="Build artifact path in task checkout"
+          label={uiText('Build artifact path in task checkout')}
           value={artifactPath}
           editable={!disabled}
           onChangeText={setArtifactPath}
@@ -90,32 +97,39 @@ export function DeviceActions({
           autoCorrect={false}
           placeholder={
             device.platform === 'android'
-              ? 'android/app/build/outputs/apk/debug/app-debug.apk'
-              : 'build/MyApp.app'
+              ? uiText('android/app/build/outputs/apk/debug/app-debug.apk')
+              : uiText('build/MyApp.app')
           }
         />
         <Text style={styles.muted}>
-          Use a path inside this task’s checkout on the current runtime, not this phone. Dovo
-          transfers remote builds over SSH before installing.
+          <InterfaceText>
+            {
+              'Use a path inside this task’s checkout on the current runtime, not this phone. Dovo transfers remote builds over SSH before installing.'
+            }
+          </InterfaceText>
         </Text>
         <Text style={styles.muted}>
           {device.platform === 'android'
-            ? 'Android requires an .apk file.'
+            ? uiText('Android requires an .apk file.')
             : device.kind === 'physical'
-              ? 'A physical iPhone requires a signed iPhoneOS .app with an embedded provisioning profile.'
-              : 'Use an .app built for iPhoneSimulator.'}
+              ? uiText(
+                  'A physical iPhone requires a signed iPhoneOS .app with an embedded provisioning profile.',
+                )
+              : uiText('Use an .app built for iPhoneSimulator.')}
         </Text>
         <Field
-          label="App identifier (optional)"
+          label={uiText('App identifier (optional)')}
           value={bundleId}
           editable={!disabled}
           onChangeText={setBundleId}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="com.example.app"
+          placeholder={uiText('com.example.app')}
         />
         <Action
-          label={bundleId.trim() ? 'Install and launch app' : 'Install app on device'}
+          label={
+            bundleId.trim() ? uiText('Install and launch app') : uiText('Install app on device')
+          }
           disabled={disabled || device.state !== 'booted' || !artifactPath.trim()}
           onPress={() =>
             act(() =>
@@ -142,7 +156,7 @@ export function DeviceActions({
         />
         <Action
           secondary
-          label="Launch installed app"
+          label={uiText('Launch installed app')}
           disabled={
             disabled ||
             device.state !== 'booted' ||
@@ -164,42 +178,51 @@ export function DeviceActions({
       </View>
       {device.hostId && (
         <View style={styles.card}>
-          <Text style={styles.text}>Forward development server</Text>
+          <Text style={styles.text}>
+            <InterfaceText>{'Forward development server'}</InterfaceText>
+          </Text>
           <Field
-            label="Server port on current runtime"
+            label={uiText('Server port on current runtime')}
             value={localPort}
             editable={!disabled && !forward}
             keyboardType="number-pad"
             onChangeText={setLocalPort}
           />
           <Field
-            label="Listening port on destination host"
+            label={uiText('Listening port on destination host')}
             value={remotePort}
             editable={!disabled && !forward}
             keyboardType="number-pad"
             onChangeText={setRemotePort}
           />
           <Field
-            label="Forward duration in seconds (1–3600)"
+            label={uiText('Forward duration in seconds (1–3600)')}
             value={duration}
             editable={!disabled && !forward}
             keyboardType="number-pad"
             onChangeText={setDuration}
           />
           <Text style={styles.muted}>
-            Forwards the current runtime’s localhost server to the destination’s loopback address
-            over SSH. Simulators and emulators can use it directly. For physical phones, allow
-            destination network access below or use a directly reachable development-server URL.
+            <InterfaceText>
+              {
+                'Forwards the current runtime’s localhost server to the destination’s loopback address over SSH. Simulators and emulators can use it directly. For physical phones, allow destination network access below or use a directly reachable development-server URL.'
+              }
+            </InterfaceText>
           </Text>
           {device.kind === 'physical' && (
             <View style={{ gap: 8 }}>
-              <Text style={styles.text}>Allow phones on the destination network</Text>
+              <Text style={styles.text}>
+                <InterfaceText>{'Allow phones on the destination network'}</InterfaceText>
+              </Text>
               <Text style={styles.muted}>
-                Expose this port on the destination’s LAN/VPN. Its SSH server must use GatewayPorts
-                clientspecified.
+                <InterfaceText>
+                  {
+                    'Expose this port on the destination’s LAN/VPN. Its SSH server must use GatewayPorts clientspecified.'
+                  }
+                </InterfaceText>
               </Text>
               <Switch
-                accessibilityLabel="Allow phones on the destination network"
+                accessibilityLabel={uiText('Allow phones on the destination network')}
                 value={exposeToNetwork}
                 disabled={disabled || !!forward}
                 onValueChange={setExposeToNetwork}
@@ -208,7 +231,7 @@ export function DeviceActions({
           )}
           {!forward && (
             <Action
-              label="Start URL forward"
+              label={uiText('Start URL forward')}
               disabled={disabled}
               onPress={() =>
                 act(() =>
@@ -244,19 +267,27 @@ export function DeviceActions({
                 {forward.url}
               </Text>
               <Text style={styles.muted}>
-                Expires {new Date(forward.expiresAt).toLocaleTimeString()}. A forward also stops
-                when the task closes. Leaving this preview does not stop it immediately.
+                <InterfaceText
+                  values={{ value0: new Date(forward.expiresAt).toLocaleTimeString() }}
+                >
+                  {
+                    'Expires {value0}. A forward also stops when the task closes. Leaving this preview does not stop it immediately.'
+                  }
+                </InterfaceText>
               </Text>
               {device.kind === 'physical' && !forward.url.startsWith('http://127.0.0.1:') && (
                 <Text style={styles.muted}>
-                  Use the device host’s LAN/VPN address if its SSH alias is not reachable from your
-                  phone.
+                  <InterfaceText>
+                    {
+                      'Use the device host’s LAN/VPN address if its SSH alias is not reachable from your phone.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {forward.hostId === device.hostId && device.kind !== 'physical' && (
                 <Action
                   secondary
-                  label="Use forwarded preview URL"
+                  label={uiText('Use forwarded preview URL')}
                   disabled={disabled}
                   onPress={() => {
                     const url = new URL(forward.url)
@@ -272,7 +303,7 @@ export function DeviceActions({
               )}
               <Action
                 secondary
-                label="Stop URL forward"
+                label={uiText('Stop URL forward')}
                 disabled={disabled}
                 onPress={() =>
                   act(() =>

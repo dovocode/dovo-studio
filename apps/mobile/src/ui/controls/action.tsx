@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable } from 'react-native'
 import { Text } from '../content/text'
 import { IconButton } from './icon-button'
@@ -10,6 +11,7 @@ type ActionProps = {
   onPress: () => void
   disabled?: boolean
   secondary?: boolean
+  destructive?: boolean
   /** Text actions share the web button hierarchy; icon actions keep native styling. */
   variant?: 'default' | 'outline' | 'ghost'
   /** Full-width primary call to action, e.g. the one decision on a form. */
@@ -17,6 +19,7 @@ type ActionProps = {
   icon?: IconName
 }
 export function Action(props: ActionProps) {
+  const uiText = useInterfaceText()
   const { colors } = useTheme()
   const secondary = props.variant ? props.variant !== 'default' : props.secondary
 
@@ -28,16 +31,16 @@ export function Action(props: ActionProps) {
         onPress={props.onPress}
         disabled={props.disabled}
         icon={icon}
-        color={destructive.test(props.label) ? colors.error : undefined}
+        color={(props.destructive ?? destructive.test(props.label)) ? colors.error : undefined}
         variant={
-          props.label === 'Back' || props.label === 'Back to PRs'
+          props.label === uiText('Back') || props.label === uiText('Back to PRs')
             ? 'glass'
             : secondary
               ? 'plain'
               : 'filled'
         }
         prominent={!secondary}
-        size={props.label === 'Send' || props.label === 'Stop' ? 48 : 44}
+        size={props.label === uiText('Send') || props.label === uiText('Stop') ? 48 : 44}
       />
     )
   return <TextAction {...props} />
@@ -49,10 +52,11 @@ function TextAction({
   secondary = false,
   variant = secondary ? 'ghost' : 'default',
   wide = false,
+  destructive: dangerous,
 }: ActionProps) {
   const { colors } = useTheme()
 
-  const danger = destructive.test(label)
+  const danger = dangerous ?? destructive.test(label)
   const filled = variant === 'default'
   return (
     <Pressable

@@ -3,6 +3,7 @@ import { build } from 'esbuild'
 import { chromium } from 'playwright'
 const resolveDir = new URL('../apps/mobile/', import.meta.url).pathname
 const controls = `
+export {resolveInterfaceLanguage} from '${new URL('../packages/protocol/src/interface-language.ts', import.meta.url).pathname}';
 import {Effect} from 'effect';
 import {useState} from 'react';
 const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ScrollView, View, TextInput } from 'react-native'
@@ -68,9 +69,18 @@ export function ProjectSpreadsheet({
   const preview = current?.value
   const cellStyle = { borderWidth: 0.5, borderColor: colors.border, padding: 6 }
   return (
-    <View accessibilityLabel="Spreadsheet preview" style={{ flex: 1, minHeight: 280, gap: 10 }}>
-      <Text style={styles.muted}>Read-only spreadsheet</Text>
-      {!current && <Text>Loading spreadsheet…</Text>}
+    <View
+      accessibilityLabel={uiText('Spreadsheet preview')}
+      style={{ flex: 1, minHeight: 280, gap: 10 }}
+    >
+      <Text style={styles.muted}>
+        <InterfaceText>{'Read-only spreadsheet'}</InterfaceText>
+      </Text>
+      {!current && (
+        <Text>
+          <InterfaceText>{'Loading spreadsheet…'}</InterfaceText>
+        </Text>
+      )}
       {current?.error && (
         <>
           <Text accessibilityRole="alert" style={styles.error}>
@@ -82,7 +92,7 @@ export function ProjectSpreadsheet({
       {preview && (
         <>
           <Choice
-            label="Worksheet"
+            label={uiText('Worksheet')}
             value={preview.sheet}
             items={preview.sheets.map((name) => ({ id: name, name }))}
             onChange={(value) => {
@@ -96,9 +106,11 @@ export function ProjectSpreadsheet({
           />
           <View style={{ flexDirection: 'row', gap: 12, flexWrap: 'wrap' }}>
             <View style={{ gap: 4 }}>
-              <Text>Column</Text>
+              <Text>
+                <InterfaceText>{'Column'}</InterfaceText>
+              </Text>
               <TextInput
-                accessibilityLabel="Column to resize"
+                accessibilityLabel={uiText('Column to resize')}
                 keyboardType="number-pad"
                 value={String(column + 1)}
                 onChangeText={(value) =>
@@ -116,9 +128,11 @@ export function ProjectSpreadsheet({
               />
             </View>
             <View style={{ gap: 4 }}>
-              <Text>Width</Text>
+              <Text>
+                <InterfaceText>{'Width'}</InterfaceText>
+              </Text>
               <TextInput
-                accessibilityLabel="Column width"
+                accessibilityLabel={uiText('Column width')}
                 keyboardType="number-pad"
                 value={String(widths[column] ?? 140)}
                 onChangeText={(value) =>
@@ -131,9 +145,11 @@ export function ProjectSpreadsheet({
               />
             </View>
             <View style={{ gap: 4 }}>
-              <Text>Row</Text>
+              <Text>
+                <InterfaceText>{'Row'}</InterfaceText>
+              </Text>
               <TextInput
-                accessibilityLabel="Row to resize"
+                accessibilityLabel={uiText('Row to resize')}
                 keyboardType="number-pad"
                 value={String(row + 1)}
                 onChangeText={(value) =>
@@ -148,9 +164,11 @@ export function ProjectSpreadsheet({
               />
             </View>
             <View style={{ gap: 4 }}>
-              <Text>Height</Text>
+              <Text>
+                <InterfaceText>{'Height'}</InterfaceText>
+              </Text>
               <TextInput
-                accessibilityLabel="Row height"
+                accessibilityLabel={uiText('Row height')}
                 keyboardType="number-pad"
                 value={String(heights[row] ?? 40)}
                 onChangeText={(value) =>
@@ -165,7 +183,7 @@ export function ProjectSpreadsheet({
           </View>
           <Action
             secondary
-            label="Reset sizes"
+            label={uiText('Reset sizes')}
             onPress={() => {
               setWidths({})
               setHeights({})
@@ -173,7 +191,9 @@ export function ProjectSpreadsheet({
           />
           {preview.truncated && (
             <Text style={styles.muted}>
-              Preview limited to 200 rows, 50 columns, and bounded cell text.
+              <InterfaceText>
+                {'Preview limited to 200 rows, 50 columns, and bounded cell text.'}
+              </InterfaceText>
             </Text>
           )}
           <ScrollView horizontal style={{ flexGrow: 0 }}>
@@ -224,19 +244,26 @@ export function ProjectSpreadsheet({
             </View>
           </ScrollView>
           <Text style={styles.muted}>
-            Rows {Math.min(page * 25 + 1, preview.rows.length)}–
-            {Math.min((page + 1) * 25, preview.rows.length)} of {preview.rows.length}
+            <InterfaceText
+              values={{
+                value0: Math.min(page * 25 + 1, preview.rows.length),
+                value1: Math.min((page + 1) * 25, preview.rows.length),
+                value2: preview.rows.length,
+              }}
+            >
+              {'Rows {value0}–{value1} of {value2}'}
+            </InterfaceText>
           </Text>
           <View style={styles.row}>
             <Action
               secondary
-              label="Previous rows"
+              label={uiText('Previous rows')}
               disabled={!page}
               onPress={() => setPage((value) => value - 1)}
             />
             <Action
               secondary
-              label="Next rows"
+              label={uiText('Next rows')}
               disabled={(page + 1) * 25 >= preview.rows.length}
               onPress={() => setPage((value) => value + 1)}
             />

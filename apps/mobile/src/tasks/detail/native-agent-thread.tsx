@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import {
@@ -24,6 +25,8 @@ export function NativeAgentThread({
   onClose: () => void
   parentTitle?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, call } = useRuntime()
   const { colors, styles } = useTheme()
   const [page, setPage] = useState<NativeThreadPage>()
@@ -81,13 +84,13 @@ export function NativeAgentThread({
     load,
   ])
   return (
-    <View style={{ flex: 1 }} accessibilityLabel="Native agent thread">
+    <View style={{ flex: 1 }} accessibilityLabel={uiText('Native agent thread')}>
       <ScreenHeader
         title={agent.name}
-        leading={<Action secondary label="Back to agents" onPress={onClose} />}
+        leading={<Action secondary label={uiText('Back to agents')} onPress={onClose} />}
         buttons={[
           {
-            label: 'Refresh thread',
+            label: uiText('Refresh thread'),
             icon: 'refresh',
             disabled: !connected || busy,
             onPress: () => setLoad(({ revision }) => ({ revision: revision + 1 })),
@@ -96,9 +99,13 @@ export function NativeAgentThread({
       />
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 12 }}
-        accessibilityLabel="Native agent thread"
+        accessibilityLabel={uiText('Native agent thread')}
       >
-        {!connected && <Text style={styles.muted}>Reconnect to load this native thread.</Text>}
+        {!connected && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Reconnect to load this native thread.'}</InterfaceText>
+          </Text>
+        )}
         {!!error && (
           <Text accessibilityRole="alert" style={{ color: colors.error }}>
             {error}
@@ -108,14 +115,18 @@ export function NativeAgentThread({
         {!!page?.before && (
           <Action
             secondary
-            label="Load older messages"
+            label={uiText('Load older messages')}
             disabled={!connected || busy}
             onPress={() =>
               setLoad(({ revision }) => ({ before: page.before, revision: revision + 1 }))
             }
           />
         )}
-        {busy && <Text style={styles.muted}>Loading thread…</Text>}
+        {busy && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Loading thread…'}</InterfaceText>
+          </Text>
+        )}
         {page?.entries.map((entry) => (
           <View
             key={entry.id}
@@ -135,7 +146,8 @@ export function NativeAgentThread({
             {entry.role === 'tool' || entry.role === 'reasoning' ? (
               <>
                 <Text style={styles.muted}>
-                  {entry.label || (entry.role === 'reasoning' ? 'Reasoning' : 'Tool')}
+                  {entry.label ||
+                    (entry.role === 'reasoning' ? uiText('Reasoning') : uiText('Tool'))}
                 </Text>
                 <Text
                   selectable
@@ -150,14 +162,23 @@ export function NativeAgentThread({
           </View>
         ))}
         {page && !page.entries.length && (
-          <Text style={styles.muted}>No conversation messages are available.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'No conversation messages are available.'}</InterfaceText>
+          </Text>
         )}
       </ScrollView>
       <Text
         style={[styles.muted, { padding: 16, borderTopWidth: 0.5, borderTopColor: colors.border }]}
       >
-        {parentTitle && `${parentTitle} · `}
-        {subagentMetadata(agent) || agent.provider} · {agent.status} · Read only
+        <InterfaceText
+          values={{
+            value0: parentTitle && `${parentTitle} · `,
+            value1: subagentMetadata(agent) || agent.provider,
+            value2: agent.status,
+          }}
+        >
+          {'{value0}{value1} · {value2} · Read only'}
+        </InterfaceText>
       </Text>
     </View>
   )

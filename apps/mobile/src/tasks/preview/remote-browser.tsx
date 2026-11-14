@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { BrowserSearchEngine } from '@dovo/protocol'
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { Text } from '../../ui/content/text'
@@ -90,6 +91,8 @@ function RemoteBrowserContent({
   onControls,
   attachment,
 }: RemoteBrowserProps & { attachment?: ReturnType<typeof useScreenshotAttachment> }) {
+  const uiText = useInterfaceText()
+
   const { styles, mode } = useTheme()
   const appearance = useRef(mode)
   const screenshots = attachment
@@ -337,10 +340,10 @@ function RemoteBrowserContent({
       {processFailed ? (
         <View style={styles.content}>
           <Text accessibilityRole="alert" style={styles.error}>
-            The browser preview stopped. Retry to connect again.
+            <InterfaceText>{'The browser preview stopped. Retry to connect again.'}</InterfaceText>
           </Text>
           <Action
-            label="Retry browser"
+            label={uiText('Retry browser')}
             disabled={!active}
             onPress={() => {
               recovered.current = false
@@ -453,7 +456,7 @@ function RemoteBrowserContent({
                 'details' in message &&
                 typeof message.details === 'string'
               ) {
-                Alert.alert('Browser connection', message.details.slice(0, 2000))
+                Alert.alert(uiText('Browser connection'), message.details.slice(0, 2000))
                 return
               }
               const state = decodeResult(remoteBrowserMessageSchema, message)
@@ -537,7 +540,9 @@ function RemoteBrowserContent({
                   void runClientEffect(
                     nativeEffect(() => openLink(lastAddress.current, true)).pipe(
                       Effect.catch((error) =>
-                        nativeEffect(() => Alert.alert('Could not open browser', String(error))),
+                        nativeEffect(() =>
+                          Alert.alert(uiText('Could not open browser'), String(error)),
+                        ),
                       ),
                     ),
                   )
@@ -564,7 +569,7 @@ function RemoteBrowserContent({
               })
             } catch (cause) {
               Alert.alert(
-                'Could not navigate',
+                uiText('Could not navigate'),
                 cause instanceof Error ? cause.message : String(cause),
               )
             }

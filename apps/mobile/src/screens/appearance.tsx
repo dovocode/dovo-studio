@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botLayouts, isBotLayout } from '@dovo/protocol'
 import { SettingsScrollView } from './settings-search'
@@ -38,17 +39,21 @@ export default function AppearanceScreen() {
     <SettingsPage>
       <ScreenHeader title={uiText('Appearance')} />
       <SettingsScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
-        <Text style={[styles.muted, { fontSize: 13 }]}>This device · saved automatically</Text>
+        <Text style={[styles.muted, { fontSize: 13 }]}>
+          <InterfaceText>{'This device · saved automatically'}</InterfaceText>
+        </Text>
         <SettingsGroup
           title={uiText('Accessibility')}
-          footer="Status icons and labels work without color. Text follows your phone’s text size setting."
+          footer={uiText(
+            'Status icons and labels work without color. Text follows your phone’s text size setting.',
+          )}
         >
           <Choice
-            label="Status colors"
+            label={uiText('Status colors')}
             value={colorVision}
             items={[
-              { id: 'default', name: 'Normal' },
-              { id: 'blue-orange', name: 'GitHub colorblind' },
+              { id: 'default', name: uiText('Normal') },
+              { id: 'blue-orange', name: uiText('GitHub colorblind') },
             ]}
             onChange={(value) => {
               if (value === 'default' || value === 'blue-orange')
@@ -56,33 +61,39 @@ export default function AppearanceScreen() {
             }}
           />
           <View
-            accessibilityLabel="Status color preview"
+            accessibilityLabel={uiText('Status color preview')}
             style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12, padding: 12 }}
           >
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <CircleCheck size={16} color={colors.success} accessible={false} />
-              <Text style={[styles.muted, { color: colors.success }]}>Finished</Text>
+              <Text style={[styles.muted, { color: colors.success }]}>
+                <InterfaceText>{'Finished'}</InterfaceText>
+              </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <CircleX size={16} color={colors.error} accessible={false} />
-              <Text style={[styles.muted, { color: colors.error }]}>Failed</Text>
+              <Text style={[styles.muted, { color: colors.error }]}>
+                <InterfaceText>{'Failed'}</InterfaceText>
+              </Text>
             </View>
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
               <TriangleAlert size={16} color={colors.warning} accessible={false} />
-              <Text style={[styles.muted, { color: colors.warning }]}>Needs input</Text>
+              <Text style={[styles.muted, { color: colors.warning }]}>
+                <InterfaceText>{'Needs input'}</InterfaceText>
+              </Text>
             </View>
           </View>
           <SettingsSwitchRow
-            label="Higher contrast"
+            label={uiText('Higher contrast')}
             value={highContrast}
             onValueChange={(highContrast) => updateMobilePreferences({ highContrast })}
           />
           <Choice
-            label="Animations"
+            label={uiText('Animations')}
             value={motion}
             items={[
               { id: 'system', name: uiText('System') },
-              { id: 'reduce', name: 'Reduce' },
+              { id: 'reduce', name: uiText('Reduce') },
             ]}
             onChange={(value) => {
               if (value === 'system' || value === 'reduce')
@@ -91,35 +102,37 @@ export default function AppearanceScreen() {
           />
         </SettingsGroup>
         <SettingsGroup
-          title="Layout"
-          footer="Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context."
+          title={uiText('Layout')}
+          footer={uiText(
+            'Compact uses uniform rows with smaller text and single-line details. Comfortable keeps the original layout with more room for context.',
+          )}
         >
           <SettingsSwitchRow
-            label="Bots in thread overview"
+            label={uiText('Bots in thread overview')}
             value={botsInThreads}
             onValueChange={(botsInThreads) => updateMobilePreferences({ botsInThreads })}
           />
           <SettingsSwitchRow
-            label="Separate Bots overview"
+            label={uiText('Separate Bots overview')}
             value={botsOverviewEnabled}
             onValueChange={(botsOverviewEnabled) =>
               updateMobilePreferences({ botsOverviewEnabled })
             }
           />
           <Choice
-            label="Bot layout"
+            label={uiText('Bot layout')}
             value={botLayout}
-            items={botLayouts.map((item) => ({ ...item }))}
+            items={botLayouts.map((item) => ({ ...item, name: uiText(item.name) }))}
             onChange={(value) => {
               if (isBotLayout(value)) updateMobilePreferences({ botLayout: value })
             }}
           />
           <Choice
-            label="Thread density"
+            label={uiText('Thread density')}
             value={threadDensity}
             items={[
-              { id: 'compact', name: 'Compact' },
-              { id: 'comfortable', name: 'Comfortable' },
+              { id: 'compact', name: uiText('Compact') },
+              { id: 'comfortable', name: uiText('Comfortable') },
             ]}
             onChange={(value) => {
               if (value === 'compact' || value === 'comfortable')
@@ -129,10 +142,10 @@ export default function AppearanceScreen() {
         </SettingsGroup>
         <SettingsGroup
           title={uiText('Theme')}
-          footer="System follows your phone’s light or dark mode."
+          footer={uiText('System follows your phone’s light or dark mode.')}
         >
           <Choice
-            label="Color scheme"
+            label={uiText('Color scheme')}
             value={theme}
             items={[
               { id: 'system', name: uiText('System') },
@@ -146,8 +159,8 @@ export default function AppearanceScreen() {
           />
         </SettingsGroup>
         <SettingsGroup
-          title="Color palette"
-          footer="The same palettes as desktop, with both light and dark previews."
+          title={uiText('Color palette')}
+          footer={uiText('The same palettes as desktop, with both light and dark previews.')}
         >
           {studioThemeIds.map((id) => {
             const palette = studioThemes[id]
@@ -190,13 +203,15 @@ export default function AppearanceScreen() {
         <CodeThemeSettings />
         <SettingsGroup
           title={uiText('Terminal')}
-          footer="JetBrains Mono Nerd Font is bundled for offline shell and developer icons. Changes apply to open terminals."
+          footer={uiText(
+            'JetBrains Mono Nerd Font is bundled for offline shell and developer icons. Changes apply to open terminals.',
+          )}
         >
           <Choice
-            label="Terminal font"
+            label={uiText('Terminal font')}
             value={terminalFontFamily}
             items={[
-              { id: '', name: 'System monospace' },
+              { id: '', name: uiText('System monospace') },
               { id: nerdFontFamily, name: nerdFontFamily },
             ]}
             onChange={(value) => {
@@ -205,7 +220,7 @@ export default function AppearanceScreen() {
             }}
           />
           <Choice
-            label="Terminal font size"
+            label={uiText('Terminal font size')}
             value={String(terminalFontSize)}
             items={Array.from({ length: 25 }, (_, index) => ({
               id: String(index + 8),

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
@@ -16,6 +17,8 @@ import {
 import { Text } from '../ui/content/text'
 import { useSettingsTheme } from './settings-theme'
 export function UsageHubs({ computer, onSaved }: { computer: string; onSaved: () => void }) {
+  const uiText = useInterfaceText()
+
   const { overviews } = useRuntime()
   const { styles } = useSettingsTheme()
   const [selected, setSelected] = useState(''),
@@ -25,19 +28,22 @@ export function UsageHubs({ computer, onSaved }: { computer: string; onSaved: ()
   return (
     <View style={{ gap: 12 }}>
       <Action
-        label={open ? 'Hide usage hubs' : 'Manage usage hubs'}
+        label={open ? uiText('Hide usage hubs') : uiText('Manage usage hubs')}
         secondary
         onPress={() => setOpen(!open)}
       />
       {open && (
         <>
           <Text style={styles.muted}>
-            Connect CLIProxyAPI to include its Codex and Claude accounts. The management key stays
-            on the selected computer. This does not change agent routing.
+            <InterfaceText>
+              {
+                'Connect CLIProxyAPI to include its Codex and Claude accounts. The management key stays on the selected computer. This does not change agent routing.'
+              }
+            </InterfaceText>
           </Text>
           {hosts.length > 1 && (
             <Choice
-              label="Hub computer"
+              label={uiText('Hub computer')}
               value={host?.profile.id ?? ''}
               items={hosts.map((entry) => ({
                 id: entry.profile.id,
@@ -53,7 +59,9 @@ export function UsageHubs({ computer, onSaved }: { computer: string; onSaved: ()
               onSaved={onSaved}
             />
           ) : (
-            <Text style={styles.muted}>Connect this computer to manage its hubs.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Connect this computer to manage its hubs.'}</InterfaceText>
+            </Text>
           )}
         </>
       )}
@@ -120,7 +128,9 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
       onSaved()
     } catch {
       setError(
-        'Could not save hubs. Check the name, URL and key, and that the runtime supports usage hubs.',
+        uiText(
+          'Could not save hubs. Check the name, URL and key, and that the runtime supports usage hubs.',
+        ),
       )
     } finally {
       setBusy(false)
@@ -137,12 +147,12 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
         <View key={hub.id} style={[styles.card, { gap: 8 }]}>
           <Text style={styles.text}>
             {hub.label}
-            {hub.enabled ? '' : ' · Disabled'}
+            {hub.enabled ? '' : uiText(' · Disabled')}
           </Text>
           <Text style={styles.muted}>{hub.url}</Text>
           {!!hub.error && <Text style={styles.muted}>{hub.error}</Text>}
           <Action
-            label={`Edit ${hub.label}`}
+            label={uiText('Edit {value0}', { value0: hub.label })}
             secondary
             disabled={busy}
             onPress={() => {
@@ -157,7 +167,8 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
             }}
           />
           <Action
-            label={`Remove ${hub.label}`}
+            destructive
+            label={uiText('Remove {value0}', { value0: hub.label })}
             secondary
             disabled={busy}
             onPress={() => setConfirm(hub.id)}
@@ -165,25 +176,33 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
           {confirm === hub.id && (
             <>
               <Text style={styles.muted}>
-                Remove this hub from the dashboard? Its accounts and agent routing stay unchanged.
+                <InterfaceText>
+                  {
+                    'Remove this hub from the dashboard? Its accounts and agent routing stay unchanged.'
+                  }
+                </InterfaceText>
               </Text>
-              <Action label="Confirm removal" disabled={busy} onPress={() => void write(hub.id)} />
+              <Action
+                label={uiText('Confirm removal')}
+                disabled={busy}
+                onPress={() => void write(hub.id)}
+              />
               <Action label={uiText('Cancel')} secondary onPress={() => setConfirm('')} />
             </>
           )}
         </View>
       ))}
-      <Text style={styles.title}>{draft.id ? 'Edit hub' : 'Add a hub'}</Text>
+      <Text style={styles.title}>{draft.id ? uiText('Edit hub') : uiText('Add a hub')}</Text>
       <Field
         editable={!busy}
-        label="Hub name"
+        label={uiText('Hub name')}
         maxLength={100}
         value={draft.label}
         onChangeText={(label) => setDraft({ ...draft, label })}
       />
       <Field
         editable={!busy}
-        label="Hub URL"
+        label={uiText('Hub URL')}
         placeholder="http://hub:8317"
         autoCapitalize="none"
         autoCorrect={false}
@@ -192,7 +211,7 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
       />
       <Field
         editable={!busy}
-        label="Management key"
+        label={uiText('Management key')}
         secureTextEntry
         autoCapitalize="none"
         autoCorrect={false}
@@ -201,11 +220,13 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
       />
       {!!draft.id && (
         <Text style={styles.muted}>
-          Leave the key blank to keep it. A changed URL requires its own key.
+          <InterfaceText>
+            {'Leave the key blank to keep it. A changed URL requires its own key.'}
+          </InterfaceText>
         </Text>
       )}
       <Choice
-        label="Include in dashboard"
+        label={uiText('Include in dashboard')}
         disabled={busy}
         value={draft.enabled ? 'yes' : 'no'}
         items={[
@@ -215,7 +236,7 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
         onChange={(value) => setDraft({ ...draft, enabled: value === 'yes' })}
       />
       <Action
-        label={busy ? 'Saving…' : 'Save hub'}
+        label={busy ? uiText('Saving…') : uiText('Save hub')}
         disabled={
           busy || !draft.label.trim() || !draft.url.trim() || (!draft.id && !draft.managementKey)
         }
@@ -223,7 +244,7 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
       />
       {!!draft.id && (
         <Action
-          label="Cancel edit"
+          label={uiText('Cancel edit')}
           disabled={busy}
           secondary
           onPress={() => setDraft({ id: '', label: '', url: '', managementKey: '', enabled: true })}

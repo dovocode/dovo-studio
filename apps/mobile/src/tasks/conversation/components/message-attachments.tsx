@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
 import { EditChatImage } from '../../composer/chat-image-edit-context'
@@ -43,6 +44,8 @@ export function MessageAttachments({
   onBusy?: (busy: boolean) => void
   draftAttachmentDisabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
   const generation = useRef(0)
 
@@ -106,7 +109,7 @@ export function MessageAttachments({
         nestedScrollEnabled
         style={{ maxHeight: 146, flexGrow: 0 }}
         contentContainerStyle={{ gap: 4 }}
-        accessibilityLabel={removable ? 'Draft attachments' : 'Message attachments'}
+        accessibilityLabel={removable ? uiText('Draft attachments') : uiText('Message attachments')}
       >
         {files.map((file) => (
           <View
@@ -124,7 +127,7 @@ export function MessageAttachments({
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Preview ${file.name}`}
+              accessibilityLabel={uiText('Preview {value0}', { value0: file.name })}
               accessibilityState={{ disabled: !connected || busy || disabled }}
               disabled={!connected || busy || disabled}
               style={({ pressed }) => ({
@@ -185,7 +188,7 @@ export function MessageAttachments({
             {removable && edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
               <AttachmentAction
                 icon="edit"
-                label={`Edit ${file.name}`}
+                label={uiText('Edit {value0}', { value0: file.name })}
                 disabled={!connected || busy || disabled}
                 onPress={() => void edit(file.id)}
               />
@@ -196,7 +199,7 @@ export function MessageAttachments({
             {removable && (
               <AttachmentAction
                 icon="close"
-                label={`Remove ${file.name}`}
+                label={uiText('Remove {value0}', { value0: file.name })}
                 disabled={!connected || busy || disabled}
                 onPress={() =>
                   void act(async () => {
@@ -266,7 +269,7 @@ export function MessageAttachments({
                 />
               )}
               <IconButton
-                label="Share file"
+                label={uiText('Share file')}
                 icon="share"
                 variant="glass"
                 disabled={busy}
@@ -288,7 +291,7 @@ export function MessageAttachments({
                 }
               />
               <IconButton
-                label="Close preview"
+                label={uiText('Close preview')}
                 icon="close"
                 variant="glass"
                 onPress={() => setPreview(null)}
@@ -310,7 +313,7 @@ export function MessageAttachments({
               (isImageAttachment(preview.attachment) ? (
                 <ScrollView
                   key={preview.attachment.id}
-                  accessibilityLabel="Image preview"
+                  accessibilityLabel={uiText('Image preview')}
                   style={{ flex: 1 }}
                   contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
                   maximumZoomScale={4}
@@ -330,7 +333,7 @@ export function MessageAttachments({
                 <AttachmentMedia key={preview.attachment.id} {...preview} />
               ) : (
                 <ScrollView
-                  accessibilityLabel="File preview"
+                  accessibilityLabel={uiText('File preview')}
                   style={{ flex: 1 }}
                   contentContainerStyle={styles.content}
                 >
@@ -364,6 +367,8 @@ function PreviewLifecycle({ onDeactivate }: { onDeactivate: () => void }) {
 }
 
 function AttachmentMedia({ attachment, data }: { attachment: Attachment; data: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [status, setStatus] = useApplicationState<'loading' | 'ready' | 'error'>('loading')
   const tag = attachment.mime.startsWith('video/') ? 'video' : 'audio'
@@ -389,7 +394,7 @@ try{
   return (
     <View style={{ flex: 1 }}>
       <WebView
-        accessibilityLabel={`Play ${attachment.name}`}
+        accessibilityLabel={uiText('Play {value0}', { value0: attachment.name })}
         source={{ html }}
         originWhitelist={['about:blank']}
         onShouldStartLoadWithRequest={(request) => request.url === 'about:blank'}
@@ -406,10 +411,14 @@ try{
         onError={() => setStatus('error')}
         onHttpError={() => setStatus('error')}
       />
-      {status === 'loading' && <Text accessibilityRole="status">Loading media…</Text>}
+      {status === 'loading' && (
+        <Text accessibilityRole="status">
+          <InterfaceText>{'Loading media…'}</InterfaceText>
+        </Text>
+      )}
       {status === 'error' && (
         <Text accessibilityRole="alert" style={styles.error}>
-          Unable to play this file. Share it to open elsewhere.
+          <InterfaceText>{'Unable to play this file. Share it to open elsewhere.'}</InterfaceText>
         </Text>
       )}
     </View>
@@ -453,6 +462,8 @@ function AttachmentAction({
 }
 
 function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachment }) {
+  const uiText = useInterfaceText()
+
   const { connected, readEffect } = useRuntime()
   const [uri, setUri] = useApplicationState('')
   const [thumbnailError, setThumbnailError] = useApplicationState('')
@@ -490,7 +501,9 @@ function AttachmentThumbnail({ taskId, file }: { taskId: string; file: Attachmen
       <View
         style={{ width: 24, height: 24, alignItems: 'center', justifyContent: 'center' }}
         accessibilityLabel={
-          thumbnailError ? `Preview unavailable: ${thumbnailError}` : 'Loading preview'
+          thumbnailError
+            ? uiText('Preview unavailable: {value0}', { value0: thumbnailError })
+            : uiText('Loading preview')
         }
       >
         <Icon name="fileImage" size={20} />

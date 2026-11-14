@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { useOpenAppLink } from '../ui/content/open-link'
@@ -62,24 +63,35 @@ export default function AppUpdates() {
   }
   return (
     <SettingsPage>
-      <ScreenHeader title="App & updates" />
+      <ScreenHeader title={uiText('App & updates')} />
       <ScrollView contentContainerStyle={[styles.content, { gap: 24 }]}>
-        <Text style={styles.muted}>This app · version and updates</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'This app · version and updates'}</InterfaceText>
+        </Text>
         <Text style={styles.title}>
-          Dovo Studio {Constants.expoConfig?.version ?? 'development'}
-          {build ? ` (${build})` : ''}
+          <InterfaceText
+            values={{
+              value0: Constants.expoConfig?.version ?? uiText('development'),
+              value1: build ? ` (${build})` : '',
+            }}
+          >
+            {'Dovo Studio {value0}{value1}'}
+          </InterfaceText>
         </Text>
         <Text selectable style={styles.muted}>
-          {installedChannel ?? 'development'}
+          {installedChannel ?? uiText('development')}
           {typeof commit === 'string' ? ` · ${commit.slice(0, 12)}` : ''}
         </Text>
         <Text style={styles.muted}>
-          Native app updates come from TestFlight, Google Play testing, or a local build. Updates
-          keep your paired computers and saved settings.
+          <InterfaceText>
+            {
+              'Native app updates come from TestFlight, Google Play testing, or a local build. Updates keep your paired computers and saved settings.'
+            }
+          </InterfaceText>
         </Text>
         <Action
           wide
-          label={Platform.OS === 'ios' ? 'Open TestFlight' : 'Open Google Play'}
+          label={Platform.OS === 'ios' ? uiText('Open TestFlight') : uiText('Open Google Play')}
           onPress={() =>
             void Linking.openURL(
               Platform.OS === 'ios'
@@ -95,12 +107,12 @@ export default function AppUpdates() {
           }
         />
         <Choice
-          label="Release notes channel"
+          label={uiText('Release notes channel')}
           disabled={busy}
           value={channel}
           items={[
-            { id: 'nightly', name: 'Nightly' },
-            { id: 'stable', name: 'Stable' },
+            { id: 'nightly', name: uiText('Nightly') },
+            { id: 'stable', name: uiText('Stable') },
           ]}
           onChange={(value) => {
             setChannel(value)
@@ -109,12 +121,15 @@ export default function AppUpdates() {
           }}
         />
         <Text style={styles.muted}>
-          Desktop release notes are shown below. Mobile builds become available separately in
-          TestFlight or Google Play testing.
+          <InterfaceText>
+            {
+              'Desktop release notes are shown below. Mobile builds become available separately in TestFlight or Google Play testing.'
+            }
+          </InterfaceText>
         </Text>
         <Action
           wide
-          label={busy ? 'Checking…' : 'Check release notes'}
+          label={busy ? uiText('Checking…') : uiText('Check release notes')}
           disabled={busy}
           onPress={() => void check()}
         />
@@ -126,7 +141,7 @@ export default function AppUpdates() {
         {release && (
           <Action
             secondary
-            label={`Desktop release notes ${release.version}`}
+            label={uiText('Desktop release notes {value0}', { value0: release.version })}
             onPress={() =>
               void runClientEffect(
                 nativeEffect(() => openLink(release.url)).pipe(
@@ -140,8 +155,10 @@ export default function AppUpdates() {
         )}
         {Platform.OS === 'ios' && (
           <SettingsGroup
-            title="Update from your Mac"
-            footer="Connect and unlock your iPhone. Run this in your Dovo checkout; the script builds, signs and installs the new app without uninstalling it."
+            title={uiText('Update from your Mac')}
+            footer={uiText(
+              'Connect and unlock your iPhone. Run this in your Dovo checkout; the script builds, signs and installs the new app without uninstalling it.',
+            )}
           >
             <Text
               selectable
@@ -153,15 +170,16 @@ export default function AppUpdates() {
                 },
               ]}
             >
-              git pull --ff-only{'\n'}pnpm install --frozen-lockfile{'\n'}pnpm mobile:update --
-              --device YOUR_DEVICE_UDID
+              {uiText(
+                'git pull --ff-only\npnpm install --frozen-lockfile\npnpm mobile:update -- --device YOUR_DEVICE_UDID',
+              )}
             </Text>
           </SettingsGroup>
         )}
-        <SettingsGroup title="Related settings">
+        <SettingsGroup title={uiText('Related settings')}>
           <SettingsRow
             title={uiText('Notifications')}
-            subtitle="Task alerts and Live Activities on this device"
+            subtitle={uiText('Task alerts and Live Activities on this device')}
             icon="settings"
             onPress={() => router.push('/settings/notifications')}
           />

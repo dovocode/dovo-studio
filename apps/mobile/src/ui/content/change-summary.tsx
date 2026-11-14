@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   changeTypeDistribution,
   pullFileKind,
@@ -49,6 +50,8 @@ export function ChangeSummary({
   testID?: string
   accessibilityLabel?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, mode, styles } = useTheme()
   const distribution = changeTypeDistribution(files, 'lines')
   const categories = changeCategories.filter(({ kind }) => distribution.counts.has(kind))
@@ -75,7 +78,18 @@ export function ChangeSummary({
     <View
       accessible
       accessibilityRole="image"
-      accessibilityLabel={`${distribution.unit === 'lines' ? `${partialStats || (total != null && total > files.length) ? 'Available changed' : 'Changed'} line` : 'File type'} distribution: ${categories.map(({ kind, label }) => `${label} ${distribution.weights.get(kind) ?? 0} ${distribution.unit}`).join(', ')}`}
+      accessibilityLabel={uiText('{value0} distribution: {value1}', {
+        value0:
+          distribution.unit === 'lines'
+            ? `${partialStats || (total != null && total > files.length) ? 'Available changed' : 'Changed'} line`
+            : 'File type',
+        value1: categories
+          .map(
+            ({ kind, label }) =>
+              `${label} ${distribution.weights.get(kind) ?? 0} ${distribution.unit}`,
+          )
+          .join(', '),
+      })}
       style={{ flexDirection: 'row', height: 6, gap: 1, overflow: 'hidden', borderRadius: 3 }}
     >
       {categories
@@ -106,7 +120,11 @@ export function ChangeSummary({
         testID={testID}
         accessibilityRole="button"
         accessibilityLabel={
-          accessibilityLabel ?? `${count} ${count === 1 ? 'file' : 'files'} changed`
+          accessibilityLabel ??
+          uiText('{value0} {value1} changed', {
+            value0: count,
+            value1: count === 1 ? 'file' : 'files',
+          })
         }
         accessibilityHint={statsHint(
           totals,
@@ -125,7 +143,11 @@ export function ChangeSummary({
         <Icon name="fileText" size={20} color={colors.text} />
         <View style={{ flex: 1, gap: 3 }}>
           <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600' }}>
-            {count} {count === 1 ? 'file' : 'files'} changed
+            <InterfaceText
+              values={{ value0: count, value1: count === 1 ? uiText('file') : uiText('files') }}
+            >
+              {'{value0} {value1} changed'}
+            </InterfaceText>
           </Text>
           {(totals.additions !== null || totals.deletions !== null) && (
             <Text style={{ fontSize: 12 }}>
@@ -137,7 +159,9 @@ export function ChangeSummary({
                 <Text style={{ color: colors.error }}>−{totals.deletions}</Text>
               )}
               {partialStats || (total != null && total > files.length) ? (
-                <Text style={{ color: colors.muted }}> · available stats</Text>
+                <Text style={{ color: colors.muted }}>
+                  <InterfaceText>{' · available stats'}</InterfaceText>
+                </Text>
               ) : null}
             </Text>
           )}
@@ -177,7 +201,11 @@ export function ChangeSummary({
                       {categoryStats.deletions !== null && (
                         <Text style={{ color: colors.error }}>−{categoryStats.deletions}</Text>
                       )}
-                      {categoryPartial && <Text style={{ color: colors.muted }}> · available</Text>}
+                      {categoryPartial && (
+                        <Text style={{ color: colors.muted }}>
+                          <InterfaceText>{' · available'}</InterfaceText>
+                        </Text>
+                      )}
                     </Text>
                   )}
               </>
@@ -195,7 +223,10 @@ export function ChangeSummary({
               <Pressable
                 key={category.kind}
                 accessibilityRole="button"
-                accessibilityLabel={`Filter ${category.label}: ${distribution.counts.get(category.kind)} files`}
+                accessibilityLabel={uiText('Filter {value0}: {value1} files', {
+                  value0: category.label,
+                  value1: distribution.counts.get(category.kind),
+                })}
                 accessibilityHint={statsHint(categoryStats, categoryPartial)}
                 accessibilityState={{ selected: value === category.kind }}
                 onPress={() => onChange(value === category.kind ? undefined : category.kind)}
@@ -226,7 +257,10 @@ export function ChangeSummary({
               <View
                 key={category.kind}
                 accessible
-                accessibilityLabel={`${category.label}, ${distribution.counts.get(category.kind)} files`}
+                accessibilityLabel={uiText('{value0}, {value1} files', {
+                  value0: category.label,
+                  value1: distribution.counts.get(category.kind),
+                })}
                 accessibilityHint={statsHint(categoryStats, categoryPartial)}
                 style={tileStyle}
               >
@@ -238,7 +272,9 @@ export function ChangeSummary({
       )}
       {total != null && total > files.length && (
         <Text style={[styles.muted, { fontSize: 11 }]}>
-          {files.length} of {total} files loaded
+          <InterfaceText values={{ value0: files.length, value1: total }}>
+            {'{value0} of {value1} files loaded'}
+          </InterfaceText>
         </Text>
       )}
       {expanded && (

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMobilePreferences } from '../preferences/app-preferences'
 import { startPolling } from '@dovo/client-runtime'
 import { useApplicationState } from './application-state'
@@ -12,6 +13,8 @@ import { Field } from '../../ui/controls/field'
 import { formatDateTime } from '../../ui/content/format-date'
 import { useTheme } from '../../ui/theme'
 export function ActivityLog() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { showToolDetails } = useMobilePreferences()
@@ -64,9 +67,11 @@ export function ActivityLog() {
         gap: 8,
       }}
     >
-      <Text style={styles.title}>Activity & messages</Text>
+      <Text style={styles.title}>
+        <InterfaceText>{'Activity & messages'}</InterfaceText>
+      </Text>
       <Field
-        label="Search activity"
+        label={uiText('Search activity')}
         value={query}
         onChangeText={(v) => {
           setQuery(v)
@@ -92,13 +97,13 @@ export function ActivityLog() {
       <View style={styles.row}>
         <Action
           secondary
-          label="Newer activity"
+          label={uiText('Newer activity')}
           disabled={!offset}
           onPress={() => setOffset((v) => Math.max(0, v - 100))}
         />
         <Action
           secondary
-          label="Older activity"
+          label={uiText('Older activity')}
           disabled={data.events.length < 100}
           onPress={() => setOffset((v) => v + 100)}
         />

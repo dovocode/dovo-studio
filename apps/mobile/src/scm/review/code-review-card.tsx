@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import type { Task, CodeFinding } from '@dovo/protocol'
 import { useTaskReview } from './use-task-review'
@@ -11,6 +12,8 @@ export function CodeReviewCard({
   task: Task
   onOpen: (finding?: CodeFinding) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { report, error } = useTaskReview(task.id, task.status, !task.example),
     { styles } = useTheme()
   const latest = report?.reviews[0]
@@ -20,13 +23,24 @@ export function CodeReviewCard({
   )
   return (
     <View style={[styles.card, { marginHorizontal: 16, marginBottom: 8, gap: 8 }]}>
-      <Text style={[styles.text, { fontWeight: '600' }]}>Independent review · {latest.status}</Text>
-      <Text style={styles.muted}>
-        {latest.reviewer} · {findings.length} open findings
-        {report?.current ? '' : ' · changes since review'}
-        {report?.approved ? ' · approved' : ''}
+      <Text style={[styles.text, { fontWeight: '600' }]}>
+        <InterfaceText values={{ value0: latest.status }}>
+          {'Independent review · {value0}'}
+        </InterfaceText>
       </Text>
-      <Action secondary label="Open review" onPress={() => onOpen()} />
+      <Text style={styles.muted}>
+        <InterfaceText
+          values={{
+            value0: latest.reviewer,
+            value1: findings.length,
+            value2: report?.current ? '' : uiText(' · changes since review'),
+            value3: report?.approved ? uiText(' · approved') : '',
+          }}
+        >
+          {'{value0} · {value1} open findings{value2}{value3}'}
+        </InterfaceText>
+      </Text>
+      <Action secondary label={uiText('Open review')} onPress={() => onOpen()} />
       {findings.slice(0, 3).map((finding) => (
         <Action
           key={finding.id}

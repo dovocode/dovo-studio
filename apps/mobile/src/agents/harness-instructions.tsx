@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Alert, View } from 'react-native'
 import { useHarnessInstructions } from '@dovo/studio-core/harness-instructions'
 import { providerDisplayName } from '@dovo/protocol'
@@ -13,6 +14,8 @@ import { Text } from '../ui/content/text'
 import { useState } from 'react'
 
 export function HarnessInstructions() {
+  const uiText = useInterfaceText()
+
   const { call, connected, snapshot, profile } = useRuntime()
   const { styles } = useSettingsTheme()
   const [opened, setOpened] = useState(false)
@@ -27,26 +30,33 @@ export function HarnessInstructions() {
   const draft = editor.draft
   return (
     <View style={[styles.card, { gap: 12 }]}>
-      <Text style={styles.text}>Harness instruction files</Text>
+      <Text style={styles.text}>
+        <InterfaceText>{'Harness instruction files'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Edit native harness files on this computer. Files can be shared by several profiles. Review
-        the diff before saving.
+        <InterfaceText>
+          {
+            'Edit native harness files on this computer. Files can be shared by several profiles. Review the diff before saving.'
+          }
+        </InterfaceText>
       </Text>
       {snapshot?.harnessInstructionsSupported !== true ? (
         <Text style={styles.muted}>
-          Update Dovo on this computer to edit harness instruction files.
+          <InterfaceText>
+            {'Update Dovo on this computer to edit harness instruction files.'}
+          </InterfaceText>
         </Text>
       ) : !opened ? (
         <Action
           secondary
-          label="Edit harness instruction files"
+          label={uiText('Edit harness instruction files')}
           disabled={!connected}
           onPress={() => setOpened(true)}
         />
       ) : (
         <>
           <Choice
-            label="Harness instruction file"
+            label={uiText('Harness instruction file')}
             value={file?.id ?? ''}
             disabled={editor.disabled || !editor.files.length}
             items={editor.files.map((item) => ({
@@ -62,17 +72,23 @@ export function HarnessInstructions() {
               </Text>
               {draft && draft.resolvedPath !== file.path && (
                 <Text selectable style={styles.muted}>
-                  Linked file: {draft.resolvedPath}
+                  <InterfaceText values={{ value0: draft.resolvedPath }}>
+                    {'Linked file: {value0}'}
+                  </InterfaceText>
                 </Text>
               )}
               <Text style={styles.muted}>{file.description}</Text>
               {draft && !draft.exists && (
-                <Text style={styles.muted}>This file does not exist yet. Saving creates it.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>
+                    {'This file does not exist yet. Saving creates it.'}
+                  </InterfaceText>
+                </Text>
               )}
             </>
           )}
           <Field
-            label="Harness instructions"
+            label={uiText('Harness instructions')}
             value={draft?.text ?? ''}
             editable={!editor.disabled && !!draft}
             multiline
@@ -86,43 +102,49 @@ export function HarnessInstructions() {
           )}
           <Action
             secondary
-            label="Review diff"
+            label={uiText('Review diff')}
             disabled={editor.disabled || !draft}
             onPress={() => void editor.review()}
           />
           <Action
-            label="Save instruction file"
+            label={uiText('Save instruction file')}
             disabled={editor.disabled || !draft?.reviewed}
             onPress={() => void editor.save()}
           />
           <Action
             secondary
-            label="Reload disk version"
+            label={uiText('Reload disk version')}
             disabled={editor.disabled || !file}
             onPress={() => void editor.reload()}
           />
           <Text style={styles.muted}>
-            Reload keeps your draft for a new diff review. Start a new harness session to use saved
-            changes.
+            <InterfaceText>
+              {
+                'Reload keeps your draft for a new diff review. Start a new harness session to use saved changes.'
+              }
+            </InterfaceText>
           </Text>
           <Action
+            destructive
             secondary
-            label="Discard draft"
+            label={uiText('Discard draft')}
             disabled={editor.disabled || !draft || draft.text === draft.original}
             onPress={() =>
               Alert.alert(
-                'Discard instruction draft?',
-                'Your edits to this file will be removed. The file on disk stays unchanged.',
+                uiText('Discard instruction draft?'),
+                uiText(
+                  'Your edits to this file will be removed. The file on disk stays unchanged.',
+                ),
                 [
-                  { text: 'Keep editing', style: 'cancel' },
-                  { text: 'Discard draft', style: 'destructive', onPress: editor.reset },
+                  { text: uiText('Keep editing'), style: 'cancel' },
+                  { text: uiText('Discard draft'), style: 'destructive', onPress: editor.reset },
                 ],
               )
             }
           />
           <Action
             secondary
-            label="Reload file list"
+            label={uiText('Reload file list')}
             disabled={editor.disabled}
             onPress={editor.retry}
           />
@@ -140,7 +162,9 @@ export function HarnessInstructions() {
       )}
       {!connected && (
         <Text style={styles.muted}>
-          Reconnect this computer to read or save files. Your drafts are kept.
+          <InterfaceText>
+            {'Reconnect this computer to read or save files. Your drafts are kept.'}
+          </InterfaceText>
         </Text>
       )}
       {editor.notices.map((notice) => (

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect } from 'effect'
 import {
@@ -238,7 +239,13 @@ export function MessageQueue({
     <IconButton
       icon={queuePaused ? 'play' : 'pause'}
       variant={queuePaused ? 'filled' : 'plain'}
-      label={head?.paused ? 'Resume first prompt' : task.queuePaused ? 'Run queue' : 'Pause queue'}
+      label={
+        head?.paused
+          ? uiText('Resume first prompt')
+          : task.queuePaused
+            ? uiText('Run queue')
+            : uiText('Pause queue')
+      }
       disabled={
         !connected ||
         busy ||
@@ -260,7 +267,10 @@ export function MessageQueue({
       {renderHeader?.(playback)}
       <View
         testID="Queued messages"
-        accessibilityLabel={`${queue.length} queued messages, ${queuePaused ? 'paused' : 'after this turn'}`}
+        accessibilityLabel={uiText('{value0} queued messages, {value1}', {
+          value0: queue.length,
+          value1: queuePaused ? 'paused' : 'after this turn',
+        })}
         style={
           embedded
             ? {
@@ -286,7 +296,11 @@ export function MessageQueue({
           accessibilityLiveRegion="polite"
           style={{ position: 'absolute', width: 1, height: 1, overflow: 'hidden' }}
         >
-          {`${queue.length} queued ${queue.length === 1 ? 'message' : 'messages'}${queuePaused ? ', paused' : ''}`}
+          {uiText('{value0} queued {value1}{value2}', {
+            value0: queue.length,
+            value1: queue.length === 1 ? 'message' : 'messages',
+            value2: queuePaused ? ', paused' : '',
+          })}
         </Text>
         {!renderHeader && (
           <View
@@ -300,13 +314,15 @@ export function MessageQueue({
               borderBottomColor: colors.border,
             }}
           >
-            <Text style={styles.muted}>{queuePaused ? 'Paused' : 'Runs after this turn'}</Text>
+            <Text style={styles.muted}>
+              {queuePaused ? uiText('Paused') : uiText('Runs after this turn')}
+            </Text>
             {playback}
           </View>
         )}
         {(busy || pendingQueueSend) && (
           <Text accessibilityLiveRegion="polite" style={styles.muted}>
-            Waiting for confirmation
+            <InterfaceText>{'Waiting for confirmation'}</InterfaceText>
           </Text>
         )}
         <GestureDetector gesture={drag.scrollGesture}>
@@ -324,7 +340,7 @@ export function MessageQueue({
             }}
             scrollEventThrottle={16}
             style={{ maxHeight: 180 }}
-            accessibilityLabel="Queued message list"
+            accessibilityLabel={uiText('Queued message list')}
             nestedScrollEnabled
             keyboardShouldPersistTaps="handled"
           >
@@ -353,7 +369,7 @@ export function MessageQueue({
                   collapsable={false}
                   testID={`Queued message row ${index + 1}`}
                   accessibilityLabel={
-                    highlightedCopy === message.id ? 'Duplicated queued message' : undefined
+                    highlightedCopy === message.id ? uiText('Duplicated queued message') : undefined
                   }
                   onLayout={({ nativeEvent: { layout } }) => {
                     drag.rows.current.set(message.id, layout)
@@ -408,9 +424,12 @@ export function MessageQueue({
                         accessibilityLabel={
                           pendingMessage
                             ? pendingMessage.state === 'failed'
-                              ? 'Could not send · Retry from composer'
-                              : 'Waiting for confirmation'
-                            : `Message ${index + 1}${state ? `, ${state}` : ''}`
+                              ? uiText('Could not send · Retry from composer')
+                              : uiText('Waiting for confirmation')
+                            : uiText('Message {value0}{value1}', {
+                                value0: index + 1,
+                                value1: state ? `, ${state}` : '',
+                              })
                         }
                         style={[
                           styles.muted,
@@ -475,12 +494,23 @@ export function MessageQueue({
                   >
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityHint={`Queued message ${index + 1} of ${queue.length}, ${message.steering ? 'being delivered' : 'not sent'}.${canDrag && !pendingMessage && !message.steering ? ' Touch and hold to reorder.' : ''}`}
+                      accessibilityHint={uiText(
+                        'Queued message {value0} of {value1}, {value2}.{value3}',
+                        {
+                          value0: index + 1,
+                          value1: queue.length,
+                          value2: message.steering ? 'being delivered' : 'not sent',
+                          value3:
+                            canDrag && !pendingMessage && !message.steering
+                              ? ' Touch and hold to reorder.'
+                              : '',
+                        },
+                      )}
                       accessibilityActions={
                         canDrag && !pendingMessage && !message.steering
                           ? [
-                              { name: 'increment', label: 'Move message later' },
-                              { name: 'decrement', label: 'Move message earlier' },
+                              { name: 'increment', label: uiText('Move message later') },
+                              { name: 'decrement', label: uiText('Move message earlier') },
                             ]
                           : undefined
                       }
@@ -492,7 +522,16 @@ export function MessageQueue({
                         if (actionName === 'increment' && source < confirmed.length - 1)
                           change('move', message.id, confirmed[source + 2]?.id ?? null)
                       }}
-                      accessibilityLabel={`View queued message ${index + 1}: ${preview}${state ? `; ${state}` : ''}${message.turnSettings ? '; custom turn settings' : ''}${message.plan ? '; plan mode' : ''}`}
+                      accessibilityLabel={uiText(
+                        'View queued message {value0}: {value1}{value2}{value3}{value4}',
+                        {
+                          value0: index + 1,
+                          value1: preview,
+                          value2: state ? `; ${state}` : '',
+                          value3: message.turnSettings ? '; custom turn settings' : '',
+                          value4: message.plan ? '; plan mode' : '',
+                        },
+                      )}
                       onPress={() => setSelectedId(message.id)}
                       style={{
                         flex: 1,
@@ -520,7 +559,7 @@ export function MessageQueue({
                           {preview.replace(/\s+/g, ' ')}
                           {!!message.text &&
                             !!message.attachments?.length &&
-                            ` · ${message.attachments.length} files`}
+                            uiText(' · {value0} files', { value0: message.attachments.length })}
                         </Text>
                       </View>
                       {message.plan && <Icon name="checklist" size={12} color={colors.accent} />}
@@ -529,18 +568,20 @@ export function MessageQueue({
                   </QueueDragTarget>
 
                   <QueueMenu
-                    label={`Actions for queued message ${index + 1}`}
+                    label={uiText('Actions for queued message {value0}', { value0: index + 1 })}
                     actions={[
                       {
-                        title: 'Move earlier',
-                        label: `Move queued message ${index + 1} earlier`,
+                        title: uiText('Move earlier'),
+                        label: uiText('Move queued message {value0} earlier', {
+                          value0: index + 1,
+                        }),
                         icon: 'moveUp',
                         disabled: !canDrag || reorderIndex <= 0,
                         onPress: () => change('move', message.id, confirmed[reorderIndex - 1]?.id),
                       },
                       {
-                        title: 'Move later',
-                        label: `Move queued message ${index + 1} later`,
+                        title: uiText('Move later'),
+                        label: uiText('Move queued message {value0} later', { value0: index + 1 }),
                         icon: 'moveDown',
                         disabled:
                           !canDrag || reorderIndex < 0 || reorderIndex >= confirmed.length - 1,
@@ -548,8 +589,11 @@ export function MessageQueue({
                           change('move', message.id, confirmed[reorderIndex + 2]?.id ?? null),
                       },
                       {
-                        title: paused ? 'Resume' : 'Pause',
-                        label: `${paused ? 'Resume' : 'Pause'} queued message ${index + 1}`,
+                        title: paused ? uiText('Resume') : uiText('Pause'),
+                        label: uiText('{value0} queued message {value1}', {
+                          value0: paused ? 'Resume' : 'Pause',
+                          value1: index + 1,
+                        }),
                         icon: paused ? 'play' : 'pause',
                         disabled:
                           !connected ||
@@ -563,14 +607,14 @@ export function MessageQueue({
                       },
                       {
                         title: uiText('Edit'),
-                        label: `Edit queued message ${index + 1}`,
+                        label: uiText('Edit queued message {value0}', { value0: index + 1 }),
                         icon: 'edit',
                         disabled: !canEdit(message),
                         onPress: () => actions.beginEdit(message),
                       },
                       {
-                        title: 'Duplicate',
-                        label: `Duplicate queued message ${index + 1}`,
+                        title: uiText('Duplicate'),
+                        label: uiText('Duplicate queued message {value0}', { value0: index + 1 }),
                         icon: 'copy',
                         disabled:
                           !connected ||
@@ -583,15 +627,15 @@ export function MessageQueue({
                         onPress: () => change('duplicate', message.id),
                       },
                       {
-                        title: 'Steer now',
-                        label: `Steer with message ${index + 1}`,
+                        title: uiText('Steer now'),
+                        label: uiText('Steer with message {value0}', { value0: index + 1 }),
                         icon: 'steer',
                         disabled: !canSteer(message),
                         onPress: () => change('steer', message.id),
                       },
                       {
                         title: uiText('Remove'),
-                        label: `Remove queued message ${index + 1}`,
+                        label: uiText('Remove queued message {value0}', { value0: index + 1 }),
                         icon: 'close',
                         disabled:
                           !connected ||
@@ -603,8 +647,8 @@ export function MessageQueue({
                         onPress: () => change('remove', message.id),
                       },
                       {
-                        title: 'Return to composer',
-                        label: `Return message ${index + 1} to composer`,
+                        title: uiText('Return to composer'),
+                        label: uiText('Return message {value0} to composer', { value0: index + 1 }),
                         icon: 'restore',
                         disabled: !canEdit(message),
                         onPress: () => {
@@ -615,7 +659,7 @@ export function MessageQueue({
                   />
                   <IconButton
                     icon="steer"
-                    label={`Steer with queued message ${index + 1}`}
+                    label={uiText('Steer with queued message {value0}', { value0: index + 1 })}
                     disabled={!canSteer(message)}
                     onPress={() => change('steer', message.id)}
                   />
@@ -625,7 +669,10 @@ export function MessageQueue({
           </ScrollView>
         </GestureDetector>
         {selected && (
-          <Sheet title={`Queued message ${selectedIndex + 1}`} onClose={() => setSelectedId(null)}>
+          <Sheet
+            title={uiText('Queued message {value0}', { value0: selectedIndex + 1 })}
+            onClose={() => setSelectedId(null)}
+          >
             {selectedSource && selectedSource.kind !== 'user' && (
               <MessageSource source={selectedSource} taskId={task.id} />
             )}
@@ -634,10 +681,10 @@ export function MessageQueue({
               (firstPaused >= 0 && firstPaused < selectedIndex)) && (
               <Text style={styles.muted}>
                 {task.queuePaused
-                  ? 'Queue paused'
+                  ? uiText('Queue paused')
                   : selected.paused
-                    ? 'Paused'
-                    : `Waiting behind paused message ${firstPaused + 1}`}
+                    ? uiText('Paused')
+                    : uiText('Waiting behind paused message {value0}', { value0: firstPaused + 1 })}
               </Text>
             )}
             {selectedWatch ? (
@@ -657,8 +704,11 @@ export function MessageQueue({
             )}
             {selected.turnSettings && (
               <Text style={styles.muted}>
-                This message uses its own turn settings. Edit it to use thread defaults before
-                steering.
+                <InterfaceText>
+                  {
+                    'This message uses its own turn settings. Edit it to use thread defaults before steering.'
+                  }
+                </InterfaceText>
               </Text>
             )}
           </Sheet>

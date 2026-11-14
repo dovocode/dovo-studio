@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -19,6 +20,8 @@ export function GithubConnectionStatus({
   repositoryId?: string
   automatic?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { read, connected } = useRuntime()
   const { styles } = useTheme()
   const [result, setResult] = useState<GithubConnectionCheck | null>(null)
@@ -54,7 +57,9 @@ export function GithubConnectionStatus({
         if (current)
           setError(
             cause instanceof RuntimeRequestError && [404, 405].includes(cause.status ?? 0)
-              ? 'Connection diagnostics are unavailable. Refresh accounts or update this computer’s runtime.'
+              ? uiText(
+                  'Connection diagnostics are unavailable. Refresh accounts or update this computer’s runtime.',
+                )
               : cause instanceof Error
                 ? cause.message
                 : String(cause),
@@ -82,7 +87,7 @@ export function GithubConnectionStatus({
           : '')
   return (
     <View
-      accessibilityLabel="GitHub connection status"
+      accessibilityLabel={uiText('GitHub connection status')}
       accessibilityState={{ busy }}
       style={{ gap: 8, padding: 16 }}
     >
@@ -93,7 +98,7 @@ export function GithubConnectionStatus({
         importantForAccessibility={status ? 'auto' : 'no-hide-descendants'}
         style={[error ? styles.error : styles.muted, { minHeight: 16, opacity: status ? 1 : 0 }]}
       >
-        {status || 'Checking GitHub connection…'}
+        {status || uiText('Checking GitHub connection…')}
       </Text>
       {result && (
         <Text
@@ -103,20 +108,29 @@ export function GithubConnectionStatus({
           }
           style={result.status === 'failed' ? styles.error : styles.muted}
         >
-          {`${result.login ? `@${result.login} · ${result.host}\n` : ''}${result.repository ? `${result.repository}\n` : ''}${result.message}\nChecked ${new Date(result.checkedAt).toLocaleString()}`}
+          {uiText('{value0}{value1}{value2}\nChecked {value3}', {
+            value0: result.login ? `@${result.login} · ${result.host}\n` : '',
+            value1: result.repository ? `${result.repository}\n` : '',
+            value2: result.message,
+            value3: new Date(result.checkedAt).toLocaleString(),
+          })}
         </Text>
       )}
       {lastVerifiedAt && (error || result?.status !== 'verified') && (
         <Text style={styles.muted}>
-          Last successful check {new Date(lastVerifiedAt).toLocaleString()}
+          <InterfaceText values={{ value0: new Date(lastVerifiedAt).toLocaleString() }}>
+            {'Last successful check {value0}'}
+          </InterfaceText>
         </Text>
       )}
       {!repositoryId && (
-        <Text style={styles.muted}>Account checked in the runtime default context.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Account checked in the runtime default context.'}</InterfaceText>
+        </Text>
       )}
       <Action
         variant="outline"
-        label={repositoryId ? 'Test project connection' : 'Test connection'}
+        label={repositoryId ? uiText('Test project connection') : uiText('Test connection')}
         disabled={!connected || busy}
         onPress={() => {
           if (pending.current) return
@@ -126,7 +140,11 @@ export function GithubConnectionStatus({
       />
       {automatic && (
         <Text style={styles.muted}>
-          Uses GitHub CLI on this computer. A project checkout can resolve a different account.
+          <InterfaceText>
+            {
+              'Uses GitHub CLI on this computer. A project checkout can resolve a different account.'
+            }
+          </InterfaceText>
         </Text>
       )}
     </View>

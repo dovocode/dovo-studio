@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskDefaultSettings } from '../../runtime/preferences/task-default-settings'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { View } from 'react-native'
@@ -9,6 +10,8 @@ import { ImportCodexSession } from './import-codex-session'
 import { ImportPiSession } from './import-pi-session'
 import { ProjectTransferSettings } from './project-transfer'
 export function RepositoryCheckouts({ repository }: { repository: Repository }) {
+  const uiText = useInterfaceText()
+
   const { snapshot } = useRuntime()
   const [taskId, setTaskId] = useApplicationState('')
   return (
@@ -19,13 +22,13 @@ export function RepositoryCheckouts({ repository }: { repository: Repository }) 
     >
       {!repository.kind && (
         <Choice
-          label={`${repository.name} working directory`}
+          label={uiText('{value0} working directory', { value0: repository.name })}
           value={taskId}
           onChange={setTaskId}
           items={[
             {
               id: '',
-              name: 'Project checkout',
+              name: uiText('Project checkout'),
             },
             ...(snapshot?.workspace.tasks ?? [])
               .filter((t) => t.repositoryId === repository.id && t.execution === 'worktree')

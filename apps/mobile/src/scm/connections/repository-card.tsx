@@ -60,7 +60,7 @@ export function RepositoryCard({
       <Text selectable style={styles.muted}>
         {checkout ||
           (taskId
-            ? 'Task worktree · refresh to inspect'
+            ? uiText('Task worktree · refresh to inspect')
             : `${repository.path} · ${repository.branch}`)}
       </Text>
       <BranchPicker
@@ -74,7 +74,7 @@ export function RepositoryCard({
       <View style={styles.row}>
         <Action
           secondary
-          label="Issues"
+          label={uiText('Issues')}
           onPress={() =>
             openWork({
               repositoryId: repository.id,
@@ -84,7 +84,7 @@ export function RepositoryCard({
         />
         <Action
           secondary
-          label="Refresh Git"
+          label={uiText('Refresh Git')}
           disabled={!connected || busy}
           onPress={() => act(refresh)}
         />
@@ -110,7 +110,7 @@ export function RepositoryCard({
         <>
           <Action
             secondary
-            label={`Stage ${files.length} files`}
+            label={uiText('Stage {value0} files', { value0: files.length })}
             disabled={!connected || busy || !files.length}
             onPress={() =>
               act(() =>
@@ -128,9 +128,9 @@ export function RepositoryCard({
               )
             }
           />
-          <Field label="Commit message" value={message} onChangeText={setMessage} />
+          <Field label={uiText('Commit message')} value={message} onChangeText={setMessage} />
           <Action
-            label="Commit staged changes"
+            label={uiText('Commit staged changes')}
             disabled={!connected || busy || !message.trim()}
             onPress={() =>
               act(() =>

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotCall } from '../../bots/bot-call'
 import { BotWorkSummary } from '../../bots/bot-work-summary'
@@ -186,6 +187,8 @@ function PendingConversation({
   runtimeHost: string
   onRetry: () => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const recovery = useAction()
   return (
@@ -193,13 +196,15 @@ function PendingConversation({
       {connected && !historyError && !recovery.error && !unauthorized && <ActivityIndicator />}
       <Text accessibilityRole={historyError ? 'alert' : undefined} style={styles.muted}>
         {unauthorized
-          ? 'This computer rejected this device’s pairing. Open Computers to pair it again.'
+          ? uiText('This computer rejected this device’s pairing. Open Computers to pair it again.')
           : historyError ||
             (connected
               ? recovery.error
-                ? 'Could not load the conversation.'
-                : 'Loading conversation…'
-              : `This conversation is not cached. Connect ${runtimeHost} to load it.`)}
+                ? uiText('Could not load the conversation.')
+                : uiText('Loading conversation…')
+              : uiText('This conversation is not cached. Connect {value0} to load it.', {
+                  value0: runtimeHost,
+                }))}
       </Text>
       {!!recovery.error && !unauthorized && (
         <Text accessibilityRole="alert" style={styles.muted}>
@@ -211,11 +216,11 @@ function PendingConversation({
           label={
             recovery.busy
               ? connected
-                ? 'Retrying…'
-                : 'Reconnecting…'
+                ? uiText('Retrying…')
+                : uiText('Reconnecting…')
               : connected
-                ? 'Retry'
-                : 'Reconnect'
+                ? uiText('Retry')
+                : uiText('Reconnect')
           }
           disabled={recovery.busy}
           onPress={() => recovery.act(onRetry)}
@@ -349,11 +354,17 @@ export function TaskDetail({
           titleMenu
           titleMenuDisabled
           buttons={[
-            { label: 'Chat', icon: 'chat', overflow: true, disabled: true, onPress: () => {} },
+            {
+              label: uiText('Chat'),
+              icon: 'chat',
+              overflow: true,
+              disabled: true,
+              onPress: () => {},
+            },
             ...(hasDiff
               ? [
                   {
-                    label: `Changes (${task.files.length})`,
+                    label: uiText('Changes ({value0})', { value0: task.files.length }),
                     icon: 'changes' as const,
                     overflow: car,
                     disabled: true,
@@ -362,7 +373,7 @@ export function TaskDetail({
                 ]
               : []),
             {
-              label: 'Thread info',
+              label: uiText('Thread info'),
               icon: 'info',
               overflow: car || !hasProject,
               disabled: true,
@@ -445,7 +456,7 @@ function TaskDetailContent({
   const worktreeActions: HeaderAction[] =
     !task.bot && task.execution === 'worktree' && (task.checkoutBranch || task.existingWorktreePath)
       ? (['reuse', 'fork'] as const).map((mode) => ({
-          label: mode === 'reuse' ? 'New thread in this worktree' : 'Fork worktree',
+          label: mode === 'reuse' ? uiText('New thread in this worktree') : uiText('Fork worktree'),
           icon: mode === 'reuse' ? 'chat' : 'changes',
           overflow: true,
           group: 'Advanced',
@@ -465,7 +476,7 @@ function TaskDetailContent({
         }))
       : []
   useEffect(() => {
-    if (worktreeThread.error) Alert.alert('Could not create thread', worktreeThread.error)
+    if (worktreeThread.error) Alert.alert(uiText('Could not create thread'), worktreeThread.error)
   }, [worktreeThread.error])
   const resume = useAction()
   const preparation = taskPreparation(task)
@@ -486,7 +497,7 @@ function TaskDetailContent({
   const branch = task.checkoutBranch
   const projectAction = useAction()
   useEffect(() => {
-    if (projectAction.error) Alert.alert('Could not run the action', projectAction.error)
+    if (projectAction.error) Alert.alert(uiText('Could not run the action'), projectAction.error)
   }, [projectAction.error])
   // Project actions run in the task's terminal on the computer; a worktree needs a first message.
   const actionsReady = !(task.execution === 'worktree' && canChangeTaskCheckout(task))
@@ -496,16 +507,16 @@ function TaskDetailContent({
           snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)?.actions ??
           []
         ).map((action): HeaderAction => ({
-          label: `Run ${action.name}`,
+          label: uiText('Run {value0}', { value0: action.name }),
           group: 'Project',
           icon: 'terminal',
           overflow: true,
           disabled: !connected || projectAction.busy,
           onPress: () =>
-            Alert.alert(`Run ${action.name}?`, action.command, [
-              { text: 'Cancel', style: 'cancel' },
+            Alert.alert(uiText('Run {value0}?', { value0: action.name }), action.command, [
+              { text: uiText('Cancel'), style: 'cancel' },
               {
-                text: 'Run',
+                text: uiText('Run'),
                 onPress: () =>
                   projectAction.act(() =>
                     callEffect(
@@ -538,7 +549,8 @@ function TaskDetailContent({
     task.historyRevision,
   ])
   useEffect(() => {
-    if (copyConversation.error) Alert.alert('Could not copy conversation', copyConversation.error)
+    if (copyConversation.error)
+      Alert.alert(uiText('Could not copy conversation'), copyConversation.error)
   }, [copyConversation.error])
   const copied = (value: string) =>
     void copyText(value).then(
@@ -546,12 +558,15 @@ function TaskDetailContent({
         if (result === 'copied') AccessibilityInfo.announceForAccessibility('Copied')
       },
       (error: unknown) =>
-        Alert.alert('Could not copy', error instanceof Error ? error.message : String(error)),
+        Alert.alert(
+          uiText('Could not copy'),
+          error instanceof Error ? error.message : String(error),
+        ),
     )
   const conversationActions: HeaderAction[] = task.messages.length
     ? [
         {
-          label: 'Review changes',
+          label: uiText('Review changes'),
           group: 'Navigate',
           icon: 'changes',
           overflow: true,
@@ -566,7 +581,7 @@ function TaskDetailContent({
             ),
         },
         {
-          label: 'Side chats',
+          label: uiText('Side chats'),
           group: 'Tools',
           icon: 'chat',
           overflow: true,
@@ -577,7 +592,7 @@ function TaskDetailContent({
           },
         },
         {
-          label: 'Copy conversation',
+          label: uiText('Copy conversation'),
           group: 'Thread',
           icon: 'copy',
           overflow: true,
@@ -615,13 +630,13 @@ function TaskDetailContent({
       ]
     : []
   useEffect(() => {
-    if (compaction.error) Alert.alert('Could not compact context', compaction.error)
+    if (compaction.error) Alert.alert(uiText('Could not compact context'), compaction.error)
   }, [compaction.error])
   const compactActions: HeaderAction[] =
     task.sessionId && !task.archived
       ? [
           {
-            label: 'Compact agent context',
+            label: uiText('Compact agent context'),
             group: 'Advanced',
             icon: 'collapse',
             overflow: true,
@@ -634,7 +649,7 @@ function TaskDetailContent({
       : []
   const handoff = useAction()
   useEffect(() => {
-    if (handoff.error) Alert.alert('Could not move the task', handoff.error)
+    if (handoff.error) Alert.alert(uiText('Could not move the task'), handoff.error)
   }, [handoff.error])
   const inWorktree = task.execution === 'worktree'
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
@@ -649,20 +664,28 @@ function TaskDetailContent({
       ? [
           {
             group: 'Advanced',
-            label: inWorktree ? 'Move to the project folder' : 'Move to its own worktree',
+            label: inWorktree
+              ? uiText('Move to the project folder')
+              : uiText('Move to its own worktree'),
             icon: 'changes',
             overflow: true,
             disabled: !connected || handoff.busy || task.status === 'running',
             onPress: () =>
               Alert.alert(
-                inWorktree ? 'Move to the project folder?' : 'Move to its own worktree?',
                 inWorktree
-                  ? 'The project folder switches to this task’s branch and its worktree is removed. The task’s uncommitted changes come along. The project folder must have no uncommitted changes.'
-                  : 'A new worktree and branch are created from the project folder’s current branch. All uncommitted changes in the project folder move with this task.',
+                  ? uiText('Move to the project folder?')
+                  : uiText('Move to its own worktree?'),
+                inWorktree
+                  ? uiText(
+                      'The project folder switches to this task’s branch and its worktree is removed. The task’s uncommitted changes come along. The project folder must have no uncommitted changes.',
+                    )
+                  : uiText(
+                      'A new worktree and branch are created from the project folder’s current branch. All uncommitted changes in the project folder move with this task.',
+                    ),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Move task',
+                    text: uiText('Move task'),
                     onPress: () =>
                       handoff.act(() =>
                         callEffect(
@@ -681,7 +704,7 @@ function TaskDetailContent({
     !task.bot && snapshot?.threadHandoffsSupported && task.status !== 'draft'
       ? [
           {
-            label: 'Continue elsewhere',
+            label: uiText('Continue elsewhere'),
             group: 'Thread',
             icon: 'laptop',
             overflow: true,
@@ -698,8 +721,8 @@ function TaskDetailContent({
       ? [
           {
             label: inWorktree
-              ? 'Copy worktree to another machine'
-              : 'Copy project checkout to another machine',
+              ? uiText('Copy worktree to another machine')
+              : uiText('Copy project checkout to another machine'),
             group: 'Project',
             icon: 'copy',
             overflow: true,
@@ -715,7 +738,7 @@ function TaskDetailContent({
     !task.bot && branch
       ? [
           {
-            label: 'Copy branch name',
+            label: uiText('Copy branch name'),
             group: 'Project',
             icon: 'copy',
             overflow: true,
@@ -846,7 +869,7 @@ function TaskDetailContent({
   const newSession = useAction()
   useEffect(() => {
     const error = lifecycle.error || newSession.error
-    if (error) Alert.alert('Could not update thread', error)
+    if (error) Alert.alert(uiText('Could not update thread'), error)
   }, [lifecycle.error, newSession.error])
   const viewed = useTaskViewed(task, !native && pane === 'chat' && !linkingProjects && !renaming)
   return (
@@ -913,20 +936,20 @@ function TaskDetailContent({
                 .map((tab): HeaderAction => ({
                   label:
                     tab === 'chat'
-                      ? 'Chat'
+                      ? uiText('Chat')
                       : tab === 'diff'
                         ? pane === 'diff'
-                          ? 'Back to chat'
-                          : `Changes (${task.files.length})`
+                          ? uiText('Back to chat')
+                          : uiText('Changes ({value0})', { value0: task.files.length })
                         : tab === 'files'
-                          ? 'Files'
+                          ? uiText('Files')
                           : tab === 'terminal'
-                            ? 'Terminal'
+                            ? uiText('Terminal')
                             : tab === 'agents'
-                              ? 'Agents'
+                              ? uiText('Agents')
                               : tab === 'devices'
-                                ? 'Devices'
-                                : 'Browser',
+                                ? uiText('Devices')
+                                : uiText('Browser'),
                   icon:
                     tab === 'diff'
                       ? pane === 'diff'
@@ -956,7 +979,7 @@ function TaskDetailContent({
                     ...(task.bot
                       ? [
                           {
-                            label: 'Call',
+                            label: uiText('Call'),
                             icon: 'phone' as const,
                             group: 'Tools',
                             onPress: () => setCalling(true),
@@ -981,7 +1004,7 @@ function TaskDetailContent({
                         ]
                       : []),
                     {
-                      label: 'Thread info',
+                      label: uiText('Thread info'),
                       group: 'Project',
                       icon: 'info',
                       overflow: car || !hasProject,
@@ -994,7 +1017,7 @@ function TaskDetailContent({
                     ...(pulls.length
                       ? [
                           {
-                            label: 'Linked PRs',
+                            label: uiText('Linked PRs'),
                             group: 'Project',
                             icon: 'pulls' as const,
                             overflow: true,
@@ -1008,7 +1031,7 @@ function TaskDetailContent({
                     ...(snapshot?.artifactsEnabled
                       ? [
                           {
-                            label: 'Artifacts',
+                            label: uiText('Artifacts'),
                             group: 'Tools',
                             icon: 'artifact' as const,
                             overflow: true,
@@ -1017,7 +1040,7 @@ function TaskDetailContent({
                         ]
                       : []),
                     {
-                      label: 'Linked projects',
+                      label: uiText('Linked projects'),
                       group: 'Project',
                       icon: 'projects',
                       overflow: true,
@@ -1027,7 +1050,7 @@ function TaskDetailContent({
                       },
                     },
                     {
-                      label: task.bot ? 'Rename Bot' : 'Rename thread',
+                      label: task.bot ? uiText('Rename Bot') : uiText('Rename thread'),
                       group: 'Thread',
                       icon: 'edit',
                       overflow: true,
@@ -1037,11 +1060,11 @@ function TaskDetailContent({
                     {
                       label: task.bot
                         ? task.pinned
-                          ? 'Unpin Bot'
-                          : 'Pin Bot'
+                          ? uiText('Unpin Bot')
+                          : uiText('Pin Bot')
                         : task.pinned
-                          ? 'Unpin thread'
-                          : 'Pin thread',
+                          ? uiText('Unpin thread')
+                          : uiText('Pin thread'),
                       group: 'Thread',
                       icon: task.pinned ? 'unpin' : 'pin',
                       overflow: true,
@@ -1049,7 +1072,7 @@ function TaskDetailContent({
                       onPress: lifecycle.togglePinned,
                     },
                     {
-                      label: 'Regenerate title',
+                      label: uiText('Regenerate title'),
                       group: 'Advanced',
                       icon: 'refresh',
                       overflow: true,
@@ -1079,7 +1102,7 @@ function TaskDetailContent({
                         ),
                     },
                     {
-                      label: task.archived ? 'Reopen thread' : 'Settle thread',
+                      label: task.archived ? uiText('Reopen thread') : uiText('Settle thread'),
                       group: 'Thread',
                       icon: 'check',
                       overflow: true,
@@ -1087,7 +1110,7 @@ function TaskDetailContent({
                       onPress: lifecycle.toggleSettled,
                     },
                     {
-                      label: lifecycle.unread ? 'Mark as read' : 'Mark as unread',
+                      label: lifecycle.unread ? uiText('Mark as read') : uiText('Mark as unread'),
                       group: 'Thread',
                       icon: lifecycle.unread ? 'read' : 'unread',
                       overflow: true,
@@ -1095,7 +1118,9 @@ function TaskDetailContent({
                       onPress: lifecycle.toggleRead,
                     },
                     {
-                      label: task.snoozedUntil ? 'Unsnooze thread' : 'Snooze thread',
+                      label: task.snoozedUntil
+                        ? uiText('Unsnooze thread')
+                        : uiText('Snooze thread'),
                       group: 'Thread',
                       icon: 'snooze',
                       overflow: true,
@@ -1108,7 +1133,7 @@ function TaskDetailContent({
                             ),
                     },
                     {
-                      label: 'Auto-settle & auto-archive',
+                      label: uiText('Auto-settle & auto-archive'),
                       group: 'Advanced',
                       icon: 'archive',
                       overflow: true,
@@ -1116,7 +1141,7 @@ function TaskDetailContent({
                       onPress: () => setThreadBehavior(true),
                     },
                     {
-                      label: task.archivedAt ? 'Restore thread' : 'Archive thread',
+                      label: task.archivedAt ? uiText('Restore thread') : uiText('Archive thread'),
                       group: 'Thread',
                       icon: 'archive',
                       overflow: true,
@@ -1124,7 +1149,7 @@ function TaskDetailContent({
                       onPress: lifecycle.toggleArchived,
                     },
                     {
-                      label: 'Delete thread…',
+                      label: uiText('Delete thread…'),
                       group: 'Delete',
                       destructive: true,
                       icon: 'trash',
@@ -1135,7 +1160,7 @@ function TaskDetailContent({
                     ...(task.sessionId
                       ? [
                           {
-                            label: 'Start fresh agent session',
+                            label: uiText('Start fresh agent session'),
                             group: 'Advanced',
                             icon: 'newChat' as const,
                             overflow: true,
@@ -1148,14 +1173,14 @@ function TaskDetailContent({
                         ]
                       : []),
                     {
-                      label: 'Edit project instructions',
+                      label: uiText('Edit project instructions'),
                       group: 'Advanced',
                       icon: 'settings',
                       overflow: true,
                       onPress: () => setEditingInstructions(true),
                     },
                     {
-                      label: 'Project approval rules',
+                      label: uiText('Project approval rules'),
                       group: 'Advanced',
                       icon: 'settings',
                       overflow: true,
@@ -1208,7 +1233,7 @@ function TaskDetailContent({
         >
           <Text style={{ flex: 1 }}>
             {task.bot.role}
-            {' · Paused. New messages stay queued until you resume.'}
+            {uiText(' · Paused. New messages stay queued until you resume.')}
           </Text>
         </View>
       )}
@@ -1307,7 +1332,7 @@ function TaskDetailContent({
               },
             ]}
           >
-            Couldn’t save read status.
+            <InterfaceText>{'Couldn’t save read status.'}</InterfaceText>
           </Text>
           <Action secondary label={uiText('Retry')} disabled={viewed.busy} onPress={viewed.retry} />
         </View>
@@ -1397,18 +1422,28 @@ function TaskDetailContent({
                       }}
                     >
                       <ActivityIndicator size="small" color={colors.muted} />
-                      <Text style={[styles.muted, { flex: 1 }]}>Starting agent…</Text>
+                      <Text style={[styles.muted, { flex: 1 }]}>
+                        <InterfaceText>{'Starting agent…'}</InterfaceText>
+                      </Text>
                     </View>
                   ) : null}
                   {task.quotaContinuation && (
                     <View style={{ padding: 12, gap: 8 }}>
                       <Text style={styles.muted}>
-                        {task.quotaContinuation.resume ? 'Scheduled to resume' : 'Snoozed'} at{' '}
-                        {new Date(task.quotaContinuation.at).toLocaleString()}
+                        <InterfaceText
+                          values={{
+                            value0: task.quotaContinuation.resume
+                              ? uiText('Scheduled to resume')
+                              : uiText('Snoozed'),
+                            value1: new Date(task.quotaContinuation.at).toLocaleString(),
+                          }}
+                        >
+                          {'{value0} at {value1}'}
+                        </InterfaceText>
                       </Text>
                       <Action
                         secondary
-                        label="Cancel quota continuation"
+                        label={uiText('Cancel quota continuation')}
                         disabled={!connected || quota.busy}
                         onPress={() =>
                           quota.act(() =>
@@ -1426,8 +1461,16 @@ function TaskDetailContent({
                       accessibilityRole="alert"
                       style={[styles.muted, { color: colors.warning, paddingHorizontal: 16 }]}
                     >
-                      Task budget reached · {budget.tokens ?? 'unknown'} tokens ·{' '}
-                      {Math.round(budget.minutes)} agent minutes. The agent can continue.
+                      <InterfaceText
+                        values={{
+                          value0: budget.tokens ?? uiText('unknown'),
+                          value1: Math.round(budget.minutes),
+                        }}
+                      >
+                        {
+                          'Task budget reached · {value0} tokens · {value1} agent minutes. The agent can continue.'
+                        }
+                      </InterfaceText>
                     </Text>
                   )}
                   {task.restartRecovery &&
@@ -1437,7 +1480,9 @@ function TaskDetailContent({
                       <View style={{ paddingHorizontal: 16, gap: 8 }}>
                         <Action
                           label={
-                            task.runPhase === 'finalizing' ? 'Retry saving changes' : 'Resume task'
+                            task.runPhase === 'finalizing'
+                              ? uiText('Retry saving changes')
+                              : uiText('Resume task')
                           }
                           disabled={!connected || resume.busy}
                           onPress={() =>
@@ -1456,10 +1501,17 @@ function TaskDetailContent({
                   {task.status === 'cancelled' && !task.archived && !task.restartRecovery && (
                     <View style={{ paddingHorizontal: 16, gap: 8 }}>
                       <Text style={styles.muted}>
-                        Stopped ·{' '}
-                        {task.queue?.length
-                          ? `${task.queue.length} queued messages ready`
-                          : 'continue with a follow-up'}
+                        <InterfaceText
+                          values={{
+                            value0: task.queue?.length
+                              ? uiText('{value0} queued messages ready', {
+                                  value0: task.queue.length,
+                                })
+                              : uiText('continue with a follow-up'),
+                          }}
+                        >
+                          {'Stopped · {value0}'}
+                        </InterfaceText>
                       </Text>
                       <Action
                         label={uiText('Continue')}
@@ -1659,7 +1711,7 @@ function TaskDetailContent({
         />
       )}
       {linkingProjects && !task.bot && (
-        <Sheet title="Linked projects" onClose={() => setLinkingProjects(false)}>
+        <Sheet title={uiText('Linked projects')} onClose={() => setLinkingProjects(false)}>
           <LinkedProjects key={task.id} task={task} />
         </Sheet>
       )}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
 import { composerReferences, composerReferenceIcon, type ComposerReference } from '@dovo/protocol'
 import { Keyboard, useWindowDimensions, type TextInputProps, type ViewProps } from 'react-native'
@@ -113,6 +114,8 @@ export function NativeComposerInput({
   inputRef,
   ...props
 }: NativeComposerInputProps) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const [eventCount, setEventCount] = useState(0)
   const observed = useRef(0)
@@ -155,7 +158,7 @@ export function NativeComposerInput({
     <Input
       {...props}
       ref={view}
-      accessibilityLabel="Message"
+      accessibilityLabel={uiText('Message')}
       testID="Message"
       content={{ text: value, revision, eventCount, references }}
       focusKey={focusKey ?? ''}

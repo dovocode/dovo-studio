@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   type ComponentRef,
   type Ref,
@@ -43,6 +44,8 @@ export const ComposerField = memo(function ComposerField({
   resources?: ComposerReferenceResources
   inputRef?: Ref<ComposerInputHandle>
 }) {
+  const uiText = useInterfaceText()
+
   const { styles, reduceMotion } = useTheme()
 
   const input = useRef<ComponentRef<typeof TextInput>>(null)
@@ -117,7 +120,7 @@ export const ComposerField = memo(function ComposerField({
           inputRef={input}
           defaultValue={Platform.OS === 'web' ? value : initial.current}
           onChangeText={type}
-          label="Message"
+          label={uiText('Message')}
           hideLabel
           // iOS can still revise text/selection through spellcheck and smart spacing
           // with autocorrect off. Keep this command composer free of keyboard rewrites.

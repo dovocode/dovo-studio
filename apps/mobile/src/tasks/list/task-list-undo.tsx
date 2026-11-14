@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   createContext,
   useCallback,
@@ -27,6 +28,8 @@ type UndoContext = {
 const Context = createContext<UndoContext | null>(null)
 
 export function TaskListUndoProvider({ children }: { children: ReactNode }) {
+  const uiText = useInterfaceText()
+
   const { readRuntime, refreshRuntime } = useRuntime()
   const { colors } = useTheme()
   const [notice, setNotice] = useState<Notice | null>(null)
@@ -59,13 +62,13 @@ export function TaskListUndoProvider({ children }: { children: ReactNode }) {
           setNotice({ token: result.undo, profile, action, title: task.title })
           void refreshRuntime(profile).catch((error: unknown) => {
             Alert.alert(
-              'Thread updated, but could not refresh',
+              uiText('Thread updated, but could not refresh'),
               error instanceof Error ? error.message : String(error),
             )
           })
         } catch (error) {
           Alert.alert(
-            'Could not confirm thread update',
+            uiText('Could not confirm thread update'),
             error instanceof Error ? error.message : String(error),
           )
         } finally {
@@ -74,7 +77,7 @@ export function TaskListUndoProvider({ children }: { children: ReactNode }) {
         }
       })()
     },
-    [readRuntime, refreshRuntime],
+    [readRuntime, refreshRuntime, uiText],
   )
 
   const undo = useCallback(() => {
@@ -97,18 +100,21 @@ export function TaskListUndoProvider({ children }: { children: ReactNode }) {
         if (!result.ok) throw new Error('The thread was not restored.')
         void refreshRuntime(selected.profile).catch((error: unknown) => {
           Alert.alert(
-            'Undo applied, but could not refresh',
+            uiText('Undo applied, but could not refresh'),
             error instanceof Error ? error.message : String(error),
           )
         })
       } catch (error) {
-        Alert.alert('Could not undo', error instanceof Error ? error.message : String(error))
+        Alert.alert(
+          uiText('Could not undo'),
+          error instanceof Error ? error.message : String(error),
+        )
       } finally {
         inFlight.current = false
         setBusy(false)
       }
     })()
-  }, [notice, readRuntime, refreshRuntime])
+  }, [notice, readRuntime, refreshRuntime, uiText])
   const context = useMemo(() => ({ busy, run }), [busy, run])
 
   return (
@@ -134,22 +140,24 @@ export function TaskListUndoProvider({ children }: { children: ReactNode }) {
           }}
         >
           <Text style={{ color: colors.text, flex: 1 }}>
-            {notice.title} {notice.action === 'settle' ? 'settled' : 'snoozed'}
+            {notice.title} {notice.action === 'settle' ? uiText('settled') : uiText('snoozed')}
           </Text>
           <Pressable
             testID="Task list undo"
             accessibilityRole="button"
-            accessibilityLabel={`Undo ${notice.action}`}
+            accessibilityLabel={uiText('Undo {value0}', { value0: notice.action })}
             accessibilityState={{ disabled: busy }}
             disabled={busy}
             onPress={undo}
             style={{ minWidth: 48, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >
-            <Text style={{ color: colors.accent, fontWeight: '700' }}>Undo</Text>
+            <Text style={{ color: colors.accent, fontWeight: '700' }}>
+              <InterfaceText>{'Undo'}</InterfaceText>
+            </Text>
           </Pressable>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Dismiss undo notification"
+            accessibilityLabel={uiText('Dismiss undo notification')}
             onPress={() => setNotice(null)}
             style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
           >

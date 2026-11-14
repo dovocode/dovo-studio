@@ -184,7 +184,7 @@ createRoot(document.getElementById('app')).render(<App/>);
     },
     {
       path: '@dovo/protocol',
-      contents: 'export const runtimeComputerName=({profile})=>profile.id;',
+      contents: `export {resolveInterfaceLanguage} from '${root}packages/protocol/src/interface-language.ts';export const runtimeComputerName=({profile})=>profile.id;`,
     },
     {
       path: '../runtime/state/application-state',

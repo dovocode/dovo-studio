@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { Alert, View } from 'react-native'
 import { router } from 'expo-router'
@@ -27,6 +28,8 @@ export function WorkspaceTerminalScreen({
   runtimeId: string
   terminalId: string
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const { focused } = useNavigation()
   const { styles } = useTheme()
@@ -59,12 +62,14 @@ export function WorkspaceTerminalScreen({
   const back = () => (router.canGoBack() ? router.back() : router.replace('/terminal'))
   const close = () =>
     Alert.alert(
-      'Close terminal?',
-      'This ends its running processes and removes its saved session. Settle it to keep it for later.',
+      uiText('Close terminal?'),
+      uiText(
+        'This ends its running processes and removes its saved session. Settle it to keep it for later.',
+      ),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: uiText('Cancel'), style: 'cancel' },
         {
-          text: 'Close terminal',
+          text: uiText('Close terminal'),
           style: 'destructive',
           onPress: () => {
             if (!owner?.connected || closing) return
@@ -75,7 +80,9 @@ export function WorkspaceTerminalScreen({
                 back()
                 return runtime.refreshRuntime(owner.profile)
               })
-              .catch((cause: unknown) => Alert.alert('Could not close terminal', String(cause)))
+              .catch((cause: unknown) =>
+                Alert.alert(uiText('Could not close terminal'), String(cause)),
+              )
               .finally(() => setClosing(false))
           },
         },
@@ -84,21 +91,25 @@ export function WorkspaceTerminalScreen({
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={terminal?.title ?? 'Terminal'}
+        title={terminal?.title ?? uiText('Terminal')}
         subtitle={
           owner
             ? `${runtimeComputerName(owner)}${status ? ` · ${status.label}` : ''}`
             : runtime.ready
-              ? 'Unpaired computer'
-              : 'Loading computer…'
+              ? uiText('Unpaired computer')
+              : uiText('Loading computer…')
         }
         onBack={back}
         buttons={
           terminal
             ? [
-                { label: 'Terminal actions', icon: 'filters', onPress: () => setMenu(true) },
                 {
-                  label: 'Rename',
+                  label: uiText('Terminal actions'),
+                  icon: 'filters',
+                  onPress: () => setMenu(true),
+                },
+                {
+                  label: uiText('Rename'),
                   icon: 'edit',
                   overflow: true,
                   disabled: actions.disabled,
@@ -107,27 +118,27 @@ export function WorkspaceTerminalScreen({
                   },
                 },
                 {
-                  label: 'Automatic title',
+                  label: uiText('Automatic title'),
                   icon: 'magic',
                   overflow: true,
                   disabled: actions.disabled || !terminal.customTitle,
                   onPress: () => void actions.update({ title: null }),
                 },
                 {
-                  label: 'Reconnect terminal',
+                  label: uiText('Reconnect terminal'),
                   icon: 'refresh',
                   overflow: true,
                   disabled: !owner?.connected,
                   onPress: () => setGeneration((value) => value + 1),
                 },
                 {
-                  label: 'New terminal',
+                  label: uiText('New terminal'),
                   icon: 'add',
                   overflow: true,
                   onPress: () => router.push('/terminal/new'),
                 },
                 {
-                  label: 'Close terminal',
+                  label: uiText('Close terminal'),
                   icon: 'close',
                   overflow: true,
                   destructive: true,
@@ -141,19 +152,19 @@ export function WorkspaceTerminalScreen({
       {!terminal ? (
         <EmptyState
           icon="terminal"
-          title={loading ? 'Loading terminal…' : 'Terminal unavailable'}
+          title={loading ? uiText('Loading terminal…') : uiText('Terminal unavailable')}
           description={
             loading
-              ? 'Waiting for this computer’s terminal sessions.'
+              ? uiText('Waiting for this computer’s terminal sessions.')
               : !owner
-                ? 'This computer is no longer paired.'
+                ? uiText('This computer is no longer paired.')
                 : owner.unauthorized
-                  ? 'This computer rejected its saved pairing. Pair it again in Computers.'
+                  ? uiText('This computer rejected its saved pairing. Pair it again in Computers.')
                   : !owner.connected
-                    ? 'Reconnect to this computer to resume its terminals.'
-                    : 'This standalone terminal may have been closed.'
+                    ? uiText('Reconnect to this computer to resume its terminals.')
+                    : uiText('This standalone terminal may have been closed.')
           }
-          action={<Action secondary label="Back to workspace" onPress={back} />}
+          action={<Action secondary label={uiText('Back to workspace')} onPress={back} />}
         />
       ) : (
         <>
@@ -162,15 +173,15 @@ export function WorkspaceTerminalScreen({
           (terminal.snoozedUntil && Date.parse(terminal.snoozedUntil) > Date.now()) ? (
             <EmptyState
               icon="terminal"
-              title={terminal.dormant ? 'Session sleeping' : 'Session put aside'}
+              title={terminal.dormant ? uiText('Session sleeping') : uiText('Session put aside')}
               description={
                 terminal.dormant
-                  ? 'Restore to resume this session on its computer.'
-                  : 'Active commands keep running. Restore to reconnect.'
+                  ? uiText('Restore to resume this session on its computer.')
+                  : uiText('Active commands keep running. Restore to reconnect.')
               }
               action={
                 <Action
-                  label="Restore terminal"
+                  label={uiText('Restore terminal')}
                   disabled={actions.disabled}
                   onPress={() => void actions.update({ settled: false, snoozedUntil: null })}
                 />
@@ -210,6 +221,8 @@ function RetainedTerminalSession({
   focused: boolean
   generation: number
 }) {
+  const uiText = useInterfaceText()
+
   const { connected } = useRuntime()
   const { styles } = useTheme()
   const [started, setStarted] = useState(false)
@@ -220,15 +233,15 @@ function RetainedTerminalSession({
     return (
       <EmptyState
         icon="device"
-        title="Computer offline"
-        description="Reconnect to load this session."
+        title={uiText('Computer offline')}
+        description={uiText('Reconnect to load this session.')}
       />
     )
   return (
     <>
       {!connected && (
         <Text style={[styles.muted, { padding: 10 }]}>
-          Computer offline. Showing retained terminal output.
+          <InterfaceText>{'Computer offline. Showing retained terminal output.'}</InterfaceText>
         </Text>
       )}
       <TerminalSession key={`${id}:${generation}`} id={id} visible={focused} />

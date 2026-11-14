@@ -293,7 +293,7 @@ function TaskListRowView({
   const subthreadControl = childCount > 0 && (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel={`Subthreads for ${task.title}`}
+      accessibilityLabel={uiText('Subthreads for {value0}', { value0: task.title })}
       accessibilityHint={childrenDetail}
       accessibilityState={{
         expanded: open,
@@ -344,7 +344,9 @@ function TaskListRowView({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 3 }}>
           <PullRequestIcon state={pullStatus?.state} draft={pullStatus?.draft} size={12} />
           <Text numberOfLines={1} style={{ color: pullColor, ...contextText }}>
-            {pulls.length > 1 ? `${pulls.length} PRs` : `#${pulls[0].number}`}
+            {pulls.length > 1
+              ? uiText('{value0} PRs', { value0: pulls.length })
+              : `#${pulls[0].number}`}
           </Text>
         </View>
       )}
@@ -362,7 +364,10 @@ function TaskListRowView({
     <SquareTerminal
       size={12}
       color={colors.muted}
-      accessibilityLabel={`${owner.activeTerminals} active terminal${owner.activeTerminals === 1 ? '' : 's'}`}
+      accessibilityLabel={uiText('{value0} active terminal{value1}', {
+        value0: owner.activeTerminals,
+        value1: owner.activeTerminals === 1 ? '' : 's',
+      })}
     />
   )
   const executionIcons = (
@@ -488,7 +493,7 @@ function TaskListRowView({
         {settled && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`Task details for ${task.title}`}
+            accessibilityLabel={uiText('Task details for {value0}', { value0: task.title })}
             disabled={disabled}
             onPress={onDetails}
             style={{
@@ -504,21 +509,34 @@ function TaskListRowView({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.bot ? 'Bot, ' : ''}${task.pinned ? 'Pinned, ' : ''}${projectName}, ${task.title}, ${status}, ${task.bot ? 'Bot' : general ? 'Conversation' : `${worktree ? 'Worktree' : 'Local checkout'}, ${branch}`}, ${executionDevice}${row.online ? '' : ', Offline'}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
+          accessibilityLabel={`${task.bot ? uiText('Bot, ') : ''}${task.pinned ? uiText('Pinned, ') : ''}${projectName}, ${task.title}, ${status}, ${task.bot ? uiText('Bot') : general ? uiText('Conversation') : `${worktree ? uiText('Worktree') : uiText('Local checkout')}, ${branch}`}, ${executionDevice}${row.online ? '' : uiText(', Offline')}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
           accessibilityHint={
             car
-              ? 'Open conversation.'
+              ? uiText('Open conversation.')
               : selectionActive
-                ? 'Tap to toggle selection.'
+                ? uiText('Tap to toggle selection.')
                 : settled
                   ? task.bot
-                    ? 'Open Bot conversation. Touch and hold to select. Tap the Bot icon for actions.'
-                    : 'Open conversation. Touch and hold to select. Tap the project icon for task details.'
-                  : 'Open conversation. Touch and hold to select. Task details are in the actions menu.'
+                    ? uiText(
+                        'Open Bot conversation. Touch and hold to select. Tap the Bot icon for actions.',
+                      )
+                    : uiText(
+                        'Open conversation. Touch and hold to select. Tap the project icon for task details.',
+                      )
+                  : uiText(
+                      'Open conversation. Touch and hold to select. Task details are in the actions menu.',
+                    )
           }
           accessibilityState={{ disabled, selected: selectionActive ? selected : current }}
           accessibilityActions={
-            car ? [] : [{ name: 'select', label: selected ? 'Deselect task' : 'Select task' }]
+            car
+              ? []
+              : [
+                  {
+                    name: 'select',
+                    label: selected ? uiText('Deselect task') : uiText('Select task'),
+                  },
+                ]
           }
           onAccessibilityAction={({ nativeEvent }) => {
             if (!disabled && !car && nativeEvent.actionName === 'select') onSelect()
@@ -701,7 +719,7 @@ function TaskListRowView({
     <TaskSwipeActions
       enabled={!disabled && !selectionActive && actions.enabled && !actions.busy}
       primary={{
-        label: task.archived ? 'Unsettle' : 'Settle',
+        label: task.archived ? uiText('Unsettle') : uiText('Settle'),
         icon: task.archived ? 'reopen' : 'check',
         disabled: task.status === 'running',
         run: actions.toggleSettled,
@@ -710,7 +728,7 @@ function TaskListRowView({
         task.archived
           ? undefined
           : {
-              label: isSnoozed(task, now) ? 'Unsnooze' : 'Snooze',
+              label: isSnoozed(task, now) ? uiText('Unsnooze') : uiText('Snooze'),
               icon: 'snooze',
               run: () =>
                 isSnoozed(task, Date.now())

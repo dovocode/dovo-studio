@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Sheet } from '../ui/layout/sheet'
 import { Choice } from '../ui/controls/choice'
@@ -156,26 +157,29 @@ export function TerminalPane({
         <Sheet
           title={
             closing.ids.length === 1
-              ? 'Close terminal?'
-              : `Close ${closing.ids.length} terminal panes?`
+              ? uiText('Close terminal?')
+              : uiText('Close {value0} terminal panes?', { value0: closing.ids.length })
           }
           presentation="dialog"
           onClose={cancelClose}
         >
           <Text>
-            This terminates the shell and any running processes in {closing.labels.join(', ')} and
-            clears their terminal history. Hide the terminal instead to keep them running.
+            <InterfaceText values={{ value0: closing.labels.join(', ') }}>
+              {
+                'This terminates the shell and any running processes in {value0} and clears their terminal history. Hide the terminal instead to keep them running.'
+              }
+            </InterfaceText>
           </Text>
           <Action secondary label={uiText('Cancel')} onPress={cancelClose} />
-          <Action label="Close terminal" onPress={confirmClose} />
+          <Action label={uiText('Close terminal')} onPress={confirmClose} />
         </Sheet>
       )}
       {!!task.linkedCheckouts?.length && (
         <Choice
-          label="New terminal checkout"
+          label={uiText('New terminal checkout')}
           value={checkoutId}
           items={[
-            { id: '', name: 'Primary checkout' },
+            { id: '', name: uiText('Primary checkout') },
             ...task.linkedCheckouts.map((link) => ({
               id: link.id,
               name: `${snapshot?.workspace.repositories.find((repo) => repo.id === link.repositoryId)?.name ?? link.repositoryId} · ${link.branch ?? link.execution}`,
@@ -195,7 +199,7 @@ export function TerminalPane({
       >
         <View style={styles.row}>
           <Action
-            label="New terminal"
+            label={uiText('New terminal')}
             disabled={!connected || busy || !shellReady}
             onPress={() => openShell()}
           />
@@ -203,7 +207,7 @@ export function TerminalPane({
             <>
               <Action
                 secondary
-                label="Reconnect terminal"
+                label={uiText('Reconnect terminal')}
                 disabled={!connected}
                 onPress={() => setGeneration((value) => value + 1)}
               />
@@ -225,20 +229,23 @@ export function TerminalPane({
                     secondary
                     label={
                       tab.sessions.length > 1
-                        ? `${terminal.title} · ${tab.sessions.length} panes`
-                        : `${terminal.title}${terminal.exited ? ' · exited' : ''}`
+                        ? uiText('{value0} · {value1} panes', {
+                            value0: terminal.title,
+                            value1: tab.sessions.length,
+                          })
+                        : `${terminal.title}${terminal.exited ? uiText(' · exited') : ''}`
                     }
                     onPress={() => onSelect(terminal.id)}
                   />
                   <IconButton
                     icon="edit"
-                    label={`Rename ${terminal.title}`}
+                    label={uiText('Rename {value0}', { value0: terminal.title })}
                     disabled={!connected || busy}
                     onPress={() => setRenaming(terminal.id)}
                   />
                   <IconButton
                     icon="close"
-                    label={`Close terminal tab ${index + 1}`}
+                    label={uiText('Close terminal tab {value0}', { value0: index + 1 })}
                     disabled={!connected || busy}
                     onPress={() => askClose(tab.sessions)}
                   />
@@ -251,13 +258,13 @@ export function TerminalPane({
           <View style={styles.row}>
             <Action
               secondary
-              label="Split left/right"
+              label={uiText('Split left/right')}
               disabled={!connected || busy || !shellReady}
               onPress={() => openShell('columns')}
             />
             <Action
               secondary
-              label="Split top/bottom"
+              label={uiText('Split top/bottom')}
               disabled={!connected || busy || !shellReady}
               onPress={() => openShell('rows')}
             />
@@ -296,13 +303,13 @@ export function TerminalPane({
                     </Text>
                     <IconButton
                       icon="edit"
-                      label={`Rename ${terminal.title} pane`}
+                      label={uiText('Rename {value0} pane', { value0: terminal.title })}
                       disabled={!connected || busy}
                       onPress={() => setRenaming(terminal.id)}
                     />
                     <IconButton
                       icon="close"
-                      label={`Close ${terminal.title}`}
+                      label={uiText('Close {value0}', { value0: terminal.title })}
                       disabled={!connected || busy}
                       onPress={() => askClose([terminal.id])}
                     />
@@ -319,8 +326,8 @@ export function TerminalPane({
       ) : (
         <Text style={[styles.muted, styles.content]}>
           {shellReady
-            ? 'No terminal open. Tap New terminal to open a shell in this checkout.'
-            : 'Send the first message to create this worktree before opening a shell.'}
+            ? uiText('No terminal open. Tap New terminal to open a shell in this checkout.')
+            : uiText('Send the first message to create this worktree before opening a shell.')}
         </Text>
       )}
     </View>

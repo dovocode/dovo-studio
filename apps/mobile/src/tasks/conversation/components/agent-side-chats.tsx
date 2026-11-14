@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -36,6 +37,8 @@ export function AgentSideChats({
   onClose: () => void
   onReadOnly: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile, connected, call, legacyDraftRuntimeId } = useRuntime()
   const current = useOperationGuard(
     JSON.stringify([profile?.id, profile?.connection.address, snapshot?.runtimeId, task.id]),
@@ -55,15 +58,18 @@ export function AgentSideChats({
     })
   }
   return (
-    <Sheet ref={sheet} title="Side chats" onClose={onClose} busy={action.busy}>
+    <Sheet ref={sheet} title={uiText('Side chats')} onClose={onClose} busy={action.busy}>
       {!children.length && (
         <Text style={styles.muted}>
-          Work with an agent in its own conversation and checkout. Bring completed results back when
-          you choose.
+          <InterfaceText>
+            {
+              'Work with an agent in its own conversation and checkout. Bring completed results back when you choose.'
+            }
+          </InterfaceText>
         </Text>
       )}
       <Action
-        label="New side chat"
+        label={uiText('New side chat')}
         disabled={
           !connected ||
           !profile ||
@@ -94,15 +100,23 @@ export function AgentSideChats({
           })
         }
       />
-      <Action secondary label="Read-only chat" onPress={onReadOnly} />
+      <Action secondary label={uiText('Read-only chat')} onPress={onReadOnly} />
       {!!task.sideThread && (
-        <Text style={styles.muted}>Start another side chat from the main thread.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Start another side chat from the main thread.'}</InterfaceText>
+        </Text>
       )}
       {!canCreate && (
-        <Text style={styles.muted}>Agent side chats need a Git project or General workspace.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>
+            {'Agent side chats need a Git project or General workspace.'}
+          </InterfaceText>
+        </Text>
       )}
       {!children.length && (
-        <Text style={styles.muted}>Your agent side chats will appear here.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Your agent side chats will appear here.'}</InterfaceText>
+        </Text>
       )}
       {children.map((child) => {
         const attention = sideThreadAttention(snapshot, child.id)
@@ -132,8 +146,9 @@ export function AgentSideChats({
             />
             {unused && !child.archivedAt && (
               <Action
+                destructive
                 secondary
-                label={`Discard ${child.title}`}
+                label={uiText('Discard {value0}', { value0: child.title })}
                 disabled={!connected || action.busy}
                 onPress={() =>
                   action.act(() =>
@@ -156,6 +171,8 @@ export function AgentSideChats({
 
 /** Uses the ordinary task screen for models, tools, approvals and cancellation. */
 export function SideThreadActions({ task, onReview }: { task: Task; onReview?: () => void }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile, connected, call, legacyDraftRuntimeId } = useRuntime()
   const { styles } = useTheme()
   const action = useAction()
@@ -190,22 +207,24 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
     <>
       {task.sideThread.source === 'head' && (
         <Text style={[styles.muted, { paddingHorizontal: 12 }]}>
-          Committed files only · parent’s in-progress edits were excluded.
+          <InterfaceText>
+            {'Committed files only · parent’s in-progress edits were excluded.'}
+          </InterfaceText>
         </Text>
       )}
       {task.sideThread.source === 'scratch' && (
         <Text style={[styles.muted, { paddingHorizontal: 12 }]}>
-          General side chat · starts with an empty directory.
+          <InterfaceText>{'General side chat · starts with an empty directory.'}</InterfaceText>
         </Text>
       )}
       <Action
         secondary
         label={
           action.busy
-            ? 'Bringing back…'
+            ? uiText('Bringing back…')
             : alreadyBroughtBack
-              ? 'Retry delivery to parent'
-              : 'Bring back'
+              ? uiText('Retry delivery to parent')
+              : uiText('Bring back')
         }
         disabled={disabled}
         onPress={() =>
@@ -235,11 +254,11 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
       {!!reason && <Text style={[styles.muted, { paddingHorizontal: 12 }]}>{reason}</Text>}
       {!!delivered && (
         <Text accessibilityRole="status" style={styles.muted}>
-          Brought back to the parent draft.
+          <InterfaceText>{'Brought back to the parent draft.'}</InterfaceText>
         </Text>
       )}
       {!!onReview && task.sideThread.source !== 'scratch' && (
-        <Action secondary label="Review side-chat changes" onPress={onReview} />
+        <Action secondary label={uiText('Review side-chat changes')} onPress={onReview} />
       )}
       {!!action.error && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -251,6 +270,8 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
 }
 
 export function SideChatAttention({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile } = useRuntime()
   const { styles } = useTheme()
   const target = sideThreadAttentionTarget(snapshot, task.id)
@@ -266,11 +287,15 @@ export function SideChatAttention({ task }: { task: Task }) {
       }}
     >
       <Text accessibilityRole="status" style={styles.muted}>
-        Side chat needs {target.kind === 'approval' ? 'approval' : 'an answer'}.
+        <InterfaceText
+          values={{ value0: target.kind === 'approval' ? uiText('approval') : uiText('an answer') }}
+        >
+          {'Side chat needs {value0}.'}
+        </InterfaceText>
       </Text>
       <Action
         secondary
-        label={target.kind === 'approval' ? 'Open approval' : 'Open question'}
+        label={target.kind === 'approval' ? uiText('Open approval') : uiText('Open question')}
         onPress={() => router.push(taskHref(profile.id, target.id))}
       />
     </View>

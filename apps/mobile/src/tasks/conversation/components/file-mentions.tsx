@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
@@ -60,6 +61,8 @@ export function FileMentions({
   /** The project's saved prompts, inserted with "#" (edited on the desktop). */
   prompts?: readonly SavedPrompt[]
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
 
   const { call, connected, activeId, connection, snapshot, overviews } = useRuntime()
@@ -206,7 +209,9 @@ export function FileMentions({
       keyboardShouldPersistTaps="always"
       showsHorizontalScrollIndicator={false}
       accessibilityLabel={
-        mention.trigger === '@' ? 'File, model and MCP server suggestions' : 'Skill suggestions'
+        mention.trigger === '@'
+          ? uiText('File, model and MCP server suggestions')
+          : uiText('Skill suggestions')
       }
       contentContainerStyle={{ gap: 6, paddingHorizontal: 10, paddingVertical: 6 }}
     >
@@ -235,12 +240,25 @@ export function FileMentions({
             accessibilityRole="button"
             accessibilityLabel={
               item.kind === 'command'
-                ? `Command ${item.value}: ${item.detail}`
+                ? uiText('Command {value0}: {value1}', { value0: item.value, value1: item.detail })
                 : item.kind === 'prompt'
-                  ? `Insert saved prompt ${item.name}`
+                  ? uiText('Insert saved prompt {value0}', { value0: item.name })
                   : item.kind === 'bot'
-                    ? `Mention Bot ${item.name}: ${item.detail}`
-                    : `Mention ${item.kind === 'file' ? 'file' : item.kind === 'mcp' ? 'MCP server' : item.kind === 'model' ? 'model' : 'skill'} ${item.value}`
+                    ? uiText('Mention Bot {value0}: {value1}', {
+                        value0: item.name,
+                        value1: item.detail,
+                      })
+                    : uiText('Mention {value0} {value1}', {
+                        value0:
+                          item.kind === 'file'
+                            ? 'file'
+                            : item.kind === 'mcp'
+                              ? 'MCP server'
+                              : item.kind === 'model'
+                                ? 'model'
+                                : 'skill',
+                        value1: item.value,
+                      })
             }
             onPress={() => {
               if (item.kind === 'bot')

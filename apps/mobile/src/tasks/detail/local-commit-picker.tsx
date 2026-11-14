@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { responses, type LocalCommit } from '@dovo/protocol'
@@ -18,6 +19,8 @@ export function LocalCommitPicker({
   disabled?: boolean
   onSelect: (commit: LocalCommit) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { read, connected, connection } = useRuntime()
   const { styles } = useTheme()
   const [open, setOpen] = useState(false)
@@ -67,7 +70,7 @@ export function LocalCommitPicker({
     <>
       <Action
         secondary
-        label="Local commits"
+        label={uiText('Local commits')}
         disabled={disabled || !connected}
         onPress={() => {
           setCursor(undefined)
@@ -76,9 +79,11 @@ export function LocalCommitPicker({
         }}
       />
       {open && (
-        <Sheet title="Review a local commit" onClose={() => setOpen(false)}>
+        <Sheet title={uiText('Review a local commit')} onClose={() => setOpen(false)}>
           <Text style={styles.muted}>
-            Changes against the first parent. Merge commits use their first parent.
+            <InterfaceText>
+              {'Changes against the first parent. Merge commits use their first parent.'}
+            </InterfaceText>
           </Text>
           <ScrollView style={{ maxHeight: 480 }} keyboardShouldPersistTaps="handled">
             {current?.error ? (
@@ -88,20 +93,24 @@ export function LocalCommitPicker({
                 </Text>
                 <Action
                   secondary
-                  label="Retry commit list"
+                  label={uiText('Retry commit list')}
                   onPress={() => setRetry((value) => value + 1)}
                 />
               </View>
             ) : !current ? (
-              <Text>Loading commits…</Text>
+              <Text>
+                <InterfaceText>{'Loading commits…'}</InterfaceText>
+              </Text>
             ) : !current.commits.length ? (
-              <Text>No commits in this checkout.</Text>
+              <Text>
+                <InterfaceText>{'No commits in this checkout.'}</InterfaceText>
+              </Text>
             ) : (
               current.commits.map((commit) => (
                 <View key={commit.sha} style={{ paddingVertical: 6 }}>
                   <Action
                     secondary
-                    label={`${commit.sha.slice(0, 8)} · ${commit.subject || '(no subject)'}`}
+                    label={`${commit.sha.slice(0, 8)} · ${commit.subject || uiText('(no subject)')}`}
                     onPress={() => {
                       onSelect(commit)
                       setOpen(false)
@@ -117,7 +126,7 @@ export function LocalCommitPicker({
           {current?.hasMore && current.commits.at(-1)?.parents[0] && (
             <Action
               secondary
-              label="Older commits"
+              label={uiText('Older commits')}
               onPress={() => setCursor(current.commits.at(-1)?.parents[0])}
             />
           )}

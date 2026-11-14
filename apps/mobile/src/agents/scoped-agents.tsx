@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import { View, Alert } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -29,6 +30,8 @@ export function ScopedAgents({
   scope: SettingsScope
   repository?: Repository
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, callEffect, connected } = useRuntime()
@@ -100,25 +103,32 @@ export function ScopedAgents({
   if (!snapshot?.scopedAgentsSupported)
     return (
       <Text style={styles.muted}>
-        Update this environment to configure named agents at all four scopes.
+        <InterfaceText>
+          {'Update this environment to configure named agents at all four scopes.'}
+        </InterfaceText>
       </Text>
     )
   return (
     <View style={[styles.card, { gap: 12 }]}>
-      <Text style={[styles.text, { fontWeight: '600' }]}>Agent profiles</Text>
+      <Text style={[styles.text, { fontWeight: '600' }]}>
+        <InterfaceText>{'Agent profiles'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Built-in providers use your computer’s installation and login. Save an override here, or
-        reset to the earlier level.
+        <InterfaceText>
+          {
+            'Built-in providers use your computer’s installation and login. Save an override here, or reset to the earlier level.'
+          }
+        </InterfaceText>
       </Text>
       {!settings && !loadError && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
           {connected
-            ? 'Loading agent profiles…'
-            : 'This computer is offline. Reconnect to load agent profiles.'}
+            ? uiText('Loading agent profiles…')
+            : uiText('This computer is offline. Reconnect to load agent profiles.')}
         </Text>
       )}
       <Action
-        label="New configuration"
+        label={uiText('New configuration')}
         disabled={!connected || !settings || busy}
         onPress={() =>
           setEditing({
@@ -138,24 +148,26 @@ export function ScopedAgents({
             <Text style={styles.text}>{agent.name}</Text>
             <Text style={styles.muted}>
               {local
-                ? `Set here · ${settingsScopeLabels[scope]}`
+                ? uiText('Set here · {value0}', { value0: settingsScopeLabels[scope] })
                 : origin === 'built-in'
-                  ? 'Built-in · provider defaults'
-                  : `Inherited · ${origin ? settingsScopeLabels[origin] : 'Earlier scope'}`}{' '}
+                  ? uiText('Built-in · provider defaults')
+                  : uiText('Inherited · {value0}', {
+                      value0: origin ? settingsScopeLabels[origin] : 'Earlier scope',
+                    })}{' '}
               · <HarnessLabel agent={agent} /> · <ModelLabel agent={agent} />
             </Text>
             <View style={[styles.row, { flexWrap: 'wrap' }]}>
               <Action
                 secondary
                 icon="settings"
-                label={local ? 'Configure' : 'Override'}
+                label={local ? uiText('Configure') : uiText('Override')}
                 disabled={!connected || busy}
                 onPress={() => setEditing(agent)}
               />
               <Action
                 secondary
                 icon="more"
-                label={`More actions for ${agent.name}`}
+                label={uiText('More actions for {value0}', { value0: agent.name })}
                 disabled={busy}
                 onPress={() => setExpandedId(expandedId === agent.id ? '' : agent.id)}
               />
@@ -163,7 +175,7 @@ export function ScopedAgents({
                 <>
                   <Action
                     secondary
-                    label="Duplicate"
+                    label={uiText('Duplicate')}
                     disabled={!connected || busy}
                     onPress={() =>
                       setEditing({ ...agent, id: randomUUID(), name: `${agent.name} copy` })
@@ -174,8 +186,8 @@ export function ScopedAgents({
                     icon="star"
                     label={
                       snapshot?.defaults?.modelPreferences?.[`agent:${agent.id}`]?.favorite
-                        ? 'Unfavorite'
-                        : 'Favorite'
+                        ? uiText('Unfavorite')
+                        : uiText('Favorite')
                     }
                     disabled={!connected || busy}
                     onPress={() =>
@@ -198,7 +210,7 @@ export function ScopedAgents({
                   <Action
                     secondary
                     icon="info"
-                    label="Check provider"
+                    label={uiText('Check provider')}
                     disabled={!connected || busy}
                     onPress={() =>
                       act(async () => {
@@ -217,9 +229,10 @@ export function ScopedAgents({
                   />
                   {local && (
                     <Action
+                      destructive={reset ? false : true}
                       secondary
                       icon={reset ? 'reopen' : 'trash'}
-                      label={reset ? 'Reset' : 'Delete'}
+                      label={reset ? uiText('Reset') : uiText('Delete')}
                       disabled={!connected || busy}
                       onPress={() => {
                         const remove = () =>
@@ -227,11 +240,11 @@ export function ScopedAgents({
                         if (reset) remove()
                         else
                           Alert.alert(
-                            'Delete configuration?',
-                            'Existing threads keep their configuration.',
+                            uiText('Delete configuration?'),
+                            uiText('Existing threads keep their configuration.'),
                             [
-                              { text: 'Cancel', style: 'cancel' },
-                              { text: 'Delete', style: 'destructive', onPress: remove },
+                              { text: uiText('Cancel'), style: 'cancel' },
+                              { text: uiText('Delete'), style: 'destructive', onPress: remove },
                             ],
                           )
                       }}
@@ -244,19 +257,23 @@ export function ScopedAgents({
         )
       })}
       {!agents.length && settings && (
-        <Text style={styles.muted}>No named configurations at this target.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'No named configurations at this target.'}</InterfaceText>
+        </Text>
       )}
       {!!diagnostics && <Text style={styles.muted}>{diagnostics}</Text>}
       {saved && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Agent profiles saved at {settingsScopeLabels[scope]}.
+          <InterfaceText values={{ value0: settingsScopeLabels[scope] }}>
+            {'Agent profiles saved at {value0}.'}
+          </InterfaceText>
         </Text>
       )}
       {!!(error || loadError) && <Text style={styles.error}>{error || loadError}</Text>}
       {!!loadError && (
         <Action
           secondary
-          label="Retry agent profiles"
+          label={uiText('Retry agent profiles')}
           disabled={!connected || busy}
           onPress={() => setRetry(retry + 1)}
         />

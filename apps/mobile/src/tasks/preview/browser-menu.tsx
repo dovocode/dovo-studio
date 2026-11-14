@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Choice } from '../../ui/controls/choice'
 import type { IconName } from '../../ui/controls/icon'
 
@@ -7,9 +8,11 @@ export type BrowserMenuProps = {
 }
 
 export function BrowserMenu({ items, onChange }: BrowserMenuProps) {
+  const uiText = useInterfaceText()
+
   return (
     <Choice
-      label="Browser options"
+      label={uiText('Browser options')}
       hideLabel
       compact
       value=""

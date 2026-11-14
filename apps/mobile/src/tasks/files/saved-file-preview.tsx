@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { DiffView } from '../preview/diff-view'
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
@@ -31,6 +32,8 @@ export function SavedFilePreview({
   working?: boolean
   sideThreadSnapshot?: { before: string; after: string }
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connection } = useRuntime()
@@ -128,16 +131,20 @@ export function SavedFilePreview({
       <Text style={styles.muted}>
         {filePreviewLabel(file)} ·{' '}
         {working
-          ? 'Current working checkout · preview only.'
+          ? uiText('Current working checkout · preview only.')
           : file.preview?.kind === 'submodule' ||
               preview?.before?.kind === 'submodule' ||
               preview?.after?.kind === 'submodule'
-            ? 'Submodule commit references saved in Git.'
-            : 'Full contents saved in Git.'}
+            ? uiText('Submodule commit references saved in Git.')
+            : uiText('Full contents saved in Git.')}
       </Text>
       {diff && !displayDiff && (
         <Text accessibilityRole="alert" style={styles.error}>
-          The diff is unavailable or too large for the viewer. Complete contents are shown below.
+          <InterfaceText>
+            {
+              'The diff is unavailable or too large for the viewer. Complete contents are shown below.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {error ? (
@@ -145,7 +152,9 @@ export function SavedFilePreview({
           {error}
         </Text>
       ) : !preview ? (
-        <Text style={styles.muted}>{full ? 'Loading full diff…' : 'Loading compact preview…'}</Text>
+        <Text style={styles.muted}>
+          {full ? uiText('Loading full diff…') : uiText('Loading compact preview…')}
+        </Text>
       ) : null}
       {((preview &&
         [preview.before, preview.after].some((side) => side?.kind === 'text' && side.truncated)) ||
@@ -153,35 +162,46 @@ export function SavedFilePreview({
         error) && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={full ? 'Retry full diff' : 'Load full diff'}
+          accessibilityLabel={full ? uiText('Retry full diff') : uiText('Load full diff')}
           onPress={() => {
             setFullKey(ownerKey)
             setAttempt((value) => value + 1)
           }}
           style={styles.card}
         >
-          <Text>{full ? 'Retry full diff' : 'Load full diff'}</Text>
+          <Text>{full ? uiText('Retry full diff') : uiText('Load full diff')}</Text>
         </Pressable>
       )}
       {full && (preview?.before?.truncated || preview?.after?.truncated) && (
         <Text style={styles.muted}>
-          This computer returned only a compact preview. Update it to load larger text diffs.
+          <InterfaceText>
+            {'This computer returned only a compact preview. Update it to load larger text diffs.'}
+          </InterfaceText>
         </Text>
       )}
       {full && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Show compact preview"
+          accessibilityLabel={uiText('Show compact preview')}
           onPress={() => setFullKey('')}
           style={styles.card}
         >
-          <Text>Show compact preview</Text>
+          <Text>
+            <InterfaceText>{'Show compact preview'}</InterfaceText>
+          </Text>
         </Pressable>
       )}
       {(full || preview?.before?.truncated || preview?.after?.truncated) && (
         <Text style={styles.muted}>
-          Text diffs support up to 8 MB per side.{' '}
-          {working ? 'The working file is unchanged.' : 'Full snapshots remain saved.'}
+          <InterfaceText
+            values={{
+              value0: working
+                ? uiText('The working file is unchanged.')
+                : uiText('Full snapshots remain saved.'),
+            }}
+          >
+            {'Text diffs support up to 8 MB per side. {value0}'}
+          </InterfaceText>
         </Text>
       )}
       {(['before', 'after'] as const).map((name) => {
@@ -190,7 +210,7 @@ export function SavedFilePreview({
         return (
           <View key={name} style={[styles.card, { gap: 8 }]}>
             <Text>
-              {name === 'before' ? 'Before' : 'After'}
+              {name === 'before' ? uiText('Before') : uiText('After')}
               {(side || metadata) && side?.kind !== 'submodule' && metadata?.mode !== '160000'
                 ? ` · ${fileSizeLabel(side?.size ?? metadata?.size ?? 0)}`
                 : ''}
@@ -198,7 +218,10 @@ export function SavedFilePreview({
             {side?.image ? (
               <Image
                 source={{ uri: side.image }}
-                accessibilityLabel={`${name} preview of ${file.path}`}
+                accessibilityLabel={uiText('{value0} preview of {value1}', {
+                  value0: name,
+                  value1: file.path,
+                })}
                 style={{ width: '100%', height: 256 }}
                 resizeMode="contain"
               />
@@ -213,10 +236,12 @@ export function SavedFilePreview({
               )
             ) : side ? (
               <Text style={styles.muted}>
-                {side.notice ?? 'Binary contents saved. No text preview.'}
+                {side.notice ?? uiText('Binary contents saved. No text preview.')}
               </Text>
             ) : preview ? (
-              <Text style={styles.muted}>File absent.</Text>
+              <Text style={styles.muted}>
+                <InterfaceText>{'File absent.'}</InterfaceText>
+              </Text>
             ) : metadata ? (
               <Text selectable style={styles.muted}>
                 {metadata.hash}
@@ -224,7 +249,9 @@ export function SavedFilePreview({
             ) : null}
             {side?.truncated && (
               <Text style={styles.muted}>
-                First 64 KB shown. Load the full diff to compare changes beyond this preview.
+                <InterfaceText>
+                  {'First 64 KB shown. Load the full diff to compare changes beyond this preview.'}
+                </InterfaceText>
               </Text>
             )}
           </View>

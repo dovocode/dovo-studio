@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Image, View } from 'react-native'
 import { Pressable } from 'react-native-gesture-handler'
 import { projectIcon, projectIconColor, projectIconInitials } from '@dovo/protocol'
@@ -21,6 +22,8 @@ export function StandaloneRow({
   onOpen: () => void
   onActions: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const { threadDensity } = useMobilePreferences()
   const actions = useStandaloneActions(item)
@@ -86,10 +89,13 @@ export function StandaloneRow({
         testID={`Workspace ${item.kind} ${item.title}`}
         accessibilityRole="button"
         accessibilityLabel={`${item.kind}: ${item.title}, ${context}, ${status}`}
-        accessibilityHint="Open. Long press for item actions."
+        accessibilityHint={uiText('Open. Long press for item actions.')}
         onPress={onOpen}
         onLongPress={onActions}
-        accessibilityActions={[{ name: 'activate' }, { name: 'longpress', label: 'Item actions' }]}
+        accessibilityActions={[
+          { name: 'activate' },
+          { name: 'longpress', label: uiText('Item actions') },
+        ]}
         onAccessibilityAction={({ nativeEvent }) =>
           nativeEvent.actionName === 'longpress' ? onActions() : onOpen()
         }
@@ -177,7 +183,7 @@ export function StandaloneRow({
                   style={{ color: colors.muted, fontSize: dense ? 11 : 12, flex: 1 }}
                 >
                   {item.kind === 'terminal'
-                    ? `${item.terminal.checkoutBranch ?? 'Shell'} · ${item.detail.split(' · ').at(-1)}`
+                    ? `${item.terminal.checkoutBranch ?? uiText('Shell')} · ${item.detail.split(' · ').at(-1)}`
                     : item.detail}
                 </Text>
               </View>
@@ -188,7 +194,7 @@ export function StandaloneRow({
       {!tile && !settled && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Actions for ${item.title}`}
+          accessibilityLabel={uiText('Actions for {value0}', { value0: item.title })}
           onPress={onActions}
           style={{
             position: 'absolute',
@@ -210,7 +216,7 @@ export function StandaloneRow({
     <TaskSwipeActions
       enabled={!actions.disabled}
       primary={{
-        label: settled ? 'Restore' : 'Settle',
+        label: settled ? uiText('Restore') : uiText('Settle'),
         icon: settled ? 'reopen' : 'check',
         run: () => actions.change('settle'),
       }}
@@ -218,7 +224,7 @@ export function StandaloneRow({
         settled
           ? undefined
           : {
-              label: item.section === 'snoozed' ? 'Wake now' : 'Snooze',
+              label: item.section === 'snoozed' ? uiText('Wake now') : uiText('Snooze'),
               icon: 'snooze',
               run: () =>
                 item.section === 'snoozed'

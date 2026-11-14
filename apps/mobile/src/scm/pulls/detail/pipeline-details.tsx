@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import { PipelineStepProgress } from './pipeline-step-progress'
 import { useForegroundInterval } from '../../../runtime/state/app-active'
@@ -104,6 +105,8 @@ function Errors({ errors }: { errors?: string[] }) {
   ) : null
 }
 export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
 
   const now = usePipelineNow(pipelineSignal(run.status).phase === 'active' && !!run.startedAt)
@@ -113,8 +116,14 @@ export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <WorkSignal status={run.status} emphasis />
         <Text style={styles.muted}>
-          Run {run.number || run.id}
-          {run.attempt ? ` · Attempt ${run.attempt}` : ''}
+          <InterfaceText
+            values={{
+              value0: run.number || run.id,
+              value1: run.attempt ? uiText(' · Attempt {value0}', { value0: run.attempt }) : '',
+            }}
+          >
+            {'Run {value0}{value1}'}
+          </InterfaceText>
         </Text>
       </View>
       {run.workflow && <Text style={[styles.muted, { fontWeight: '600' }]}>{run.workflow}</Text>}
@@ -146,12 +155,18 @@ export function PipelineRunInfo({ run }: { run: ForgePipeline }) {
         )}
         {duration && <Text style={styles.muted}>{duration}</Text>}
       </View>
-      {run.actor && <Text style={styles.muted}>Triggered by {run.actor}</Text>}
+      {run.actor && (
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: run.actor }}>{'Triggered by {value0}'}</InterfaceText>
+        </Text>
+      )}
       <Errors errors={run.errors} />
     </View>
   )
 }
 export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [expanded, setExpanded] = useApplicationState(false)
@@ -164,7 +179,7 @@ export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
       <Pressable
         testID="Pipeline run details"
         accessibilityRole="button"
-        accessibilityLabel="Pipeline run details"
+        accessibilityLabel={uiText('Pipeline run details')}
         accessibilityState={{
           expanded,
         }}
@@ -187,7 +202,7 @@ export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
             },
           ]}
         >
-          Run details
+          <InterfaceText>{'Run details'}</InterfaceText>
         </Text>
         <Icon name={expanded ? 'down' : 'next'} size={13} color={colors.muted} />
       </Pressable>
@@ -212,16 +227,16 @@ export function PipelineRunDetails({ run }: { run: ForgePipeline }) {
               {run.commitMessage}
             </Text>
           )}
-          <Metadata label="Run" value={run.number ?? run.id} />
-          <Metadata label="Workflow" value={run.workflow ?? run.definition} />
-          <Metadata label="Trigger" value={run.event} />
-          <Metadata label="Branch" value={run.ref} />
-          <Metadata label="Commit" value={run.sha} />
-          <Metadata label="Actor" value={run.actor} />
-          <Metadata label="Created" value={date(run.createdAt)} />
-          <Metadata label="Started" value={date(run.startedAt)} />
-          <Metadata label="Finished" value={date(run.completedAt)} />
-          <Metadata label="Updated" value={date(run.updatedAt)} />
+          <Metadata label={uiText('Run')} value={run.number ?? run.id} />
+          <Metadata label={uiText('Workflow')} value={run.workflow ?? run.definition} />
+          <Metadata label={uiText('Trigger')} value={run.event} />
+          <Metadata label={uiText('Branch')} value={run.ref} />
+          <Metadata label={uiText('Commit')} value={run.sha} />
+          <Metadata label={uiText('Actor')} value={run.actor} />
+          <Metadata label={uiText('Created')} value={date(run.createdAt)} />
+          <Metadata label={uiText('Started')} value={date(run.startedAt)} />
+          <Metadata label={uiText('Finished')} value={date(run.completedAt)} />
+          <Metadata label={uiText('Updated')} value={date(run.updatedAt)} />
         </View>
       )}
     </View>
@@ -238,6 +253,8 @@ function PipelineJob({
   onOpen: (url: string) => void
   now: number
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const failed = pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length
@@ -259,7 +276,7 @@ function PipelineJob({
       <Pressable
         testID={`Job ${job.name}`}
         accessibilityRole="button"
-        accessibilityLabel={`Job ${job.name}`}
+        accessibilityLabel={uiText('Job {value0}', { value0: job.name })}
         accessibilityState={{
           expanded,
         }}
@@ -347,7 +364,7 @@ function PipelineJob({
                   {step.url && (
                     <Action
                       secondary
-                      label={`Open ${step.name} logs`}
+                      label={uiText('Open {value0} logs', { value0: step.name })}
                       onPress={() => onOpen(step.url!)}
                     />
                   )}
@@ -355,13 +372,21 @@ function PipelineJob({
               ))}
             </View>
           ) : (
-            <Text style={styles.muted}>The provider did not supply step details for this job.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>
+                {'The provider did not supply step details for this job.'}
+              </InterfaceText>
+            </Text>
           )}
-          <Action secondary label={`Open ${job.name} logs`} onPress={() => onOpen(job.url)} />
+          <Action
+            secondary
+            label={uiText('Open {value0} logs', { value0: job.name })}
+            onPress={() => onOpen(job.url)}
+          />
           <View>
-            <Metadata label="Runner" value={job.runner} />
-            <Metadata label="Started" value={date(job.startedAt)} />
-            <Metadata label="Finished" value={date(job.completedAt)} />
+            <Metadata label={uiText('Runner')} value={job.runner} />
+            <Metadata label={uiText('Started')} value={date(job.startedAt)} />
+            <Metadata label={uiText('Finished')} value={date(job.completedAt)} />
           </View>
         </View>
       )}
@@ -383,6 +408,8 @@ export function PipelineJobs({
   hasMore: boolean
   onOpen: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
   const [selected, setSelected] = useApplicationState<string | null>(null)
   const columns = pipelineGraphColumns(graph, jobs)
@@ -407,10 +434,16 @@ export function PipelineJobs({
       }}
     >
       {!!columns.length && (
-        <View accessibilityLabel="Pipeline graph" style={{ gap: 10 }}>
-          <Text style={styles.text}>Workflow</Text>
+        <View accessibilityLabel={uiText('Pipeline graph')} style={{ gap: 10 }}>
+          <Text style={styles.text}>
+            <InterfaceText>{'Workflow'}</InterfaceText>
+          </Text>
           {graphNotice && <Text style={styles.muted}>{graphNotice}</Text>}
-          {!graph && <Text style={styles.muted}>Jobs · dependencies not provided</Text>}
+          {!graph && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Jobs · dependencies not provided'}</InterfaceText>
+            </Text>
+          )}
           <View style={{ gap: 16, paddingVertical: 8 }}>
             {columns.map((column, index) => (
               <View key={index} style={{ gap: 12 }}>
@@ -418,7 +451,7 @@ export function PipelineJobs({
                   <Text
                     style={[styles.muted, { fontSize: 11, fontWeight: '600', letterSpacing: 1 }]}
                   >
-                    STAGE {index + 1}
+                    <InterfaceText values={{ value0: index + 1 }}>{'STAGE {value0}'}</InterfaceText>
                   </Text>
                 )}
                 {column.map((node) => (
@@ -440,11 +473,17 @@ export function PipelineJobs({
                           color: impact.failed.has(node.id) ? colors.error : colors.warning,
                         }}
                       >
-                        {impact.failed.has(node.id) ? 'Failed stage' : 'Depends on failed stage'}
+                        {impact.failed.has(node.id)
+                          ? uiText('Failed stage')
+                          : uiText('Depends on failed stage')}
                       </Text>
                     )}
                     {!!node.needs.length && (
-                      <Text style={styles.muted}>After {node.needs.join(', ')}</Text>
+                      <Text style={styles.muted}>
+                        <InterfaceText values={{ value0: node.needs.join(', ') }}>
+                          {'After {value0}'}
+                        </InterfaceText>
+                      </Text>
                     )}
                     {node.jobIds.map((id) => {
                       const job = jobs.find((job) => job.id === id)
@@ -453,7 +492,7 @@ export function PipelineJobs({
                           <Pressable
                             key={id}
                             accessibilityRole="button"
-                            accessibilityLabel={`View job ${job.name}`}
+                            accessibilityLabel={uiText('View job {value0}', { value0: job.name })}
                             accessibilityState={{ selected: selected === id }}
                             onPress={() => setSelected(id)}
                             style={{
@@ -476,7 +515,11 @@ export function PipelineJobs({
                         )
                       )
                     })}
-                    {!node.jobIds.length && <Text style={styles.muted}>Not reported</Text>}
+                    {!node.jobIds.length && (
+                      <Text style={styles.muted}>
+                        <InterfaceText>{'Not reported'}</InterfaceText>
+                      </Text>
+                    )}
                   </View>
                 ))}
               </View>
@@ -495,12 +538,20 @@ export function PipelineJobs({
           },
         ]}
       >
-        Jobs{ready ? ` · ${jobs.length}` : ''}
-        {hasMore ? ' loaded' : ''}
-        {failures ? ` · ${failures} failed` : ''}
+        <InterfaceText
+          values={{
+            value0: ready ? ` · ${jobs.length}` : '',
+            value1: hasMore ? uiText(' loaded') : '',
+            value2: failures ? uiText(' · {value0} failed', { value0: failures }) : '',
+          }}
+        >
+          {'Jobs{value0}{value1}{value2}'}
+        </InterfaceText>
       </Text>
       {ready && !jobs.length && (
-        <Text style={styles.muted}>No jobs have been returned for this run.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'No jobs have been returned for this run.'}</InterfaceText>
+        </Text>
       )}
       {[...jobs]
         .sort(

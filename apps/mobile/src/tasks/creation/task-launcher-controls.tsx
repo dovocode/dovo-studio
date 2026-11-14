@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   taskModelSelectionDifficultySchema,
   selectPermissionPreset,
@@ -38,6 +39,8 @@ export function TaskLauncherPicker(
     onOpenChange?: (open: boolean) => void
   },
 ) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useState(false)
   const { colors } = useTheme()
   const { selection, disabled } = props
@@ -71,7 +74,7 @@ export function TaskLauncherPicker(
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Choose agent and model"
+        accessibilityLabel={uiText('Choose agent and model')}
         accessibilityState={{ expanded: open, disabled }}
         accessibilityValue={{ text: `${model}, ${effort}` }}
         disabled={disabled}
@@ -116,7 +119,7 @@ export function TaskLauncherPicker(
       </Pressable>
       {open && (
         <Sheet
-          title="Agent & model"
+          title={uiText('Agent & model')}
           onClose={() => {
             setOpen(false)
             props.onOpenChange?.(false)
@@ -142,6 +145,8 @@ export function TaskLauncherControls({
   repository: Repository
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [advanced, setAdvanced] = useState(false)
 
@@ -154,12 +159,12 @@ export function TaskLauncherControls({
     <View style={{ gap: 12 }}>
       {/* The selection mode decides whether the picker below applies, so it leads. */}
       <Choice
-        label="Model selection"
+        label={uiText('Model selection')}
         value={selection.modelSelection ?? 'fixed'}
         disabled={disabled}
         items={[
-          { id: 'fixed', name: 'Specific harness/model' },
-          { id: 'inherit', name: 'Inherit' },
+          { id: 'fixed', name: uiText('Specific harness/model') },
+          { id: 'inherit', name: uiText('Inherit') },
           ...(snapshot.smartModelSelectionEnabled === true
             ? [
                 { id: 'auto', name: 'Tune', icon: 'tune' as const },
@@ -194,13 +199,13 @@ export function TaskLauncherControls({
             options={
               <Choice
                 row
-                label="Access mode"
-                selectedLabel={permissionPolicyLabel(agent)}
+                label={uiText('Access mode')}
+                selectedLabel={uiText(permissionPolicyLabel(agent))}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 disabled={disabled}
                 items={selectableAccessModes(agent.permission, agent.provider)
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
-                  .map((mode) => ({ id: mode.id, name: mode.name }))}
+                  .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
                 onChange={(permission) => {
                   const mode = selectableAccessModes(agent.permission, agent.provider).find(
                     (mode) => mode.id === permission,
@@ -227,17 +232,19 @@ export function TaskLauncherControls({
           {(availability.loading || availability.error || !availability.available.size) && (
             <Text style={styles.muted}>
               {availability.loading
-                ? 'Checking available providers…'
+                ? uiText('Checking available providers…')
                 : availability.error
-                  ? `Could not check available providers: ${availability.error}`
-                  : 'No providers available on this runtime. Configure agents in Settings.'}
+                  ? uiText('Could not check available providers: {value0}', {
+                      value0: availability.error,
+                    })
+                  : uiText('No providers available on this runtime. Configure agents in Settings.')}
             </Text>
           )}
         </>
       )}
       <Action
         secondary
-        label={advanced ? 'Back to models' : 'More settings'}
+        label={advanced ? uiText('Back to models') : uiText('More settings')}
         onPress={() => setAdvanced(!advanced)}
       />
       {(advanced ||
@@ -246,7 +253,7 @@ export function TaskLauncherControls({
         <>
           {(selection.modelSelection === 'auto' || selection.modelSelection === 'smart') && (
             <Choice
-              label="Difficulty"
+              label={uiText('Difficulty')}
               value={selection.modelSelectionDifficulty ?? 'auto'}
               items={[...automaticDifficultyChoices]}
               disabled={disabled}
@@ -276,13 +283,13 @@ export function TaskLauncherControls({
             />
           )}
           <Choice
-            label="Access mode"
-            selectedLabel={permissionPolicyLabel(agent)}
+            label={uiText('Access mode')}
+            selectedLabel={uiText(permissionPolicyLabel(agent))}
             value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
             disabled={disabled}
             items={selectableAccessModes(agent.permission, agent.provider)
               .filter((mode) => supportsAccess(agent.provider, mode.id))
-              .map((mode) => ({ id: mode.id, name: mode.name }))}
+              .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
             onChange={(permission) => {
               const mode = selectableAccessModes(agent.permission, agent.provider).find(
                 (mode) => mode.id === permission,

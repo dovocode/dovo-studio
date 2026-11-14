@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useBrowserWorkspace } from './browser-workspace'
 import { BrowserNavigation } from './browser-navigation'
@@ -120,7 +121,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const [clock, setClock] = useState(() => Date.now())
   const [tabCategory, setTabCategory] = useState<BrowserTabCategory>('active')
   const [snoozingTab, setSnoozingTab] = useState<BrowserTab | null>(null)
-  const [profiles, setProfiles] = useState<BrowserProfile[]>([{ id: 'default', name: 'Default' }])
+  const [profiles, setProfiles] = useState<BrowserProfile[]>([
+    { id: 'default', name: uiText('Default') },
+  ])
   const [profilesOwner, setProfilesOwner] = useState<string | null>(null)
   const [profileApply, setProfileApply] = useState<{ scope: string; error: string }>()
   const [customization, setCustomization] = useState<BrowserWebsiteCustomization | null>(null)
@@ -289,7 +292,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   }, [active.id, active.profileId])
   useEffect(() => {
     let alive = true
-    setProfiles([{ id: 'default', name: 'Default' }])
+    setProfiles([{ id: 'default', name: uiText('Default') }])
     setProfilesOwner(null)
     if (owner?.connected)
       void runtime
@@ -306,7 +309,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             }
           },
           (cause) => {
-            if (alive) setError(`Could not load browser profiles: ${String(cause)}`)
+            if (alive)
+              setError(
+                uiText('Could not load browser profiles: {value0}', { value0: String(cause) }),
+              )
           },
         )
     return () => {
@@ -356,7 +362,11 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         setError(String(cause))
         void module
           .closeTab(page.tabId)
-          .catch((error) => setError(`Could not close rejected native tab: ${String(error)}`))
+          .catch((error) =>
+            setError(
+              uiText('Could not close rejected native tab: {value0}', { value0: String(error) }),
+            ),
+          )
       }
     }
     const subscriptions = [
@@ -376,7 +386,12 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         }
       }),
       module.addListener('onExternalUrlBlocked', (page) => {
-        if (alive) setError(`This page requested an unsupported external address: ${page.url}`)
+        if (alive)
+          setError(
+            uiText('This page requested an unsupported external address: {value0}', {
+              value0: page.url,
+            }),
+          )
       }),
     ]
     for (const closed of native.closedTabs) {
@@ -555,7 +570,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     const ids = new Set(discarded.map((tab) => tab.id))
     change((state) => ({ ...state, tabs: state.tabs.filter((tab) => !ids.has(tab.id)) }))
     for (const tab of discarded)
-      void disposeTab(tab).catch((cause) => setError(`Could not close preview: ${String(cause)}`))
+      void disposeTab(tab).catch((cause) =>
+        setError(uiText('Could not close preview: {value0}', { value0: String(cause) })),
+      )
   }, [state.tabs, state.active])
   useEffect(() => {
     if (!loaded || !focused) return
@@ -640,10 +657,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         }))
         for (const tab of closing)
           void disposeTab(tab).catch((cause) =>
-            setError(`Could not close settled tab: ${String(cause)}`),
+            setError(uiText('Could not close settled tab: {value0}', { value0: String(cause) })),
           )
       } catch (cause) {
-        if (!stopped) setError(`Tab cleanup failed: ${String(cause)}`)
+        if (!stopped) setError(uiText('Tab cleanup failed: {value0}', { value0: String(cause) }))
       } finally {
         running = false
       }
@@ -760,11 +777,14 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       )
     } catch (cause) {
       setError(
-        `The phone draft could not be saved: ${String(cause)}. The quote may already be in the composer. Open the thread to review it before adding again.`,
+        uiText(
+          'The phone draft could not be saved: {value0}. The quote may already be in the composer. Open the thread to review it before adding again.',
+          { value0: String(cause) },
+        ),
       )
       return
     }
-    setNotice('Added to the thread draft. Review before sending.')
+    setNotice(uiText('Added to the thread draft. Review before sending.'))
     saved = true
     openSavedDraft()
   }
@@ -786,7 +806,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open ${tab.title || tab.url || 'New tab'}`}
+          accessibilityLabel={uiText('Open {value0}', {
+            value0: tab.title || tab.url || 'New tab',
+          })}
           onPress={() =>
             void act(async () => {
               const existing = current.current.tabs.find((item) =>
@@ -797,7 +819,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             })
           }
         >
-          <Text style={styles.text}>{tab.title || tab.url || 'New tab'}</Text>
+          <Text style={styles.text}>{tab.title || tab.url || uiText('New tab')}</Text>
           <Text style={styles.muted}>{describe(tab)}</Text>
           {!!tab.title && (
             <Text numberOfLines={1} style={styles.muted}>
@@ -808,7 +830,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         {kind === 'tabs' ? (
           <Action
             secondary
-            label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
+            label={`${tab.pinned ? uiText('Unpin') : uiText('Close')} ${tab.title || uiText('tab')}`}
             onPress={() =>
               tab.pinned
                 ? change((state) => togglePinnedTab(state, tab.id))
@@ -817,8 +839,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
         ) : kind === 'bookmarks' ? (
           <Action
+            destructive
             secondary
-            label="Remove bookmark"
+            label={uiText('Remove bookmark')}
             onPress={() =>
               change((state) => ({
                 ...state,
@@ -832,7 +855,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   if (!loaded)
     return (
       <View style={styles.content}>
-        <Text style={styles.muted}>Restoring browser…</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Restoring browser…'}</InterfaceText>
+        </Text>
       </View>
     )
   return (
@@ -853,7 +878,13 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     >
       <ScreenHeader
         hidden={Platform.OS === 'ios'}
-        title={active.previewOf ? 'Link preview' : unified ? active.title || 'Page' : 'Browser'}
+        title={
+          active.previewOf
+            ? uiText('Link preview')
+            : unified
+              ? active.title || uiText('Page')
+              : uiText('Browser')
+        }
         onBack={() => (active.previewOf ? void act(() => close(active)) : navigate('tasks'))}
       />
       {active.previewOf && (
@@ -868,12 +899,12 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         >
           <Action
             secondary
-            label="Close preview"
+            label={uiText('Close preview')}
             disabled={busy}
             onPress={() => void act(() => close(active))}
           />
           <Action
-            label="Keep as tab"
+            label={uiText('Keep as tab')}
             onPress={() => change((state) => promoteTab(state, active.id))}
           />
         </View>
@@ -893,11 +924,13 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         {active.kind === 'remote' && !!profileApplyError && (
           <View>
             <Text accessibilityRole="alert" style={styles.muted}>
-              Profiles are saved. Some open browser settings could not apply: {profileApplyError}
+              <InterfaceText values={{ value0: profileApplyError }}>
+                {'Profiles are saved. Some open browser settings could not apply: {value0}'}
+              </InterfaceText>
             </Text>
             <Action
               secondary
-              label="Retry browser settings"
+              label={uiText('Retry browser settings')}
               disabled={busy || !owner?.connected}
               onPress={() =>
                 void act(async () => {
@@ -917,7 +950,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         )}
         {!writable && (
           <Action
-            label="Reset saved browser data"
+            label={uiText('Reset saved browser data')}
             onPress={() =>
               void act(async () => {
                 await resetStorage()
@@ -966,7 +999,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                         .catch((error) => setError(String(error)))
                   }
                   if (additions.length > capacity)
-                    setError('Close a tab before opening more browser tabs.')
+                    setError(uiText('Close a tab before opening more browser tabs.'))
                   if (additions.length)
                     change((state) => {
                       const tabs = additions
@@ -993,8 +1026,11 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           ) : (
             <View style={styles.content}>
               <Text style={styles.muted}>
-                This tab’s computer is offline or no longer paired. Its computer and profile are
-                retained.
+                <InterfaceText>
+                  {
+                    'This tab’s computer is offline or no longer paired. Its computer and profile are retained.'
+                  }
+                </InterfaceText>
               </Text>
             </View>
           )
@@ -1003,10 +1039,12 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             <DovoWebKitBrowserView key={nativeReady} tabId={active.id} style={{ flex: 1 }} />
           ) : (
             <View style={styles.content}>
-              <Text style={styles.muted}>{nativeOpenError || 'Opening native browser…'}</Text>
+              <Text style={styles.muted}>
+                {nativeOpenError || uiText('Opening native browser…')}
+              </Text>
               {!!nativeOpenError && (
                 <Action
-                  label="Retry native tab"
+                  label={uiText('Retry native tab')}
                   onPress={() => setNativeAttempt((attempt) => attempt + 1)}
                 />
               )}
@@ -1014,12 +1052,17 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           )
         ) : DovoWebKitBrowser && !native.status ? (
           <Text style={styles.muted}>
-            {native.error ? 'Native browser could not start.' : 'Native browser is starting.'}
+            {native.error
+              ? uiText('Native browser could not start.')
+              : uiText('Native browser is starting.')}
           </Text>
         ) : active.profileId !== 'device' ? (
           <Text style={styles.error}>
-            This tab requires its native WebKit profile. It will not be opened in the shared device
-            session.
+            <InterfaceText>
+              {
+                'This tab requires its native WebKit profile. It will not be opened in the shared device session.'
+              }
+            </InterfaceText>
           </Text>
         ) : active.url ? (
           <WebView
@@ -1088,15 +1131,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   })
                 }
               } catch {
-                setError('Could not read browser selection.')
+                setError(uiText('Could not read browser selection.'))
               }
             }}
           />
         ) : (
           <View style={styles.content}>
             <Text style={styles.muted}>
-              Enter an address or search below. Localhost refers to this phone; choose a paired
-              computer to browse its services.
+              <InterfaceText>
+                {
+                  'Enter an address or search below. Localhost refers to this phone; choose a paired computer to browse its services.'
+                }
+              </InterfaceText>
             </Text>
           </View>
         )}
@@ -1155,14 +1201,14 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               }}
             >
               <IconButton
-                label="Browser options"
+                label={uiText('Browser options')}
                 icon="more"
                 onPress={() => setOptionsOpen(true)}
               />
               <TextInput
-                accessibilityLabel="Search or enter address"
+                accessibilityLabel={uiText('Search or enter address')}
                 testID="Search or enter address"
-                placeholder="Search or enter address"
+                placeholder={uiText('Search or enter address')}
                 placeholderTextColor={colors.muted}
                 selectionColor={colors.accent}
                 value={address}
@@ -1190,7 +1236,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 }}
               />
               <IconButton
-                label={address !== active.url || !active.url ? 'Go' : 'Reload'}
+                label={address !== active.url || !active.url ? uiText('Go') : uiText('Reload')}
                 icon={address !== active.url || !active.url ? 'next' : 'refresh'}
                 disabled={busy || nativeOpening || !address.trim()}
                 onPress={navigateLocal}
@@ -1215,7 +1261,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   }
                 />
                 <IconButton
-                  label="Forward"
+                  label={uiText('Forward')}
                   icon="next"
                   disabled={!navigation.forward || busy || nativeOpening}
                   onPress={() =>
@@ -1229,19 +1275,19 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               </>
             ) : (
               <IconButton
-                label="Browser options"
+                label={uiText('Browser options')}
                 icon="more"
                 onPress={() => setOptionsOpen(true)}
               />
             )}
             <IconButton
-              label="Page actions"
+              label={uiText('Page actions')}
               icon="share"
               disabled={!active.url || nativeOpening}
               onPress={() => setPageActionsOpen(true)}
             />
             <IconButton
-              label="Bookmarks"
+              label={uiText('Bookmarks')}
               icon="history"
               onPress={() => {
                 setQuery('')
@@ -1250,7 +1296,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             />
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Tabs (${recentTabs(state.tabs).length})`}
+              accessibilityLabel={uiText('Tabs ({value0})', {
+                value0: recentTabs(state.tabs).length,
+              })}
               onPress={() => {
                 setQuery('')
                 setLibrary('tabs')
@@ -1333,7 +1381,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       {pageActionsOpen && (
         <Sheet
           ref={pageActionsSheet}
-          title="Page actions"
+          title={uiText('Page actions')}
           onClose={() => setPageActionsOpen(false)}
         >
           <Text numberOfLines={2} style={styles.title}>
@@ -1341,12 +1389,12 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           </Text>
           <Action
             secondary
-            label="Thread for this tab"
+            label={uiText('Thread for this tab')}
             onPress={() => pageActionsSheet.current?.dismiss(() => setThreadOpen(true))}
           />
           <Action
             secondary
-            label="Customize website"
+            label={uiText('Customize website')}
             disabled={
               !websiteOrigin || !customizationSupported || isPrivateBrowserProfile(active.profileId)
             }
@@ -1354,7 +1402,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label="Share page"
+            label={uiText('Share page')}
             disabled={busy}
             onPress={() =>
               void act(async () => {
@@ -1368,18 +1416,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label="Copy page address"
+            label={uiText('Copy page address')}
             onPress={() =>
               void act(async () => {
                 await Clipboard.setStringAsync(active.url)
-                setNotice('Page address copied.')
+                setNotice(uiText('Page address copied.'))
               })
             }
           />
           {active.kind === 'remote' && !isPrivateBrowserProfile(active.profileId) && (
             <Action
               secondary
-              label="Copy Studio ID (for agents)"
+              label={uiText('Copy Studio ID (for agents)')}
               onPress={() =>
                 void act(async () => {
                   await Clipboard.setStringAsync(
@@ -1389,36 +1437,39 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                       `workspace:${active.id}`,
                     ),
                   )
-                  setNotice('Studio ID copied.')
+                  setNotice(uiText('Studio ID copied.'))
                 })
               }
             />
           )}
           <Action
+            destructive={
+              state.bookmarks.some((tab) => pageKey(tab) === pageKey(active)) ? true : false
+            }
             secondary
             label={
               state.bookmarks.some((tab) => pageKey(tab) === pageKey(active))
-                ? 'Remove bookmark'
-                : 'Bookmark page'
+                ? uiText('Remove bookmark')
+                : uiText('Bookmark page')
             }
             disabled={busy || !!active.previewOf || isPrivateBrowserProfile(active.profileId)}
             onPress={() => change((state) => toggleBookmark(state, active))}
           />
           <Action
             secondary
-            label="Copy selection"
+            label={uiText('Copy selection')}
             disabled={busy || !active.url || nativeOpening}
             onPress={() =>
               void act(async () => {
                 const value = await selected()
                 await Clipboard.setStringAsync(value.text)
-                setNotice('Selection copied.')
+                setNotice(uiText('Selection copied.'))
               })
             }
           />
           <Action
             secondary
-            label="Add selection to thread"
+            label={uiText('Add selection to thread')}
             disabled={busy || !active.url || nativeOpening}
             onPress={() =>
               void act(async () => {
@@ -1430,7 +1481,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label="Add page to thread"
+            label={uiText('Add page to thread')}
             disabled={busy || !active.url || nativeOpening}
             onPress={() => {
               pageActionsSheet.current?.dismiss(() =>
@@ -1442,18 +1493,22 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         </Sheet>
       )}
       {optionsOpen && (
-        <Sheet ref={optionsSheet} title="Browser options" onClose={() => setOptionsOpen(false)}>
+        <Sheet
+          ref={optionsSheet}
+          title={uiText('Browser options')}
+          onClose={() => setOptionsOpen(false)}
+        >
           {Platform.OS === 'ios' && active.kind === 'local' && (
             <>
               <Action
                 secondary
-                label="Page actions"
+                label={uiText('Page actions')}
                 disabled={!active.url || nativeOpening}
                 onPress={() => optionsSheet.current?.dismiss(() => setPageActionsOpen(true))}
               />
               <Action
                 secondary
-                label="Bookmarks"
+                label={uiText('Bookmarks')}
                 onPress={() =>
                   optionsSheet.current?.dismiss(() => {
                     setQuery('')
@@ -1463,28 +1518,28 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               />
             </>
           )}
-          <Action secondary label="Settle tab" disabled={busy} onPress={() => move()} />
+          <Action secondary label={uiText('Settle tab')} disabled={busy} onPress={() => move()} />
           <Action
             secondary
-            label="Snooze for 1 hour"
+            label={uiText('Snooze for 1 hour')}
             disabled={busy}
             onPress={() => move(Date.now() + 3600000)}
           />
           <Action
             secondary
-            label="Snooze for 4 hours"
+            label={uiText('Snooze for 4 hours')}
             disabled={busy}
             onPress={() => move(Date.now() + 14400000)}
           />
           <Action
             secondary
-            label="Snooze until tomorrow"
+            label={uiText('Snooze until tomorrow')}
             disabled={busy}
             onPress={() => move(tomorrowBrowserTabWake())}
           />
           <Action
             secondary
-            label="Choose date and time…"
+            label={uiText('Choose date and time…')}
             disabled={busy || active.pinned}
             onPress={() => {
               const tab = active
@@ -1493,7 +1548,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label={active.pinned ? 'Unpin tab' : 'Pin tab'}
+            label={active.pinned ? uiText('Unpin tab') : uiText('Pin tab')}
             onPress={() => change((state) => togglePinnedTab(state, active.id))}
           />
           <Action
@@ -1522,16 +1577,20 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               onSave={saveSearchEngine}
             />
           )}
-          <Text style={styles.title}>Tab profile</Text>
+          <Text style={styles.title}>
+            <InterfaceText>{'Tab profile'}</InterfaceText>
+          </Text>
           {isPrivateBrowserProfile(active.profileId) ? (
             <Text style={styles.muted}>
-              Private · temporary profile. Website data is discarded when this tab closes.
+              <InterfaceText>
+                {'Private · temporary profile. Website data is discarded when this tab closes.'}
+              </InterfaceText>
             </Text>
           ) : active.kind === 'local' ? (
             nativeAvailable ? (
               <>
                 <Choice
-                  label="Local profile for this tab"
+                  label={uiText('Local profile for this tab')}
                   value={active.profileId}
                   items={[
                     ...new Set([
@@ -1549,29 +1608,35 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   onChange={(id) => void act(() => localProfile(id))}
                 />
                 <Field
-                  label="New local profile ID"
+                  label={uiText('New local profile ID')}
                   value={nativeProfileId}
                   onChangeText={setNativeProfileId}
                   autoCapitalize="none"
                   autoCorrect={false}
                 />
                 <Action
-                  label="Use new local profile"
+                  label={uiText('Use new local profile')}
                   disabled={busy || nativeOpening || !nativeProfileId}
                   onPress={() => void act(() => localProfile(nativeProfileId))}
                 />
-                <Text style={styles.muted}>Native WebKit · separate website data per profile</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>
+                    {'Native WebKit · separate website data per profile'}
+                  </InterfaceText>
+                </Text>
               </>
             ) : (
               <Text style={styles.muted}>
                 {active.profileId === 'device'
-                  ? 'This device · one shared device session (no separate local profiles)'
-                  : `Native WebKit profile ${active.profileId} is required for this tab.`}
+                  ? uiText('This device · one shared device session (no separate local profiles)')
+                  : uiText('Native WebKit profile {value0} is required for this tab.', {
+                      value0: active.profileId,
+                    })}
               </Text>
             )
           ) : (
             <Choice
-              label="Profile for this tab"
+              label={uiText('Profile for this tab')}
               value={active.profileId}
               items={profiles}
               disabled={busy || !owner?.connected}
@@ -1601,17 +1666,25 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               {error}
             </Text>
           ) : null}
-          <Text style={styles.title}>Engine limitations</Text>
+          <Text style={styles.title}>
+            <InterfaceText>{'Engine limitations'}</InterfaceText>
+          </Text>
           {active.kind === 'remote' ? (
             <Text style={styles.muted}>
-              Website camera, microphone and screen sharing depend on the paired browser engine.
-              Dovo's remote stream is separate from a website call's media access.
+              <InterfaceText>
+                {
+                  "Website camera, microphone and screen sharing depend on the paired browser engine. Dovo's remote stream is separate from a website call's media access."
+                }
+              </InterfaceText>
             </Text>
           ) : (
             <>
               <Text style={styles.muted}>
-                Website calls can request camera and microphone access with separate approval.
-                Sharing another browser tab and its audio is unavailable in this mobile browser.
+                <InterfaceText>
+                  {
+                    'Website calls can request camera and microphone access with separate approval. Sharing another browser tab and its audio is unavailable in this mobile browser.'
+                  }
+                </InterfaceText>
               </Text>
               {native.status &&
                 'websiteTabCaptureAvailable' in native.status &&
@@ -1630,7 +1703,11 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         <Sheet
           ref={librarySheet}
           title={
-            library === 'tabs' ? 'Browser tabs' : library === 'bookmarks' ? 'Bookmarks' : 'History'
+            library === 'tabs'
+              ? uiText('Browser tabs')
+              : library === 'bookmarks'
+                ? uiText('Bookmarks')
+                : uiText('History')
           }
           onClose={() => setLibrary(null)}
         >
@@ -1640,10 +1717,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             </Text>
           ) : null}
           <Choice
-            label="Computer for new tab"
+            label={uiText('Computer for new tab')}
             value={source}
             items={[
-              { id: 'device', name: 'This device' },
+              { id: 'device', name: uiText('This device') },
               ...runtime.overviews.map((entry) => ({
                 id: entry.profile.id,
                 name: entry.profile.name,
@@ -1653,21 +1730,25 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             onChange={setSource}
           />
           <Action
-            label="New tab"
+            label={uiText('New tab')}
             disabled={busy || state.tabs.length >= 100}
             onPress={() => void act(async () => newTab())}
           />
           <Action
             secondary
-            label="New private tab"
+            label={uiText('New private tab')}
             disabled={busy || state.tabs.length >= 100 || (source === 'device' && !nativeAvailable)}
             onPress={() => void act(async () => newTab(undefined, true))}
           />
-          <SearchField label="Search browser pages" value={query} onChangeText={setQuery} />
+          <SearchField
+            label={uiText('Search browser pages')}
+            value={query}
+            onChangeText={setQuery}
+          />
           {library === 'tabs' ? (
             <>
               <Choice
-                label="Tab category"
+                label={uiText('Tab category')}
                 value={visibleTabCategory}
                 items={(['active', 'snoozed', 'settled'] as const)
                   .filter((id) => id !== 'snoozed' || hasSnoozedTabs)
@@ -1710,7 +1791,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                           color={tab.pinned ? colors.accent : colors.muted}
                         />
                         <IconButton
-                          label={`${tab.pinned ? 'Unpin' : 'Close'} ${tab.title || 'tab'}`}
+                          label={`${tab.pinned ? uiText('Unpin') : uiText('Close')} ${tab.title || uiText('tab')}`}
                           icon={tab.pinned ? 'unpin' : 'close'}
                           disabled={busy}
                           onPress={() =>
@@ -1722,16 +1803,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                       </View>
                       <Pressable
                         accessibilityRole="button"
-                        accessibilityLabel={`Open ${tab.title || tab.url || 'New tab'}`}
+                        accessibilityLabel={uiText('Open {value0}', {
+                          value0: tab.title || tab.url || 'New tab',
+                        })}
                         accessibilityState={{ selected: tab.id === active.id }}
                         onPress={() => open(tab)}
                         style={{ minHeight: 116, padding: 12, gap: 8 }}
                       >
                         <Text numberOfLines={2} style={styles.text}>
-                          {tab.title || 'New tab'}
+                          {tab.title || uiText('New tab')}
                         </Text>
                         <Text numberOfLines={2} style={styles.muted}>
-                          {tab.url || 'Search or enter address'}
+                          {tab.url || uiText('Search or enter address')}
                         </Text>
                         <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
                           {describe(tab)}
@@ -1743,15 +1826,21 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             </>
           ) : library === 'bookmarks' ? (
             <>
-              <Text style={styles.title}>Bookmarks</Text>
+              <Text style={styles.title}>
+                <InterfaceText>{'Bookmarks'}</InterfaceText>
+              </Text>
               {list(state.bookmarks, 'bookmarks')}
-              {!state.bookmarks.length && <Text style={styles.muted}>No bookmarks yet.</Text>}
+              {!state.bookmarks.length && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No bookmarks yet.'}</InterfaceText>
+                </Text>
+              )}
             </>
           ) : (
             <>
               <Action
                 secondary
-                label="Reopen last closed tab"
+                label={uiText('Reopen last closed tab')}
                 disabled={!state.closed.length || state.tabs.length >= 100}
                 onPress={() =>
                   void act(async () => {
@@ -1766,11 +1855,13 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               <Text style={styles.title}>{uiText('History')}</Text>
               <Action
                 secondary
-                label="Clear history"
+                label={uiText('Clear history')}
                 onPress={() => change((state) => ({ ...state, history: [] }))}
               />
               {list(state.history, 'saved')}
-              <Text style={styles.title}>Recently closed</Text>
+              <Text style={styles.title}>
+                <InterfaceText>{'Recently closed'}</InterfaceText>
+              </Text>
               {list(state.closed, 'saved')}
             </>
           )}
@@ -1779,7 +1870,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       {snoozingTab && (
         <BrowserSnoozeSheet
           key={snoozingTab.id}
-          title={snoozingTab.title || 'tab'}
+          title={snoozingTab.title || uiText('tab')}
           until={snoozingTab.snoozedUntil}
           onClose={() => setSnoozingTab(null)}
           onSnooze={(until) => {
@@ -1793,14 +1884,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       {selection && (
         <Sheet
           ref={draftSheet}
-          title="Add to a thread draft"
+          title={uiText('Add to a thread draft')}
           busy={busy}
           onClose={() => setSelection(null)}
         >
           <Text style={styles.muted}>
-            Append the page source and selected text to this phone’s draft. Review before sending.
+            <InterfaceText>
+              {
+                'Append the page source and selected text to this phone’s draft. Review before sending.'
+              }
+            </InterfaceText>
           </Text>
-          <SearchField label="Find a thread" value={query} onChangeText={setQuery} />
+          <SearchField label={uiText('Find a thread')} value={query} onChangeText={setQuery} />
           {error ? (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
@@ -1818,7 +1913,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 <Action
                   key={entry.profile.id + task.id}
                   secondary
-                  label={`${task.title || 'Untitled thread'} · ${entry.profile.name}`}
+                  label={`${task.title || uiText('Untitled thread')} · ${entry.profile.name}`}
                   disabled={busy || !entry.connected}
                   onPress={() => void act(() => saveDraft(entry.profile.id, task.id))}
                 />

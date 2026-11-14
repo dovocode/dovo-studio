@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { ActivityIndicator, Pressable, View, type ViewStyle } from 'react-native'
 import { designTokens } from '@dovo/design'
@@ -39,6 +40,8 @@ export function Pill({
   testID?: string
   children?: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, highContrast } = useTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
@@ -78,7 +81,13 @@ export function Pill({
           {children}
         </Pressable>
       </Glass>
-      {onDismiss && <IconButton icon="close" label={`Dismiss ${label}`} onPress={onDismiss} />}
+      {onDismiss && (
+        <IconButton
+          icon="close"
+          label={uiText('Dismiss {value0}', { value0: label })}
+          onPress={onDismiss}
+        />
+      )}
     </View>
   )
 }

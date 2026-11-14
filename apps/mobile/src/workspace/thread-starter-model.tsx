@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
   decode,
@@ -27,6 +28,8 @@ export function ThreadStarterModel({
   disabled: boolean
   onChange: (fields: StarterModel) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot } = useRuntime()
   const [open, setOpen] = useState(false)
   const repository = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
@@ -45,12 +48,12 @@ export function ThreadStarterModel({
     <>
       <Action
         secondary
-        label={`Model · ${agent.model || agent.name}`}
+        label={uiText('Model · {value0}', { value0: agent.model || agent.name })}
         disabled={disabled}
         onPress={() => setOpen(true)}
       />
       {open && (
-        <Sheet title="Choose a model" onClose={() => setOpen(false)}>
+        <Sheet title={uiText('Choose a model')} onClose={() => setOpen(false)}>
           <HarnessModelPicker
             task={task}
             agent={agent}

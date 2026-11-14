@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
 import type { Task } from '@dovo/protocol'
@@ -21,12 +22,14 @@ export function TaskRowMenu({
   onDetails,
   contentOffsetY = 0,
 }: TaskRowMenuProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   return (
     <Pressable
       testID={testID}
-      accessibilityLabel={`Actions for ${task.title}`}
+      accessibilityLabel={uiText('Actions for {value0}', { value0: task.title })}
       accessibilityRole="button"
       accessibilityState={{ disabled }}
       disabled={disabled}

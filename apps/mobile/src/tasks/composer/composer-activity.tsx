@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import { nativeTodoSummary, responses, type Task } from '@dovo/protocol'
@@ -12,6 +13,8 @@ import { MessageQueue } from './message-queue'
 import { pendingQueue } from './pending-send'
 
 export function ComposerActivity({ task, attached = false }: { task: Task; attached?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { actions } = useTaskConversation()
   const { call, connected } = useRuntime()
@@ -60,10 +63,17 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
             ? [
                 {
                   value: 'queue',
-                  title: 'Queue',
+                  title: uiText('Queue'),
                   count: String(queue.length),
                   notice: pausedCount > 0,
-                  label: `Queue · ${queue.length}${pausedCount ? (pausedCount === queue.length ? ' · Paused' : ` · ${pausedCount} paused`) : ''}`,
+                  label: uiText('Queue · {value0}{value1}', {
+                    value0: queue.length,
+                    value1: pausedCount
+                      ? pausedCount === queue.length
+                        ? ' · Paused'
+                        : ` · ${pausedCount} paused`
+                      : '',
+                  }),
                 },
               ]
             : []),
@@ -71,10 +81,14 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
             ? [
                 {
                   value: 'checklist',
-                  title: 'Checklist',
+                  title: uiText('Checklist'),
                   count: `${summary.completed}/${summary.total}`,
                   notice: summary.unfinished,
-                  label: `Checklist · ${summary.completed}/${summary.total}${summary.unfinished ? ' · Unfinished' : ''}`,
+                  label: uiText('Checklist · {value0}/{value1}{value2}', {
+                    value0: summary.completed,
+                    value1: summary.total,
+                    value2: summary.unfinished ? ' · Unfinished' : '',
+                  }),
                 },
               ]
             : []),
@@ -168,7 +182,9 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
       {playback}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={collapsed ? 'Expand composer activity' : 'Collapse composer activity'}
+        accessibilityLabel={
+          collapsed ? uiText('Expand composer activity') : uiText('Collapse composer activity')
+        }
         accessibilityState={{ expanded: !collapsed }}
         onPress={() => setCollapsed((value) => !value)}
         style={({ pressed }) => ({
@@ -189,7 +205,7 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
   const Surface = attached ? View : Glass
   return (
     <View
-      accessibilityLabel="Composer activity"
+      accessibilityLabel={uiText('Composer activity')}
       style={{
         marginHorizontal: attached ? 20 : 12,
         marginTop: 0,
@@ -220,7 +236,7 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
         {collapsed && summary && (
           <View
             accessibilityRole="progressbar"
-            accessibilityLabel="Checklist completion"
+            accessibilityLabel={uiText('Checklist completion')}
             accessibilityValue={{ min: 0, max: summary.total, now: summary.completed }}
             style={{
               marginHorizontal: 10,

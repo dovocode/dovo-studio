@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { Action } from '../../../ui/controls/action'
@@ -11,13 +12,18 @@ export function PullSectionStatus({
   label: string
   section: ReturnType<typeof usePullDetail>['sections']['overview']
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const error = section.error || section.detail?.refreshError || section.detail?.pull.statusError
   const warnings = section.detail?.warnings ?? []
   if (section.enabled === false) return null
   if (section.ready && !error && !warnings.length) return null
   return (
-    <View accessibilityLabel={`${label} loading status`} style={{ gap: 8 }}>
+    <View
+      accessibilityLabel={uiText('{value0} loading status', { value0: label })}
+      style={{ gap: 8 }}
+    >
       <Text
         accessibilityRole={error ? 'alert' : undefined}
         style={error ? styles.error : styles.muted}
@@ -25,10 +31,10 @@ export function PullSectionStatus({
         {error
           ? `${label}: ${error}`
           : section.ready
-            ? `${label}: some data could not be loaded.`
+            ? uiText('{value0}: some data could not be loaded.', { value0: label })
             : section.readConnected
-              ? `Loading ${label.toLowerCase()}…`
-              : `${label}: connect to load this section.`}
+              ? uiText('Loading {value0}…', { value0: label.toLowerCase() })
+              : uiText('{value0}: connect to load this section.', { value0: label })}
       </Text>
       {warnings.map((warning) => (
         <Text key={warning} accessibilityRole="alert" style={styles.error}>
@@ -40,8 +46,8 @@ export function PullSectionStatus({
         disabled={!section.readConnected || section.busy}
         label={
           section.refreshing
-            ? `Refreshing ${label.toLowerCase()}…`
-            : `Refresh ${label.toLowerCase()}`
+            ? uiText('Refreshing {value0}…', { value0: label.toLowerCase() })
+            : uiText('Refresh {value0}', { value0: label.toLowerCase() })
         }
         onPress={section.refresh}
       />

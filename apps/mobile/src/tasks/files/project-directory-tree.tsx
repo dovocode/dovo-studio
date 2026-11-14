@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Effect } from 'effect'
 import { Pressable, View } from 'react-native'
@@ -27,6 +28,8 @@ export function ProjectDirectoryTree(props: Props) {
 }
 
 function Directory({ path, depth, ...props }: BranchProps & { path: string; depth: number }) {
+  const uiText = useInterfaceText()
+
   const { readEffect, connected } = props
   const { styles, colors } = useTheme()
   const [result, setResult] = useState<ProjectDirectory>()
@@ -115,8 +118,16 @@ function Directory({ path, depth, ...props }: BranchProps & { path: string; dept
           </Pressable>
         ),
       )}
-      {!connected && !result && <Text style={styles.muted}>Reconnect to browse files.</Text>}
-      {loading && props.active && connected && <Text style={styles.muted}>Loading folder…</Text>}
+      {!connected && !result && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Reconnect to browse files.'}</InterfaceText>
+        </Text>
+      )}
+      {loading && props.active && connected && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Loading folder…'}</InterfaceText>
+        </Text>
+      )}
       {!!error && (
         <View>
           <Text accessibilityRole="alert" style={styles.error}>
@@ -124,31 +135,37 @@ function Directory({ path, depth, ...props }: BranchProps & { path: string; dept
           </Text>
           <Action
             secondary
-            label="Retry folder"
+            label={uiText('Retry folder')}
             disabled={!connected}
             onPress={() => setRetry((value) => value + 1)}
           />
         </View>
       )}
       {result?.entries.length === 0 && !loading && !error && (
-        <Text style={styles.muted}>This folder has no visible files.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'This folder has no visible files.'}</InterfaceText>
+        </Text>
       )}
       {!!result?.nextCursor && (
         <Action
           secondary
-          label="More entries"
+          label={uiText('More entries')}
           disabled={!connected || loading}
           onPress={() => setPage({ version, cursor: result.nextCursor })}
         />
       )}
       {result?.truncated && !result.nextCursor && (
-        <Text style={styles.muted}>Some files are omitted. Search to find more files.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Some files are omitted. Search to find more files.'}</InterfaceText>
+        </Text>
       )}
     </View>
   )
 }
 
 function FolderEntry({ path, depth, ...props }: BranchProps & { path: string; depth: number }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const [expanded, setExpanded] = useState(() => !!props.selected?.startsWith(`${path}/`))
   const [visited, setVisited] = useState(expanded)
@@ -162,7 +179,7 @@ function FolderEntry({ path, depth, ...props }: BranchProps & { path: string; de
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Folder ${path}`}
+        accessibilityLabel={uiText('Folder {value0}', { value0: path })}
         accessibilityState={{ expanded }}
         onPress={() => {
           setExpanded((value) => !value)

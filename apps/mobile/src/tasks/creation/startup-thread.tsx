@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
@@ -90,9 +91,13 @@ export function StartupThread({
   if (!entry?.snapshot)
     return (
       <View style={styles.content}>
-        <Text style={styles.title}>Connect a computer</Text>
-        <Text style={styles.muted}>A computer needs to be online to start a thread.</Text>
-        <Action label="Browse tasks" secondary onPress={onBrowse} />
+        <Text style={styles.title}>
+          <InterfaceText>{'Connect a computer'}</InterfaceText>
+        </Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'A computer needs to be online to start a thread.'}</InterfaceText>
+        </Text>
+        <Action label={uiText('Browse tasks')} secondary onPress={onBrowse} />
       </View>
     )
   return (
@@ -173,7 +178,9 @@ export function StartupThread({
         </TemporaryTaskRuntime>
       ) : (
         <View style={styles.content}>
-          <Text style={styles.title}>Choose a folder</Text>
+          <Text style={styles.title}>
+            <InterfaceText>{'Choose a folder'}</InterfaceText>
+          </Text>
           <FolderPicker
             allowOffline
             repositories={entry.snapshot.workspace.repositories}
@@ -198,7 +205,7 @@ export function StartupThread({
               })
             }}
           />
-          <Action label="Browse tasks" secondary onPress={onBrowse} />
+          <Action label={uiText('Browse tasks')} secondary onPress={onBrowse} />
         </View>
       )}
     </RuntimeScope>

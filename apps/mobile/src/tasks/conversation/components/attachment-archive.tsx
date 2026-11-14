@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
@@ -191,7 +192,7 @@ export function AttachmentArchive({
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, padding: 8 }}>
           {(path || folder) && (
             <IconButton
-              label={path ? 'Back to archive folder' : 'Parent archive folder'}
+              label={path ? uiText('Back to archive folder') : uiText('Parent archive folder')}
               icon="back"
               variant="glass"
               onPress={() => {
@@ -212,23 +213,28 @@ export function AttachmentArchive({
             {path ?? (folder || attachment.name)}
           </Text>
           <IconButton
-            label={current ? 'Share selected file' : 'Share ZIP'}
+            label={current ? uiText('Share selected file') : uiText('Share ZIP')}
             icon="share"
             variant="glass"
             disabled={!connected || busy}
             onPress={share}
           />
-          <IconButton label="Close archive" icon="close" variant="glass" onPress={close} />
+          <IconButton
+            label={uiText('Close archive')}
+            icon="close"
+            variant="glass"
+            onPress={close}
+          />
         </View>
         {(loadError || error || !connected) && (
           <View style={{ paddingHorizontal: 16, gap: 8 }}>
             <Text accessibilityRole="alert" style={styles.error}>
-              {!connected ? 'Reconnect to browse this ZIP.' : loadError || error}
+              {!connected ? uiText('Reconnect to browse this ZIP.') : loadError || error}
             </Text>
             {!!loadError && connected && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Retry archive"
+                accessibilityLabel={uiText('Retry archive')}
                 onPress={() => setRetry((value) => value + 1)}
                 style={{ minHeight: 44, justifyContent: 'center' }}
               >
@@ -241,7 +247,7 @@ export function AttachmentArchive({
           current ? (
             <>
               <ScrollView
-                accessibilityLabel="Archive file preview"
+                accessibilityLabel={uiText('Archive file preview')}
                 style={{ flex: 1, minHeight: 0 }}
                 contentContainerStyle={{ padding: 16 }}
               >
@@ -263,9 +269,9 @@ export function AttachmentArchive({
                 accessibilityLabel={
                   added
                     ? heldUploads.current.has(current.path)
-                      ? 'Check saved uploads'
-                      : 'Attached to draft'
-                    : 'Attach selected file to draft'
+                      ? uiText('Check saved uploads')
+                      : uiText('Attached to draft')
+                    : uiText('Attach selected file to draft')
                 }
                 disabled={!connected || busy || added || disabled}
                 onPress={() => {
@@ -341,22 +347,27 @@ export function AttachmentArchive({
                 <Text style={{ color: colors.text }}>
                   {added
                     ? heldUploads.current.has(current.path)
-                      ? 'Check saved uploads'
-                      : 'Attached to draft'
-                    : 'Attach to draft'}
+                      ? uiText('Check saved uploads')
+                      : uiText('Attached to draft')
+                    : uiText('Attach to draft')}
                 </Text>
               </Pressable>
             </>
           ) : !loadError && connected ? (
-            <Text style={[styles.text, { padding: 16 }]}>Loading file…</Text>
+            <Text style={[styles.text, { padding: 16 }]}>
+              <InterfaceText>{'Loading file…'}</InterfaceText>
+            </Text>
           ) : null
         ) : entries ? (
-          <ScrollView accessibilityLabel="Archive files" style={{ flex: 1, minHeight: 0 }}>
+          <ScrollView
+            accessibilityLabel={uiText('Archive files')}
+            style={{ flex: 1, minHeight: 0 }}
+          >
             {archiveChildren(entries, folder).map((entry) => (
               <Pressable
                 key={entry.path}
                 accessibilityRole="button"
-                accessibilityLabel={`${entry.directory ? 'Open folder' : 'Preview file'} ${entry.path.slice(folder.length).replace(/\/$/, '')}`}
+                accessibilityLabel={`${entry.directory ? uiText('Open folder') : uiText('Preview file')} ${entry.path.slice(folder.length).replace(/\/$/, '')}`}
                 disabled={!connected || busy}
                 onPress={() => (entry.directory ? setFolder(entry.path) : setPath(entry.path))}
                 style={{
@@ -382,11 +393,15 @@ export function AttachmentArchive({
               </Pressable>
             ))}
             {!archiveChildren(entries, folder).length && (
-              <Text style={[styles.text, { padding: 16 }]}>This folder is empty.</Text>
+              <Text style={[styles.text, { padding: 16 }]}>
+                <InterfaceText>{'This folder is empty.'}</InterfaceText>
+              </Text>
             )}
           </ScrollView>
         ) : !loadError && connected ? (
-          <Text style={[styles.text, { padding: 16 }]}>Loading archive…</Text>
+          <Text style={[styles.text, { padding: 16 }]}>
+            <InterfaceText>{'Loading archive…'}</InterfaceText>
+          </Text>
         ) : null}
       </View>
     </SafeModal>

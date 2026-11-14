@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState, useRef, useEffect } from 'react'
 import { View } from 'react-native'
 import { Schema } from 'effect'
@@ -11,6 +12,8 @@ import { copyText } from '../ui/content/clipboard'
 import { useTheme } from '../ui/theme'
 
 export function RunAudit({ runId }: { runId: string }) {
+  const uiText = useInterfaceText()
+
   const { callEffect, profile, connected } = useRuntime()
   const { styles } = useTheme()
   const { act, error, busy } = useAction()
@@ -41,11 +44,14 @@ export function RunAudit({ runId }: { runId: string }) {
   return (
     <View style={{ gap: 8 }}>
       <Text style={styles.muted}>
-        Run audit includes this run's workers. Output loads only when requested. Cost is an
-        estimate, not a subscription bill.
+        <InterfaceText>
+          {
+            "Run audit includes this run's workers. Output loads only when requested. Cost is an estimate, not a subscription bill."
+          }
+        </InterfaceText>
       </Text>
       <Action
-        label="Load run audit"
+        label={uiText('Load run audit')}
         secondary
         disabled={!connected || busy}
         onPress={() => load(0)}
@@ -54,17 +60,24 @@ export function RunAudit({ runId }: { runId: string }) {
       {audit && (
         <>
           <Text style={styles.muted}>
-            {audit.tokens} reported tokens · ${audit.estimatedCostUsd.toFixed(4)} estimated
-            {audit.usageIncomplete ? ' · Some usage is unavailable' : ''}
+            <InterfaceText
+              values={{
+                value0: audit.tokens,
+                value1: audit.estimatedCostUsd.toFixed(4),
+                value2: audit.usageIncomplete ? uiText(' · Some usage is unavailable') : '',
+              }}
+            >
+              {'{value0} reported tokens · ${value1} estimated{value2}'}
+            </InterfaceText>
           </Text>
           <Action
-            label="Load output for this page"
+            label={uiText('Load output for this page')}
             secondary
             disabled={!connected || busy}
             onPress={() => load(offset, true)}
           />
           <Action
-            label="Copy audit page"
+            label={uiText('Copy audit page')}
             secondary
             disabled={busy}
             onPress={() => act(() => copyText(JSON.stringify(audit, null, 2)))}
@@ -74,7 +87,7 @@ export function RunAudit({ runId }: { runId: string }) {
           </Text>
           {audit.nextOffset !== undefined && (
             <Action
-              label="Next audit page"
+              label={uiText('Next audit page')}
               secondary
               disabled={!connected || busy}
               onPress={() => {

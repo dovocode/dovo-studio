@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ProjectSpreadsheet } from './project-spreadsheet'
 import { isSpreadsheet } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
@@ -41,6 +42,8 @@ export function TaskFiles({
   draft: ThreadFileDraft | null
   onDraftChange: (draft: ThreadFileDraft | null) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { call, connected, snapshot, connection } = useRuntime()
   const { styles, colors } = useTheme()
   const [checkoutId, setCheckoutId] = useState(draft?.checkoutId ?? '')
@@ -137,9 +140,9 @@ export function TaskFiles({
       action()
     }
     if (dirty)
-      Alert.alert('Discard file edits?', 'Your unsaved changes will be lost.', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: proceed },
+      Alert.alert(uiText('Discard file edits?'), uiText('Your unsaved changes will be lost.'), [
+        { text: uiText('Keep editing'), style: 'cancel' },
+        { text: uiText('Discard'), style: 'destructive', onPress: proceed },
       ])
     else proceed()
   }
@@ -203,7 +206,7 @@ export function TaskFiles({
       <View style={{ padding: 12, gap: 8 }}>
         {!!links.length && (
           <Choice
-            label="Project folder"
+            label={uiText('Project folder')}
             value={checkoutId}
             disabled={saving}
             items={[
@@ -232,14 +235,14 @@ export function TaskFiles({
           {!!selected && (
             <Action
               secondary
-              label="Browse files"
+              label={uiText('Browse files')}
               disabled={saving}
               onPress={() => discardThen(() => setSelected(''))}
             />
           )}
           <Action
             secondary
-            label="Refresh files"
+            label={uiText('Refresh files')}
             disabled={!connected || saving}
             onPress={() =>
               discardThen(() => {
@@ -248,7 +251,11 @@ export function TaskFiles({
             }
           />
         </View>
-        {!connected && <Text style={styles.muted}>Reconnect to browse and save files.</Text>}
+        {!connected && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Reconnect to browse and save files.'}</InterfaceText>
+          </Text>
+        )}
       </View>
       <View style={selected ? { display: 'none' } : { flex: 1, minHeight: 0 }}>
         <ProjectFileBrowser
@@ -276,7 +283,7 @@ export function TaskFiles({
           {delimitedText && !editing && (
             <Action
               secondary
-              label={sheetPreview ? 'Text view' : 'Table preview'}
+              label={sheetPreview ? uiText('Text view') : uiText('Table preview')}
               onPress={() => setTablePreviewKey(sheetPreview ? '' : tableKey)}
             />
           )}
@@ -291,12 +298,14 @@ export function TaskFiles({
             </Text>
           )}
           {!file && connected && !editing && !sheetPreview && (
-            <Text style={styles.muted}>Loading file…</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading file…'}</InterfaceText>
+            </Text>
           )}
           {editing ? (
             <>
               <Field
-                label="File contents"
+                label={uiText('File contents')}
                 value={editing.contents}
                 editable={!saving && !editLimit}
                 multiline
@@ -307,24 +316,29 @@ export function TaskFiles({
               />
               <View style={[styles.row, { gap: 8 }]}>
                 <Action
-                  label={saving ? 'Saving…' : 'Save file'}
+                  label={saving ? uiText('Saving…') : uiText('Save file')}
                   disabled={!connected || saving || readOnly || editLimit || !dirty}
                   onPress={() => void save()}
                 />
                 <Action
                   secondary
-                  label="Cancel editing"
+                  label={uiText('Cancel editing')}
                   disabled={saving}
                   onPress={() => discardThen(() => {})}
                 />
               </View>
               <Text style={styles.muted}>
-                Saves only if the file still matches the version you opened. Refresh to load changes
-                from disk.
+                <InterfaceText>
+                  {
+                    'Saves only if the file still matches the version you opened. Refresh to load changes from disk.'
+                  }
+                </InterfaceText>
               </Text>
               {editLimit && (
                 <Text style={styles.muted}>
-                  A complete file read is required to continue editing.
+                  <InterfaceText>
+                    {'A complete file read is required to continue editing.'}
+                  </InterfaceText>
                 </Text>
               )}
             </>
@@ -342,7 +356,7 @@ export function TaskFiles({
                 <>
                   <Action
                     secondary
-                    label="Edit file"
+                    label={uiText('Edit file')}
                     disabled={!connected || readOnly || editLimit}
                     onPress={() =>
                       onDraftChange({
@@ -356,14 +370,16 @@ export function TaskFiles({
                   {editLimit && (
                     <Text style={styles.muted}>
                       {file.size === undefined
-                        ? 'Update the runtime for bounded, editable file previews.'
-                        : `Read-only preview · ${file.size} bytes total.`}
+                        ? uiText('Update the runtime for bounded, editable file previews.')
+                        : uiText('Read-only preview · {value0} bytes total.', {
+                            value0: file.size,
+                          })}
                     </Text>
                   )}
                   {editLimit && file.size !== undefined && file.size <= 1024 * 1024 && (
                     <Action
                       secondary
-                      label="Load complete file to edit"
+                      label={uiText('Load complete file to edit')}
                       onPress={() => setFullRead(true)}
                     />
                   )}
@@ -371,7 +387,7 @@ export function TaskFiles({
                     visibleContents.includes('\n') && (
                       <Action
                         secondary
-                        label="Next lines"
+                        label={uiText('Next lines')}
                         onPress={() => {
                           setFocusedLine(
                             (file.startLine ?? 1) + (visibleContents.match(/\n/g)?.length ?? 0),
@@ -381,8 +397,15 @@ export function TaskFiles({
                       />
                     )}
                   {!!focusedLine && (
-                    <View style={{ gap: 6 }} accessibilityLabel={`Selected line ${focusedLine}`}>
-                      <Text style={styles.muted}>Search result · line {focusedLine}</Text>
+                    <View
+                      style={{ gap: 6 }}
+                      accessibilityLabel={uiText('Selected line {value0}', { value0: focusedLine })}
+                    >
+                      <Text style={styles.muted}>
+                        <InterfaceText values={{ value0: focusedLine }}>
+                          {'Search result · line {value0}'}
+                        </InterfaceText>
+                      </Text>
                       <CodeBlock
                         content={file.contents
                           .split('\n')
@@ -402,7 +425,9 @@ export function TaskFiles({
                   <CodeBlock content={visibleContents} language={fileLanguage(selected)} />
                   {file.contents.length > 200000 && (
                     <Text style={styles.muted}>
-                      Preview limited to the first 200,000 characters.
+                      <InterfaceText>
+                        {'Preview limited to the first 200,000 characters.'}
+                      </InterfaceText>
                     </Text>
                   )}
                 </>
@@ -416,7 +441,11 @@ export function TaskFiles({
                 />
               )}
               {!!file?.notice && <Text style={styles.muted}>{file.notice}</Text>}
-              {readOnly && <Text style={styles.muted}>This folder is read-only.</Text>}
+              {readOnly && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'This folder is read-only.'}</InterfaceText>
+                </Text>
+              )}
             </>
           )}
         </ScrollView>

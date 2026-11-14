@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
@@ -33,9 +34,11 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
     archive !== 'on' ||
     (/^\d+$/.test(days) && Number.isInteger(period) && period >= 1 && period <= 365)
   return (
-    <Sheet title="Thread lifecycle" busy={busy} onClose={onClose}>
+    <Sheet title={uiText('Thread lifecycle')} busy={busy} onClose={onClose}>
       <Text style={styles.muted}>
-        Override this thread’s project defaults. Inherit follows Task lifecycle settings.
+        <InterfaceText>
+          {'Override this thread’s project defaults. Inherit follows Task lifecycle settings.'}
+        </InterfaceText>
       </Text>
       {overrides.map((key, i) => (
         <Choice
@@ -47,7 +50,7 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
           }
           value={settle?.[key] === undefined ? 'inherit' : settle[key] ? 'on' : 'off'}
           items={[
-            { id: 'inherit', name: 'Inherit project' },
+            { id: 'inherit', name: uiText('Inherit project') },
             { id: 'on', name: uiText('On') },
             { id: 'off', name: uiText('Off') },
           ]}
@@ -61,19 +64,19 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
         />
       ))}
       <Choice
-        label="Auto-archive after settled"
+        label={uiText('Auto-archive after settled')}
         value={archive}
         onChange={setArchive}
         disabled={busy || !connected}
         items={[
-          { id: 'inherit', name: 'Inherit project' },
+          { id: 'inherit', name: uiText('Inherit project') },
           { id: 'off', name: uiText('Off') },
           { id: 'on', name: uiText('On') },
         ]}
       />
       {archive === 'on' && (
         <Field
-          label="Days in Settled"
+          label={uiText('Days in Settled')}
           value={days}
           onChangeText={setDays}
           keyboardType="number-pad"
@@ -82,7 +85,7 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
       )}
       {!valid && (
         <Text accessibilityRole="alert" style={styles.error}>
-          Choose between 1 and 365 days.
+          <InterfaceText>{'Choose between 1 and 365 days.'}</InterfaceText>
         </Text>
       )}
       <View style={styles.row}>

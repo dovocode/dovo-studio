@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { memo, useState } from 'react'
 import { View } from 'react-native'
 import { Pressable } from './thread-pressable'
@@ -31,6 +33,8 @@ export const NestedThreads = memo(function NestedThreads({
   onAcknowledgeFailure?: (key: string) => void
   hideSummary?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   thread = {
     ...thread,
     children: threadChildRows({ ...thread, nativeAgents: undefined }),
@@ -62,7 +66,7 @@ export const NestedThreads = memo(function NestedThreads({
     <View key={child.key}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open child thread ${child.title}`}
+        accessibilityLabel={uiText('Open child thread {value0}', { value0: child.title })}
         disabled={disabled}
         style={{ paddingVertical: 10, gap: 4 }}
         onPress={() => {
@@ -97,10 +101,14 @@ export const NestedThreads = memo(function NestedThreads({
             .join(' · ')}
         </Text>
         {threadNeedsInput(child) && child.phase !== 'needs-input' && (
-          <Text style={[styles.muted, { fontSize: 11 }]}>Needs input in child work</Text>
+          <Text style={[styles.muted, { fontSize: 11 }]}>
+            <InterfaceText>{'Needs input in child work'}</InterfaceText>
+          </Text>
         )}
         {child.partial && (
-          <Text style={[styles.muted, { fontSize: 11 }]}>Some child details unavailable</Text>
+          <Text style={[styles.muted, { fontSize: 11 }]}>
+            <InterfaceText>{'Some child details unavailable'}</InterfaceText>
+          </Text>
         )}
         {!!child.activity && !child.nativeAgentKey && (
           <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
@@ -114,12 +122,14 @@ export const NestedThreads = memo(function NestedThreads({
         !acknowledgedFailures.includes(child.failureKey) && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Acknowledge failure"
+            accessibilityLabel={uiText('Acknowledge failure')}
             disabled={disabled}
             style={{ minHeight: 44, paddingVertical: 12 }}
             onPress={() => onAcknowledgeFailure(child.failureKey!)}
           >
-            <Text style={[styles.muted, { fontSize: 12 }]}>Acknowledge failure</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              <InterfaceText>{'Acknowledge failure'}</InterfaceText>
+            </Text>
           </Pressable>
         )}
       {!!child.nativeAgentOverflow?.total && (
@@ -131,15 +141,27 @@ export const NestedThreads = memo(function NestedThreads({
             style={{ minHeight: 44, paddingVertical: 12 }}
           >
             <Text style={[styles.muted, { fontSize: 12 }]}>
-              Open {child.nativeAgentOverflow.total} additional agents in {child.title}
+              <InterfaceText
+                values={{ value0: child.nativeAgentOverflow.total, value1: child.title }}
+              >
+                {'Open {value0} additional agents in {value1}'}
+              </InterfaceText>
             </Text>
           </Pressable>
           {!!child.nativeAgentOverflow.working && (
-            <Text style={styles.muted}>{child.nativeAgentOverflow.working} working</Text>
+            <Text style={styles.muted}>
+              <InterfaceText values={{ value0: child.nativeAgentOverflow.working }}>
+                {'{value0} working'}
+              </InterfaceText>
+            </Text>
           )}
           {nativeOverflowFailures(child, acknowledgedFailures) > 0 && (
             <Text style={{ color: colors.error }}>
-              {nativeOverflowFailures(child, acknowledgedFailures)} additional failures
+              <InterfaceText
+                values={{ value0: nativeOverflowFailures(child, acknowledgedFailures) }}
+              >
+                {'{value0} additional failures'}
+              </InterfaceText>
             </Text>
           )}
           {child.nativeAgentOverflow.failureKey &&
@@ -152,8 +174,11 @@ export const NestedThreads = memo(function NestedThreads({
                 onPress={() => onAcknowledgeFailure(child.nativeAgentOverflow!.failureKey!)}
               >
                 <Text style={[styles.muted, { fontSize: 12 }]}>
-                  Acknowledge {child.nativeAgentOverflow.failed} additional failures in{' '}
-                  {child.title}
+                  <InterfaceText
+                    values={{ value0: child.nativeAgentOverflow.failed, value1: child.title }}
+                  >
+                    {'Acknowledge {value0} additional failures in {value1}'}
+                  </InterfaceText>
                 </Text>
               </Pressable>
             )}
@@ -173,7 +198,7 @@ export const NestedThreads = memo(function NestedThreads({
       {!hideSummary && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Spawned threads for ${thread.title}`}
+          accessibilityLabel={uiText('Spawned threads for {value0}', { value0: thread.title })}
           accessibilityState={{ expanded: open }}
           aria-expanded={open}
           disabled={searching}
@@ -192,7 +217,9 @@ export const NestedThreads = memo(function NestedThreads({
             <View>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`Finished threads for ${thread.title}`}
+                accessibilityLabel={uiText('Finished threads for {value0}', {
+                  value0: thread.title,
+                })}
                 accessibilityState={{ expanded: finishedOpen }}
                 aria-expanded={finishedOpen}
                 disabled={searching}
@@ -200,7 +227,11 @@ export const NestedThreads = memo(function NestedThreads({
                 style={{ paddingVertical: 12, minHeight: 44 }}
               >
                 <Text style={[styles.muted, { fontSize: 12 }]}>
-                  {finishedOpen ? '⌄' : '›'} Finished threads · {finishedThreads.length}
+                  <InterfaceText
+                    values={{ value0: finishedOpen ? '⌄' : '›', value1: finishedThreads.length }}
+                  >
+                    {'{value0} Finished threads · {value1}'}
+                  </InterfaceText>
                 </Text>
               </Pressable>
               {finishedOpen && (

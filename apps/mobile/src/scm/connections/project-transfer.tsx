@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { Schema } from 'effect'
@@ -46,6 +47,8 @@ export function ProjectTransferSettings({
   continuation?: boolean
   initiallyOpen?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { navigate } = useNavigation()
   const runtime = useRuntime(),
     { styles, colors } = useTheme()
@@ -282,8 +285,8 @@ export function ProjectTransferSettings({
     return (
       <Text style={styles.muted}>
         {handoffTask
-          ? 'Update this computer to continue threads on another computer.'
-          : 'Update this computer to copy projects to another computer.'}
+          ? uiText('Update this computer to continue threads on another computer.')
+          : uiText('Update this computer to copy projects to another computer.')}
       </Text>
     )
   const start = (retry = false) =>
@@ -363,11 +366,11 @@ export function ProjectTransferSettings({
         label={
           open
             ? handoffTask
-              ? 'Hide move options'
-              : 'Hide project copy'
+              ? uiText('Hide move options')
+              : uiText('Hide project copy')
             : handoffTask
-              ? 'Continue on another computer'
-              : 'Add to another computer'
+              ? uiText('Continue on another computer')
+              : uiText('Add to another computer')
         }
         onPress={() => {
           setOpen(!open)
@@ -381,15 +384,19 @@ export function ProjectTransferSettings({
           </Text>
           {handoffTask && job.state === 'failed' && (
             <Text style={styles.muted}>
-              This thread stays read-only. Retry the move, or cancel it. Cancel unlocks the thread
-              only after {job.targetName} confirms that it removed its copy. If {job.targetName}{' '}
-              already received the thread, cancel finishes the move instead.
+              <InterfaceText values={{ value0: job.targetName, value1: job.targetName }}>
+                {
+                  'This thread stays read-only. Retry the move, or cancel it. Cancel unlocks the thread only after {value0} confirms that it removed its copy. If {value1} already received the thread, cancel finishes the move instead.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {active && (
             <View
               accessibilityRole="progressbar"
-              accessibilityLabel={handoffTask ? 'Thread move progress' : 'Project copy progress'}
+              accessibilityLabel={
+                handoffTask ? uiText('Thread move progress') : uiText('Project copy progress')
+              }
               accessibilityValue={{
                 min: 0,
                 max: 100,
@@ -415,12 +422,15 @@ export function ProjectTransferSettings({
             <>
               <Text style={styles.text}>
                 {handoffTask
-                  ? `This thread continues on ${job.targetName}. Open it there and send your next message. The copy here stays read-only for recovery.`
-                  : `Thread created on ${job.targetName}.`}
+                  ? uiText(
+                      'This thread continues on {value0}. Open it there and send your next message. The copy here stays read-only for recovery.',
+                      { value0: job.targetName },
+                    )
+                  : uiText('Thread created on {value0}.', { value0: job.targetName })}
               </Text>
               <Action
                 secondary
-                label={`Open thread on ${job.targetName}`}
+                label={uiText('Open thread on {value0}', { value0: job.targetName })}
                 disabled={busy}
                 onPress={() =>
                   void act(async () => {
@@ -439,7 +449,9 @@ export function ProjectTransferSettings({
           )}
           {job.threadStartError && (
             <Text accessibilityRole="alert" style={styles.error}>
-              Files copied and thread saved. Could not start agent: {job.threadStartError}
+              <InterfaceText values={{ value0: job.threadStartError }}>
+                {'Files copied and thread saved. Could not start agent: {value0}'}
+              </InterfaceText>
             </Text>
           )}
           {job.path && (
@@ -448,12 +460,16 @@ export function ProjectTransferSettings({
             </Text>
           )}
           {!!job.skippedLinks && (
-            <Text style={styles.muted}>{job.skippedLinks} symbolic links skipped.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText values={{ value0: job.skippedLinks }}>
+                {'{value0} symbolic links skipped.'}
+              </InterfaceText>
+            </Text>
           )}
           {(active || (!!handoffTask && job.state === 'failed')) && (
             <Action
               secondary
-              label={handoffTask ? 'Cancel move' : 'Cancel copy'}
+              label={handoffTask ? uiText('Cancel move') : uiText('Cancel copy')}
               disabled={busy}
               onPress={() =>
                 void act(async () => {
@@ -472,14 +488,20 @@ export function ProjectTransferSettings({
         <View style={{ gap: 12 }}>
           <Text style={styles.muted}>
             {handoffTask
-              ? 'Move the full saved conversation, checklist, attachments and files. Provider sessions and credentials stay here. The destination thread uses that computer’s default harness, with no more access than this thread has. Nothing runs until you send the next message there. You can change its model after it opens. This thread stays here, read-only, for recovery.'
-              : 'Copy files and local Git history. The source project and chats stay here. A new folder is created on the destination. Worktrees use its configured worktree directory.'}
+              ? uiText(
+                  'Move the full saved conversation, checklist, attachments and files. Provider sessions and credentials stay here. The destination thread uses that computer’s default harness, with no more access than this thread has. Nothing runs until you send the next message there. You can change its model after it opens. This thread stays here, read-only, for recovery.',
+                )
+              : uiText(
+                  'Copy files and local Git history. The source project and chats stay here. A new folder is created on the destination. Worktrees use its configured worktree directory.',
+                )}
           </Text>
           {handoffTask && sourceRunning && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={[styles.text, { flex: 1 }]}>Stop the current turn first</Text>
+              <Text style={[styles.text, { flex: 1 }]}>
+                <InterfaceText>{'Stop the current turn first'}</InterfaceText>
+              </Text>
               <Switch
-                accessibilityLabel="Stop the current turn first"
+                accessibilityLabel={uiText('Stop the current turn first')}
                 value={stopSource}
                 disabled={busy || active}
                 onValueChange={setStopSource}
@@ -488,10 +510,10 @@ export function ProjectTransferSettings({
           )}
           {!handoffTask && !!worktrees.length && (
             <Choice
-              label="Source checkout"
+              label={uiText('Source checkout')}
               value={worktreePath}
               items={[
-                { id: '', name: 'Project checkout' },
+                { id: '', name: uiText('Project checkout') },
                 ...worktrees.map((entry) => ({
                   id: entry.path,
                   name: `${entry.branch || 'Detached HEAD'}${entry.dirty ? ' · Local changes' : ''} · ${entry.path}`,
@@ -509,9 +531,11 @@ export function ProjectTransferSettings({
           {!handoffTask && !!runtime.snapshot?.projectWorktreeTransfersSupported && (
             <View style={{ gap: 8 }}>
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-                <Text style={[styles.text, { flex: 1 }]}>Create a thread on destination</Text>
+                <Text style={[styles.text, { flex: 1 }]}>
+                  <InterfaceText>{'Create a thread on destination'}</InterfaceText>
+                </Text>
                 <Switch
-                  accessibilityLabel="Create a thread on destination"
+                  accessibilityLabel={uiText('Create a thread on destination')}
                   value={createThread}
                   disabled={busy || active}
                   onValueChange={setCreateThread}
@@ -520,22 +544,25 @@ export function ProjectTransferSettings({
               {createThread && (
                 <>
                   <Field
-                    label="First message (optional)"
+                    label={uiText('First message (optional)')}
                     value={prompt}
                     onChangeText={setPrompt}
                     multiline
                     editable={!busy && !active}
                   />
                   <Text style={styles.muted}>
-                    Leave empty for a draft. A message starts the agent using the destination’s
-                    settings in the copied checkout.
+                    <InterfaceText>
+                      {
+                        'Leave empty for a draft. A message starts the agent using the destination’s settings in the copied checkout.'
+                      }
+                    </InterfaceText>
                   </Text>
                 </>
               )}
             </View>
           )}
           <Choice
-            label="Destination computer"
+            label={uiText('Destination computer')}
             value={targetId}
             onChange={choose}
             items={targets.map((target) => ({ id: target.id, name: target.name }))}
@@ -543,13 +570,17 @@ export function ProjectTransferSettings({
           />
           {directUnavailable && transport !== 'ssh' && (
             <Text accessibilityRole="alert" style={styles.error}>
-              This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.
+              <InterfaceText>
+                {'This destination requires an SSH tunnel or a LAN/VPN pairing for project copies.'}
+              </InterfaceText>
             </Text>
           )}
           {!!worktreePath && !(directUnavailable && transport !== 'ssh') && (
             <View style={{ gap: 8 }}>
               {!plan && !planError && (
-                <Text style={styles.muted}>Checking destination project…</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Checking destination project…'}</InterfaceText>
+                </Text>
               )}
               {!!planError && (
                 <Text accessibilityRole="alert" style={styles.error}>
@@ -559,10 +590,10 @@ export function ProjectTransferSettings({
               {plan &&
                 (plan.repositories.length ? (
                   <Choice
-                    label="Destination project"
+                    label={uiText('Destination project')}
                     value={'repositoryId' in destination ? (destination.repositoryId ?? '') : ''}
                     items={[
-                      { id: '', name: 'Choose an existing project' },
+                      { id: '', name: uiText('Choose an existing project') },
                       ...plan.repositories.map((repo) => ({
                         id: repo.id,
                         name: `${repo.name} · ${repo.path}`,
@@ -574,10 +605,14 @@ export function ProjectTransferSettings({
                 ) : (
                   <>
                     <Text style={styles.muted}>
-                      This project is not on the destination yet. Where should its main checkout go?
+                      <InterfaceText>
+                        {
+                          'This project is not on the destination yet. Where should its main checkout go?'
+                        }
+                      </InterfaceText>
                     </Text>
                     <Field
-                      label="Project parent folder on destination"
+                      label={uiText('Project parent folder on destination')}
                       value={parentDirectory}
                       onChangeText={setParentDirectory}
                       editable={!busy && !active}
@@ -589,13 +624,15 @@ export function ProjectTransferSettings({
                 ))}
               {plan && (
                 <Text selectable style={styles.muted}>
-                  Copied worktree directory: {plan.worktreesRoot}. The main checkout stays separate.
+                  <InterfaceText values={{ value0: plan.worktreesRoot }}>
+                    {'Copied worktree directory: {value0}. The main checkout stays separate.'}
+                  </InterfaceText>
                 </Text>
               )}
               {!!planError && (
                 <Action
                   secondary
-                  label="Check destination project"
+                  label={uiText('Check destination project')}
                   disabled={busy || active}
                   onPress={() => setPlanRevision((value) => value + 1)}
                 />
@@ -604,27 +641,32 @@ export function ProjectTransferSettings({
           )}
           {!targets.length && (
             <Text style={styles.muted}>
-              Pair another computer in Settings → Computers, then refresh.
+              <InterfaceText>
+                {'Pair another computer in Settings → Computers, then refresh.'}
+              </InterfaceText>
             </Text>
           )}
           <Choice
-            label="Project copy connection"
+            label={uiText('Project copy connection')}
             value={transport}
             onChange={setTransport}
             items={[
-              { id: 'p2p', name: 'Dovo P2P' },
-              { id: 'ssh', name: 'SSH tunnel' },
+              { id: 'p2p', name: uiText('Dovo P2P') },
+              { id: 'ssh', name: uiText('SSH tunnel') },
             ]}
             disabled={busy || active}
           />
           {transport === 'ssh' && (
             <View style={{ gap: 10 }}>
               <Text style={styles.muted}>
-                SSH runs on the source computer, using its trusted SSH keys. Dovo must be running on
-                the paired destination.
+                <InterfaceText>
+                  {
+                    'SSH runs on the source computer, using its trusted SSH keys. Dovo must be running on the paired destination.'
+                  }
+                </InterfaceText>
               </Text>
               <Field
-                label="SSH host"
+                label={uiText('SSH host')}
                 value={sshHost}
                 onChangeText={setSshHost}
                 editable={!busy && !active}
@@ -632,7 +674,7 @@ export function ProjectTransferSettings({
                 autoCorrect={false}
               />
               <Field
-                label="SSH user"
+                label={uiText('SSH user')}
                 value={sshUser}
                 onChangeText={setSshUser}
                 editable={!busy && !active}
@@ -642,7 +684,7 @@ export function ProjectTransferSettings({
               <View style={{ flexDirection: 'row', gap: 12 }}>
                 <View style={{ flex: 1 }}>
                   <Field
-                    label="SSH port"
+                    label={uiText('SSH port')}
                     value={sshPort}
                     onChangeText={setSshPort}
                     keyboardType="number-pad"
@@ -651,7 +693,7 @@ export function ProjectTransferSettings({
                 </View>
                 <View style={{ flex: 1 }}>
                   <Field
-                    label="Destination Dovo HTTP port"
+                    label={uiText('Destination Dovo HTTP port')}
                     value={runtimePort}
                     onChangeText={setRuntimePort}
                     keyboardType="number-pad"
@@ -660,45 +702,61 @@ export function ProjectTransferSettings({
                 </View>
               </View>
               <Field
-                label="SSH key on source (optional)"
+                label={uiText('SSH key on source (optional)')}
                 value={identityFile}
                 onChangeText={setIdentityFile}
                 editable={!busy && !active}
                 autoCapitalize="none"
                 autoCorrect={false}
-                placeholder="Use configured SSH keys"
+                placeholder={uiText('Use configured SSH keys')}
               />
             </View>
           )}
           {inspection && (
             <View style={{ gap: 8 }}>
               <Text style={styles.muted}>
-                {inspection.files} files · {(inspection.bytes / 1048576).toFixed(1)} MB, plus Git
-                history.
+                <InterfaceText
+                  values={{
+                    value0: inspection.files,
+                    value1: (inspection.bytes / 1048576).toFixed(1),
+                  }}
+                >
+                  {'{value0} files · {value1} MB, plus Git history.'}
+                </InterfaceText>
               </Text>
               {!!inspection.skippedLinks && (
                 <Text style={styles.muted}>
-                  {inspection.skippedLinks} symbolic links will be skipped.
+                  <InterfaceText values={{ value0: inspection.skippedLinks }}>
+                    {'{value0} symbolic links will be skipped.'}
+                  </InterfaceText>
                 </Text>
               )}
               {inspection.ignoredFilesTruncated && (
                 <Text style={styles.muted}>
-                  Only the first 10,000 ignored or private files are listed. Unselected files stay
-                  on this computer.
+                  <InterfaceText>
+                    {
+                      'Only the first 10,000 ignored or private files are listed. Unselected files stay on this computer.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {!!inspection.ignoredFiles.length && (
                 <Action
                   secondary
-                  label={`Ignored or private files (${ignored.length} selected)`}
+                  label={uiText('Ignored or private files ({value0} selected)', {
+                    value0: ignored.length,
+                  })}
                   onPress={() => setShowIgnored(!showIgnored)}
                 />
               )}
               {showIgnored && (
                 <View style={{ gap: 8 }}>
                   <Text style={styles.muted}>
-                    Select only configuration and secrets you want on the destination. Generated
-                    folders are excluded.
+                    <InterfaceText>
+                      {
+                        'Select only configuration and secrets you want on the destination. Generated folders are excluded.'
+                      }
+                    </InterfaceText>
                   </Text>
                   {inspection.ignoredFiles.map((file) => (
                     <View
@@ -707,7 +765,7 @@ export function ProjectTransferSettings({
                     >
                       <Text style={[styles.text, { flex: 1 }]}>{file.path}</Text>
                       <Switch
-                        accessibilityLabel={`Include ${file.path}`}
+                        accessibilityLabel={uiText('Include {value0}', { value0: file.path })}
                         value={ignored.includes(file.path)}
                         disabled={busy || active}
                         onValueChange={(checked) =>
@@ -730,14 +788,14 @@ export function ProjectTransferSettings({
                 <Action
                   label={
                     busy
-                      ? 'Preparing…'
+                      ? uiText('Preparing…')
                       : handoffTask
-                        ? 'Move thread'
+                        ? uiText('Move thread')
                         : createThread
-                          ? 'Copy and create thread'
+                          ? uiText('Copy and create thread')
                           : worktreePath
-                            ? 'Copy worktree'
-                            : 'Copy project'
+                            ? uiText('Copy worktree')
+                            : uiText('Copy project')
                   }
                   disabled={
                     busy ||
@@ -754,14 +812,14 @@ export function ProjectTransferSettings({
               {job?.state === 'failed' && (
                 <Action
                   secondary
-                  label={handoffTask ? 'Retry move' : 'Retry copy'}
+                  label={handoffTask ? uiText('Retry move') : uiText('Retry copy')}
                   disabled={busy || !runtime.connected}
                   onPress={() => void start(true)}
                 />
               )}
               <Action
                 secondary
-                label="Refresh copy options"
+                label={uiText('Refresh copy options')}
                 disabled={busy || !runtime.connected}
                 onPress={() => void load()}
               />
@@ -791,16 +849,18 @@ export function ProjectTransferDialog({
   continuation?: boolean
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <Sheet
       title={
         sourceTask && continuation
-          ? 'Continue on another computer'
+          ? uiText('Continue on another computer')
           : sourceTask
             ? sourceTask.execution === 'worktree'
-              ? 'Copy worktree to another machine'
-              : 'Copy project checkout to another machine'
-            : 'Add to another machine'
+              ? uiText('Copy worktree to another machine')
+              : uiText('Copy project checkout to another machine')
+            : uiText('Add to another machine')
       }
       onClose={onClose}
     >

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { decode, pullDetailSchema, type PullDetail } from '@dovo/protocol'
@@ -146,6 +147,8 @@ export function PullExample({
 }: {
   initialScenario?: PullExampleScenario
 }) {
+  const uiText = useInterfaceText()
+
   const [scenario, setScenario] = useState(initialScenario)
   const [opened, setOpened] = useState('Choose a check or review to preview its local action.')
   const { colors, styles } = useTheme()
@@ -158,13 +161,19 @@ export function PullExample({
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
             <PullRequestIcon state={detail.pull.state} draft={detail.pull.draft} size={20} />
             <Text accessibilityRole="header" style={[styles.title, { flex: 1 }]}>
-              Pull request #{detail.pull.number}
+              <InterfaceText values={{ value0: detail.pull.number }}>
+                {'Pull request #{value0}'}
+              </InterfaceText>
             </Text>
           </View>
           <Text style={styles.text}>{detail.pull.title}</Text>
           <Text style={styles.muted}>
-            {detail.pull.state === 'merged' ? 'Merged' : detail.pull.draft ? 'Draft' : 'Open'} ·{' '}
-            {detail.pull.head} → {detail.pull.base} · {detail.pull.author}
+            {detail.pull.state === 'merged'
+              ? uiText('Merged')
+              : detail.pull.draft
+                ? uiText('Draft')
+                : uiText('Open')}{' '}
+            · {detail.pull.head} → {detail.pull.base} · {detail.pull.author}
           </Text>
         </View>
 
@@ -214,10 +223,14 @@ export function PullExample({
             },
           ]}
         >
-          <Text style={{ color: colors.accent, fontWeight: '600' }}>Open PR preview</Text>
+          <Text style={{ color: colors.accent, fontWeight: '600' }}>
+            <InterfaceText>{'Open PR preview'}</InterfaceText>
+          </Text>
         </Pressable>
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          {opened} No navigation or forge request is performed.
+          <InterfaceText values={{ value0: opened }}>
+            {'{value0} No navigation or forge request is performed.'}
+          </InterfaceText>
         </Text>
       </View>
     </RuntimeContext.Provider>

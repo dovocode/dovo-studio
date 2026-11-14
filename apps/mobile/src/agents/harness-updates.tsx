@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
@@ -13,6 +14,8 @@ import { SettingsAction as Action } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 export function HarnessUpdates() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { connected, callEffect, snapshot } = useRuntime()
   const [items, setItems] = useApplicationState<AdapterDiagnostic[]>([])
@@ -45,16 +48,19 @@ export function HarnessUpdates() {
   return (
     <View style={{ gap: 10 }}>
       <Text accessibilityRole="header" style={styles.text}>
-        Harness updates
+        <InterfaceText>{'Harness updates'}</InterfaceText>
       </Text>
       <Action
-        label={busy ? 'Checking…' : 'Check for updates'}
+        label={busy ? uiText('Checking…') : uiText('Check for updates')}
         disabled={!connected || busy}
         onPress={() => void check()}
       />
       <Text style={styles.muted}>
-        Installed versions on this server. Update CLI tools on the host; bundled SDKs update with
-        Dovo.
+        <InterfaceText>
+          {
+            'Installed versions on this server. Update CLI tools on the host; bundled SDKs update with Dovo.'
+          }
+        </InterfaceText>
       </Text>
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -62,11 +68,11 @@ export function HarnessUpdates() {
         </Text>
       ) : null}
       <Choice
-        label="Codex diagnostic profile"
+        label={uiText('Codex diagnostic profile')}
         value={networkAgentId}
         disabled={!connected || networkBusy}
         items={[
-          { id: '', name: 'Default Codex executable' },
+          { id: '', name: uiText('Default Codex executable') },
           ...codexAgents.map((agent) => ({ id: agent.id, name: agent.name })),
         ]}
         onChange={(id) => {
@@ -75,7 +81,7 @@ export function HarnessUpdates() {
         }}
       />
       <Action
-        label={networkBusy ? 'Testing Codex network…' : 'Test Codex network'}
+        label={networkBusy ? uiText('Testing Codex network…') : uiText('Test Codex network')}
         disabled={!connected || networkBusy}
         onPress={async () => {
           setNetworkBusy(true)
@@ -101,8 +107,10 @@ export function HarnessUpdates() {
       {network && (
         <View style={{ gap: 4 }}>
           <Text style={styles.text}>
-            {network.ok ? 'Network diagnostic completed' : 'Network diagnostic failed'} ·{' '}
-            {(network.durationMs / 1000).toFixed(1)}s
+            {network.ok
+              ? uiText('Network diagnostic completed')
+              : uiText('Network diagnostic failed')}{' '}
+            · {(network.durationMs / 1000).toFixed(1)}s
           </Text>
           <Text selectable style={styles.muted}>
             {network.output}
@@ -112,14 +120,14 @@ export function HarnessUpdates() {
       {items.map((item) => (
         <View key={item.id} style={{ gap: 4 }}>
           <Text style={styles.text}>
-            {item.name} · {item.installedVersion ?? 'Unavailable'} ·{' '}
+            {item.name} · {item.installedVersion ?? uiText('Unavailable')} ·{' '}
             {item.updateStatus === 'update-available'
-              ? `Update available: ${item.latestVersion}`
+              ? uiText('Update available: {value0}', { value0: item.latestVersion })
               : item.updateStatus === 'current'
-                ? 'Up to date'
+                ? uiText('Up to date')
                 : item.updateStatus === 'ahead'
-                  ? 'Ahead of latest release'
-                  : 'Version not confirmed'}
+                  ? uiText('Ahead of latest release')
+                  : uiText('Version not confirmed')}
           </Text>
           <Text style={styles.muted}>
             {item.detail} {item.guidance}

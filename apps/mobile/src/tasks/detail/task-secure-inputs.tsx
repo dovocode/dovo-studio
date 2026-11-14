@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useLayoutEffect, useRef, useState, type ComponentRef } from 'react'
 import { AppState, TextInput, View } from 'react-native'
 import { taskInputVisible, type RuntimeConnection } from '@dovo/protocol'
@@ -37,6 +38,8 @@ export function SecureInputCard({
   connection: RuntimeConnection
   connected: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const field = useRef<ComponentRef<typeof TextInput>>(null)
   const value = useRef('')
@@ -136,34 +139,64 @@ export function SecureInputCard({
   const destination = input.destination
   return (
     <View style={[styles.card, { marginHorizontal: 16, marginBottom: 12, padding: 12, gap: 10 }]}>
-      <Text style={styles.text}>Secure input · {input.title}</Text>
+      <Text style={styles.text}>
+        <InterfaceText values={{ value0: input.title }}>{'Secure input · {value0}'}</InterfaceText>
+      </Text>
       <Text style={styles.text}>{input.prompt}</Text>
       <Text style={styles.muted}>
-        Only this runtime receives the value. The agent receives status only. Input is not saved.
+        <InterfaceText>
+          {
+            'Only this runtime receives the value. The agent receives status only. Input is not saved.'
+          }
+        </InterfaceText>
       </Text>
       {destination.kind === 'command' ? (
         <>
           <Text style={styles.text}>
-            Run:{' '}
-            {[destination.command, ...destination.args].map((arg) => JSON.stringify(arg)).join(' ')}
+            <InterfaceText
+              values={{
+                value0: [destination.command, ...destination.args]
+                  .map((arg) => JSON.stringify(arg))
+                  .join(' '),
+              }}
+            >
+              {'Run: {value0}'}
+            </InterfaceText>
           </Text>
-          <Text style={styles.muted}>Folder: {input.directory}</Text>
           <Text style={styles.muted}>
-            Use stdin{destination.appendNewline ? ' with a trailing newline' : ' as entered'}.
-            Output is discarded. Trust this command before you submit.
+            <InterfaceText values={{ value0: input.directory }}>{'Folder: {value0}'}</InterfaceText>
+          </Text>
+          <Text style={styles.muted}>
+            <InterfaceText
+              values={{
+                value0: destination.appendNewline
+                  ? uiText(' with a trailing newline')
+                  : uiText(' as entered'),
+              }}
+            >
+              {'Use stdin{value0}. Output is discarded. Trust this command before you submit.'}
+            </InterfaceText>
           </Text>
         </>
       ) : (
         <Text style={styles.text}>
-          Complete the active sign-in for ACP installation: {destination.installationId}
+          <InterfaceText values={{ value0: destination.installationId }}>
+            {'Complete the active sign-in for ACP installation: {value0}'}
+          </InterfaceText>
         </Text>
       )}
-      <Text style={styles.muted}>Expires: {new Date(input.expiresAt).toLocaleTimeString()}</Text>
-      <Text style={styles.muted}>Private value</Text>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: new Date(input.expiresAt).toLocaleTimeString() }}>
+          {'Expires: {value0}'}
+        </InterfaceText>
+      </Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Private value'}</InterfaceText>
+      </Text>
       <TextInput
         key={fieldKey}
         ref={field}
-        accessibilityLabel="Private value"
+        accessibilityLabel={uiText('Private value')}
         secureTextEntry
         autoComplete="off"
         textContentType="none"
@@ -201,25 +234,25 @@ export function SecureInputCard({
       <Action
         label={
           busy
-            ? 'Sending…'
+            ? uiText('Sending…')
             : envelope.current || input.status === 'running'
-              ? 'Check submission'
+              ? uiText('Check submission')
               : destination.kind === 'command'
-                ? 'Submit and run privately'
-                : 'Submit callback privately'
+                ? uiText('Submit and run privately')
+                : uiText('Submit callback privately')
         }
         disabled={!connected || busy || done}
         onPress={submit}
       />
       <Action
         secondary
-        label="Cancel secure input"
+        label={uiText('Cancel secure input')}
         disabled={!connected || done}
         onPress={() => void act(true)}
       />
       {!connected && (
         <Text accessibilityRole="status" style={styles.muted}>
-          Reconnect to submit. Private input is never queued.
+          <InterfaceText>{'Reconnect to submit. Private input is never queued.'}</InterfaceText>
         </Text>
       )}
       {!!status && (

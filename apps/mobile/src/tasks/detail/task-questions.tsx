@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useQuestionRecovery } from '../composer/question-recovery'
 import { useState } from 'react'
 import { Effect } from 'effect'
@@ -21,6 +22,8 @@ import { useTheme } from '../../ui/theme'
 import { QuestionForm } from '../composer/question-form'
 import { useConversationSelector } from '../conversation/state/provider'
 export function TaskQuestions({ taskId, questionId }: { taskId: string; questionId?: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, profile, connected } = useRuntime()
@@ -43,11 +46,11 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
         {recovery}
         <Text accessibilityRole="alert" style={styles.muted}>
           {connected
-            ? 'This question has already been answered or is no longer pending.'
-            : 'Reconnect to check this question.'}
+            ? uiText('This question has already been answered or is no longer pending.')
+            : uiText('Reconnect to check this question.')}
         </Text>
         <Action
-          label="Show pending questions"
+          label={uiText('Show pending questions')}
           secondary
           onPress={() => router.setParams({ questionId: undefined })}
         />
@@ -68,9 +71,15 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
       </Text>
       {pending.taskId !== taskId && (
         <Text style={styles.muted}>
-          For child thread ·{' '}
-          {snapshot?.workspace.tasks.find((child) => child.id === pending.taskId)?.title ??
-            pending.taskId}
+          <InterfaceText
+            values={{
+              value0:
+                snapshot?.workspace.tasks.find((child) => child.id === pending.taskId)?.title ??
+                pending.taskId,
+            }}
+          >
+            {'For child thread · {value0}'}
+          </InterfaceText>
         </Text>
       )}
       {recovery}
@@ -201,6 +210,8 @@ function QuestionCard({
 }
 
 function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: string[] }) {
+  const uiText = useInterfaceText()
+
   const { scope, store } = useQuestionRecovery()
   const { styles } = useTheme()
   const entries = store
@@ -219,14 +230,24 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
           <Text accessibilityRole="alert" style={styles.error}>
             {store.error(scope)}
           </Text>
-          <Action label="Retry saved answers" secondary onPress={() => void store.retry(scope)} />
+          <Action
+            label={uiText('Retry saved answers')}
+            secondary
+            onPress={() => void store.retry(scope)}
+          />
         </View>
       )}
       {entries.map((entry) => (
         <View key={entry.request.id} style={[styles.card, { padding: 12, gap: 8 }]}>
-          <Text style={styles.text}>Saved answers · {entry.request.prompt.title}</Text>
+          <Text style={styles.text}>
+            <InterfaceText values={{ value0: entry.request.prompt.title }}>
+              {'Saved answers · {value0}'}
+            </InterfaceText>
+          </Text>
           <Text style={styles.muted}>
-            This request is no longer pending. Select and copy the answers you want to keep.
+            <InterfaceText>
+              {'This request is no longer pending. Select and copy the answers you want to keep.'}
+            </InterfaceText>
           </Text>
           {entry.request.prompt.questions
             .filter((q) => !q.secret)
@@ -240,13 +261,16 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
                 </Text>
                 {(entry.files[q.id] ?? []).map((file) => (
                   <Text key={file.id} selectable style={styles.muted}>
-                    Attachment: {file.name} ({file.id})
+                    <InterfaceText values={{ value0: file.name, value1: file.id }}>
+                      {'Attachment: {value0} ({value1})'}
+                    </InterfaceText>
                   </Text>
                 ))}
               </View>
             ))}
           <Action
-            label="Discard saved answers"
+            destructive
+            label={uiText('Discard saved answers')}
             secondary
             onPress={() => store.remove(scope, taskId, entry.request.id)}
           />

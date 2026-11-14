@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskWorkflows } from './task-workflows'
 import {
   buildThreadTree,
@@ -42,6 +43,8 @@ export function TaskAgents({
   task: Task
   onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connected, profile, snapshot, callEffect } = useRuntime()
@@ -164,11 +167,15 @@ export function TaskAgents({
             marginBottom: 12,
           }}
         >
-          <Text style={[styles.muted, { fontSize: 11 }]}>SPAWNED AGENTS</Text>
+          <Text style={[styles.muted, { fontSize: 11 }]}>
+            <InterfaceText>{'SPAWNED AGENTS'}</InterfaceText>
+          </Text>
           <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-            <Text style={[styles.muted, { fontSize: 12 }]}>Hide finished</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              <InterfaceText>{'Hide finished'}</InterfaceText>
+            </Text>
             <Switch
-              accessibilityLabel="Hide finished"
+              accessibilityLabel={uiText('Hide finished')}
               value={hideFinishedSubagents}
               onValueChange={(hideFinishedSubagents) =>
                 updateMobilePreferences({ hideFinishedSubagents })
@@ -179,7 +186,7 @@ export function TaskAgents({
         {(activeAgents.size > 0 || canStopRemote) && (
           <Action
             secondary
-            label={cancellation.busy ? 'Stopping…' : 'Stop agents'}
+            label={cancellation.busy ? uiText('Stopping…') : uiText('Stop agents')}
             disabled={cancellation.busy}
             onPress={() =>
               cancellation.act(() =>
@@ -198,12 +205,16 @@ export function TaskAgents({
         {!!cancellation.error && <Text style={{ color: colors.error }}>{cancellation.error}</Text>}
         {!agents.length && !remote.length && (
           <Text style={styles.muted}>
-            No subagents yet. Agents spawned by a supported harness appear here as they work.
+            <InterfaceText>
+              {'No subagents yet. Agents spawned by a supported harness appear here as they work.'}
+            </InterfaceText>
           </Text>
         )}
         {(!!agents.length || !!remote.length) && !visibleAgents.length && !visibleRemote.length && (
           <Text style={styles.muted}>
-            All subagents have finished. Turn off Hide finished to view them.
+            <InterfaceText>
+              {'All subagents have finished. Turn off Hide finished to view them.'}
+            </InterfaceText>
           </Text>
         )}
         {visibleBranches.map((branch) => (
@@ -296,7 +307,11 @@ export function TaskAgents({
                     },
                   ]}
                 >
-                  {agent.queued ? 'Queued' : active ? agent.activity || 'Working' : state}
+                  {agent.queued
+                    ? uiText('Queued')
+                    : active
+                      ? agent.activity || uiText('Working')
+                      : state}
                 </Text>
                 <Text
                   style={[
@@ -322,7 +337,7 @@ export function TaskAgents({
                     !task.acknowledgedSubagentFailures?.includes(failureKey(agent)) && (
                       <Action
                         secondary
-                        label="Acknowledge failure"
+                        label={uiText('Acknowledge failure')}
                         disabled={cancellation.busy}
                         onPress={() => acknowledgeFailure(failureKey(agent))}
                       />
@@ -345,14 +360,14 @@ export function TaskAgents({
                   {childId && (
                     <Action
                       secondary
-                      label={`Open child thread · ${agent.provider}`}
+                      label={uiText('Open child thread · {value0}', { value0: agent.provider })}
                       onPress={() => navigate('tasks', childId, profile?.id)}
                     />
                   )}
                   {agent.source !== 'dovo' && owner && (
                     <Action
                       secondary
-                      label={`View native thread · ${agent.provider}`}
+                      label={uiText('View native thread · {value0}', { value0: agent.provider })}
                       onPress={() => onOpenThread({ taskId: owner.id, agent })}
                     />
                   )}
@@ -362,7 +377,7 @@ export function TaskAgents({
                     owner && (
                       <Action
                         secondary
-                        label="Stop child"
+                        label={uiText('Stop child')}
                         disabled={cancellation.busy}
                         onPress={() =>
                           cancellation.act(() =>
@@ -385,7 +400,7 @@ export function TaskAgents({
                   {active && child?.activeRunId && (
                     <Action
                       secondary
-                      label="Stop child"
+                      label={uiText('Stop child')}
                       disabled={cancellation.busy}
                       onPress={() =>
                         cancellation.act(() =>
@@ -410,7 +425,7 @@ export function TaskAgents({
                       },
                     ]}
                   >
-                    {agent.source === 'dovo' ? 'Dovo child agent' : agent.id}
+                    {agent.source === 'dovo' ? uiText('Dovo child agent') : agent.id}
                   </Text>
                 </View>
               )}
@@ -428,9 +443,16 @@ export function TaskAgents({
           },
         ]}
       >
-        {working} working · {agents.length + remote.length} total
-        {hidden > 0 ? ` · ${hidden} hidden` : ''}
-        {!connected ? ' · Offline · saved state' : ''}
+        <InterfaceText
+          values={{
+            value0: working,
+            value1: agents.length + remote.length,
+            value2: hidden > 0 ? uiText(' · {value0} hidden', { value0: hidden }) : '',
+            value3: !connected ? uiText(' · Offline · saved state') : '',
+          }}
+        >
+          {'{value0} working · {value1} total{value2}{value3}'}
+        </InterfaceText>
       </Text>
     </View>
   )

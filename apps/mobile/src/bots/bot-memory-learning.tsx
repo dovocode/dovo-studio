@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -16,6 +17,8 @@ export function BotMemoryLearning({
   taskId: string
   onChanged: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, snapshot, callEffect } = useRuntime()
   const { styles } = useTheme()
   const [status, setStatus] = useState<Status>()
@@ -71,40 +74,49 @@ export function BotMemoryLearning({
   if (!supported) return null
   return (
     <View style={{ gap: 8, paddingVertical: 12 }}>
-      <Text style={styles.title}>Background learning</Text>
+      <Text style={styles.title}>
+        <InterfaceText>{'Background learning'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Reviews your messages after 20 completed turns, or after 15 idle minutes with 3 new turns.
-        Uses the utility model in Settings → Agents with tools off. Your edits take priority. Reset
-        keeps memory.
+        <InterfaceText>
+          {
+            'Reviews your messages after 20 completed turns, or after 15 idle minutes with 3 new turns. Uses the utility model in Settings → Agents with tools off. Your edits take priority. Reset keeps memory.'
+          }
+        </InterfaceText>
       </Text>
       <Text>
         {status?.running
-          ? 'Review in progress'
+          ? uiText('Review in progress')
           : status?.lastReviewedAt
-            ? `Last reviewed ${new Date(status.lastReviewedAt).toLocaleString()}`
-            : 'No reviews yet'}
+            ? uiText('Last reviewed {value0}', {
+                value0: new Date(status.lastReviewedAt).toLocaleString(),
+              })
+            : uiText('No reviews yet')}
       </Text>
       <Action
         secondary
-        label={status?.enabled ? 'Pause learning' : 'Enable learning'}
+        label={status?.enabled ? uiText('Pause learning') : uiText('Enable learning')}
         disabled={!connected || !status || busy}
         onPress={() => run('save')}
       />
       <Action
         secondary
-        label="Review now"
+        label={uiText('Review now')}
         disabled={!connected || !status?.enabled || busy || status.running}
         onPress={() => run('run')}
       />
       {confirmClear && (
         <Text>
-          Delete all saved notes? Earlier messages will not be reviewed again. The conversation,
-          files and actions stay.
+          <InterfaceText>
+            {
+              'Delete all saved notes? Earlier messages will not be reviewed again. The conversation, files and actions stay.'
+            }
+          </InterfaceText>
         </Text>
       )}
       <Action
         secondary
-        label={confirmClear ? 'Confirm clear memory' : 'Clear memory'}
+        label={confirmClear ? uiText('Confirm clear memory') : uiText('Clear memory')}
         disabled={!connected || !status || busy}
         onPress={() => {
           if (!confirmClear) {
@@ -115,7 +127,7 @@ export function BotMemoryLearning({
         }}
       />
       {confirmClear && (
-        <Action secondary label="Cancel clear" onPress={() => setConfirmClear(false)} />
+        <Action secondary label={uiText('Cancel clear')} onPress={() => setConfirmClear(false)} />
       )}
       {!!(error || status?.error) && (
         <Text accessibilityRole="alert" style={styles.error}>

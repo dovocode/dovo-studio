@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { NativeIcon, NativeMenuButton, NativeIconLabel } from '../../ui/controls/native-icon'
 import { Button, Divider, Host, Menu } from '@expo/ui/swift-ui'
 import {
@@ -24,6 +25,8 @@ export function TaskRowMenu({
   onDetails,
   contentOffsetY = 0,
 }: TaskRowMenuProps) {
+  const uiText = useInterfaceText()
+
   const { colors, mode: appearanceMode } = useTheme()
 
   const { taskSnoozeMinutes } = useMobilePreferences()
@@ -53,11 +56,11 @@ export function TaskRowMenu({
         ]}
       >
         {!actions.onCurrentRuntime && (
-          <NativeMenuButton label="Open thread" icon="chat" onPress={onOpen} />
+          <NativeMenuButton label={uiText('Open thread')} icon="chat" onPress={onOpen} />
         )}
         <NativeMenuButton
           testID="Task menu details"
-          label="Thread details"
+          label={uiText('Thread details')}
           icon="info"
           onPress={onDetails}
         />
@@ -66,7 +69,7 @@ export function TaskRowMenu({
             <Divider />
             <NativeMenuButton
               testID="Task menu read status"
-              label={actions.unread ? 'Mark as read' : 'Mark as unread'}
+              label={actions.unread ? uiText('Mark as read') : uiText('Mark as unread')}
               icon={actions.unread ? 'read' : 'unread'}
               modifiers={[disabledModifier(!actions.readStateEnabled || actions.busy)]}
               onPress={actions.toggleRead}
@@ -81,11 +84,11 @@ export function TaskRowMenu({
               label={
                 task.bot
                   ? task.pinned
-                    ? 'Unpin Bot'
-                    : 'Pin Bot'
+                    ? uiText('Unpin Bot')
+                    : uiText('Pin Bot')
                   : task.pinned
-                    ? 'Unpin thread'
-                    : 'Pin thread'
+                    ? uiText('Unpin thread')
+                    : uiText('Pin thread')
               }
               icon={task.pinned ? 'unpin' : 'pin'}
               modifiers={[disabledModifier(unavailable)]}
@@ -96,7 +99,7 @@ export function TaskRowMenu({
                 {!task.archivedAt && (
                   <NativeMenuButton
                     testID="Task menu settle"
-                    label={task.archived ? 'Reopen thread' : 'Settle thread'}
+                    label={task.archived ? uiText('Reopen thread') : uiText('Settle thread')}
                     icon={task.archived ? 'reopen' : 'check'}
                     modifiers={[disabledModifier(unavailable || task.status === 'running')]}
                     onPress={actions.toggleSettled}
@@ -106,7 +109,7 @@ export function TaskRowMenu({
                   (isSnoozed(task, Date.now()) ? (
                     <NativeMenuButton
                       testID="Task menu unsnooze"
-                      label="Unsnooze"
+                      label={uiText('Unsnooze')}
                       icon="snooze"
                       modifiers={[disabledModifier(unavailable)]}
                       onPress={() => actions.snooze(null)}
@@ -114,7 +117,7 @@ export function TaskRowMenu({
                   ) : (
                     <Menu
                       testID="Task menu snooze"
-                      label={<NativeIconLabel title="Snooze" icon="snooze" />}
+                      label={<NativeIconLabel title={uiText('Snooze')} icon="snooze" />}
                       modifiers={[disabledModifier(unavailable)]}
                     >
                       {taskSnoozeChoices(taskSnoozeMinutes).map((option) => (
@@ -132,7 +135,7 @@ export function TaskRowMenu({
                     </Menu>
                   ))}
                 <NativeMenuButton
-                  label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
+                  label={task.archivedAt ? uiText('Restore thread') : uiText('Archive thread')}
                   icon="archive"
                   modifiers={[disabledModifier(unavailable || task.status === 'running')]}
                   onPress={actions.toggleArchived}
@@ -140,7 +143,7 @@ export function TaskRowMenu({
                 <Divider />
                 <NativeMenuButton
                   role="destructive"
-                  label="Delete thread…"
+                  label={uiText('Delete thread…')}
                   icon="trash"
                   modifiers={[disabledModifier(unavailable || task.status === 'running')]}
                   onPress={actions.deleteThread}

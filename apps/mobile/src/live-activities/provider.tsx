@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import Constants from 'expo-constants'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import type { ActivityDelivery } from './controller'
@@ -22,6 +23,8 @@ const Context = createContext({
 })
 export const useLiveActivities = () => useContext(Context)
 export function LiveActivityProvider({ children }: { children: ReactNode }) {
+  const uiText = useInterfaceText()
+
   const account = useMobileAccount()
   const identity = account.directory
     ? JSON.stringify([account.client.origin, account.directory.user.id, account.client.sessionId()])
@@ -160,7 +163,9 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
               Effect.catch(() =>
                 Effect.sync(() => {
                   if (!disposed)
-                    setError('Live Activities could not be stopped. Try again when connected.')
+                    setError(
+                      uiText('Live Activities could not be stopped. Try again when connected.'),
+                    )
                 }),
               ),
             ),
@@ -186,7 +191,9 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
             onError: () => {
               if (!disposed)
                 setError(
-                  'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
+                  uiText(
+                    'Live Activities could not update. Check iOS Live Activity permissions and your connection.',
+                  ),
                 )
               retryAfter = Date.now() + 60_000
             },
@@ -225,7 +232,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
       Effect.catch(() =>
         Effect.sync(() => {
           if (!disposed)
-            setError('Could not initialize Live Activities. Reopen the app to try again.')
+            setError(uiText('Could not initialize Live Activities. Reopen the app to try again.'))
         }),
       ),
     )
@@ -244,7 +251,7 @@ export function LiveActivityProvider({ children }: { children: ReactNode }) {
     void runClientEffect(
       nativeEffect(() => AsyncStorage.setItem(preferenceKey, String(value))).pipe(
         Effect.catch(() =>
-          nativeEffect(() => setError('Could not save Live Activity preferences.')),
+          nativeEffect(() => setError(uiText('Could not save Live Activity preferences.'))),
         ),
       ),
     )

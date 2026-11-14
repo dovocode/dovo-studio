@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, TextInput, View } from 'react-native'
@@ -102,7 +103,7 @@ export function ThreadContextPicker({
       {controlledOpen === undefined && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Attach thread context"
+          accessibilityLabel={uiText('Attach thread context')}
           disabled={disabled || attachmentBusy || !connected}
           onPress={() => setOpen(true)}
           style={{
@@ -119,17 +120,20 @@ export function ThreadContextPicker({
       <SafeModal visible={open} animationType="slide" onRequestClose={close}>
         <View style={{ flex: 1, padding: 16, gap: 12 }}>
           <Text accessibilityRole="header" style={{ color: colors.text, fontSize: 20 }}>
-            Attach thread context
+            <InterfaceText>{'Attach thread context'}</InterfaceText>
           </Text>
           <Text style={{ color: colors.muted }}>
-            Attach a snapshot from this computer, up to 5 MB. Review it before sending; existing
-            attachments are listed by name only.
+            <InterfaceText>
+              {
+                'Attach a snapshot from this computer, up to 5 MB. Review it before sending; existing attachments are listed by name only.'
+              }
+            </InterfaceText>
           </Text>
           <TextInput
-            accessibilityLabel="Search threads"
+            accessibilityLabel={uiText('Search threads')}
             value={query}
             onChangeText={setQuery}
-            placeholder="Search threads"
+            placeholder={uiText('Search threads')}
             placeholderTextColor={colors.muted}
             style={{
               color: colors.text,
@@ -160,7 +164,9 @@ export function ThreadContextPicker({
                   onPress={() => void attach(task)}
                   style={{ paddingVertical: 14 }}
                 >
-                  <Text style={{ color: colors.text }}>{task.title || 'Untitled thread'}</Text>
+                  <Text style={{ color: colors.text }}>
+                    {task.title || uiText('Untitled thread')}
+                  </Text>
                 </Pressable>
               ))}
           </ScrollView>

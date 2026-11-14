@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { blockAccessibleNotificationInputs } from '../../notifications/visibility'
 import { createDraftStash, restoreStashedText, type StashedDraft } from '@dovo/protocol'
 import AsyncStorage from '@react-native-async-storage/async-storage'
@@ -27,6 +28,8 @@ export function DraftStash(props: {
   hasAttachments: boolean
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [localOpen, setLocalOpen] = useState(false)
   const open = props.open ?? localOpen
@@ -61,7 +64,7 @@ export function DraftStash(props: {
       },
       () => {
         if (!cancelled) {
-          setError('Could not read stashed drafts. Your saved data was kept.')
+          setError(uiText('Could not read stashed drafts. Your saved data was kept.'))
           setBusy(false)
         }
       },
@@ -86,7 +89,7 @@ export function DraftStash(props: {
       if (active.current) setEntries(rows)
     } catch (cause) {
       if (active.current)
-        setError(cause instanceof Error ? cause.message : 'Could not stash this draft.')
+        setError(cause instanceof Error ? cause.message : uiText('Could not stash this draft.'))
     } finally {
       if (active.current) setBusy(false)
     }
@@ -100,7 +103,7 @@ export function DraftStash(props: {
       const rows = await stash.list(props.scope)
       if (active.current) setEntries(rows)
     } catch {
-      if (active.current) setError('Could not delete the saved draft.')
+      if (active.current) setError(uiText('Could not delete the saved draft.'))
     } finally {
       if (active.current) setBusy(false)
     }
@@ -110,7 +113,7 @@ export function DraftStash(props: {
       {props.open === undefined && (
         <IconButton
           icon="archive"
-          label="Stashed drafts"
+          label={uiText('Stashed drafts')}
           disabled={props.disabled || !props.scope}
           onPress={() => {
             setOpen(true)
@@ -118,22 +121,31 @@ export function DraftStash(props: {
         />
       )}
       {open && (
-        <Sheet ref={sheet} title="Stashed drafts" onClose={() => setOpen(false)}>
+        <Sheet ref={sheet} title={uiText('Stashed drafts')} onClose={() => setOpen(false)}>
           <Text style={styles.muted}>
-            Text saved on this device for this thread. Restoring appends to your draft and keeps a
-            saved copy.
+            <InterfaceText>
+              {
+                'Text saved on this device for this thread. Restoring appends to your draft and keeps a saved copy.'
+              }
+            </InterfaceText>
           </Text>
           {props.hasAttachments && (
             <Text style={styles.muted}>
-              Remove attachments before stashing or restoring a text draft.
+              <InterfaceText>
+                {'Remove attachments before stashing or restoring a text draft.'}
+              </InterfaceText>
             </Text>
           )}
           <Action
-            label="Stash current text"
+            label={uiText('Stash current text')}
             disabled={busy || props.disabled || props.hasAttachments || !props.getText().trim()}
             onPress={() => void save()}
           />
-          {!busy && !entries.length && <Text style={styles.muted}>No stashed drafts yet.</Text>}
+          {!busy && !entries.length && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'No stashed drafts yet.'}</InterfaceText>
+            </Text>
+          )}
           {entries.map((entry) => (
             <View key={entry.id} style={{ gap: 8, paddingVertical: 12 }}>
               <Text numberOfLines={3}>{entry.text}</Text>
@@ -141,7 +153,7 @@ export function DraftStash(props: {
               <View style={{ flexDirection: 'row', gap: 8 }}>
                 <Action
                   secondary
-                  label="Restore"
+                  label={uiText('Restore')}
                   disabled={busy || props.disabled || props.hasAttachments}
                   onPress={() => {
                     const current = latest.current
@@ -150,13 +162,14 @@ export function DraftStash(props: {
                       current.onChange(restoreStashedText(current.getText(), entry.text))
                       sheet.current?.dismiss(current.focus)
                     } catch {
-                      setError('Could not restore the draft. The saved copy was kept.')
+                      setError(uiText('Could not restore the draft. The saved copy was kept.'))
                     }
                   }}
                 />
                 <Action
+                  destructive
                   secondary
-                  label="Delete stashed draft"
+                  label={uiText('Delete stashed draft')}
                   disabled={busy}
                   onPress={() => void remove(entry.id)}
                 />

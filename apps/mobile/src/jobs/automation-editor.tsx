@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RoutineOptions } from './routine-options'
 import { defaultGithubTrigger, githubEventChoices } from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
@@ -27,6 +28,8 @@ import { linearNodes, newAutomationNode, withLinearNodes, scheduleChoices } from
 import { StepFields } from './step-fields'
 import { useNavigation } from '../shell/navigation'
 export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, callEffect } = useRuntime()
@@ -106,7 +109,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
   if (!focused) return null
   return (
     <Sheet
-      title={baseline ? 'Edit automation' : 'New automation'}
+      title={baseline ? uiText('Edit automation') : uiText('New automation')}
       busy={busy}
       onClose={() => {
         if (focus.current) onClose()
@@ -114,13 +117,16 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
     >
       {!ordered || !trigger ? (
         <Text style={styles.muted}>
-          This automation has canvas connections that cannot be edited here. Use the desktop canvas
-          to preserve its branches and dependencies.
+          <InterfaceText>
+            {
+              'This automation has canvas connections that cannot be edited here. Use the desktop canvas to preserve its branches and dependencies.'
+            }
+          </InterfaceText>
         </Text>
       ) : (
         <>
           <Field
-            label="Automation name"
+            label={uiText('Automation name')}
             value={draft.name}
             editable={!busy}
             onChangeText={(name) =>
@@ -129,7 +135,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 name,
               }))
             }
-            placeholder="Morning repository review"
+            placeholder={uiText('Morning repository review')}
           />
           <RoutineOptions
             key={draft.id}
@@ -141,23 +147,23 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             onSave={(options) => setDraft((current) => ({ ...current, ...options }))}
           />
           <Choice
-            label="Trigger"
+            label={uiText('Trigger')}
             value={trigger.data.trigger}
             items={[
               {
                 id: 'manual',
-                name: 'Manual',
+                name: uiText('Manual'),
               },
               {
                 id: 'schedule',
-                name: 'Schedule',
+                name: uiText('Schedule'),
               },
-              { id: 'once', name: 'One time' },
+              { id: 'once', name: uiText('One time') },
               {
                 id: 'webhook',
-                name: 'Webhook',
+                name: uiText('Webhook'),
               },
-              { id: 'github', name: 'GitHub event' },
+              { id: 'github', name: uiText('GitHub event') },
             ]}
             disabled={busy}
             onChange={(value) => {
@@ -179,30 +185,32 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
           {trigger.data.trigger === 'once' && (
             <>
               <Field
-                label="Run at"
+                label={uiText('Run at')}
                 value={trigger.data.runAt ?? ''}
                 editable={!busy}
                 onChangeText={(runAt) => updateNode(trigger.id, { runAt: runAt.replace(' ', 'T') })}
                 placeholder="2026-10-28T09:00"
               />
               <Field
-                label="Time zone"
+                label={uiText('Time zone')}
                 value={trigger.data.timezone}
                 editable={!busy}
                 onChangeText={(timezone) => updateNode(trigger.id, { timezone })}
-                placeholder="Europe/Amsterdam"
+                placeholder={uiText('Europe/Amsterdam')}
               />
               <Text style={styles.muted}>
-                Enter YYYY-MM-DD HH:mm in this time zone. Runs once, including when this computer
-                comes back online after the time has passed. The trigger turns off after the run
-                starts.
+                <InterfaceText>
+                  {
+                    'Enter YYYY-MM-DD HH:mm in this time zone. Runs once, including when this computer comes back online after the time has passed. The trigger turns off after the run starts.'
+                  }
+                </InterfaceText>
               </Text>
             </>
           )}
           {trigger.data.trigger === 'schedule' && (
             <>
               <Choice
-                label="Schedule"
+                label={uiText('Schedule')}
                 value={customSchedule ? 'custom' : trigger.data.schedule}
                 items={scheduleChoices}
                 disabled={busy}
@@ -216,7 +224,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               />
               {customSchedule && (
                 <Field
-                  label="Cron expression"
+                  label={uiText('Cron expression')}
                   value={trigger.data.schedule}
                   editable={!busy}
                   onChangeText={(schedule) =>
@@ -228,7 +236,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                 />
               )}
               <Field
-                label="Time zone"
+                label={uiText('Time zone')}
                 value={trigger.data.timezone}
                 editable={!busy}
                 onChangeText={(timezone) =>
@@ -236,9 +244,13 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                     timezone,
                   })
                 }
-                placeholder="Europe/Amsterdam"
+                placeholder={uiText('Europe/Amsterdam')}
               />
-              <Text style={styles.muted}>Schedules use this time zone, even when you travel.</Text>
+              <Text style={styles.muted}>
+                <InterfaceText>
+                  {'Schedules use this time zone, even when you travel.'}
+                </InterfaceText>
+              </Text>
             </>
           )}
           {trigger.data.trigger === 'github' &&
@@ -249,21 +261,21 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               return (
                 <>
                   <Field
-                    label="GitHub host"
+                    label={uiText('GitHub host')}
                     value={github.host}
                     editable={!busy}
                     onChangeText={(host) => update({ host })}
-                    placeholder="github.com"
+                    placeholder={uiText('github.com')}
                   />
                   <Field
-                    label="GitHub repository"
+                    label={uiText('GitHub repository')}
                     value={github.repository}
                     editable={!busy}
                     onChangeText={(repository) => update({ repository })}
-                    placeholder="owner/repository"
+                    placeholder={uiText('owner/repository')}
                   />
                   <Choice
-                    label="GitHub event"
+                    label={uiText('GitHub event')}
                     value={github.event}
                     items={githubEventChoices.map((item) => ({ ...item }))}
                     disabled={busy}
@@ -279,7 +291,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                     }}
                   />
                   <Field
-                    label="Label filter (optional)"
+                    label={uiText('Label filter (optional)')}
                     value={github.label}
                     editable={!busy}
                     onChangeText={(label) => update({ label })}
@@ -287,18 +299,18 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                   {github.event !== 'pull_request.synchronized' && (
                     <>
                       <Field
-                        label="Actor login (optional)"
+                        label={uiText('Actor login (optional)')}
                         value={github.actor}
                         editable={!busy}
                         onChangeText={(actor) => update({ actor })}
-                        placeholder="octocat"
+                        placeholder={uiText('octocat')}
                       />
                       <Choice
-                        label="Require actor write access"
+                        label={uiText('Require actor write access')}
                         value={github.requireWriteAccess ? 'yes' : 'no'}
                         items={[
-                          { id: 'no', name: 'Any actor' },
-                          { id: 'yes', name: 'Actors with write access' },
+                          { id: 'no', name: uiText('Any actor') },
+                          { id: 'yes', name: uiText('Actors with write access') },
                         ]}
                         disabled={busy}
                         onChange={(value) => update({ requireWriteAccess: value === 'yes' })}
@@ -306,18 +318,26 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                     </>
                   )}
                   <Text style={styles.muted}>
-                    Uses the selected computer’s gh login. Polls every minute while the runtime is
-                    running. Enabling a trigger starts with new events.
+                    <InterfaceText>
+                      {
+                        'Uses the selected computer’s gh login. Polls every minute while the runtime is running. Enabling a trigger starts with new events.'
+                      }
+                    </InterfaceText>
                   </Text>
                   {github.event === 'pull_request.synchronized' && (
                     <Text style={styles.muted}>
-                      Detects PR head changes after the first observation. Pushes between polls are
-                      combined; pusher filters are unavailable.
+                      <InterfaceText>
+                        {
+                          'Detects PR head changes after the first observation. Pushes between polls are combined; pusher filters are unavailable.'
+                        }
+                      </InterfaceText>
                     </Text>
                   )}
                   {github.event === 'discussion.updated' && (
                     <Text style={styles.muted}>
-                      Detects the latest discussion edit; edits between polls are combined.
+                      <InterfaceText>
+                        {'Detects the latest discussion edit; edits between polls are combined.'}
+                      </InterfaceText>
                     </Text>
                   )}
                 </>
@@ -325,8 +345,11 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             })()}
           {trigger.data.trigger === 'webhook' && (
             <Text style={styles.muted}>
-              After saving, configure the webhook credential on the host desktop. Each delivery
-              needs a unique X-Idempotency-Key.
+              <InterfaceText>
+                {
+                  'After saving, configure the webhook credential on the host desktop. Each delivery needs a unique X-Idempotency-Key.'
+                }
+              </InterfaceText>
             </Text>
           )}
           <Text
@@ -338,7 +361,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               },
             ]}
           >
-            Steps
+            <InterfaceText>{'Steps'}</InterfaceText>
           </Text>
           {ordered.slice(1).map((node, stepIndex) => {
             const index = stepIndex + 1
@@ -393,14 +416,19 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                         },
                       ]}
                     >
-                      {node.data.label || 'Untitled step'}
+                      {node.data.label || uiText('Untitled step')}
                     </Text>
                     <Text style={styles.muted}>
                       {node.data.kind === 'review'
-                        ? 'Approval gate'
+                        ? uiText('Approval gate')
                         : node.data.botId
-                          ? `Bot job · ${snapshot?.workspace.tasks.find((task) => task.id === node.data.botId && task.bot)?.title || 'Unavailable Bot'}`
-                          : 'Agent task'}
+                          ? uiText('Bot job · {value0}', {
+                              value0:
+                                snapshot?.workspace.tasks.find(
+                                  (task) => task.id === node.data.botId && task.bot,
+                                )?.title || 'Unavailable Bot',
+                            })
+                          : uiText('Agent task')}
                     </Text>
                   </View>
                   <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
@@ -424,14 +452,14 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                       <IconButton
                         icon="moveUp"
                         variant="plain"
-                        label="Move up"
+                        label={uiText('Move up')}
                         disabled={busy || index === 1}
                         onPress={() => move(index, -1)}
                       />
                       <IconButton
                         icon="moveDown"
                         variant="plain"
-                        label="Move down"
+                        label={uiText('Move down')}
                         disabled={busy || index === ordered.length - 1}
                         onPress={() => move(index, 1)}
                       />
@@ -439,7 +467,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                         icon="trash"
                         variant="plain"
                         color={colors.error}
-                        label="Remove step"
+                        label={uiText('Remove step')}
                         disabled={busy}
                         onPress={() => updateNodes(ordered.filter((item) => item.id !== node.id))}
                       />
@@ -450,13 +478,25 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             )
           })}
           <View style={styles.row}>
-            <Action secondary label="Add task" disabled={busy} onPress={() => add('task')} />
-            <Action secondary label="Add review" disabled={busy} onPress={() => add('review')} />
+            <Action
+              secondary
+              label={uiText('Add task')}
+              disabled={busy}
+              onPress={() => add('task')}
+            />
+            <Action
+              secondary
+              label={uiText('Add review')}
+              disabled={busy}
+              onPress={() => add('review')}
+            />
           </View>
           <Text style={styles.muted}>
             {baseline?.enabled
-              ? 'Changes apply to future runs. Current runs keep their original steps.'
-              : 'Saved with automatic triggers paused. You can run it manually, then enable triggers when ready.'}
+              ? uiText('Changes apply to future runs. Current runs keep their original steps.')
+              : uiText(
+                  'Saved with automatic triggers paused. You can run it manually, then enable triggers when ready.',
+                )}
           </Text>
           {attempted &&
             issues.map((issue) => (
@@ -465,7 +505,9 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
               </Text>
             ))}
           {!connected && (
-            <Text style={styles.muted}>Reconnect to save changes on this computer.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Reconnect to save changes on this computer.'}</InterfaceText>
+            </Text>
           )}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
@@ -474,7 +516,7 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
           )}
           <Action
             wide
-            label="Save automation"
+            label={uiText('Save automation')}
             disabled={!connected || busy}
             onPress={() => {
               setAttempted(true)

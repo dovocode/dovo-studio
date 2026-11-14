@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { useRuntime } from '../connection/provider'
 import { useOptionalSettingsTarget } from './settings-target'
@@ -47,6 +48,8 @@ export function SettingSource({
   disabled?: boolean
   onReset?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useState(false)
   const [showOverrides, setShowOverrides] = useState(false)
   const [resetState, setResetState] = useState({ busy: false, message: '' })
@@ -143,11 +146,18 @@ export function SettingSource({
   }
   const confirmReset = () =>
     Alert.alert(
-      'Reset later overrides',
-      `Remove the ${label.toLowerCase()} override at ${overrides.length} later ${overrides.length === 1 ? 'level' : 'levels'}? They inherit the earlier value again.`,
+      uiText('Reset later overrides'),
+      uiText(
+        'Remove the {value0} override at {value1} later {value2}? They inherit the earlier value again.',
+        {
+          value0: label.toLowerCase(),
+          value1: overrides.length,
+          value2: overrides.length === 1 ? 'level' : 'levels',
+        },
+      ),
       [
-        { text: 'Keep', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: () => void resetOverrides() },
+        { text: uiText('Keep'), style: 'cancel' },
+        { text: uiText('Reset'), style: 'destructive', onPress: () => void resetOverrides() },
       ],
     )
   return (
@@ -164,7 +174,9 @@ export function SettingSource({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
-            open ? 'Hide inheritance' : `View inheritance for ${label.toLowerCase()}`
+            open
+              ? uiText('Hide inheritance')
+              : uiText('View inheritance for {value0}', { value0: label.toLowerCase() })
           }
           accessibilityHint={sourceLabel}
           accessibilityState={{ expanded: open }}
@@ -198,8 +210,15 @@ export function SettingSource({
           accessibilityRole="button"
           accessibilityLabel={
             showOverrides
-              ? 'Hide later overrides'
-              : `${overrides.length} ${overrides.length === 1 ? 'override keeps its own value' : 'overrides keep their own values'} for ${label.toLowerCase()}`
+              ? uiText('Hide later overrides')
+              : uiText('{value0} {value1} for {value2}', {
+                  value0: overrides.length,
+                  value1:
+                    overrides.length === 1
+                      ? 'override keeps its own value'
+                      : 'overrides keep their own values',
+                  value2: label.toLowerCase(),
+                })
           }
           accessibilityState={{ expanded: showOverrides }}
           onPress={() => setShowOverrides(!showOverrides)}
@@ -212,19 +231,31 @@ export function SettingSource({
         <View style={{ width: '100%', gap: 12 }}>
           <Text style={styles.muted}>{sourceLabel}</Text>
           <Text style={[styles.text, { fontSize: 14, fontWeight: '600' }]}>
-            At this level: {valueLabel && settingValuePreview(valueLabel)}
+            <InterfaceText values={{ value0: valueLabel && settingValuePreview(valueLabel) }}>
+              {'At this level: {value0}'}
+            </InterfaceText>
           </Text>
           <Text style={[styles.muted, { fontSize: 13 }]}>
-            Project overrides Computer; Project on computer wins over both. The check marks the
-            effective value for each computer, including later overrides.
+            <InterfaceText>
+              {
+                'Project overrides Computer; Project on computer wins over both. The check marks the effective value for each computer, including later overrides.'
+              }
+            </InterfaceText>
           </Text>
           {!sourceCurrent && (
             <Text style={styles.muted}>
-              The value above comes from the latest settings read. Source details below use saved
-              snapshots.
+              <InterfaceText>
+                {
+                  'The value above comes from the latest settings read. Source details below use saved snapshots.'
+                }
+              </InterfaceText>
             </Text>
           )}
-          <Text style={styles.text}>Use inherited value: {inheritedLabel}</Text>
+          <Text style={styles.text}>
+            <InterfaceText values={{ value0: inheritedLabel }}>
+              {'Use inherited value: {value0}'}
+            </InterfaceText>
+          </Text>
           {overviews.map((entry) => {
             const active = entry.profile.id === activeId
             const state = active ? snapshot : entry.snapshot
@@ -246,11 +277,13 @@ export function SettingSource({
               <View key={entry.profile.id} style={{ gap: 6 }}>
                 <Text style={styles.text}>
                   {runtimeComputerName(entry)}
-                  {active ? ' · editing' : ''}
-                  {!entry.connected ? ' · offline, saved snapshot' : ''}
+                  {active ? uiText(' · editing') : ''}
+                  {!entry.connected ? uiText(' · offline, saved snapshot') : ''}
                 </Text>
                 {!state ? (
-                  <Text style={styles.muted}>No snapshot available</Text>
+                  <Text style={styles.muted}>
+                    <InterfaceText>{'No snapshot available'}</InterfaceText>
+                  </Text>
                 ) : (
                   <>
                     {rows.map((row) => (
@@ -275,15 +308,15 @@ export function SettingSource({
                       >
                         {row.effective ? '✓ ' : ''}
                         {row.value === undefined
-                          ? 'Inherit'
+                          ? uiText('Inherit')
                           : settingValueDescription(setting.field, row.value, computers)}{' '}
                         ·{' '}
                         {settingSourceName(row.scope, {
                           project: repository?.name,
                           computer: runtimeComputerName(entry),
                         })}
-                        {row.effective ? ' · effective' : ''}
-                        {active && row.scope === setting.scope ? ' · current draft' : ''}
+                        {row.effective ? uiText(' · effective') : ''}
+                        {active && row.scope === setting.scope ? uiText(' · current draft') : ''}
                       </Text>
                     ))}
                     <Text style={styles.muted}>
@@ -300,8 +333,11 @@ export function SettingSource({
       {showOverrides && setting && overrides.length > 0 && (
         <View style={{ width: '100%', gap: 8 }}>
           <Text style={[styles.muted, { fontSize: 13, lineHeight: 17 }]}>
-            These levels keep their own value when {settingsScopeLabels[setting.scope]} changes.
-            Open one to edit it, or reset them all to inherit again.
+            <InterfaceText values={{ value0: settingsScopeLabels[setting.scope] }}>
+              {
+                'These levels keep their own value when {value0} changes. Open one to edit it, or reset them all to inherit again.'
+              }
+            </InterfaceText>
           </Text>
           {overrides.map((entry) => (
             <View
@@ -317,7 +353,10 @@ export function SettingSource({
               {settingsTarget && (
                 <Action
                   secondary
-                  label={`Open ${settingsScopeLabels[entry.scope]} settings for ${overrideName(entry)}`}
+                  label={uiText('Open {value0} settings for {value1}', {
+                    value0: settingsScopeLabels[entry.scope],
+                    value1: overrideName(entry),
+                  })}
                   onPress={() => settingsTarget.setTarget(entry.target)}
                 />
               )}
@@ -326,7 +365,9 @@ export function SettingSource({
           <Action
             secondary
             label={
-              resetState.busy ? 'Resetting…' : `Reset all later ${label.toLowerCase()} overrides`
+              resetState.busy
+                ? uiText('Resetting…')
+                : uiText('Reset all later {value0} overrides', { value0: label.toLowerCase() })
             }
             disabled={disabled || resetState.busy}
             onPress={confirmReset}
@@ -341,7 +382,10 @@ export function SettingSource({
       {overridden && onReset && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Use inherited ${label.toLowerCase()}${inheritedLabel ? `: ${settingValuePreview(inheritedLabel)}` : ''}`}
+          accessibilityLabel={uiText('Use inherited {value0}{value1}', {
+            value0: label.toLowerCase(),
+            value1: inheritedLabel ? `: ${settingValuePreview(inheritedLabel)}` : '',
+          })}
           accessibilityState={{ disabled }}
           disabled={disabled}
           onPress={onReset}

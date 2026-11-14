@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { forgePullTarget } from '@dovo/protocol'
 import { useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
@@ -11,6 +12,8 @@ import { PullDetail } from '../detail/pull-detail'
 import { pullRouteNumber } from './pull-route-number'
 
 export function PullRouteScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const params = useLocalSearchParams<{
@@ -28,7 +31,7 @@ export function PullRouteScreen() {
     <RuntimeRoute
       runtimeId={params.runtimeId}
       repositoryId={forgePullTarget(params.repositoryId) ? undefined : params.repositoryId}
-      title={number ? `PR #${number}` : 'Pull request'}
+      title={number ? uiText('PR #{value0}', { value0: number }) : uiText('Pull request')}
       backTo="/pulls"
     >
       {number ? (
@@ -49,13 +52,17 @@ export function PullRouteScreen() {
       ) : (
         <View style={styles.screen}>
           <ScreenHeader
-            title="Pull request"
-            leading={<Action label="Back to PRs" secondary onPress={back} />}
+            title={uiText('Pull request')}
+            leading={<Action label={uiText('Back to PRs')} secondary onPress={back} />}
           />
           <View style={styles.content}>
-            <Text style={styles.title}>Pull request unavailable</Text>
+            <Text style={styles.title}>
+              <InterfaceText>{'Pull request unavailable'}</InterfaceText>
+            </Text>
             <Text style={styles.muted}>
-              This link does not contain a valid pull request number.
+              <InterfaceText>
+                {'This link does not contain a valid pull request number.'}
+              </InterfaceText>
             </Text>
           </View>
         </View>

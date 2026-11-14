@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -41,6 +42,8 @@ export function WorkTaskAction({
       }
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, activeId, callEffect, refreshEffect } = useRuntime()
@@ -54,7 +57,7 @@ export function WorkTaskAction({
   const projectPicker = useRef<SheetHandle>(null)
   const openTask = (id: string) => {
     if (!activeId) {
-      setError('The computer that owns this task is unavailable.')
+      setError(uiText('The computer that owns this task is unavailable.'))
       return
     }
     navigateAfterSheet(() => navigate('tasks', id, activeId))
@@ -177,11 +180,15 @@ export function WorkTaskAction({
           }}
         >
           {linked[0] ? (
-            <Action label="Open linked task" onPress={() => openTask(linked[0]!.id)} />
+            <Action label={uiText('Open linked task')} onPress={() => openTask(linked[0]!.id)} />
           ) : (
             <Action
               label={
-                busy ? 'Opening task…' : source.kind === 'issue' ? 'Start task' : 'Investigate run'
+                busy
+                  ? uiText('Opening task…')
+                  : source.kind === 'issue'
+                    ? uiText('Start task')
+                    : uiText('Investigate run')
               }
               disabled={disabled || busy}
               onPress={() => void create()}
@@ -190,14 +197,14 @@ export function WorkTaskAction({
         </View>
         {!!linked.length && (
           <WorkMenu
-            label="Linked tasks"
+            label={uiText('Linked tasks')}
             actions={[
               ...linked.map((task) => ({
                 label: task.title,
                 onPress: () => openTask(task.id),
               })),
               {
-                label: busy ? 'Opening task…' : 'Start another task',
+                label: busy ? uiText('Opening task…') : uiText('Start another task'),
                 disabled: disabled || busy,
                 onPress: () => void create(),
               },
@@ -218,7 +225,7 @@ export function WorkTaskAction({
       {choosing && (
         <Sheet
           ref={projectPicker}
-          title="Start task in a project"
+          title={uiText('Start task in a project')}
           busy={busy}
           onClose={() => {
             setChoosing(false)
@@ -226,17 +233,19 @@ export function WorkTaskAction({
           }}
         >
           <Text style={styles.muted}>
-            Choose the codebase for this task. The issue stays in Jira.
+            <InterfaceText>
+              {'Choose the codebase for this task. The issue stays in Jira.'}
+            </InterfaceText>
           </Text>
           <Choice
-            label="Dovo project"
+            label={uiText('Dovo project')}
             value={destination}
             onChange={setDestination}
             disabled={busy || !!attempt.current}
             items={[
               {
                 id: '',
-                name: 'Choose a project…',
+                name: uiText('Choose a project…'),
               },
               ...projects.map((project) => ({
                 id: project.id,
@@ -246,8 +255,11 @@ export function WorkTaskAction({
           />
           {!projects.length && (
             <Text style={styles.muted}>
-              Add a project to this computer first. You can keep working with Jira issues without
-              one.
+              <InterfaceText>
+                {
+                  'Add a project to this computer first. You can keep working with Jira issues without one.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {!!error && (
@@ -256,7 +268,7 @@ export function WorkTaskAction({
             </Text>
           )}
           <Action
-            label={busy ? 'Opening task…' : 'Start task'}
+            label={busy ? uiText('Opening task…') : uiText('Start task')}
             disabled={disabled || busy || !destination}
             onPress={() => void create(destination)}
           />

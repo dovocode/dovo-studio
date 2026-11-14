@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useTaskReview } from '../../scm/review/use-task-review'
 import { LocalCommitPicker } from './local-commit-picker'
 import { CodeReviewReport, type ReviewTab } from '../../scm/review/code-review-report'
@@ -51,6 +52,8 @@ export function TaskReview({
   edit: FileEditDraft | null
   onEditChange: (draft: FileEditDraft | null) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles, code } = useTheme()
 
   const task = useConversationSelector((value) => value.task)
@@ -376,11 +379,11 @@ export function TaskReview({
         <View style={{ paddingHorizontal: 12, paddingVertical: 2, gap: 4 }}>
           {!!(checkpoint ? selectedTurn?.linked?.length : task.linkedCheckouts?.length) && (
             <Choice
-              label="Project checkout"
+              label={uiText('Project checkout')}
               value={checkoutId}
               disabled={!!edit}
               items={[
-                { id: '', name: 'Primary checkout' },
+                { id: '', name: uiText('Primary checkout') },
                 ...((checkpoint
                   ? selectedTurn?.linked?.map((item) => ({
                       id: item.checkoutId,
@@ -407,15 +410,15 @@ export function TaskReview({
               <Choice
                 compact
                 hideLabel
-                label="Change history"
+                label={uiText('Change history')}
                 value={commit ? `commit:${commit.sha}` : since ? 'review' : checkpoint}
                 disabled={!!edit}
                 items={[
                   {
                     id: '',
-                    name: 'Current changes',
+                    name: uiText('Current changes'),
                   },
-                  ...(since ? [{ id: 'review', name: 'Since last review' }] : []),
+                  ...(since ? [{ id: 'review', name: uiText('Since last review') }] : []),
                   ...(commit
                     ? [
                         {
@@ -443,7 +446,7 @@ export function TaskReview({
             </View>
             <Action
               secondary
-              label="Refresh changes"
+              label={uiText('Refresh changes')}
               disabled={!connected || busy || task.example || !!edit || !!checkpoint || !!commit}
               onPress={() =>
                 act(async () => {
@@ -466,13 +469,18 @@ export function TaskReview({
             />
             <Action
               secondary
-              label="More actions"
+              label={uiText('More actions')}
               icon="more"
               disabled={!!edit}
               onPress={() => setToolsOpen((value) => !value)}
             />
             {edit && (
-              <Action label="Cancel edit" secondary disabled={busy} onPress={() => setEdit(null)} />
+              <Action
+                label={uiText('Cancel edit')}
+                secondary
+                disabled={busy}
+                onPress={() => setEdit(null)}
+              />
             )}
           </View>
           <LocalCommitPicker
@@ -492,10 +500,16 @@ export function TaskReview({
           />
           {commit && (
             <Text style={styles.muted}>
-              {commit.subject} · Read-only changes against the first parent.
+              <InterfaceText values={{ value0: commit.subject }}>
+                {'{value0} · Read-only changes against the first parent.'}
+              </InterfaceText>
             </Text>
           )}
-          {commit && !commitDiff && <Text>Loading commit changes…</Text>}
+          {commit && !commitDiff && (
+            <Text>
+              <InterfaceText>{'Loading commit changes…'}</InterfaceText>
+            </Text>
+          )}
           {commitDiff?.error && commit && (
             <View>
               <Text accessibilityRole="alert" style={styles.error}>
@@ -503,7 +517,7 @@ export function TaskReview({
               </Text>
               <Action
                 secondary
-                label="Retry commit changes"
+                label={uiText('Retry commit changes')}
                 onPress={() => setCommitRetry((value) => value + 1)}
               />
             </View>
@@ -512,18 +526,24 @@ export function TaskReview({
           {toolsOpen && (
             <Sheet
               ref={tools}
-              title="Change actions"
+              title={uiText('Change actions')}
               presentation="dialog"
               onClose={() => setToolsOpen(false)}
             >
               {since && (
                 <Text style={styles.muted}>
-                  Changes since this review snapshot. Select Current changes to comment or edit.
+                  <InterfaceText>
+                    {
+                      'Changes since this review snapshot. Select Current changes to comment or edit.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {!!checkpoint && (
                 <Text style={styles.muted}>
-                  Snapshot diff for this turn. Select Current changes to edit files.
+                  <InterfaceText>
+                    {'Snapshot diff for this turn. Select Current changes to edit files.'}
+                  </InterfaceText>
                 </Text>
               )}
 
@@ -537,7 +557,7 @@ export function TaskReview({
               <View style={styles.row}>
                 {!edit && file ? (
                   <Action
-                    label="Edit file"
+                    label={uiText('Edit file')}
                     secondary
                     disabled={
                       busy ||
@@ -567,19 +587,30 @@ export function TaskReview({
                   scope === 'working' &&
                   (!checkpoint || !history?.undone) && (
                     <Action
+                      destructive={checkpoint ? false : true}
                       secondary
-                      label={checkpoint ? 'Revert this file' : 'Discard file changes'}
+                      label={
+                        checkpoint ? uiText('Revert this file') : uiText('Discard file changes')
+                      }
                       disabled={!connected || busy || task.example || task.status === 'running'}
                       onPress={() =>
                         Alert.alert(
-                          checkpoint ? 'Revert this file?' : 'Discard changes to this file?',
                           checkpoint
-                            ? `${file.path} goes back to how it was before this turn. The current file is saved first.`
-                            : `${file.path} goes back to the last commit. The current file is saved first, so this can be recovered.`,
+                            ? uiText('Revert this file?')
+                            : uiText('Discard changes to this file?'),
+                          checkpoint
+                            ? uiText(
+                                '{value0} goes back to how it was before this turn. The current file is saved first.',
+                                { value0: file.path },
+                              )
+                            : uiText(
+                                '{value0} goes back to the last commit. The current file is saved first, so this can be recovered.',
+                                { value0: file.path },
+                              ),
                           [
-                            { text: 'Cancel', style: 'cancel' },
+                            { text: uiText('Cancel'), style: 'cancel' },
                             {
-                              text: checkpoint ? 'Revert' : 'Discard',
+                              text: checkpoint ? uiText('Revert') : uiText('Discard'),
                               style: 'destructive',
                               onPress: () =>
                                 act(() =>
@@ -652,7 +683,9 @@ export function TaskReview({
           </View>
         )}
         {!file && !edit ? (
-          <Text style={[styles.muted, styles.content]}>No changed files.</Text>
+          <Text style={[styles.muted, styles.content]}>
+            <InterfaceText>{'No changed files.'}</InterfaceText>
+          </Text>
         ) : edit ? (
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
             <Field
@@ -680,7 +713,7 @@ export function TaskReview({
               ]}
             />
             <Action
-              label="Apply to disk"
+              label={uiText('Apply to disk')}
               disabled={busy || !connected || task.example}
               onPress={() =>
                 act(() =>
@@ -703,7 +736,11 @@ export function TaskReview({
               }
             />
             <Text style={styles.muted}>
-              Applies on the connected computer only if the file still matches the loaded baseline.
+              <InterfaceText>
+                {
+                  'Applies on the connected computer only if the file still matches the loaded baseline.'
+                }
+              </InterfaceText>
             </Text>
           </ScrollView>
         ) : file?.preview ? (
@@ -767,7 +804,9 @@ export function TaskReview({
           onClose={() => setContextPreview(null)}
         >
           <ScrollView>
-            <Text style={styles.muted}>Surrounding code · unchanged file</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Surrounding code · unchanged file'}</InterfaceText>
+            </Text>
             <Text selectable style={[styles.text, { fontFamily: 'monospace' }]}>
               {contextPreview.contents
                 .split('\n')
@@ -781,16 +820,22 @@ export function TaskReview({
         </Sheet>
       )}
       {comment && file && (
-        <Sheet title={`Comment on ${file.path}:${comment.line}`} onClose={() => setComment(null)}>
+        <Sheet
+          title={uiText('Comment on {value0}:{value1}', {
+            value0: file.path,
+            value1: comment.line,
+          })}
+          onClose={() => setComment(null)}
+        >
           <View style={{ gap: 12 }}>
             <Field
-              label="Review comment"
+              label={uiText('Review comment')}
               multiline
               value={comment.body}
               onChangeText={(body) => setComment({ ...comment, body })}
             />
             <Action
-              label="Add comment to thread"
+              label={uiText('Add comment to thread')}
               disabled={!connected || busy || !comment.body.trim()}
               onPress={() =>
                 act(async () => {

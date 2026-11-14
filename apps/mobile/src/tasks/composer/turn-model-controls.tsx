@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { HarnessModelPicker } from '../../agents/harness-model-picker'
 import {
@@ -31,6 +32,8 @@ export function TurnModelControls({
   disabled?: boolean
   task?: Task
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { snapshot } = useRuntime()
   const [custom, setCustom] = useState(false)
@@ -50,7 +53,9 @@ export function TurnModelControls({
     <View style={{ gap: 12 }}>
       {!snapshot?.persistentTurnModelsSupported && (
         <Text style={styles.muted}>
-          Only this turn. The active run and thread defaults stay unchanged.
+          <InterfaceText>
+            {'Only this turn. The active run and thread defaults stay unchanged.'}
+          </InterfaceText>
         </Text>
       )}
       {task ? (
@@ -74,17 +79,17 @@ export function TurnModelControls({
       ) : (
         <>
           <Choice
-            label="Turn model"
+            label={uiText('Turn model')}
             value={value ? selected.model : '__inherit__'}
             disabled={disabled}
             items={[
-              { id: '__inherit__', name: 'Thread defaults' },
-              { id: '', name: 'Provider default' },
+              { id: '__inherit__', name: uiText('Thread defaults') },
+              { id: '', name: uiText('Provider default') },
               ...models,
               ...(selected.model && !models.some((m) => m.id === selected.model)
                 ? [{ id: selected.model, name: `${selected.model} (saved/custom)` }]
                 : []),
-              { id: '__custom__', name: 'Custom model…' },
+              { id: '__custom__', name: uiText('Custom model…') },
             ]}
             onChange={(model) => {
               if (model === '__inherit__') {
@@ -105,14 +110,14 @@ export function TurnModelControls({
           {custom && (
             <View style={{ gap: 8 }}>
               <Field
-                label="Turn custom model ID"
+                label={uiText('Turn custom model ID')}
                 editable={!disabled}
                 value={customId}
                 maxLength={500}
                 onChangeText={setCustomId}
               />
               <Action
-                label="Use model"
+                label={uiText('Use model')}
                 disabled={disabled || !customId.trim()}
                 onPress={() => {
                   update({ model: customId.trim(), reasoning: '' })
@@ -125,12 +130,12 @@ export function TurnModelControls({
       )}
       {!task && (
         <Choice
-          label="Turn reasoning level"
+          label={uiText('Turn reasoning level')}
           disabled={disabled}
           value={value ? (selected.reasoning ?? '') : '__inherit__'}
           items={[
-            ...(!value ? [{ id: '__inherit__', name: 'Thread defaults' }] : []),
-            { id: '', name: 'Provider default reasoning' },
+            ...(!value ? [{ id: '__inherit__', name: uiText('Thread defaults') }] : []),
+            { id: '', name: uiText('Provider default reasoning') },
             ...efforts,
             ...(selected.reasoning && !efforts.some((e) => e.id === selected.reasoning)
               ? [{ id: selected.reasoning, name: `${selected.reasoning} (saved)` }]
@@ -144,14 +149,18 @@ export function TurnModelControls({
       {!!value && (
         <Action
           secondary
-          label="Use thread defaults"
+          label={uiText('Use thread defaults')}
           disabled={disabled}
           onPress={() => onChange(null)}
         />
       )}
       {!task && (
         <>
-          {loading && <Text style={styles.muted}>Loading models…</Text>}
+          {loading && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading models…'}</InterfaceText>
+            </Text>
+          )}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}
@@ -159,7 +168,7 @@ export function TurnModelControls({
           )}
           <Action
             secondary
-            label="Refresh models"
+            label={uiText('Refresh models')}
             disabled={loading || !canDiscover}
             onPress={refresh}
           />

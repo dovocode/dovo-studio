@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Platform, ScrollView, View } from 'react-native'
 import {
@@ -22,6 +23,8 @@ export function InlineArtifact({
   reference: ArtifactReference
   onOpen: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { read, connected } = useRuntime()
   const { colors, styles } = useTheme()
   const [artifact, setArtifact] = useState<Artifact>()
@@ -33,7 +36,7 @@ export function InlineArtifact({
     setArtifact(undefined)
     setError('')
     if (!connected) {
-      setError('Reconnect the computer to load this preview.')
+      setError(uiText('Reconnect the computer to load this preview.'))
       return
     }
     void read(
@@ -74,14 +77,23 @@ export function InlineArtifact({
         }}
       >
         <Text style={[styles.muted, { flex: 1, fontSize: 11 }]}>
-          {reference.fileCount ? `${reference.fileCount} files · ` : ''}Version {reference.revision}
+          <InterfaceText
+            values={{
+              value0: reference.fileCount
+                ? uiText('{value0} files · ', { value0: reference.fileCount })
+                : '',
+              value1: reference.revision,
+            }}
+          >
+            {'{value0}Version {value1}'}
+          </InterfaceText>
         </Text>
         <IconButton
-          label={source ? 'Show rendered artifact' : 'View inline artifact source'}
+          label={source ? uiText('Show rendered artifact') : uiText('View inline artifact source')}
           icon={source ? 'preview' : 'code'}
           onPress={() => setSource((value) => !value)}
         />
-        <IconButton label="Expand inline artifact" icon="expand" onPress={onOpen} />
+        <IconButton label={uiText('Expand inline artifact')} icon="expand" onPress={onOpen} />
       </View>
       <View style={{ height: 320 }}>
         {!artifact && !error && <ActivityIndicator color={colors.accent} />}
@@ -89,7 +101,7 @@ export function InlineArtifact({
           <View style={{ padding: 16, gap: 8 }}>
             <Text style={styles.error}>{error}</Text>
             <Action
-              label="Retry inline preview"
+              label={uiText('Retry inline preview')}
               disabled={!connected}
               onPress={() => setReload((value) => value + 1)}
             />
@@ -101,7 +113,7 @@ export function InlineArtifact({
               <View style={{ flex: 1, display: source ? 'none' : 'flex' }}>
                 <ArtifactWebView
                   content={artifact.content}
-                  onError={() => setError('Could not load artifact preview')}
+                  onError={() => setError(uiText('Could not load artifact preview'))}
                 />
               </View>
             )}

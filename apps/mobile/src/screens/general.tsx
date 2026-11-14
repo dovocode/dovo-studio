@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
 import { RuntimeSpeechSettings } from './runtime-speech'
@@ -30,6 +31,8 @@ import {
 } from '@dovo/protocol'
 
 function SnoozeDurations({ minutes }: { minutes: number[] }) {
+  const uiText = useInterfaceText()
+
   const saved = formatTaskSnoozeMinutes(minutes)
   const [text, setText] = useState(saved)
   const [error, setError] = useState('')
@@ -41,7 +44,7 @@ function SnoozeDurations({ minutes }: { minutes: number[] }) {
   return (
     <View style={{ gap: 8, padding: 12 }}>
       <Field
-        label="Snooze durations"
+        label={uiText('Snooze durations')}
         value={text}
         autoCapitalize="none"
         autoCorrect={false}
@@ -52,7 +55,7 @@ function SnoozeDurations({ minutes }: { minutes: number[] }) {
         placeholder="15m, 1h, 4h, 1d"
       />
       <Action
-        label="Save snooze durations"
+        label={uiText('Save snooze durations')}
         disabled={text === saved}
         onPress={() => {
           try {
@@ -65,7 +68,7 @@ function SnoozeDurations({ minutes }: { minutes: number[] }) {
       />
       <Action
         secondary
-        label="Reset snooze durations"
+        label={uiText('Reset snooze durations')}
         onPress={() => {
           updateMobilePreferences({ taskSnoozeMinutes: [...defaultTaskSnoozeMinutes] })
           setText(formatTaskSnoozeMinutes(defaultTaskSnoozeMinutes))
@@ -128,7 +131,9 @@ function LocalSettingsPage({ title, children }: { title: string; children: React
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={[styles.content, { paddingTop: 4, gap: 20 }]}
       >
-        <Text style={[styles.muted, { fontSize: 13 }]}>Saved automatically on this device.</Text>
+        <Text style={[styles.muted, { fontSize: 13 }]}>
+          <InterfaceText>{'Saved automatically on this device.'}</InterfaceText>
+        </Text>
         {children}
       </SettingsScrollView>
     </SettingsPage>
@@ -143,7 +148,9 @@ export default function GeneralScreen() {
     <LocalSettingsPage title={uiText('General')}>
       <SettingsGroup
         title={uiText('Interface language')}
-        footer="Language for navigation, settings labels, and common controls. Other copy falls back to English. Speech recognition keeps its own language."
+        footer={uiText(
+          'Language for navigation, settings labels, and common controls. Other copy falls back to English. Speech recognition keeps its own language.',
+        )}
       >
         <Choice
           label={uiText('Interface language')}
@@ -154,98 +161,105 @@ export default function GeneralScreen() {
           }
         />
       </SettingsGroup>
-      <SettingsGroup title="Startup" footer="The page Dovo shows when it opens.">
+      <SettingsGroup
+        title={uiText('Startup')}
+        footer={uiText('The page Dovo shows when it opens.')}
+      >
         <Choice
-          label="Open on launch"
+          label={uiText('Open on launch')}
           value={preferences.launchTab}
-          items={tabs.map((tab) => ({ id: tab.id, name: tab.name }))}
+          items={tabs.map((tab) => ({ id: tab.id, name: uiText(tab.name) }))}
           onChange={(launchTab) =>
             updateMobilePreferences({ launchTab: launchTab as typeof preferences.launchTab })
           }
         />
       </SettingsGroup>
       <SettingsGroup
-        title="Browser tab cleanup"
-        footer="0 turns a timer off. Current tabs, pinned tabs and active media are protected. Checks run when Browser is open."
+        title={uiText('Browser tab cleanup')}
+        footer={uiText(
+          '0 turns a timer off. Current tabs, pinned tabs and active media are protected. Checks run when Browser is open.',
+        )}
       >
         <BrowserCleanupMinutes
-          label="Auto-settle unused tabs after (minutes)"
+          label={uiText('Auto-settle unused tabs after (minutes)')}
           value={preferences.browserAutoSettleMinutes}
           onSave={(browserAutoSettleMinutes) =>
             updateMobilePreferences({ browserAutoSettleMinutes })
           }
         />
         <BrowserCleanupMinutes
-          label="Close settled tabs after (minutes)"
+          label={uiText('Close settled tabs after (minutes)')}
           value={preferences.browserCloseSettledMinutes}
           onSave={(browserCloseSettledMinutes) =>
             updateMobilePreferences({ browserCloseSettledMinutes })
           }
         />
       </SettingsGroup>
-      <SettingsGroup title="Date & time">
+      <SettingsGroup title={uiText('Date & time')}>
         <Choice
-          label="Time format"
+          label={uiText('Time format')}
           value={preferences.timeFormat}
           items={[
             { id: 'auto', name: uiText('Automatic') },
-            { id: '12h', name: '12-hour' },
-            { id: '24h', name: '24-hour' },
+            { id: '12h', name: uiText('12-hour') },
+            { id: '24h', name: uiText('24-hour') },
           ]}
           onChange={(timeFormat) =>
             updateMobilePreferences({ timeFormat: timeFormat as typeof preferences.timeFormat })
           }
         />
       </SettingsGroup>
-      <SettingsGroup title="Conversation & speech">
+      <SettingsGroup title={uiText('Conversation & speech')}>
         <SettingsRow
-          title="Conversation"
-          subtitle="Changed files, tool activity and keeping the screen on"
+          title={uiText('Conversation')}
+          subtitle={uiText('Changed files, tool activity and keeping the screen on')}
           icon="chat"
           onPress={() => router.push('/settings/conversation')}
         />
         <SettingsRow
-          title="Speech & driving"
-          subtitle="Dictation, read aloud, voices and car mode"
+          title={uiText('Speech & driving')}
+          subtitle={uiText('Dictation, read aloud, voices and car mode')}
           icon="settings"
           onPress={() => router.push('/settings/speech')}
         />
       </SettingsGroup>
       <SettingsGroup
-        title="Experimental"
-        footer="Browser tabs stay on this device. Terminals run on paired computers and use their session recovery."
+        title={uiText('Experimental')}
+        footer={uiText(
+          'Browser tabs stay on this device. Terminals run on paired computers and use their session recovery.',
+        )}
       >
         <SettingsSwitchRow
-          label="Enable experimental Browser"
+          label={uiText('Enable experimental Browser')}
           value={preferences.browserWorkspaceEnabled}
           onValueChange={(browserWorkspaceEnabled) =>
             updateMobilePreferences({ browserWorkspaceEnabled })
           }
         />
         <SettingsSwitchRow
-          label="Enable Terminal workspace"
+          label={uiText('Enable Terminal workspace')}
           value={preferences.terminalWorkspaceEnabled}
           onValueChange={(terminalWorkspaceEnabled) =>
             updateMobilePreferences({ terminalWorkspaceEnabled })
           }
         />
       </SettingsGroup>
-      <SettingsGroup title="Related settings">
+      <SettingsGroup title={uiText('Related settings')}>
         <SettingsRow
-          title="Battery & background"
-          subtitle="This device · computer refresh and widget updates"
+          title={uiText('Battery & background')}
+          subtitle={uiText('This device · computer refresh and widget updates')}
           icon="settings"
           onPress={() => router.push('/settings/battery')}
         />
         <SettingsRow
-          title="Thread & PR preferences"
-          subtitle="This device · task list, confirmations and merge preferences"
+          title={uiText('Thread & PR preferences')}
+          subtitle={uiText('This device · task list, confirmations and merge preferences')}
           icon="tasks"
           onPress={() => router.push('/settings/task-preferences')}
         />
         <SettingsRow
           title={uiText('Notifications')}
-          subtitle="Task alerts, computer subscriptions and Live Activities"
+          subtitle={uiText('Task alerts, computer subscriptions and Live Activities')}
           icon="settings"
           onPress={() => router.push('/settings/notifications')}
         />
@@ -255,20 +269,24 @@ export default function GeneralScreen() {
 }
 
 export function BatterySettingsScreen() {
+  const uiText = useInterfaceText()
+
   const preferences = useMobilePreferences()
   return (
-    <LocalSettingsPage title="Battery & background">
+    <LocalSettingsPage title={uiText('Battery & background')}>
       <SettingsGroup
-        title="Battery & background activity"
-        footer="The open computer updates live. Less frequent checks of other computers reduce network activity. Connections pause while the app is in the background; notifications and Live Activities are managed in Notifications. Disabled widgets keep their last saved snapshot."
+        title={uiText('Battery & background activity')}
+        footer={uiText(
+          'The open computer updates live. Less frequent checks of other computers reduce network activity. Connections pause while the app is in the background; notifications and Live Activities are managed in Notifications. Disabled widgets keep their last saved snapshot.',
+        )}
       >
         <Choice
-          label="Other computer refresh"
+          label={uiText('Other computer refresh')}
           value={preferences.computerRefresh}
           items={[
-            { id: 'normal', name: 'Every 30 seconds' },
-            { id: 'reduced', name: 'Every 2 minutes' },
-            { id: 'manual', name: 'When I refresh' },
+            { id: 'normal', name: uiText('Every 30 seconds') },
+            { id: 'reduced', name: uiText('Every 2 minutes') },
+            { id: 'manual', name: uiText('When I refresh') },
           ]}
           onChange={(value) => {
             if (value === 'normal' || value === 'reduced' || value === 'manual')
@@ -277,7 +295,7 @@ export function BatterySettingsScreen() {
         />
 
         <SettingsSwitchRow
-          label="Update widgets"
+          label={uiText('Update widgets')}
           value={preferences.widgetUpdates}
           onValueChange={(widgetUpdates) => updateMobilePreferences({ widgetUpdates })}
         />
@@ -292,15 +310,17 @@ export function TaskPreferencesScreen() {
   const preferences = useMobilePreferences()
   const { setView } = useTaskListView()
   return (
-    <LocalSettingsPage title="Thread & PR preferences">
+    <LocalSettingsPage title={uiText('Thread & PR preferences')}>
       <SettingsGroup
-        title="Task list"
-        footer="Working groups running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible."
+        title={uiText('Task list')}
+        footer={uiText(
+          'Working groups running tasks in a collapsed section. They return to the main list when they need input or finish. Pinned tasks stay visible.',
+        )}
       >
         <Choice
-          label="Default sort"
+          label={uiText('Default sort')}
           value={preferences.taskSort}
-          items={taskSortOptions.map((option) => ({ id: option.id, name: option.name }))}
+          items={taskSortOptions.map((option) => ({ id: option.id, name: uiText(option.name) }))}
           onChange={(value) => {
             const taskSort = value as typeof preferences.taskSort
             updateMobilePreferences({ taskSort })
@@ -308,9 +328,9 @@ export function TaskPreferencesScreen() {
           }}
         />
         <Choice
-          label="Group by"
+          label={uiText('Group by')}
           value={preferences.taskGrouping}
-          items={[...taskGroupOptions]}
+          items={taskGroupOptions.map((option) => ({ ...option, name: uiText(option.name) }))}
           onChange={(taskGrouping) =>
             updateMobilePreferences({
               taskGrouping: taskGrouping as typeof preferences.taskGrouping,
@@ -319,46 +339,52 @@ export function TaskPreferencesScreen() {
         />
 
         <SettingsSwitchRow
-          label="Working section"
+          label={uiText('Working section')}
           value={preferences.workingSection}
           onValueChange={(workingSection) => updateMobilePreferences({ workingSection })}
         />
       </SettingsGroup>
       <SettingsGroup
-        title="Snoozing"
-        footer="Enter 1–12 durations separated by commas, in menu order: m for minutes, h for hours, d for days or w for weeks. Existing snoozed threads keep their wake-up time."
+        title={uiText('Snoozing')}
+        footer={uiText(
+          'Enter 1–12 durations separated by commas, in menu order: m for minutes, h for hours, d for days or w for weeks. Existing snoozed threads keep their wake-up time.',
+        )}
       >
         <SnoozeSchedule schedule={preferences.taskSnoozeSchedule} ready={preferences.ready} />
         <SnoozeDurations minutes={preferences.taskSnoozeMinutes} />
       </SettingsGroup>
       <SettingsGroup
-        title="Confirmations"
-        footer="Archived threads can always be restored from Settings → Archived threads. Stopping pauses queued messages."
+        title={uiText('Confirmations')}
+        footer={uiText(
+          'Archived threads can always be restored from Settings → Archived threads. Stopping pauses queued messages.',
+        )}
       >
         <SettingsSwitchRow
           first
-          label="Confirm before archiving a task"
+          label={uiText('Confirm before archiving a task')}
           value={preferences.confirmArchive}
           onValueChange={(confirmArchive) => updateMobilePreferences({ confirmArchive })}
         />
         <SettingsSwitchRow
-          label="Confirm before stopping a running task"
+          label={uiText('Confirm before stopping a running task')}
           value={preferences.confirmStop}
           onValueChange={(confirmStop) => updateMobilePreferences({ confirmStop })}
         />
       </SettingsGroup>
       <SettingsGroup
         title={uiText('Pull requests')}
-        footer="The merge method is preselected when merging and falls back to the forge’s default. Draft applies where the forge supports it."
+        footer={uiText(
+          'The merge method is preselected when merging and falls back to the forge’s default. Draft applies where the forge supports it.',
+        )}
       >
         <Choice
-          label="Merge method"
+          label={uiText('Merge method')}
           value={preferences.mergeMethod}
           items={[
-            { id: 'auto', name: 'Forge default' },
-            { id: 'merge', name: 'Merge' },
-            { id: 'squash', name: 'Squash' },
-            { id: 'rebase', name: 'Rebase' },
+            { id: 'auto', name: uiText('Forge default') },
+            { id: 'merge', name: uiText('Merge') },
+            { id: 'squash', name: uiText('Squash') },
+            { id: 'rebase', name: uiText('Rebase') },
           ]}
           onChange={(mergeMethod) =>
             updateMobilePreferences({
@@ -368,7 +394,7 @@ export function TaskPreferencesScreen() {
         />
 
         <SettingsSwitchRow
-          label="Create pull requests as drafts"
+          label={uiText('Create pull requests as drafts')}
           value={preferences.pullDraft}
           onValueChange={(pullDraft) => updateMobilePreferences({ pullDraft })}
         />
@@ -378,27 +404,31 @@ export function TaskPreferencesScreen() {
 }
 
 export function ConversationSettingsScreen() {
+  const uiText = useInterfaceText()
+
   const preferences = useMobilePreferences()
   return (
-    <LocalSettingsPage title="Conversation">
+    <LocalSettingsPage title={uiText('Conversation')}>
       <SettingsGroup
-        title="Conversation"
-        footer="Turn off Minimal composer to always show the full composer. Tool activity controls whether commands, edits and searches start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open."
+        title={uiText('Conversation')}
+        footer={uiText(
+          'Turn off Minimal composer to always show the full composer. Tool activity controls whether commands, edits and searches start open or folded. Tool call details show output and full inputs only when enabled. The screen stays on only while you have a running task open.',
+        )}
       >
         <SettingsSwitchRow
           first
-          label="Collapse changed files by default"
+          label={uiText('Collapse changed files by default')}
           value={preferences.collapseChangedFiles}
           onValueChange={(collapseChangedFiles) =>
             updateMobilePreferences({ collapseChangedFiles })
           }
         />
         <Choice
-          label="Tool activity"
+          label={uiText('Tool activity')}
           value={preferences.toolActivity}
           items={[
-            { id: 'collapsed', name: 'Collapsed' },
-            { id: 'expanded', name: 'Expanded' },
+            { id: 'collapsed', name: uiText('Collapsed') },
+            { id: 'expanded', name: uiText('Expanded') },
           ]}
           onChange={(toolActivity) =>
             updateMobilePreferences({
@@ -408,27 +438,27 @@ export function ConversationSettingsScreen() {
         />
 
         <SettingsSwitchRow
-          label="Show tool call details"
+          label={uiText('Show tool call details')}
           value={preferences.showToolDetails}
           onValueChange={(showToolDetails) => updateMobilePreferences({ showToolDetails })}
         />
         <SettingsSwitchRow
-          label="Minimal composer"
+          label={uiText('Minimal composer')}
           value={preferences.minimalComposer}
           onValueChange={(minimalComposer) => updateMobilePreferences({ minimalComposer })}
         />
         <SettingsSwitchRow
-          label="Show Plan button"
+          label={uiText('Show Plan button')}
           value={preferences.showPlanButton}
           onValueChange={(showPlanButton) => updateMobilePreferences({ showPlanButton })}
         />
         <SettingsSwitchRow
-          label="Show context usage"
+          label={uiText('Show context usage')}
           value={preferences.showContextUsage}
           onValueChange={(showContextUsage) => updateMobilePreferences({ showContextUsage })}
         />
         <SettingsSwitchRow
-          label="Keep the screen on while a task runs"
+          label={uiText('Keep the screen on while a task runs')}
           value={preferences.keepScreenOn}
           onValueChange={(keepScreenOn) => updateMobilePreferences({ keepScreenOn })}
         />
@@ -488,20 +518,26 @@ export function SpeechSettingsScreen() {
     return rank(a) - rank(b) || a.language.localeCompare(b.language) || a.name.localeCompare(b.name)
   })
   return (
-    <LocalSettingsPage title="Speech & driving">
+    <LocalSettingsPage title={uiText('Speech & driving')}>
       <RuntimeSpeechSettings />
       <SettingsGroup
         title={uiText('Speech')}
-        footer="Saved on this phone. Siri voices appear when iOS makes them available to apps; additional voices can be downloaded in iPhone speech settings."
+        footer={uiText(
+          'Saved on this phone. Siri voices appear when iOS makes them available to apps; additional voices can be downloaded in iPhone speech settings.',
+        )}
       >
-        {loadingSpeech && <Text style={styles.muted}>Loading speech options…</Text>}
+        {loadingSpeech && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'Loading speech options…'}</InterfaceText>
+          </Text>
+        )}
         {!!speechError && (
           <Text accessibilityRole="alert" style={styles.error}>
             {speechError}
           </Text>
         )}
         <Choice
-          label="Dictation language"
+          label={uiText('Dictation language')}
           value={preferences.dictationLanguage}
           items={[
             { id: '', name: uiText('Automatic') },
@@ -513,7 +549,7 @@ export function SpeechSettingsScreen() {
           onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
         />
         <Choice
-          label="Read aloud language"
+          label={uiText('Read aloud language')}
           value={preferences.speechLanguage}
           items={[
             { id: '', name: uiText('Automatic') },
@@ -524,10 +560,10 @@ export function SpeechSettingsScreen() {
           }
         />
         <Choice
-          label="Voice"
+          label={uiText('Voice')}
           value={preferences.speechVoice}
           items={[
-            { id: '', name: 'System default' },
+            { id: '', name: uiText('System default') },
             ...orderedVoices.map((voice) => ({
               id: voice.identifier,
               name: `${/siri/i.test(`${voice.name} ${voice.identifier}`) ? 'Siri · ' : ''}${voice.name} · ${voice.language}${voice.quality === 'Enhanced' ? ' · Enhanced' : ''}`,
@@ -536,7 +572,7 @@ export function SpeechSettingsScreen() {
           onChange={(speechVoice) => updateMobilePreferences({ speechVoice })}
         />
         <Choice
-          label="Speaking speed"
+          label={uiText('Speaking speed')}
           value={String(preferences.speechRate)}
           items={speechRates.map((rate) => ({
             id: String(rate),
@@ -549,17 +585,19 @@ export function SpeechSettingsScreen() {
         />
       </SettingsGroup>
       <SettingsGroup
-        title="Driving"
-        footer="Bigger text, only Threads and Settings, and chats without tool details. The screen stays on while a task runs. Also on the car button in Threads. Use dictation and keep your eyes on the road."
+        title={uiText('Driving')}
+        footer={uiText(
+          'Bigger text, only Threads and Settings, and chats without tool details. The screen stays on while a task runs. Also on the car button in Threads. Use dictation and keep your eyes on the road.',
+        )}
       >
         <SettingsSwitchRow
           first
-          label="Car mode"
+          label={uiText('Car mode')}
           value={preferences.carMode}
           onValueChange={(carMode) => updateMobilePreferences({ carMode })}
         />
         <SettingsSwitchRow
-          label="Read replies aloud"
+          label={uiText('Read replies aloud')}
           value={preferences.readRepliesAloud}
           onValueChange={(readRepliesAloud) => updateMobilePreferences({ readRepliesAloud })}
         />

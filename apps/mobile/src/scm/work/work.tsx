@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pipelineSignal,
@@ -254,18 +255,33 @@ export function WorkScreen({
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={mode === 'issues' ? 'Issues' : pullNumber ? `PR #${pullNumber} runs` : 'PR runs'}
+        title={
+          mode === 'issues'
+            ? uiText('Issues')
+            : pullNumber
+              ? uiText('PR #{value0} runs', { value0: pullNumber })
+              : uiText('PR runs')
+        }
         onBack={mode === 'issues' ? () => backToCollection('/') : undefined}
         subtitle={
           mode === 'issues'
-            ? `${visible.length} issue${visible.length === 1 ? '' : 's'} · ${selected ? workSourceName(selected) : 'All sources'}`
-            : `${selected ? workSourceName(selected) : 'Project'} · Commit ${commitSha?.slice(0, 8) || 'unavailable'}`
+            ? uiText('{value0} issue{value1} · {value2}', {
+                value0: visible.length,
+                value1: visible.length === 1 ? '' : 's',
+                value2: selected ? workSourceName(selected) : 'All sources',
+              })
+            : uiText('{value0} · Commit {value1}', {
+                value0: selected ? workSourceName(selected) : 'Project',
+                value1: commitSha?.slice(0, 8) || 'unavailable',
+              })
         }
-        leading={onBack ? <Action secondary label="Back to PR" onPress={onBack} /> : undefined}
+        leading={
+          onBack ? <Action secondary label={uiText('Back to PR')} onPress={onBack} /> : undefined
+        }
         buttons={[
           {
             icon: 'refresh',
-            label: `Refresh ${mode}`,
+            label: uiText('Refresh {value0}', { value0: mode }),
             disabled: busy || !connected || !focused,
             onPress: refresh,
           },
@@ -273,7 +289,7 @@ export function WorkScreen({
             ? ([
                 {
                   icon: 'add',
-                  label: 'New issue',
+                  label: uiText('New issue'),
                   disabled: !focused || !eligible.length,
                   onPress: () => {
                     pinForm(eligible.length === 1 ? eligible[0] : undefined)
@@ -282,7 +298,7 @@ export function WorkScreen({
                 },
                 {
                   icon: 'filters',
-                  label: 'Issue filters',
+                  label: uiText('Issue filters'),
                   selected:
                     !!repositoryId ||
                     state !== 'all' ||
@@ -321,22 +337,24 @@ export function WorkScreen({
             }}
           >
             <SearchField
-              label={`Search ${mode}`}
+              label={uiText('Search {value0}', { value0: mode })}
               value={search}
               maxLength={300}
               onChangeText={setSearch}
-              placeholder={mode === 'issues' ? 'Search issues…' : 'Search runs…'}
+              placeholder={mode === 'issues' ? uiText('Search issues…') : uiText('Search runs…')}
             />
             {mode === 'pipelines' && (matching.length > 0 || state !== 'all') && (
               <View style={{ gap: 6 }}>
-                <Text style={styles.muted}>In loaded, searched results</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'In loaded, searched results'}</InterfaceText>
+                </Text>
                 <View
                   accessibilityRole="none"
-                  accessibilityLabel="Filter loaded runs by status"
+                  accessibilityLabel={uiText('Filter loaded runs by status')}
                   style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
                 >
                   {[
-                    { status: 'all', label: 'All runs', count: matching.length },
+                    { status: 'all', label: uiText('All runs'), count: matching.length },
                     ...pipelineStatuses,
                   ].map(({ status: statusValue, label, count }) => {
                     const selected =
@@ -347,7 +365,7 @@ export function WorkScreen({
                       <Pressable
                         key={label}
                         accessibilityRole="button"
-                        accessibilityLabel={`${statusValue === 'all' ? 'All runs' : `Filter ${label}`}: ${count}${statusValue === 'all' ? '' : ' runs'}`}
+                        accessibilityLabel={`${statusValue === 'all' ? uiText('All runs') : uiText('Filter {value0}', { value0: label })}: ${count}${statusValue === 'all' ? '' : uiText(' runs')}`}
                         accessibilityState={{ selected }}
                         onPress={() => setState(selected ? 'all' : statusValue)}
                         style={({ pressed }) => ({
@@ -366,7 +384,9 @@ export function WorkScreen({
                         })}
                       >
                         {statusValue === 'all' ? (
-                          <Text style={styles.text}>All runs</Text>
+                          <Text style={styles.text}>
+                            <InterfaceText>{'All runs'}</InterfaceText>
+                          </Text>
                         ) : (
                           <WorkSignal status={statusValue} />
                         )}
@@ -383,8 +403,11 @@ export function WorkScreen({
               <>
                 {!!jiraFilters.board && !jiraFilters.sprint && (
                   <Text style={styles.muted}>
-                    Showing project issues. Choose a sprint to filter by the selected board. Saved
-                    board columns and filters are available in Jira.
+                    <InterfaceText>
+                      {
+                        'Showing project issues. Choose a sprint to filter by the selected board. Saved board columns and filters are available in Jira.'
+                      }
+                    </InterfaceText>
                   </Text>
                 )}
                 <JiraQuickViews
@@ -397,17 +420,20 @@ export function WorkScreen({
                 />
                 <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
                   <JiraChip
-                    label="List"
+                    label={uiText('List')}
                     selected={layout === 'list'}
                     onPress={() => setLayout('list')}
                   />
                   <JiraChip
-                    label="By status"
+                    label={uiText('By status')}
                     selected={layout === 'status'}
                     onPress={() => setLayout('status')}
                   />
                   {state !== 'all' && (
-                    <JiraChip label={`Status: ${state} ×`} onPress={() => setState('all')} />
+                    <JiraChip
+                      label={uiText('Status: {value0} ×', { value0: state })}
+                      onPress={() => setState('all')}
+                    />
                   )}
                   {(
                     [
@@ -430,7 +456,7 @@ export function WorkScreen({
                     .map((key) => (
                       <JiraChip
                         key={key}
-                        label={`${key === 'assignee' ? (jiraFilters[key] === 'mine' ? 'Assigned to me' : 'Unassigned') : `${key === 'statusCategory' ? 'Category' : key === 'type' ? 'Type' : key === 'label' ? 'Label' : key === 'priority' ? 'Priority' : key === 'board' ? 'Board' : key === 'sprint' ? 'Sprint' : key === 'team' ? 'Team' : key === 'component' ? 'Component' : 'Release'}: ${jiraFilters[key]}`} ×`}
+                        label={`${key === 'assignee' ? (jiraFilters[key] === 'mine' ? uiText('Assigned to me') : uiText('Unassigned')) : `${key === 'statusCategory' ? uiText('Category') : key === 'type' ? uiText('Type') : key === 'label' ? uiText('Label') : key === 'priority' ? uiText('Priority') : key === 'board' ? uiText('Board') : key === 'sprint' ? uiText('Sprint') : key === 'team' ? uiText('Team') : key === 'component' ? uiText('Component') : uiText('Release')}: ${jiraFilters[key]}`} ×`}
                         onPress={() =>
                           setJiraFilters({
                             ...jiraFilters,
@@ -463,13 +489,13 @@ export function WorkScreen({
                     <Choice
                       compact
                       hideLabel
-                      label="Issue state"
+                      label={uiText('Issue state')}
                       value={state}
                       onChange={setState}
                       items={[
                         {
                           id: 'all',
-                          name: 'All states',
+                          name: uiText('All states'),
                         },
                         ...[
                           ...new Set(
@@ -490,7 +516,7 @@ export function WorkScreen({
                 </View>
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Manage issue sources and Jira"
+                  accessibilityLabel={uiText('Manage issue sources and Jira')}
                   onPress={() => setSourcesOpen(true)}
                   style={({ pressed }) => ({
                     minHeight: 44,
@@ -507,7 +533,7 @@ export function WorkScreen({
                       },
                     ]}
                   >
-                    Sources
+                    <InterfaceText>{'Sources'}</InterfaceText>
                   </Text>
                 </Pressable>
               </View>
@@ -518,15 +544,15 @@ export function WorkScreen({
               style={[styles.muted, { minHeight: 16 }]}
             >
               {busy
-                ? `${pages.some((page) => page.items.length) ? 'Updating' : 'Loading'} ${mode}…`
+                ? `${pages.some((page) => page.items.length) ? uiText('Updating') : uiText('Loading')} ${mode}…`
                 : !connected && pages.length
                   ? pages.some((page) => page.items.length)
-                    ? 'Offline · showing saved results.'
-                    : `Connect to load ${mode}.`
+                    ? uiText('Offline · showing saved results.')
+                    : uiText('Connect to load {value0}.', { value0: mode })
                   : query
                     ? mode === 'issues' && pages.some((page) => page.options?.issueSearch)
-                      ? 'Searching all connected issue sources.'
-                      : 'Search loaded results. Load more for earlier work.'
+                      ? uiText('Searching all connected issue sources.')
+                      : uiText('Search loaded results. Load more for earlier work.')
                     : '\u00a0'}
             </Text>
             {!!message && (
@@ -591,8 +617,10 @@ export function WorkScreen({
                     },
                   ]}
                 >
-                  {'state' in row ? issueLabel(row.id) : `Run ${row.number ?? row.id}`} ·{' '}
-                  {workSourceName(page.source)}
+                  {'state' in row
+                    ? issueLabel(row.id)
+                    : uiText('Run {value0}', { value0: row.number ?? row.id })}{' '}
+                  · {workSourceName(page.source)}
                 </Text>
                 <Text
                   style={[
@@ -634,17 +662,21 @@ export function WorkScreen({
                 <View style={{ gap: 4 }}>
                   <Text style={styles.muted}>
                     {row.state} · {row.type}
-                    {row.priority ? ` · ${row.priority} priority` : ''}
+                    {row.priority ? uiText(' · {value0} priority', { value0: row.priority }) : ''}
                   </Text>
                   <Text numberOfLines={2} style={styles.text}>
                     {(row.assigneeNames ?? row.assignees).length
-                      ? `Assigned to ${(row.assigneeNames ?? row.assignees).join(', ')}`
-                      : 'Unassigned'}
+                      ? uiText('Assigned to {value0}', {
+                          value0: (row.assigneeNames ?? row.assignees).join(', '),
+                        })
+                      : uiText('Unassigned')}
                   </Text>
                   {!!row.labels.length && (
                     <Text numberOfLines={2} style={styles.muted}>
                       {row.labels.slice(0, 3).join(' · ')}
-                      {row.labels.length > 3 ? ` · +${row.labels.length - 3} labels` : ''}
+                      {row.labels.length > 3
+                        ? uiText(' · +{value0} labels', { value0: row.labels.length - 3 })
+                        : ''}
                     </Text>
                   )}
                 </View>
@@ -663,10 +695,17 @@ export function WorkScreen({
                 ]}
               >
                 {page.options?.provider === 'jira'
-                  ? `Jira · ${(page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? ''} · `
+                  ? uiText('Jira · {value0} · ', {
+                      value0:
+                        (page.source.kind === 'jira' ? page.source.jiraSource.project : '') ?? '',
+                    })
                   : ''}
                 {page.source.computerName}
-                {!page.source.connected ? ' · Offline · Saved' : page.stale ? ' · Saved' : ''}
+                {!page.source.connected
+                  ? uiText(' · Offline · Saved')
+                  : page.stale
+                    ? uiText(' · Saved')
+                    : ''}
               </Text>
             </Pressable>
           </View>
@@ -685,10 +724,10 @@ export function WorkScreen({
                 ]}
               >
                 {query || (mode === 'pipelines' && state !== 'all')
-                  ? 'No matching results'
+                  ? uiText('No matching results')
                   : mode === 'issues'
-                    ? 'No issues found'
-                    : 'No runs found for this commit'}
+                    ? uiText('No issues found')
+                    : uiText('No runs found for this commit')}
               </Text>
               <Text
                 style={[
@@ -699,14 +738,16 @@ export function WorkScreen({
                 ]}
               >
                 {!connected
-                  ? 'Connect to a computer to load work. Saved results stay available offline.'
+                  ? uiText(
+                      'Connect to a computer to load work. Saved results stay available offline.',
+                    )
                   : mode === 'pipelines' && state !== 'all'
-                    ? 'Choose All runs or another status above.'
+                    ? uiText('Choose All runs or another status above.')
                     : mode === 'issues'
-                      ? 'Try another state or source, or add Jira in Sources.'
+                      ? uiText('Try another state or source, or add Jira in Sources.')
                       : pages.some((page) => page.next)
-                        ? 'Load earlier runs below to keep looking.'
-                        : 'Refresh after CI starts, or check the PR on its server.'}
+                        ? uiText('Load earlier runs below to keep looking.')
+                        : uiText('Refresh after CI starts, or check the PR on its server.')}
               </Text>
             </View>
           ) : undefined
@@ -752,7 +793,7 @@ export function WorkScreen({
                   {(page.next || page.error || page.optionsError) && (
                     <Action
                       secondary
-                      label={`${page.error || page.optionsError ? 'Retry' : 'Load more'} · ${workSourceName(page.source)}`}
+                      label={`${page.error || page.optionsError ? uiText('Retry') : uiText('Load more')} · ${workSourceName(page.source)}`}
                       disabled={busy || !page.source.connected}
                       onPress={() => void more(page.source.key)}
                     />
@@ -763,15 +804,15 @@ export function WorkScreen({
         }
       />
       {filters && (
-        <Sheet title="Issue filters" onClose={() => setFilters(false)}>
+        <Sheet title={uiText('Issue filters')} onClose={() => setFilters(false)}>
           <Choice
-            label="Issue source"
+            label={uiText('Issue source')}
             value={repositoryId}
             onChange={(id) => onRepositoryChange?.(id)}
             items={[
               {
                 id: '',
-                name: 'All sources',
+                name: uiText('All sources'),
               },
               ...sources.map((source) => ({
                 id: source.key,
@@ -799,7 +840,7 @@ export function WorkScreen({
             </>
           )}
           <Choice
-            label="Sort issues"
+            label={uiText('Sort issues')}
             value={sort}
             onChange={setSort}
             items={[
@@ -811,8 +852,8 @@ export function WorkScreen({
               },
               ...(jiraOnly
                 ? [
-                    { id: 'rank', name: 'Jira rank · per source' },
-                    { id: 'recent', name: 'Recently updated · per source' },
+                    { id: 'rank', name: uiText('Jira rank · per source') },
+                    { id: 'recent', name: uiText('Recently updated · per source') },
                   ]
                 : []),
               {
@@ -823,7 +864,7 @@ export function WorkScreen({
           />
           <Action
             secondary
-            label="Reset filters"
+            label={uiText('Reset filters')}
             onPress={() => {
               onRepositoryChange?.('')
               setState('all')
@@ -833,12 +874,12 @@ export function WorkScreen({
               setSearch('')
             }}
           />
-          <Action label="Show issues" onPress={() => setFilters(false)} />
+          <Action label={uiText('Show issues')} onPress={() => setFilters(false)} />
         </Sheet>
       )}
       {sourcesOpen && (
         <Sheet
-          title={jiraConnection ? 'Jira source' : 'Issue sources'}
+          title={jiraConnection ? uiText('Jira source') : uiText('Issue sources')}
           busy={sourceBusy}
           onClose={() => {
             setSourcesOpen(false)
@@ -860,8 +901,11 @@ export function WorkScreen({
           ) : (
             <>
               <Text style={styles.muted}>
-                Jira issues are independent of Dovo projects. Browse them here, then link a project
-                when needed.
+                <InterfaceText>
+                  {
+                    'Jira issues are independent of Dovo projects. Browse them here, then link a project when needed.'
+                  }
+                </InterfaceText>
               </Text>
               {sources
                 .filter((source) => source.kind === 'jira')
@@ -885,7 +929,7 @@ export function WorkScreen({
                     />
                     <Text style={styles.muted}>
                       {source.jiraSource.site} · {source.jiraSource.project}
-                      {!source.connected ? ' · Offline' : ''}
+                      {!source.connected ? uiText(' · Offline') : ''}
                     </Text>
                   </View>
                 ))}
@@ -897,13 +941,13 @@ export function WorkScreen({
                   },
                 ]}
               >
-                Connect Jira
+                <InterfaceText>{'Connect Jira'}</InterfaceText>
               </Text>
               {overviews.map((entry) => (
                 <Action
                   key={entry.profile.id}
                   secondary
-                  label={`Add Jira · ${runtimeComputerName(entry)}`}
+                  label={uiText('Add Jira · {value0}', { value0: runtimeComputerName(entry) })}
                   disabled={!entry.connected}
                   onPress={() =>
                     setJiraConnection({
@@ -914,12 +958,16 @@ export function WorkScreen({
               ))}
               {!overviews.length && (
                 <Text style={styles.muted}>
-                  Connect a computer in Settings to use its signed-in Jira account.
+                  <InterfaceText>
+                    {'Connect a computer in Settings to use its signed-in Jira account.'}
+                  </InterfaceText>
                 </Text>
               )}
               {!!sources.some((source) => source.kind === 'repository') && (
                 <Text style={styles.muted}>
-                  Repository issue trackers are included automatically.
+                  <InterfaceText>
+                    {'Repository issue trackers are included automatically.'}
+                  </InterfaceText>
                 </Text>
               )}
             </>
@@ -928,9 +976,11 @@ export function WorkScreen({
       )}
       {creating &&
         (!formPage?.options ? (
-          <Sheet ref={sourcePicker} title="New issue" onClose={() => setCreating(false)}>
+          <Sheet ref={sourcePicker} title={uiText('New issue')} onClose={() => setCreating(false)}>
             <Text style={styles.muted}>
-              Choose the issue tracker. You can link a Dovo project later.
+              <InterfaceText>
+                {'Choose the issue tracker. You can link a Dovo project later.'}
+              </InterfaceText>
             </Text>
             {eligible.map((page) => (
               <Action

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
@@ -17,6 +18,8 @@ export function ImportCodexSession({
   repositoryId: string
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const { styles } = useTheme()
   const [open, setOpen] = useState(false)
@@ -32,7 +35,7 @@ export function ImportCodexSession({
     <>
       <Action
         secondary
-        label="Import Codex terminal session"
+        label={uiText('Import Codex terminal session')}
         disabled={disabled || !runtime.connected}
         onPress={() => {
           picker.refresh()
@@ -42,21 +45,24 @@ export function ImportCodexSession({
       {open && (
         <Sheet
           ref={sheet}
-          title="Import Codex terminal session"
+          title={uiText('Import Codex terminal session')}
           busy={picker.importing}
           onClose={() => setOpen(false)}
         >
           <Text style={styles.muted}>
-            Preview a session from this project on the selected computer. Exit Codex before
-            importing. Send a new message after import to continue.
+            <InterfaceText>
+              {
+                'Preview a session from this project on the selected computer. Exit Codex before importing. Send a new message after import to continue.'
+              }
+            </InterfaceText>
           </Text>
           <Choice
-            label="Codex configuration"
+            label={uiText('Codex configuration')}
             value={picker.agentId}
             disabled={picker.importing}
             onChange={picker.setAgentId}
             items={[
-              { id: '', name: 'Project / default Codex home' },
+              { id: '', name: uiText('Project / default Codex home') },
               ...(runtime.snapshot?.workspace.agents ?? [])
                 .filter((agent) => agent.provider === 'codex')
                 .map((agent) => ({ id: agent.id, name: agent.name })),
@@ -64,7 +70,7 @@ export function ImportCodexSession({
           />
           <Action
             secondary
-            label="Refresh sessions"
+            label={uiText('Refresh sessions')}
             disabled={picker.importing}
             onPress={picker.refresh}
           />
@@ -75,17 +81,21 @@ export function ImportCodexSession({
           )}
           {!!picker.notice && <Text style={styles.muted}>{picker.notice}</Text>}
           {!picker.sessions ? (
-            <Text style={styles.muted}>Finding Codex sessions…</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Finding Codex sessions…'}</InterfaceText>
+            </Text>
           ) : !picker.sessions.length ? (
             <Text style={styles.muted}>
-              No terminal Codex sessions found for this project and configuration.
+              <InterfaceText>
+                {'No terminal Codex sessions found for this project and configuration.'}
+              </InterfaceText>
             </Text>
           ) : (
             picker.sessions.map((session) => (
               <View key={session.key} style={{ gap: 4, marginVertical: 6 }}>
                 <Action
                   secondary
-                  label={`${session.title}${session.taskId ? ' · In Dovo' : ''}`}
+                  label={`${session.title}${session.taskId ? uiText(' · In Dovo') : ''}`}
                   disabled={picker.importing}
                   onPress={() => picker.select(session.key)}
                 />
@@ -96,26 +106,32 @@ export function ImportCodexSession({
             ))
           )}
           {!!picker.selected && !picker.preview && !picker.error && (
-            <Text style={styles.muted}>Loading session preview…</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading session preview…'}</InterfaceText>
+            </Text>
           )}
           {!!picker.preview && (
-            <View accessibilityLabel="Codex session preview" style={{ gap: 12 }}>
+            <View accessibilityLabel={uiText('Codex session preview')} style={{ gap: 12 }}>
               <Text style={styles.muted}>
-                {picker.preview.session.model || 'Native model'} ·{' '}
+                {picker.preview.session.model || uiText('Native model')} ·{' '}
                 {picker.preview.session.sessionId}
               </Text>
               <Text style={styles.text}>{picker.preview.notice}</Text>
               {!!picker.preview.olderMessages && (
                 <Text style={styles.muted}>
-                  Showing the latest 100 messages. All{' '}
-                  {picker.preview.olderMessages + picker.preview.messages.length} messages will be
-                  saved.
+                  <InterfaceText
+                    values={{
+                      value0: picker.preview.olderMessages + picker.preview.messages.length,
+                    }}
+                  >
+                    {'Showing the latest 100 messages. All {value0} messages will be saved.'}
+                  </InterfaceText>
                 </Text>
               )}
               {picker.preview.messages.map((message) => (
                 <View key={message.id} style={{ gap: 4 }}>
                   <Text style={styles.muted}>
-                    {message.role === 'user' ? 'You · Imported' : 'Codex'}
+                    {message.role === 'user' ? uiText('You · Imported') : 'Codex'}
                   </Text>
                   <Text selectable style={styles.text}>
                     {message.text}
@@ -126,7 +142,7 @@ export function ImportCodexSession({
           )}
           {picker.preview?.session.taskId ? (
             <Action
-              label="Open existing thread"
+              label={uiText('Open existing thread')}
               onPress={() => {
                 const id = picker.preview?.session.taskId
                 if (id) navigate(id)
@@ -134,7 +150,7 @@ export function ImportCodexSession({
             />
           ) : (
             <Action
-              label={picker.importing ? 'Importing…' : 'Import session'}
+              label={picker.importing ? uiText('Importing…') : uiText('Import session')}
               disabled={
                 picker.importing ||
                 picker.preview?.status !== 'available' ||

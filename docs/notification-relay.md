@@ -189,6 +189,13 @@ changes update the Lock Screen and Dynamic Island without notification banners. 
 notifications are limited to input requests, task failures and completed turns; PR-check results and
 cancellations do not send banners.
 
+Local and runtime Live Activity progress updates at most once every 30 seconds. Each update uses the
+latest state. Status changes and end events bypass that interval. Unchanged content refreshes every
+three minutes. Direct APNs and updated relays use priority `5` for ordinary progress and priority
+`10` for input requests and end events. Alert notifications retain priority `10`. Update the relay
+to apply the priority change to managed delivery. Older relays still receive fewer progress updates
+from updated runtimes. These limits do not establish measured battery savings.
+
 Signed-in phones create a separate Connect grant for each activity at `/v1/push/activities`. Only
 that activity's runtime profile, ActivityKit token, task turn and Apple environment can use the
 grant at `/v1/push/activities/send`. Grants cannot send alert notifications or start new activities.

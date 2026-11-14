@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { pullDiscussionGroups } from '@dovo/protocol'
 import { type ComponentRef, useEffect, useRef, type ReactNode } from 'react'
@@ -60,6 +61,8 @@ export function PullComments({
   onAnchor?: (node: ComponentRef<typeof View>) => void
   capabilities?: ForgeCapabilities
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   if (!expanded && comments.length)
@@ -95,12 +98,19 @@ export function PullComments({
     )
   return (
     <View style={{ gap: 12, minWidth: 0 }}>
-      {!comments.length && <Text style={styles.muted}>No discussion yet.</Text>}
+      {!comments.length && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'No discussion yet.'}</InterfaceText>
+        </Text>
+      )}
       {comments.map((c) => (
         <CommentAnchor key={c.id} url={c.url} fragment={fragment} onAnchor={onAnchor}>
           <Pressable
             accessibilityRole="link"
-            accessibilityLabel={`View ${c.author}'s ${pullCommentSignal(c).label} on server`}
+            accessibilityLabel={uiText("View {value0}'s {value1} on server", {
+              value0: c.author,
+              value1: pullCommentSignal(c).label,
+            })}
             onPress={() => onOpen(c.url)}
             style={({ pressed }) => [
               styles.row,
@@ -115,8 +125,10 @@ export function PullComments({
                 <PullCommentLabel comment={c} />
               </View>
               <Text style={styles.muted}>
-                {c.date ? formatShortDateTime(c.date) : 'Not submitted yet'}
-                {c.kind === 'review' && c.commitId ? ` · Reviewed ${c.commitId.slice(0, 8)}` : ''}
+                {c.date ? formatShortDateTime(c.date) : uiText('Not submitted yet')}
+                {c.kind === 'review' && c.commitId
+                  ? uiText(' · Reviewed {value0}', { value0: c.commitId.slice(0, 8) })
+                  : ''}
               </Text>
             </View>
             <Icon name="next" size={13} color={colors.muted} />
@@ -130,7 +142,9 @@ export function PullComments({
               ]}
             >
               {c.path}
-              {c.line ? ` · Line ${c.line}` : ' · Previous revision'}
+              {c.line
+                ? uiText(' · Line {value0}', { value0: c.line })
+                : uiText(' · Previous revision')}
             </Text>
           )}
           {!!c.body.trim() && (
@@ -138,8 +152,8 @@ export function PullComments({
           )}
           {c.resolved !== undefined && (
             <Text style={styles.muted}>
-              {c.resolved ? 'Resolved discussion' : 'Open discussion'}
-              {c.outdated ? ' · Earlier revision' : ''}
+              {c.resolved ? uiText('Resolved discussion') : uiText('Open discussion')}
+              {c.outdated ? uiText(' · Earlier revision') : ''}
             </Text>
           )}
           {onAction && (
@@ -149,14 +163,14 @@ export function PullComments({
                 (c.threadId || c.kind === 'inline') && (
                   <Action
                     secondary
-                    label="Reply"
+                    label={uiText('Reply')}
                     onPress={() => onAction({ action: 'reply', comment: c })}
                   />
                 )}
               {capabilities?.actions.includes('resolve') && c.threadId && c.canResolve && (
                 <Action
                   secondary
-                  label={c.resolved ? 'Reopen discussion' : 'Resolve discussion'}
+                  label={c.resolved ? uiText('Reopen discussion') : uiText('Resolve discussion')}
                   onPress={() => onAction({ action: 'resolve', comment: c })}
                 />
               )}
@@ -169,6 +183,8 @@ export function PullComments({
 }
 
 function ResolvedDiscussion(props: Parameters<typeof PullComments>[0]) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const targeted =
     !!props.fragment &&
@@ -182,7 +198,9 @@ function ResolvedDiscussion(props: Parameters<typeof PullComments>[0]) {
     <View style={[styles.card, { gap: 8 }]}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Resolved discussion by ${authors.join(', ')}`}
+        accessibilityLabel={uiText('Resolved discussion by {value0}', {
+          value0: authors.join(', '),
+        })}
         accessibilityState={{ expanded: open }}
         onPress={() => setOpen((value) => !value)}
         style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
@@ -208,8 +226,15 @@ function ResolvedDiscussion(props: Parameters<typeof PullComments>[0]) {
           ))}
         </View>
         <Text style={[styles.muted, { flex: 1 }]}>
-          Resolved · {props.comments[0]?.path ?? 'Discussion'} · {props.comments.length}{' '}
-          {props.comments.length === 1 ? 'comment' : 'comments'}
+          <InterfaceText
+            values={{
+              value0: props.comments[0]?.path ?? uiText('Discussion'),
+              value1: props.comments.length,
+              value2: props.comments.length === 1 ? uiText('comment') : uiText('comments'),
+            }}
+          >
+            {'Resolved · {value0} · {value1} {value2}'}
+          </InterfaceText>
         </Text>
         <Icon name={open ? 'down' : 'next'} size={16} color={colors.muted} />
       </Pressable>

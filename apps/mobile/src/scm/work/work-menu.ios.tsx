@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { NativeIcon } from '../../ui/controls/native-icon'
 import { Button, Host, Menu } from '@expo/ui/swift-ui'
 import {
@@ -12,11 +13,13 @@ import { useTheme } from '../../ui/theme'
 import type { WorkMenuAction } from './work-menu'
 export function WorkMenu({
   actions,
-  label = 'Work actions',
+  label: labelOverride,
 }: {
   actions: WorkMenuAction[]
   label?: string
 }) {
+  const uiText = useInterfaceText()
+  const label = labelOverride ?? uiText('Work actions')
   const { colors, mode: appearanceMode } = useTheme()
 
   return (

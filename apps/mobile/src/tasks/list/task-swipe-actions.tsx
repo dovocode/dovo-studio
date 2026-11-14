@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { View } from 'react-native'
 import { Gesture, GestureDetector, Pressable } from 'react-native-gesture-handler'
@@ -31,6 +32,8 @@ export function TaskSwipeActions({
   primary: SwipeAction
   secondary?: SwipeAction
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, reduceMotion } = useTheme()
   const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
 
@@ -183,7 +186,7 @@ export function TaskSwipeActions({
           {open && (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel="Close thread actions"
+              accessibilityLabel={uiText('Close thread actions')}
               onPress={close}
               style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 }}
             />

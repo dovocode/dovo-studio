@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSettingsDraft } from './settings-target'
 import { SettingsSaveBar } from '../../screens/settings-save-bar'
 import { Switch } from '../../ui/controls/switch'
@@ -29,6 +30,8 @@ import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
 export function CommandSettings({ computerUse = false }: { computerUse?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connected, callEffect, readEffect } = useRuntime()
@@ -119,18 +122,30 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
     <View style={styles.card}>
       {!connected && (
         <Text accessibilityRole="alert" style={styles.muted}>
-          Offline · your unsaved edits are kept here. Reconnect to save.
+          <InterfaceText>
+            {'Offline · your unsaved edits are kept here. Reconnect to save.'}
+          </InterfaceText>
         </Text>
       )}
-      <Text style={styles.text}>{computerUse ? 'Computer use' : 'CLI commands & shell'}</Text>
+      <Text style={styles.text}>
+        {computerUse ? uiText('Computer use') : uiText('CLI commands & shell')}
+      </Text>
       <Text style={styles.muted}>
         {computerUse
-          ? 'Set up CuaDriver on this runtime host. CuaDriver owns OS permissions; Dovo connects agents through MCP.'
-          : 'Host executable names or paths, without shell quoting. Agent overrides take precedence. New terminals use these shell settings.'}
+          ? uiText(
+              'Set up CuaDriver on this runtime host. CuaDriver owns OS permissions; Dovo connects agents through MCP.',
+            )
+          : uiText(
+              'Host executable names or paths, without shell quoting. Agent overrides take precedence. New terminals use these shell settings.',
+            )}
       </Text>
       {!settings && !loadError && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Loading {computerUse ? 'computer-use' : 'command'} settings…
+          <InterfaceText
+            values={{ value0: computerUse ? uiText('computer-use') : uiText('command') }}
+          >
+            {'Loading {value0} settings…'}
+          </InterfaceText>
         </Text>
       )}
       {settings && (
@@ -162,7 +177,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             ))}
           {!computerUse && (
             <Field
-              label="Shell arguments (one per line)"
+              label={uiText('Shell arguments (one per line)')}
               multiline
               editable={!busy && connected}
               value={settings.shellArgs.join('\n')}
@@ -177,15 +192,19 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           )}
           {!computerUse && (
             <Text style={styles.muted}>
-              Automatic shell: {defaultShell}. Default: -l (login shell).
+              <InterfaceText values={{ value0: defaultShell }}>
+                {'Automatic shell: {value0}. Default: -l (login shell).'}
+              </InterfaceText>
             </Text>
           )}
           {computerUse && (
             <>
               <View style={styles.row}>
-                <Text style={styles.text}>Enable agent computer use on this computer</Text>
+                <Text style={styles.text}>
+                  <InterfaceText>{'Enable agent computer use on this computer'}</InterfaceText>
+                </Text>
                 <Switch
-                  accessibilityLabel="Enable agent computer use on this computer"
+                  accessibilityLabel={uiText('Enable agent computer use on this computer')}
                   value={settings.cuaEnabled}
                   disabled={busy || !connected}
                   onValueChange={(value) => {
@@ -195,41 +214,55 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                 />
               </View>
               <Text style={styles.muted}>
-                Grants writable agents access to this computer’s desktop. Read-only agents are
-                excluded. The user and agents share the desktop and app state.
+                <InterfaceText>
+                  {
+                    'Grants writable agents access to this computer’s desktop. Read-only agents are excluded. The user and agents share the desktop and app state.'
+                  }
+                </InterfaceText>
               </Text>
               <Text style={styles.muted}>
-                Leave Cua Driver empty to detect it on this computer’s PATH or in its standard
-                installation folder. Changes apply to new agent turns.
+                <InterfaceText>
+                  {
+                    'Leave Cua Driver empty to detect it on this computer’s PATH or in its standard installation folder. Changes apply to new agent turns.'
+                  }
+                </InterfaceText>
               </Text>
               {cua && (
                 <View style={styles.card}>
-                  <Text style={styles.text}>1. Install on this computer</Text>
+                  <Text style={styles.text}>
+                    <InterfaceText>{'1. Install on this computer'}</InterfaceText>
+                  </Text>
                   <Text style={styles.muted}>{cuaInstallHelp(cua.platform).prerequisites}</Text>
                   <Text style={styles.muted}>
-                    Run the official installer on the runtime host, then refresh status. It
-                    downloads and installs CuaDriver; no Cua account is required.
+                    <InterfaceText>
+                      {
+                        'Run the official installer on the runtime host, then refresh status. It downloads and installs CuaDriver; no Cua account is required.'
+                      }
+                    </InterfaceText>
                   </Text>
                   <Text selectable style={styles.muted}>
                     {cuaInstallHelp(cua.platform).commands}
                   </Text>
                   {cua.platform === 'linux' && (
                     <Text style={styles.muted}>
-                      Minimal Linux systems need libxi6 and at-spi2-core. GNOME needs Cua’s bundled
-                      WinRects helper; see the installation guide.
+                      <InterfaceText>
+                        {
+                          'Minimal Linux systems need libxi6 and at-spi2-core. GNOME needs Cua’s bundled WinRects helper; see the installation guide.'
+                        }
+                      </InterfaceText>
                     </Text>
                   )}
                 </View>
               )}
               <Action
-                label="Install and set up Cua Driver"
+                label={uiText('Install and set up Cua Driver')}
                 disabled={busy || !connected}
                 onPress={() =>
                   act(() => Linking.openURL('https://cua.ai/docs/cua-driver/quickstart'))
                 }
               />
               <Action
-                label="Detect / check Cua Driver"
+                label={uiText('Detect / check Cua Driver')}
                 disabled={busy || !connected}
                 onPress={() =>
                   act(() =>
@@ -251,17 +284,23 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                   <View key={group} style={styles.card}>
                     <Text style={styles.text}>
                       {group === 'setup'
-                        ? '2. Permissions & desktop access'
+                        ? uiText('2. Permissions & desktop access')
                         : group === 'skills'
-                          ? '3. Agent MCP, skills & hooks'
-                          : '4. Computer History (optional preview)'}
+                          ? uiText('3. Agent MCP, skills & hooks')
+                          : uiText('4. Computer History (optional preview)')}
                     </Text>
                     <Text style={styles.muted}>
                       {group === 'setup'
-                        ? 'Grant macOS Accessibility and Screen Recording to CuaDriver and accept its relaunch. Test desktop access lists apps without changing them. Daemon controls affect active computer-use sessions.'
+                        ? uiText(
+                            'Grant macOS Accessibility and Screen Recording to CuaDriver and accept its relaunch. Test desktop access lists apps without changing them. Daemon controls affect active computer-use sessions.',
+                          )
                         : group === 'skills'
-                          ? 'Save the computer-use switch for automatic dovo_cua MCP on new writable turns. No manual MCP registration is needed. Install the optional official skill pack; installation links detected agents on this computer.'
-                          : 'Opt-in, encrypted, metadata-only history. Enable may restart the daemon. Disable keeps recorded data; pause temporarily stops recording. Unsupported builds report an error. Data stays on the runtime host; View recent history retrieves up to 20 events here.'}
+                          ? uiText(
+                              'Save the computer-use switch for automatic dovo_cua MCP on new writable turns. No manual MCP registration is needed. Install the optional official skill pack; installation links detected agents on this computer.',
+                            )
+                          : uiText(
+                              'Opt-in, encrypted, metadata-only history. Enable may restart the daemon. Disable keeps recorded data; pause temporarily stops recording. Unsupported builds report an error. Data stays on the runtime host; View recent history retrieves up to 20 events here.',
+                            )}
                     </Text>
                     {cuaActions
                       .filter(
@@ -278,12 +317,14 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
                           onPress={() => {
                             if (action.id === 'history-delete') {
                               Alert.alert(
-                                'Delete recorded Computer History?',
-                                'Delete all recorded history and its encryption key on this computer. This cannot be undone.',
+                                uiText('Delete recorded Computer History?'),
+                                uiText(
+                                  'Delete all recorded history and its encryption key on this computer. This cannot be undone.',
+                                ),
                                 [
-                                  { text: 'Cancel', style: 'cancel' },
+                                  { text: uiText('Cancel'), style: 'cancel' },
                                   {
-                                    text: 'Delete',
+                                    text: uiText('Delete'),
                                     style: 'destructive',
                                     onPress: () => runAction(action.id),
                                   },
@@ -313,21 +354,35 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
               {cua && (
                 <View>
                   <Text style={styles.muted}>
-                    {cua.available ? 'Cua Driver found' : 'Cua Driver unavailable'}
+                    {cua.available ? uiText('Cua Driver found') : uiText('Cua Driver unavailable')}
                     {cua.version ? ` · ${cua.version}` : ''}
                   </Text>
                   {cua.path && <Text style={styles.muted}>{cua.path}</Text>}
                   <Text style={styles.muted}>{cua.detail}</Text>
-                  {cua.daemon && <Text style={styles.muted}>Daemon: {cua.daemon}</Text>}
+                  {cua.daemon && (
+                    <Text style={styles.muted}>
+                      <InterfaceText values={{ value0: cua.daemon }}>
+                        {'Daemon: {value0}'}
+                      </InterfaceText>
+                    </Text>
+                  )}
                   {cua.permissions && (
-                    <Text style={styles.muted}>Permissions: {cua.permissions}</Text>
+                    <Text style={styles.muted}>
+                      <InterfaceText values={{ value0: cua.permissions }}>
+                        {'Permissions: {value0}'}
+                      </InterfaceText>
+                    </Text>
                   )}
                   <Text style={styles.muted}>
                     {cua.platform === 'darwin'
-                      ? 'Grant Accessibility and Screen Recording to CuaDriver on this Mac, then restart its daemon.'
+                      ? uiText(
+                          'Grant Accessibility and Screen Recording to CuaDriver on this Mac, then restart its daemon.',
+                        )
                       : cua.platform === 'win32'
-                        ? 'Run Cua Driver in an interactive Windows desktop session.'
-                        : 'Cua Driver needs a Linux desktop session. A WSL runtime checks Linux tools, not the Windows desktop.'}
+                        ? uiText('Run Cua Driver in an interactive Windows desktop session.')
+                        : uiText(
+                            'Cua Driver needs a Linux desktop session. A WSL runtime checks Linux tools, not the Windows desktop.',
+                          )}
                   </Text>
                 </View>
               )}
@@ -376,8 +431,8 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
           {saved && (
             <Text accessibilityLiveRegion="polite" style={styles.muted}>
               {computerUse
-                ? 'Computer-use settings saved. Applies to new turns.'
-                : 'Command settings saved.'}
+                ? uiText('Computer-use settings saved. Applies to new turns.')
+                : uiText('Command settings saved.')}
             </Text>
           )}
         </>
@@ -391,7 +446,7 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
         <Action
           wide
           secondary
-          label="Retry command settings"
+          label={uiText('Retry command settings')}
           disabled={busy || !connected}
           onPress={() => {
             const reload = () => {
@@ -401,11 +456,11 @@ export function CommandSettings({ computerUse = false }: { computerUse?: boolean
             if (!dirty) reload()
             else
               Alert.alert(
-                'Discard unsaved edits?',
-                'Load the latest saved settings and discard your edits?',
+                uiText('Discard unsaved edits?'),
+                uiText('Load the latest saved settings and discard your edits?'),
                 [
-                  { text: 'Keep editing', style: 'cancel' },
-                  { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                  { text: uiText('Keep editing'), style: 'cancel' },
+                  { text: uiText('Discard and reload'), style: 'destructive', onPress: reload },
                 ],
               )
           }}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { isSnoozed, latestCompletedTaskTurn, type Task } from '@dovo/protocol'
@@ -15,6 +16,8 @@ export function LifecycleActions({
   onDeleted?: () => void
   runtimeId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const {
@@ -35,7 +38,7 @@ export function LifecycleActions({
       {allowReadState && !task.archived && latestCompletedTaskTurn(task) && (
         <Action
           secondary
-          label={unread ? 'Mark read' : 'Mark unread'}
+          label={unread ? uiText('Mark read') : uiText('Mark unread')}
           disabled={!readStateEnabled || busy}
           onPress={toggleRead}
         />
@@ -46,11 +49,11 @@ export function LifecycleActions({
           label={
             task.bot
               ? task.pinned
-                ? 'Unpin Bot'
-                : 'Pin Bot'
+                ? uiText('Unpin Bot')
+                : uiText('Pin Bot')
               : task.pinned
-                ? 'Unpin task'
-                : 'Pin task'
+                ? uiText('Unpin task')
+                : uiText('Pin task')
           }
           disabled={!enabled || busy}
           onPress={togglePinned}
@@ -58,7 +61,7 @@ export function LifecycleActions({
         {!task.bot && !task.archivedAt && (
           <Action
             secondary
-            label={task.archived ? 'Reopen task' : 'Settle task'}
+            label={task.archived ? uiText('Reopen task') : uiText('Settle task')}
             disabled={!enabled || busy || task.status === 'running'}
             onPress={toggleSettled}
           />
@@ -69,7 +72,7 @@ export function LifecycleActions({
           {isSnoozed(task, Date.now()) ? (
             <Action
               secondary
-              label="Unsnooze"
+              label={uiText('Unsnooze')}
               icon="snooze"
               disabled={!enabled || busy}
               onPress={() => snooze(null)}
@@ -77,7 +80,7 @@ export function LifecycleActions({
           ) : (
             <Action
               secondary
-              label="Snooze"
+              label={uiText('Snooze')}
               icon="snooze"
               disabled={!enabled || busy}
               onPress={() => chooseSnoozeDuration('Snooze thread', (until) => snooze(until))}
@@ -89,7 +92,7 @@ export function LifecycleActions({
         <View style={styles.row}>
           <Action
             secondary
-            label={task.archivedAt ? 'Restore thread' : 'Archive thread'}
+            label={task.archivedAt ? uiText('Restore thread') : uiText('Archive thread')}
             disabled={
               !enabled ||
               busy ||
@@ -100,8 +103,9 @@ export function LifecycleActions({
             onPress={toggleArchived}
           />
           <Action
+            destructive
             secondary
-            label="Delete thread…"
+            label={uiText('Delete thread…')}
             disabled={
               !enabled ||
               busy ||

@@ -1,4 +1,10 @@
-import { liveActivityRefreshMs, liveActivityStaleMs, runtimeComputerName } from '@dovo/protocol'
+import {
+  liveActivityRefreshMs,
+  liveActivityStaleMs,
+  liveActivityProgressMs,
+  runtimeComputerName,
+  type LiveTaskProps,
+} from '@dovo/protocol'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
 import { clientTaskScope } from '@dovo/client-runtime'
 import { mutableStruct, mutableArray } from '@dovo/protocol'
@@ -54,7 +60,10 @@ export function createActivityController(onError: (message: string) => void) {
     let lastSaved = raw
     const seen = new Set(saved.seen)
     const records = new Map(saved.records.map((record) => [record.key, record]))
-    const fingerprints = new Map<string, { value: string; at: number }>()
+    const fingerprints = new Map<
+      string,
+      { value: string; at: number; status: LiveTaskProps['status'] }
+    >()
     const registered = new Map<string, { key: string; at: number }>()
     const registering = new Map<string, string>()
     const registrationLocks = new Map<string, Semaphore.Semaphore>()
@@ -243,14 +252,17 @@ export function createActivityController(onError: (message: string) => void) {
               if (!instance || !record) continue
               const fingerprint = JSON.stringify(props)
               const previous = fingerprints.get(record.id)
+              const now = Date.now()
               if (
-                previous?.value !== fingerprint ||
-                Date.now() - previous.at >= liveActivityRefreshMs
+                !previous ||
+                previous.status !== props.status ||
+                now - previous.at >= liveActivityRefreshMs ||
+                (previous.value !== fingerprint && now - previous.at >= liveActivityProgressMs)
               ) {
                 yield* nativeEffect(() =>
                   instance.update(props, new Date(Date.now() + liveActivityStaleMs)),
                 )
-                fingerprints.set(record.id, { value: fingerprint, at: Date.now() })
+                fingerprints.set(record.id, { value: fingerprint, at: now, status: props.status })
               }
               const id = record.id
               let lock = registrationLocks.get(id)

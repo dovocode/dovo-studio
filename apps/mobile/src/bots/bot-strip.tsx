@@ -50,7 +50,7 @@ export function BotStrip({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={uiText('New Bot')}
-          accessibilityHint="Choose a computer and create a Bot."
+          accessibilityHint={uiText('Choose a computer and create a Bot.')}
           disabled={createDisabled}
           onPress={onCreate}
           style={({ pressed }) => ({
@@ -122,6 +122,8 @@ function BotTile({
   rows: boolean
   onOpen: (id: string, runtimeId: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const lifecycle = useTaskLifecycle(row.task, row.runtimeId)
   const unread = hasUnreadTaskActivity(row.task)
@@ -129,19 +131,25 @@ function BotTile({
     <View style={{ width, paddingHorizontal: 2 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open Bot ${row.task.title} on ${row.runtimeName}${unread ? ', new messages' : ''}${row.task.pinned ? ', pinned' : ''}${row.online ? '' : ', offline'}`}
-        accessibilityHint="Touch and hold to pin or unpin this Bot."
+        accessibilityLabel={uiText('Open Bot {value0} on {value1}{value2}{value3}{value4}', {
+          value0: row.task.title,
+          value1: row.runtimeName,
+          value2: unread ? ', new messages' : '',
+          value3: row.task.pinned ? ', pinned' : '',
+          value4: row.online ? '' : ', offline',
+        })}
+        accessibilityHint={uiText('Touch and hold to pin or unpin this Bot.')}
         onPress={() => onOpen(row.task.id, row.runtimeId)}
         onLongPress={() =>
           Alert.alert(row.task.title, row.runtimeName, [
             {
-              text: row.task.pinned ? 'Unpin Bot' : 'Pin Bot',
+              text: row.task.pinned ? uiText('Unpin Bot') : uiText('Pin Bot'),
               onPress: () => {
                 if (row.online && !lifecycle.busy) lifecycle.togglePinned()
               },
             },
-            { text: 'Open Bot', onPress: () => onOpen(row.task.id, row.runtimeId) },
-            { text: 'Cancel', style: 'cancel' },
+            { text: uiText('Open Bot'), onPress: () => onOpen(row.task.id, row.runtimeId) },
+            { text: uiText('Cancel'), style: 'cancel' },
           ])
         }
         style={({ pressed }) => ({

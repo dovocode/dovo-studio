@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { responses, type RuntimeProfile, type TerminalInfo } from '@dovo/protocol'
@@ -72,12 +73,14 @@ function RenameEditor({ session, owner, onClose }: TerminalRenameProps) {
     }
   }
   return (
-    <Sheet title="Rename terminal" busy={pending} onClose={onClose}>
+    <Sheet title={uiText('Rename terminal')} busy={pending} onClose={onClose}>
       <Text style={styles.muted}>
-        Choose a name, or let the shell and its programs update it automatically.
+        <InterfaceText>
+          {'Choose a name, or let the shell and its programs update it automatically.'}
+        </InterfaceText>
       </Text>
       <Field
-        label="Terminal title"
+        label={uiText('Terminal title')}
         value={title}
         onChangeText={setTitle}
         maxLength={256}
@@ -98,7 +101,7 @@ function RenameEditor({ session, owner, onClose }: TerminalRenameProps) {
       <View style={[styles.row, { flexWrap: 'wrap' }]}>
         <Action
           secondary
-          label="Use automatic title"
+          label={uiText('Use automatic title')}
           disabled={pending || !connected}
           onPress={() => void save(null)}
         />

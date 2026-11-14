@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { changeTypeDistribution, type ChangeTypeFile, type FileKind } from '@dovo/protocol'
 import { Pressable, View } from 'react-native'
 import { useTheme } from '../theme'
@@ -47,6 +48,8 @@ export function ChangeTypeFilters({
   showDistribution?: boolean
   subtleSelection?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { mode, colors, styles } = useTheme()
   const { counts, weights, unit, total: amount } = changeTypeDistribution(files, weightBy)
   return (
@@ -55,7 +58,9 @@ export function ChangeTypeFilters({
         <View
           style={{ flexDirection: 'row', gap: 2 }}
           accessibilityLabel={
-            unit === 'lines' ? 'Changed line distribution' : 'File type distribution'
+            unit === 'lines'
+              ? uiText('Changed line distribution')
+              : uiText('File type distribution')
           }
         >
           {changeCategories
@@ -64,7 +69,14 @@ export function ChangeTypeFilters({
               <Pressable
                 key={category.kind}
                 accessibilityRole="button"
-                accessibilityLabel={`Filter ${category.label}: ${counts.get(category.kind)} files${unit === 'lines' ? `, ${weights.get(category.kind)} of ${amount} changed lines` : ''}`}
+                accessibilityLabel={uiText('Filter {value0}: {value1} files{value2}', {
+                  value0: category.label,
+                  value1: counts.get(category.kind),
+                  value2:
+                    unit === 'lines'
+                      ? `, ${weights.get(category.kind)} of ${amount} changed lines`
+                      : '',
+                })}
                 accessibilityState={{ selected: value === category.kind }}
                 onPress={() => onChange(value === category.kind ? undefined : category.kind)}
                 style={{
@@ -88,11 +100,11 @@ export function ChangeTypeFilters({
         </View>
       )}
       <View
-        accessibilityLabel="Change types"
+        accessibilityLabel={uiText('Change types')}
         style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 4 }}
       >
         {[
-          { kind: undefined, label: 'All', count: files.length },
+          { kind: undefined, label: uiText('All'), count: files.length },
           ...changeCategories
             .filter(({ kind }) => counts.has(kind) || value === kind)
             .map((category) => ({
@@ -149,7 +161,9 @@ export function ChangeTypeFilters({
         ))}
         {total != null && total > files.length && (
           <Text style={styles.muted}>
-            ({files.length} of {total} files loaded)
+            <InterfaceText values={{ value0: files.length, value1: total }}>
+              {'({value0} of {value1} files loaded)'}
+            </InterfaceText>
           </Text>
         )}
       </View>

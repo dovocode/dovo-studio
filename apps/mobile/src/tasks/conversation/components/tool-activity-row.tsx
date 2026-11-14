@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ToolResultImages } from './tool-result-images'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useConversationSelector } from '../state/provider'
@@ -77,6 +78,8 @@ export function ToolActivityRow({
   event: TaskToolEvent
   compact?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [open, setOpen] = useApplicationState(false)
@@ -101,7 +104,7 @@ export function ToolActivityRow({
         accessibilityState={{
           expanded: expandable ? open : undefined,
         }}
-        accessibilityLabel={`${running ? 'Running · ' : ''}${detail.title}${status ? ` · ${status}` : ''}`}
+        accessibilityLabel={`${running ? uiText('Running · ') : ''}${detail.title}${status ? ` · ${status}` : ''}`}
         onPress={() => setOpen((value) => !value)}
         style={({ pressed }) => ({
           minHeight: 44,
@@ -124,7 +127,7 @@ export function ToolActivityRow({
             ]}
           >
             {running && detail.kind === 'command' && detail.title === detail.input
-              ? 'Running '
+              ? uiText('Running ')
               : ''}
             {detail.title}
           </Text>
@@ -148,14 +151,25 @@ export function ToolActivityRow({
       </Pressable>
       <ToolResultImages event={event} />
       {mcpAppReferences(event.payload).map((reference) => (
-        <Suspense key={reference.id} fallback={<Text>Loading app…</Text>}>
+        <Suspense
+          key={reference.id}
+          fallback={
+            <Text>
+              <InterfaceText>{'Loading app…'}</InterfaceText>
+            </Text>
+          }
+        >
           <MobileMcpApp reference={reference} />
         </Suspense>
       ))}
       {artifactReferences(event.payload).map((reference) => (
         <Suspense
           key={`${reference.id}:${reference.revision}`}
-          fallback={<Text>Loading artifact…</Text>}
+          fallback={
+            <Text>
+              <InterfaceText>{'Loading artifact…'}</InterfaceText>
+            </Text>
+          }
         >
           <ArtifactCard reference={reference} />
         </Suspense>
@@ -209,7 +223,7 @@ export function ToolActivityRow({
             ))}
           {showToolDetails && !detail.output && (
             <Text style={styles.muted}>
-              {running ? 'In progress…' : status || 'No output recorded'}
+              {running ? uiText('In progress…') : status || uiText('No output recorded')}
             </Text>
           )}
         </View>
@@ -218,6 +232,8 @@ export function ToolActivityRow({
   )
 }
 export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [open, setOpen] = useApplicationState(false)
@@ -255,7 +271,7 @@ export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
             },
           ]}
         >
-          {active ? 'Thinking' : 'Reasoning summary'}
+          {active ? uiText('Thinking') : uiText('Reasoning summary')}
           {status ? ` · ${status}` : ''}
         </Text>
         {active && <ActivityIndicator size="small" color={colors.muted} />}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
@@ -17,10 +18,15 @@ export function PipelineSectionStatus({
   }
   connected: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   if (state.ready && !state.error && !state.detail?.stale) return null
   return (
-    <View accessibilityLabel={`${label} loading status`} style={[styles.card, { gap: 8 }]}>
+    <View
+      accessibilityLabel={uiText('{value0} loading status', { value0: label })}
+      style={[styles.card, { gap: 8 }]}
+    >
       <Text
         accessibilityRole={state.error ? 'alert' : undefined}
         style={state.error ? styles.error : styles.muted}
@@ -28,16 +34,16 @@ export function PipelineSectionStatus({
         {state.error
           ? `${label}: ${state.error}`
           : state.ready
-            ? `${label}: showing cached data.`
+            ? uiText('{value0}: showing cached data.', { value0: label })
             : connected
-              ? `Loading ${label.toLowerCase()}…`
-              : `${label}: connect to load this section.`}
+              ? uiText('Loading {value0}…', { value0: label.toLowerCase() })
+              : uiText('{value0}: connect to load this section.', { value0: label })}
       </Text>
       {(!state.busy || state.ready) && (
         <Action
           secondary
           disabled={!connected || state.busy}
-          label={`Refresh ${label.toLowerCase()}`}
+          label={uiText('Refresh {value0}', { value0: label.toLowerCase() })}
           onPress={state.refresh}
         />
       )}

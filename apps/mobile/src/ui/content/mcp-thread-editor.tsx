@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { RuntimeRequestError, type LauncherAgent, type Repository } from '@dovo/protocol'
@@ -35,6 +36,8 @@ export function McpThreadEditor({
   onSend: (value: McpThreadSelection) => Promise<unknown>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const currentKey = useRef<string | undefined>(draftKey)
   currentKey.current = draftKey
   useEffect(
@@ -62,12 +65,12 @@ export function McpThreadEditor({
     (!connected ? 'Reconnect the source computer before sending.' : undefined)
   return (
     <Sheet
-      title="New agent thread"
+      title={uiText('New agent thread')}
       busy={busy}
       onClose={onClose}
       footer={
         <Action
-          label={draft.attempt ? 'Retry Send' : 'Send'}
+          label={draft.attempt ? uiText('Retry Send') : uiText('Send')}
           wide
           disabled={busy || !!blocked || !!issue || !draft.prompt.trim() || !snapshot}
           onPress={() => {
@@ -100,16 +103,26 @@ export function McpThreadEditor({
     >
       <View style={{ gap: 16 }}>
         <Text style={styles.muted}>
-          Review the prompt, harness and model before Send. Preparation starts no work.
+          <InterfaceText>
+            {'Review the prompt, harness and model before Send. Preparation starts no work.'}
+          </InterfaceText>
         </Text>
         <Text style={styles.muted}>
-          New thread destination: {destination.kind === 'scratch' ? 'No project' : destination.name}
+          <InterfaceText
+            values={{
+              value0: destination.kind === 'scratch' ? uiText('No project') : destination.name,
+            }}
+          >
+            {'New thread destination: {value0}'}
+          </InterfaceText>
         </Text>
         {allowDestination &&
           snapshot?.workspace.repositories.map((item) => (
             <Action
               key={item.id}
-              label={`Use ${item.kind === 'scratch' ? 'No project' : item.name}`}
+              label={uiText('Use {value0}', {
+                value0: item.kind === 'scratch' ? 'No project' : item.name,
+              })}
               secondary
               disabled={locked || item.id === destination.id}
               onPress={() => setField('repositoryId', item.id)}
@@ -131,7 +144,7 @@ export function McpThreadEditor({
           </Text>
         )}
         <Field
-          label="Prompt"
+          label={uiText('Prompt')}
           multiline
           value={draft.prompt}
           editable={!locked}
@@ -149,11 +162,16 @@ export function McpThreadEditor({
         )}
         {draft.attempt && (
           <Text style={styles.muted}>
-            The send may have reached the runtime. Retry sends the same prompt and settings so it
-            can recover the same thread.
+            <InterfaceText>
+              {
+                'The send may have reached the runtime. Retry sends the same prompt and settings so it can recover the same thread.'
+              }
+            </InterfaceText>
           </Text>
         )}
-        <Text style={styles.muted}>Closing this sheet keeps your unsent edits.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Closing this sheet keeps your unsent edits.'}</InterfaceText>
+        </Text>
       </View>
     </Sheet>
   )

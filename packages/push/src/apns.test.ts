@@ -50,7 +50,8 @@ it('uses separate alert and Live Activity topics, shares one signed provider tok
   cleanup.push(() => rm(directory, { recursive: true, force: true }))
   const keyPath = join(directory, 'key.p8')
   await writeFile(keyPath, await exportPKCS8(key.privateKey), { mode: 0o600 })
-  const received: Array<{ topic: string; type: string; authorization: string }> = []
+  const received: Array<{ topic: string; type: string; authorization: string; priority: string }> =
+    []
   const server = createServer()
   const sessions = new Set<import('node:http2').ServerHttp2Session>()
   server.on('session', (session) => {
@@ -62,6 +63,7 @@ it('uses separate alert and Live Activity topics, shares one signed provider tok
       topic: String(headers['apns-topic']),
       type: String(headers['apns-push-type']),
       authorization: String(headers.authorization),
+      priority: String(headers['apns-priority']),
     })
     stream.on('data', () => {})
     stream.on('end', () => {
@@ -100,13 +102,17 @@ it('uses separate alert and Live Activity topics, shares one signed provider tok
   expect(received).toContainEqual({
     topic: 'com.dovo.studio',
     type: 'alert',
+    priority: '10',
     authorization: received[0].authorization,
   })
   expect(received).toContainEqual({
     topic: 'com.dovo.studio.push-type.liveactivity',
     type: 'liveactivity',
+    priority: '5',
     authorization: received[0].authorization,
   })
   const verified = await jwtVerify(received[0].authorization.replace('bearer ', ''), key.publicKey)
   expect(verified.payload.iss).toBe('test-team')
+  await sender.sendLiveActivity('a'.repeat(64), { aps: { event: 'end' } }, 'c'.repeat(64), 10)
+  expect(received.at(-1)).toMatchObject({ type: 'liveactivity', priority: '10' })
 })

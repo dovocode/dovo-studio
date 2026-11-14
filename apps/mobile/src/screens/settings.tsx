@@ -1,4 +1,5 @@
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { InterfaceText } from '@dovo/studio-core/interface-language'
+import { useInterfaceText, useInterfaceLanguage } from '@dovo/studio-core/interface-language'
 import type { IconName } from '../ui/controls/icon'
 import { mobileSettingsFields } from './settings-search-data'
 import { SettingsScrollView } from './settings-search'
@@ -47,6 +48,8 @@ function settingsLocation(path: string, local: boolean): { icon: IconName; descr
 
 export default function SettingsScreen({ categorySlug }: { categorySlug?: string } = {}) {
   const uiText = useInterfaceText()
+  const language = useInterfaceLanguage()
+  const locale = language === 'auto' ? undefined : language
 
   const { colors, styles } = useTheme()
 
@@ -74,12 +77,12 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
   )
   const groups = [
     {
-      title: 'App preferences',
+      title: uiText('App preferences'),
       path: '/settings/app-preferences',
       items: [
         {
           title: uiText('Appearance'),
-          subtitle: 'Colors, accessibility, density and fonts',
+          subtitle: uiText('Colors, accessibility, density and fonts'),
           icon: 'preview',
           path: '/settings/appearance',
           group: 'Look & feel',
@@ -89,7 +92,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         },
         {
           title: uiText('General'),
-          subtitle: 'Startup page and time format',
+          subtitle: uiText('Startup page and time format'),
           icon: 'settings',
           path: '/settings/general',
           group: 'Look & feel',
@@ -98,8 +101,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'startup launch date time clock format automatic 12-hour 24-hour experimental browser tabs web',
         },
         {
-          title: 'Conversation',
-          subtitle: 'Files, tool activity and keeping the screen on',
+          title: uiText('Conversation'),
+          subtitle: uiText('Files, tool activity and keeping the screen on'),
           icon: 'chat',
           path: '/settings/conversation',
           group: 'Chat & voice',
@@ -108,8 +111,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'collapse changed files tool call details output full inputs commands edits searches collapsed expanded minimal full compact composer context usage keep screen awake on sleep',
         },
         {
-          title: 'Speech & driving',
-          subtitle: 'Dictation, read aloud, voices and car mode',
+          title: uiText('Speech & driving'),
+          subtitle: uiText('Dictation, read aloud, voices and car mode'),
           icon: 'microphone',
           path: '/settings/speech',
           group: 'Chat & voice',
@@ -119,7 +122,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         },
         {
           title: uiText('Notifications'),
-          subtitle: 'Task alerts, computer subscriptions and Live Activities',
+          subtitle: uiText('Task alerts, computer subscriptions and Live Activities'),
           icon: 'settings',
           path: '/settings/notifications',
           group: 'Alerts & background',
@@ -128,8 +131,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'push alerts completion failed failures input requests lock screen dynamic island managed standalone relay',
         },
         {
-          title: 'Battery & background',
-          subtitle: 'Computer refresh and widget updates on this device',
+          title: uiText('Battery & background'),
+          subtitle: uiText('Computer refresh and widget updates on this device'),
           icon: 'settings',
           path: '/settings/battery',
           group: 'Alerts & background',
@@ -138,8 +141,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'background widgets refresh battery energy network frequency manual 30 seconds 2 minutes',
         },
         {
-          title: 'App & updates',
-          subtitle: 'Version, releases and installing app updates',
+          title: uiText('App & updates'),
+          subtitle: uiText('Version, releases and installing app updates'),
           icon: 'info',
           path: '/settings/updates',
           group: 'About',
@@ -147,8 +150,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           keywords: 'version build testflight google play release install upgrade',
         },
         {
-          title: 'Thread & PR preferences',
-          subtitle: 'Task list, confirmations and merge preferences',
+          title: uiText('Thread & PR preferences'),
+          subtitle: uiText('Task list, confirmations and merge preferences'),
           icon: 'tasks',
           path: '/settings/task-preferences',
           group: 'On this device',
@@ -159,12 +162,12 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'New thread defaults',
+      title: uiText('New thread defaults'),
       path: '/settings/new-task-defaults',
       items: [
         {
-          title: 'Task defaults',
-          subtitle: 'Agent, workspace and prompts',
+          title: uiText('Task defaults'),
+          subtitle: uiText('Agent, workspace and prompts'),
           icon: 'settings',
           path: '/settings/task-defaults',
           group: 'Shared defaults',
@@ -174,12 +177,12 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'Running task behavior',
+      title: uiText('Running task behavior'),
       path: '/settings/running-task-settings',
       items: [
         {
-          title: 'Task lifecycle',
-          subtitle: 'Recovery, settling and archiving across scopes',
+          title: uiText('Task lifecycle'),
+          subtitle: uiText('Recovery, settling and archiving across scopes'),
           icon: 'tasks',
           path: '/settings/task-lifecycle',
           group: 'Task workflow',
@@ -187,8 +190,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'inherit quota limited resume snooze settle merged closed inactive archive restart lifecycle',
         },
         {
-          title: 'Running tasks',
-          subtitle: 'Running tasks, child agents, approvals and reviews',
+          title: uiText('Running tasks'),
+          subtitle: uiText('Running tasks, child agents, approvals and reviews'),
           icon: 'tasks',
           path: '/settings/task-behavior',
           group: 'Task workflow',
@@ -196,8 +199,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'tab completion autocomplete suggest next prompt suggestions restart resume interrupted sleep awake auto archive inactive maximum concurrent child agents limit experimental models tune maestro scope project supervised allow web requests approvals code reviews verification',
         },
         {
-          title: 'Pull requests & pipelines',
-          subtitle: 'PR linking, lifecycle and feedback watchers',
+          title: uiText('Pull requests & pipelines'),
+          subtitle: uiText('PR linking, lifecycle and feedback watchers'),
           icon: 'changes',
           path: '/settings/pull-requests',
           group: 'Task workflow',
@@ -207,12 +210,12 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'Agents & tools',
+      title: uiText('Agents & tools'),
       path: '/settings/agent-settings',
       items: [
         {
           title: uiText('Agents'),
-          subtitle: 'Codex, Claude Code and agent profiles',
+          subtitle: uiText('Codex, Claude Code and agent profiles'),
           icon: 'chat',
           tint: '#bb9aff',
           path: '/settings/agents',
@@ -220,8 +223,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           keywords: 'models providers permissions access accounts login reasoning',
         },
         {
-          title: 'MCP, skills & hooks',
-          subtitle: 'Shared tools and project or agent overrides',
+          title: uiText('MCP, skills & hooks'),
+          subtitle: uiText('Shared tools and project or agent overrides'),
           icon: 'jobs',
           tint: '#5ac8bd',
           path: '/settings/resources',
@@ -230,15 +233,15 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         },
         {
           title: uiText('Memory'),
-          subtitle: 'System, General and project notes',
+          subtitle: uiText('System, General and project notes'),
           icon: 'fileText',
           path: '/settings/memory',
           group: 'Knowledge',
           keywords: 'notes memory project system-wide general threads scopes enable disable',
         },
         {
-          title: 'Usage & limits',
-          subtitle: 'Provider quotas, time and tokens across computers',
+          title: uiText('Usage & limits'),
+          subtitle: uiText('Provider quotas, time and tokens across computers'),
           icon: 'jobs',
           tint: '#f3bb75',
           path: '/settings/usage',
@@ -248,12 +251,12 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'Threads & projects',
+      title: uiText('Threads & projects'),
       path: '/settings/task-settings',
       items: [
         {
-          title: 'Worktrees',
-          subtitle: 'Branch names and checkout cleanup',
+          title: uiText('Worktrees'),
+          subtitle: uiText('Branch names and checkout cleanup'),
           icon: 'changes',
           path: '/settings/worktrees',
           group: 'Files & outputs',
@@ -261,8 +264,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'git prefix branch remove delete deleting worktree archived cleanup last thread checkout',
         },
         {
-          title: 'Artifacts',
-          subtitle: 'Documents, previews and retention',
+          title: uiText('Artifacts'),
+          subtitle: uiText('Documents, previews and retention'),
           icon: 'preview',
           path: '/settings/artifacts',
           group: 'Files & outputs',
@@ -270,8 +273,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'enable storage retention settled archived documents diagrams code interactive previews versions delete forever days',
         },
         {
-          title: 'Source control',
-          subtitle: 'Accounts and linked projects across your computers',
+          title: uiText('Source control'),
+          subtitle: uiText('Accounts and linked projects across your computers'),
           icon: 'changes',
           path: '/settings/source-control',
           group: 'Files & outputs',
@@ -279,8 +282,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'git accounts forge tokens repositories github bitbucket forgejo gitea azure devops',
         },
         {
-          title: 'Automations',
-          subtitle: 'Scheduled workflows and runs',
+          title: uiText('Automations'),
+          subtitle: uiText('Scheduled workflows and runs'),
           icon: 'jobs',
           path: '/settings/automations',
           group: 'Task workflow',
@@ -293,14 +296,14 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       path: '/settings/computer-settings',
       footer: profiles.length
         ? undefined
-        : 'Pair a computer to configure agents and project defaults.',
+        : uiText('Pair a computer to configure agents and project defaults.'),
       items: [
         {
-          title: profiles.length ? 'Manage computers' : 'Connect a computer',
+          title: profiles.length ? uiText('Manage computers') : uiText('Connect a computer'),
           testID: 'Devices & runtime',
           subtitle: profiles.length
-            ? 'Connections, runtime settings, updates and tools'
-            : 'Pair your runtime to get started',
+            ? uiText('Connections, runtime settings, updates and tools')
+            : uiText('Pair your runtime to get started'),
           icon: 'device',
           tint: overviews.some((entry) => entry.connected) ? colors.accent : colors.muted,
           path: '/settings/devices',
@@ -310,8 +313,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'pair runtime devices network address tailscale netbird shell commands installations accounts titles dictation logs debug',
         },
         {
-          title: 'Runtime tools',
-          subtitle: 'Studio Tools, linked projects and retrieval',
+          title: uiText('Runtime tools'),
+          subtitle: uiText('Studio Tools, linked projects and retrieval'),
           icon: 'settings',
           path: '/settings/runtime-tools',
           group: 'Tools & previews',
@@ -319,8 +322,8 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'experimental studio tools remote desktop threads automations browsers ui diagnostics linked projects share github jira retrieval preferred computer',
         },
         {
-          title: 'Device previews',
-          subtitle: 'Simulators and phones over SSH',
+          title: uiText('Device previews'),
+          subtitle: uiText('Simulators and phones over SSH'),
           icon: 'device',
           path: '/settings/device-hosts',
           group: 'Tools & previews',
@@ -334,18 +337,18 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       path: '/settings/history-settings',
       items: [
         {
-          title: 'Activity retention',
-          subtitle: 'How long to keep requests and tool details',
+          title: uiText('Activity retention'),
+          subtitle: uiText('How long to keep requests and tool details'),
           icon: 'history',
           path: '/settings/activity-retention',
           group: 'Storage',
           keywords: 'history retention diagnostics events logs requests activity keep forever days',
         },
         {
-          title: 'Archived threads',
+          title: uiText('Archived threads'),
           subtitle: archived
-            ? `${archived} archived · Restore from the task menu`
-            : 'Nothing archived',
+            ? uiText('{value0} archived · Restore from the task menu', { value0: archived })
+            : uiText('Nothing archived'),
           icon: 'archive',
           path: '/settings/archived',
           group: 'Task history',
@@ -355,13 +358,15 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
     },
   ] as const
   const category = groups.find((group) => group.path === `/settings/${categorySlug}`)
-  const needle = query.trim().toLowerCase()
+  const needle = query.trim().toLocaleLowerCase(locale)
   const matches = (category ? [category] : groups)
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
         const text =
-          `${group.title} ${item.group} ${item.title} ${item.subtitle} ${'keywords' in item ? item.keywords : ''} ${(mobileSettingsFields[item.path] ?? []).join(' ')}`.toLowerCase()
+          `${group.title} ${uiText(item.group)} ${item.title} ${item.subtitle} ${'keywords' in item ? item.keywords : ''} ${(mobileSettingsFields[item.path] ?? []).flatMap((label) => [label, uiText(label)]).join(' ')}`.toLocaleLowerCase(
+            locale,
+          )
         return needle.split(/\s+/).every((term) => text.includes(term))
       }),
     }))
@@ -369,7 +374,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
   return (
     <SettingsPage>
       <ScreenHeader
-        title={category?.title ?? 'Settings'}
+        title={category?.title ?? uiText('Settings')}
         testID="Settings heading"
         onBack={categorySlug ? undefined : () => backToCollection('/')}
       />
@@ -380,43 +385,70 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         automaticallyAdjustKeyboardInsets
       >
         <SearchField
-          label="Search settings"
-          placeholder={category ? `Search ${category.title.toLowerCase()}…` : 'Search settings…'}
+          label={uiText('Search settings')}
+          placeholder={
+            category
+              ? uiText('Search {value0}…', { value0: category.title.toLowerCase() })
+              : uiText('Search settings…')
+          }
           value={query}
           onChangeText={setQuery}
         />
         {policy && (
           <View
             style={[styles.card, { gap: 6 }]}
-            accessibilityLabel={`Managed by ${policy.organization}`}
+            accessibilityLabel={uiText('Managed by {value0}', { value0: policy.organization })}
           >
             <Text style={[styles.text, { fontWeight: '600' }]}>
-              Managed by {policy.organization}
+              <InterfaceText values={{ value0: policy.organization }}>
+                {'Managed by {value0}'}
+              </InterfaceText>
             </Text>
             <Text style={styles.muted} selectable>
-              Policy fingerprint: {policy.fingerprint}
+              <InterfaceText values={{ value0: policy.fingerprint }}>
+                {'Policy fingerprint: {value0}'}
+              </InterfaceText>
             </Text>
             <Text style={styles.muted}>
-              Rules are enforced on this computer for every client and agent. Ask your administrator
-              to change them.
+              <InterfaceText>
+                {
+                  'Rules are enforced on this computer for every client and agent. Ask your administrator to change them.'
+                }
+              </InterfaceText>
             </Text>
             {policy.maxPermission && (
-              <Text style={styles.muted}>Maximum access: {policy.maxPermission}</Text>
+              <Text style={styles.muted}>
+                <InterfaceText values={{ value0: policy.maxPermission }}>
+                  {'Maximum access: {value0}'}
+                </InterfaceText>
+              </Text>
             )}
             {policy.allowedClients && (
-              <Text style={styles.muted}>Allowed clients: {policy.allowedClients.join(', ')}</Text>
+              <Text style={styles.muted}>
+                <InterfaceText values={{ value0: policy.allowedClients.join(', ') }}>
+                  {'Allowed clients: {value0}'}
+                </InterfaceText>
+              </Text>
             )}
             {policy.allowedProviders && (
               <Text style={styles.muted}>
-                Allowed providers: {policy.allowedProviders.join(', ')}
+                <InterfaceText values={{ value0: policy.allowedProviders.join(', ') }}>
+                  {'Allowed providers: {value0}'}
+                </InterfaceText>
               </Text>
             )}
             {!!policy.lockedSettings.length && (
-              <Text style={styles.muted}>Locked settings: {policy.lockedSettings.join(', ')}</Text>
+              <Text style={styles.muted}>
+                <InterfaceText values={{ value0: policy.lockedSettings.join(', ') }}>
+                  {'Locked settings: {value0}'}
+                </InterfaceText>
+              </Text>
             )}
             {!!policy.disabledCapabilities.length && (
               <Text style={styles.muted}>
-                Unavailable: {policy.disabledCapabilities.join(', ')}
+                <InterfaceText values={{ value0: policy.disabledCapabilities.join(', ') }}>
+                  {'Unavailable: {value0}'}
+                </InterfaceText>
               </Text>
             )}
           </View>
@@ -424,18 +456,22 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         {!category && !needle && crash && (
           <View accessibilityRole="alert" style={[styles.card, { gap: 6 }]}>
             <Text style={[styles.text, { fontWeight: '600' }]}>
-              {crash.fatal ? 'The app closed unexpectedly' : 'The app hit an unexpected error'}
+              {crash.fatal
+                ? uiText('The app closed unexpectedly')
+                : uiText('The app hit an unexpected error')}
             </Text>
             <Text style={styles.muted}>{new Date(crash.at).toLocaleString()}</Text>
             <Text selectable numberOfLines={6} style={styles.muted}>
               {crash.message}
             </Text>
             <Text style={[styles.muted, { fontSize: 12 }]}>
-              Nothing was sent anywhere. Your tasks and saved work on your computers are safe.
+              <InterfaceText>
+                {'Nothing was sent anywhere. Your tasks and saved work on your computers are safe.'}
+              </InterfaceText>
             </Text>
             <Action
               secondary
-              label="Dismiss crash report"
+              label={uiText('Dismiss crash report')}
               onPress={() => {
                 setCrash(null)
                 void clearLastCrash()
@@ -469,11 +505,13 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
                   disabled={!profiles.length && !('local' in item && item.local)}
                   mark={{
                     icon: settingsLocation(item.path, 'local' in item && item.local).icon,
-                    label: `Settings scope for ${item.title}`,
+                    label: uiText('Settings scope for {value0}', { value0: item.title }),
                     onPress: () =>
                       Alert.alert(
                         item.title,
-                        settingsLocation(item.path, 'local' in item && item.local).description,
+                        uiText(
+                          settingsLocation(item.path, 'local' in item && item.local).description,
+                        ),
                       ),
                   }}
                   onPress={() => router.push(item.path)}
@@ -483,12 +521,16 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
                     .filter((label) =>
                       needle
                         .split(/\s+/)
-                        .every((term) => `${label} ${item.title}`.toLowerCase().includes(term)),
+                        .every((term) =>
+                          `${label} ${uiText(label)} ${item.title}`
+                            .toLocaleLowerCase(locale)
+                            .includes(term),
+                        ),
                     )
                     .map((label) => (
                       <SettingsRow
                         key={label}
-                        title={label}
+                        title={uiText(label)}
                         subtitle={item.title}
                         icon="settings"
                         disabled={!profiles.length && !('local' in item && item.local)}
@@ -501,17 +543,25 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             ))}
           </SettingsGroup>
         ))}
-        {needle && <Action secondary label="Clear search" onPress={() => setQuery('')} />}
+        {needle && <Action secondary label={uiText('Clear search')} onPress={() => setQuery('')} />}
         {!matches.length && (
           <Text accessibilityRole="alert" style={styles.muted}>
-            No settings match “{query}”.
+            <InterfaceText values={{ value0: query }}>
+              {'No settings match “{value0}”.'}
+            </InterfaceText>
           </Text>
         )}
         {!category && (
           <Text style={[styles.muted, { textAlign: 'center', fontSize: 12 }]}>
-            Dovo Studio {appVersion}
-            {appBuild ? ` (${appBuild})` : ''}
-            {appChannel ? ` · ${appChannel}` : ''}
+            <InterfaceText
+              values={{
+                value0: appVersion,
+                value1: appBuild ? ` (${appBuild})` : '',
+                value2: appChannel ? ` · ${appChannel}` : '',
+              }}
+            >
+              {'Dovo Studio {value0}{value1}{value2}'}
+            </InterfaceText>
           </Text>
         )}
       </SettingsScrollView>

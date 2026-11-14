@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useLocalSearchParams } from 'expo-router'
@@ -13,13 +14,15 @@ import { AutomationCard } from './automation-card'
 import { AutomationEditor } from './automation-editor'
 import { RunProgress } from './run-progress'
 export function AutomationRouteScreen() {
+  const uiText = useInterfaceText()
+
   const { runtimeId, automationId, runId } = useLocalSearchParams<{
     runtimeId: string
     automationId: string
     runId?: string
   }>()
   return (
-    <RuntimeRoute runtimeId={runtimeId} title="Automation" backTo="/settings/automations">
+    <RuntimeRoute runtimeId={runtimeId} title={uiText('Automation')} backTo="/settings/automations">
       <AutomationDetail
         key={`${runtimeId}:${automationId}:${runId ?? ''}`}
         automationId={automationId}
@@ -30,25 +33,33 @@ export function AutomationRouteScreen() {
 }
 /** The exact requested run, never the latest one. Runs outside the retained snapshot say so. */
 function RequestedRun({ automationId, runId }: { automationId: string; runId: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { snapshot } = useRuntime()
   const run = snapshot?.runs.find((item) => item.id === runId && item.automationId === automationId)
   return (
     <View testID="Requested automation run" style={{ gap: 8 }}>
-      <Text style={{ fontWeight: '600' }}>Requested run</Text>
+      <Text style={{ fontWeight: '600' }}>
+        <InterfaceText>{'Requested run'}</InterfaceText>
+      </Text>
       {run ? (
         <RunProgress key={run.id} run={run} />
       ) : (
         <Text style={styles.muted}>
           {snapshot
-            ? 'This run is not in the recent run history on this computer. It may be older than the runs the computer keeps.'
-            : 'Loading run history from this computer.'}
+            ? uiText(
+                'This run is not in the recent run history on this computer. It may be older than the runs the computer keeps.',
+              )
+            : uiText('Loading run history from this computer.')}
         </Text>
       )}
     </View>
   )
 }
 function AutomationDetail({ automationId, runId }: { automationId: string; runId?: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, profile } = useRuntime()
@@ -57,11 +68,11 @@ function AutomationDetail({ automationId, runId }: { automationId: string; runId
   return (
     <SettingsPage>
       <ScreenHeader
-        title={flow?.name ?? (runId ? 'Automation run' : 'Automation unavailable')}
+        title={flow?.name ?? (runId ? uiText('Automation run') : uiText('Automation unavailable'))}
         subtitle={runtimeComputerName({ profile, snapshot })}
         leading={
           <IconButton
-            label="Back to automations"
+            label={uiText('Back to automations')}
             icon="back"
             variant="glass"
             onPress={() => backToCollection('/settings/automations')}
@@ -90,7 +101,9 @@ function AutomationDetail({ automationId, runId }: { automationId: string; runId
         <View style={[styles.content, { gap: 16 }]}>
           {runId && <RequestedRun automationId={automationId} runId={runId} />}
           <Text style={styles.muted}>
-            This automation may have been removed. Return to Automations to choose another.
+            <InterfaceText>
+              {'This automation may have been removed. Return to Automations to choose another.'}
+            </InterfaceText>
           </Text>
         </View>
       )}

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -378,14 +379,14 @@ export function WorkForm({
       ref={sheet}
       title={
         kind === 'transition'
-          ? 'Change Jira status'
+          ? uiText('Change Jira status')
           : kind === 'run'
-            ? 'Run pipeline'
+            ? uiText('Run pipeline')
             : kind === 'comment'
-              ? 'Add comment'
+              ? uiText('Add comment')
               : kind === 'edit'
-                ? 'Edit issue'
-                : 'New issue'
+                ? uiText('Edit issue')
+                : uiText('New issue')
       }
       onClose={onClose}
       busy={busy}
@@ -393,28 +394,30 @@ export function WorkForm({
       {kind === 'transition' ? (
         <>
           <Text style={styles.muted}>
-            Current status: {issue?.state}. Enter a status available in this project’s workflow.
+            <InterfaceText values={{ value0: issue?.state }}>
+              {'Current status: {value0}. Enter a status available in this project’s workflow.'}
+            </InterfaceText>
           </Text>
           <Field
-            label="New Jira status"
+            label={uiText('New Jira status')}
             value={state}
             onChangeText={setState}
             editable={!busy}
-            placeholder="In Progress"
+            placeholder={uiText('In Progress')}
           />
         </>
       ) : kind === 'run' ? (
         <>
           {definitions?.manual ? (
             <Field
-              label="Pipeline"
+              label={uiText('Pipeline')}
               value={definition}
               onChangeText={setDefinition}
               editable={!busy}
             />
           ) : (
             <Choice
-              label="Pipeline"
+              label={uiText('Pipeline')}
               value={definition}
               onChange={setDefinition}
               disabled={busy}
@@ -429,7 +432,7 @@ export function WorkForm({
           <Text style={styles.muted}>{definitions?.hint}</Text>
           {definitions?.next && (
             <Action
-              label="More pipelines"
+              label={uiText('More pipelines')}
               secondary
               disabled={busy || definitionsLoading || !connected}
               onPress={() => void moreDefinitions()}
@@ -438,14 +441,19 @@ export function WorkForm({
           {!definitions && !definitionsLoading && (
             <Action
               secondary
-              label="Retry pipelines"
+              label={uiText('Retry pipelines')}
               disabled={!connected || busy}
               onPress={() => retryDefinitions((value) => value + 1)}
             />
           )}
-          <Field label="Branch or ref" value={ref} onChangeText={setRef} editable={!busy} />
           <Field
-            label="Inputs (JSON string values)"
+            label={uiText('Branch or ref')}
+            value={ref}
+            onChangeText={setRef}
+            editable={!busy}
+          />
+          <Field
+            label={uiText('Inputs (JSON string values)')}
             value={inputs}
             onChangeText={setInputs}
             editable={!busy}
@@ -460,10 +468,10 @@ export function WorkForm({
           <Field
             label={
               kind === 'edit' && issue?.bodyFormat === 'html'
-                ? 'Description (original HTML)'
+                ? uiText('Description (original HTML)')
                 : kind === 'comment'
-                  ? 'Comment'
-                  : 'Description'
+                  ? uiText('Comment')
+                  : uiText('Description')
             }
             value={body}
             onChangeText={setBody}
@@ -476,16 +484,16 @@ export function WorkForm({
           />
           {kind === 'create' && options.provider === 'jira' && options.issueTypes.length === 0 && (
             <Field
-              label="Issue type"
+              label={uiText('Issue type')}
               value={type}
               onChangeText={setType}
               editable={!busy}
-              placeholder="Task"
+              placeholder={uiText('Task')}
             />
           )}
           {kind === 'create' && options.issueTypes.length > 1 && (
             <Choice
-              label="Type"
+              label={uiText('Type')}
               value={type}
               onChange={setType}
               disabled={busy}
@@ -497,7 +505,7 @@ export function WorkForm({
           )}
           {kind === 'edit' && options.provider !== 'jira' && issueStates.length > 0 && (
             <Choice
-              label="State"
+              label={uiText('State')}
               value={state}
               onChange={setState}
               disabled={busy}
@@ -511,8 +519,8 @@ export function WorkForm({
             <Field
               label={
                 options.provider === 'jira'
-                  ? 'Assignee (account ID)'
-                  : 'Assignees (comma separated)'
+                  ? uiText('Assignee (account ID)')
+                  : uiText('Assignees (comma separated)')
               }
               value={assignees}
               onChangeText={setAssignees}
@@ -521,7 +529,7 @@ export function WorkForm({
           )}
           {kind !== 'comment' && options.labels && (
             <Field
-              label="Labels (comma separated)"
+              label={uiText('Labels (comma separated)')}
               value={labels}
               onChangeText={setLabels}
               editable={!busy}
@@ -530,7 +538,11 @@ export function WorkForm({
         </>
       )}
       {!available && (
-        <Text style={styles.muted}>This action is no longer available for this issue source.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>
+            {'This action is no longer available for this issue source.'}
+          </InterfaceText>
+        </Text>
       )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -540,16 +552,16 @@ export function WorkForm({
       <Action
         label={
           busy
-            ? 'Saving…'
+            ? uiText('Saving…')
             : kind === 'create'
-              ? 'Create issue'
+              ? uiText('Create issue')
               : kind === 'edit'
-                ? 'Save changes'
+                ? uiText('Save changes')
                 : kind === 'comment'
-                  ? 'Post comment'
+                  ? uiText('Post comment')
                   : kind === 'transition'
-                    ? 'Change status'
-                    : 'Run pipeline'
+                    ? uiText('Change status')
+                    : uiText('Run pipeline')
         }
         disabled={
           disabled ||

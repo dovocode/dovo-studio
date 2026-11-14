@@ -275,6 +275,12 @@ build, `DOVO_PUSH_NOTIFICATIONS=0` disables push capabilities. Existing foregrou
 to work without a delivery service. Unchanged background content refreshes every three minutes and
 is marked stale after five minutes without an update. Apple delivery remains best effort.
 
+Progress changes use the latest state and update at most once every 30 seconds. Status changes and
+end events bypass this limit. Direct APNs and updated notification relays send ordinary progress at
+low priority. Input requests and end events remain high priority. Update both the app and its
+runtime for local and background batching. Managed delivery also needs an updated relay for low
+priority; batching still applies with older relays. Battery savings have not been measured.
+
 Existing direct runtime APNs configuration remains available as a standalone fallback:
 
 ```sh

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useMemo, useState } from 'react'
 import { Pressable, SectionList, View } from 'react-native'
 import {
@@ -65,6 +66,8 @@ export function MobileFileTree({
   defaultExpandedDepth?: number
   showChangeBars?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [expanded, setExpanded] = useState(new Map<string, boolean>())
   const [searchClosed, setSearchClosed] = useState({ query: '', paths: new Set<string>() })
@@ -98,7 +101,7 @@ export function MobileFileTree({
         })
         if (members.length)
           sections.push({
-            title: `Feature · ${group.label}`,
+            title: uiText('Feature · {value0}', { value0: group.label }),
             summary: group.summary,
             impact: group.impact,
             data: members,
@@ -118,9 +121,20 @@ export function MobileFileTree({
       }
     }
     flatten(buildFileTree([...remaining.values()]))
-    if (rows.length) sections.push({ title: sections.length ? 'Other files' : '', data: rows })
+    if (rows.length)
+      sections.push({ title: sections.length ? uiText('Other files') : '', data: rows })
     return sections
-  }, [files, groups, related, search, expanded, searchClosed, selected, defaultExpandedDepth])
+  }, [
+    files,
+    groups,
+    related,
+    search,
+    expanded,
+    searchClosed,
+    selected,
+    defaultExpandedDepth,
+    uiText,
+  ])
   const row = ({ node, depth, open, flat }: Row) => {
     const folder = node.kind === 'directory'
     const active = !folder && node.path === selected
@@ -128,7 +142,7 @@ export function MobileFileTree({
       <Pressable
         key={node.path}
         accessibilityRole="button"
-        accessibilityLabel={`${node.path}${!folder && node.viewed !== undefined ? (node.viewed ? ', viewed' : ', unviewed') : ''}`}
+        accessibilityLabel={`${node.path}${!folder && node.viewed !== undefined ? (node.viewed ? uiText(', viewed') : uiText(', unviewed')) : ''}`}
         accessibilityState={folder ? { expanded: open } : { selected: active, disabled }}
         disabled={!folder && disabled}
         onPress={() => {
@@ -188,7 +202,7 @@ export function MobileFileTree({
         {folder && showChangeBars ? (
           <View style={{ flexDirection: 'row', gap: 5, alignItems: 'center' }}>
             <Text style={[styles.muted, { fontSize: 11 }]}>
-              {node.count} {node.count === 1 ? 'file' : 'files'}
+              {node.count} {node.count === 1 ? uiText('file') : uiText('files')}
             </Text>
             {hasLineStat(node, 'additions') && (
               <Text style={{ color: colors.success, fontSize: 11 }}>+{node.additions}</Text>
@@ -250,7 +264,13 @@ export function MobileFileTree({
         {!!section.summary && (
           <Text style={{ color: colors.text, fontSize: 13 }}>{section.summary}</Text>
         )}
-        {!!section.impact && <Text style={styles.muted}>Linked impact: {section.impact}</Text>}
+        {!!section.impact && (
+          <Text style={styles.muted}>
+            <InterfaceText values={{ value0: section.impact }}>
+              {'Linked impact: {value0}'}
+            </InterfaceText>
+          </Text>
+        )}
       </View>
     ) : null
   if (!scrollable)
@@ -273,7 +293,11 @@ export function MobileFileTree({
       stickySectionHeadersEnabled={false}
       renderSectionHeader={({ section }) => header(section)}
       renderItem={({ item }) => row(item)}
-      ListEmptyComponent={<Text style={styles.muted}>No matching files.</Text>}
+      ListEmptyComponent={
+        <Text style={styles.muted}>
+          <InterfaceText>{'No matching files.'}</InterfaceText>
+        </Text>
+      }
     />
   )
 }

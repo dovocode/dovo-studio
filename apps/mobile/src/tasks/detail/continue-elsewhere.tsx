@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
@@ -169,14 +170,18 @@ export function ContinueElsewhere({
   )
   return (
     <Sheet
-      title={step === 'choose' ? 'Continue elsewhere' : 'Continue with another harness'}
+      title={
+        step === 'choose' ? uiText('Continue elsewhere') : uiText('Continue with another harness')
+      }
       onClose={onClose}
       busy={busy}
     >
       {step === 'choose' ? (
         <View style={{ gap: 10 }}>
           <Text style={styles.muted}>
-            Continue “{task.title}” with the full saved conversation, checklist and files.
+            <InterfaceText values={{ value0: task.title }}>
+              {'Continue “{value0}” with the full saved conversation, checklist and files.'}
+            </InterfaceText>
           </Text>
           {option(
             'Another harness on this computer',
@@ -194,13 +199,20 @@ export function ContinueElsewhere({
             onMachine,
             !connected || !!machineUnavailable,
           )}
-          {!connected && <Text style={styles.muted}>Connect to this computer to continue.</Text>}
+          {!connected && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Connect to this computer to continue.'}</InterfaceText>
+            </Text>
+          )}
         </View>
       ) : (
         <View style={{ gap: 12 }}>
           <Text style={styles.muted}>
-            Your next message starts a new {name} session from the saved conversation, checklist and
-            attachments. Earlier turns keep their original harness. {keptHere}
+            <InterfaceText values={{ value0: name, value1: keptHere }}>
+              {
+                'Your next message starts a new {value0} session from the saved conversation, checklist and attachments. Earlier turns keep their original harness. {value1}'
+              }
+            </InterfaceText>
           </Text>
           <HarnessModelPicker
             task={view}
@@ -212,13 +224,13 @@ export function ContinueElsewhere({
             options={
               <Choice
                 row
-                label="Access mode"
+                label={uiText('Access mode')}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-                selectedLabel={permissionPolicyLabel(agent)}
+                selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={busy || !connected}
                 items={selectableAccessModes(agent.permission, agent.provider)
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
-                  .map((mode) => ({ id: mode.id, name: mode.name }))}
+                  .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
                 onChange={(value) =>
                   setAgent(
                     selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)),
@@ -228,12 +240,18 @@ export function ContinueElsewhere({
             }
             onChange={(_selection, next) => setAgent(next)}
           />
-          {availability.loading && <Text style={styles.muted}>Checking available providers…</Text>}
+          {availability.loading && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Checking available providers…'}</InterfaceText>
+            </Text>
+          )}
           {running && (
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={[styles.text, { flex: 1 }]}>Stop the current turn first</Text>
+              <Text style={[styles.text, { flex: 1 }]}>
+                <InterfaceText>{'Stop the current turn first'}</InterfaceText>
+              </Text>
               <Switch
-                accessibilityLabel="Stop the current turn first"
+                accessibilityLabel={uiText('Stop the current turn first')}
                 value={stop}
                 disabled={busy}
                 onValueChange={setStop}
@@ -242,7 +260,9 @@ export function ContinueElsewhere({
           )}
           {queued && (
             <Text accessibilityRole="alert" style={styles.error}>
-              Send or remove the queued messages before you change the harness.
+              <InterfaceText>
+                {'Send or remove the queued messages before you change the harness.'}
+              </InterfaceText>
             </Text>
           )}
           {!!policyIssue && (
@@ -252,7 +272,7 @@ export function ContinueElsewhere({
           )}
           <Action
             wide
-            label={busy ? 'Switching…' : `Continue with ${name}`}
+            label={busy ? uiText('Switching…') : uiText('Continue with {value0}', { value0: name })}
             disabled={blocked}
             onPress={() => void submit()}
           />

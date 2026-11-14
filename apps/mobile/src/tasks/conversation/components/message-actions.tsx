@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { responseReply } from '@dovo/protocol'
 import { botResultSchema, taskIsWorking } from '@dovo/protocol'
 import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
@@ -37,6 +38,8 @@ export function MessageActions({
   user: boolean
   messageId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
 
   const [feedback, setFeedback] = useState<Feedback>('')
@@ -70,7 +73,10 @@ export function MessageActions({
       responses.ok,
     )
       .catch((error: unknown) =>
-        Alert.alert('Could not try again', error instanceof Error ? error.message : String(error)),
+        Alert.alert(
+          uiText('Could not try again'),
+          error instanceof Error ? error.message : String(error),
+        ),
       )
       .finally(() => setRetrying(false))
   }
@@ -80,10 +86,14 @@ export function MessageActions({
     if (!agent || !turn || !profile) return
     const same = `Try again${agent.model ? ` with ${modelDisplayName(agent.model)}` : ''}`
     if (Platform.OS !== 'ios')
-      return Alert.alert('Try again?', 'This turn’s file changes are undone first.', [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Try again', onPress: () => retry() },
-      ])
+      return Alert.alert(
+        uiText('Try again?'),
+        uiText('This turn’s file changes are undone first.'),
+        [
+          { text: uiText('Cancel'), style: 'cancel' },
+          { text: uiText('Try again'), onPress: () => retry() },
+        ],
+      )
     setRetrying(true)
     void loadMobileModelCatalog(
       profile,
@@ -106,7 +116,7 @@ export function MessageActions({
         ]
         ActionSheetIOS.showActionSheetWithOptions(
           {
-            title: 'Try again',
+            title: uiText('Try again'),
             message: 'This turn’s file changes are undone first.',
             options,
             cancelButtonIndex: options.length - 1,
@@ -121,12 +131,14 @@ export function MessageActions({
   const fork = () => {
     if (!turn || forking || !activeId || task.bot) return
     Alert.alert(
-      'Fork from here?',
-      'A new task starts with the conversation up to this reply, and this turn’s files in its own worktree.',
+      uiText('Fork from here?'),
+      uiText(
+        'A new task starts with the conversation up to this reply, and this turn’s files in its own worktree.',
+      ),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: uiText('Cancel'), style: 'cancel' },
         {
-          text: 'Fork',
+          text: uiText('Fork'),
           onPress: () => {
             setForking(true)
             void call('/api/tasks/fork', { id: task.id, turnId: turn.id }, forkSchema)
@@ -135,7 +147,7 @@ export function MessageActions({
               )
               .catch((error: unknown) =>
                 Alert.alert(
-                  'Could not fork',
+                  uiText('Could not fork'),
                   error instanceof Error ? error.message : String(error),
                 ),
               )
@@ -154,7 +166,7 @@ export function MessageActions({
       .then((terminal) => openTerminal(terminal.id))
       .catch((error: unknown) =>
         Alert.alert(
-          'Could not run the command',
+          uiText('Could not run the command'),
           error instanceof Error ? error.message : String(error),
         ),
       )
@@ -163,16 +175,16 @@ export function MessageActions({
   const chooseCommand = () => {
     if (commands.length === 1) {
       // Show the command first: it runs on the computer, not on this phone.
-      Alert.alert('Run in terminal?', commands[0].command, [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Run', onPress: () => runCommand(commands[0].command) },
+      Alert.alert(uiText('Run in terminal?'), commands[0].command, [
+        { text: uiText('Cancel'), style: 'cancel' },
+        { text: uiText('Run'), onPress: () => runCommand(commands[0].command) },
       ])
       return
     }
     if (Platform.OS === 'ios') {
       const options = [...commands.map((entry) => entry.label), 'Cancel']
       ActionSheetIOS.showActionSheetWithOptions(
-        { title: 'Run in terminal', options, cancelButtonIndex: options.length - 1 },
+        { title: uiText('Run in terminal'), options, cancelButtonIndex: options.length - 1 },
         (index) => {
           const entry = commands[index]
           if (entry) runCommand(entry.command)
@@ -180,9 +192,9 @@ export function MessageActions({
       )
       return
     }
-    Alert.alert('Run in terminal', commands.at(-1)?.label ?? '', [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Run last command', onPress: () => runCommand(commands.at(-1)!.command) },
+    Alert.alert(uiText('Run in terminal'), commands.at(-1)?.label ?? '', [
+      { text: uiText('Cancel'), style: 'cancel' },
+      { text: uiText('Run last command'), onPress: () => runCommand(commands.at(-1)!.command) },
     ])
   }
   useEffect(() => {
@@ -198,7 +210,10 @@ export function MessageActions({
         AccessibilityInfo.announceForAccessibility(kind === 'code' ? 'Code copied' : 'Copied')
       },
       (error: unknown) =>
-        Alert.alert('Could not copy', error instanceof Error ? error.message : String(error)),
+        Alert.alert(
+          uiText('Could not copy'),
+          error instanceof Error ? error.message : String(error),
+        ),
     )
   const copyCode = () => {
     if (blocks.length === 1) return copy(blocks[0].code, 'code')
@@ -207,7 +222,7 @@ export function MessageActions({
     if (Platform.OS === 'ios') {
       const options = [...blocks.map(codeBlockLabel), 'All code', 'Cancel']
       ActionSheetIOS.showActionSheetWithOptions(
-        { title: 'Copy code', options, cancelButtonIndex: options.length - 1 },
+        { title: uiText('Copy code'), options, cancelButtonIndex: options.length - 1 },
         (index) => {
           if (index === blocks.length) copy(all, 'code')
           else choose(blocks[index])
@@ -216,11 +231,15 @@ export function MessageActions({
       return
     }
     // Android dialogs hold at most three buttons.
-    Alert.alert('Copy code', `${blocks.length} code blocks in this reply.`, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Last block', onPress: () => choose(blocks.at(-1)) },
-      { text: 'All code', onPress: () => copy(all, 'code') },
-    ])
+    Alert.alert(
+      uiText('Copy code'),
+      uiText('{value0} code blocks in this reply.', { value0: blocks.length }),
+      [
+        { text: uiText('Cancel'), style: 'cancel' },
+        { text: uiText('Last block'), onPress: () => choose(blocks.at(-1)) },
+        { text: uiText('All code'), onPress: () => copy(all, 'code') },
+      ],
+    )
   }
   return (
     <View
@@ -228,8 +247,8 @@ export function MessageActions({
     >
       <ActionButton
         testID="Copy message"
-        label={feedback === 'message' ? 'Copied' : 'Copy message'}
-        hint="Touch and hold to share."
+        label={feedback === 'message' ? uiText('Copied') : uiText('Copy message')}
+        hint={uiText('Touch and hold to share.')}
         icon={feedback === 'message' ? 'check' : 'copy'}
         onPress={() => copy(text, 'message')}
         onLongPress={() => void shareText(text).catch(() => undefined)}
@@ -237,8 +256,8 @@ export function MessageActions({
       {!user && !!messageId && !!text && (
         <ActionButton
           testID="Reply to response"
-          hint="Adds a quote to your draft."
-          label="Reply to response"
+          hint={uiText('Adds a quote to your draft.')}
+          label={uiText('Reply to response')}
           icon="chat"
           onPress={() => {
             appendReply(responseReply({ id: messageId, text }))
@@ -248,7 +267,7 @@ export function MessageActions({
       {!user && !!messageId && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={bookmarked ? 'Remove bookmark' : 'Bookmark reply'}
+          accessibilityLabel={bookmarked ? uiText('Remove bookmark') : uiText('Bookmark reply')}
           accessibilityState={{ selected: bookmarked, disabled: !connected }}
           disabled={!connected}
           onPress={() =>
@@ -264,7 +283,9 @@ export function MessageActions({
               .then(() => {
                 if (messageId) setBookmark(messageId, !bookmarked)
               })
-              .catch((error: unknown) => Alert.alert('Could not update bookmark', String(error)))
+              .catch((error: unknown) =>
+                Alert.alert(uiText('Could not update bookmark'), String(error)),
+              )
           }
           style={({ pressed }) => ({
             width: 44,
@@ -281,8 +302,8 @@ export function MessageActions({
         <Pressable
           testID="Try again"
           accessibilityRole="button"
-          accessibilityLabel="Try again"
-          accessibilityHint="Runs this request again, with this or another model."
+          accessibilityLabel={uiText('Try again')}
+          accessibilityHint={uiText('Runs this request again, with this or another model.')}
           accessibilityState={{ disabled: !connected || retrying, busy: retrying }}
           disabled={!connected || retrying}
           onPress={chooseRetry}
@@ -301,8 +322,8 @@ export function MessageActions({
         <Pressable
           testID="Fork from here"
           accessibilityRole="button"
-          accessibilityLabel="Fork from here"
-          accessibilityHint="Starts a new task with the conversation up to this reply."
+          accessibilityLabel={uiText('Fork from here')}
+          accessibilityHint={uiText('Starts a new task with the conversation up to this reply.')}
           accessibilityState={{ disabled: !connected || forking, busy: forking }}
           disabled={!connected || forking}
           onPress={fork}
@@ -321,7 +342,7 @@ export function MessageActions({
         <View>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Reset context to here"
+            accessibilityLabel={uiText('Reset context to here')}
             disabled={
               !connected ||
               forking ||
@@ -331,12 +352,14 @@ export function MessageActions({
             }
             onPress={() =>
               Alert.alert(
-                'Reset Bot context to this reply?',
-                'Future replies will use the conversation up to this point. Later messages stay visible for reference. Files and completed actions stay unchanged.',
+                uiText('Reset Bot context to this reply?'),
+                uiText(
+                  'Future replies will use the conversation up to this point. Later messages stay visible for reference. Files and completed actions stay unchanged.',
+                ),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Reset context',
+                    text: uiText('Reset context'),
                     onPress: () => {
                       if (!task.bot || forking) return
                       setForking(true)
@@ -347,7 +370,7 @@ export function MessageActions({
                       )
                         .catch((error: unknown) =>
                           Alert.alert(
-                            'Could not reset context',
+                            uiText('Could not reset context'),
                             error instanceof Error ? error.message : String(error),
                           ),
                         )
@@ -362,7 +385,9 @@ export function MessageActions({
             <Icon name="refresh" size={14} color={colors.muted} />
           </Pressable>
           {task.bot.contextResets?.some((reset) => reset.turnId === turn.id) && (
-            <Text>Context reset here</Text>
+            <Text>
+              <InterfaceText>{'Context reset here'}</InterfaceText>
+            </Text>
           )}
         </View>
       )}
@@ -370,8 +395,10 @@ export function MessageActions({
         <Pressable
           testID="Run in terminal"
           accessibilityRole="button"
-          accessibilityLabel="Run in terminal"
-          accessibilityHint="Runs a command from this reply in the task's terminal on the computer."
+          accessibilityLabel={uiText('Run in terminal')}
+          accessibilityHint={uiText(
+            "Runs a command from this reply in the task's terminal on the computer.",
+          )}
           accessibilityState={{ disabled: !connected || running }}
           disabled={!connected || running}
           onPress={chooseCommand}
@@ -388,14 +415,16 @@ export function MessageActions({
           })}
         >
           <Icon name="terminal" size={13} color={colors.muted} />
-          <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>Run</Text>
+          <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
+            <InterfaceText>{'Run'}</InterfaceText>
+          </Text>
         </Pressable>
       )}
       {blocks.length > 0 && (
         <Pressable
           testID="Copy code"
           accessibilityRole="button"
-          accessibilityLabel={feedback === 'code' ? 'Code copied' : 'Copy code'}
+          accessibilityLabel={feedback === 'code' ? uiText('Code copied') : uiText('Copy code')}
           onPress={copyCode}
           style={({ pressed }) => ({
             minHeight: 44,
@@ -411,7 +440,7 @@ export function MessageActions({
         >
           <Icon name={feedback === 'code' ? 'check' : 'copy'} size={13} color={colors.muted} />
           <Text style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
-            {feedback === 'code' ? 'Copied' : 'Copy code'}
+            {feedback === 'code' ? uiText('Copied') : uiText('Copy code')}
           </Text>
         </Pressable>
       )}

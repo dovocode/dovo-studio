@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ActivityIndicator, Linking, Pressable, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -47,7 +48,7 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
       {!!text && !listening && (
         <Text
           numberOfLines={4}
-          accessibilityLabel={`Message: ${draft.text}`}
+          accessibilityLabel={uiText('Message: {value0}', { value0: draft.text })}
           style={styles.chatText}
         >
           {draft.text}
@@ -98,7 +99,7 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
         <View style={{ flexDirection: 'row', gap: 10 }}>
           {!!text && (
             <CarButton
-              label="Clear"
+              label={uiText('Clear')}
               secondary
               onPress={() => {
                 dictation.reset()
@@ -108,7 +109,7 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
           )}
           {text ? (
             <CarButton
-              label={running ? 'Queue' : 'Send'}
+              label={running ? uiText('Queue') : uiText('Send')}
               disabled={!canSend || finishing}
               onPress={() => send()}
             />
@@ -129,14 +130,14 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
       )}
       {dictation.permissionDenied && (
         <CarButton
-          label="Allow microphone in Settings"
+          label={uiText('Allow microphone in Settings')}
           secondary
           onPress={() => act(() => Linking.openSettings())}
         />
       )}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Type instead"
+        accessibilityLabel={uiText('Type instead')}
         hitSlop={8}
         disabled={listening}
         onPress={onType}
@@ -150,7 +151,9 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
         })}
       >
         <Icon name="keyboard" size={15} color={colors.muted} />
-        <Text style={[styles.muted, { fontSize: 14 }]}>Type instead</Text>
+        <Text style={[styles.muted, { fontSize: 14 }]}>
+          <InterfaceText>{'Type instead'}</InterfaceText>
+        </Text>
       </Pressable>
     </View>
   )

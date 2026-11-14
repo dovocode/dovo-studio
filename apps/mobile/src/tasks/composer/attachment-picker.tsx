@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useImageEditor } from './image-editor'
 import { Effect, Schema } from 'effect'
 import { useEffect, useRef, useState } from 'react'
@@ -44,6 +45,8 @@ export function useAttachmentPicker(
     uploaded: (file: Attachment) => boolean
   },
 ) {
+  const uiText = useInterfaceText()
+
   const {
     connected,
     callEffect,
@@ -302,8 +305,8 @@ export function useAttachmentPicker(
       }
       if (held) {
         Alert.alert(
-          'Attachments saved for review',
-          'Open connection status to attach them to the current draft of this task.',
+          uiText('Attachments saved for review'),
+          uiText('Open connection status to attach them to the current draft of this task.'),
         )
         if (requireCommitted || operation)
           rejected.push(
@@ -405,11 +408,11 @@ export function useAttachmentPicker(
             const permission = await ImagePicker.requestCameraPermissionsAsync()
             if (!permission.granted) {
               Alert.alert(
-                'Camera access needed',
-                'Allow camera access in Settings to take a photo.',
+                uiText('Camera access needed'),
+                uiText('Allow camera access in Settings to take a photo.'),
                 [
-                  { text: 'Cancel', style: 'cancel' },
-                  { text: 'Open Settings', onPress: () => void Linking.openSettings() },
+                  { text: uiText('Cancel'), style: 'cancel' },
+                  { text: uiText('Open Settings'), onPress: () => void Linking.openSettings() },
                 ],
               )
               return { canceled: true, assets: [] }
@@ -446,8 +449,8 @@ export function useAttachmentPicker(
       { text: 'Files', onPress: () => select('files') },
     ]
     Alert.alert(
-      'Add attachment',
-      'Take a photo or choose an attachment',
+      uiText('Add attachment'),
+      uiText('Take a photo or choose an attachment'),
       Platform.OS === 'android' ? choices : [...choices, { text: 'Cancel', style: 'cancel' }],
       { cancelable: true },
     )

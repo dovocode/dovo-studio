@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   createRuntimeClient,
@@ -160,7 +161,7 @@ export const McpAppView = memo(function McpAppView({
           ready.current = false
           view.current?.reload()
         }}
-        onError={() => setError('Could not load MCP App')}
+        onError={() => setError(uiText('Could not load MCP App'))}
         onMessage={(event) => {
           let data: unknown
           try {
@@ -204,11 +205,11 @@ export const McpAppView = memo(function McpAppView({
             if (value.method === 'ui/download-file') {
               const accepted = await new Promise<boolean>((resolve) =>
                 Alert.alert(
-                  'MCP App export',
-                  'Save or share files offered by this app?',
+                  uiText('MCP App export'),
+                  uiText('Save or share files offered by this app?'),
                   [
-                    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                    { text: 'Continue', onPress: () => resolve(true) },
+                    { text: uiText('Cancel'), style: 'cancel', onPress: () => resolve(false) },
+                    { text: uiText('Continue'), onPress: () => resolve(true) },
                   ],
                   { cancelable: true, onDismiss: () => resolve(false) },
                 ),
@@ -256,11 +257,13 @@ export const McpAppView = memo(function McpAppView({
             if (value.method === 'ui/message') {
               const accepted = await new Promise<boolean>((resolve) =>
                 Alert.alert(
-                  'MCP App message',
-                  `Send this message to the thread?\n\n${JSON.stringify(value.params).slice(0, 500)}`,
+                  uiText('MCP App message'),
+                  uiText('Send this message to the thread?\n\n{value0}', {
+                    value0: JSON.stringify(value.params).slice(0, 500),
+                  }),
                   [
-                    { text: 'Cancel', style: 'cancel', onPress: () => resolve(false) },
-                    { text: 'Send', onPress: () => resolve(true) },
+                    { text: uiText('Cancel'), style: 'cancel', onPress: () => resolve(false) },
+                    { text: uiText('Send'), onPress: () => resolve(true) },
                   ],
                   { cancelable: true, onDismiss: () => resolve(false) },
                 ),
@@ -296,7 +299,9 @@ export const McpAppView = memo(function McpAppView({
         }}
       />
     ) : (
-      <Text style={styles.muted}>Loading app…</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Loading app…'}</InterfaceText>
+      </Text>
     )
   return (
     <View
@@ -305,9 +310,9 @@ export const McpAppView = memo(function McpAppView({
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={[styles.text, { flex: 1 }]}>
           {reference.title}
-          {!connected || app?.connected === false ? ' · disconnected' : ''}
+          {!connected || app?.connected === false ? uiText(' · disconnected') : ''}
         </Text>
-        <Action label="Expand" secondary onPress={() => setFull(true)} />
+        <Action label={uiText('Expand')} secondary onPress={() => setFull(true)} />
       </View>
       {notice ? (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>

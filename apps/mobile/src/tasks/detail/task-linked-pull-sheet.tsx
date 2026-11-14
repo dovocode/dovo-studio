@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import {
@@ -26,6 +27,8 @@ export function TaskLinkedPullSheet({
   initialUrl?: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const origin = useLinkOrigin(task.id)
   const { snapshot } = useRuntime()
   const { colors, styles } = useTheme()
@@ -67,7 +70,12 @@ export function TaskLinkedPullSheet({
     }
   }
   return (
-    <Sheet ref={sheet} title="Linked pull requests" scrollable={!selected} onClose={onClose}>
+    <Sheet
+      ref={sheet}
+      title={uiText('Linked pull requests')}
+      scrollable={!selected}
+      onClose={onClose}
+    >
       {selected ? (
         <PullDetail
           key={`${selected.repositoryId}:${selected.number}`}
@@ -86,7 +94,10 @@ export function TaskLinkedPullSheet({
             <Pressable
               key={pull.url}
               accessibilityRole="button"
-              accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+              accessibilityLabel={uiText('Open PR #{value0}: {value1}', {
+                value0: pull.number,
+                value1: pull.title,
+              })}
               onPress={() => open(pull.url)}
               style={[
                 styles.card,
@@ -117,7 +128,9 @@ export function TaskLinkedPullSheet({
             </Pressable>
           ))}
           {!links.length && (
-            <Text style={styles.muted}>No pull requests linked to this thread.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'No pull requests linked to this thread.'}</InterfaceText>
+            </Text>
           )}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>

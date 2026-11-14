@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable, View } from 'react-native'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
@@ -14,10 +15,12 @@ export function CheckoutChoice({
   branch?: string
   onChange: (value: 'main' | 'worktree' | 'existing') => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   return (
-    <View style={{ gap: 8 }} accessibilityLabel="Working directory">
+    <View style={{ gap: 8 }} accessibilityLabel={uiText('Working directory')}>
       {(['main', 'worktree', 'existing'] as const).map((mode) => {
         const selected = value === mode
         return (
@@ -48,17 +51,19 @@ export function CheckoutChoice({
             <View style={{ flex: 1, gap: 3 }}>
               <Text style={[styles.text, { fontWeight: '600' }]}>
                 {mode === 'main'
-                  ? 'Local checkout'
+                  ? uiText('Local checkout')
                   : mode === 'worktree'
-                    ? 'New worktree'
-                    : 'Existing worktree'}
+                    ? uiText('New worktree')
+                    : uiText('Existing worktree')}
               </Text>
               <Text style={styles.muted}>
                 {mode === 'main'
-                  ? `Work in ${branch || 'the current branch'}, including local changes.`
+                  ? uiText('Work in {value0}, including local changes.', {
+                      value0: branch || 'the current branch',
+                    })
                   : mode === 'worktree'
-                    ? 'A separate folder and branch. Keep your current checkout untouched.'
-                    : 'Use its current branch and uncommitted files.'}
+                    ? uiText('A separate folder and branch. Keep your current checkout untouched.')
+                    : uiText('Use its current branch and uncommitted files.')}
               </Text>
             </View>
             {selected && <Icon name="check" size={18} color={colors.accent} />}
@@ -67,7 +72,9 @@ export function CheckoutChoice({
       })}
       {value === 'worktree' && (
         <Text style={styles.muted}>
-          Created when you send. The branch name comes from your AI-generated task title.
+          <InterfaceText>
+            {'Created when you send. The branch name comes from your AI-generated task title.'}
+          </InterfaceText>
         </Text>
       )}
     </View>

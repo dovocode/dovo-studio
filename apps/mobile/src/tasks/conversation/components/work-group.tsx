@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { formatTurnDuration } from '@dovo/protocol'
 import { useMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -32,6 +33,8 @@ export function ConversationWorkGroup({
   endIndex: number
   artifactsOnly?: boolean
 }>) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const message = useAuiState((state) => state.message)
@@ -87,7 +90,7 @@ export function ConversationWorkGroup({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={summary}
-        accessibilityHint={`${count} ${count === 1 ? 'tool call' : 'tool calls'}`}
+        accessibilityHint={`${count} ${count === 1 ? uiText('tool call') : uiText('tool calls')}`}
         accessibilityState={{ expanded: open }}
         onPress={() => {
           setOpen((value) => !value)
@@ -102,14 +105,14 @@ export function ConversationWorkGroup({
       {turn && open && workStatus !== 'running' && (
         <Text style={[styles.muted, { paddingLeft: 22, fontSize: 12, paddingBottom: 4 }]}>
           {duration
-            ? `${workStatus === 'failed' ? 'Failed after' : workStatus === 'cancelled' ? 'Cancelled after' : 'Worked for'} ${duration}`
+            ? `${workStatus === 'failed' ? uiText('Failed after') : workStatus === 'cancelled' ? uiText('Cancelled after') : uiText('Worked for')} ${duration}`
             : workStatus === 'failed'
-              ? 'Failed'
+              ? uiText('Failed')
               : workStatus === 'cancelled'
-                ? 'Cancelled'
+                ? uiText('Cancelled')
                 : workStatus === 'interrupted'
-                  ? 'Interrupted'
-                  : 'Completed'}
+                  ? uiText('Interrupted')
+                  : uiText('Completed')}
         </Text>
       )}
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}

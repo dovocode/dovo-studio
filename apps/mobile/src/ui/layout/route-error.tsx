@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useContext, useEffect, useMemo, useState } from 'react'
 import { Platform } from 'react-native'
 import Constants from 'expo-constants'
@@ -13,6 +14,8 @@ import { useTheme } from '../theme'
 
 /** A failing screen must never blank or close the app; its tab stays usable. */
 export function RouteError({ error, retry }: ErrorBoundaryProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const runtime = useContext(RuntimeContext)
   const failure = useMemo(() => clientDiagnostic(error), [error])
@@ -52,9 +55,15 @@ export function RouteError({ error, retry }: ErrorBoundaryProps) {
     >
       <View accessibilityRole="alert" style={{ alignItems: 'center', gap: 10 }}>
         <Icon name="error" size={28} color={colors.warning} />
-        <Text style={[styles.title, { textAlign: 'center' }]}>This screen hit a problem</Text>
+        <Text style={[styles.title, { textAlign: 'center' }]}>
+          <InterfaceText>{'This screen hit a problem'}</InterfaceText>
+        </Text>
         <Text style={[styles.muted, { textAlign: 'center' }]}>
-          Try again, or go back to your tasks. Diagnostics stay on this device until you copy them.
+          <InterfaceText>
+            {
+              'Try again, or go back to your tasks. Diagnostics stay on this device until you copy them.'
+            }
+          </InterfaceText>
         </Text>
         {!!error.message && (
           <Text selectable numberOfLines={4} style={[styles.error, { textAlign: 'center' }]}>
@@ -62,7 +71,7 @@ export function RouteError({ error, retry }: ErrorBoundaryProps) {
           </Text>
         )}
         <Text selectable style={styles.muted}>
-          Diagnostic {diagnostic.id}
+          <InterfaceText values={{ value0: diagnostic.id }}>{'Diagnostic {value0}'}</InterfaceText>
         </Text>
         {!!copyStatus && (
           <Text accessibilityLiveRegion="polite" style={styles.muted}>
@@ -71,9 +80,9 @@ export function RouteError({ error, retry }: ErrorBoundaryProps) {
         )}
       </View>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: 8 }}>
-        <Action label="Copy diagnostics" secondary onPress={() => void copy()} />
-        <Action label="Try again" onPress={() => void retry()} />
-        <Action label="Go to tasks" secondary onPress={() => router.replace('/')} />
+        <Action label={uiText('Copy diagnostics')} secondary onPress={() => void copy()} />
+        <Action label={uiText('Try again')} onPress={() => void retry()} />
+        <Action label={uiText('Go to tasks')} secondary onPress={() => router.replace('/')} />
       </View>
     </ScrollView>
   )

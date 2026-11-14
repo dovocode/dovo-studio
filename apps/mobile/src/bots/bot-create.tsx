@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
@@ -112,25 +113,45 @@ function hostStatus(entry: RuntimeOverview): HostStatus {
 }
 
 /** Whether a frozen request can be sent again without risking a second Bot. */
-function pendingStatus(pending: PendingCreate, entry: RuntimeOverview | undefined, name: string) {
+function pendingStatus(
+  pending: PendingCreate,
+  entry: RuntimeOverview | undefined,
+  name: string,
+  uiText: ReturnType<typeof useInterfaceText>,
+) {
   if (!entry)
     return {
       retry: false,
-      message: `${name} was removed. The earlier request may already have created this Bot.`,
+      message: uiText(
+        '{value0} was removed. The earlier request may already have created this Bot.',
+        { value0: name },
+      ),
     }
   // The request stays bound to its exact pairing. A replacement pairing never inherits it.
   if (!sameRuntimeConnection(pending.connection, entry.profile.connection))
     return {
       retry: false,
-      message: `${name} was paired again, so Dovo will not resend the earlier request. It may already have created this Bot. Check the Bots on ${name} first.`,
+      message: uiText(
+        '{value0} was paired again, so Dovo will not resend the earlier request. It may already have created this Bot. Check the Bots on {value0} first.',
+        { value0: name },
+      ),
     }
   if (!entry.connected || !entry.snapshot)
-    return { retry: false, message: `Reconnect ${name} to retry. Your request is kept.` }
+    return {
+      retry: false,
+      message: uiText('Reconnect {value0} to retry. Your request is kept.', { value0: name }),
+    }
   if (!entry.snapshot.botsSupported)
-    return { retry: false, message: `Update ${name} to retry. Your request is kept.` }
+    return {
+      retry: false,
+      message: uiText('Update {value0} to retry. Your request is kept.', { value0: name }),
+    }
   return {
     retry: true,
-    message: `Retry sends the original request to ${name}. This prevents a duplicate Bot.`,
+    message: uiText(
+      'Retry sends the original request to {value0}. This prevents a duplicate Bot.',
+      { value0: name },
+    ),
   }
 }
 
@@ -187,7 +208,7 @@ export function CreateBot({
   const target = runtime.overviews.find((entry) => entry.profile.id === targetId)
   const targetName = target ? runtimeComputerName(target) : 'This computer'
   const status = target ? hostStatus(target) : undefined
-  const frozen = pending ? pendingStatus(pending, target, targetName) : undefined
+  const frozen = pending ? pendingStatus(pending, target, targetName, uiText) : undefined
   useEffect(() => {
     if (!pending) setDiscarding(false)
   }, [pending])
@@ -195,13 +216,13 @@ export function CreateBot({
     ? frozen.message
     : !target
       ? targetId
-        ? 'The selected computer is no longer paired. Choose another computer.'
+        ? uiText('The selected computer is no longer paired. Choose another computer.')
         : runtime.overviews.length
-          ? 'No paired computer is ready. Choose a computer when one is online.'
-          : 'Pair a computer to create a Bot.'
+          ? uiText('No paired computer is ready. Choose a computer when one is online.')
+          : uiText('Pair a computer to create a Bot.')
       : status?.ready
         ? undefined
-        : status?.detail
+        : status && uiText(status.detail)
   const canCreate =
     !busy &&
     !!target &&
@@ -302,7 +323,8 @@ export function CreateBot({
           )}
           {pending && !frozen?.retry && !discarding && (
             <Action
-              label="Discard earlier request"
+              destructive
+              label={uiText('Discard earlier request')}
               secondary
               disabled={busy}
               onPress={() => setDiscarding(true)}
@@ -314,16 +336,20 @@ export function CreateBot({
               style={[styles.card, { gap: 10, borderColor: colors.warning }]}
             >
               <Text style={styles.text}>
-                {`The earlier request may already have created this Bot on ${targetName}. Check its Bots first. A new request can make a second Bot.`}
+                {uiText(
+                  'The earlier request may already have created this Bot on {value0}. Check its Bots first. A new request can make a second Bot.',
+                  { value0: targetName },
+                )}
               </Text>
               <Action
-                label="Keep earlier request"
+                label={uiText('Keep earlier request')}
                 secondary
                 disabled={busy}
                 onPress={() => setDiscarding(false)}
               />
               <Action
-                label="Discard and allow a new request"
+                destructive
+                label={uiText('Discard and allow a new request')}
                 secondary
                 disabled={busy}
                 onPress={() => setField('pending', undefined)}
@@ -336,14 +362,16 @@ export function CreateBot({
             </RuntimeScope>
           ) : (
             <Action
-              label={pending ? 'Retry Create Bot' : 'Create Bot'}
+              label={pending ? uiText('Retry Create Bot') : uiText('Create Bot')}
               wide
               disabled
               onPress={() => undefined}
             />
           )}
           <Text style={[styles.muted, { textAlign: 'center' }]}>
-            You can change the model and tool permissions in Bot settings later.
+            <InterfaceText>
+              {'You can change the model and tool permissions in Bot settings later.'}
+            </InterfaceText>
           </Text>
         </View>
       }
@@ -351,10 +379,10 @@ export function CreateBot({
       <View style={{ gap: 20 }}>
         <View style={{ gap: 6 }}>
           <Text accessibilityRole="header" style={styles.largeTitle}>
-            Create your Bot
+            <InterfaceText>{'Create your Bot'}</InterfaceText>
           </Text>
           <Text style={[styles.text, { color: colors.muted }]}>
-            One conversation. Its own memory. A role that lasts.
+            <InterfaceText>{'One conversation. Its own memory. A role that lasts.'}</InterfaceText>
           </Text>
         </View>
         <RunsOn
@@ -389,8 +417,11 @@ export function CreateBot({
         <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: 10 }}>
           <Icon name="checkCircle" size={18} color={colors.success} />
           <Text style={[styles.muted, { flex: 1, fontSize: 15, lineHeight: 21 }]}>
-            Each Bot gets one lasting conversation, private memory, routines and tools. Closing this
-            sheet keeps your text.
+            <InterfaceText>
+              {
+                'Each Bot gets one lasting conversation, private memory, routines and tools. Closing this sheet keeps your text.'
+              }
+            </InterfaceText>
           </Text>
         </View>
       </View>
@@ -408,18 +439,22 @@ function Starters({
   disabled: boolean
   onFill: (text: BotText) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   if (textFields.every((field) => draft[field].trim())) return null
   return (
     <View style={{ gap: 8 }}>
-      <Text style={styles.muted}>Optional: start from a suggested role</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Optional: start from a suggested role'}</InterfaceText>
+      </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {starters.map((starter) => (
           <Pressable
             key={starter.label}
             accessibilityRole="button"
-            accessibilityLabel={`Use ${starter.label} starter`}
-            accessibilityHint="Fills only the empty fields."
+            accessibilityLabel={uiText('Use {value0} starter', { value0: uiText(starter.label) })}
+            accessibilityHint={uiText('Fills only the empty fields.')}
             accessibilityState={{ disabled }}
             disabled={disabled}
             onPress={() => onFill(starter.text)}
@@ -435,7 +470,7 @@ function Starters({
               maxWidth: '100%',
             })}
           >
-            <Text style={[styles.text, { fontSize: 15 }]}>{starter.label}</Text>
+            <Text style={[styles.text, { fontSize: 15 }]}>{uiText(starter.label)}</Text>
           </Pressable>
         ))}
       </View>
@@ -453,10 +488,12 @@ function CreateButton({
   disabled: boolean
   onPress: (host: Runtime) => void
 }) {
+  const uiText = useInterfaceText()
+
   const host = useRuntime()
   return (
     <Action
-      label={retry ? 'Retry Create Bot' : 'Create Bot'}
+      label={retry ? uiText('Retry Create Bot') : uiText('Create Bot')}
       wide
       disabled={disabled}
       onPress={() => onPress(host)}
@@ -481,18 +518,24 @@ function RunsOn({
   onToggle: () => void
   onSelect: (runtimeId: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
-  const name = selected ? runtimeComputerName(selected) : 'Choose a computer'
+  const name = selected ? runtimeComputerName(selected) : uiText('Choose a computer')
   const status = selected ? hostStatus(selected) : undefined
   return (
     <View style={[styles.card, { padding: 4, gap: 0 }]}>
       <Text style={[styles.muted, { paddingHorizontal: 12, paddingTop: 10, fontSize: 15 }]}>
-        Runs on
+        <InterfaceText>{'Runs on'}</InterfaceText>
       </Text>
       <Pressable
         testID="Runs on"
         accessibilityRole="button"
-        accessibilityLabel={`Runs on ${name}, ${status?.label ?? 'unavailable'}${locked ? '' : '. Change computer'}`}
+        accessibilityLabel={uiText('Runs on {value0}, {value1}{value2}', {
+          value0: name,
+          value1: status ? uiText(status.label) : uiText('Unavailable'),
+          value2: locked ? '' : uiText('. Change computer'),
+        })}
         accessibilityState={{ expanded: open, disabled: disabled || locked }}
         disabled={disabled || locked}
         onPress={onToggle}
@@ -532,18 +575,18 @@ function RunsOn({
       </Pressable>
       {!locked && (
         <Text style={[styles.muted, { paddingHorizontal: 12, paddingBottom: 10 }]}>
-          This computer hosts your Bot and runs its work.
+          <InterfaceText>{'This computer hosts your Bot and runs its work.'}</InterfaceText>
         </Text>
       )}
       {locked && (
         <Text style={[styles.muted, { paddingHorizontal: 12, paddingBottom: 8 }]}>
-          The computer stays fixed until this request finishes.
+          <InterfaceText>{'The computer stays fixed until this request finishes.'}</InterfaceText>
         </Text>
       )}
       {open && (
         <View
           accessibilityRole="radiogroup"
-          accessibilityLabel="Choose a computer"
+          accessibilityLabel={uiText('Choose a computer')}
           style={{ borderTopWidth: 1, borderTopColor: colors.border, paddingTop: 4 }}
         >
           {overviews.map((entry) => {
@@ -555,7 +598,7 @@ function RunsOn({
                 key={entry.profile.id}
                 testID={`Run on ${entryName}`}
                 accessibilityRole="radio"
-                accessibilityLabel={`${entryName}, ${entryStatus.label}`}
+                accessibilityLabel={`${entryName}, ${uiText(entryStatus.label)}`}
                 accessibilityState={{ checked, disabled: disabled || !entryStatus.ready }}
                 disabled={disabled || !entryStatus.ready}
                 onPress={() => onSelect(entry.profile.id)}
@@ -592,6 +635,7 @@ function RunsOn({
 }
 
 function StatusLine({ status }: { status: HostStatus }) {
+  const uiText = useInterfaceText()
   const { colors, styles } = useTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
@@ -606,7 +650,7 @@ function StatusLine({ status }: { status: HostStatus }) {
           ],
         }}
       />
-      <Text style={[styles.muted, { flexShrink: 1 }]}>{status.label}</Text>
+      <Text style={[styles.muted, { flexShrink: 1 }]}>{uiText(status.label)}</Text>
     </View>
   )
 }

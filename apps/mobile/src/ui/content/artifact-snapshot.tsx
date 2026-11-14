@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { Image, View } from 'react-native'
 import {
@@ -24,6 +25,8 @@ export function ArtifactSnapshot({
   connecting: boolean
   refreshKey: number
 }) {
+  const uiText = useInterfaceText()
+
   const { readRuntime } = useRuntime()
   const { colors } = useTheme()
   const identity = JSON.stringify([
@@ -123,7 +126,11 @@ export function ArtifactSnapshot({
             backgroundColor: colors.elevated,
           }}
         >
-          {!connected ? (connecting ? 'Connecting…' : 'Computer offline') : 'Snapshot unavailable'}
+          {!connected
+            ? connecting
+              ? uiText('Connecting…')
+              : uiText('Computer offline')
+            : uiText('Snapshot unavailable')}
         </Text>
       )}
     </View>

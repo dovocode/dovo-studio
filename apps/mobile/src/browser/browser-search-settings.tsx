@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -21,6 +22,8 @@ export function BrowserSearchSettings({
   disabled: boolean
   onSave: (search: BrowserSearchEngine) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [engine, setEngine] = useState<BrowserSearchEngine['engine']>(value?.engine ?? 'google')
   const [url, setUrl] = useState(value?.engine === 'custom' ? value.url : '')
@@ -32,10 +35,10 @@ export function BrowserSearchSettings({
   return (
     <View style={{ gap: 8 }}>
       <Choice
-        label="Default search engine"
+        label={uiText('Default search engine')}
         value={engine}
         disabled={disabled || busy}
-        items={[...browserSearchProviders, { id: 'custom', name: 'Custom URL' }]}
+        items={[...browserSearchProviders, { id: 'custom', name: uiText('Custom URL') }]}
         onChange={(id) => {
           if (id === 'custom') setEngine(id)
           else {
@@ -48,7 +51,7 @@ export function BrowserSearchSettings({
       {engine === 'custom' && (
         <>
           <Field
-            label="Search URL"
+            label={uiText('Search URL')}
             value={url}
             onChangeText={setUrl}
             placeholder="https://example.com/search?q=%s"
@@ -57,13 +60,15 @@ export function BrowserSearchSettings({
             editable={!disabled && !busy}
           />
           <Text style={valid ? styles.muted : styles.error}>
-            Use an HTTP or HTTPS URL containing %s for the search term, without credentials.
+            <InterfaceText>
+              {'Use an HTTP or HTTPS URL containing %s for the search term, without credentials.'}
+            </InterfaceText>
           </Text>
         </>
       )}
       {changed && (
         <Action
-          label={busy ? 'Saving search engine…' : 'Save search engine'}
+          label={busy ? uiText('Saving search engine…') : uiText('Save search engine')}
           disabled={disabled || busy || !valid}
           onPress={() => {
             setBusy(true)

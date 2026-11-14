@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FolderPicker } from './folder-picker'
 import { TaskLauncherPicker } from './task-launcher-controls'
@@ -34,6 +35,8 @@ import { useTheme } from '../../ui/theme'
 import { taskHref } from '../../shell/task-route'
 
 export function TaskLauncherScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles, reduceMotion } = useTheme()
   const [focused, setFocused] = useApplicationState(false)
   const [modelOpen, setModelOpen] = useApplicationState(false)
@@ -224,7 +227,7 @@ export function TaskLauncherScreen() {
     )
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Start a task" onBack={back} gestureEnabled={!busy} />
+      <ScreenHeader title={uiText('Start a task')} onBack={back} gestureEnabled={!busy} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
@@ -246,15 +249,17 @@ export function TaskLauncherScreen() {
               textAlign: 'center',
             }}
           >
-            What would you like to work on?
+            <InterfaceText>{'What would you like to work on?'}</InterfaceText>
           </Text>
           {!ready ? (
             <ActivityIndicator color={colors.accent} />
           ) : !profiles.length ? (
             <>
-              <Text style={styles.title}>Connect a computer</Text>
+              <Text style={styles.title}>
+                <InterfaceText>{'Connect a computer'}</InterfaceText>
+              </Text>
               <Action
-                label="Open computer settings"
+                label={uiText('Open computer settings')}
                 onPress={() => router.push('/settings/devices')}
               />
             </>
@@ -310,7 +315,9 @@ export function TaskLauncherScreen() {
               {loading && <ActivityIndicator color={colors.accent} />}
               {snapshot && !snapshot.workspace.repositories.length && (
                 <Text style={styles.muted}>
-                  Add a project on this computer before starting a task.
+                  <InterfaceText>
+                    {'Add a project on this computer before starting a task.'}
+                  </InterfaceText>
                 </Text>
               )}
               <Animated.View
@@ -326,9 +333,13 @@ export function TaskLauncherScreen() {
                 <View style={{ flexDirection: 'row', alignItems: 'center' }}>
                   <View style={{ flex: 1, minWidth: 0 }}>
                     <Field
-                      label="Task prompt"
+                      label={uiText('Task prompt')}
                       hideLabel
-                      placeholder={expanded ? 'What would you like to work on?' : 'Send a message…'}
+                      placeholder={
+                        expanded
+                          ? uiText('What would you like to work on?')
+                          : uiText('Send a message…')
+                      }
                       multiline
                       value={text}
                       onChangeText={setText}
@@ -353,7 +364,11 @@ export function TaskLauncherScreen() {
                       variant="filled"
                       icon="send"
                       label={
-                        busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'
+                        busy
+                          ? uiText('Dispatching…')
+                          : attempt.current
+                            ? uiText('Retry dispatch')
+                            : uiText('Start task')
                       }
                       disabled={sendDisabled}
                       onPress={() => void dispatch()}
@@ -374,7 +389,11 @@ export function TaskLauncherScreen() {
                       variant="filled"
                       icon="send"
                       label={
-                        busy ? 'Dispatching…' : attempt.current ? 'Retry dispatch' : 'Start task'
+                        busy
+                          ? uiText('Dispatching…')
+                          : attempt.current
+                            ? uiText('Retry dispatch')
+                            : uiText('Start task')
                       }
                       disabled={sendDisabled}
                       onPress={() => void dispatch()}
@@ -389,13 +408,15 @@ export function TaskLauncherScreen() {
               )}
               {error && !attempt.current && !loading && (
                 <Action
-                  label="Retry server connection"
+                  label={uiText('Retry server connection')}
                   secondary
                   onPress={() => setRetry((value) => value + 1)}
                 />
               )}
               {!!attempt.current && (
-                <Text style={styles.muted}>Retry keeps the same task and message.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Retry keeps the same task and message.'}</InterfaceText>
+                </Text>
               )}
               {selectionIssue && (
                 <Text accessibilityRole="alert" style={styles.error}>

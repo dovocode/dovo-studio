@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
@@ -86,11 +87,11 @@ export function AutomationCard({
             </Text>
           )}
           <Text numberOfLines={2} style={styles.muted}>
-            {triggerSummary(flow)} · {steps} {steps === 1 ? 'step' : 'steps'}
+            {triggerSummary(flow)} · {steps} {steps === 1 ? uiText('step') : uiText('steps')}
           </Text>
         </View>
         <IconButton
-          label={`Edit ${flow.name}`}
+          label={uiText('Edit {value0}', { value0: flow.name })}
           icon="settings"
           variant="plain"
           disabled={!focused || busy}
@@ -99,8 +100,11 @@ export function AutomationCard({
       </View>
       {!flow.enabled && (
         <Text style={styles.text}>
-          Test run performs real work. Triggers stay disabled and the next scheduled time stays
-          unchanged.
+          <InterfaceText>
+            {
+              'Test run performs real work. Triggers stay disabled and the next scheduled time stays unchanged.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {latest ? <RunProgress key={latest.id} run={latest} /> : null}
@@ -115,7 +119,13 @@ export function AutomationCard({
         {(!active || !!requestId) && (
           <Action
             secondary={recoverable}
-            label={requestId ? 'Retry start' : !flow.enabled ? 'Test run' : 'Run automation'}
+            label={
+              requestId
+                ? uiText('Retry start')
+                : !flow.enabled
+                  ? uiText('Test run')
+                  : uiText('Run automation')
+            }
             disabled={!focused || !connected || !activeId || busy || issues.length > 0}
             onPress={() =>
               act(() =>
@@ -148,12 +158,12 @@ export function AutomationCard({
             <Text style={styles.muted}>
               {flow.enabled
                 ? trigger?.data.trigger === 'schedule'
-                  ? 'Scheduled'
-                  : 'Enabled'
-                : 'Paused'}
+                  ? uiText('Scheduled')
+                  : uiText('Enabled')
+                : uiText('Paused')}
             </Text>
             <Switch
-              accessibilityLabel={`Triggers for ${flow.name}`}
+              accessibilityLabel={uiText('Triggers for {value0}', { value0: flow.name })}
               value={!!flow.enabled}
               disabled={!focused || !connected || busy || (!flow.enabled && issues.length > 0)}
               onValueChange={(enabled) =>
@@ -183,7 +193,9 @@ export function AutomationCard({
       </View>
       {!linearNodes(flow) && (
         <Text style={styles.muted}>
-          Edit this automation’s canvas on desktop. Runs and reviews are available here.
+          <InterfaceText>
+            {'Edit this automation’s canvas on desktop. Runs and reviews are available here.'}
+          </InterfaceText>
         </Text>
       )}
       {issues.map((issue) => (
@@ -192,14 +204,15 @@ export function AutomationCard({
         </Text>
       ))}
       <Action
+        destructive
         secondary
-        label="Delete automation"
+        label={uiText('Delete automation')}
         disabled={!focused || !connected || !activeId || busy || !!active}
         onPress={() => setDeletingOn(activeId)}
       />
       {deletingOn && (
         <SettingsSheet
-          title={`Delete “${flow.name}”?`}
+          title={uiText('Delete “{value0}”?', { value0: flow.name })}
           presentation="dialog"
           onClose={() => {
             if (!busy) setDeletingOn(null)
@@ -207,12 +220,16 @@ export function AutomationCard({
         >
           <View style={{ gap: 12 }}>
             <Text style={styles.muted}>
-              This removes the automation and its triggers. Existing threads and run history are
-              kept.
+              <InterfaceText>
+                {
+                  'This removes the automation and its triggers. Existing threads and run history are kept.'
+                }
+              </InterfaceText>
             </Text>
             {error && <Text style={styles.error}>{error}</Text>}
             <Action
-              label="Delete automation"
+              destructive
+              label={uiText('Delete automation')}
               wide
               disabled={!focused || !connected || busy || !!active || deletingOn !== activeId}
               onPress={() =>
@@ -238,7 +255,11 @@ export function AutomationCard({
       {runs.length > 1 && (
         <Action
           secondary
-          label={history ? 'Hide recent runs' : `Recent runs (${runs.length - 1})`}
+          label={
+            history
+              ? uiText('Hide recent runs')
+              : uiText('Recent runs ({value0})', { value0: runs.length - 1 })
+          }
           disabled={!focused}
           onPress={() => setHistory(!history)}
         />

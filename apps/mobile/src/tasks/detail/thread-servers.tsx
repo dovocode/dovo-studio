@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { Effect } from 'effect'
@@ -16,6 +17,8 @@ export function ThreadServers({
   taskId: string
   onOpen: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, profile, readEffect, callEffect, snapshot } = useRuntime()
   const foreground = useAppActive()
   const { styles } = useTheme()
@@ -102,21 +105,23 @@ export function ThreadServers({
       })
   }
   return (
-    <View accessibilityLabel="Running servers" style={{ gap: 8 }}>
-      <Text style={styles.muted}>Running servers</Text>
+    <View accessibilityLabel={uiText('Running servers')} style={{ gap: 8 }}>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Running servers'}</InterfaceText>
+      </Text>
       {servers.map((server) => (
         <View key={`${server.pid}:${server.port}:${server.started}`} style={{ gap: 4 }}>
           <Text style={styles.muted}>
-            {server.source === 'agent' ? 'Agent' : 'Terminal'} · {server.name}
+            {server.source === 'agent' ? uiText('Agent') : uiText('Terminal')} · {server.name}
           </Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Action
-              label={`Open localhost:${server.port}`}
+              label={uiText('Open localhost:{value0}', { value0: server.port })}
               disabled={!connected || !server.url}
               onPress={() => server.url && onOpen(server.url)}
             />
             <Action
-              label={`Stop localhost:${server.port}`}
+              label={uiText('Stop localhost:{value0}', { value0: server.port })}
               disabled={!connected || busy}
               onPress={() => stop(server)}
             />
@@ -125,8 +130,12 @@ export function ThreadServers({
       ))}
       {error && (
         <>
-          <Text style={styles.error}>Could not refresh servers: {error}</Text>
-          <Action label="Retry servers" onPress={() => setRetry((value) => value + 1)} />
+          <Text style={styles.error}>
+            <InterfaceText values={{ value0: error }}>
+              {'Could not refresh servers: {value0}'}
+            </InterfaceText>
+          </Text>
+          <Action label={uiText('Retry servers')} onPress={() => setRetry((value) => value + 1)} />
         </>
       )}
     </View>

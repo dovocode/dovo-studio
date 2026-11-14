@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useEffectEvent } from 'react'
 import { watchRuntimeSettled } from '@dovo/protocol'
@@ -87,7 +88,9 @@ export function AddPullsToThread({
   }
   return (
     <Sheet
-      title={`Add ${pulls.length === 1 ? 'PR' : `${pulls.length} PRs`} to thread`}
+      title={uiText('Add {value0} to thread', {
+        value0: pulls.length === 1 ? 'PR' : `${pulls.length} PRs`,
+      })}
       busy={busy}
       scrollable={false}
       onClose={() => {
@@ -95,10 +98,12 @@ export function AddPullsToThread({
       }}
     >
       <View style={{ flex: 1, gap: 12 }}>
-        <Text style={{ color: colors.muted }}>Choose any thread. Its checkout stays the same.</Text>
+        <Text style={{ color: colors.muted }}>
+          <InterfaceText>{'Choose any thread. Its checkout stays the same.'}</InterfaceText>
+        </Text>
         <SearchField
-          label="Search threads to link"
-          placeholder="Search threads, projects or computers…"
+          label={uiText('Search threads to link')}
+          placeholder={uiText('Search threads, projects or computers…')}
           value={search}
           onChangeText={setSearch}
         />
@@ -120,11 +125,15 @@ export function AddPullsToThread({
               <Text numberOfLines={2}>{thread.task.title}</Text>
               <Text style={{ color: colors.muted }}>
                 {thread.project} · {runtimeComputerName(thread.runtime)}
-                {thread.runtime.connected ? '' : ' · Offline'}
+                {thread.runtime.connected ? '' : uiText(' · Offline')}
               </Text>
             </Pressable>
           )}
-          ListEmptyComponent={<Text>No matching threads.</Text>}
+          ListEmptyComponent={
+            <Text>
+              <InterfaceText>{'No matching threads.'}</InterfaceText>
+            </Text>
+          }
         />
         {!!error && <Text style={{ color: colors.error }}>{error}</Text>}
         <Action label={uiText('Cancel')} secondary disabled={busy} onPress={onClose} />

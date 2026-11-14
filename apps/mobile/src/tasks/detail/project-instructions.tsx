@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import { View } from 'react-native'
 import { Schema } from 'effect'
@@ -21,6 +22,8 @@ export function ProjectInstructions({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { call, connected } = useRuntime()
@@ -70,10 +73,10 @@ export function ProjectInstructions({
       .finally(() => setBusy(false))
   }
   return (
-    <Sheet title="Project instructions" onClose={onClose} busy={busy}>
+    <Sheet title={uiText('Project instructions')} onClose={onClose} busy={busy}>
       <View style={{ gap: 12 }}>
         <Choice
-          label="File"
+          label={uiText('File')}
           value={name}
           items={[
             { id: 'AGENTS.md', name: 'AGENTS.md' },
@@ -82,7 +85,7 @@ export function ProjectInstructions({
           onChange={(value) => setName(value as typeof name)}
         />
         <Field
-          label="Instructions"
+          label={uiText('Instructions')}
           value={text}
           onChangeText={(value) => {
             setText(value)
@@ -92,7 +95,12 @@ export function ProjectInstructions({
           style={{ minHeight: 240, textAlignVertical: 'top' }}
           editable={!busy && connected}
         />
-        <Action secondary label="Review diff" disabled={busy || !version} onPress={preview} />
+        <Action
+          secondary
+          label={uiText('Review diff')}
+          disabled={busy || !version}
+          onPress={preview}
+        />
         {!!diff && (
           <Text selectable style={styles.muted}>
             {diff}
@@ -100,7 +108,7 @@ export function ProjectInstructions({
         )}
         {!!error && <Text style={styles.error}>{error}</Text>}
         <Action
-          label="Save instructions"
+          label={uiText('Save instructions')}
           disabled={busy || !diff || diff === 'No changes'}
           onPress={save}
         />

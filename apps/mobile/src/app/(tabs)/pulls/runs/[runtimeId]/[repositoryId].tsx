@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useLocalSearchParams } from 'expo-router'
 import { WorkbenchDetailRoute } from '../../../../../shell/workbench'
 import { RuntimeRoute } from '../../../../../shell/runtime-route'
@@ -6,6 +7,8 @@ import { projectSourceKey } from '../../../../../runtime/state/collection-source
 import { WorkScreen } from '../../../../../scm/work/work'
 
 export default function PipelineRunsRoute() {
+  const uiText = useInterfaceText()
+
   const { runtimeId, repositoryId, sha, pull } = useLocalSearchParams<{
     runtimeId: string
     repositoryId: string
@@ -17,7 +20,7 @@ export default function PipelineRunsRoute() {
       <RuntimeRoute
         runtimeId={runtimeId}
         repositoryId={repositoryId}
-        title="PR runs"
+        title={uiText('PR runs')}
         backTo="/pulls"
       >
         <WorkScreen

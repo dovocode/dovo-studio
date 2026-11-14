@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AccountPanel } from '../runtime/connection/account-panel'
 import { ServiceUrlSettings } from '../runtime/connection/service-url-settings'
@@ -120,7 +121,7 @@ export default function DevicesScreen() {
           profiles.length
             ? [
                 {
-                  label: 'Add computer',
+                  label: uiText('Add computer'),
                   icon: 'add',
                   onPress: () => {
                     setInvitation(undefined)
@@ -160,7 +161,10 @@ export default function DevicesScreen() {
           </Text>
         )}
         {!runtime.registryLoaded && !!runtimeError && (
-          <Action label="Retry loading saved computers" onPress={() => runtime.refreshAll()} />
+          <Action
+            label={uiText('Retry loading saved computers')}
+            onPress={() => runtime.refreshAll()}
+          />
         )}
         {!!invitationError && (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -168,24 +172,28 @@ export default function DevicesScreen() {
           </Text>
         )}
         {profiles.length ? (
-          <SettingsGroup footer="Tasks, projects and tools appear together across these computers.">
+          <SettingsGroup
+            footer={uiText('Tasks, projects and tools appear together across these computers.')}
+          >
             {overviews.map((entry, index) => (
               <SettingsRow
                 key={entry.profile.id}
                 title={runtimeComputerName(entry)}
                 subtitle={
                   entry.connected
-                    ? `Online · ${connectionType(entry.profile.connection, entry.connected)?.label}`
+                    ? uiText('Online · {value0}', {
+                        value0: connectionType(entry.profile.connection, entry.connected)?.label,
+                      })
                     : !entry.error
-                      ? 'Connecting…'
+                      ? uiText('Connecting…')
                       : entry.lastSeen
-                        ? 'Offline · Saved workspace available'
-                        : 'Not connected'
+                        ? uiText('Offline · Saved workspace available')
+                        : uiText('Not connected')
                 }
                 icon={runtimeIconName(entry.snapshot?.runtimeIcon)}
                 tint={entry.connected ? colors.accent : colors.muted}
                 last={index === overviews.length - 1}
-                label={`Manage ${runtimeComputerName(entry)}`}
+                label={uiText('Manage {value0}', { value0: runtimeComputerName(entry) })}
                 testID={
                   entry.connected && entry.profile.id === activeId
                     ? 'Connected computer'
@@ -197,7 +205,7 @@ export default function DevicesScreen() {
           </SettingsGroup>
         ) : (
           <Action
-            label={invitation ? 'Continue pairing' : 'Connect a computer'}
+            label={invitation ? uiText('Continue pairing') : uiText('Connect a computer')}
             onPress={() => {
               setDiscoveredAddress(undefined)
               setAdding(true)
@@ -205,9 +213,11 @@ export default function DevicesScreen() {
           />
         )}
         {!!profiles.length && <ComputerUpdates />}
-        <SettingsGroup title="Tools">
+        <SettingsGroup title={uiText('Tools')}>
           <SettingsRow
-            title={Platform.OS === 'ios' ? 'Shortcuts & quick launch' : 'Quick launch'}
+            title={
+              Platform.OS === 'ios' ? uiText('Shortcuts & quick launch') : uiText('Quick launch')
+            }
             icon="jobs"
             tint="#bb9aff"
             onPress={() => setShortcuts(true)}
@@ -216,37 +226,54 @@ export default function DevicesScreen() {
         </SettingsGroup>
       </ScrollView>
       {adding && (
-        <Sheet title="Connect a computer" busy={pairingBusy} onClose={() => setAdding(false)}>
+        <Sheet
+          title={uiText('Connect a computer')}
+          busy={pairingBusy}
+          onClose={() => setAdding(false)}
+        >
           {invitation && profiles.length > 0 && pairTarget === undefined ? (
             <>
               <Text style={styles.text}>
-                Use this code to connect a new computer or update one you have already saved.
+                <InterfaceText>
+                  {'Use this code to connect a new computer or update one you have already saved.'}
+                </InterfaceText>
               </Text>
               <Text selectable style={styles.muted}>
-                {invitation.peer ? 'Internet pairing · end-to-end encrypted' : invitation.address}
+                {invitation.peer
+                  ? uiText('Internet pairing · end-to-end encrypted')
+                  : invitation.address}
               </Text>
               {profiles.map((profile) => (
                 <Action
                   key={profile.id}
                   secondary
-                  label={`Update ${runtimeComputerName({ profile, snapshot: overviews.find((entry) => entry.profile.id === profile.id)?.snapshot })}`}
+                  label={uiText('Update {value0}', {
+                    value0: runtimeComputerName({
+                      profile,
+                      snapshot: overviews.find((entry) => entry.profile.id === profile.id)
+                        ?.snapshot,
+                    }),
+                  })}
                   onPress={() => setPairTarget(profile.id)}
                 />
               ))}
-              <Action label="Add a new computer" onPress={() => setPairTarget(null)} />
+              <Action label={uiText('Add a new computer')} onPress={() => setPairTarget(null)} />
             </>
           ) : (
             <>
               {pairTarget && (
                 <Text style={styles.text}>
-                  Updating {profiles.find((profile) => profile.id === pairTarget)?.name}. Pair only
-                  with that same computer.
+                  <InterfaceText
+                    values={{ value0: profiles.find((profile) => profile.id === pairTarget)?.name }}
+                  >
+                    {'Updating {value0}. Pair only with that same computer.'}
+                  </InterfaceText>
                 </Text>
               )}
               {invitation && (
                 <Action
                   secondary
-                  label="Choose a different computer"
+                  label={uiText('Choose a different computer')}
                   disabled={pairingBusy}
                   onPress={() => setPairTarget(undefined)}
                 />
@@ -279,15 +306,20 @@ export default function DevicesScreen() {
       )}
       {shortcuts && (
         <Sheet
-          title={Platform.OS === 'ios' ? 'Shortcuts & quick launch' : 'Quick launch'}
+          title={
+            Platform.OS === 'ios' ? uiText('Shortcuts & quick launch') : uiText('Quick launch')
+          }
           onClose={() => setShortcuts(false)}
         >
           <Text style={styles.text}>
-            Long-press Dovo’s app icon and choose Start a task to select a server, project and
-            favorite agent.
+            <InterfaceText>
+              {
+                'Long-press Dovo’s app icon and choose Start a task to select a server, project and favorite agent.'
+              }
+            </InterfaceText>
           </Text>
           <Action
-            label="Open task launcher"
+            label={uiText('Open task launcher')}
             onPress={() => {
               setShortcuts(false)
               router.push('/launch')
@@ -295,22 +327,32 @@ export default function DevicesScreen() {
           />
           <Text style={styles.muted}>
             {Platform.OS === 'ios'
-              ? 'In Apple Shortcuts, add an Open URLs action with the link below. You can assign it to Siri, your Home Screen or Action button.'
-              : 'Supported Android launchers also let you drag the Start a task shortcut onto your Home Screen.'}
+              ? uiText(
+                  'In Apple Shortcuts, add an Open URLs action with the link below. You can assign it to Siri, your Home Screen or Action button.',
+                )
+              : uiText(
+                  'Supported Android launchers also let you drag the Start a task shortcut onto your Home Screen.',
+                )}
           </Text>
           <Text selectable style={styles.muted}>
-            dovo://launch
+            <InterfaceText>{'dovo://launch'}</InterfaceText>
           </Text>
           <Text style={styles.text}>
-            In Shortcuts: Ask for Input → URL Encode → Text with the URL below → Open URLs. Review
-            the draft, model and checkout before sending its first message.
+            <InterfaceText>
+              {
+                'In Shortcuts: Ask for Input → URL Encode → Text with the URL below → Open URLs. Review the draft, model and checkout before sending its first message.'
+              }
+            </InterfaceText>
           </Text>
           <Text selectable style={styles.muted}>
-            dovo://task?text=URL_ENCODED_INPUT
+            <InterfaceText>{'dovo://task?text=URL_ENCODED_INPUT'}</InterfaceText>
           </Text>
           <Text style={styles.muted}>
-            Optional URL fields: title, repositoryId, agentId. Requests wait on this phone while
-            offline.
+            <InterfaceText>
+              {
+                'Optional URL fields: title, repositoryId, agentId. Requests wait on this phone while offline.'
+              }
+            </InterfaceText>
           </Text>
         </Sheet>
       )}
@@ -318,6 +360,8 @@ export default function DevicesScreen() {
   )
 }
 function ComputerSettings({ onClose }: { onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const connectionType = useConnectionTypes()
 
@@ -342,17 +386,21 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
   const leaveDeviceHosts = (leave: () => void) => {
     if (deviceHostsBusy) return
     if (!deviceHostsDirty) return leave()
-    Alert.alert('Discard device host draft?', 'Your unsaved host changes will be discarded.', [
-      { text: 'Keep editing', style: 'cancel' },
-      {
-        text: 'Discard',
-        style: 'destructive',
-        onPress: () => {
-          setDeviceHostsDirty(false)
-          leave()
+    Alert.alert(
+      uiText('Discard device host draft?'),
+      uiText('Your unsaved host changes will be discarded.'),
+      [
+        { text: uiText('Keep editing'), style: 'cancel' },
+        {
+          text: uiText('Discard'),
+          style: 'destructive',
+          onPress: () => {
+            setDeviceHostsDirty(false)
+            leave()
+          },
         },
-      },
-    ])
+      ],
+    )
   }
   const [panel, setPanel] = useApplicationState<
     'commands' | 'computer-use' | 'activity' | 'device-hosts' | 'recovered-edits' | null
@@ -368,7 +416,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
         <>
           <Action
             secondary
-            label="Back to computer"
+            label={uiText('Back to computer')}
             disabled={pairingBusy}
             onPress={() => setChangingAddress(false)}
           />
@@ -383,7 +431,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
         <>
           <Action
             secondary
-            label="Back to computer"
+            label={uiText('Back to computer')}
             disabled={deviceHostsBusy}
             onPress={() => leaveDeviceHosts(() => setPanel(null))}
           />
@@ -411,14 +459,18 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               },
             ]}
           >
-            {connected ? 'Online' : recovering ? 'Reconnecting…' : 'Offline'}
+            {connected
+              ? uiText('Online')
+              : recovering
+                ? uiText('Reconnecting…')
+                : uiText('Offline')}
           </Text>
           {connected && (
             <Text style={styles.muted}>{connectionType(profile.connection, connected)?.label}</Text>
           )}
           <Text selectable style={styles.muted}>
             {isPeerAddress(profile.connection.address)
-              ? 'Internet · WebRTC · end-to-end encrypted'
+              ? uiText('Internet · WebRTC · end-to-end encrypted')
               : profile.connection.address}
           </Text>
           <ConnectSettings key={profile.id} onBusyChange={setPairingBusy} />
@@ -432,7 +484,11 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
           )}
           {profile.connection.internet && (
             <Text style={styles.muted}>
-              LAN / VPN is preferred. Dovo Connect is available as an encrypted internet fallback.
+              <InterfaceText>
+                {
+                  'LAN / VPN is preferred. Dovo Connect is available as an encrypted internet fallback.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {!profile.connection.peer &&
@@ -442,18 +498,24 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             )}
           {!profile.connection.peer && connected && snapshot && !snapshot.peerUpgradeSupported && (
             <Text style={styles.muted}>
-              Update Dovo on this computer to enable internet access without re-pairing.
+              <InterfaceText>
+                {'Update Dovo on this computer to enable internet access without re-pairing.'}
+              </InterfaceText>
             </Text>
           )}
-          <Action label="Reconnect" disabled={busy || pairingBusy} onPress={() => act(refresh)} />
+          <Action
+            label={uiText('Reconnect')}
+            disabled={busy || pairingBusy}
+            onPress={() => act(refresh)}
+          />
           <Action
             secondary
             label={
               profile.connection.accountSession
-                ? 'Pair LAN / VPN'
+                ? uiText('Pair LAN / VPN')
                 : profile.connection.internet
-                  ? 'Update LAN / VPN pairing'
-                  : 'Update connection address'
+                  ? uiText('Update LAN / VPN pairing')
+                  : uiText('Update connection address')
             }
             disabled={busy || pairingBusy}
             onPress={() => setChangingAddress(true)}
@@ -466,45 +528,50 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
           <RuntimeIconSettings />
           <RuntimePreferences />
           <TaskDefaultSettings />
-          <SettingsGroup title="On this computer">
+          <SettingsGroup title={uiText('On this computer')}>
             <SettingsRow
-              title="Device previews"
-              subtitle="Remote SSH device hosts"
+              title={uiText('Device previews')}
+              subtitle={uiText('Remote SSH device hosts')}
               icon="device"
               onPress={() => setPanel('device-hosts')}
             />
             <SettingsRow
-              title="CLI commands & shell"
+              title={uiText('CLI commands & shell')}
               icon="terminal"
               disabled={!connected}
               onPress={() => setPanel('commands')}
             />
             <SettingsRow
-              title="Computer use"
+              title={uiText('Computer use')}
               icon="terminal"
               disabled={!connected}
               onPress={() => setPanel('computer-use')}
             />
             {connected && (
               <SettingsRow
-                title="Recovered edits"
+                title={uiText('Recovered edits')}
                 icon="tasks"
                 disabled={!connected}
                 onPress={() => setPanel('recovered-edits')}
               />
             )}
             <SettingsRow
-              title="Activity log"
+              title={uiText('Activity log')}
               icon="tasks"
               disabled={!connected}
               onPress={() => setPanel('activity')}
               last
             />
           </SettingsGroup>
-          <Field label="Computer name" value={name} onChangeText={setName} maxLength={80} />
+          <Field
+            label={uiText('Computer name')}
+            value={name}
+            onChangeText={setName}
+            maxLength={80}
+          />
           <Action
             secondary
-            label="Save name"
+            label={uiText('Save name')}
             disabled={busy || !name.trim() || name.trim() === profile.name}
             onPress={() =>
               act(() =>
@@ -516,7 +583,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
             }
           />
           {!!snapshot?.devices.length && (
-            <SettingsGroup title="Paired devices">
+            <SettingsGroup title={uiText('Paired devices')}>
               {snapshot.devices.map((device) => (
                 <View
                   key={device.id}
@@ -527,7 +594,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
                 >
                   <Text style={styles.text}>{device.name}</Text>
                   <Text style={styles.muted}>
-                    {device.revokedAt ? 'Revoked' : 'Trusted device'}
+                    {device.revokedAt ? uiText('Revoked') : uiText('Trusted device')}
                   </Text>
                 </View>
               ))}
@@ -535,26 +602,33 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
           )}
           <Action
             secondary
-            label={help ? 'Hide connection help' : 'Connection help'}
+            label={help ? uiText('Hide connection help') : uiText('Connection help')}
             onPress={() => setHelp(!help)}
           />
           {help && <ConnectionHelp />}
           <Text style={styles.muted}>
-            Forgetting removes this connection from your phone. Work on the computer continues.
+            <InterfaceText>
+              {
+                'Forgetting removes this connection from your phone. Work on the computer continues.'
+              }
+            </InterfaceText>
           </Text>
           <Action
+            destructive
             secondary
-            label="Forget computer"
+            label={uiText('Forget computer')}
             disabled={busy}
             onPress={() =>
               // Undoing this needs a fresh pairing code from the computer, so confirm first.
               Alert.alert(
-                `Forget ${runtimeComputerName({ profile, snapshot })}?`,
-                'This phone’s access is removed from the computer too. Connecting again needs a new pairing code. Work on the computer continues.',
+                uiText('Forget {value0}?', { value0: runtimeComputerName({ profile, snapshot }) }),
+                uiText(
+                  'This phone’s access is removed from the computer too. Connecting again needs a new pairing code. Work on the computer continues.',
+                ),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Forget',
+                    text: uiText('Forget'),
                     style: 'destructive',
                     onPress: () =>
                       act(() =>
@@ -575,6 +649,8 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
 }
 
 function RecoveredEdits() {
+  const uiText = useInterfaceText()
+
   const { read } = useRuntime()
   const { styles } = useTheme()
   const [edits, setEdits] = useApplicationState<WorkspaceRecovery[]>([])
@@ -602,8 +678,11 @@ function RecoveredEdits() {
   return (
     <View style={{ gap: 12 }}>
       <Text style={styles.text}>
-        Conflicting edits are saved here while the runtime value stays in use. Select and copy an
-        edit to recover it.
+        <InterfaceText>
+          {
+            'Conflicting edits are saved here while the runtime value stays in use. Select and copy an edit to recover it.'
+          }
+        </InterfaceText>
       </Text>
       {warnings.map((warning) => (
         <Text key={warning} style={styles.text}>
@@ -612,7 +691,11 @@ function RecoveredEdits() {
       ))}
       {!!error && <Text style={styles.text}>{error}</Text>}
       {edits.length === 0
-        ? !error && <Text style={styles.text}>No recovered edits.</Text>
+        ? !error && (
+            <Text style={styles.text}>
+              <InterfaceText>{'No recovered edits.'}</InterfaceText>
+            </Text>
+          )
         : edits.map((edit) => (
             <Text selectable key={edit.id} style={styles.text}>
               {JSON.stringify(edit, null, 2)}
@@ -620,7 +703,7 @@ function RecoveredEdits() {
           ))}
       {cursor && (
         <Action
-          label="Load older edits"
+          label={uiText('Load older edits')}
           disabled={loading}
           onPress={() => {
             setLoading(true)

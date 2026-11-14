@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useLocalSearchParams } from 'expo-router'
 import { RuntimeRoute } from '../../shell/runtime-route'
 import { backToCollection } from '../../shell/source-route'
@@ -10,6 +11,8 @@ export function WorkItemRoute({
   mode: 'issues' | 'pipelines'
   jira?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { runtimeId, repositoryId, sourceId, itemId, url } = useLocalSearchParams<{
     runtimeId: string
     repositoryId?: string
@@ -23,7 +26,7 @@ export function WorkItemRoute({
       runtimeId={runtimeId}
       repositoryId={jira ? undefined : repositoryId}
       jiraSourceId={jira ? sourceId : undefined}
-      title={mode === 'issues' ? 'Issue' : 'Pipeline'}
+      title={mode === 'issues' ? uiText('Issue') : uiText('Pipeline')}
       backTo={backTo}
     >
       <WorkItemScreen

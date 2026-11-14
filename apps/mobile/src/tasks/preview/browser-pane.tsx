@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { useOpenAppLink } from '../../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
@@ -65,6 +66,8 @@ function PreviewPane({
   openLink,
   onLinkOpened,
 }: PreviewProps & { initialMode: 'remote' | 'devices' }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [keyboard, setKeyboard] = useApplicationState(() => Keyboard.isVisible())
   useEffect(() => {
@@ -143,10 +146,12 @@ function PreviewPane({
           flex: 1,
         }}
       >
-        <Text style={styles.muted}>Devices</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Devices'}</InterfaceText>
+        </Text>
       </View>
       <IconButton
-        label={expanded ? 'Show controls' : 'Expand preview'}
+        label={expanded ? uiText('Show controls') : uiText('Expand preview')}
         icon={expanded ? 'collapse' : 'expand'}
         onPress={() => onExpand(!expanded)}
       />
@@ -183,7 +188,7 @@ function PreviewPane({
         {initialMode !== 'devices' && expanded && (
           <View style={{ position: 'absolute', bottom: 8, right: 8 }}>
             <IconButton
-              label="Show browser controls"
+              label={uiText('Show browser controls')}
               icon="collapse"
               variant="glass"
               onPress={() => onExpand(false)}
@@ -211,6 +216,8 @@ function BrowserContent({
   onMode: (mode: BrowserMode, address?: string) => void
   onExpand: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const screenshots = useScreenshotAttachment(taskId)
@@ -429,7 +436,7 @@ function BrowserContent({
         }}
       >
         <Field
-          label="Preview URL"
+          label={uiText('Preview URL')}
           hideLabel
           value={input}
           onChangeText={setInput}
@@ -466,7 +473,7 @@ function BrowserContent({
         >
           <IconButton
             icon="back"
-            label="Back to devices"
+            label={uiText('Back to devices')}
             onPress={() => setLiveDevice(undefined)}
           />
           <Text
@@ -479,18 +486,18 @@ function BrowserContent({
             ]}
           >
             {liveDevice.name}
-            {liveDevice.hostName ? ` · ${liveDevice.hostName}` : ' · Local runtime'}
+            {liveDevice.hostName ? ` · ${liveDevice.hostName}` : uiText(' · Local runtime')}
           </Text>
           <IconButton
             icon="settings"
-            label="Install app / URL forwards"
+            label={uiText('Install app / URL forwards')}
             disabled={!connected || busy}
             onPress={() => setActionDevice(liveDevice)}
           />
           {liveDevice.kind === 'physical' && liveDevice.platform === 'ios' && (
             <IconButton
               icon="settings"
-              label="Device controls"
+              label={uiText('Device controls')}
               disabled={!connected || busy}
               onPress={() => setSetupDevice(liveDevice)}
             />
@@ -550,7 +557,9 @@ function BrowserContent({
                       padding: 16,
                     }}
                   >
-                    <Text style={styles.text}>Open this preview externally in Safari.</Text>
+                    <Text style={styles.text}>
+                      <InterfaceText>{'Open this preview externally in Safari.'}</InterfaceText>
+                    </Text>
                   </View>
                 ) : active ? (
                   <View ref={browserCapture} collapsable={false} style={{ flex: 1 }}>
@@ -602,10 +611,17 @@ function BrowserContent({
               gap: 12,
             }}
           >
-            <Text style={styles.text}>Start your project’s server, then enter its address.</Text>
+            <Text style={styles.text}>
+              <InterfaceText>
+                {'Start your project’s server, then enter its address.'}
+              </InterfaceText>
+            </Text>
             <Text style={styles.muted}>
-              Localhost uses your runtime’s hostname. The server must accept connections from your
-              phone over Wi-Fi or VPN.
+              <InterfaceText>
+                {
+                  'Localhost uses your runtime’s hostname. The server must accept connections from your phone over Wi-Fi or VPN.'
+                }
+              </InterfaceText>
             </Text>
           </View>
         )
@@ -618,7 +634,7 @@ function BrowserContent({
         >
           <Action
             secondary
-            label={busy ? 'Working…' : 'Refresh devices'}
+            label={busy ? uiText('Working…') : uiText('Refresh devices')}
             disabled={!connected || busy}
             onPress={() => act(load)}
           />
@@ -630,18 +646,23 @@ function BrowserContent({
           {hubEnabled === false && (
             <View style={{ gap: 12 }}>
               <Text style={styles.muted}>
-                Device Hub is off for this computer. Enable it in Device previews settings to
-                discover simulators and connected phones.
+                <InterfaceText>
+                  {
+                    'Device Hub is off for this computer. Enable it in Device previews settings to discover simulators and connected phones.'
+                  }
+                </InterfaceText>
               </Text>
               <Action
-                label="Enable in Device previews settings"
+                label={uiText('Enable in Device previews settings')}
                 onPress={() => router.push('/settings/device-hosts')}
               />
             </View>
           )}
           {hubEnabled === true && !devices.length && !busy && (
             <Text style={styles.muted}>
-              No devices found. Connect a phone to the host or create a simulator.
+              <InterfaceText>
+                {'No devices found. Connect a phone to the host or create a simulator.'}
+              </InterfaceText>
             </Text>
           )}
           {devices.map((device, index) => (
@@ -666,17 +687,22 @@ function BrowserContent({
                   ]}
                 >
                   {device.kind === 'physical'
-                    ? 'Connected phones and tablets'
-                    : 'Simulators and emulators'}
+                    ? uiText('Connected phones and tablets')
+                    : uiText('Simulators and emulators')}
                 </Text>
               )}
               <Text style={styles.text}>{device.name}</Text>
-              <Text style={styles.muted}>{device.hostName ?? 'Local runtime'}</Text>
+              <Text style={styles.muted}>{device.hostName ?? uiText('Local runtime')}</Text>
               <Text style={styles.muted}>
                 {device.kind === 'physical'
-                  ? `Physical ${device.platform === 'ios' ? 'iPhone / iPad' : 'Android'} · ${device.connection}`
-                  : `${device.platform === 'ios' ? 'iOS simulator' : 'Android emulator'} · ${device.state}`}
-                {device.kind === 'physical' && device.state === 'booted' && ' · Direct control'}
+                  ? uiText('Physical {value0} · {value1}', {
+                      value0: device.platform === 'ios' ? 'iPhone / iPad' : 'Android',
+                      value1: device.connection,
+                    })
+                  : `${device.platform === 'ios' ? uiText('iOS simulator') : uiText('Android emulator')} · ${device.state}`}
+                {device.kind === 'physical' &&
+                  device.state === 'booted' &&
+                  uiText(' · Direct control')}
               </Text>
               <View
                 style={[
@@ -687,7 +713,9 @@ function BrowserContent({
                 ]}
               >
                 <Action
-                  label={device.kind === 'physical' ? 'Control device' : 'Live preview'}
+                  label={
+                    device.kind === 'physical' ? uiText('Control device') : uiText('Live preview')
+                  }
                   disabled={
                     device.liveSupported === false ||
                     (device.kind === 'physical' && device.state !== 'booted') ||
@@ -699,7 +727,7 @@ function BrowserContent({
                 />
                 <Action
                   secondary
-                  label="Install app / URL forwards"
+                  label={uiText('Install app / URL forwards')}
                   disabled={!connected || busy}
                   onPress={() => setActionDevice(device)}
                 />
@@ -708,7 +736,7 @@ function BrowserContent({
                     {device.platform === 'android' && (
                       <Action
                         secondary
-                        label="Open URL"
+                        label={uiText('Open URL')}
                         disabled={!connected || busy || device.state !== 'booted'}
                         onPress={() => deviceAction(device, 'open')}
                       />
@@ -716,14 +744,14 @@ function BrowserContent({
                     {device.platform === 'ios' && (
                       <Action
                         secondary
-                        label="Device controls"
+                        label={uiText('Device controls')}
                         disabled={!connected || busy}
                         onPress={() => setSetupDevice(device)}
                       />
                     )}
                     <Action
                       secondary
-                      label="Take screenshot"
+                      label={uiText('Take screenshot')}
                       disabled={!connected || busy}
                       onPress={() => deviceAction(device, 'screenshot')}
                     />
@@ -732,7 +760,7 @@ function BrowserContent({
                 {device.kind !== 'physical' && (
                   <>
                     <Action
-                      label={device.state === 'booted' ? 'Stop' : 'Start'}
+                      label={device.state === 'booted' ? uiText('Stop') : uiText('Start')}
                       disabled={!connected || busy || device.state === 'starting'}
                       onPress={() =>
                         deviceAction(device, device.state === 'booted' ? 'shutdown' : 'boot')
@@ -740,13 +768,13 @@ function BrowserContent({
                     />
                     <Action
                       secondary
-                      label="Open URL"
+                      label={uiText('Open URL')}
                       disabled={!connected || busy || device.state !== 'booted'}
                       onPress={() => deviceAction(device, 'open')}
                     />
                     <Action
                       secondary
-                      label="Take screenshot"
+                      label={uiText('Take screenshot')}
                       disabled={!connected || busy || device.state !== 'booted'}
                       onPress={() => deviceAction(device, 'screenshot')}
                     />
@@ -760,13 +788,15 @@ function BrowserContent({
           {image && (
             <>
               <Text style={styles.muted}>
-                Captured screenshot · capture again with Take screenshot
+                <InterfaceText>
+                  {'Captured screenshot · capture again with Take screenshot'}
+                </InterfaceText>
               </Text>
               <Image
                 source={{
                   uri: image,
                 }}
-                accessibilityLabel="Simulator screenshot"
+                accessibilityLabel={uiText('Simulator screenshot')}
                 resizeMode="contain"
                 style={{
                   width: '100%',

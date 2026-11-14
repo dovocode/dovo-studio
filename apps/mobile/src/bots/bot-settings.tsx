@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Choice } from '../ui/controls/choice'
 import { taskHref } from '../shell/task-route'
@@ -178,12 +179,12 @@ function BotSettingsEditor({
           <View style={{ gap: 12 }}>
             <Text>
               {bot.state === 'paused'
-                ? 'Paused. New messages stay queued until you resume.'
-                : 'Active. This Bot keeps one conversation across its work.'}
+                ? uiText('Paused. New messages stay queued until you resume.')
+                : uiText('Active. This Bot keeps one conversation across its work.')}
             </Text>
             {!!error && <Text accessibilityRole="alert">{error}</Text>}
             <Action
-              label={bot.state === 'paused' ? 'Resume Bot' : 'Pause Bot'}
+              label={bot.state === 'paused' ? uiText('Resume Bot') : uiText('Pause Bot')}
               disabled={!connected || busy || !snapshot?.botsSupported}
               onPress={() =>
                 act(async () => {
@@ -212,16 +213,20 @@ function BotSettingsEditor({
               }
             />
             <Text>
-              Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.
+              <InterfaceText>
+                {
+                  'Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.'
+                }
+              </InterfaceText>
             </Text>
             {snapshot?.botBackupSupported && (
               <>
                 <Choice
-                  label="Automatic backup"
+                  label={uiText('Automatic backup')}
                   value={draft.backupAgentId || 'none'}
                   disabled={!connected || busy}
                   items={[
-                    { id: 'none', name: 'No backup' },
+                    { id: 'none', name: uiText('No backup') },
                     ...(snapshot?.workspace.agents ?? []).map((agent) => ({
                       id: agent.id,
                       name: `${agent.name} · ${agent.model}`,
@@ -230,15 +235,17 @@ function BotSettingsEditor({
                   onChange={(id) => retain({ backupAgentId: id === 'none' ? '' : id })}
                 />
                 <Text>
-                  Use this saved agent after a quota or provider outage, only before work starts.
-                  Access stays the same. The backup becomes the current model and can have different
-                  costs.
+                  <InterfaceText>
+                    {
+                      'Use this saved agent after a quota or provider outage, only before work starts. Access stays the same. The backup becomes the current model and can have different costs.'
+                    }
+                  </InterfaceText>
                 </Text>
               </>
             )}
             <Action label={uiText('Avatar')} secondary onPress={() => setAvatar(true)} />
             <Action
-              label="Harness, model and tool permissions"
+              label={uiText('Harness, model and tool permissions')}
               secondary
               onPress={() => setHarness(true)}
             />
@@ -255,7 +262,8 @@ function BotSettingsEditor({
             <Action label={uiText('Routines')} secondary onPress={() => setRoutines(true)} />
             <Action label={uiText('Memory')} secondary onPress={() => setMemory(true)} />
             <Action
-              label="Delete Bot…"
+              destructive
+              label={uiText('Delete Bot…')}
               secondary
               disabled={
                 !connected ||
@@ -269,16 +277,18 @@ function BotSettingsEditor({
           </View>
           {deleting && (
             <Sheet
-              title="Delete Bot?"
+              title={uiText('Delete Bot?')}
               busy={busy}
               onClose={() => {
                 if (!busy) setDeleting(false)
               }}
             >
               <Text>
-                Permanently delete “{task.title}”, its conversation, private memory and local child
-                threads? Repository files and worktrees stay. Saved routines stay, but their Bot
-                jobs need a new target. Stop active work and close terminals first.
+                <InterfaceText values={{ value0: task.title }}>
+                  {
+                    'Permanently delete “{value0}”, its conversation, private memory and local child threads? Repository files and worktrees stay. Saved routines stay, but their Bot jobs need a new target. Stop active work and close terminals first.'
+                  }
+                </InterfaceText>
               </Text>
               <BotDeletionResult deleted={deleted} busy={busy} onDeleted={onDeleted} />
               {!!error && <Text accessibilityRole="alert">{error}</Text>}
@@ -289,7 +299,8 @@ function BotSettingsEditor({
                 onPress={() => setDeleting(false)}
               />
               <Action
-                label="Delete Bot"
+                destructive
+                label={uiText('Delete Bot')}
                 disabled={
                   !connected ||
                   busy ||
@@ -384,6 +395,8 @@ function BotSettingsEditor({
 }
 
 function BotRoutines({ taskId }: { taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile } = useRuntime()
   const navigate = useSheetNavigation()
   const task = snapshot?.workspace.tasks.find((t) => t.id === taskId)
@@ -401,8 +414,14 @@ function BotRoutines({ taskId }: { taskId: string }) {
   const routines = botRoutines(taskId, snapshot?.workspace.automations ?? [], snapshot?.runs ?? [])
   return (
     <View style={{ gap: 8 }}>
-      <Text>Work inbox</Text>
-      <Text>Workers run separately. Your conversation stays available.</Text>
+      <Text>
+        <InterfaceText>{'Work inbox'}</InterfaceText>
+      </Text>
+      <Text>
+        <InterfaceText>
+          {'Workers run separately. Your conversation stays available.'}
+        </InterfaceText>
+      </Text>
       {inbox.map((item) => (
         <Action
           key={item.key}
@@ -421,37 +440,53 @@ function BotRoutines({ taskId }: { taskId: string }) {
           }}
         />
       ))}
-      {!inbox.length && <Text>No work yet.</Text>}
+      {!inbox.length && (
+        <Text>
+          <InterfaceText>{'No work yet.'}</InterfaceText>
+        </Text>
+      )}
       <Text>
-        Routines are optional.{' '}
-        {routines.length
-          ? `${routines.length} ${routines.length === 1 ? 'routine uses' : 'routines use'} this Bot.`
-          : 'No routines use this Bot.'}
+        <InterfaceText
+          values={{
+            value0: routines.length
+              ? uiText('{value0} {value1} this Bot.', {
+                  value0: routines.length,
+                  value1: routines.length === 1 ? 'routine uses' : 'routines use',
+                })
+              : uiText('No routines use this Bot.'),
+          }}
+        >
+          {'Routines are optional. {value0}'}
+        </InterfaceText>
       </Text>
       {routines.map(({ flow, triggers, steps, runs }) => (
         <View key={flow.id} style={{ gap: 8 }}>
           <Action
-            label={`${flow.name}${flow.enabled ? '' : ' · Disabled'}`}
+            label={`${flow.name}${flow.enabled ? '' : uiText(' · Disabled')}`}
             secondary
             disabled={!profile}
             onPress={() => {
               if (profile) navigate(() => router.navigate(automationHref(profile.id, flow.id)))
             }}
           />
-          <Text>{triggers.join(' · ') || 'No trigger configured'}</Text>
+          <Text>{triggers.join(' · ') || uiText('No trigger configured')}</Text>
           {steps.map((step) => (
             <Text key={step.id}>
               {step.label} ·{' '}
               {step.botJob
-                ? 'This Bot'
+                ? uiText('This Bot')
                 : step.review
-                  ? 'Human review'
+                  ? uiText('Human review')
                   : step.botId
-                    ? 'Bot job'
-                    : 'Agent task'}
+                    ? uiText('Bot job')
+                    : uiText('Agent task')}
             </Text>
           ))}
-          {!runs.length && <Text>No runs yet.</Text>}
+          {!runs.length && (
+            <Text>
+              <InterfaceText>{'No runs yet.'}</InterfaceText>
+            </Text>
+          )}
           {runs.slice(0, 3).map((run) => (
             <Action
               key={run.id}
@@ -467,7 +502,7 @@ function BotRoutines({ taskId }: { taskId: string }) {
         </View>
       ))}
       <Action
-        label="Manage routines"
+        label={uiText('Manage routines')}
         secondary
         onPress={() => navigate(() => router.navigate('/settings/automations'))}
       />

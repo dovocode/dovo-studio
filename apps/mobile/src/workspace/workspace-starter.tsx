@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
 import { DovoWebKitBrowserView } from '../../modules/dovo-webkit-browser'
@@ -230,7 +231,7 @@ export function WorkspaceStarter({
     if (!explicit && browserSource === 'device')
       return DovoWebKitBrowserView
         ? preferences.browserProfiles
-        : [{ id: 'default', name: 'Default' }]
+        : [{ id: 'default', name: uiText('Default') }]
     const target = runtime.overviews.find((owner) => owner.profile.id === id)
     if (!target) throw new Error('This computer is no longer paired.')
     return (
@@ -276,7 +277,8 @@ export function WorkspaceStarter({
         }
       })
       .catch((cause: unknown) => {
-        if (current) setError(`Could not load browser profiles: ${String(cause)}`)
+        if (current)
+          setError(uiText('Could not load browser profiles: {value0}', { value0: String(cause) }))
       })
     return () => {
       current = false
@@ -556,7 +558,7 @@ export function WorkspaceStarter({
     >
       {!embedded && (
         <ScreenHeader
-          title={initialMode === 'terminal' ? 'New terminal' : 'Start something'}
+          title={initialMode === 'terminal' ? uiText('New terminal') : uiText('Start something')}
           onBack={() => router.back()}
         />
       )}
@@ -581,12 +583,12 @@ export function WorkspaceStarter({
             }}
           >
             {mode === 'terminal'
-              ? 'Start a terminal'
+              ? uiText('Start a terminal')
               : mode === 'browser'
-                ? 'Open a page'
+                ? uiText('Open a page')
                 : mode === 'thread'
-                  ? 'Start a thread'
-                  : 'What would you like to work on?'}
+                  ? uiText('Start a thread')
+                  : uiText('What would you like to work on?')}
           </Text>
           {mode !== 'browser' && !(mode === 'thread' && threadId) && (
             <ThreadStartModes
@@ -601,13 +603,13 @@ export function WorkspaceStarter({
               }}
               project={
                 <Choice
-                  label="Project"
+                  label={uiText('Project')}
                   hideLabel
                   compact
                   value={repositoryId}
                   disabled={busy || !connected}
                   items={[
-                    { id: '', name: 'Choose project', icon: 'folder' },
+                    { id: '', name: uiText('Choose project'), icon: 'folder' },
                     ...repositories
                       .filter((entry) => entry.kind !== 'scratch')
                       .map((entry) => ({ id: entry.id, name: entry.name })),
@@ -622,7 +624,7 @@ export function WorkspaceStarter({
               }
               server={
                 <Choice
-                  label="Computer"
+                  label={uiText('Computer')}
                   compact
                   quiet
                   hideLabel
@@ -648,18 +650,24 @@ export function WorkspaceStarter({
           )}
           {mode === 'thread' && threadId && (
             <Text style={styles.muted}>
-              Continuing{' '}
-              {owner?.snapshot?.workspace.tasks.find((task) => task.id === threadId)?.title ??
-                'thread'}
+              <InterfaceText
+                values={{
+                  value0:
+                    owner?.snapshot?.workspace.tasks.find((task) => task.id === threadId)?.title ??
+                    uiText('thread'),
+                }}
+              >
+                {'Continuing {value0}'}
+              </InterfaceText>
             </Text>
           )}
           {mode === 'browser' && (
             <Text style={styles.muted}>
               {browserSource === 'device'
-                ? 'This device'
+                ? uiText('This device')
                 : owner
                   ? runtimeComputerName(owner)
-                  : 'Choose a computer'}
+                  : uiText('Choose a computer')}
             </Text>
           )}
         </View>
@@ -677,7 +685,9 @@ export function WorkspaceStarter({
         >
           <TextInput
             testID="Workspace request"
-            accessibilityLabel={mode === 'terminal' ? 'Terminal command' : 'Workspace request'}
+            accessibilityLabel={
+              mode === 'terminal' ? uiText('Terminal command') : uiText('Workspace request')
+            }
             value={text}
             editable={!busy}
             multiline
@@ -693,12 +703,12 @@ export function WorkspaceStarter({
             selectionColor={colors.accent}
             placeholder={
               mode === 'terminal'
-                ? 'Optional command, or open an empty shell…'
+                ? uiText('Optional command, or open an empty shell…')
                 : mode === 'browser'
-                  ? 'Enter a URL or web search…'
+                  ? uiText('Enter a URL or web search…')
                   : mode === 'thread'
-                    ? 'What would you like to work on?'
-                    : 'Enter a request, URL or command…'
+                    ? uiText('What would you like to work on?')
+                    : uiText('Enter a request, URL or command…')
             }
             onFocus={() => setEditorFocused(true)}
             onBlur={() => setEditorFocused(false)}
@@ -732,7 +742,7 @@ export function WorkspaceStarter({
           >
             <IconButton
               icon="add"
-              label="Workspace options"
+              label={uiText('Workspace options')}
               size={44}
               onPress={() => {
                 Keyboard.dismiss()
@@ -742,14 +752,14 @@ export function WorkspaceStarter({
             />
             {initialMode === 'auto' ? (
               <Choice
-                label="Destination"
+                label={uiText('Destination')}
                 compact
                 hideLabel
                 value={mode}
                 disabled={busy}
                 items={[
-                  { id: 'auto', name: 'Auto', icon: 'magic' },
-                  { id: 'thread', name: 'Thread', icon: 'chat' },
+                  { id: 'auto', name: uiText('Auto'), icon: 'magic' },
+                  { id: 'thread', name: uiText('Thread'), icon: 'chat' },
                   { id: 'browser', name: uiText('Browser'), icon: 'web' },
                   { id: 'terminal', name: uiText('Terminal'), icon: 'terminal' },
                 ]}
@@ -783,7 +793,7 @@ export function WorkspaceStarter({
             )}
             {mode === 'terminal' && (
               <Choice
-                label="Shell"
+                label={uiText('Shell')}
                 hideLabel
                 compact
                 value={shellId}
@@ -815,32 +825,42 @@ export function WorkspaceStarter({
         <View style={{ gap: 12 }}>
           <Text accessibilityRole={reason ? 'alert' : undefined} style={styles.muted}>
             {reason
-              ? `Suggested ${mode}: ${reason}. Review the destination, then choose ${actionLabel}.`
+              ? uiText(
+                  'Suggested {value0}: {value1}. Review the destination, then choose {value2}.',
+                  { value0: mode, value1: reason, value2: actionLabel },
+                )
               : mode === 'auto'
-                ? 'Auto suggests a destination. Review it before sending.'
+                ? uiText('Auto suggests a destination. Review it before sending.')
                 : mode === 'terminal'
-                  ? `Terminal · ${owner ? runtimeComputerName(owner) : 'No computer'} · ${repository?.name ?? 'Home folder'}`
+                  ? uiText('Terminal · {value0} · {value1}', {
+                      value0: owner ? runtimeComputerName(owner) : 'No computer',
+                      value1: repository?.name ?? 'Home folder',
+                    })
                   : mode === 'thread'
-                    ? `Thread · ${threadId ? 'Continue existing thread' : 'New thread'}`
-                    : 'Browser · New page'}
+                    ? uiText('Thread · {value0}', {
+                        value0: threadId ? 'Continue existing thread' : 'New thread',
+                      })
+                    : uiText('Browser · New page')}
           </Text>
           {mode === 'terminal' && shells.key === ownerKey && shells.error && (
             <>
               <Text style={styles.error}>{shells.error}</Text>
               <Action
                 secondary
-                label="Retry shells"
+                label={uiText('Retry shells')}
                 onPress={() => setShellRetry((value) => value + 1)}
               />
             </>
           )}
           {!connected && mode !== 'browser' && (
-            <Text style={styles.muted}>Choose an online paired computer to continue.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Choose an online paired computer to continue.'}</InterfaceText>
+            </Text>
           )}
           {!runtime.overviews.length && mode !== 'browser' && (
             <Action
               secondary
-              label="Pair a computer"
+              label={uiText('Pair a computer')}
               onPress={() => router.push('/settings/devices')}
             />
           )}
@@ -853,12 +873,12 @@ export function WorkspaceStarter({
       </View>
       {options && (
         <Sheet
-          title={mode === 'terminal' ? 'Terminal options' : 'Workspace options'}
+          title={mode === 'terminal' ? uiText('Terminal options') : uiText('Workspace options')}
           onClose={() => setOptions(false)}
         >
           {mode === 'thread' && (
             <Choice
-              label="Thread destination"
+              label={uiText('Thread destination')}
               disabled={busy || !connected}
               value={threadId}
               items={[
@@ -875,11 +895,11 @@ export function WorkspaceStarter({
           )}
           {mode === 'browser' && (
             <Choice
-              label="Browser computer"
+              label={uiText('Browser computer')}
               value={browserSource}
               disabled={busy}
               items={[
-                { id: 'device', name: 'This device' },
+                { id: 'device', name: uiText('This device') },
                 ...runtime.overviews.map((entry) => ({
                   id: entry.profile.id,
                   name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · offline'}`,
@@ -902,12 +922,12 @@ export function WorkspaceStarter({
           )}
           {mode === 'browser' && (
             <Choice
-              label="Browser profile"
+              label={uiText('Browser profile')}
               value={profileId}
               disabled={busy || browserProfiles.key !== browserProfilesKey}
               items={(browserProfiles.key === browserProfilesKey
                 ? browserProfiles.items
-                : [{ id: 'default', name: 'Default' }]
+                : [{ id: 'default', name: uiText('Default') }]
               ).map((profile) => ({ id: profile.id, name: profile.name }))}
               onChange={(id) => {
                 invalidate()
@@ -918,13 +938,13 @@ export function WorkspaceStarter({
           {mode === 'terminal' && repositoryId && (
             <>
               <Choice
-                label="Checkout"
+                label={uiText('Checkout')}
                 disabled={busy}
                 value={checkout}
                 items={[
-                  { id: 'main', name: 'Local checkout' },
-                  { id: 'existing', name: 'Existing worktree' },
-                  { id: 'worktree', name: 'New worktree' },
+                  { id: 'main', name: uiText('Local checkout') },
+                  { id: 'existing', name: uiText('Existing worktree') },
+                  { id: 'worktree', name: uiText('New worktree') },
                 ]}
                 onChange={(value) => {
                   if (value === 'main' || value === 'existing' || value === 'worktree') {
@@ -936,7 +956,7 @@ export function WorkspaceStarter({
               />
               {checkout !== 'main' && (
                 <Choice
-                  label={checkout === 'existing' ? 'Worktree' : 'Base branch'}
+                  label={checkout === 'existing' ? uiText('Worktree') : uiText('Base branch')}
                   value={checkoutValue}
                   disabled={busy || !availableCheckouts}
                   items={availableCheckouts ?? []}
@@ -951,15 +971,20 @@ export function WorkspaceStarter({
                   <Text style={styles.error}>{choices.error}</Text>
                   <Action
                     secondary
-                    label="Retry checkouts"
+                    label={uiText('Retry checkouts')}
                     onPress={() => setCheckoutRetry((value) => value + 1)}
                   />
                 </>
               )}
               {checkout !== 'main' && availableCheckouts?.length === 0 && (
                 <Text style={styles.muted}>
-                  No {checkout === 'existing' ? 'worktrees' : 'branches'} available. Choose another
-                  checkout.
+                  <InterfaceText
+                    values={{
+                      value0: checkout === 'existing' ? uiText('worktrees') : uiText('branches'),
+                    }}
+                  >
+                    {'No {value0} available. Choose another checkout.'}
+                  </InterfaceText>
                 </Text>
               )}
             </>
@@ -973,9 +998,11 @@ export function WorkspaceStarter({
                   alignItems: 'center',
                 }}
               >
-                <Text>Remember session</Text>
+                <Text>
+                  <InterfaceText>{'Remember session'}</InterfaceText>
+                </Text>
                 <Switch
-                  accessibilityLabel="Remember terminal session"
+                  accessibilityLabel={uiText('Remember terminal session')}
                   value={remember && owner?.snapshot?.terminalRecoverySupported === true}
                   disabled={busy || !owner?.snapshot?.terminalRecoverySupported}
                   onValueChange={(value) => {
@@ -986,8 +1013,10 @@ export function WorkspaceStarter({
               </View>
               <Text style={styles.muted}>
                 {owner?.snapshot?.terminalRecoverySupported
-                  ? 'Recover supported tools after a computer restart. Settling idle sessions lets them sleep.'
-                  : 'Update this computer to enable persistent terminal recovery.'}
+                  ? uiText(
+                      'Recover supported tools after a computer restart. Settling idle sessions lets them sleep.',
+                    )
+                  : uiText('Update this computer to enable persistent terminal recovery.')}
               </Text>
             </View>
           )}

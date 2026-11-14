@@ -243,15 +243,15 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title={unified ? 'Workspace' : 'Terminals'}
+        title={unified ? uiText('Workspace') : uiText('Terminals')}
         buttons={[
           {
-            label: unified ? 'Start something' : 'New terminal',
+            label: unified ? uiText('Start something') : uiText('New terminal'),
             icon: 'add',
             onPress: () => router.push(unified ? '/workspace/new' : '/terminal/new'),
           },
           {
-            label: 'Workspace filters',
+            label: uiText('Workspace filters'),
             icon: 'filters',
             selected: filtered,
             onPress: () => setFiltering(true),
@@ -261,8 +261,8 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
       />
       <View style={{ ...contentColumn.collection, paddingHorizontal: 16, paddingBottom: 8 }}>
         <SearchField
-          label="Search workspace"
-          placeholder={unified ? 'Search your workspace' : 'Search terminals'}
+          label={uiText('Search workspace')}
+          placeholder={unified ? uiText('Search your workspace') : uiText('Search terminals')}
           style={{ fontSize: 15 }}
           value={view.search}
           onChangeText={(search) => {
@@ -317,17 +317,17 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
             <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
               <Icon name={waitingForThreads ? 'tasks' : 'search'} size={28} color={colors.muted} />
               <Text style={styles.title}>
-                {waitingForThreads ? 'Loading threads…' : 'No matching items'}
+                {waitingForThreads ? uiText('Loading threads…') : uiText('No matching items')}
               </Text>
               <Text style={styles.muted}>
                 {waitingForThreads
-                  ? 'Connecting to your computers.'
-                  : 'Try another title, project or computer.'}
+                  ? uiText('Connecting to your computers.')
+                  : uiText('Try another title, project or computer.')}
               </Text>
               {!waitingForThreads && (
                 <Action
                   secondary
-                  label="Clear filters"
+                  label={uiText('Clear filters')}
                   onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
                 />
               )}
@@ -337,7 +337,10 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
             row.kind === 'section' ? (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${row.title}, ${row.count} items`}
+                accessibilityLabel={uiText('{value0}, {value1} items', {
+                  value0: row.title,
+                  value1: row.count,
+                })}
                 accessibilityState={{
                   expanded: !!query || !preferences.collapsedThreadSections.includes(row.id),
                 }}
@@ -385,17 +388,17 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         />
       )}
       {filtering && (
-        <Sheet title="Workspace filters" onClose={() => setFiltering(false)}>
+        <Sheet title={uiText('Workspace filters')} onClose={() => setFiltering(false)}>
           {unified && (
             <Choice
-              label="Show"
+              label={uiText('Show')}
               value={view.kind}
               items={[
-                { id: 'all', name: 'Everything' },
+                { id: 'all', name: uiText('Everything') },
                 { id: 'thread', name: uiText('Threads') },
                 { id: 'bot', name: uiText('Bots') },
-                { id: 'browser', name: 'Pages' },
-                { id: 'terminal', name: 'Terminals' },
+                { id: 'browser', name: uiText('Pages') },
+                { id: 'terminal', name: uiText('Terminals') },
               ]}
               onChange={(kind) => {
                 savedScroll.current = 0
@@ -404,11 +407,11 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
             />
           )}
           <Choice
-            label="Computer"
+            label={uiText('Computer')}
             value={view.computer}
             items={[
-              { id: 'all', name: 'All computers' },
-              ...(unified ? [{ id: 'device', name: 'This device' }] : []),
+              { id: 'all', name: uiText('All computers') },
+              ...(unified ? [{ id: 'device', name: uiText('This device') }] : []),
               ...runtime.overviews.map((owner) => ({
                 id: owner.profile.id,
                 name: runtimeComputerName(owner),
@@ -421,7 +424,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label="Reset filters"
+            label={uiText('Reset filters')}
             onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
           />
         </Sheet>

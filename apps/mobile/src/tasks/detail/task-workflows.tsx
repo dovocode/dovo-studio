@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { taskWorkflows, workflowStateLabel, type TaskMetadata, type Subagent } from '@dovo/protocol'
 import { View, Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -12,17 +13,19 @@ export function TaskWorkflows({
   task: TaskMetadata
   onOpenThread: (thread: { taskId: string; agent: Subagent }) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected, profile } = useRuntime()
   const { colors, styles } = useTheme()
   const { navigate } = useNavigation()
   const workflows = taskWorkflows(task, snapshot?.workspace.tasks ?? [])
   if (!workflows.length) return null
   return (
-    <View accessibilityLabel="Workflows" style={{ gap: 12, marginBottom: 16 }}>
+    <View accessibilityLabel={uiText('Workflows')} style={{ gap: 12, marginBottom: 16 }}>
       {workflows.map((workflow) => (
         <View
           key={workflow.id}
-          accessibilityLabel={`Workflow: ${workflow.name}`}
+          accessibilityLabel={uiText('Workflow: {value0}', { value0: workflow.name })}
           style={{
             borderWidth: 1,
             borderColor: colors.border,
@@ -34,7 +37,7 @@ export function TaskWorkflows({
           <Text style={{ fontWeight: '600' }}>{workflow.name}</Text>
           <Text style={styles.muted}>
             {!connected && workflow.state === 'working'
-              ? 'Last seen working'
+              ? uiText('Last seen working')
               : workflowStateLabel[workflow.state]}
           </Text>
           {!!workflow.description && <Text style={styles.muted}>{workflow.description}</Text>}
@@ -45,10 +48,14 @@ export function TaskWorkflows({
               </Text>
               <Text style={styles.muted}>
                 {!connected && phase.state === 'working'
-                  ? 'Last seen working'
+                  ? uiText('Last seen working')
                   : workflowStateLabel[phase.state]}
               </Text>
-              {!phase.members.length && <Text style={styles.muted}>No agents assigned yet.</Text>}
+              {!phase.members.length && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No agents assigned yet.'}</InterfaceText>
+                </Text>
+              )}
               {phase.members.map((member) => (
                 <Pressable
                   key={member.id}

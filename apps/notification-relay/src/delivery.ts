@@ -1,6 +1,7 @@
 import { Apns, apnsConfig } from '@dovo/push'
 import {
   activityPayload,
+  liveActivityPriority,
   parseNotificationQuestion,
   notificationQuestionCategory,
   type RelayMessage,
@@ -75,6 +76,7 @@ export function createDelivery(env = process.env) {
                 value.token,
                 activityPayload(value.props, value.event === 'end', value.timestamp * 1000),
                 value.id,
+                liveActivityPriority(value.props, value.event === 'end'),
               )
             : await provider.sendAlert(value.token, appleNotificationPayload(value), value.id)
         if (result.status === 200) return { delivered: true, invalidToken: false }

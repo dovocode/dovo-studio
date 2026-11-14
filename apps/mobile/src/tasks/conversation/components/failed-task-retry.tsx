@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { Task } from '@dovo/protocol'
 import { responses } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -8,6 +9,8 @@ import { useTheme } from '../../../ui/theme'
 import { View } from 'react-native'
 
 export function FailedTaskRetry({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { connected, callEffect, snapshot } = useRuntime()
   const { busy, error, act } = useAction()
   const { styles } = useTheme()
@@ -22,7 +25,7 @@ export function FailedTaskRetry({ task }: { task: Task }) {
         <>
           <Action
             secondary
-            label={busy ? 'Retrying…' : 'Retry'}
+            label={busy ? uiText('Retrying…') : uiText('Retry')}
             disabled={
               !connected ||
               busy ||
@@ -34,7 +37,9 @@ export function FailedTaskRetry({ task }: { task: Task }) {
             }
           />
           <Text style={styles.muted}>
-            Continue with the current files. Queued messages stay paused.
+            <InterfaceText>
+              {'Continue with the current files. Queued messages stay paused.'}
+            </InterfaceText>
           </Text>
         </>
       )}

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Switch, View } from 'react-native'
@@ -37,12 +38,12 @@ export function WebsiteCustomizationEditor({
     if (busy) return
     const scriptError = !remove && draft.enabled && browserWebsiteScriptError(draft.script)
     if (scriptError) {
-      setError(`JavaScript: ${scriptError}`)
+      setError(uiText('JavaScript: {value0}', { value0: scriptError }))
       return
     }
     const result = decodeResult(browserWebsiteCustomizationSchema, draft)
     if (!result.success) {
-      setError('CSS and JavaScript must each be at most 64,000 characters.')
+      setError(uiText('CSS and JavaScript must each be at most 64,000 characters.'))
       return
     }
     setBusy(true)
@@ -57,21 +58,25 @@ export function WebsiteCustomizationEditor({
     }
   }
   return (
-    <Sheet ref={sheet} title="Customize website" onClose={onClose} busy={busy}>
+    <Sheet ref={sheet} title={uiText('Customize website')} onClose={onClose} busy={busy}>
       <Text style={styles.muted}>
-        {website.origin} · {profileName}. Saved for this profile only.
+        <InterfaceText values={{ value0: website.origin, value1: profileName }}>
+          {'{value0} · {value1}. Saved for this profile only.'}
+        </InterfaceText>
       </Text>
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-        <Text>Enable customization</Text>
+        <Text>
+          <InterfaceText>{'Enable customization'}</InterfaceText>
+        </Text>
         <Switch
-          accessibilityLabel="Enable customization"
+          accessibilityLabel={uiText('Enable customization')}
           value={draft.enabled}
           disabled={busy}
           onValueChange={(enabled) => setDraft({ ...draft, enabled })}
         />
       </View>
       <Field
-        label="Website CSS"
+        label={uiText('Website CSS')}
         multiline
         style={{ minHeight: 150, textAlignVertical: 'top', fontFamily: 'monospace' }}
         autoCapitalize="none"
@@ -82,7 +87,7 @@ export function WebsiteCustomizationEditor({
         onChangeText={(css) => setDraft({ ...draft, css })}
       />
       <Field
-        label="Website JavaScript"
+        label={uiText('Website JavaScript')}
         multiline
         style={{ minHeight: 120, textAlignVertical: 'top', fontFamily: 'monospace' }}
         autoCapitalize="none"
@@ -93,8 +98,11 @@ export function WebsiteCustomizationEditor({
         onChangeText={(script) => setDraft({ ...draft, script })}
       />
       <Text style={styles.muted}>
-        Scripts run at DOM ready with this website’s permissions. Saving reloads this tab. Reload
-        clears page changes but cannot undo changes to website data.
+        <InterfaceText>
+          {
+            'Scripts run at DOM ready with this website’s permissions. Saving reloads this tab. Reload clears page changes but cannot undo changes to website data.'
+          }
+        </InterfaceText>
       </Text>
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -103,15 +111,21 @@ export function WebsiteCustomizationEditor({
       ) : null}
       {onAgent && (
         <Action
-          label="Customize with agent…"
+          label={uiText('Customize with agent…')}
           secondary
           disabled={busy}
           onPress={() => sheet.current?.dismiss(() => onAgent(draft))}
         />
       )}
-      <Action label={uiText('Remove')} secondary disabled={busy} onPress={() => void save(true)} />
       <Action
-        label={busy ? 'Saving…' : 'Save and reload'}
+        destructive
+        label={uiText('Remove')}
+        secondary
+        disabled={busy}
+        onPress={() => void save(true)}
+      />
+      <Action
+        label={busy ? uiText('Saving…') : uiText('Save and reload')}
         disabled={busy}
         onPress={() => void save()}
       />

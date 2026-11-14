@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Linking, View } from 'react-native'
 import { router } from 'expo-router'
@@ -17,6 +18,8 @@ export default function PipelinePreview({
   target: LinkTarget
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const sheet = useRef<SheetHandle>(null)
   const [error, setError] = useState('')
   const { styles } = useTheme()
@@ -24,7 +27,7 @@ export default function PipelinePreview({
   const close = () => sheet.current?.dismiss()
   return (
     <Sheet
-      title="Pipeline preview"
+      title={uiText('Pipeline preview')}
       ref={sheet}
       presentation="dialog"
       scrollable={false}
@@ -33,12 +36,12 @@ export default function PipelinePreview({
         <View style={{ gap: 8 }}>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Action
-              label="Open details"
+              label={uiText('Open details')}
               secondary
               onPress={() => sheet.current?.dismiss(() => router.push(linkTargetHref(target)))}
             />
             <Action
-              label="Open URL"
+              label={uiText('Open URL')}
               secondary
               onPress={() => {
                 void Linking.openURL(target.url).catch((cause: unknown) => setError(String(cause)))
@@ -57,7 +60,7 @@ export default function PipelinePreview({
         <RuntimeRoute
           runtimeId={target.runtimeId}
           repositoryId={target.repositoryId}
-          title="Pipeline"
+          title={uiText('Pipeline')}
           backTo="/pulls"
           onBack={close}
         >

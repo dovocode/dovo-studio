@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useRef, useState } from 'react'
 import { Alert } from 'react-native'
 import { File, Paths } from 'expo-file-system'
@@ -14,6 +15,8 @@ import {
 import { useTheme } from '../theme'
 
 export function ArtifactWebView({ content, onError }: { content: string; onError: () => void }) {
+  const uiText = useInterfaceText()
+
   const [generation, setGeneration] = useState(0)
   const [nonce] = useState(() => Crypto.randomUUID())
   const sharing = useRef(false)
@@ -47,7 +50,7 @@ export function ArtifactWebView({ content, onError }: { content: string; onError
     const message = decodeResult(artifactDownloadMessageSchema, value).data
     if (message?.nonce !== nonce) return
     if (message.error) {
-      Alert.alert('Could not download file', message.error)
+      Alert.alert(uiText('Could not download file'), message.error)
       return
     }
     if (message.data === undefined || !message.name || !message.mime) return
@@ -68,7 +71,10 @@ export function ArtifactWebView({ content, onError }: { content: string; onError
         dialogTitle: name,
       })
     } catch (cause) {
-      Alert.alert('Could not download file', cause instanceof Error ? cause.message : String(cause))
+      Alert.alert(
+        uiText('Could not download file'),
+        cause instanceof Error ? cause.message : String(cause),
+      )
     } finally {
       sharing.current = false
       if (file?.exists) file.delete()

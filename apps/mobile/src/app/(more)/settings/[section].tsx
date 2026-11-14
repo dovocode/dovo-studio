@@ -80,10 +80,10 @@ export default function SettingsSection() {
   const [leaving, setLeaving] = useState(false)
   usePreventRemove(!!draftFlags && !leaving, ({ repeat }) => {
     if (draftFlags & 2) return
-    Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
-      { text: 'Keep editing', style: 'cancel' },
+    Alert.alert(uiText('Unsaved settings'), uiText('Discard unsaved settings changes?'), [
+      { text: uiText('Keep editing'), style: 'cancel' },
       {
-        text: 'Discard',
+        text: uiText('Discard'),
         style: 'destructive',
         onPress: () => {
           setLeaving(true)
@@ -111,7 +111,10 @@ export default function SettingsSection() {
       ) : (
         <View style={styles.screen}>
           <ScreenHeader title={uiText('Settings')} />
-          <Action label="Back to Settings" onPress={() => router.dismissTo('/settings')} />
+          <Action
+            label={uiText('Back to Settings')}
+            onPress={() => router.dismissTo('/settings')}
+          />
         </View>
       )}
     </WorkbenchDetailRoute>

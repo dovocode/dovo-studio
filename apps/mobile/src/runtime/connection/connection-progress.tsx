@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { connectionProgress, type RuntimeOverview } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
@@ -11,12 +12,14 @@ export function ConnectionProgress({
   entry: RuntimeOverview
   recovering?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const connectionType = useConnectionTypes()
   return (
     <View style={{ gap: 6 }}>
       <View
-        accessibilityLabel="Connection stages"
+        accessibilityLabel={uiText('Connection stages')}
         style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10 }}
       >
         {connectionProgress(entry, recovering).map((step) => (

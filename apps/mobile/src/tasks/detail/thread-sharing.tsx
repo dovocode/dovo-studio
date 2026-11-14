@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo } from 'react'
 import { ThreadSuggestions } from '../../ui/content/thread-suggestions'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -9,6 +10,8 @@ import { Sheet } from '../../ui/layout/sheet'
 import { SharingPanel } from '../../ui/content/sharing-panel'
 
 export function ThreadSharing({ onClose }: { onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { task } = useTaskConversation()
   const { call, activeId, connected } = useRuntime(),
     account = useMobileAccount()
@@ -30,7 +33,7 @@ export function ThreadSharing({ onClose }: { onClose: () => void }) {
   )
   if (task.example || !account.directory || account.deletionPending) return null
   return (
-    <Sheet title="Share thread" onClose={onClose}>
+    <Sheet title={uiText('Share thread')} onClose={onClose}>
       <SharingPanel
         key={`${account.client.sessionId()}:${activeId}:${task.id}`}
         sourceId={`${activeId}:${task.id}`}

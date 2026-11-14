@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { Effect } from 'effect'
@@ -35,6 +36,8 @@ export function DirectoryPicker(props: Props) {
   return <DirectoryBrowser key={clientScopeKey(connection)} {...props} />
 }
 function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { read, connected, profile, snapshot, readEffect } = useRuntime()
@@ -161,7 +164,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             gap: 4,
           }}
         >
-          <IconButton label="Back to project" icon="back" onPress={onClose} />
+          <IconButton label={uiText('Back to project')} icon="back" onPress={onClose} />
           <View
             style={{
               flex: 1,
@@ -169,10 +172,10 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             }}
           >
             <Field
-              label="Folder path"
+              label={uiText('Folder path')}
               hideLabel
               value={draft}
-              placeholder="Home folder"
+              placeholder={uiText('Home folder')}
               autoCorrect={false}
               returnKeyType="go"
               onChangeText={(path) => {
@@ -201,13 +204,13 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
           ]}
         >
           <IconButton
-            label="Home folder"
+            label={uiText('Home folder')}
             icon="home"
             disabled={!connected}
             onPress={() => navigate(data?.page.home ?? '~')}
           />
           <IconButton
-            label="Parent folder"
+            label={uiText('Parent folder')}
             icon="moveUp"
             disabled={!available || !page?.parent}
             onPress={() => {
@@ -242,7 +245,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
                 {index > 0 && <Icon name="next" size={10} color={colors.muted} />}
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel={`Open folder ${crumb.path}`}
+                  accessibilityLabel={uiText('Open folder {value0}', { value0: crumb.path })}
                   disabled={!available}
                   onPress={() => navigate(crumb.path)}
                   style={{
@@ -283,8 +286,8 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             }}
           >
             <SearchField
-              label="Filter folders"
-              placeholder="Find a folder"
+              label={uiText('Filter folders')}
+              placeholder={uiText('Find a folder')}
               value={location.query}
               editable={connected}
               onChangeText={(query) =>
@@ -303,7 +306,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
             }}
           >
             <Choice
-              label="Folder visibility"
+              label={uiText('Folder visibility')}
               hideLabel
               compact
               disabled={!connected}
@@ -311,11 +314,11 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
               items={[
                 {
                   id: 'visible',
-                  name: 'Visible',
+                  name: uiText('Visible'),
                 },
                 {
                   id: 'all',
-                  name: 'All folders',
+                  name: uiText('All folders'),
                 },
               ]}
               onChange={(value) =>
@@ -344,7 +347,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
       >
         {!connected && (
           <Text accessibilityRole="alert" style={styles.muted}>
-            Reconnect to browse and choose a folder.
+            <InterfaceText>{'Reconnect to browse and choose a folder.'}</InterfaceText>
           </Text>
         )}
         {!!error && (
@@ -357,7 +360,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
               {error}
             </Text>
             <Action
-              label="Retry folders"
+              label={uiText('Retry folders')}
               secondary
               disabled={!connected || busy}
               onPress={() =>
@@ -380,18 +383,22 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
           ]}
         >
           {!connected
-            ? 'Offline'
+            ? uiText('Offline')
             : error
-              ? 'Folder unavailable'
+              ? uiText('Folder unavailable')
               : busy
                 ? location.offset
-                  ? 'Loading more folders…'
-                  : 'Loading folders…'
+                  ? uiText('Loading more folders…')
+                  : uiText('Loading folders…')
                 : !page
                   ? '\u00a0'
                   : page.total === undefined
-                    ? `${page.entries.length} folders loaded`
-                    : `${page.entries.length} of ${page.total} ${page.total === 1 ? 'folder' : 'folders'}`}
+                    ? uiText('{value0} folders loaded', { value0: page.entries.length })
+                    : uiText('{value0} of {value1} {value2}', {
+                        value0: page.entries.length,
+                        value1: page.total,
+                        value2: page.total === 1 ? 'folder' : 'folders',
+                      })}
         </Text>
         {page && (
           <>
@@ -399,7 +406,7 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
               <Pressable
                 key={entry.path}
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${entry.name} folder`}
+                accessibilityLabel={uiText('Open {value0} folder', { value0: entry.name })}
                 disabled={!available}
                 onPress={() => navigate(entry.path)}
                 style={({ pressed }) => ({
@@ -441,13 +448,13 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
                 ]}
               >
                 {location.query
-                  ? 'No folders match this filter.'
-                  : 'No subfolders. You can choose this folder.'}
+                  ? uiText('No folders match this filter.')
+                  : uiText('No subfolders. You can choose this folder.')}
               </Text>
             )}
             {page.nextOffset !== null && (
               <Action
-                label="Load more folders"
+                label={uiText('Load more folders')}
                 secondary
                 disabled={!available}
                 onPress={() => {
@@ -465,10 +472,10 @@ function DirectoryBrowser({ initialPath, onSelect, onClose }: Props) {
       </ScrollView>
       <View style={styles.sheetFooter}>
         <Text numberOfLines={2} selectable style={styles.muted}>
-          {page?.path ?? (draft || 'Home folder')}
+          {page?.path ?? (draft || uiText('Home folder'))}
         </Text>
         <Action
-          label="Choose this folder"
+          label={uiText('Choose this folder')}
           disabled={!available}
           onPress={() => {
             if (available && page) onSelect(page.path)

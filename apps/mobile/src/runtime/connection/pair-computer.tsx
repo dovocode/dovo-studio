@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PairingField } from './pairing-field'
 import { finalizePairing } from './pair-finalization'
 import { PairingScanner } from './pairing-scanner'
@@ -43,6 +44,8 @@ export function PairComputer({
   invitation?: PairingInvitation
   onBusyChange?: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connect, cancelPairing } = useRuntime(),
@@ -223,26 +226,40 @@ export function PairComputer({
     <View style={{ gap: 20 }}>
       {replaceId ? (
         <Text style={styles.muted}>
-          Enter the new address and a fresh pairing code from the same computer. Your saved
-          connection stays unchanged until pairing succeeds.
+          <InterfaceText>
+            {
+              'Enter the new address and a fresh pairing code from the same computer. Your saved connection stays unchanged until pairing succeeds.'
+            }
+          </InterfaceText>
         </Text>
       ) : (
         <View style={{ gap: 12 }}>
           <Step number={1}>
-            On your computer, open Dovo and choose{' '}
-            <Text style={{ color: colors.text, fontWeight: '600' }}>Connect your phone</Text> in
-            Settings → Devices & runtime.
+            <InterfaceText
+              values={{
+                value0: (
+                  <Text style={{ color: colors.text, fontWeight: '600' }}>
+                    <InterfaceText>{'Connect your phone'}</InterfaceText>
+                  </Text>
+                ),
+              }}
+            >
+              {'On your computer, open Dovo and choose {value0} in Settings → Devices & runtime.'}
+            </InterfaceText>
           </Step>
           <Step number={2}>
-            Scan the QR code in this app to connect over the internet. No VPN or local IP needed.
-            You can also pair using a LAN / VPN address.
+            <InterfaceText>
+              {
+                'Scan the QR code in this app to connect over the internet. No VPN or local IP needed. You can also pair using a LAN / VPN address.'
+              }
+            </InterfaceText>
           </Step>
         </View>
       )}
       {!pending && (
         <Action
           secondary
-          label="Scan pairing QR code"
+          label={uiText('Scan pairing QR code')}
           disabled={busy || finishing}
           onPress={() => {
             Keyboard.dismiss()
@@ -265,10 +282,15 @@ export function PairComputer({
       )}
       {peer ? (
         <View style={[styles.card, { gap: 6 }]}>
-          <Text>Internet connection</Text>
+          <Text>
+            <InterfaceText>{'Internet connection'}</InterfaceText>
+          </Text>
           <Text style={styles.muted}>
-            WebRTC + STUN · end-to-end encrypted. No VPN or computer address needed. Keep Dovo open
-            on the computer.
+            <InterfaceText>
+              {
+                'WebRTC + STUN · end-to-end encrypted. No VPN or computer address needed. Keep Dovo open on the computer.'
+              }
+            </InterfaceText>
           </Text>
           <PeerRelayChoice
             value={peer.relay}
@@ -277,7 +299,7 @@ export function PairComputer({
           />
           <Action
             secondary
-            label="Use a LAN / VPN address instead"
+            label={uiText('Use a LAN / VPN address instead')}
             disabled={!!pending || busy}
             onPress={() => {
               setPeer(undefined)
@@ -291,9 +313,9 @@ export function PairComputer({
         <View style={{ gap: 14 }}>
           <PairingField
             key={`address:${inputRevision}`}
-            label="Computer address"
+            label={uiText('Computer address')}
             placeholder="192.168.1.20:51464"
-            hint="Wi-Fi, Tailscale and NetBird addresses all work. Include the port."
+            hint={uiText('Wi-Fi, Tailscale and NetBird addresses all work. Include the port.')}
             keyboardType="url"
             autoCorrect={false}
             autoComplete="off"
@@ -304,12 +326,15 @@ export function PairComputer({
           />
           <PairingField
             key={`code:${inputRevision}`}
-            label="Pairing code"
-            placeholder="8-digit code"
+            label={uiText('Pairing code')}
+            placeholder={uiText('8-digit code')}
             hint={
               digits && digits < 8
-                ? `${8 - digits} more digit${8 - digits === 1 ? '' : 's'}`
-                : 'Codes expire after two minutes.'
+                ? uiText('{value0} more digit{value1}', {
+                    value0: 8 - digits,
+                    value1: 8 - digits === 1 ? '' : 's',
+                  })
+                : uiText('Codes expire after two minutes.')
             }
             keyboardType="number-pad"
             textContentType="oneTimeCode"
@@ -332,16 +357,19 @@ export function PairComputer({
           <View style={[styles.row, { flexWrap: 'nowrap' }]}>
             <ActivityIndicator color={colors.accent} />
             <Text style={[styles.text, { flex: 1, fontWeight: '600' }]}>
-              {finishing ? 'Saving connection…' : 'Waiting for your computer'}
+              {finishing ? uiText('Saving connection…') : uiText('Waiting for your computer')}
             </Text>
           </View>
           <Text style={styles.muted}>
-            Keep this screen open and the computer online. If your computer asks, approve this phone
-            there to finish.
+            <InterfaceText>
+              {
+                'Keep this screen open and the computer online. If your computer asks, approve this phone there to finish.'
+              }
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Cancel pairing"
+            label={uiText('Cancel pairing')}
             disabled={busy || finishing}
             onPress={() =>
               act(() =>
@@ -366,17 +394,17 @@ export function PairComputer({
       ) : (
         <Action
           wide
-          label={busy ? 'Connecting…' : 'Connect'}
+          label={busy ? uiText('Connecting…') : uiText('Connect')}
           disabled={busy || digits !== 8 || !name.trim() || !address.trim()}
           onPress={submit}
         />
       )}
       {keyboard && !inSheet && (
-        <Action secondary label="Dismiss keyboard" onPress={() => Keyboard.dismiss()} />
+        <Action secondary label={uiText('Dismiss keyboard')} onPress={() => Keyboard.dismiss()} />
       )}
       <View>
         <Disclosure
-          label="Name this computer and phone"
+          label={uiText('Name this computer and phone')}
           testID="Pairing options"
           open={options}
           onToggle={() => setOptions(!options)}
@@ -384,16 +412,16 @@ export function PairComputer({
         {options && (
           <View style={{ gap: 14, paddingBottom: 8 }}>
             <PairingField
-              label="Computer name"
-              placeholder="Optional · Work Mac, Home server…"
+              label={uiText('Computer name')}
+              placeholder={uiText('Optional · Work Mac, Home server…')}
               value={computerName}
               onChangeText={setComputerName}
               editable={!pending && !busy}
               maxLength={80}
             />
             <PairingField
-              label="This phone’s name"
-              hint="Shown on your computer’s list of paired devices."
+              label={uiText('This phone’s name')}
+              hint={uiText('Shown on your computer’s list of paired devices.')}
               value={name}
               onChangeText={setName}
               editable={!pending && !busy}
@@ -402,7 +430,7 @@ export function PairComputer({
           </View>
         )}
         <Disclosure
-          label={error || pairError ? 'Trouble connecting?' : 'How to connect'}
+          label={error || pairError ? uiText('Trouble connecting?') : uiText('How to connect')}
           testID="Connection help"
           open={help}
           onToggle={() => setHelp(!help)}

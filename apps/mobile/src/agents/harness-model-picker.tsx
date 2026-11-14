@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import {
@@ -63,6 +64,8 @@ function ComputerModelPicker({
   options,
   onChange,
 }: PickerProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { snapshot, callEffect, connected, profile } = useRuntime()
   const [filter, setFilter] = useState('all')
@@ -144,14 +147,18 @@ function ComputerModelPicker({
     savePreference(candidate, model, { favorite: !favorite(candidate, model) })
   return (
     <View
-      accessibilityLabel={`Selected on ${computer}: ${choices.find((choice) => choice.id === selection)?.name ?? agent.name}, ${agent.model ? modelName : 'Provider default'}`}
+      accessibilityLabel={uiText('Selected on {value0}: {value1}, {value2}', {
+        value0: computer,
+        value1: choices.find((choice) => choice.id === selection)?.name ?? agent.name,
+        value2: agent.model ? modelName : 'Provider default',
+      })}
       style={{ gap: 12 }}
     >
       <View style={{ gap: 8 }}>
         <View style={{ flex: 1, minWidth: 0 }}>
           <SearchField
-            label="Search harnesses and models"
-            placeholder="Find a model"
+            label={uiText('Search harnesses and models')}
+            placeholder={uiText('Find a model')}
             value={query}
             onChangeText={setQuery}
             onSubmitEditing={() => {
@@ -175,14 +182,14 @@ function ComputerModelPicker({
         </View>
         <View style={{ alignSelf: 'flex-start', maxWidth: '100%' }}>
           <ChoiceControl
-            label="Filter models"
+            label={uiText('Filter models')}
             hideLabel
             compact
             value={filter}
             items={[
-              { id: 'all', name: 'All providers' },
-              { id: 'favorites', name: 'Favorites' },
-              ...(!modelsOnly ? [{ id: 'agents', name: 'Saved agents' }] : []),
+              { id: 'all', name: uiText('All providers') },
+              { id: 'favorites', name: uiText('Favorites') },
+              ...(!modelsOnly ? [{ id: 'agents', name: uiText('Saved agents') }] : []),
               ...providers.map((choice) => ({ id: choice.id, name: choice.name })),
             ]}
             onChange={(value) => {
@@ -194,7 +201,9 @@ function ComputerModelPicker({
         </View>
       </View>
       <View
-        accessibilityLabel={filter === 'agents' ? 'Saved agents' : 'Available models'}
+        accessibilityLabel={
+          filter === 'agents' ? uiText('Saved agents') : uiText('Available models')
+        }
         style={{ gap: 8 }}
       >
         {filter === 'agents' ? (
@@ -237,8 +246,8 @@ function ComputerModelPicker({
             ) && (
               <Text style={styles.muted}>
                 {savedAgents.length
-                  ? 'No matching saved agents.'
-                  : 'No saved agents. Create one in Settings.'}
+                  ? uiText('No matching saved agents.')
+                  : uiText('No saved agents. Create one in Settings.')}
               </Text>
             )}
           </>
@@ -289,15 +298,17 @@ function ComputerModelPicker({
         )}
       </View>
       <View style={{ gap: 6 }}>
-        <Text style={[styles.muted, { fontSize: 13, paddingHorizontal: 12 }]}>Options</Text>
+        <Text style={[styles.muted, { fontSize: 13, paddingHorizontal: 12 }]}>
+          <InterfaceText>{'Options'}</InterfaceText>
+        </Text>
         <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden' }}>
           <ChoiceControl
             row
-            label="Reasoning level"
+            label={uiText('Reasoning level')}
             value={agent.reasoning || selectedModel?.defaultReasoning || ''}
             disabled={disabled}
             items={[
-              { id: '', name: 'Provider default' },
+              { id: '', name: uiText('Provider default') },
               ...efforts,
               ...(agent.reasoning && !efforts.some((effort) => effort.id === agent.reasoning)
                 ? [{ id: agent.reasoning, name: agent.reasoning }]
@@ -308,7 +319,7 @@ function ComputerModelPicker({
           {!modelsOnly && agent.provider === 'codex' && (
             <ChoiceControl
               row
-              label="Speed"
+              label={uiText('Speed')}
               value={serviceTierValue(agent.serviceTier)}
               disabled={disabled}
               items={modelServiceTiers(catalog, agent.model, agent.serviceTier).map((tier) => ({
@@ -331,15 +342,19 @@ function ComputerModelPicker({
       )}
       <Action
         secondary
-        label={catalogExpanded ? 'Hide catalog settings' : 'Catalog settings'}
+        label={catalogExpanded ? uiText('Hide catalog settings') : uiText('Catalog settings')}
         onPress={() => setCatalogExpanded(!catalogExpanded)}
       />
       {catalogExpanded && filter !== 'agents' && (
         <>
           <View style={{ backgroundColor: colors.surface, borderRadius: 16, overflow: 'hidden' }}>
             {[
-              { label: 'Manage hidden models', value: manageHidden, change: setManageHidden },
-              { label: 'Legacy models', value: showLegacy, change: setShowLegacy },
+              {
+                label: uiText('Manage hidden models'),
+                value: manageHidden,
+                change: setManageHidden,
+              },
+              { label: uiText('Legacy models'), value: showLegacy, change: setShowLegacy },
             ].map((control) => (
               <View
                 key={control.label}
@@ -365,7 +380,7 @@ function ComputerModelPicker({
             <View style={{ flex: 1, minWidth: 0 }}>
               <Action
                 secondary
-                label="Custom model…"
+                label={uiText('Custom model…')}
                 disabled={disabled || !customAgent}
                 onPress={() => {
                   setCustom(!custom)
@@ -375,7 +390,7 @@ function ComputerModelPicker({
             </View>
             <Action
               secondary
-              label="Refresh models"
+              label={uiText('Refresh models')}
               disabled={!connected}
               onPress={() => {
                 for (const entry of catalogs.current.values()) entry.refresh()
@@ -385,8 +400,8 @@ function ComputerModelPicker({
           {custom && customAgent && customChoice && (
             <View style={{ gap: 8 }}>
               <SearchField
-                label="Custom model ID"
-                placeholder={`${customChoice.name} model ID`}
+                label={uiText('Custom model ID')}
+                placeholder={uiText('{value0} model ID', { value0: customChoice.name })}
                 value={customId}
                 onChangeText={setCustomId}
                 autoFocus
@@ -394,7 +409,7 @@ function ComputerModelPicker({
                 onSubmitEditing={applyCustom}
               />
               <Action
-                label="Use model"
+                label={uiText('Use model')}
                 disabled={disabled || !customId.trim()}
                 onPress={applyCustom}
               />
@@ -443,6 +458,8 @@ function ProviderModels({
   showLegacy: boolean
   toggleHidden: (model: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { connected } = useRuntime()
   const [expanded, setExpanded] = useState(
@@ -527,7 +544,7 @@ function ProviderModels({
     <View style={{ gap: 4 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`${choice.name} models`}
+        accessibilityLabel={uiText('{value0} models', { value0: choice.name })}
         accessibilityState={{ expanded: open }}
         onPress={() => setExpanded(!expanded)}
         disabled={narrowed}
@@ -567,9 +584,9 @@ function ProviderModels({
                   accessibilityRole="button"
                   accessibilityLabel={
                     'typed' in model
-                      ? `Use custom model ${model.id}`
+                      ? uiText('Use custom model {value0}', { value0: model.id })
                       : 'custom' in model
-                        ? `${model.name} (saved/custom)`
+                        ? uiText('{value0} (saved/custom)', { value0: model.name })
                         : model.name
                   }
                   accessibilityState={{
@@ -635,7 +652,7 @@ function ProviderModels({
                 {manageHidden && !('typed' in model) && (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`${preferences?.[modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)]?.disabled ? 'Show' : 'Hide'} ${model.name}`}
+                    accessibilityLabel={`${preferences?.[modelPreferenceKey(candidate.provider, model.id, candidate.acpInstallationId)]?.disabled ? uiText('Show') : uiText('Hide')} ${model.name}`}
                     disabled={favoriteDisabled}
                     onPress={() => toggleHidden(model.id)}
                     style={{
@@ -665,7 +682,7 @@ function ProviderModels({
                 {!('typed' in model) && (
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={`${favorite(candidate, model.id) ? 'Unfavorite' : 'Favorite'} ${model.name}`}
+                    accessibilityLabel={`${favorite(candidate, model.id) ? uiText('Unfavorite') : uiText('Favorite')} ${model.name}`}
                     accessibilityState={{
                       selected: favorite(candidate, model.id),
                       disabled: favoriteDisabled,
@@ -694,21 +711,31 @@ function ProviderModels({
           {models.length > shown.length && (
             <Action
               secondary
-              label={`Show ${Math.min(pageSize, models.length - shown.length)} more models`}
+              label={uiText('Show {value0} more models', {
+                value0: Math.min(pageSize, models.length - shown.length),
+              })}
               onPress={() => setLimit(limit + pageSize)}
             />
           )}
-          {loading && <Text style={styles.muted}>Loading models…</Text>}
+          {loading && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading models…'}</InterfaceText>
+            </Text>
+          )}
           {!loading && !rows.length && (
             <Text style={styles.muted}>
               {favoritesOnly
                 ? search
-                  ? 'No matching favorites.'
-                  : 'No favorite models for this harness.'
-                : 'No matching models.'}
+                  ? uiText('No matching favorites.')
+                  : uiText('No favorite models for this harness.')
+                : uiText('No matching models.')}
             </Text>
           )}
-          {!connected && !!catalog && <Text style={styles.muted}>Offline · saved list</Text>}
+          {!connected && !!catalog && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Offline · saved list'}</InterfaceText>
+            </Text>
+          )}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}

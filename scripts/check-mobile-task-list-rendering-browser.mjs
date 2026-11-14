@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
@@ -8,6 +9,9 @@ import { checkMobileTaskSearch } from './browser/mobile-task-search.mjs'
 // Native controls/storage/network are browser adapters; row-menu leaves count renders.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
+const catalog = JSON.parse(
+  readFileSync(root + 'packages/studio-core/src/interface-catalog.json', 'utf8'),
+)
 const controls = `
 import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};
@@ -251,6 +255,7 @@ import {dispatchKeyboardSearch} from './apps/mobile/src/shell/keyboard-search';w
 import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
+import {InterfaceLanguageProvider} from './packages/studio-core/src/interface-language.tsx';
 import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts';
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
@@ -287,7 +292,8 @@ window.publish=changes=>flushSync(()=>{
 function Probe(){window.runtime=useRuntime();window.messageReveal=useMessageReveal();return null}
 function PaneProbe({children}){const runtime=useRuntime();const {setView}=useTaskListView();window.resetThreadList=()=>setView({project:'',search:'',filter:'active',source:'all',sort:'newest'});const[sources,setSources]=useState(null);window.setListSources=value=>flushSync(()=>setSources(value));const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={sources?{...runtime,activeId:'shared-peer',overviews:sources,profiles:sources.map(source=>source.profile),selectRuntimeEffect:id=>window.holdSelection?Effect.promise(()=>new Promise(resolve=>window.releaseSelection=resolve)):runtime.selectRuntimeEffect(id)}:showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
 function Screen(){const[lifecycle,setLifecycle]=useState(null);window.showBotLifecycle=setLifecycle;const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return lifecycle?<LifecycleActions task={lifecycle}/>:overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
-createRoot(document.getElementById('app')).render(<ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider>);
+function Language({children}){const[language,setLanguage]=useState('en-US');window.setInterfaceLanguage=setLanguage;return <InterfaceLanguageProvider language={language}>{children}</InterfaceLanguageProvider>}
+createRoot(document.getElementById('app')).render(<Language><ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider></Language>);
 `,
     },
     conditions: ['development'],
@@ -1487,6 +1493,19 @@ try {
   const workingHeader = page.getByRole('button', { name: /^Working,/ })
   const openHeader = page.getByRole('button', { name: /^Pinned, \d+ tasks$/ })
   const waitingHeader = page.getByRole('button', { name: /^Waiting,/ })
+  await waitingHeader.waitFor()
+  await page.evaluate(() => window.setInterfaceLanguage('nl-NL'))
+  await page.getByRole('button', { name: new RegExp('^' + catalog.nl.Working + ',') }).waitFor()
+  await page.getByRole('button', { name: new RegExp('^' + catalog.nl.Pinned + ',') }).waitFor()
+  await page.getByText('Pinned working', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.snapshot.workspace.tasks.find((task) => task.id === 'pinned-working').title,
+    ),
+    'Pinned working',
+    'Translated sections keep the task title unchanged',
+  )
+  await page.evaluate(() => window.setInterfaceLanguage('en-US'))
   await waitingHeader.waitFor()
   assert.equal(
     await workingHeader.evaluate(

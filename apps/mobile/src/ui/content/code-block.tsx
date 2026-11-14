@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useMemo, useState } from 'react'
 import { Platform, Pressable, ScrollView, View } from 'react-native'
 import { useTheme } from '../theme'
@@ -8,6 +9,8 @@ import { Text } from './text'
 
 /** Inline source viewer: one native selectable paragraph keeps copied code intact. */
 export function CodeBlock({ content, language }: { content: string; language?: string }) {
+  const uiText = useInterfaceText()
+
   const { colors, syntaxTheme } = useTheme()
   const [wrap, setWrap] = useState(false)
   const lang = syntaxLanguage(language)
@@ -69,14 +72,16 @@ export function CodeBlock({ content, language }: { content: string; language?: s
           borderColor: colors.border,
         }}
       >
-        <Text style={{ color: syntaxTheme.fg, fontSize: 12 }}>{language || 'Code'}</Text>
+        <Text style={{ color: syntaxTheme.fg, fontSize: 12 }}>{language || uiText('Code')}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={wrap ? 'Scroll code horizontally' : 'Wrap code lines'}
+          accessibilityLabel={wrap ? uiText('Scroll code horizontally') : uiText('Wrap code lines')}
           onPress={() => setWrap((value) => !value)}
           style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}
         >
-          <Text style={{ color: syntaxTheme.fg, fontSize: 12 }}>{wrap ? 'Scroll' : 'Wrap'}</Text>
+          <Text style={{ color: syntaxTheme.fg, fontSize: 12 }}>
+            {wrap ? uiText('Scroll') : uiText('Wrap')}
+          </Text>
         </Pressable>
       </View>
       {wrap ? (

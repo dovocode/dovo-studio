@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useMemo, type ComponentProps } from 'react'
 import { Alert } from 'react-native'
 import { responses, threadPullLink } from '@dovo/protocol'
@@ -23,6 +24,8 @@ export function ThreadMarkdown({
 }: Omit<ComponentProps<typeof Markdown>, 'onLinkLongPress' | 'onLinkPress'> & {
   plainText?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const appendTemplate = useAppendConversationTemplate()
   const taskId = useConversationSelector((value) => value.task.id)
   const origin = useLinkOrigin(taskId)
@@ -61,16 +64,16 @@ export function ThreadMarkdown({
     void openAppLink(url, false, origin, [
       {
         signal: linkActions.current?.signal,
-        label: linked ? 'Already linked to this thread' : 'Link to this thread',
+        label: linked ? uiText('Already linked to this thread') : uiText('Link to this thread'),
         disabled: !!linked || !connected || archived || (linkedPullRequests?.length ?? 0) >= 20,
         run: () => call('/api/scm/pulls/link-thread', { id: taskId, pulls: [pull] }, responses.ok),
       },
-    ]).catch((cause: unknown) => Alert.alert('Could not open link', String(cause)))
+    ]).catch((cause: unknown) => Alert.alert(uiText('Could not open link'), String(cause)))
     return true
   }
   const open = (url: string) => {
     void openAppLink(url, false, origin).catch((cause: unknown) => {
-      Alert.alert('Could not open link', String(cause))
+      Alert.alert(uiText('Could not open link'), String(cause))
     })
   }
   return (

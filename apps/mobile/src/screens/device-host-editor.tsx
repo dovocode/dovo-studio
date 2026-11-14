@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import type { RuntimeProfile } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -45,30 +46,35 @@ export function DeviceHostEditor({
   onSave: () => void
   onCancel: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const change = (patch: Partial<DeviceHostDraft>) => onChange({ ...draft, ...patch })
   return (
     <View style={{ gap: 20 }}>
       <Text style={styles.muted}>
-        The current runtime connects over SSH to the destination computer. Install an updated Dovo
-        runtime there and pair it with this phone first.
+        <InterfaceText>
+          {
+            'The current runtime connects over SSH to the destination computer. Install an updated Dovo runtime there and pair it with this phone first.'
+          }
+        </InterfaceText>
       </Text>
       <View style={styles.card}>
         <Field
-          label="Device host name"
+          label={uiText('Device host name')}
           value={draft.name}
           editable={!busy}
           onChangeText={(name) => change({ name })}
           maxLength={80}
         />
         <Choice
-          label="Paired destination computer"
+          label={uiText('Paired destination computer')}
           value={draft.pairedProfileId}
           disabled={busy}
           items={[
             ...(draft.hasToken
-              ? [{ id: '', name: 'Keep saved pairing' }]
-              : [{ id: '', name: 'Choose a paired computer' }]),
+              ? [{ id: '', name: uiText('Keep saved pairing') }]
+              : [{ id: '', name: uiText('Choose a paired computer') }]),
             ...profiles.map((profile) => ({
               id: profile.id,
               name: runtimeComputerName({ profile }),
@@ -83,10 +89,12 @@ export function DeviceHostEditor({
           }}
         />
         <Text style={styles.muted}>
-          Uses the destination’s saved pairing securely. No pairing token is shown here.
+          <InterfaceText>
+            {'Uses the destination’s saved pairing securely. No pairing token is shown here.'}
+          </InterfaceText>
         </Text>
         <Field
-          label="Destination runtime address"
+          label={uiText('Destination runtime address')}
           value={draft.runtimeAddress}
           editable={!busy}
           onChangeText={(runtimeAddress) => change({ runtimeAddress })}
@@ -95,22 +103,25 @@ export function DeviceHostEditor({
           autoCorrect={false}
         />
         <Text style={styles.muted}>
-          HTTP and HTTPS are supported. Use an address reachable from the current runtime. If the
-          address differs from your saved profile, choose the pairing for that same destination.
+          <InterfaceText>
+            {
+              'HTTP and HTTPS are supported. Use an address reachable from the current runtime. If the address differs from your saved profile, choose the pairing for that same destination.'
+            }
+          </InterfaceText>
         </Text>
       </View>
       <View style={styles.card}>
         <Field
-          label="SSH host"
+          label={uiText('SSH host')}
           value={draft.sshHost}
           editable={!busy}
           onChangeText={(sshHost) => change({ sshHost })}
           autoCapitalize="none"
           autoCorrect={false}
-          placeholder="mac-mini.local or VPN address"
+          placeholder={uiText('mac-mini.local or VPN address')}
         />
         <Field
-          label="SSH user"
+          label={uiText('SSH user')}
           value={draft.sshUser}
           editable={!busy}
           onChangeText={(sshUser) => change({ sshUser })}
@@ -118,14 +129,14 @@ export function DeviceHostEditor({
           autoCorrect={false}
         />
         <Field
-          label="SSH port"
+          label={uiText('SSH port')}
           value={draft.sshPort}
           editable={!busy}
           onChangeText={(sshPort) => change({ sshPort })}
           keyboardType="number-pad"
         />
         <Field
-          label="SSH identity file path (optional)"
+          label={uiText('SSH identity file path (optional)')}
           value={draft.identityFile}
           editable={!busy}
           onChangeText={(identityFile) => change({ identityFile })}
@@ -134,27 +145,33 @@ export function DeviceHostEditor({
           placeholder="/home/user/.ssh/id_ed25519"
         />
         <Text style={styles.muted}>
-          This key path belongs to the current runtime computer, not this phone or the destination.
-          Leave it empty for the runtime’s SSH defaults. Key authentication only; never paste or
-          upload a private key.
+          <InterfaceText>
+            {
+              'This key path belongs to the current runtime computer, not this phone or the destination. Leave it empty for the runtime’s SSH defaults. Key authentication only; never paste or upload a private key.'
+            }
+          </InterfaceText>
         </Text>
       </View>
       <View style={styles.card}>
         <View style={styles.row}>
-          <Text style={[styles.text, { flex: 1 }]}>Allow agent access</Text>
+          <Text style={[styles.text, { flex: 1 }]}>
+            <InterfaceText>{'Allow agent access'}</InterfaceText>
+          </Text>
           <Switch
-            accessibilityLabel="Allow agent access to device host"
+            accessibilityLabel={uiText('Allow agent access to device host')}
             value={draft.agentAccess}
             disabled={busy}
             onValueChange={(agentAccess) => change({ agentAccess })}
           />
         </View>
         <Text style={styles.muted}>
-          Off by default. Enable to let agents discover and control devices on this host.
+          <InterfaceText>
+            {'Off by default. Enable to let agents discover and control devices on this host.'}
+          </InterfaceText>
         </Text>
       </View>
       <Action
-        label={busy ? 'Working…' : 'Test connection & readiness'}
+        label={busy ? uiText('Working…') : uiText('Test connection & readiness')}
         disabled={busy}
         onPress={onTest}
       />
@@ -177,11 +194,11 @@ export function DeviceHostEditor({
       )}
       <Text style={styles.muted}>
         {ready
-          ? 'Readiness checks passed. Ready to save.'
-          : 'Test this draft successfully before saving. Changes require a new test.'}
+          ? uiText('Readiness checks passed. Ready to save.')
+          : uiText('Test this draft successfully before saving. Changes require a new test.')}
       </Text>
-      <Action label="Save device host" disabled={busy || !ready} onPress={onSave} />
-      <Action secondary label="Cancel editing" disabled={busy} onPress={onCancel} />
+      <Action label={uiText('Save device host')} disabled={busy || !ready} onPress={onSave} />
+      <Action secondary label={uiText('Cancel editing')} disabled={busy} onPress={onCancel} />
     </View>
   )
 }

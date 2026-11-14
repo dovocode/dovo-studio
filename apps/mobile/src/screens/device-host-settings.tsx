@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SettingsScrollView } from './settings-search'
 import { useEffect, useRef } from 'react'
 import { Alert, View } from 'react-native'
@@ -33,6 +34,8 @@ export function DeviceHostSettings({
   onBusyChange?: (busy: boolean) => void
   onDirtyChange?: (dirty: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const { profile, profiles, connected, read, call } = useRuntime()
   const [settings, setSettings] = useApplicationState<Settings | null>(null)
@@ -141,17 +144,28 @@ export function DeviceHostSettings({
   return (
     <View style={{ gap: 20 }}>
       <Text style={styles.muted}>
-        Saved on {profile ? runtimeComputerName({ profile }) : 'the current runtime'}. Discover and
-        control simulators and connected phones on other paired computers over SSH.
+        <InterfaceText
+          values={{
+            value0: profile ? runtimeComputerName({ profile }) : uiText('the current runtime'),
+          }}
+        >
+          {
+            'Saved on {value0}. Discover and control simulators and connected phones on other paired computers over SSH.'
+          }
+        </InterfaceText>
       </Text>
       {!connected && (
         <Text accessibilityRole="alert" style={styles.muted}>
-          This computer is offline. Reconnect to load or save device hosts. Your draft is kept here.
+          <InterfaceText>
+            {
+              'This computer is offline. Reconnect to load or save device hosts. Your draft is kept here.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {loading && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Loading device hosts…
+          <InterfaceText>{'Loading device hosts…'}</InterfaceText>
         </Text>
       )}
       {!!error && (
@@ -162,17 +176,19 @@ export function DeviceHostSettings({
       {!!error && (
         <Action
           secondary
-          label="Retry device host settings"
+          label={uiText('Retry device host settings')}
           disabled={disabled}
           onPress={() => setRetry((value) => value + 1)}
         />
       )}
       <SettingsGroup
-        title="Device Hub"
-        footer="Enable device discovery and controls on this runtime. Turning it off keeps saved hosts and leaves devices running."
+        title={uiText('Device Hub')}
+        footer={uiText(
+          'Enable device discovery and controls on this runtime. Turning it off keeps saved hosts and leaves devices running.',
+        )}
       >
         <SettingsSwitchRow
-          label="Enable Device Hub"
+          label={uiText('Enable Device Hub')}
           value={settings?.enabled === true}
           disabled={disabled || !settings}
           onValueChange={(enabled) =>
@@ -255,14 +271,16 @@ export function DeviceHostSettings({
           settings && (
             <>
               <SettingsGroup
-                title="Remote device hosts"
-                footer="The destination requires an updated installed Dovo runtime and an existing pairing. SSH alone does not grant Dovo access."
+                title={uiText('Remote device hosts')}
+                footer={uiText(
+                  'The destination requires an updated installed Dovo runtime and an existing pairing. SSH alone does not grant Dovo access.',
+                )}
               >
                 {settings.hosts.map((host, index) => (
                   <SettingsRow
                     key={host.id}
                     title={host.name}
-                    subtitle={`${host.sshUser}@${host.sshHost}:${host.sshPort} · ${host.agentAccess ? 'Agent access on' : 'Agent access off'}`}
+                    subtitle={`${host.sshUser}@${host.sshHost}:${host.sshPort} · ${host.agentAccess ? uiText('Agent access on') : uiText('Agent access off')}`}
                     icon="device"
                     last={index === settings.hosts.length - 1}
                     disabled={disabled}
@@ -276,13 +294,15 @@ export function DeviceHostSettings({
                 {!settings.hosts.length && (
                   <View style={{ padding: 16 }}>
                     <Text style={styles.muted}>
-                      No remote device hosts yet. Local devices remain available.
+                      <InterfaceText>
+                        {'No remote device hosts yet. Local devices remain available.'}
+                      </InterfaceText>
                     </Text>
                   </View>
                 )}
               </SettingsGroup>
               <Action
-                label="Add device host"
+                label={uiText('Add device host')}
                 disabled={disabled || settings.hosts.length >= 20}
                 onPress={() => {
                   setDraft({
@@ -302,11 +322,11 @@ export function DeviceHostSettings({
                 }}
               />
               <Choice
-                label="Default device host"
+                label={uiText('Default device host')}
                 value={settings.defaultHostId ?? ''}
                 disabled={disabled}
                 items={[
-                  { id: '', name: 'Local runtime (no remote default)' },
+                  { id: '', name: uiText('Local runtime (no remote default)') },
                   ...settings.hosts.map((host) => ({ id: host.id, name: host.name })),
                 ]}
                 onChange={(defaultHostId) =>
@@ -324,8 +344,11 @@ export function DeviceHostSettings({
                 }
               />
               <Text style={styles.muted}>
-                Preselects this host in the desktop device picker. The mobile picker shows devices
-                from all reachable hosts.
+                <InterfaceText>
+                  {
+                    'Preselects this host in the desktop device picker. The mobile picker shows devices from all reachable hosts.'
+                  }
+                </InterfaceText>
               </Text>
             </>
           )
@@ -334,17 +357,20 @@ export function DeviceHostSettings({
         draft &&
         settings?.hosts.some((host) => host.id === draft.id) && (
           <Action
+            destructive
             secondary
-            label="Remove device host"
+            label={uiText('Remove device host')}
             disabled={disabled}
             onPress={() =>
               Alert.alert(
-                'Remove device host?',
-                'This removes the SSH device host configuration from this runtime. The destination pairing and its devices remain intact.',
+                uiText('Remove device host?'),
+                uiText(
+                  'This removes the SSH device host configuration from this runtime. The destination pairing and its devices remain intact.',
+                ),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Remove',
+                    text: uiText('Remove'),
                     style: 'destructive',
                     onPress: () =>
                       run(async (current) => {
@@ -373,11 +399,13 @@ export function DeviceHostSettings({
 }
 
 export default function DeviceHostsScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const { profile } = useRuntime()
   return (
     <SettingsPage>
-      <ScreenHeader title="Device previews" />
+      <ScreenHeader title={uiText('Device previews')} />
       <SettingsScrollView
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
@@ -386,7 +414,9 @@ export default function DeviceHostsScreen() {
         {profile ? (
           <DeviceHostSettings key={profile.id} />
         ) : (
-          <Text style={styles.muted}>Pair a computer to configure its device hosts.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Pair a computer to configure its device hosts.'}</InterfaceText>
+          </Text>
         )}
       </SettingsScrollView>
     </SettingsPage>

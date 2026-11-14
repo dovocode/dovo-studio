@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { usePreviewActive } from '../../tasks/preview/use-preview-active'
 import { Schema } from 'effect'
@@ -95,12 +96,21 @@ export function SharingPanel({
   }
   const confirmRemove = (id: string) =>
     Alert.alert(
-      id === 'links' ? 'Restrict link access?' : 'Remove this access?',
-      `${id === 'links' ? 'All anyone-with-link URLs will stop working. People you invited keep access.' : 'This person or link will lose access. Other readers keep access.'} Saved copies cannot be recalled.${kind === 'artifact' ? ' A live data feed must be approved again after access changes.' : ''}`,
+      id === 'links' ? uiText('Restrict link access?') : uiText('Remove this access?'),
+      uiText('{value0} Saved copies cannot be recalled.{value1}', {
+        value0:
+          id === 'links'
+            ? 'All anyone-with-link URLs will stop working. People you invited keep access.'
+            : 'This person or link will lose access. Other readers keep access.',
+        value1:
+          kind === 'artifact'
+            ? ' A live data feed must be approved again after access changes.'
+            : '',
+      }),
       [
-        { text: 'Keep access', style: 'cancel' },
+        { text: uiText('Keep access'), style: 'cancel' },
         {
-          text: 'Remove access',
+          text: uiText('Remove access'),
           style: 'destructive',
           onPress: () => void (id === 'links' ? sharing.setLinkAccess(false) : sharing.revoke(id)),
         },
@@ -109,66 +119,80 @@ export function SharingPanel({
   return (
     <View
       style={{ gap: 16 }}
-      accessibilityLabel="Sharing settings"
+      accessibilityLabel={uiText('Sharing settings')}
       accessibilityState={{ busy: sharing.busy }}
     >
       {!account.directory ? (
         <>
           <Text style={styles.muted}>
-            Sign in to manage sharing. People you share a link with can read without an account.
+            <InterfaceText>
+              {
+                'Sign in to manage sharing. People you share a link with can read without an account.'
+              }
+            </InterfaceText>
           </Text>
           <Action
-            label={account.busy ? 'Signing in…' : 'Sign in to publish'}
+            label={account.busy ? uiText('Signing in…') : uiText('Sign in to publish')}
             disabled={account.busy}
             onPress={() => void account.client.signIn()}
             wide
           />
           {account.login && (
             <>
-              <Text style={styles.text}>Compare sign-in code: {account.login.code}</Text>
-              <Action secondary label="Cancel sign-in" onPress={account.client.cancel} />
+              <Text style={styles.text}>
+                <InterfaceText values={{ value0: account.login.code }}>
+                  {'Compare sign-in code: {value0}'}
+                </InterfaceText>
+              </Text>
+              <Action secondary label={uiText('Cancel sign-in')} onPress={account.client.cancel} />
             </>
           )}
         </>
       ) : (
         <>
           {!sharing.loaded && !sharing.error && (
-            <Text style={styles.text}>Loading sharing settings…</Text>
+            <Text style={styles.text}>
+              <InterfaceText>{'Loading sharing settings…'}</InterfaceText>
+            </Text>
           )}
           {needsRecovery && (
             <View style={{ ...styles.card, gap: 12 }}>
               <Text accessibilityRole="header" style={heading}>
-                Recover sharing access
+                <InterfaceText>{'Recover sharing access'}</InterfaceText>
               </Text>
               <Text style={styles.muted}>
-                Signing in restores sharing once your key is saved with your account. For older
-                sharing, open Studio on a device where sharing works, restore a backup, or reset
-                below if the key is lost.
+                <InterfaceText>
+                  {
+                    'Signing in restores sharing once your key is saved with your account. For older sharing, open Studio on a device where sharing works, restore a backup, or reset below if the key is lost.'
+                  }
+                </InterfaceText>
               </Text>
               {!!sharing.syncError && <Text style={styles.muted}>{sharing.syncError}</Text>}
               <Action
                 secondary
-                label="Retry account recovery"
+                label={uiText('Retry account recovery')}
                 disabled={sharing.busy}
                 onPress={() => void sharing.refresh()}
               />
               {sharing.recoveryState !== 'unavailable' && (
                 <Action
                   secondary
-                  label="I no longer have the key"
+                  label={uiText('I no longer have the key')}
                   disabled={sharing.busy}
                   onPress={() =>
                     Alert.alert(
-                      'Reset legacy sharing?',
-                      'This deletes all your hosted thread and artifact copies, invitations and links for this account. Local content stays intact. New sharing will recover automatically when you sign in.',
+                      uiText('Reset legacy sharing?'),
+                      uiText(
+                        'This deletes all your hosted thread and artifact copies, invitations and links for this account. Local content stays intact. New sharing will recover automatically when you sign in.',
+                      ),
                       [
-                        { text: 'Cancel', style: 'cancel' },
+                        { text: uiText('Cancel'), style: 'cancel' },
                         {
-                          text: 'Delete old copies and reset',
+                          text: uiText('Delete old copies and reset'),
                           style: 'destructive',
                           onPress: () => {
                             void sharing.resetLegacySharing().then((ok) => {
-                              if (ok) setNotice('Sharing is ready with account recovery')
+                              if (ok) setNotice(uiText('Sharing is ready with account recovery'))
                             })
                           },
                         },
@@ -179,13 +203,13 @@ export function SharingPanel({
               )}
               <Action
                 secondary
-                label="Restore from a backup"
+                label={uiText('Restore from a backup')}
                 onPress={() => setShowRecovery(!showRecovery)}
               />
               {showRecovery && (
                 <>
                   <Field
-                    label="Recovery key"
+                    label={uiText('Recovery key')}
                     secureTextEntry
                     autoCorrect={false}
                     autoCapitalize="none"
@@ -194,7 +218,7 @@ export function SharingPanel({
                     editable={!sharing.busy}
                   />
                   <Action
-                    label="Restore sharing key"
+                    label={uiText('Restore sharing key')}
                     disabled={sharing.busy || !restore.trim()}
                     onPress={() => {
                       void sharing.restore(restore).then((ok) => {
@@ -206,16 +230,16 @@ export function SharingPanel({
               )}
             </View>
           )}
-          <View style={{ gap: 12 }} accessibilityLabel="People with access">
+          <View style={{ gap: 12 }} accessibilityLabel={uiText('People with access')}>
             {!!contacts.directory &&
               (contacts.directory.friends.some((person) => person.status === 'accepted') ||
                 contacts.directory.organizations.some((org) => org.status === 'member')) && (
                 <Choice
-                  label="Add friends or organisations"
+                  label={uiText('Add friends or organisations')}
                   hideLabel
                   value=""
                   items={[
-                    { id: '', name: 'Add friends or organisations…' },
+                    { id: '', name: uiText('Add friends or organisations…') },
                     ...contacts.directory.friends
                       .filter(
                         (person) =>
@@ -249,9 +273,9 @@ export function SharingPanel({
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <View style={{ flex: 1 }}>
                 <Field
-                  label="Add people by sharing ID"
+                  label={uiText('Add people by sharing ID')}
                   hideLabel
-                  placeholder="Add people by sharing ID"
+                  placeholder={uiText('Add people by sharing ID')}
                   autoCapitalize="none"
                   autoCorrect={false}
                   value={recipient}
@@ -268,32 +292,46 @@ export function SharingPanel({
                   void sharing.invite(recipient.trim()).then((ok) => {
                     if (ok) {
                       setRecipient('')
-                      setNotice('Person added. Copy their invitation link to send it to them.')
+                      setNotice(
+                        uiText('Person added. Copy their invitation link to send it to them.'),
+                      )
                     }
                   })
                 }}
               />
             </View>
             <Text style={styles.muted}>
-              Use their sharing ID from Studio. You send the invitation link yourself.
+              <InterfaceText>
+                {'Use their sharing ID from Studio. You send the invitation link yourself.'}
+              </InterfaceText>
             </Text>
             <View
               style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 }}
             >
               <Icon name="agents" size={22} color={colors.muted} />
               <View style={{ flex: 1, gap: 2 }}>
-                <Text style={styles.text}>{account.directory.user.name} (you)</Text>
-                <Text style={styles.muted}>Owner</Text>
+                <Text style={styles.text}>
+                  <InterfaceText values={{ value0: account.directory.user.name }}>
+                    {'{value0} (you)'}
+                  </InterfaceText>
+                </Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Owner'}</InterfaceText>
+                </Text>
               </View>
             </View>
             {people.map((grant) => (
               <View
                 key={grant.id}
                 style={divider}
-                accessibilityLabel={`Access for ${grant.userId ?? grant.organizationId}`}
+                accessibilityLabel={uiText('Access for {value0}', {
+                  value0: grant.userId ?? grant.organizationId,
+                })}
               >
                 {grant.organizationId && (
-                  <Text style={styles.muted}>Organisation · access follows membership</Text>
+                  <Text style={styles.muted}>
+                    <InterfaceText>{'Organisation · access follows membership'}</InterfaceText>
+                  </Text>
                 )}
                 <Text selectable style={styles.text}>
                   {grant.organizationId
@@ -301,18 +339,19 @@ export function SharingPanel({
                     : personName(grant.userId ?? '')}
                 </Text>
                 <Text style={styles.muted}>
-                  {kind === 'thread' ? 'Reader · Can suggest' : 'Reader'}
+                  {kind === 'thread' ? uiText('Reader · Can suggest') : uiText('Reader')}
                 </Text>
                 <View style={[styles.row, { gap: 16 }]}>
                   <Action
                     variant="outline"
-                    label="Copy invitation link"
+                    label={uiText('Copy invitation link')}
                     disabled={sharing.busy}
                     onPress={() => void copy(sharing.link(grant.id))}
                   />
                   <Action
+                    destructive
                     secondary
-                    label="Remove access"
+                    label={uiText('Remove access')}
                     disabled={sharing.busy}
                     onPress={() => confirmRemove(grant.id)}
                   />
@@ -320,12 +359,12 @@ export function SharingPanel({
               </View>
             ))}
           </View>
-          <View style={divider} accessibilityLabel="General access">
+          <View style={divider} accessibilityLabel={uiText('General access')}>
             <Text accessibilityRole="header" style={heading}>
-              General access
+              <InterfaceText>{'General access'}</InterfaceText>
             </Text>
             <Choice
-              label="General access"
+              label={uiText('General access')}
               hideLabel
               value={activeLink ? 'anyone' : 'restricted'}
               disabled={unavailable}
@@ -335,43 +374,53 @@ export function SharingPanel({
                 else void sharing.setLinkAccess(true, Number(seconds))
               }}
               items={[
-                { id: 'restricted', name: 'Restricted' },
-                { id: 'anyone', name: 'Anyone with the link' },
+                { id: 'restricted', name: uiText('Restricted') },
+                { id: 'anyone', name: uiText('Anyone with the link') },
               ]}
             />
             <Text style={styles.muted}>
               {activeLink
-                ? `Anyone with the link can read${kind === 'thread' ? ' and suggest a prompt' : ''}. No sign-in required.`
-                : 'Only people and organisations you add can open their invitation links.'}
+                ? uiText('Anyone with the link can read{value0}. No sign-in required.', {
+                    value0: kind === 'thread' ? ' and suggest a prompt' : '',
+                  })
+                : uiText('Only people and organisations you add can open their invitation links.')}
             </Text>
             {activeLink && (
               <Text style={styles.muted}>
-                Link expires {new Date(activeLink.expiresAt ?? 0).toLocaleDateString()}
+                <InterfaceText
+                  values={{ value0: new Date(activeLink.expiresAt ?? 0).toLocaleDateString() }}
+                >
+                  {'Link expires {value0}'}
+                </InterfaceText>
               </Text>
             )}
             <Text style={styles.muted}>
               {kind === 'thread'
-                ? 'New replies update automatically; tools, files and drafts stay private.'
-                : 'Shares this saved version and its files. Later edits stay private.'}
+                ? uiText('New replies update automatically; tools, files and drafts stay private.')
+                : uiText('Shares this saved version and its files. Later edits stay private.')}
             </Text>
             {!!sharing.share &&
               kind === 'thread' &&
               (sharing.share.record.paused || !runtime || sharing.sync?.enabled === false) && (
                 <Text accessibilityLiveRegion="polite" style={styles.muted}>
                   {sharing.share.record.paused
-                    ? 'Updates paused. Readers see the last published messages.'
-                    : 'Waiting for the source computer. Readers see the last published messages.'}
+                    ? uiText('Updates paused. Readers see the last published messages.')
+                    : uiText(
+                        'Waiting for the source computer. Readers see the last published messages.',
+                      )}
                 </Text>
               )}
             {!sharing.share && kind === 'thread' && !runtime && (
               <Text style={styles.muted}>
-                Reconnect to the source computer to share this thread.
+                <InterfaceText>
+                  {'Reconnect to the source computer to share this thread.'}
+                </InterfaceText>
               </Text>
             )}
           </View>
           <View style={divider}>
             <Action
-              label="Copy link"
+              label={uiText('Copy link')}
               disabled={unavailable || !activeLink}
               onPress={() => {
                 if (activeLink) void copy(sharing.link(activeLink.id))
@@ -380,20 +429,31 @@ export function SharingPanel({
             />
             {!activeLink && (
               <Text style={styles.muted}>
-                To copy a link for anyone, change General access. Personal invitation links are
-                above.
+                <InterfaceText>
+                  {
+                    'To copy a link for anyone, change General access. Personal invitation links are above.'
+                  }
+                </InterfaceText>
               </Text>
             )}
-            <Text style={[styles.muted, { fontSize: 12, textAlign: 'center' }]}>Encrypted</Text>
+            <Text style={[styles.muted, { fontSize: 12, textAlign: 'center' }]}>
+              <InterfaceText>{'Encrypted'}</InterfaceText>
+            </Text>
           </View>
           {!!legacy.length && (
             <Text style={styles.muted}>
-              An older unencrypted copy is still hosted. Manage it in Advanced.
+              <InterfaceText>
+                {'An older unencrypted copy is still hosted. Manage it in Advanced.'}
+              </InterfaceText>
             </Text>
           )}
           <Action
             secondary
-            label={managePeople ? 'Hide friends and organisations' : 'Friends and organisations'}
+            label={
+              managePeople
+                ? uiText('Hide friends and organisations')
+                : uiText('Friends and organisations')
+            }
             onPress={() => setManagePeople((value) => !value)}
           />
           {managePeople && (
@@ -408,10 +468,10 @@ export function SharingPanel({
               }
             }}
           >
-            <SharingDisclosure title="Review shared content">
+            <SharingDisclosure title={uiText('Review shared content')}>
               <Action
                 variant="outline"
-                label="Load content preview"
+                label={uiText('Load content preview')}
                 disabled={unavailable || (kind === 'thread' && !runtime)}
                 onPress={() => void sharing.review()}
               />
@@ -419,7 +479,7 @@ export function SharingPanel({
                 <ScrollView
                   style={{ maxHeight: 240 }}
                   nestedScrollEnabled
-                  accessibilityLabel="Content to share"
+                  accessibilityLabel={uiText('Content to share')}
                 >
                   <Text selectable style={styles.text}>
                     {sharing.preview.kind === 'thread'
@@ -435,25 +495,28 @@ export function SharingPanel({
               )}
             </SharingDisclosure>
             <Text style={styles.muted}>
-              New link lifetime applies when you enable link access or create another link. Existing
-              links keep their expiry.
+              <InterfaceText>
+                {
+                  'New link lifetime applies when you enable link access or create another link. Existing links keep their expiry.'
+                }
+              </InterfaceText>
             </Text>
             <Choice
-              label="New link lifetime"
+              label={uiText('New link lifetime')}
               value={seconds}
               onChange={setSeconds}
               disabled={sharing.busy}
               items={[
-                { id: '3600', name: '1 hour' },
-                { id: '86400', name: '1 day' },
-                { id: '604800', name: '7 days' },
-                { id: '2592000', name: '30 days' },
+                { id: '3600', name: uiText('1 hour') },
+                { id: '86400', name: uiText('1 day') },
+                { id: '604800', name: uiText('7 days') },
+                { id: '2592000', name: uiText('30 days') },
               ]}
             />
             {!!activeLink && (
               <Action
                 variant="outline"
-                label="Create another link"
+                label={uiText('Create another link')}
                 disabled={unavailable}
                 onPress={() => void sharing.createLink(Number(seconds))}
               />
@@ -462,21 +525,25 @@ export function SharingPanel({
               <View key={grant.id} style={{ ...styles.card, gap: 10 }}>
                 <Text style={styles.muted}>
                   {grant.organizationId
-                    ? `Organisation · ${organizationName(grant.organizationId)}`
+                    ? uiText('Organisation · {value0}', {
+                        value0: organizationName(grant.organizationId),
+                      })
                     : grant.userId
-                      ? `Invitation · ${grant.userId}`
-                      : `${(grant.expiresAt ?? 0) > Date.now() ? 'Expires' : 'Expired'} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
+                      ? uiText('Invitation · {value0}', { value0: grant.userId })
+                      : `${(grant.expiresAt ?? 0) > Date.now() ? uiText('Expires') : uiText('Expired')} · ${new Date(grant.expiresAt ?? 0).toLocaleString()}`}
                 </Text>
                 <Field
                   label={
-                    grant.userId || grant.organizationId ? 'Private invitation link' : 'Share link'
+                    grant.userId || grant.organizationId
+                      ? uiText('Private invitation link')
+                      : uiText('Share link')
                   }
                   value={sharing.link(grant.id)}
                   editable={false}
                 />
                 <Action
                   variant="outline"
-                  label="Copy this link"
+                  label={uiText('Copy this link')}
                   disabled={
                     sharing.busy ||
                     (!grant.userId && !grant.organizationId && (grant.expiresAt ?? 0) <= Date.now())
@@ -484,8 +551,9 @@ export function SharingPanel({
                   onPress={() => void copy(sharing.link(grant.id))}
                 />
                 <Action
+                  destructive
                   secondary
-                  label="Remove this link"
+                  label={uiText('Remove this link')}
                   disabled={sharing.busy}
                   onPress={() => confirmRemove(grant.id)}
                 />
@@ -493,17 +561,22 @@ export function SharingPanel({
             ))}
             {sharing.share && kind === 'thread' && (
               <View style={{ gap: 10 }}>
-                <Text style={heading}>Automatic updates</Text>
+                <Text style={heading}>
+                  <InterfaceText>{'Automatic updates'}</InterfaceText>
+                </Text>
                 <Text style={styles.muted}>
-                  Pausing keeps the current hosted copy available. Suggestions appear inline in your
-                  thread.
+                  <InterfaceText>
+                    {
+                      'Pausing keeps the current hosted copy available. Suggestions appear inline in your thread.'
+                    }
+                  </InterfaceText>
                 </Text>
                 <Action
                   variant="outline"
                   label={
                     sharing.share.record.paused
-                      ? 'Resume automatic updates'
-                      : 'Pause automatic updates'
+                      ? uiText('Resume automatic updates')
+                      : uiText('Pause automatic updates')
                   }
                   disabled={sharing.busy || (!runtime && sharing.share.record.paused)}
                   onPress={() =>
@@ -513,14 +586,16 @@ export function SharingPanel({
                 {!sharing.share.record.paused && sharing.sync?.enabled === false && !!runtime && (
                   <Action
                     variant="outline"
-                    label="Reconnect automatic updates"
+                    label={uiText('Reconnect automatic updates')}
                     disabled={sharing.busy}
                     onPress={() => void sharing.resume()}
                   />
                 )}
                 {!runtime && (
                   <Text style={styles.muted}>
-                    Reconnect to the source computer to start or resume updates.
+                    <InterfaceText>
+                      {'Reconnect to the source computer to start or resume updates.'}
+                    </InterfaceText>
                   </Text>
                 )}
                 {!!sharing.sync?.error && (
@@ -533,7 +608,7 @@ export function SharingPanel({
             {!!sharing.share && renderFeed?.(sharing.share, sharing.origin, sharing.setShare)}
             {sharing.hasKey && (
               <SharingDisclosure
-                title="Recovery and another device"
+                title={uiText('Recovery and another device')}
                 open={showRecovery || !!sharing.recovery}
                 onOpenChange={(open) => {
                   setShowRecovery(open)
@@ -542,60 +617,82 @@ export function SharingPanel({
               >
                 <Text style={styles.muted}>
                   {sharing.recoveryState === 'ready'
-                    ? 'Your sharing key is saved with your account. Signing in restores access even if every device is lost. Connect can recover this key. A manual backup is optional.'
-                    : 'Account recovery is not ready yet. Keep this device signed in and connected so Studio can save your key with your account.'}
+                    ? uiText(
+                        'Your sharing key is saved with your account. Signing in restores access even if every device is lost. Connect can recover this key. A manual backup is optional.',
+                      )
+                    : uiText(
+                        'Account recovery is not ready yet. Keep this device signed in and connected so Studio can save your key with your account.',
+                      )}
                 </Text>
                 {!!sharing.syncError && <Text style={styles.muted}>{sharing.syncError}</Text>}
                 {sharing.recovery ? (
                   <>
-                    <Text selectable accessibilityLabel="Sharing recovery key" style={styles.text}>
+                    <Text
+                      selectable
+                      accessibilityLabel={uiText('Sharing recovery key')}
+                      style={styles.text}
+                    >
                       {sharing.recovery}
                     </Text>
                     <Action
                       variant="outline"
-                      label="Copy recovery key"
+                      label={uiText('Copy recovery key')}
                       onPress={() => void copy(sharing.recovery, 'Recovery key copied')}
                       disabled={sharing.busy}
                     />
-                    <Action secondary label="Hide key" onPress={sharing.hideRecovery} />
+                    <Action secondary label={uiText('Hide key')} onPress={sharing.hideRecovery} />
                   </>
                 ) : (
                   <Action
                     variant="outline"
-                    label="Show recovery key"
+                    label={uiText('Show recovery key')}
                     disabled={sharing.busy}
                     onPress={() => void sharing.showRecovery()}
                   />
                 )}
               </SharingDisclosure>
             )}
-            <SharingDisclosure title="Account and destination">
-              <Text style={styles.muted}>Publishing as {account.directory.user.name}</Text>
-              <Text selectable style={styles.muted}>
-                Your sharing ID: {account.directory.user.id}
+            <SharingDisclosure title={uiText('Account and destination')}>
+              <Text style={styles.muted}>
+                <InterfaceText values={{ value0: account.directory.user.name }}>
+                  {'Publishing as {value0}'}
+                </InterfaceText>
               </Text>
               <Text selectable style={styles.muted}>
-                Hosted at {sharing.origin || 'Loading…'}
+                <InterfaceText values={{ value0: account.directory.user.id }}>
+                  {'Your sharing ID: {value0}'}
+                </InterfaceText>
+              </Text>
+              <Text selectable style={styles.muted}>
+                <InterfaceText values={{ value0: sharing.origin || uiText('Loading…') }}>
+                  {'Hosted at {value0}'}
+                </InterfaceText>
               </Text>
             </SharingDisclosure>
             {sharing.share && (
               <View style={divider}>
                 <Text style={styles.muted}>
-                  Delete the hosted copy to stop all sharing. Your local {kind} stays available.
-                  Saved reader copies cannot be recalled.
+                  <InterfaceText values={{ value0: kind }}>
+                    {
+                      'Delete the hosted copy to stop all sharing. Your local {value0} stays available. Saved reader copies cannot be recalled.'
+                    }
+                  </InterfaceText>
                 </Text>
                 <Action
+                  destructive
                   secondary
-                  label="Delete hosted copy"
+                  label={uiText('Delete hosted copy')}
                   disabled={sharing.busy}
                   onPress={() =>
                     Alert.alert(
-                      'Delete hosted copy?',
-                      'All links and invitations will stop working. Your local content stays available.',
+                      uiText('Delete hosted copy?'),
+                      uiText(
+                        'All links and invitations will stop working. Your local content stays available.',
+                      ),
                       [
-                        { text: 'Cancel', style: 'cancel' },
+                        { text: uiText('Cancel'), style: 'cancel' },
                         {
-                          text: 'Delete hosted copy',
+                          text: uiText('Delete hosted copy'),
                           style: 'destructive',
                           onPress: () => void sharing.remove(),
                         },
@@ -614,7 +711,7 @@ export function SharingPanel({
             ))}
             <Action
               secondary
-              label="Refresh sharing"
+              label={uiText('Refresh sharing')}
               disabled={sharing.busy}
               onPress={() => void sharing.refresh()}
             />
@@ -682,6 +779,8 @@ function LegacySharing({
   origin: string
   publication: ArtifactSourcePublication
 }) {
+  const uiText = useInterfaceText()
+
   const { client } = useMobileAccount(),
     { styles } = useTheme()
   const [access, setAccess] = useState<typeof artifactAccessSchema.Type | null>(null),
@@ -697,7 +796,7 @@ function LegacySharing({
     try {
       await run()
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Sharing failed')
+      setError(cause instanceof Error ? cause.message : uiText('Sharing failed'))
     } finally {
       setBusy(false)
     }
@@ -710,28 +809,33 @@ function LegacySharing({
   return (
     <View style={styles.card}>
       <Text accessibilityRole="header" style={styles.title}>
-        Existing hosted v{publication.revision} · Not end-to-end encrypted
+        <InterfaceText values={{ value0: publication.revision }}>
+          {'Existing hosted v{value0} · Not end-to-end encrypted'}
+        </InterfaceText>
       </Text>
       <Text style={styles.muted}>
-        An encrypted copy uses new links. Delete this previous copy to remove its content and live
-        feed from hosting. Backups follow server retention.
+        <InterfaceText>
+          {
+            'An encrypted copy uses new links. Delete this previous copy to remove its content and live feed from hosting. Backups follow server retention.'
+          }
+        </InterfaceText>
       </Text>
       <Action
         secondary
-        label="Manage existing access"
+        label={uiText('Manage existing access')}
         disabled={busy}
         onPress={() => void act(refresh)}
       />
       {access && (
         <>
           <Field
-            label="Existing copy recipient sharing ID"
+            label={uiText('Existing copy recipient sharing ID')}
             value={recipient}
             onChangeText={setRecipient}
           />
           <Action
             secondary
-            label="Invite account to existing copy"
+            label={uiText('Invite account to existing copy')}
             disabled={busy || !recipient.trim()}
             onPress={() =>
               void act(async () => {
@@ -745,7 +849,7 @@ function LegacySharing({
           />
           <Action
             secondary
-            label="Create 7-day link to existing copy"
+            label={uiText('Create 7-day link to existing copy')}
             disabled={busy}
             onPress={() =>
               void act(async () => {
@@ -767,10 +871,12 @@ function LegacySharing({
               </Text>
               <Action
                 secondary
-                label="Copy existing artifact link"
+                label={uiText('Copy existing artifact link')}
                 onPress={() =>
                   void copyText(created).catch((cause) =>
-                    setError(cause instanceof Error ? cause.message : 'Could not copy link'),
+                    setError(
+                      cause instanceof Error ? cause.message : uiText('Could not copy link'),
+                    ),
                   )
                 }
               />
@@ -784,8 +890,9 @@ function LegacySharing({
             {invite.userId}
           </Text>
           <Action
+            destructive
             secondary
-            label="Remove access"
+            label={uiText('Remove access')}
             disabled={busy}
             onPress={() =>
               void act(async () => {
@@ -798,10 +905,15 @@ function LegacySharing({
       ))}
       {access?.links.map((link) => (
         <View key={link.id}>
-          <Text style={styles.text}>Expires {new Date(link.expiresAt).toLocaleString()}</Text>
+          <Text style={styles.text}>
+            <InterfaceText values={{ value0: new Date(link.expiresAt).toLocaleString() }}>
+              {'Expires {value0}'}
+            </InterfaceText>
+          </Text>
           <Action
+            destructive
             secondary
-            label="Revoke link"
+            label={uiText('Revoke link')}
             disabled={busy}
             onPress={() =>
               void act(async () => {
@@ -815,7 +927,7 @@ function LegacySharing({
       {access?.feed && (
         <Action
           secondary
-          label="Stop existing live feed"
+          label={uiText('Stop existing live feed')}
           disabled={busy}
           onPress={() =>
             void act(async () => {
@@ -827,17 +939,18 @@ function LegacySharing({
         />
       )}
       <Action
+        destructive
         secondary
-        label="Delete unencrypted hosted copy"
+        label={uiText('Delete unencrypted hosted copy')}
         disabled={busy}
         onPress={() =>
           Alert.alert(
-            'Delete unencrypted copy?',
-            'Existing invitations, links and live data will be removed.',
+            uiText('Delete unencrypted copy?'),
+            uiText('Existing invitations, links and live data will be removed.'),
             [
-              { text: 'Cancel', style: 'cancel' },
+              { text: uiText('Cancel'), style: 'cancel' },
               {
-                text: 'Delete',
+                text: uiText('Delete'),
                 style: 'destructive',
                 onPress: () =>
                   void act(async () => {

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState, useEffect, useRef } from 'react'
 import { Alert, View } from 'react-native'
 import { useMobileAccount } from './account-provider'
@@ -11,6 +12,8 @@ import { SettingsAction as Action } from '../../screens/settings-controls'
 import { useSettingsTheme } from '../../screens/settings-theme'
 import { SharingPeoplePanel } from '../../ui/content/sharing-people'
 export function AccountPanel({ onPair }: { onPair: (address: string) => void }) {
+  const uiText = useInterfaceText()
+
   const { client, directory, login, busy, error, loaded, deletionPending } = useMobileAccount()
   const { overviews, connect } = useRuntime()
   const [connecting, setConnecting] = useState<string | null>(null)
@@ -46,13 +49,18 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
   const [selected, setSelected] = useState<Record<string, string>>({})
   const { styles } = useSettingsTheme()
   return (
-    <View style={{ gap: 12 }} accessibilityLabel="Dovo account">
+    <View style={{ gap: 12 }} accessibilityLabel={uiText('Dovo account')}>
       <Text style={styles.title}>
-        {directory ? `Signed in as ${directory.user.name}` : 'Your computers, across devices'}
+        {directory
+          ? uiText('Signed in as {value0}', { value0: directory.user.name })
+          : uiText('Your computers, across devices')}
       </Text>
       <Text style={styles.text}>
-        Use the same account as your computer for Dovo Connect. No pairing code needed. LAN / VPN
-        pairing is separate and takes priority when available.
+        <InterfaceText>
+          {
+            'Use the same account as your computer for Dovo Connect. No pairing code needed. LAN / VPN pairing is separate and takes priority when available.'
+          }
+        </InterfaceText>
       </Text>
       {!!connectionError && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -67,35 +75,44 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
       {login ? (
         <>
           <Text accessibilityRole="alert" style={styles.text}>
-            Confirm code {login.code} in your browser.
+            <InterfaceText values={{ value0: login.code }}>
+              {'Confirm code {value0} in your browser.'}
+            </InterfaceText>
           </Text>
-          <Action label="Cancel sign-in" onPress={client.cancel} />
+          <Action label={uiText('Cancel sign-in')} onPress={client.cancel} />
         </>
       ) : deletionPending ? (
         <Action
-          label="Retry account deletion"
+          label={uiText('Retry account deletion')}
           disabled={busy}
           onPress={() => void client.deleteAccount()}
         />
       ) : directory ? (
         <>
           <Action
-            label="Refresh linked computers"
+            label={uiText('Refresh linked computers')}
             disabled={busy}
             onPress={() => void client.refresh()}
           />
-          <Action label="Sign out" disabled={busy} onPress={() => void client.signOut()} />
           <Action
-            label="Delete account"
+            label={uiText('Sign out')}
+            disabled={busy}
+            onPress={() => void client.signOut()}
+          />
+          <Action
+            destructive
+            label={uiText('Delete account')}
             disabled={busy}
             onPress={() =>
               Alert.alert(
-                'Delete your Dovo account?',
-                'This permanently deletes your hosted identity, linked computers and notification permissions on all devices. Files, threads and separate pairings on your computers remain. Service backups expire within 14 days. This cannot be undone.',
+                uiText('Delete your Dovo account?'),
+                uiText(
+                  'This permanently deletes your hosted identity, linked computers and notification permissions on all devices. Files, threads and separate pairings on your computers remain. Service backups expire within 14 days. This cannot be undone.',
+                ),
                 [
-                  { text: 'Cancel', style: 'cancel' },
+                  { text: uiText('Cancel'), style: 'cancel' },
                   {
-                    text: 'Delete account',
+                    text: uiText('Delete account'),
                     style: 'destructive',
                     onPress: () => void client.deleteAccount(),
                   },
@@ -106,19 +123,27 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
         </>
       ) : (
         <Action
-          label={busy ? 'Connecting…' : 'Sign in'}
+          label={busy ? uiText('Connecting…') : uiText('Sign in')}
           disabled={busy || !loaded}
           onPress={() => void client.signIn()}
         />
       )}
       {!!error && (
-        <Action label="Retry account" disabled={busy} onPress={() => void client.load()} />
+        <Action
+          label={uiText('Retry account')}
+          disabled={busy}
+          onPress={() => void client.load()}
+        />
       )}
       {directory && !deletionPending && (
         <>
           <Action
             secondary
-            label={peopleOpen ? 'Hide friends and organisations' : 'Friends and organisations'}
+            label={
+              peopleOpen
+                ? uiText('Hide friends and organisations')
+                : uiText('Friends and organisations')
+            }
             onPress={() => setPeopleOpen((value) => !value)}
           />
           {peopleOpen && <SharingPeoplePanel key={client.sessionId()} />}
@@ -128,15 +153,18 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
         <>
           <Action
             secondary
-            label={linkedOpen ? 'Hide linked computers' : 'Manage linked computers'}
+            label={linkedOpen ? uiText('Hide linked computers') : uiText('Manage linked computers')}
             onPress={() => setLinkedOpen((open) => !open)}
           />
           {linkedOpen && (
-            <View style={{ gap: 12 }} accessibilityLabel="Linked computers">
+            <View style={{ gap: 12 }} accessibilityLabel={uiText('Linked computers')}>
               {!directory.servers.length && (
                 <Text style={styles.text}>
-                  Enable Dovo Connect on your computer to see it here, or link a separately paired
-                  computer below.
+                  <InterfaceText>
+                    {
+                      'Enable Dovo Connect on your computer to see it here, or link a separately paired computer below.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {directory.servers.map((server) => {
@@ -151,25 +179,27 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                     <Text style={styles.text}>
                       {server.internet
                         ? server.internet.online
-                          ? 'Dovo Connect · Online'
-                          : 'Dovo Connect · Offline'
+                          ? uiText('Dovo Connect · Online')
+                          : uiText('Dovo Connect · Offline')
                         : server.address}
                     </Text>
                     {server.internet ? (
                       <Action
                         label={
                           connecting === server.id
-                            ? 'Connecting…'
-                            : `${paired ? 'Reconnect' : 'Connect'} ${server.name}`
+                            ? uiText('Connecting…')
+                            : `${paired ? uiText('Reconnect') : uiText('Connect')} ${server.name}`
                         }
                         disabled={busy || !!connecting || !server.internet.online}
                         onPress={() => void connectComputer(server)}
                       />
                     ) : paired ? (
-                      <Text style={styles.text}>Already paired</Text>
+                      <Text style={styles.text}>
+                        <InterfaceText>{'Already paired'}</InterfaceText>
+                      </Text>
                     ) : (
                       <Action
-                        label={`Pair ${server.name}`}
+                        label={uiText('Pair {value0}', { value0: server.name })}
                         disabled={busy}
                         onPress={() => onPair(server.address)}
                       />
@@ -177,8 +207,8 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                     <Action
                       label={
                         server.internet
-                          ? `Disable Dovo Connect for ${server.name}`
-                          : `Unlink ${server.name}`
+                          ? uiText('Disable Dovo Connect for {value0}', { value0: server.name })
+                          : uiText('Unlink {value0}', { value0: server.name })
                       }
                       disabled={busy}
                       onPress={() => void client.unlink(server.id)}
@@ -207,7 +237,7 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                     <View key={source.profile.id} style={{ gap: 8 }}>
                       {addresses.length > 1 && (
                         <Choice
-                          label={`Address for ${name}`}
+                          label={uiText('Address for {value0}', { value0: name })}
                           value={address}
                           items={addresses.map((value) => ({ id: value, name: value }))}
                           disabled={busy}
@@ -220,7 +250,7 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                         <>
                           <Text style={styles.text}>{address}</Text>
                           <Action
-                            label={`Link ${name} to account`}
+                            label={uiText('Link {value0} to account', { value0: name })}
                             disabled={busy}
                             onPress={() => {
                               if (id) void client.link({ id, name, address })
@@ -229,7 +259,9 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
                         </>
                       ) : (
                         <Text style={styles.text}>
-                          Enable LAN/VPN access on {name} before linking it.
+                          <InterfaceText values={{ value0: name }}>
+                            {'Enable LAN/VPN access on {value0} before linking it.'}
+                          </InterfaceText>
                         </Text>
                       )}
                     </View>

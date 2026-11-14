@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import * as DocumentPicker from 'expo-document-picker'
 import { File } from 'expo-file-system'
 import { Image, Pressable, View } from 'react-native'
@@ -21,6 +22,8 @@ import { useTheme } from '../../ui/theme'
 import { Sheet } from '../../ui/layout/sheet'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { call, refresh, connected } = useRuntime()
@@ -80,26 +83,27 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
       {sharedProjectKey(repository) && (
         <View style={{ gap: 8 }}>
           <Field
-            label="Shared project name"
+            label={uiText('Shared project name')}
             value={name}
             maxLength={200}
             onChangeText={setName}
             editable={connected && !busy}
           />
           <Text style={styles.muted}>
-            Shared across paired computers with the same Git remote. Local checkout:{' '}
-            {repository.localName ?? repository.name}.
+            <InterfaceText values={{ value0: repository.localName ?? repository.name }}>
+              {'Shared across paired computers with the same Git remote. Local checkout: {value0}.'}
+            </InterfaceText>
           </Text>
           <View style={styles.row}>
             <Action
-              label="Save name"
+              label={uiText('Save name')}
               disabled={!connected || busy || !name.trim()}
               onPress={() => saveName()}
             />
             {repository.sharedName && (
               <Action
                 secondary
-                label="Use local name"
+                label={uiText('Use local name')}
                 disabled={!connected || busy}
                 onPress={() => saveName(true)}
               />
@@ -126,43 +130,50 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
             </Text>
           </View>
         )}
-        <Text style={[styles.text, { flex: 1 }]}>Project icon</Text>
+        <Text style={[styles.text, { flex: 1 }]}>
+          <InterfaceText>{'Project icon'}</InterfaceText>
+        </Text>
       </View>
       <Text style={styles.muted}>
         {sharedProjectKey(repository)
-          ? 'Icons sync across paired computers with the same Git remote.'
-          : 'This project’s icon stays on this computer.'}
+          ? uiText('Icons sync across paired computers with the same Git remote.')
+          : uiText('This project’s icon stays on this computer.')}
       </Text>
       <View style={styles.row}>
-        <Action secondary label="Choose image" disabled={!connected || busy} onPress={choose} />
+        <Action
+          secondary
+          label={uiText('Choose image')}
+          disabled={!connected || busy}
+          onPress={choose}
+        />
         {!repository.iconOverride && repository.discoveredIcon && sharedProjectKey(repository) && (
           <Action
             secondary
-            label="Share detected icon"
+            label={uiText('Share detected icon')}
             disabled={!connected || busy}
             onPress={() => save(repository.discoveredIcon?.split(',')[1])}
           />
         )}
         <Action
           secondary
-          label="Icon or emoji"
+          label={uiText('Icon or emoji')}
           disabled={!connected || busy}
           onPress={() => setPicker(true)}
         />
         {repository.iconOverride && (
           <Action
             secondary
-            label="Reset to detected"
+            label={uiText('Reset to detected')}
             disabled={!connected || busy}
             onPress={() => save()}
           />
         )}
       </View>
       {picker && (
-        <Sheet title="Choose project icon" busy={busy} onClose={() => setPicker(false)}>
+        <Sheet title={uiText('Choose project icon')} busy={busy} onClose={() => setPicker(false)}>
           {(['icon', 'emoji'] as const).map((kind) => (
             <View key={kind} style={{ gap: 8, marginBottom: 16 }}>
-              <Text style={styles.text}>{kind === 'icon' ? 'Icons' : 'Emoji'}</Text>
+              <Text style={styles.text}>{kind === 'icon' ? uiText('Icons') : uiText('Emoji')}</Text>
               <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
                 {projectIconChoices
                   .filter((choice) => choice.kind === kind)
@@ -170,7 +181,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
                     <Pressable
                       key={choice.id}
                       accessibilityRole="button"
-                      accessibilityLabel={`${kind === 'icon' ? 'Icon' : 'Emoji'}: ${choice.label}`}
+                      accessibilityLabel={`${kind === 'icon' ? uiText('Icon') : uiText('Emoji')}: ${choice.label}`}
                       disabled={!connected || busy}
                       onPress={() => save(choice.data.split(',')[1])}
                       style={{

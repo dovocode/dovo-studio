@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { sharedSettingsIssue } from '@dovo/protocol'
 import { SettingsSaveBar } from '../screens/settings-save-bar'
@@ -63,9 +64,9 @@ export function AgentEditor({
     )
       onClose()
     else
-      Alert.alert('Unsaved profile', 'Discard unsaved configuration changes?', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: onClose },
+      Alert.alert(uiText('Unsaved profile'), uiText('Discard unsaved configuration changes?'), [
+        { text: uiText('Keep editing'), style: 'cancel' },
+        { text: uiText('Discard'), style: 'destructive', onPress: onClose },
       ])
   }
   const save = async () => {
@@ -85,7 +86,10 @@ export function AgentEditor({
   }
   return (
     <Sheet
-      title={`${creating ? 'New' : 'Edit'} agent · ${scopeLabel ?? runtimeComputerName({ profile, snapshot })}`}
+      title={uiText('{value0} agent · {value1}', {
+        value0: creating ? 'New' : 'Edit',
+        value1: scopeLabel ?? runtimeComputerName({ profile, snapshot }),
+      })}
       busy={busy}
       onClose={close}
     >
@@ -101,7 +105,7 @@ export function AgentEditor({
         }
       />
       <Choice
-        label="Provider"
+        label={uiText('Provider')}
         disabled={busy || fixedProvider}
         value={draft.provider}
         items={providerSchema.literals.map((id) => ({
@@ -119,13 +123,13 @@ export function AgentEditor({
       {(draft.provider === 'claude' || draft.provider === 'codex') && (
         <>
           <Choice
-            label="Cloud integrations"
+            label={uiText('Cloud integrations')}
             disabled={busy}
             value={
               draft.cloudIntegrations === undefined ? 'default' : String(draft.cloudIntegrations)
             }
             items={[
-              { id: 'default', name: 'Provider default' },
+              { id: 'default', name: uiText('Provider default') },
               { id: 'true', name: uiText('Enabled') },
               { id: 'false', name: uiText('Disabled') },
             ]}
@@ -137,22 +141,26 @@ export function AgentEditor({
             }
           />
           <Text style={styles.muted}>
-            Use apps already connected to your {draft.provider === 'claude' ? 'Claude' : 'ChatGPT'}{' '}
-            account, such as Google Drive or Slack. Requires account sign-in on the computer running
-            the task. Provider restrictions and tool approvals still apply.
+            <InterfaceText
+              values={{ value0: draft.provider === 'claude' ? 'Claude' : uiText('ChatGPT') }}
+            >
+              {
+                'Use apps already connected to your {value0} account, such as Google Drive or Slack. Requires account sign-in on the computer running the task. Provider restrictions and tool approvals still apply.'
+              }
+            </InterfaceText>
           </Text>
         </>
       )}
       <Choice
-        label="Access mode"
+        label={uiText('Access mode')}
         disabled={busy}
         value={permissionPolicyLabel(draft) === 'Custom' ? 'custom' : draft.permission}
-        selectedLabel={permissionPolicyLabel(draft)}
+        selectedLabel={uiText(permissionPolicyLabel(draft))}
         items={selectableAccessModes(draft.permission, draft.provider)
           .filter((mode) => supportsAccess(draft.provider, mode.id))
           .map((mode) => ({
             id: mode.id,
-            name: mode.name,
+            name: uiText(mode.name),
           }))}
         onChange={(value) =>
           setDraft(selectPermissionPreset(draft, decode(agentSchema.fields.permission, value)))
@@ -165,7 +173,7 @@ export function AgentEditor({
         onChange={(policy) => setDraft({ ...draft, ...policy })}
       />
       <Field
-        label="Instructions"
+        label={uiText('Instructions')}
         editable={!busy}
         multiline
         value={draft.instructions}
@@ -185,31 +193,35 @@ export function AgentEditor({
       />
       <Action
         secondary
-        label="Connection & account"
+        label={uiText('Connection & account')}
         onPress={() => setShowConnection(!showConnection)}
       />
       {showConnection && (
         <View style={{ gap: 12 }}>
           {shared && (
             <Text style={styles.muted}>
-              Shared profiles use each computer’s installation and login. Use environment-variable
-              names for credentials. Save local paths and literal values at Computer or Project on
-              computer.
+              <InterfaceText>
+                {
+                  'Shared profiles use each computer’s installation and login. Use environment-variable names for credentials. Save local paths and literal values at Computer or Project on computer.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {draft.provider === 'hermes' && (
             <Text style={styles.muted}>
-              Uses Hermes on the runtime computer, including its memory and skills. Configure its
-              provider with hermes model. Select its hermes executable to launch the native Hermes
-              gateway.
+              <InterfaceText>
+                {
+                  'Uses Hermes on the runtime computer, including its memory and skills. Configure its provider with hermes model. Select its hermes executable to launch the native Hermes gateway.'
+                }
+              </InterfaceText>
             </Text>
           )}
           {draft.provider !== 'cursor' && (
             <Field
               label={
                 draft.provider === 'opencode'
-                  ? 'Server URL · blank starts OpenCode automatically'
-                  : 'Executable path · blank uses default'
+                  ? uiText('Server URL · blank starts OpenCode automatically')
+                  : uiText('Executable path · blank uses default')
               }
               value={agentConnectionValue(draft)}
               editable={!busy}
@@ -218,7 +230,7 @@ export function AgentEditor({
           )}
           {draft.provider === 'opencode' && !draft.endpoint.trim() && (
             <Field
-              label="OpenCode executable path · optional"
+              label={uiText('OpenCode executable path · optional')}
               value={draft.executablePath ?? ''}
               editable={!busy}
               onChangeText={(executablePath) => setDraft({ ...draft, executablePath })}
@@ -232,14 +244,14 @@ export function AgentEditor({
             <Field
               label={
                 draft.provider === 'vibe'
-                  ? 'VIBE_HOME directory'
+                  ? uiText('VIBE_HOME directory')
                   : draft.provider === 'hermes'
-                    ? 'HERMES_HOME directory'
+                    ? uiText('HERMES_HOME directory')
                     : draft.provider === 'copilot'
-                      ? 'COPILOT_HOME directory'
+                      ? uiText('COPILOT_HOME directory')
                       : draft.provider === 'codex'
-                        ? 'CODEX_HOME directory'
-                        : 'CLAUDE_CONFIG_DIR directory'
+                        ? uiText('CODEX_HOME directory')
+                        : uiText('CLAUDE_CONFIG_DIR directory')
               }
               value={draft.configDirectory ?? ''}
               onChangeText={(configDirectory) => setDraft({ ...draft, configDirectory })}
@@ -249,7 +261,7 @@ export function AgentEditor({
           {draft.provider !== 'cursor' &&
             (draft.provider !== 'opencode' || !draft.endpoint.trim()) && (
               <Field
-                label="Arguments · one per line"
+                label={uiText('Arguments · one per line')}
                 editable={!busy}
                 value={(draft.args ?? []).join('\n')}
                 onChangeText={(value) =>
@@ -263,21 +275,27 @@ export function AgentEditor({
             )}
           {draft.provider === 'cursor' && (
             <Text style={styles.muted}>
-              Runs locally through the Cursor SDK. Set CURSOR_API_KEY on this runtime or use Cursor
-              SDK browser login. Cursor desktop login is separate.
+              <InterfaceText>
+                {
+                  'Runs locally through the Cursor SDK. Set CURSOR_API_KEY on this runtime or use Cursor SDK browser login. Cursor desktop login is separate.'
+                }
+              </InterfaceText>
             </Text>
           )}
           <>
             <Field
-              label="Environment variables · NAME=value per line"
+              label={uiText('Environment variables · NAME=value per line')}
               value={environment}
               onChangeText={setEnvironment}
               editable={!busy}
               multiline
             />
             <Text style={styles.muted}>
-              Saved as readable configuration. Keep secrets in the server's environment. Claude
-              flags use --name or --name=value.
+              <InterfaceText>
+                {
+                  "Saved as readable configuration. Keep secrets in the server's environment. Claude flags use --name or --name=value."
+                }
+              </InterfaceText>
             </Text>
             {snapshot?.secretReferencesSupported && (
               <SecretEnvironmentEditor
@@ -318,7 +336,7 @@ export function AgentEditor({
         <View style={styles.row}>
           <Action
             wide
-            label="Save agent"
+            label={uiText('Save agent')}
             disabled={
               !connected ||
               busy ||

@@ -94,7 +94,7 @@ export function SettingsAction(props: ComponentProps<typeof Action>) {
   const settings = useInsideSettings()
   const { colors } = useTheme()
   if (!settings) return <Action {...props} />
-  const danger = /^(Forget|Delete|Remove|Revoke|Discard)\b/.test(props.label)
+  const danger = props.destructive ?? /^(Forget|Delete|Remove|Revoke|Discard)\b/.test(props.label)
   return (
     <Pressable
       testID={props.label}

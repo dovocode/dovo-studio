@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Alert, Pressable } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
@@ -9,11 +10,14 @@ export type WorkMenuAction = {
 }
 export function WorkMenu({
   actions,
-  label = 'Work actions',
+  label: labelOverride,
 }: {
   actions: WorkMenuAction[]
   label?: string
 }) {
+  const uiText = useInterfaceText()
+  const label = labelOverride ?? uiText('Work actions')
+
   const { colors } = useTheme()
 
   return (
@@ -29,7 +33,7 @@ export function WorkMenu({
         opacity: pressed ? 0.55 : 1,
       })}
       onPress={() =>
-        Alert.alert('Actions', undefined, [
+        Alert.alert(uiText('Actions'), undefined, [
           ...actions
             .filter((action) => !action.disabled)
             .map(({ label, onPress, destructive }) => ({
@@ -37,7 +41,7 @@ export function WorkMenu({
               onPress,
               style: destructive ? ('destructive' as const) : ('default' as const),
             })),
-          { text: 'Cancel', style: 'cancel' },
+          { text: uiText('Cancel'), style: 'cancel' },
         ])
       }
     >

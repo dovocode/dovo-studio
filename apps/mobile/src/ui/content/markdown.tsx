@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskVisualization } from './task-visualization'
 import { markdownCodeStyle } from './markdown-code-style'
 import { CodeBlock } from './code-block'
@@ -257,6 +259,8 @@ export const Markdown = memo(function Markdown({
   onLinkPress?: (url: string) => void
   onLinkLongPress?: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { connection, connected } = useRuntimeSelector(selectMarkdownConnection, sameRuntimeFields)
   const origin = useLinkOrigin(taskId)
   const navigateAfterSheet = useSheetNavigation()
@@ -318,7 +322,11 @@ export const Markdown = memo(function Markdown({
         ) : part.kind === 'mermaid' ? (
           <Suspense
             key={part.offset}
-            fallback={<Text style={styles.muted}>Rendering diagram…</Text>}
+            fallback={
+              <Text style={styles.muted}>
+                <InterfaceText>{'Rendering diagram…'}</InterfaceText>
+              </Text>
+            }
           >
             <MermaidDiagram chart={part.text} />
           </Suspense>
@@ -350,7 +358,9 @@ export const Markdown = memo(function Markdown({
               />
             ) : (
               <Text key={part.offset} style={styles.muted}>
-                Image unavailable: {imageLabel}
+                <InterfaceText values={{ value0: imageLabel }}>
+                  {'Image unavailable: {value0}'}
+                </InterfaceText>
               </Text>
             )
           })()
@@ -379,7 +389,7 @@ export const Markdown = memo(function Markdown({
               if (taskId && !baseURL && !fileBaseURL && localMarkdownPath(url) !== undefined) {
                 void previewFile(url).catch((error: unknown) =>
                   Alert.alert(
-                    'Could not preview file',
+                    uiText('Could not preview file'),
                     error instanceof Error ? error.message : String(error),
                   ),
                 )
@@ -395,23 +405,26 @@ export const Markdown = memo(function Markdown({
                         return
                       }
                       void openAppLink(target, false, origin).catch((error: unknown) =>
-                        Alert.alert('Could not open link', String(error)),
+                        Alert.alert(uiText('Could not open link'), String(error)),
                       )
                     }),
                   ).pipe(
                     Effect.catch((error) =>
-                      nativeEffect(() => Alert.alert('Could not open link', String(error))),
+                      nativeEffect(() => Alert.alert(uiText('Could not open link'), String(error))),
                     ),
                   ),
                 )
               } else {
-                Alert.alert('Desktop link', 'Open this file or link on your desktop.')
+                Alert.alert(
+                  uiText('Desktop link'),
+                  uiText('Open this file or link on your desktop.'),
+                )
               }
             }}
             onLinkLongPress={({ url }) => {
               if (taskId && !baseURL && !fileBaseURL && localMarkdownPath(url) !== undefined) {
                 void previewFile(url).catch((error: unknown) =>
-                  Alert.alert('Could not preview file', String(error)),
+                  Alert.alert(uiText('Could not preview file'), String(error)),
                 )
                 return
               }
@@ -421,7 +434,7 @@ export const Markdown = memo(function Markdown({
                 if (onLinkLongPress) onLinkLongPress(target)
                 else
                   void openAppLink(target, false, origin).catch((error: unknown) =>
-                    Alert.alert('Could not open link', String(error)),
+                    Alert.alert(uiText('Could not open link'), String(error)),
                   )
               })
             }}

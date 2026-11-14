@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -25,6 +26,8 @@ export function SecretEnvironmentEditor({
   onRefresh: () => Promise<void>
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [name, setName] = useState('')
   const [error, setError] = useState('')
@@ -34,16 +37,21 @@ export function SecretEnvironmentEditor({
     onChange({ ...value, [key]: reference })
   return (
     <View style={{ gap: 12 }}>
-      <Text>Secret environment references</Text>
+      <Text>
+        <InterfaceText>{'Secret environment references'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Values are resolved on this computer at launch using its provider CLI login. A reference
-        overrides a literal environment value with the same name.
+        <InterfaceText>
+          {
+            'Values are resolved on this computer at launch using its provider CLI login. A reference overrides a literal environment value with the same name.'
+          }
+        </InterfaceText>
       </Text>
       {Object.entries(value).map(([key, reference]) => (
         <View key={key} style={[styles.card, { gap: 8 }]}>
           <Text>{key}</Text>
           <Choice
-            label={`Secret provider for ${key}`}
+            label={uiText('Secret provider for {value0}', { value0: key })}
             value={reference.provider}
             disabled={disabled}
             items={[...secretReferenceProviders]}
@@ -53,16 +61,16 @@ export function SecretEnvironmentEditor({
             }}
           />
           <Field
-            label={`Secret reference for ${key}`}
+            label={uiText('Secret reference for {value0}', { value0: key })}
             value={reference.reference}
             editable={!disabled}
             autoCapitalize="none"
             autoCorrect={false}
             placeholder={
               reference.provider === 'onepassword'
-                ? 'op://vault/item/field'
+                ? uiText('op://vault/item/field')
                 : reference.provider === 'bitwarden'
-                  ? 'Item ID'
+                  ? uiText('Item ID')
                   : reference.provider === 'infisical'
                     ? 'SECRET_KEY'
                     : 'HOST_VARIABLE'
@@ -71,8 +79,8 @@ export function SecretEnvironmentEditor({
           />
           {reference.provider === 'onepassword' && (
             <Field
-              label={`1Password account for ${key}`}
-              placeholder="Account (optional)"
+              label={uiText('1Password account for {value0}', { value0: key })}
+              placeholder={uiText('Account (optional)')}
               value={reference.account ?? ''}
               editable={!disabled}
               autoCapitalize="none"
@@ -84,7 +92,7 @@ export function SecretEnvironmentEditor({
           )}
           {reference.provider === 'bitwarden' && (
             <Choice
-              label={`Bitwarden field for ${key}`}
+              label={uiText('Bitwarden field for {value0}', { value0: key })}
               value={reference.field ?? 'password'}
               disabled={disabled}
               items={['password', 'username', 'totp'].map((field) => ({ id: field, name: field }))}
@@ -97,7 +105,7 @@ export function SecretEnvironmentEditor({
           {reference.provider === 'infisical' && (
             <>
               <Field
-                label={`Infisical project for ${key}`}
+                label={uiText('Infisical project for {value0}', { value0: key })}
                 value={reference.projectId}
                 editable={!disabled}
                 autoCapitalize="none"
@@ -105,7 +113,7 @@ export function SecretEnvironmentEditor({
                 onChangeText={(projectId) => update(key, { ...reference, projectId })}
               />
               <Field
-                label={`Infisical environment for ${key}`}
+                label={uiText('Infisical environment for {value0}', { value0: key })}
                 value={reference.environment}
                 editable={!disabled}
                 autoCapitalize="none"
@@ -113,7 +121,7 @@ export function SecretEnvironmentEditor({
                 onChangeText={(environment) => update(key, { ...reference, environment })}
               />
               <Field
-                label={`Infisical path for ${key}`}
+                label={uiText('Infisical path for {value0}', { value0: key })}
                 value={reference.path}
                 editable={!disabled}
                 autoCapitalize="none"
@@ -121,8 +129,8 @@ export function SecretEnvironmentEditor({
                 onChangeText={(path) => update(key, { ...reference, path })}
               />
               <Field
-                label={`Infisical domain for ${key}`}
-                placeholder="Optional; CLI default"
+                label={uiText('Infisical domain for {value0}', { value0: key })}
+                placeholder={uiText('Optional; CLI default')}
                 value={reference.domain ?? ''}
                 editable={!disabled}
                 autoCapitalize="none"
@@ -134,8 +142,9 @@ export function SecretEnvironmentEditor({
             </>
           )}
           <Action
+            destructive
             secondary
-            label={`Remove ${key}`}
+            label={uiText('Remove {value0}', { value0: key })}
             disabled={disabled}
             onPress={() => {
               const next = { ...value }
@@ -146,9 +155,9 @@ export function SecretEnvironmentEditor({
         </View>
       ))}
       <Field
-        label="New secret environment variable"
+        label={uiText('New secret environment variable')}
         value={name}
-        placeholder="API_KEY"
+        placeholder={'API_KEY'}
         editable={!disabled}
         autoCapitalize="none"
         autoCorrect={false}
@@ -156,13 +165,15 @@ export function SecretEnvironmentEditor({
       />
       <Action
         secondary
-        label="Add reference"
+        label={uiText('Add reference')}
         disabled={disabled || Object.keys(value).length >= 64}
         onPress={() => {
           const key = name.trim()
           if (!decodeResult(agentEnvironmentNameSchema, key).success || Object.hasOwn(value, key)) {
             setError(
-              'Enter a unique environment variable name. Runtime credentials cannot be referenced.',
+              uiText(
+                'Enter a unique environment variable name. Runtime credentials cannot be referenced.',
+              ),
             )
             return
           }
@@ -173,7 +184,7 @@ export function SecretEnvironmentEditor({
       />
       <Action
         secondary
-        label="Refresh secret references"
+        label={uiText('Refresh secret references')}
         disabled={disabled || refreshing}
         onPress={() => {
           setRefreshing(true)

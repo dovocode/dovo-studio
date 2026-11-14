@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -24,17 +25,22 @@ export function RoutineOptions({
   findingGroupsSupported?: boolean
   onSave: (options: Pick<Automation, 'policy' | 'monitor'>) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [fields, setFields] = useState(() => routineOptionFields(flow))
   const [error, setError] = useState('')
   return (
     <View style={{ gap: 8 }}>
-      <Text style={styles.text}>Monitoring and limits</Text>
+      <Text style={styles.text}>
+        <InterfaceText>{'Monitoring and limits'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Source checks use HTTP GET. Unchanged automatic runs skip the agent. An optional JSON
-        pointer watches only that value and ignores object key order. Manual tests always run. Quiet
-        hours defer successful Bot reports. Failures and approvals stay visible. Usage limits can
-        overrun when reports arrive late.
+        <InterfaceText>
+          {
+            'Source checks use HTTP GET. Unchanged automatic runs skip the agent. An optional JSON pointer watches only that value and ignores object key order. Manual tests always run. Quiet hours defer successful Bot reports. Failures and approvals stay visible. Usage limits can overrun when reports arrive late.'
+          }
+        </InterfaceText>
       </Text>
       {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
         .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
@@ -46,12 +52,12 @@ export function RoutineOptions({
             label={routineOptionLabels[key]}
             value={fields[key]}
             editable={!disabled}
-            placeholder={key === 'start' || key === 'end' ? 'HH:mm' : undefined}
+            placeholder={key === 'start' || key === 'end' ? uiText('HH:mm') : undefined}
             onChangeText={(value) => setFields((f) => ({ ...f, [key]: value }))}
           />
         ))}
       <Action
-        label="Save monitoring and limits"
+        label={uiText('Save monitoring and limits')}
         disabled={disabled}
         onPress={() => {
           try {
@@ -63,7 +69,9 @@ export function RoutineOptions({
             setError('')
           } catch {
             setError(
-              'Check the limits, source URL, and quiet hours. Use positive limits, HH:mm and a valid time zone.',
+              uiText(
+                'Check the limits, source URL, and quiet hours. Use positive limits, HH:mm and a valid time zone.',
+              ),
             )
           }
         }}

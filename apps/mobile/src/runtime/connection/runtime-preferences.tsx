@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { MobileRemoteDesktop } from '../../screens/remote-desktop'
 import { useSettingsDraft } from '../preferences/settings-target'
@@ -164,18 +165,23 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
     <View style={{ gap: 28 }}>
       {section && (
         <Text style={styles.muted}>
-          Switches and choices save automatically. Text fields show a Save button.
+          <InterfaceText>
+            {'Switches and choices save automatically. Text fields show a Save button.'}
+          </InterfaceText>
         </Text>
       )}
       {show('tasks') && (
         <>
           <Text style={styles.muted}>
-            Computer defaults apply when scoped Task lifecycle settings inherit. Scoped restart and
-            archiving rules take precedence.
+            <InterfaceText>
+              {
+                'Computer defaults apply when scoped Task lifecycle settings inherit. Scoped restart and archiving rules take precedence.'
+              }
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Open scoped task lifecycle"
+            label={uiText('Open scoped task lifecycle')}
             onPress={() =>
               router.push({
                 pathname: '/settings/task-lifecycle',
@@ -187,17 +193,22 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       )}
       {!section && (
         <Text style={styles.muted}>
-          Saved on this computer and shared with its paired devices. Switches and choices save
-          automatically.
+          <InterfaceText>
+            {
+              'Saved on this computer and shared with its paired devices. Switches and choices save automatically.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {!connected ? (
         <Text accessibilityRole="alert" style={styles.muted}>
-          This computer is offline. Reconnect to load and change its preferences.
+          <InterfaceText>
+            {'This computer is offline. Reconnect to load and change its preferences.'}
+          </InterfaceText>
         </Text>
       ) : !value && !loadError ? (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Loading computer preferences…
+          <InterfaceText>{'Loading computer preferences…'}</InterfaceText>
         </Text>
       ) : null}
       {!!loadError && (
@@ -208,7 +219,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
           <Action
             wide
             secondary
-            label="Retry computer preferences"
+            label={uiText('Retry computer preferences')}
             disabled={!connected || busy}
             onPress={() => setRetry(retry + 1)}
           />
@@ -216,12 +227,12 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       )}
       {busy && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Saving computer preferences…
+          <InterfaceText>{'Saving computer preferences…'}</InterfaceText>
         </Text>
       )}
       {saved && !busy && !error && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Computer preferences saved.
+          <InterfaceText>{'Computer preferences saved.'}</InterfaceText>
         </Text>
       )}
       {!!error && (
@@ -232,25 +243,27 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
       {value && (
         <>
           {show('tasks') && (
-            <Section title="Prompt suggestions">
+            <Section title={uiText('Prompt suggestions')}>
               <SettingsSwitchRow
                 first
-                label="Tab completion"
+                label={uiText('Tab completion')}
                 value={value.suggestNextPrompt}
                 disabled={disabled || snapshot?.promptSuggestionsEnabled === undefined}
                 onValueChange={(suggestNextPrompt) => save({ suggestNextPrompt })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Suggest a next prompt after a Claude or Codex turn. Tap the suggestion to insert it
-                without sending. On desktop, press Tab to insert it or Escape to dismiss it. Each
-                suggestion makes an extra model request and uses plan usage.
+                <InterfaceText>
+                  {
+                    'Suggest a next prompt after a Claude or Codex turn. Tap the suggestion to insert it without sending. On desktop, press Tab to insert it or Escape to dismiss it. Each suggestion makes an extra model request and uses plan usage.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('tasks') && (
-            <Section title="Running tasks">
+            <Section title={uiText('Running tasks')}>
               <Choice
-                label="Scheduled worker capacity"
+                label={uiText('Scheduled worker capacity')}
                 value={String(value?.maxConcurrentWorkers ?? 0)}
                 disabled={disabled}
                 items={[0, 2, 4, 8, 16, 32].map((limit) => ({
@@ -260,8 +273,11 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                 onChange={(limit) => save({ maxConcurrentWorkers: Number(limit) })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Scheduled jobs wait at this threshold. One slot stays available for conversation
-                work. Direct messages and needed children can exceed it. Running work is kept.
+                <InterfaceText>
+                  {
+                    'Scheduled jobs wait at this threshold. One slot stays available for conversation work. Direct messages and needed children can exceed it. Running work is kept.'
+                  }
+                </InterfaceText>
               </Text>
               <ChildAgentLimit
                 value={value?.maxActiveChildAgents}
@@ -271,26 +287,29 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Continue interrupted turns after runtime restart"
+                  label={uiText('Continue interrupted turns after runtime restart')}
                   value={value?.autoContinueAfterRestart ?? false}
                   disabled={disabled}
                   onValueChange={(autoContinueAfterRestart) => save({ autoContinueAfterRestart })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Interrupted turns can resume automatically. Queued messages stay paused until you
-                  resume them. Stopped tasks and automations still require Retry.
+                  <InterfaceText>
+                    {
+                      'Interrupted turns can resume automatically. Queued messages stay paused until you resume them. Stopped tasks and automations still require Retry.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <Choice
-                  label="Auto-archive inactive tasks"
+                  label={uiText('Auto-archive inactive tasks')}
                   value={String(value?.autoArchiveDays ?? 0)}
                   disabled={disabled}
                   items={[
-                    { id: '0', name: 'Never' },
-                    { id: '7', name: 'After 7 days' },
-                    { id: '14', name: 'After 14 days' },
-                    { id: '30', name: 'After 30 days' },
+                    { id: '0', name: uiText('Never') },
+                    { id: '7', name: uiText('After 7 days') },
+                    { id: '14', name: uiText('After 14 days') },
+                    { id: '30', name: uiText('After 30 days') },
                   ]}
                   onChange={(days) =>
                     save({
@@ -302,66 +321,73 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   }
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Computer fallback when no scoped archiving rule is set. Scoped On archives after
-                  time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned
-                  tasks and open terminals are protected.
+                  <InterfaceText>
+                    {
+                      'Computer fallback when no scoped archiving rule is set. Scoped On archives after time in Settled; scoped Off disables automatic archiving. Running, waiting, pinned tasks and open terminals are protected.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Keep this computer awake while tasks run"
+                  label={uiText('Keep this computer awake while tasks run')}
                   value={value?.preventSleepWhileRunning ?? false}
                   disabled={disabled}
                   onValueChange={(preventSleepWhileRunning) => save({ preventSleepWhileRunning })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  macOS only. Prevents idle sleep while a task is working, so it keeps going while
-                  you follow it here.
+                  <InterfaceText>
+                    {
+                      'macOS only. Prevents idle sleep while a task is working, so it keeps going while you follow it here.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
             </Section>
           )}
           {show('tasks') && (
             <Section
-              title="Model modes (experimental)"
+              title={uiText('Model modes (experimental)')}
               advanced
               searchLabels={['Tune & Maestro modes (experimental)']}
             >
               <SettingsSwitchRow
                 first
-                label="Tune & Maestro modes (experimental)"
+                label={uiText('Tune & Maestro modes (experimental)')}
                 value={value.enableSmartModelSelection}
                 disabled={disabled || snapshot?.smartModelSelectionEnabled === undefined}
                 onValueChange={(enableSmartModelSelection) => save({ enableSmartModelSelection })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Tune chooses a model within the default agent. Maestro chooses the agent and model
-                together. Both choose reasoning once before the first turn. Inherit keeps project
-                defaults.
+                <InterfaceText>
+                  {
+                    'Tune chooses a model within the default agent. Maestro chooses the agent and model together. Both choose reasoning once before the first turn. Inherit keeps project defaults.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('tasks') && (
             <Section
-              title="Project mode (experimental)"
+              title={uiText('Project mode (experimental)')}
               advanced
               searchLabels={['Scope mode (experimental)', 'Scope model mode']}
             >
               <SettingsSwitchRow
                 first
-                label="Scope mode (experimental)"
+                label={uiText('Scope mode (experimental)')}
                 value={value.enableAutoProjectSelection}
                 disabled={disabled || snapshot?.autoProjectSelectionEnabled === undefined}
                 onValueChange={(enableAutoProjectSelection) => save({ enableAutoProjectSelection })}
               />
               {value.enableAutoProjectSelection && (
                 <Choice
-                  label="Scope model mode"
+                  label={uiText('Scope model mode')}
                   value={value.autoProjectModelSelection}
                   disabled={disabled}
                   items={[
-                    { id: 'inherit', name: 'Inherit' },
+                    { id: 'inherit', name: uiText('Inherit') },
                     ...(value.enableSmartModelSelection
                       ? [
                           { id: 'auto', name: 'Tune', icon: 'tune' as const },
@@ -376,116 +402,136 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               )}
 
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Find primary and linked projects from the first message on this computer. If no
-                project matches, continue without a project.
+                <InterfaceText>
+                  {
+                    'Find primary and linked projects from the first message on this computer. If no project matches, continue without a project.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('tasks') && (
-            <Section title="Supervised mode">
+            <Section title={uiText('Supervised mode')}>
               <SettingsSwitchRow
                 first
-                label="Always allow web requests on this computer"
+                label={uiText('Always allow web requests on this computer')}
                 value={value.allowWebRequests}
                 disabled={disabled || !webRulesSupported}
                 onValueChange={(allowWebRequests) => save({ allowWebRequests })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
                 {webRulesSupported
-                  ? 'Allows browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.'
-                  : 'Update Dovo on this computer to use web approval rules.'}
+                  ? uiText(
+                      'Allows browsing and search in every project and thread on this computer. Shell commands and file changes keep their existing approvals.',
+                    )
+                  : uiText('Update Dovo on this computer to use web approval rules.')}
               </Text>
             </Section>
           )}
           {show('tools') && (
-            <Section title="Agent tools">
+            <Section title={uiText('Agent tools')}>
               <SettingsSwitchRow
                 first
-                label="Linked projects tool"
+                label={uiText('Linked projects tool')}
                 value={value?.enableLinkedProjectsTool ?? true}
                 disabled={disabled}
                 onValueChange={(enableLinkedProjectsTool) => save({ enableLinkedProjectsTool })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Let agents discover projects and stage links for their own thread’s next turn.
-                Existing links and manual linking are unaffected. Disabling blocks calls
-                immediately; tool visibility updates next turn.
+                <InterfaceText>
+                  {
+                    'Let agents discover projects and stage links for their own thread’s next turn. Existing links and manual linking are unaffected. Disabling blocks calls immediately; tool visibility updates next turn.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('tasks') && (
-            <Section title="Code reviews (experimental)">
+            <Section title={uiText('Code reviews (experimental)')}>
               <SettingsSwitchRow
                 first
-                label="Enable experimental code reviews"
+                label={uiText('Enable experimental code reviews')}
                 value={value?.enableCodeReviews ?? false}
                 disabled={disabled}
                 onValueChange={(enableCodeReviews) => save({ enableCodeReviews })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Opt in to agent reviews, findings, verification and optional review approval on this
-                computer. Review is never required to commit or push.
+                <InterfaceText>
+                  {
+                    'Opt in to agent reviews, findings, verification and optional review approval on this computer. Review is never required to commit or push.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('pulls') && (
-            <Section title="Pull requests & pipelines">
+            <Section title={uiText('Pull requests & pipelines')}>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Smart PR linking"
+                  label={uiText('Smart PR linking')}
                   value={value?.autoLinkPullRequests ?? true}
                   disabled={disabled}
                   onValueChange={(autoLinkPullRequests) => save({ autoLinkPullRequests })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Links branch matches and verified PR URLs mentioned in messages.
+                  <InterfaceText>
+                    {'Links branch matches and verified PR URLs mentioned in messages.'}
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Settle when the PR closes"
+                  label={uiText('Settle when the PR closes')}
                   value={value?.settleOnPullClose ?? false}
                   disabled={disabled}
                   onValueChange={(settleOnPullClose) => save({ settleOnPullClose })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Moves the thread to Settled when its main PR is merged or closed. Pinned threads
-                  and active or queued work stay put.
+                  <InterfaceText>
+                    {
+                      'Moves the thread to Settled when its main PR is merged or closed. Pinned threads and active or queued work stay put.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Archive tasks when their PR closes"
+                  label={uiText('Archive tasks when their PR closes')}
                   value={value?.archiveOnPullMerge ?? false}
                   disabled={disabled}
                   onValueChange={(archiveOnPullMerge) => save({ archiveOnPullMerge })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Archives a task once its pull request is merged or closed. Pinned and busy tasks
-                  stay.
+                  <InterfaceText>
+                    {
+                      'Archives a task once its pull request is merged or closed. Pinned and busy tasks stay.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Enable experimental PR feedback watcher"
+                  label={uiText('Enable experimental PR feedback watcher')}
                   value={value?.enablePullRequestWatching ?? false}
                   disabled={disabled}
                   onValueChange={(enablePullRequestWatching) => save({ enablePullRequestWatching })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Let agents hand PR monitoring to this computer. New comments, reviews and failing
-                  checks wake the thread. Finished watched threads move to Waiting. Paused queues
-                  stay paused; settling or archiving cancels watches.
+                  <InterfaceText>
+                    {
+                      'Let agents hand PR monitoring to this computer. New comments, reviews and failing checks wake the thread. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="PR babysitting"
+                  label={uiText('PR babysitting')}
                   value={
                     !!value?.enablePullRequestWatching && !!value?.enablePullRequestBabysitting
                   }
@@ -498,44 +544,49 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   }
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Maintain the PR for an editing thread. Fix CI and review feedback, test and push
-                  fixes, and use GitHub Update branch to stay current. Merge approval stays manual.
-                  This uses agent tokens. Stop a PR watch to opt out for that thread.
+                  <InterfaceText>
+                    {
+                      'Maintain the PR for an editing thread. Fix CI and review feedback, test and push fixes, and use GitHub Update branch to stay current. Merge approval stays manual. This uses agent tokens. Stop a PR watch to opt out for that thread.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Enable experimental pipeline watcher"
+                  label={uiText('Enable experimental pipeline watcher')}
                   value={value?.enablePipelineWatching ?? false}
                   disabled={disabled}
                   onValueChange={(enablePipelineWatching) => save({ enablePipelineWatching })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Let agents hand pipeline monitoring to this computer. Failed runs wake the thread;
-                  successful runs finish silently. Finished watched threads move to Waiting. Paused
-                  queues stay paused; settling or archiving cancels watches.
+                  <InterfaceText>
+                    {
+                      'Let agents hand pipeline monitoring to this computer. Failed runs wake the thread; successful runs finish silently. Finished watched threads move to Waiting. Paused queues stay paused; settling or archiving cancels watches.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
             </Section>
           )}
           {show('tools') && (
-            <Section title="Shared GitHub and Jira retrieval">
+            <Section title={uiText('Shared GitHub and Jira retrieval')}>
               <SettingsSwitchRow
                 first
-                label="Share retrieval with paired computers"
+                label={uiText('Share retrieval with paired computers')}
                 value={value?.enableSharedRetrieval ?? true}
                 disabled={disabled}
                 onValueChange={(enableSharedRetrieval) => save({ enableSharedRetrieval })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                PRs use this machine's configured accounts by default. A preferred retrieval
-                computer must have the same account and repository access. If it is offline, saved
-                PRs remain visible and actions wait for reconnection. Credentials stay on their
-                computer.
+                <InterfaceText>
+                  {
+                    "PRs use this machine's configured accounts by default. A preferred retrieval computer must have the same account and repository access. If it is offline, saved PRs remain visible and actions wait for reconnection. Credentials stay on their computer."
+                  }
+                </InterfaceText>
               </Text>
               <Choice
-                label="Preferred retrieval computer"
+                label={uiText('Preferred retrieval computer')}
                 value={value?.preferredRetrievalHost || 'auto'}
                 disabled={disabled || value?.enableSharedRetrieval === false}
                 items={[
@@ -556,9 +607,9 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('tools') && snapshot?.remoteDesktopEnabled !== undefined && (
-            <Section title="Remote desktop (experimental)">
+            <Section title={uiText('Remote desktop (experimental)')}>
               <Action
-                label="Connect to desktop"
+                label={uiText('Connect to desktop')}
                 disabled={!connected || !snapshot?.remoteDesktopEnabled}
                 onPress={() => setDesktopOpen(true)}
               />
@@ -567,19 +618,22 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               )}
               <SettingsSwitchRow
                 first
-                label="Enable remote desktop"
+                label={uiText('Enable remote desktop')}
                 value={value?.enableRemoteDesktop ?? false}
                 disabled={disabled}
                 onValueChange={(enableRemoteDesktop) => save({ enableRemoteDesktop })}
               />
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Allow paired devices to view this computer’s primary display. Requires Cua Driver
-                and host OS permissions. Turning this off ends sharing.
+                <InterfaceText>
+                  {
+                    'Allow paired devices to view this computer’s primary display. Requires Cua Driver and host OS permissions. Turning this off ends sharing.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('tools') && (
-            <Section title="Studio Tools (experimental)">
+            <Section title={uiText('Studio Tools (experimental)')}>
               {studioToolSettings.map(({ key, label, description }) => (
                 <View key={key} style={{ gap: 6 }}>
                   <SettingsSwitchRow
@@ -597,18 +651,21 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('artifacts') && (
-            <Section title="Artifacts">
+            <Section title={uiText('Artifacts')}>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Enable Dovo Artifacts"
+                  label={uiText('Enable Dovo Artifacts')}
                   value={value?.enableArtifacts ?? false}
                   disabled={disabled}
                   onValueChange={(enableArtifacts) => save({ enableArtifacts })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Let agents create documents, diagrams, code and interactive previews inside
-                  threads. Shared by desktop and mobile for this computer.
+                  <InterfaceText>
+                    {
+                      'Let agents create documents, diagrams, code and interactive previews inside threads. Shared by desktop and mobile for this computer.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               {(['settledArtifactRetention', 'archivedArtifactRetention'] as const).map((key) => (
@@ -616,8 +673,8 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   key={key}
                   label={
                     key === 'settledArtifactRetention'
-                      ? 'Artifacts when settled'
-                      : 'Artifacts when archived'
+                      ? uiText('Artifacts when settled')
+                      : uiText('Artifacts when archived')
                   }
                   disabled={disabled}
                   value={value?.[key] ?? 'forever'}
@@ -629,29 +686,33 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                 />
               ))}
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Applies to existing artifacts and all versions, even when disabled. Deletion is
-                permanent. The archived rule takes priority; reopening or restoring resets the
-                state’s timer.
+                <InterfaceText>
+                  {
+                    'Applies to existing artifacts and all versions, even when disabled. Deletion is permanent. The archived rule takes priority; reopening or restoring resets the state’s timer.'
+                  }
+                </InterfaceText>
               </Text>
             </Section>
           )}
           {show('memory') && (
             <Section title={uiText('Memory')}>
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                Optional notes stored locally on this computer and shared across its threads. Each
-                scope starts off. Disabling a scope keeps its notes and stops agent access. Manage
-                saved notes in desktop Settings → Tasks & projects → Memory.
+                <InterfaceText>
+                  {
+                    'Optional notes stored locally on this computer and shared across its threads. Each scope starts off. Disabling a scope keeps its notes and stops agent access. Manage saved notes in desktop Settings → Tasks & projects → Memory.'
+                  }
+                </InterfaceText>
               </Text>
               {(
                 [
                   {
                     scope: 'system',
-                    label: 'System-wide memory',
+                    label: uiText('System-wide memory'),
                     enabled: value?.memory.systemEnabled ?? false,
                   },
                   {
                     scope: 'projectless',
-                    label: 'Memory for threads without a project',
+                    label: uiText('Memory for threads without a project'),
                     enabled: value?.memory.projectlessEnabled ?? false,
                   },
                 ] as const
@@ -668,12 +729,14 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               {!!memoryError && (
                 <View style={{ gap: 8 }}>
                   <Text accessibilityRole="alert" style={styles.error}>
-                    Project memory settings could not be loaded: {memoryError}
+                    <InterfaceText values={{ value0: memoryError }}>
+                      {'Project memory settings could not be loaded: {value0}'}
+                    </InterfaceText>
                   </Text>
                   <Action
                     wide
                     secondary
-                    label="Retry project memory settings"
+                    label={uiText('Retry project memory settings')}
                     disabled={disabled}
                     onPress={() => setRetry(retry + 1)}
                   />
@@ -681,20 +744,26 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               )}
               {memoryLoading && (
                 <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 16 }]}>
-                  Loading project memory settings…
+                  <InterfaceText>{'Loading project memory settings…'}</InterfaceText>
                 </Text>
               )}
               {!memoryLoading && !memoryError && !memoryProjects.length && (
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  No project memory scopes available. Add a project on this computer to configure
-                  its memory.
+                  <InterfaceText>
+                    {
+                      'No project memory scopes available. Add a project on this computer to configure its memory.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {memoryProjects.map((project) => (
                 <SettingsSwitchRow
                   key={project.id}
                   first
-                  label={`Memory for ${project.name}${!project.registered ? ' · Project removed' : ''}`}
+                  label={uiText('Memory for {value0}{value1}', {
+                    value0: project.name,
+                    value1: !project.registered ? ' · Project removed' : '',
+                  })}
                   value={value?.memory.projectRepositoryIds.includes(project.id) ?? false}
                   disabled={
                     disabled ||
@@ -707,11 +776,11 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('worktrees') && (
-            <Section title="Worktrees">
+            <Section title={uiText('Worktrees')}>
               <View style={{ padding: 16, gap: 8 }}>
                 <Field
-                  label="Branch prefix"
-                  placeholder="none"
+                  label={uiText('Branch prefix')}
+                  placeholder={uiText('none')}
                   autoCorrect={false}
                   autoCapitalize="none"
                   editable={!disabled}
@@ -721,7 +790,10 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                     setSaved(false)
                   }}
                   returnKeyType="done"
-                  hint={`New task branches look like ${branchPrefix.prefix}fix-login-1a2b3c4d. Leave empty for none.`}
+                  hint={uiText(
+                    'New task branches look like {value0}fix-login-1a2b3c4d. Leave empty for none.',
+                    { value0: branchPrefix.prefix },
+                  )}
                   error={
                     branchPrefix.valid
                       ? undefined
@@ -731,7 +803,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                 {prefixDraft !== null && prefixDraft !== value.branchPrefix && (
                   <Action
                     wide
-                    label="Save branch prefix"
+                    label={uiText('Save branch prefix')}
                     disabled={disabled || !branchPrefix.valid}
                     onPress={commitPrefix}
                   />
@@ -740,20 +812,23 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Remove worktrees of archived tasks"
+                  label={uiText('Remove worktrees of archived tasks')}
                   value={value?.removeArchivedWorktrees ?? false}
                   disabled={disabled}
                   onValueChange={(removeArchivedWorktrees) => save({ removeArchivedWorktrees })}
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Worktrees with uncommitted changes are kept. The branch stays, so restoring a task
-                  checks it out again. Ignored local files are deleted with the checkout.
+                  <InterfaceText>
+                    {
+                      'Worktrees with uncommitted changes are kept. The branch stays, so restoring a task checks it out again. Ignored local files are deleted with the checkout.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
               <View style={{ gap: 6 }}>
                 <SettingsSwitchRow
                   first
-                  label="Remove worktrees when deleting their last thread"
+                  label={uiText('Remove worktrees when deleting their last thread')}
                   value={value?.removeWorktreesOnThreadDelete ?? false}
                   disabled={disabled}
                   onValueChange={(removeWorktreesOnThreadDelete) =>
@@ -761,40 +836,44 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   }
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Only clean Dovo-created checkouts with no remaining threads are removed. Branches
-                  and uncommitted changes are kept. Ignored local files are deleted with the
-                  checkout.
+                  <InterfaceText>
+                    {
+                      'Only clean Dovo-created checkouts with no remaining threads are removed. Branches and uncommitted changes are kept. Ignored local files are deleted with the checkout.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
             </Section>
           )}
           {show('activity') && (
-            <Section title="Activity">
+            <Section title={uiText('Activity')}>
               {snapshot?.freezeProfilesSupported && (
                 <View style={{ gap: 6 }}>
                   <SettingsSwitchRow
-                    label="Capture repeated freezes"
+                    label={uiText('Capture repeated freezes')}
                     value={value?.enableFreezeProfiles ?? false}
                     disabled={disabled}
                     onValueChange={(enableFreezeProfiles) => save({ enableFreezeProfiles })}
                   />
                   <Text style={styles.muted}>
-                    After two busy stalls, sample CPU work for two seconds. Keep three local
-                    summaries without source paths or user code. At most once per ten minutes. Off
-                    by default.
+                    <InterfaceText>
+                      {
+                        'After two busy stalls, sample CPU work for two seconds. Keep three local summaries without source paths or user code. At most once per ten minutes. Off by default.'
+                      }
+                    </InterfaceText>
                   </Text>
                 </View>
               )}
               <View style={{ gap: 6 }}>
                 <Choice
-                  label="Keep activity history"
+                  label={uiText('Keep activity history')}
                   value={String(value?.activityRetentionDays ?? 90)}
                   disabled={disabled}
                   items={[
-                    { id: '0', name: 'Forever' },
-                    { id: '365', name: 'For 1 year' },
-                    { id: '90', name: 'For 90 days' },
-                    { id: '30', name: 'For 30 days' },
+                    { id: '0', name: uiText('Forever') },
+                    { id: '365', name: uiText('For 1 year') },
+                    { id: '90', name: uiText('For 90 days') },
+                    { id: '30', name: uiText('For 30 days') },
                   ]}
                   onChange={(days) =>
                     save({
@@ -806,10 +885,11 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                   }
                 />
                 <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
-                  Older requests and tool details are deleted from this computer. Task conversations
-                  are kept. CLI diagnostics and raw provider events expire after{' '}
-                  {DIAGNOSTIC_RETENTION_DAYS} days, including when activity history is kept forever.
-                  Successful Git and GitHub reads are not recorded.
+                  <InterfaceText values={{ value0: DIAGNOSTIC_RETENTION_DAYS }}>
+                    {
+                      'Older requests and tool details are deleted from this computer. Task conversations are kept. CLI diagnostics and raw provider events expire after {value0} days, including when activity history is kept forever. Successful Git and GitHub reads are not recorded.'
+                    }
+                  </InterfaceText>
                 </Text>
               </View>
             </Section>
@@ -838,6 +918,8 @@ function ChildAgentLimit({
   disabled: boolean
   onSave: (value: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const [draft, setDraft] = useApplicationState<string | null>(null)
   useSettingsDraft(draft !== null && draft !== String(value ?? 4))
   const limit = Number(draft ?? value ?? 4)
@@ -851,19 +933,21 @@ function ChildAgentLimit({
   return (
     <View style={{ gap: 8, padding: 16 }}>
       <Field
-        label="Maximum concurrent child agents"
+        label={uiText('Maximum concurrent child agents')}
         keyboardType="number-pad"
         value={draft ?? String(value ?? 4)}
         editable={!disabled}
         onChangeText={setDraft}
         returnKeyType="done"
-        hint="Per parent thread on this computer. Extra launches are refused until a child finishes; existing children keep running when the limit is lowered. Default: 4."
+        hint={uiText(
+          'Per parent thread on this computer. Extra launches are refused until a child finishes; existing children keep running when the limit is lowered. Default: 4.',
+        )}
         error={valid ? undefined : 'Enter a whole number of at least 1.'}
       />
       {draft !== null && limit !== value && (
         <Action
           wide
-          label="Save child agent limit"
+          label={uiText('Save child agent limit')}
           disabled={disabled || !valid}
           onPress={commit}
         />

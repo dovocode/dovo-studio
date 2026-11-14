@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -89,16 +90,21 @@ export function GithubRepositoryPicker({
         gap: 12,
       }}
     >
-      <Text style={styles.text}>Choose a GitHub repository</Text>
+      <Text style={styles.text}>
+        <InterfaceText>{'Choose a GitHub repository'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Uses the runtime host’s GitHub login, including accessible organization repositories.
-        Selecting fills the form; it does not start cloning.
+        <InterfaceText>
+          {
+            'Uses the runtime host’s GitHub login, including accessible organization repositories. Selecting fills the form; it does not start cloning.'
+          }
+        </InterfaceText>
       </Text>
       <Field
-        label="Filter loaded repositories"
+        label={uiText('Filter loaded repositories')}
         value={filter}
         onChangeText={setFilter}
-        placeholder="Repository or organization name"
+        placeholder={uiText('Repository or organization name')}
       />
       {!!error && (
         <>
@@ -135,7 +141,7 @@ export function GithubRepositoryPicker({
             }}
           >
             <Action
-              label={`${repo.fullName} · ${repo.private ? 'Private' : 'Public'}`}
+              label={`${repo.fullName} · ${repo.private ? uiText('Private') : uiText('Public')}`}
               secondary
               disabled={busy || !connected}
               onPress={() => onSelect(repo)}
@@ -150,21 +156,32 @@ export function GithubRepositoryPicker({
         {!busy && !error && !repositories.length && (
           <Text style={styles.muted}>
             {data?.repositories.length
-              ? 'No matches in loaded repositories. Load more or change the filter.'
-              : 'No accessible repositories found.'}
+              ? uiText('No matches in loaded repositories. Load more or change the filter.')
+              : uiText('No accessible repositories found.')}
           </Text>
         )}
       </ScrollView>
-      {busy && <Text style={styles.muted}>Loading GitHub repositories…</Text>}
+      {busy && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Loading GitHub repositories…'}</InterfaceText>
+        </Text>
+      )}
       {data && (
         <Text style={styles.muted}>
-          {data.repositories.length} loaded
-          {data.nextPage !== null ? ' · More available' : ' · All loaded'}
+          <InterfaceText
+            values={{
+              value0: data.repositories.length,
+              value1:
+                data.nextPage !== null ? uiText(' · More available') : uiText(' · All loaded'),
+            }}
+          >
+            {'{value0} loaded{value1}'}
+          </InterfaceText>
         </Text>
       )}
       {data?.nextPage != null && (
         <Action
-          label="Load more"
+          label={uiText('Load more')}
           secondary
           disabled={busy || !connected}
           onPress={() => {

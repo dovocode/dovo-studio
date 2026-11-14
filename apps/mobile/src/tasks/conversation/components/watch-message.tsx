@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Alert, Pressable, View } from 'react-native'
 import { pipelineSignal, type WatchMessage } from '@dovo/protocol'
@@ -7,6 +8,8 @@ import { openAppLink } from '../../../ui/content/open-link'
 import { useLinkOrigin } from '../../../ui/content/link-origin'
 
 export function WatchMessageCard({ update, taskId }: { update: WatchMessage; taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [expanded, setExpanded] = useState(false)
   const origin = useLinkOrigin(taskId)
@@ -41,15 +44,15 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
           {update.label}
         </Text>
         <Text style={[styles.muted, { fontSize: 12 }]}>
-          {update.watching ? 'Watching' : 'Watch ended'}
+          {update.watching ? uiText('Watching') : uiText('Watch ended')}
         </Text>
       </View>
       <Pressable
         accessibilityRole="link"
-        accessibilityLabel={`Open ${update.title}`}
+        accessibilityLabel={uiText('Open {value0}', { value0: update.title })}
         onPress={() => {
           void openAppLink(update.url, false, origin).catch((cause: unknown) =>
-            Alert.alert('Could not open link', String(cause)),
+            Alert.alert(uiText('Could not open link'), String(cause)),
           )
         }}
         style={{ minHeight: 44, justifyContent: 'center' }}
@@ -65,7 +68,11 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
         </Text>
       ))}
       {update.highlights.length > 4 && (
-        <Text style={styles.muted}>+{update.highlights.length - 4} more</Text>
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: update.highlights.length - 4 }}>
+            {'+{value0} more'}
+          </InterfaceText>
+        </Text>
       )}
       {!!update.details && (
         <>
@@ -82,8 +89,10 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
           >
             <Text style={[styles.muted, { fontSize: 12 }]}>
               {expanded
-                ? 'Hide details'
-                : `View ${update.kind === 'pipeline' ? 'job results' : 'feedback'}`}
+                ? uiText('Hide details')
+                : uiText('View {value0}', {
+                    value0: update.kind === 'pipeline' ? 'job results' : 'feedback',
+                  })}
             </Text>
           </Pressable>
           {expanded && (

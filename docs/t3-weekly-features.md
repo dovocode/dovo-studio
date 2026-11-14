@@ -54,10 +54,30 @@ English. Automatic uses the device locale and falls back to English.
 Every explicit ASR locale is available, including regional variants. Speech and interface choices
 are separate. Regional variants share the base language catalog. Arabic uses right-to-left layout.
 
-The first catalog has 80 common strings in 29 base languages. It covers navigation, common controls,
-and selected settings labels. Help text, errors, and other copy still fall back to English.
-Conversation text, file names, model names, and other user content do not enter the translation
-catalog. The translations have not had native-speaker review.
+The catalog now covers more than 4,200 authored mobile strings in 29 base languages. It includes
+settings, help, local errors, accessibility labels, menus, Bots, threads, files and terminals.
+Translations ship with the app. The app does not contact a translation service.
+
+Only marked interface copy enters the catalog. Message values use named placeholders. Names,
+messages, file paths, commands and drafts stay unchanged. Changing the language keeps open form
+drafts. Settings search accepts translated labels and keeps stable English keys in deep links.
+
+Native widgets and Live Activity content use a separate SwiftUI serializer. They can still show
+English. Provider messages and other runtime content can also remain in their source language. The
+translations have not had native-speaker review.
+
+Check catalog coverage and placeholders with:
+
+```sh
+pnpm exec vp test packages/studio-core/src/interface-language.test.ts apps/mobile/src/interface-copy.test.ts --maxWorkers=1
+pnpm exec playwright install chromium
+node scripts/check-mobile-settings-layout-browser.mjs --translations-only
+```
+
+The browser check uses the real language provider and Settings screens with mocked native controls.
+It checks translated search in Dutch, German, Greek, Turkish and Arabic, right-to-left direction,
+stable deep links, literal message values and kept drafts. It does not verify physical iPhone
+layout.
 
 ## Theme tools
 

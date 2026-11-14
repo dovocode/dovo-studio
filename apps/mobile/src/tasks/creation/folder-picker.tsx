@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { projectIcon, projectIconColor, projectIconInitials } from '@dovo/protocol'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
@@ -160,10 +161,12 @@ export function FolderPicker({
           {multipleMachines && (
             <Text style={styles.muted}>
               {serverCount > 1
-                ? `${serverCount} servers`
+                ? uiText('{value0} servers', { value0: serverCount })
                 : runtimeComputerName(group.entries[0].source)}
-              {defaultSource ? ` · Default: ${runtimeComputerName(defaultSource)}` : ''}
-              {!preferred ? ' · Unavailable' : ''}
+              {defaultSource
+                ? uiText(' · Default: {value0}', { value0: runtimeComputerName(defaultSource) })
+                : ''}
+              {!preferred ? uiText(' · Unavailable') : ''}
             </Text>
           )}
         </View>
@@ -250,13 +253,15 @@ export function FolderPicker({
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={
-            selectedProject ? `Selected project: ${prominentLabel}` : 'Start in Scope'
+            selectedProject
+              ? uiText('Selected project: {value0}', { value0: prominentLabel })
+              : uiText('Start in Scope')
           }
           accessibilityState={{ selected: projectSelected, disabled: scopeDisabled }}
           accessibilityHint={
             selectedProject
-              ? 'Choose a different project or Scope'
-              : 'Find the right projects for your task'
+              ? uiText('Choose a different project or Scope')
+              : uiText('Find the right projects for your task')
           }
           disabled={scopeDisabled}
           onPress={() => (selectedProject ? show('projects') : void chooseAuto())}
@@ -297,7 +302,7 @@ export function FolderPicker({
         </Pressable>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Choose project"
+          accessibilityLabel={uiText('Choose project')}
           accessibilityValue={{
             text: prominentLabel,
           }}
@@ -333,7 +338,7 @@ export function FolderPicker({
     ) : (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={prominent ? 'Choose project' : 'Folder'}
+        accessibilityLabel={prominent ? uiText('Choose project') : uiText('Folder')}
         accessibilityValue={{ text: projectLabel }}
         accessibilityState={{
           selected: prominent && projectSelected,
@@ -371,7 +376,7 @@ export function FolderPicker({
           />
         )}
         <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
-          {prominent ? (selectedProject?.name ?? 'Choose project') : projectLabel}
+          {prominent ? (selectedProject?.name ?? uiText('Choose project')) : projectLabel}
         </Text>
         {prominent && projectSelected && <Icon name="check" size={14} color={colors.accent} />}
         <Icon name="down" size={14} />
@@ -381,7 +386,7 @@ export function FolderPicker({
     multipleMachines || (stacked && !!runtime.profile) ? (
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Task server"
+        accessibilityLabel={uiText('Task server')}
         accessibilityValue={{ text: runtimeComputerName(runtime) }}
         accessibilityState={{ disabled: locked, expanded: open && mode === 'servers' }}
         disabled={locked}
@@ -427,12 +432,16 @@ export function FolderPicker({
       {open && !adding && !transferring && (
         <Sheet
           title={
-            mode === 'projects' ? 'Project' : mode === 'add-runtime' ? 'Select runtime' : 'Server'
+            mode === 'projects'
+              ? uiText('Project')
+              : mode === 'add-runtime'
+                ? uiText('Select runtime')
+                : uiText('Server')
           }
           headerAction={
             mode === 'projects'
               ? {
-                  label: 'Add project',
+                  label: uiText('Add project'),
                   icon: 'add',
                   disabled:
                     locked || !sources.some((source) => source.connected && source.snapshot),
@@ -449,11 +458,11 @@ export function FolderPicker({
               {onAuto && (
                 <Pressable
                   accessibilityRole="button"
-                  accessibilityLabel="Scope mode"
+                  accessibilityLabel={uiText('Scope mode')}
                   accessibilityState={{ selected: autoProject, disabled: locked || !onAuto }}
                   accessibilityHint={
                     !onAuto
-                      ? 'Enable Scope on this computer to select projects automatically.'
+                      ? uiText('Enable Scope on this computer to select projects automatically.')
                       : undefined
                   }
                   disabled={locked || !onAuto}
@@ -461,14 +470,14 @@ export function FolderPicker({
                   style={[styles.row, { padding: 12, minHeight: 48 }]}
                 >
                   <Icon name="scope" size={18} />
-                  <Text style={[styles.text, { flex: 1 }]}>Scope</Text>
+                  <Text style={[styles.text, { flex: 1 }]}>{uiText('Scope')}</Text>
                   {autoProject && <Icon name="check" size={17} />}
                 </Pressable>
               )}
               {!chatOnly && (
                 <SearchField
-                  label="Search projects"
-                  placeholder="Search projects"
+                  label={uiText('Search projects')}
+                  placeholder={uiText('Search projects')}
                   value={query}
                   onChangeText={setQuery}
                 />
@@ -476,13 +485,15 @@ export function FolderPicker({
               {matches.map(projectRow)}
               {!chatOnly && !matches.length && (
                 <Text style={styles.muted}>
-                  {query.trim() ? 'No matching projects.' : 'No projects yet.'}
+                  {query.trim() ? uiText('No matching projects.') : uiText('No projects yet.')}
                 </Text>
               )}
             </>
           ) : mode === 'add-runtime' ? (
             <>
-              <Text style={styles.muted}>Choose where to add the project.</Text>
+              <Text style={styles.muted}>
+                <InterfaceText>{'Choose where to add the project.'}</InterfaceText>
+              </Text>
               {sources.map((source) => (
                 <Pressable
                   key={source.profile.id}
@@ -514,8 +525,10 @@ export function FolderPicker({
             <>
               <Text style={styles.muted}>
                 {autoProject
-                  ? 'Select projects automatically on'
-                  : `Run ${selected?.kind === 'scratch' ? 'No Project' : selected?.name} on`}
+                  ? uiText('Select projects automatically on')
+                  : uiText('Run {value0} on', {
+                      value0: selected?.kind === 'scratch' ? 'No Project' : selected?.name,
+                    })}
               </Text>
               {sources.map((source) => {
                 const target = (
@@ -557,7 +570,7 @@ export function FolderPicker({
                       <Text style={styles.text}>{runtimeComputerName(source)}</Text>
                       {unavailable && (
                         <Text style={styles.muted}>
-                          {!source.connected ? 'Offline' : target.gitIdentityError}
+                          {!source.connected ? uiText('Offline') : target.gitIdentityError}
                         </Text>
                       )}
                     </View>
@@ -570,12 +583,16 @@ export function FolderPicker({
           {mode === 'servers' && !autoProject && selected && selected.kind !== 'scratch' && (
             <Action
               secondary
-              label="Add to another machine"
+              label={uiText('Add to another machine')}
               disabled={locked || !runtime.connected}
               onPress={() => setTransferring(true)}
             />
           )}
-          {busy && <Text style={styles.muted}>Selecting project…</Text>}
+          {busy && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Selecting project…'}</InterfaceText>
+            </Text>
+          )}
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}

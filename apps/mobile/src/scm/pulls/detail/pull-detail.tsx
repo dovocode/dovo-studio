@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullReadinessPanel } from './readiness'
 import { PullAgentChat } from './agent-chat'
@@ -66,7 +67,7 @@ export function PullDetail({
   initialTab,
   initialFragment = '',
   initialNavigationUrl,
-  backLabel = 'Back to PRs',
+  backLabel: backLabelOverride,
   embedded = false,
 }: {
   repositoryId: string
@@ -80,6 +81,7 @@ export function PullDetail({
   embedded?: boolean
 }) {
   const uiText = useInterfaceText()
+  const backLabel = backLabelOverride ?? uiText('Back to PRs')
 
   const { colors, styles } = useTheme()
 
@@ -281,10 +283,10 @@ export function PullDetail({
       <ScreenHeader
         title={
           embedded
-            ? `PR #${number}`
+            ? uiText('PR #{value0}', { value0: number })
             : detail
               ? `#${number} · ${detail.pull.title}`
-              : `PR #${number}`
+              : uiText('PR #{value0}', { value0: number })
         }
         subtitle={[
           repository?.name ?? detail?.pull.repositoryUrl.split('/').slice(-2).join('/'),
@@ -316,7 +318,7 @@ export function PullDetail({
           ) : (
             <Action
               secondary
-              label="Refresh details"
+              label={uiText('Refresh details')}
               disabled={!readConnected || busy}
               onPress={refresh}
             />
@@ -325,7 +327,7 @@ export function PullDetail({
       />
       {urlTarget && !!accounts.length && (
         <Choice
-          label="Source account"
+          label={uiText('Source account')}
           compact
           row
           value={account ?? detail?.pull.connectionId ?? ''}
@@ -335,7 +337,7 @@ export function PullDetail({
       )}
       {/different account/.test(error) && (
         <Action
-          label="Use current account"
+          label={uiText('Use current account')}
           secondary
           disabled={!connected || busy}
           onPress={acceptCurrentAccount}
@@ -348,7 +350,8 @@ export function PullDetail({
       )}
       {!detail && (
         <Text style={[styles.muted, styles.content]}>
-          {error || (readConnected ? 'Loading PR details…' : 'Connect to the runtime.')}
+          {error ||
+            (readConnected ? uiText('Loading PR details…') : uiText('Connect to the runtime.'))}
         </Text>
       )}
       {detail && (
@@ -367,7 +370,7 @@ export function PullDetail({
             items={[
               {
                 id: 'overview',
-                name: 'Overview',
+                name: uiText('Overview'),
               },
               {
                 id: 'changes',
@@ -375,11 +378,11 @@ export function PullDetail({
               },
               {
                 id: 'discussion',
-                name: 'Activity',
+                name: uiText('Activity'),
               },
               {
                 id: 'checks',
-                name: 'Checks',
+                name: uiText('Checks'),
               },
             ]}
           />
@@ -403,7 +406,10 @@ export function PullDetail({
             }
           >
             <View ref={content} collapsable={false} style={{ gap: 8 }}>
-              <View accessibilityLabel="Pull request summary" style={{ gap: 10, paddingBottom: 8 }}>
+              <View
+                accessibilityLabel={uiText('Pull request summary')}
+                style={{ gap: 10, paddingBottom: 8 }}
+              >
                 <Text
                   selectable
                   accessibilityRole="header"
@@ -433,7 +439,11 @@ export function PullDetail({
                     {detail.pull.author}
                   </Text>
                 </View>
-                <Text style={styles.muted}>Updated {formatDateTime(detail.pull.updatedAt)}</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText values={{ value0: formatDateTime(detail.pull.updatedAt) }}>
+                    {'Updated {value0}'}
+                  </InterfaceText>
+                </Text>
                 <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
                   <Icon name="changes" size={14} color={colors.muted} />
                   <Text selectable numberOfLines={1} style={[styles.muted, { flexShrink: 1 }]}>
@@ -456,7 +466,7 @@ export function PullDetail({
                   <View style={[styles.row, { flexWrap: 'wrap', gap: 12 }]}>
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel="View pull request files"
+                      accessibilityLabel={uiText('View pull request files')}
                       onPress={() => {
                         setFragment('')
                         setTab('changes')
@@ -467,8 +477,10 @@ export function PullDetail({
                     >
                       <Text style={styles.muted}>
                         {detail.pull.changedFiles == null
-                          ? 'Files'
-                          : `${detail.pull.changedFiles.toLocaleString()} files`}
+                          ? uiText('Files')
+                          : uiText('{value0} files', {
+                              value0: detail.pull.changedFiles.toLocaleString(),
+                            })}
                       </Text>
                     </Pressable>
                     {detail.pull.additions != null && (
@@ -493,7 +505,7 @@ export function PullDetail({
                     )}
                   </View>
                 </View>
-                <PullSectionStatus label="Status" section={sections.status} />
+                <PullSectionStatus label={uiText('Status')} section={sections.status} />
               </View>
               <PullReadinessPanel summary={pullReadiness(detail, sections)} onOpen={openReadiness}>
                 {[
@@ -514,14 +526,17 @@ export function PullDetail({
               <PullLinkedThreads pull={detail.pull} />
               <Action
                 secondary
-                label="Ask agent about this PR"
+                label={uiText('Ask agent about this PR')}
                 disabled={actionDisabled}
                 onPress={() => setAgentContext({ detail })}
               />
               {!!fragment && !destination?.comment && (
                 <Text style={styles.muted}>
-                  This linked section is not available in the loaded PR. Use the server action to
-                  open the original link.
+                  <InterfaceText>
+                    {
+                      'This linked section is not available in the loaded PR. Use the server action to open the original link.'
+                    }
+                  </InterfaceText>
                 </Text>
               )}
               {!!error && (
@@ -533,9 +548,9 @@ export function PullDetail({
                 <Text style={styles.muted}>
                   {!connected
                     ? readConnected
-                      ? 'Original computer offline · viewing latest available details.'
-                      : 'Offline · reconnect to refresh.'
-                    : `Unable to refresh: ${detail.refreshError}`}
+                      ? uiText('Original computer offline · viewing latest available details.')
+                      : uiText('Offline · reconnect to refresh.')
+                    : uiText('Unable to refresh: {value0}', { value0: detail.refreshError })}
                 </Text>
               )}
               {detail.warnings.map((warning) => (
@@ -554,20 +569,23 @@ export function PullDetail({
                     gap: 8,
                   }}
                 >
-                  <PullSectionStatus label="Stack" section={sections.stack} />
+                  <PullSectionStatus label={uiText('Stack')} section={sections.stack} />
                   {repository && (detail.stack || detail.pull.state === 'open') && (
                     <View style={[styles.card, { gap: 10 }]}>
                       <View style={styles.row}>
                         <Icon name="stack" size={16} color={colors.accent} />
                         <Text style={styles.text}>
-                          {detail.stack ? pullStackLabel(detail.stack) : 'Build a stack'}
+                          {detail.stack ? pullStackLabel(detail.stack) : uiText('Build a stack')}
                         </Text>
                       </View>
                       {detail.stack?.members.map((pull) => (
                         <Pressable
                           key={pull.number}
                           accessibilityRole="button"
-                          accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+                          accessibilityLabel={uiText('Open PR #{value0}: {value1}', {
+                            value0: pull.number,
+                            value1: pull.title,
+                          })}
                           disabled={pull.number === number || !profile}
                           onPress={() => {
                             if (profile)
@@ -583,18 +601,22 @@ export function PullDetail({
                             #{pull.number} · {pull.title}
                           </Text>
                           <Text style={styles.muted}>
-                            {pull.parentNumber ? `Depends on #${pull.parentNumber}` : 'Base PR'}
+                            {pull.parentNumber
+                              ? uiText('Depends on #{value0}', { value0: pull.parentNumber })
+                              : uiText('Base PR')}
                           </Text>
                         </Pressable>
                       ))}
                       {detail.stack && !detail.stack.complete && (
                         <Text style={styles.muted}>
-                          Partial stack. Refresh and verify dependencies before updating.
+                          <InterfaceText>
+                            {'Partial stack. Refresh and verify dependencies before updating.'}
+                          </InterfaceText>
                         </Text>
                       )}
                       <Action
                         secondary
-                        label="Stack a PR"
+                        label={uiText('Stack a PR')}
                         disabled={
                           !connected || detail.pull.state !== 'open' || !pullHeadBranch(detail.pull)
                         }
@@ -606,7 +628,7 @@ export function PullDetail({
                       {detail.stack && (
                         <Action
                           secondary
-                          label="Ask agent to update stack"
+                          label={uiText('Ask agent to update stack')}
                           disabled={!connected || detail.stale || taskCreation.busy}
                           onPress={() => taskCreation.start('new-branch', 'update')}
                         />
@@ -636,7 +658,7 @@ export function PullDetail({
                 >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="People and labels"
+                    accessibilityLabel={uiText('People and labels')}
                     accessibilityState={{
                       expanded: metadataOpen,
                     }}
@@ -659,7 +681,7 @@ export function PullDetail({
                         },
                       ]}
                     >
-                      People and labels
+                      <InterfaceText>{'People and labels'}</InterfaceText>
                     </Text>
                     <Icon name={metadataOpen ? 'down' : 'next'} size={13} color={colors.muted} />
                   </Pressable>
@@ -670,15 +692,23 @@ export function PullDetail({
                         paddingBottom: 12,
                       }}
                     >
-                      <Text style={styles.muted}>Requested reviewers</Text>
-                      <Text style={styles.text}>{detail.pull.reviewers.join(', ') || 'None'}</Text>
-                      <Text style={styles.muted}>Assignees</Text>
-                      <Text style={styles.text}>
-                        {detail.pull.assignees.join(', ') || 'No one'}
+                      <Text style={styles.muted}>
+                        <InterfaceText>{'Requested reviewers'}</InterfaceText>
                       </Text>
-                      <Text style={styles.muted}>Labels</Text>
                       <Text style={styles.text}>
-                        {detail.pull.labels.join(' · ') || 'No labels'}
+                        {detail.pull.reviewers.join(', ') || uiText('None')}
+                      </Text>
+                      <Text style={styles.muted}>
+                        <InterfaceText>{'Assignees'}</InterfaceText>
+                      </Text>
+                      <Text style={styles.text}>
+                        {detail.pull.assignees.join(', ') || uiText('No one')}
+                      </Text>
+                      <Text style={styles.muted}>
+                        <InterfaceText>{'Labels'}</InterfaceText>
+                      </Text>
+                      <Text style={styles.text}>
+                        {detail.pull.labels.join(' · ') || uiText('No labels')}
                       </Text>
                     </View>
                   )}
@@ -700,12 +730,17 @@ export function PullDetail({
                 >
                   {sections.discussion.ready && (
                     <Text style={styles.muted}>
-                      {discussion.filter((comment) => comment.kind === 'review').length} reviews ·{' '}
-                      {discussion.filter((comment) => comment.kind === 'comment').length} discussion
-                      comments
+                      <InterfaceText
+                        values={{
+                          value0: discussion.filter((comment) => comment.kind === 'review').length,
+                          value1: discussion.filter((comment) => comment.kind === 'comment').length,
+                        }}
+                      >
+                        {'{value0} reviews · {value1} discussion comments'}
+                      </InterfaceText>
                     </Text>
                   )}
-                  <PullSectionStatus label="Activity" section={sections.discussion} />
+                  <PullSectionStatus label={uiText('Activity')} section={sections.discussion} />
                   {sections.discussion.ready && (
                     <PullComments
                       comments={discussion}
@@ -731,7 +766,7 @@ export function PullDetail({
                 {repository && (
                   <Action
                     secondary
-                    label="View pipeline runs for this commit"
+                    label={uiText('View pipeline runs for this commit')}
                     disabled={!profile || !detail.pull.headSha}
                     onPress={() => {
                       if (profile && detail.pull.headSha)
@@ -743,8 +778,8 @@ export function PullDetail({
                     }}
                   />
                 )}
-                <PullSectionStatus label="Checks" section={sections.checks} />
-                <PullSectionStatus label="Reviews" section={sections.discussion} />
+                <PullSectionStatus label={uiText('Checks')} section={sections.checks} />
+                <PullSectionStatus label={uiText('Reviews')} section={sections.discussion} />
                 {sections.checks.ready && (
                   <PullStatus
                     reviewsReady={sections.discussion.ready}
@@ -759,10 +794,15 @@ export function PullDetail({
                 }}
               >
                 <PullSectionStatus label={uiText('Files')} section={sections.changes} />
-                <PullSectionStatus label="Code discussion" section={sections.discussion} />
+                <PullSectionStatus
+                  label={uiText('Code discussion')}
+                  section={sections.discussion}
+                />
                 {!sections.changes.ready && changesDetail && (
                   <Text style={styles.muted} accessibilityRole="text">
-                    Updating files · showing the previous revision read-only.
+                    <InterfaceText>
+                      {'Updating files · showing the previous revision read-only.'}
+                    </InterfaceText>
                   </Text>
                 )}
                 {changesOpened && changesDetail && (

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Alert, View } from 'react-native'
 import { useSharingPeople, type SharingPeople } from '@dovo/studio-core'
@@ -23,24 +24,29 @@ export function SharingPeopleManager({
   people: SharingPeople
   userId: string
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [friend, setFriend] = useState(''),
     [name, setName] = useState(''),
     [invite, setInvite] = useState<Record<string, string>>({})
   const confirm = (title: string, message: string, action: PeopleAction) =>
     Alert.alert(title, message, [
-      { text: 'Cancel', style: 'cancel' },
-      { text: 'Confirm', style: 'destructive', onPress: () => void people.run(action) },
+      { text: uiText('Cancel'), style: 'cancel' },
+      { text: uiText('Confirm'), style: 'destructive', onPress: () => void people.run(action) },
     ])
   const friends = people.directory?.friends.filter((person) => person.status === 'accepted') ?? []
   return (
-    <View style={{ gap: 16 }} accessibilityLabel="Friends and organisations">
+    <View style={{ gap: 16 }} accessibilityLabel={uiText('Friends and organisations')}>
       <Text style={styles.muted}>
-        Add friends once, then choose them when sharing. Organisations let you share with everyone
-        in a group. These permissions never grant access to your computers.
+        <InterfaceText>
+          {
+            'Add friends once, then choose them when sharing. Organisations let you share with everyone in a group. These permissions never grant access to your computers.'
+          }
+        </InterfaceText>
       </Text>
       <Text selectable style={styles.muted}>
-        Your sharing ID: {userId}
+        <InterfaceText values={{ value0: userId }}>{'Your sharing ID: {value0}'}</InterfaceText>
       </Text>
       {!!people.error && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -48,11 +54,11 @@ export function SharingPeopleManager({
         </Text>
       )}
       <Text accessibilityRole="header" style={styles.title}>
-        Friends
+        <InterfaceText>{'Friends'}</InterfaceText>
       </Text>
       <Field
-        label="Friend sharing ID"
-        placeholder="Friend’s sharing ID"
+        label={uiText('Friend sharing ID')}
+        placeholder={uiText('Friend’s sharing ID')}
         value={friend}
         onChangeText={setFriend}
         autoCapitalize="none"
@@ -60,7 +66,7 @@ export function SharingPeopleManager({
         maxLength={500}
       />
       <Action
-        label="Add friend"
+        label={uiText('Add friend')}
         disabled={people.busy || !friend.trim()}
         onPress={() => {
           void people.run({ action: 'requestFriend', userId: friend.trim() }).then((ok) => {
@@ -69,7 +75,9 @@ export function SharingPeopleManager({
         }}
       />
       {people.directory?.friends.length === 0 && (
-        <Text style={styles.muted}>No friends yet. They’ll receive your request in Studio.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'No friends yet. They’ll receive your request in Studio.'}</InterfaceText>
+        </Text>
       )}
       {people.directory?.friends.map((person) => (
         <View key={person.id} style={{ ...styles.card, gap: 8 }}>
@@ -77,26 +85,27 @@ export function SharingPeopleManager({
           <Text selectable style={styles.muted}>
             {person.id} ·{' '}
             {person.status === 'accepted'
-              ? 'Friend'
+              ? uiText('Friend')
               : person.status === 'incoming'
-                ? 'Wants to add you'
-                : 'Request sent'}
+                ? uiText('Wants to add you')
+                : uiText('Request sent')}
           </Text>
           {person.status === 'incoming' && (
             <Action
-              label="Accept friend"
+              label={uiText('Accept friend')}
               disabled={people.busy}
               onPress={() => void people.run({ action: 'acceptFriend', userId: person.id })}
             />
           )}
           <Action
+            destructive={person.status === 'accepted' ? true : false}
             secondary
             label={
               person.status === 'accepted'
-                ? 'Remove friend'
+                ? uiText('Remove friend')
                 : person.status === 'incoming'
-                  ? 'Decline'
-                  : 'Cancel request'
+                  ? uiText('Decline')
+                  : uiText('Cancel request')
             }
             disabled={people.busy}
             onPress={() =>
@@ -112,17 +121,17 @@ export function SharingPeopleManager({
         </View>
       ))}
       <Text accessibilityRole="header" style={styles.title}>
-        Organisations
+        <InterfaceText>{'Organisations'}</InterfaceText>
       </Text>
       <Field
-        label="Organisation name"
-        placeholder="Organisation name"
+        label={uiText('Organisation name')}
+        placeholder={uiText('Organisation name')}
         value={name}
         onChangeText={setName}
         maxLength={100}
       />
       <Action
-        label="Create organisation"
+        label={uiText('Create organisation')}
         disabled={people.busy || !name.trim()}
         onPress={() => {
           void people.run({ action: 'createOrganization', name: name.trim() }).then((ok) => {
@@ -131,22 +140,28 @@ export function SharingPeopleManager({
         }}
       />
       {people.directory?.organizations.length === 0 && (
-        <Text style={styles.muted}>Create an organisation and invite people to join.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Create an organisation and invite people to join.'}</InterfaceText>
+        </Text>
       )}
       {people.directory?.organizations.map((org) => (
         <View
           key={org.id}
           style={{ ...styles.card, gap: 12 }}
-          accessibilityLabel={`Organisation ${org.name}`}
+          accessibilityLabel={uiText('Organisation {value0}', { value0: org.name })}
         >
           <Text style={styles.title}>
             {org.name} ·{' '}
-            {org.status === 'invited' ? 'Invitation' : org.ownerId === userId ? 'Owner' : 'Member'}
+            {org.status === 'invited'
+              ? uiText('Invitation')
+              : org.ownerId === userId
+                ? uiText('Owner')
+                : uiText('Member')}
           </Text>
           {org.status === 'invited' ? (
             <>
               <Action
-                label="Join organisation"
+                label={uiText('Join organisation')}
                 disabled={people.busy}
                 onPress={() =>
                   void people.run({ action: 'acceptOrganization', organizationId: org.id })
@@ -154,7 +169,7 @@ export function SharingPeopleManager({
               />
               <Action
                 secondary
-                label="Decline invitation"
+                label={uiText('Decline invitation')}
                 disabled={people.busy}
                 onPress={() =>
                   void people.run({ action: 'removeMember', organizationId: org.id, userId })
@@ -164,23 +179,27 @@ export function SharingPeopleManager({
           ) : (
             <>
               <Text style={styles.muted}>
-                Members can open organisation sharing links. New members gain access; leaving or
-                removal stops access. Downloaded copies cannot be recalled.
+                <InterfaceText>
+                  {
+                    'Members can open organisation sharing links. New members gain access; leaving or removal stops access. Downloaded copies cannot be recalled.'
+                  }
+                </InterfaceText>
               </Text>
               {org.members.map((member) => (
                 <View key={member.id} style={{ gap: 4 }}>
                   <Text style={styles.text}>
                     {member.name} ·{' '}
                     {member.id === org.ownerId
-                      ? 'Owner'
+                      ? uiText('Owner')
                       : member.status === 'invited'
-                        ? 'Invited'
-                        : 'Member'}
+                        ? uiText('Invited')
+                        : uiText('Member')}
                   </Text>
                   {org.ownerId === userId && member.id !== userId && (
                     <Action
+                      destructive
                       secondary
-                      label={`Remove ${member.name}`}
+                      label={uiText('Remove {value0}', { value0: member.name })}
                       disabled={people.busy}
                       onPress={() =>
                         confirm(
@@ -197,10 +216,10 @@ export function SharingPeopleManager({
                 <>
                   {!!friends.length && (
                     <Choice
-                      label={`Choose friend for ${org.name}`}
+                      label={uiText('Choose friend for {value0}', { value0: org.name })}
                       value={invite[org.id] ?? ''}
                       items={[
-                        { id: '', name: 'Choose a friend…' },
+                        { id: '', name: uiText('Choose a friend…') },
                         ...friends.map((person) => ({ id: person.id, name: person.name })),
                       ]}
                       onChange={(value) =>
@@ -210,8 +229,8 @@ export function SharingPeopleManager({
                     />
                   )}
                   <Field
-                    label={`Invite to ${org.name}`}
-                    placeholder="Sharing ID"
+                    label={uiText('Invite to {value0}', { value0: org.name })}
+                    placeholder={uiText('Sharing ID')}
                     value={invite[org.id] ?? ''}
                     onChangeText={(value) =>
                       setInvite((previous) => ({ ...previous, [org.id]: value }))
@@ -221,7 +240,7 @@ export function SharingPeopleManager({
                     maxLength={500}
                   />
                   <Action
-                    label="Invite member"
+                    label={uiText('Invite member')}
                     disabled={people.busy || !invite[org.id]?.trim()}
                     onPress={() => {
                       void people
@@ -238,8 +257,13 @@ export function SharingPeopleManager({
                 </>
               )}
               <Action
+                destructive={org.ownerId === userId ? true : false}
                 secondary
-                label={org.ownerId === userId ? 'Delete organisation' : 'Leave organisation'}
+                label={
+                  org.ownerId === userId
+                    ? uiText('Delete organisation')
+                    : uiText('Leave organisation')
+                }
                 disabled={people.busy}
                 onPress={() =>
                   confirm(
@@ -259,7 +283,7 @@ export function SharingPeopleManager({
       ))}
       <Action
         secondary
-        label={people.busy ? 'Updating…' : 'Refresh friends and organisations'}
+        label={people.busy ? uiText('Updating…') : uiText('Refresh friends and organisations')}
         disabled={people.busy}
         onPress={() => void people.run()}
       />

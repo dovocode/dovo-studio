@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, Switch as NativeSwitch, View } from 'react-native'
 import type { StudioThemeId, StudioThemeMode } from '@dovo/studio-core/themes'
@@ -31,6 +32,8 @@ export function MobileControlsExample({
 }
 
 function ControlsContent() {
+  const uiText = useInterfaceText()
+
   const [project, setProject] = useState('website')
   const [search, setSearch] = useState('')
   const [name, setName] = useState('Dominic')
@@ -46,87 +49,106 @@ function ControlsContent() {
     <View style={[styles.screen, { padding: 16, gap: 16 }]}>
       <View style={{ gap: 4 }}>
         <Text accessibilityRole="header" style={styles.title}>
-          Mobile controls
+          <InterfaceText>{'Mobile controls'}</InterfaceText>
         </Text>
         <Text style={styles.muted}>
-          Production controls with local state. Change the fields, choose a project, and toggle the
-          switches to inspect feedback and focus behavior.
+          <InterfaceText>
+            {
+              'Production controls with local state. Change the fields, choose a project, and toggle the switches to inspect feedback and focus behavior.'
+            }
+          </InterfaceText>
         </Text>
       </View>
 
       <View style={[styles.card, { gap: 12 }]}>
         <Text accessibilityRole="header" style={styles.text}>
-          Fields and choices
+          <InterfaceText>{'Fields and choices'}</InterfaceText>
         </Text>
         <Field
-          label="Workspace name"
+          label={uiText('Workspace name')}
           value={name}
           onChangeText={(value) => {
             setName(value)
             setError(false)
           }}
-          placeholder="Name this workspace"
-          hint="Stored in this preview only."
+          placeholder={uiText('Name this workspace')}
+          hint={uiText('Stored in this preview only.')}
           error={error ? 'Use at least 3 characters.' : undefined}
         />
         <SearchField
-          label="Search projects"
+          label={uiText('Search projects')}
           value={search}
           onChangeText={setSearch}
-          placeholder="Filter available projects"
+          placeholder={uiText('Filter available projects')}
         />
         <Choice
-          label="Project"
+          label={uiText('Project')}
           value={project}
           onChange={setProject}
           row
           items={[
-            { id: 'website', name: 'Website redesign' },
-            { id: 'mobile', name: 'Mobile app' },
-            { id: 'studio', name: 'Studio tooling' },
+            { id: 'website', name: uiText('Website redesign') },
+            { id: 'mobile', name: uiText('Mobile app') },
+            { id: 'studio', name: uiText('Studio tooling') },
           ].filter((item) => item.name.toLowerCase().includes(search.toLowerCase()))}
         />
       </View>
 
       <View style={[styles.card, { gap: 10 }]}>
         <Text accessibilityRole="header" style={styles.text}>
-          Switches and actions
+          <InterfaceText>{'Switches and actions'}</InterfaceText>
         </Text>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={styles.text}>Automatic updates</Text>
-            <Text style={styles.muted}>Keep the preview current in the background.</Text>
+            <Text style={styles.text}>
+              <InterfaceText>{'Automatic updates'}</InterfaceText>
+            </Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Keep the preview current in the background.'}</InterfaceText>
+            </Text>
           </View>
           <Switch
-            accessibilityLabel="Automatic updates"
+            accessibilityLabel={uiText('Automatic updates')}
             value={enabled}
             onValueChange={setEnabled}
           />
         </View>
         <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={styles.text}>Completion notices</Text>
-            <Text style={styles.muted}>Show a notice when a task needs attention.</Text>
+            <Text style={styles.text}>
+              <InterfaceText>{'Completion notices'}</InterfaceText>
+            </Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Show a notice when a task needs attention.'}</InterfaceText>
+            </Text>
           </View>
           <NativeSwitch
-            accessibilityLabel="Completion notices"
+            accessibilityLabel={uiText('Completion notices')}
             value={notifications}
             onValueChange={setNotifications}
           />
         </View>
         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 10, alignItems: 'center' }}>
-          <Action label="Save preview" onPress={() => setSaved(true)} />
-          <Action label="Test connection" onPress={() => setSaved(true)} variant="outline" />
-          <Action label="Agent & model" onPress={() => setError(true)} secondary />
+          <Action label={uiText('Save preview')} onPress={() => setSaved(true)} />
+          <Action
+            label={uiText('Test connection')}
+            onPress={() => setSaved(true)}
+            variant="outline"
+          />
+          <Action label={uiText('Agent & model')} onPress={() => setError(true)} secondary />
           <Pill
-            label={count ? `Preview updated ${count}` : 'Preview status'}
+            label={
+              count
+                ? uiText('Preview updated {value0}', { value0: count })
+                : uiText('Preview status')
+            }
             icon="info"
             onPress={() => setCount((value) => value + 1)}
-            accessibilityHint="Updates a local preview counter."
+            accessibilityHint={uiText('Updates a local preview counter.')}
           />
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Clear preview status"
+            accessibilityLabel={uiText('Clear preview status')}
             onPress={() => {
               setSaved(false)
               setError(name.trim().length < 3)
@@ -139,12 +161,14 @@ function ControlsContent() {
               backgroundColor: pressed ? colors.selection : 'transparent',
             })}
           >
-            <Text style={{ color: colors.accent }}>Reset feedback</Text>
+            <Text style={{ color: colors.accent }}>
+              <InterfaceText>{'Reset feedback'}</InterfaceText>
+            </Text>
           </Pressable>
         </View>
         {!!saved && (
           <Text accessibilityRole="status" style={styles.muted}>
-            Saved in this preview.
+            <InterfaceText>{'Saved in this preview.'}</InterfaceText>
           </Text>
         )}
       </View>

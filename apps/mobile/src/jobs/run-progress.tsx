@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { useApplicationState } from '../runtime/state/application-state'
 import { Pressable, View } from 'react-native'
@@ -19,6 +20,8 @@ export function RunProgress({
   run: JobRun
   anotherActive?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, callEffect, profile } = useRuntime()
@@ -137,7 +140,7 @@ export function RunProgress({
         snapshot?.workspace.tasks.some((task) => task.id === current.taskId) && (
           <Action
             secondary
-            label={needsInput ? 'Respond in task' : 'Open current task'}
+            label={needsInput ? uiText('Respond in task') : uiText('Open current task')}
             disabled={!focused}
             onPress={() => navigate('tasks', current.taskId, profile?.id)}
           />
@@ -149,11 +152,13 @@ export function RunProgress({
           }}
         >
           <Text style={styles.muted}>
-            Automation review gate · Approve to continue the remaining steps.
+            <InterfaceText>
+              {'Automation review gate · Approve to continue the remaining steps.'}
+            </InterfaceText>
           </Text>
           <View style={styles.row}>
             <Action
-              label="Approve review"
+              label={uiText('Approve review')}
               disabled={!focused || !connected || busy}
               onPress={() =>
                 act(() =>
@@ -170,7 +175,7 @@ export function RunProgress({
             />
             <Action
               secondary
-              label="Reject review"
+              label={uiText('Reject review')}
               disabled={!focused || !connected || busy}
               onPress={() =>
                 act(() =>
@@ -195,7 +200,7 @@ export function RunProgress({
           }}
         >
           <Action
-            label="Retry run"
+            label={uiText('Retry run')}
             disabled={!focused || !connected || busy || anotherActive}
             onPress={() =>
               act(() =>
@@ -211,7 +216,9 @@ export function RunProgress({
           />
           {expanded && (
             <Text style={styles.muted}>
-              Continues from the unfinished step. Completed steps are kept.
+              <InterfaceText>
+                {'Continues from the unfinished step. Completed steps are kept.'}
+              </InterfaceText>
             </Text>
           )}
         </View>
@@ -233,17 +240,22 @@ export function RunProgress({
         >
           <Text style={styles.muted}>
             {formatDateTime(run.createdAt)}
-            {(run.attempt ?? 1) > 1 ? ` · Attempt ${run.attempt}` : ''}
+            {(run.attempt ?? 1) > 1 ? uiText(' · Attempt {value0}', { value0: run.attempt }) : ''}
           </Text>
           {run.scheduledFor && (
             <Text style={styles.muted}>
-              Due {formatDateTime(run.scheduledFor)} · {run.scheduleTimezone ?? 'UTC'}
-              {' · '}
-              {Math.max(
-                0,
-                Math.floor((Date.parse(run.createdAt) - Date.parse(run.scheduledFor)) / 1000),
-              )}
-              s late
+              <InterfaceText
+                values={{
+                  value0: formatDateTime(run.scheduledFor),
+                  value1: run.scheduleTimezone ?? uiText('UTC'),
+                  value2: Math.max(
+                    0,
+                    Math.floor((Date.parse(run.createdAt) - Date.parse(run.scheduledFor)) / 1000),
+                  ),
+                }}
+              >
+                {'Due {value0} · {value1} · {value2}s late'}
+              </InterfaceText>
             </Text>
           )}
           {steps
@@ -279,13 +291,15 @@ export function RunProgress({
                         {step.label}
                       </Text>
                       <Text style={step.status === 'failed' ? styles.error : styles.muted}>
-                        {task?.bot ? `Bot job · ${task.title} · ` : ''}
+                        {task?.bot ? uiText('Bot job · {value0} · ', { value0: task.title }) : ''}
                         {taskNeedsInput(step.taskId)
-                          ? 'Needs input'
+                          ? uiText('Needs input')
                           : step.status === 'waiting'
-                            ? 'Awaiting approval'
+                            ? uiText('Awaiting approval')
                             : step.status}
-                        {step.attempt > 1 ? ` · Attempt ${step.attempt}` : ''}
+                        {step.attempt > 1
+                          ? uiText(' · Attempt {value0}', { value0: step.attempt })
+                          : ''}
                       </Text>
                       {!!step.error && <Text style={styles.error}>{step.error}</Text>}
                     </View>
@@ -301,7 +315,10 @@ export function RunProgress({
                     key={step.nodeId}
                     testID={`Job task ${task.id}`}
                     accessibilityRole="button"
-                    accessibilityLabel={`Open ${task.bot ? 'Bot' : 'task'} ${task.title}`}
+                    accessibilityLabel={uiText('Open {value0} {value1}', {
+                      value0: task.bot ? 'Bot' : 'task',
+                      value1: task.title,
+                    })}
                     disabled={!focused}
                     onPress={() => navigate('tasks', task.id, profile?.id)}
                     style={[
@@ -336,7 +353,7 @@ export function RunProgress({
                     <Pressable
                       key={id}
                       accessibilityRole="button"
-                      accessibilityLabel={`Open task ${task.title}`}
+                      accessibilityLabel={uiText('Open task {value0}', { value0: task.title })}
                       disabled={!focused}
                       onPress={() => navigate('tasks', id, profile?.id)}
                       style={{
@@ -355,7 +372,7 @@ export function RunProgress({
           {active && (
             <Action
               secondary
-              label="Cancel run"
+              label={uiText('Cancel run')}
               disabled={!focused || !connected || busy}
               onPress={() =>
                 act(() =>

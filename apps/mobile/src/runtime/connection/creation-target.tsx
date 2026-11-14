@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
@@ -41,16 +42,20 @@ export function CreationTarget({
     return (
       <Sheet title={title} onClose={onClose}>
         <Text style={styles.muted}>
-          This computer connection changed. Choose where to create this work again.
+          <InterfaceText>
+            {'This computer connection changed. Choose where to create this work again.'}
+          </InterfaceText>
         </Text>
-        <Action label="Choose another computer" onPress={() => setTarget(null)} />
+        <Action label={uiText('Choose another computer')} onPress={() => setTarget(null)} />
       </Sheet>
     )
   return target ? (
     <RuntimeScope runtimeId={target.id}>{children(target.id)}</RuntimeScope>
   ) : (
     <Sheet title={title} onClose={onClose}>
-      <Text style={styles.muted}>Choose where this work should run.</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Choose where this work should run.'}</InterfaceText>
+      </Text>
       {overviews.map((entry) => (
         <View key={entry.profile.id}>
           <Action

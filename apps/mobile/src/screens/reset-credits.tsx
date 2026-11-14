@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { SettingsChoice as Choice } from './settings-controls'
 import { useRef, useState } from 'react'
@@ -10,6 +11,8 @@ import { SettingsAction as Action } from './settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: string } }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
@@ -91,7 +94,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
     <View style={{ gap: 6 }}>
       {sources.length > 1 && (
         <Choice
-          label="Server for reset"
+          label={uiText('Server for reset')}
           value={profile?.id ?? ''}
           disabled={busy}
           items={sources.map((source) => ({
@@ -107,37 +110,46 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
       )}
       <Action
         secondary
-        label={busy ? 'Contacting provider…' : 'Check reset credits'}
+        label={busy ? uiText('Contacting provider…') : uiText('Check reset credits')}
         disabled={busy || !profile || !window.account || (!source?.taskId && !source?.agentId)}
         onPress={() => void check()}
       />
       {credits && (
         <>
           <Text style={styles.muted}>
-            {credits.supported ? `${credits.availableCount} resets available` : credits.reason}
+            {credits.supported
+              ? uiText('{value0} resets available', { value0: credits.availableCount })
+              : credits.reason}
           </Text>
           {credits.availableCount > 0 && !credits.credits.length && (
-            <Text style={styles.muted}>Credit expiry details not reported.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Credit expiry details not reported.'}</InterfaceText>
+            </Text>
           )}
           {credits.credits.map((credit) => (
             <Text key={credit.id} style={styles.muted}>
               {credit.title} ·{' '}
               {credit.expiresAt
-                ? `Expires ${new Date(credit.expiresAt).toLocaleString()}`
-                : 'Expiry not reported'}
+                ? uiText('Expires {value0}', {
+                    value0: new Date(credit.expiresAt).toLocaleString(),
+                  })
+                : uiText('Expiry not reported')}
             </Text>
           ))}
           {credits.supported && credits.availableCount > 0 && (
             <Action
-              label="Use reset"
+              label={uiText('Use reset')}
               disabled={busy}
               onPress={() =>
                 Alert.alert(
-                  'Use one reset credit?',
-                  `Redeem a provider reset for ${window.account?.label}. This spends one credit; local usage history stays intact.`,
+                  uiText('Use one reset credit?'),
+                  uiText(
+                    'Redeem a provider reset for {value0}. This spends one credit; local usage history stays intact.',
+                    { value0: window.account?.label },
+                  ),
                   [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Use reset', onPress: () => void consume() },
+                    { text: uiText('Cancel'), style: 'cancel' },
+                    { text: uiText('Use reset'), onPress: () => void consume() },
                   ],
                 )
               }

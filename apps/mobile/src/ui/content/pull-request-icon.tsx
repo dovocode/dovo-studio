@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   GitMerge,
   GitPullRequest,
@@ -26,6 +27,8 @@ export function PullRequestIcon({
   draft?: boolean
   size?: number
 }) {
+  const uiText = useInterfaceText()
+
   const color = usePullRequestColor(state, draft)
   const Glyph =
     state === 'merged'
@@ -40,7 +43,9 @@ export function PullRequestIcon({
       size={size}
       color={color}
       accessibilityLabel={
-        draft && state === 'open' ? 'Draft pull request' : `${state ?? 'Linked'} pull request`
+        draft && state === 'open'
+          ? uiText('Draft pull request')
+          : uiText('{value0} pull request', { value0: state ?? 'Linked' })
       }
     />
   )

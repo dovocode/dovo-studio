@@ -179,11 +179,15 @@ it('sends background activity updates and ends through the Live Activity topic w
       },
     },
     value.id,
+    5,
   )
   expect(send.mock.contexts[0]).toMatchObject({ config: { production: true } })
   expect(alert).not.toHaveBeenCalled()
   await delivery.send({ ...value, event: 'end' })
   expect(send.mock.calls[1]?.[1]).toMatchObject({ aps: { event: 'end', 'dismissal-date': 400 } })
+  expect(send.mock.calls[1]?.[3]).toBe(10)
+  await delivery.send({ ...value, props: { ...value.props, status: 'Needs input' } })
+  expect(send.mock.calls[2]?.[3]).toBe(10)
   send.mockResolvedValueOnce({ status: 410 })
   expect(await delivery.send(value)).toEqual({ delivered: false, invalidToken: true })
   send.mockResolvedValueOnce({ status: 403, reason: 'InvalidProviderToken' })

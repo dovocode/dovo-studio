@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { decodeResult } from '@dovo/protocol'
@@ -34,6 +35,8 @@ export function CliProfilePicker({
   onChange: (value: string) => void
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connected, snapshot, readEffect } = useRuntime()
@@ -110,14 +113,14 @@ export function CliProfilePicker({
     >
       <Choice
         row
-        label="Discover in"
+        label={uiText('Discover in')}
         value={repositoryId}
         onChange={setRepositoryId}
         disabled={disabled}
         items={[
           {
             id: '',
-            name: 'Runtime default',
+            name: uiText('Runtime default'),
           },
           ...repositories.map((repo) => ({
             id: repo.id,
@@ -145,13 +148,21 @@ export function CliProfilePicker({
       )}
       {(manual || (!loading && !result?.profiles.length)) && (
         <Field
-          label={optional ? `${label} (optional)` : `Named ${label.toLowerCase()}`}
+          label={
+            optional
+              ? uiText('{value0} (optional)', { value0: label })
+              : uiText('Named {value0}', { value0: label.toLowerCase() })
+          }
           value={value}
           onChangeText={onChange}
           editable={!disabled}
           autoCorrect={false}
           placeholder={
-            provider === 'bitbucket' ? 'default' : optional ? 'Use the CLI default' : 'work'
+            provider === 'bitbucket'
+              ? uiText('default')
+              : optional
+                ? uiText('Use the CLI default')
+                : uiText('work')
           }
         />
       )}
@@ -164,14 +175,14 @@ export function CliProfilePicker({
       >
         <Action
           secondary
-          label={loading ? 'Finding profiles…' : 'Refresh profiles'}
+          label={loading ? uiText('Finding profiles…') : uiText('Refresh profiles')}
           disabled={disabled || loading || !connected}
           onPress={() => reload((value) => value + 1)}
         />
         {(loading || !!result?.profiles.length) && (
           <Action
             secondary
-            label={manual ? 'Choose detected profile' : 'Enter profile manually'}
+            label={manual ? uiText('Choose detected profile') : uiText('Enter profile manually')}
             disabled={disabled}
             onPress={() => setManual((value) => !value)}
           />
@@ -180,7 +191,9 @@ export function CliProfilePicker({
       {!!(error || result?.message) && (
         <Text style={styles.muted}>
           {error || result?.message}
-          {error ? ' Enter a profile manually or refresh after signing in on the runtime.' : ''}
+          {error
+            ? uiText(' Enter a profile manually or refresh after signing in on the runtime.')
+            : ''}
         </Text>
       )}
     </View>

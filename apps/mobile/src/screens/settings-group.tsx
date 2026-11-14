@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Glass } from '../ui/layout/glass'
 import { designTokens } from '@dovo/design'
 import { SettingsAnchor, SettingsSearchContext } from './settings-search'
@@ -34,9 +35,14 @@ export function SettingsGroup({
   footer?: string
   children: ReactNode
 }) {
+  const uiText = useInterfaceText()
   const { colors, styles } = useTheme()
   const target = useContext(SettingsSearchContext)
-  const searchMatch = !!target && (target === title || searchLabels.includes(target))
+  const searchMatch =
+    !!target &&
+    (target === title ||
+      uiText(target) === title ||
+      searchLabels.some((label) => label === target || label === uiText(target)))
   const [expanded, setExpanded] = useState(searchMatch)
   useEffect(() => {
     if (searchMatch) setExpanded(true)
@@ -49,7 +55,7 @@ export function SettingsGroup({
         {advanced && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${open ? 'Hide' : 'Show'} ${title}`}
+            accessibilityLabel={`${open ? uiText('Hide') : uiText('Show')} ${title}`}
             accessibilityState={{ expanded: open }}
             onPress={() => setExpanded(!expanded)}
             style={{

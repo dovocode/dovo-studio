@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { NativeIcon, NativeMenuButton } from '../../../ui/controls/native-icon'
 import { Button, Divider, Host, Menu } from '@expo/ui/swift-ui'
 import {
@@ -12,6 +13,8 @@ import { useTheme } from '../../../ui/theme'
 import type { PullMenuProps } from './pull-menu'
 
 export function PullMenu(props: PullMenuProps) {
+  const uiText = useInterfaceText()
+
   const { colors, mode: appearanceMode } = useTheme()
 
   return (
@@ -34,7 +37,7 @@ export function PullMenu(props: PullMenuProps) {
           buttonStyle('plain'),
           frame({ width: 44, height: 44 }),
           contentShape(shapes.rectangle(), ['interaction', 'accessibility']),
-          accessibilityLabel('PR actions'),
+          accessibilityLabel(uiText('PR actions')),
         ]}
       >
         {props.actions.map((option) => (
@@ -48,16 +51,16 @@ export function PullMenu(props: PullMenuProps) {
           />
         ))}
         {props.actions.length > 0 && <Divider />}
-        <Menu label="Start task from PR" modifiers={[disabled(props.taskDisabled)]}>
+        <Menu label={uiText('Start task from PR')} modifiers={[disabled(props.taskDisabled)]}>
           <NativeMenuButton
             testID="New branch from PR"
-            label="New branch from PR"
+            label={uiText('New branch from PR')}
             icon="newChat"
             onPress={() => props.onStartTask('new-branch')}
           />
           <NativeMenuButton
             testID="Use PR branch"
-            label="Use PR branch"
+            label={uiText('Use PR branch')}
             icon="changes"
             onPress={() => props.onStartTask('pr-branch')}
             modifiers={[disabled(!props.prBranchAvailable)]}
@@ -65,14 +68,14 @@ export function PullMenu(props: PullMenuProps) {
         </Menu>
         <NativeMenuButton
           testID={`Open on ${props.providerName ?? 'GitHub'}`}
-          label={`Open on ${props.providerName ?? 'GitHub'}`}
+          label={uiText('Open on {value0}', { value0: props.providerName ?? 'GitHub' })}
           icon="external"
           onPress={props.onOpen}
         />
         <Divider />
         <NativeMenuButton
           testID="Refresh details"
-          label="Refresh details"
+          label={uiText('Refresh details')}
           icon="refresh"
           onPress={props.onRefresh}
           modifiers={[disabled(props.refreshDisabled)]}

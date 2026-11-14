@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Linking, View } from 'react-native'
 import { responses, diagnosticMessage } from '@dovo/protocol'
@@ -28,15 +29,19 @@ export default function NotificationsSettingsScreen() {
       <ScreenHeader title={uiText('Notifications')} />
       <SettingsScrollView contentContainerStyle={styles.content}>
         <Text style={styles.muted}>
-          This device only · choose which paired computers can send alerts to this phone
+          <InterfaceText>
+            {'This device only · choose which paired computers can send alerts to this phone'}
+          </InterfaceText>
         </Text>
         <SettingsGroup
-          title="Push notifications"
-          footer="Get task completion, failures and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you."
+          title={uiText('Push notifications')}
+          footer={uiText(
+            'Get task completion, failures and input requests when Dovo is in the background. Sign in on this phone for managed delivery, or use a standalone relay. Choose which paired computers can notify you.',
+          )}
         >
           <SettingsSwitchRow
             first
-            label="Task notifications"
+            label={uiText('Task notifications')}
             disabled={!notifications.supported || notifications.busy}
             value={notifications.enabled}
             onValueChange={notifications.setEnabled}
@@ -51,19 +56,21 @@ export default function NotificationsSettingsScreen() {
               />
               <Text style={styles.muted}>
                 {!notifications.enabled || !notifications.serverEnabled(entry.profile.id)
-                  ? 'Disabled'
+                  ? uiText('Disabled')
                   : !entry.connected
-                    ? 'Computer offline'
+                    ? uiText('Computer offline')
                     : notifications.permission === 'denied'
-                      ? 'Blocked by system settings'
+                      ? uiText('Blocked by system settings')
                       : (notifications.registrations[entry.profile.id]?.error ??
                         (notifications.registrations[entry.profile.id]?.registered
-                          ? 'Registered · delivery can be tested'
-                          : 'Registering…'))}
+                          ? uiText('Registered · delivery can be tested')
+                          : uiText('Registering…')))}
               </Text>
               <Action
                 secondary
-                label={`Test notification from ${runtimeComputerName(entry)}`}
+                label={uiText('Test notification from {value0}', {
+                  value0: runtimeComputerName(entry),
+                })}
                 disabled={
                   busy ||
                   !entry.connected ||
@@ -85,10 +92,14 @@ export default function NotificationsSettingsScreen() {
             </View>
           ))}
         </SettingsGroup>
-        <Text style={styles.muted}>System permission: {notifications.permission}</Text>
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: notifications.permission }}>
+            {'System permission: {value0}'}
+          </InterfaceText>
+        </Text>
         <Action
           secondary
-          label="Open system notification settings"
+          label={uiText('Open system notification settings')}
           onPress={() => act(() => Linking.openSettings())}
         />
         {!!message && (
@@ -102,7 +113,9 @@ export default function NotificationsSettingsScreen() {
           </Text>
         )}
         {!notifications.supported && (
-          <Text style={styles.muted}>Push notifications require a new native app build.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Push notifications require a new native app build.'}</InterfaceText>
+          </Text>
         )}
         {!!notifications.error && (
           <Text accessibilityRole="alert" style={styles.error}>
@@ -110,12 +123,14 @@ export default function NotificationsSettingsScreen() {
           </Text>
         )}
         <SettingsGroup
-          title="Live Activities"
-          footer="Shows task progress on your Lock Screen and Dynamic Island. Activities start when you open Dovo and keep updating in the background through Connect or your computer’s notification relay."
+          title={uiText('Live Activities')}
+          footer={uiText(
+            'Shows task progress on your Lock Screen and Dynamic Island. Activities start when you open Dovo and keep updating in the background through Connect or your computer’s notification relay.',
+          )}
         >
           <SettingsSwitchRow
             first
-            label="Show task Live Activities"
+            label={uiText('Show task Live Activities')}
             disabled={!activity.supported}
             value={activity.enabled && activity.supported}
             onValueChange={activity.setEnabled}
@@ -123,7 +138,11 @@ export default function NotificationsSettingsScreen() {
         </SettingsGroup>
         {!activity.supported && (
           <Text style={styles.muted}>
-            Live Activities require the new native iOS build, not Expo Go or a JavaScript reload.
+            <InterfaceText>
+              {
+                'Live Activities require the new native iOS build, not Expo Go or a JavaScript reload.'
+              }
+            </InterfaceText>
           </Text>
         )}
         {!!activity.error && (

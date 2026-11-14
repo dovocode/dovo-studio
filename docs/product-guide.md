@@ -422,8 +422,10 @@ clocks. Widgets update only when their visible contents change. Snapshot and con
 batch writes and flush when leaving the foreground; the recent 500-message cache is preserved. Other
 computers’ task snapshots still refresh every 30 seconds while foregrounded, but their aggregate PR
 counts refresh every five minutes (or on manual refresh); open PR screens keep their normal updates.
-Unchanged Live Activities refresh every three minutes with a five-minute stale date, while changed
-status, questions and completion still update promptly.
+Live Activity progress updates at most once every 30 seconds and uses low-priority Apple delivery.
+Status changes, input requests and completion bypass batching. Unchanged Live Activities refresh
+every three minutes with a five-minute stale date. Low-priority relay delivery requires an updated
+notification relay; progress batching also works with older relays.
 
 Older servers and connections that block WebSockets fall back to HTTP polling. The current stream
 format omits unchanged metadata and ordering lists, and uses small string patches for growing

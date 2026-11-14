@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Image, View } from 'react-native'
 import { Icon } from '../ui/controls/icon'
 import { useTheme } from '../ui/theme'
@@ -13,6 +14,8 @@ export function BotAvatar({
   size?: number
   round?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   return (
     <View
@@ -31,7 +34,7 @@ export function BotAvatar({
       {avatar ? (
         <Image
           source={{ uri: avatar }}
-          accessibilityLabel={`${name} avatar`}
+          accessibilityLabel={uiText('{value0} avatar', { value0: name })}
           style={{ width: size, height: size }}
         />
       ) : (

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { HarnessModelPicker } from '../../agents/harness-model-picker'
 import { useHarnessHandoff } from '@dovo/studio-core/harness-handoff'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -69,6 +70,8 @@ export function HarnessSettings({
     beforeMessageId?: string
   }
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [turnError, setTurnError] = useState('')
   const [advanced, setAdvanced] = useState(false)
@@ -248,12 +251,18 @@ export function HarnessSettings({
       {task.pendingHarness && (
         <View style={{ gap: 8 }}>
           <Text>
-            After this turn: {task.pendingHarness.harness.provider} ·{' '}
-            {task.pendingHarness.harness.model || 'Default model'}
+            <InterfaceText
+              values={{
+                value0: task.pendingHarness.harness.provider,
+                value1: task.pendingHarness.harness.model || uiText('Default model'),
+              }}
+            >
+              {'After this turn: {value0} · {value1}'}
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Cancel pending change"
+            label={uiText('Cancel pending change')}
             disabled={busy || handoff.busy || !connected}
             onPress={() => void handoff.cancelDeferred()}
           />
@@ -263,12 +272,12 @@ export function HarnessSettings({
       {!turn && canChangeTaskCheckout(task) && !task.delegation && (
         <Choice
           row
-          label="Model selection"
+          label={uiText('Model selection')}
           value={task.modelSelection ?? 'fixed'}
           disabled={controlsDisabled}
           items={[
-            { id: 'fixed', name: 'Specific harness/model' },
-            { id: 'inherit', name: 'Inherit' },
+            { id: 'fixed', name: uiText('Specific harness/model') },
+            { id: 'inherit', name: uiText('Inherit') },
             ...(snapshot?.smartModelSelectionEnabled === true
               ? [
                   { id: 'auto', name: 'Tune', icon: 'tune' as const },
@@ -354,7 +363,7 @@ export function HarnessSettings({
       {!turn && (task.modelSelection === 'auto' || task.modelSelection === 'smart') && (
         <Choice
           row
-          label="Difficulty"
+          label={uiText('Difficulty')}
           value={task.modelSelectionDifficulty ?? 'auto'}
           items={[...automaticDifficultyChoices]}
           disabled={controlsDisabled}
@@ -396,16 +405,17 @@ export function HarnessSettings({
       {handoff.pending && (
         <View style={{ gap: 8 }}>
           <Text style={styles.muted}>
-            Continue with {harnessNames[handoff.pending.provider]}. Your saved conversation stays in
-            this thread.
+            <InterfaceText values={{ value0: harnessNames[handoff.pending.provider] }}>
+              {'Continue with {value0}. Your saved conversation stays in this thread.'}
+            </InterfaceText>
           </Text>
           <Action
             label={
               handoff.busy
-                ? 'Switching…'
+                ? uiText('Switching…')
                 : task.status === 'running'
-                  ? 'Stop and switch harness'
-                  : 'Retry harness switch'
+                  ? uiText('Stop and switch harness')
+                  : uiText('Retry harness switch')
             }
             disabled={!connected || handoff.busy}
             onPress={() => {
@@ -413,7 +423,7 @@ export function HarnessSettings({
             }}
           />
           <Action
-            label="Cancel harness switch"
+            label={uiText('Cancel harness switch')}
             secondary
             disabled={handoff.busy}
             onPress={handoff.cancel}
@@ -439,13 +449,13 @@ export function HarnessSettings({
                 options={
                   <Choice
                     row
-                    label="Access mode"
+                    label={uiText('Access mode')}
                     value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-                    selectedLabel={permissionPolicyLabel(agent)}
+                    selectedLabel={uiText(permissionPolicyLabel(agent))}
                     disabled={controlsDisabled || !selectionAllowed}
                     items={selectableAccessModes(agent.permission, agent.provider)
                       .filter((mode) => supportsAccess(agent.provider, mode.id))
-                      .map((mode) => ({ id: mode.id, name: mode.name }))}
+                      .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
                     onChange={(value) =>
                       save(
                         selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)),
@@ -458,11 +468,15 @@ export function HarnessSettings({
               {(availability.loading || availability.error || !choices.length) && (
                 <Text style={styles.muted}>
                   {availability.loading
-                    ? 'Checking available providers…'
+                    ? uiText('Checking available providers…')
                     : availability.error
-                      ? `Could not check available providers: ${availability.error}`
+                      ? uiText('Could not check available providers: {value0}', {
+                          value0: availability.error,
+                        })
                       : !choices.length
-                        ? 'No providers available on this runtime. Configure agents in Settings.'
+                        ? uiText(
+                            'No providers available on this runtime. Configure agents in Settings.',
+                          )
                         : ''}
                 </Text>
               )}
@@ -470,21 +484,34 @@ export function HarnessSettings({
           )}
           <Action
             secondary
-            label={advanced ? 'Back to models' : 'More settings'}
+            label={advanced ? uiText('Back to models') : uiText('More settings')}
             onPress={() => setAdvanced(!advanced)}
           />
           {advanced && (
             <>
               <Text style={styles.muted}>
                 {custom
-                  ? `${agent.name} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.`
-                  : 'Choose a built-in provider, installed ACP agent or saved custom agent.'}
+                  ? uiText(
+                      '{value0} uses its saved instructions, skills and MCP servers. Model and access changes apply only to this task.',
+                      { value0: agent.name },
+                    )
+                  : uiText(
+                      'Choose a built-in provider, installed ACP agent or saved custom agent.',
+                    )}
               </Text>
               {providerLocked && !handoff.available && (
                 <Text style={styles.muted}>
                   {lockedProvider
-                    ? `This thread uses ${harnessNames[lockedProvider]}. Choose any ${harnessNames[lockedProvider]} agent or model; start a new task to change provider.`
-                    : 'The provider is fixed after the first message. Start a new task to choose another provider.'}
+                    ? uiText(
+                        'This thread uses {value0}. Choose any {value1} agent or model; start a new task to change provider.',
+                        {
+                          value0: harnessNames[lockedProvider],
+                          value1: harnessNames[lockedProvider],
+                        },
+                      )
+                    : uiText(
+                        'The provider is fixed after the first message. Start a new task to choose another provider.',
+                      )}
                 </Text>
               )}
               <ModelSettings
@@ -495,15 +522,15 @@ export function HarnessSettings({
               />
               <Choice
                 row
-                label="Access mode"
+                label={uiText('Access mode')}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-                selectedLabel={permissionPolicyLabel(agent)}
+                selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={controlsDisabled || !selectionAllowed}
                 items={selectableAccessModes(agent.permission, agent.provider)
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
                   .map((mode) => ({
                     id: mode.id,
-                    name: mode.name,
+                    name: uiText(mode.name),
                   }))}
                 onChange={(value) =>
                   save(selectPermissionPreset(agent, decode(agentSchema.fields.permission, value)))
@@ -529,12 +556,12 @@ export function HarnessSettings({
                   <Field
                     label={
                       agent.provider === 'hermes'
-                        ? 'Hermes executable'
+                        ? uiText('Hermes executable')
                         : agent.provider === 'acp'
-                          ? 'ACP executable'
+                          ? uiText('ACP executable')
                           : agent.provider === 'opencode'
-                            ? 'OpenCode server URL'
-                            : 'Executable'
+                            ? uiText('OpenCode server URL')
+                            : uiText('Executable')
                     }
                     key={`${selection}:endpoint`}
                     defaultValue={agent.endpoint}
@@ -551,7 +578,7 @@ export function HarnessSettings({
                 (['hermes', 'vibe', 'copilot', 'grok', 'muse'].includes(agent.provider) ||
                   (agent.provider === 'acp' && !agent.acpInstallationId)) && (
                   <Field
-                    label="Arguments (one per line)"
+                    label={uiText('Arguments (one per line)')}
                     key={`${selection}:args`}
                     defaultValue={agent.args?.join('\n') ?? ''}
                     multiline
@@ -567,31 +594,38 @@ export function HarnessSettings({
             </>
           )}
           {!turn && task.status === 'running' ? (
-            <Text style={styles.muted}>Stop the active turn to change model settings.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Stop the active turn to change model settings.'}</InterfaceText>
+            </Text>
           ) : (
             <Text style={styles.muted}>
               {turn && snapshot?.persistentTurnModelsSupported
-                ? 'Other settings apply only to this message.'
-                : `Applies to ${turn ? 'this message only' : 'the next turn'}.`}
+                ? uiText('Other settings apply only to this message.')
+                : uiText('Applies to {value0}.', {
+                    value0: turn ? 'this message only' : 'the next turn',
+                  })}
             </Text>
           )}
           {turn?.value && (
             <Action
               secondary
-              label="Use thread defaults"
+              label={uiText('Use thread defaults')}
               onPress={() => turn.onChange(null)}
               disabled={controlsDisabled}
             />
           )}
           {!selectionAllowed && (
             <Text accessibilityRole="alert" style={styles.error}>
-              Choose an available {lockedProvider ? harnessNames[lockedProvider] : ''} harness or
-              custom agent.
+              <InterfaceText
+                values={{ value0: lockedProvider ? harnessNames[lockedProvider] : '' }}
+              >
+                {'Choose an available {value0} harness or custom agent.'}
+              </InterfaceText>
             </Text>
           )}
           {busy && (
             <Text accessibilityLiveRegion="polite" style={styles.muted}>
-              Saving model settings…
+              <InterfaceText>{'Saving model settings…'}</InterfaceText>
             </Text>
           )}
         </>
@@ -609,7 +643,7 @@ export function HarnessSettings({
   ) : (
     <Sheet
       ref={sheet}
-      title={advanced ? 'Model settings' : 'Agent & model'}
+      title={advanced ? uiText('Model settings') : uiText('Agent & model')}
       onClose={onClose}
       busy={busy || handoff.busy}
     >

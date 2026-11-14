@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityLabel,
@@ -12,6 +13,7 @@ import { useTheme } from '../../ui/theme'
 import type { BrowserMenuProps } from './browser-menu'
 
 export function BrowserMenu({ items, onChange }: BrowserMenuProps) {
+  const uiText = useInterfaceText()
   const { colors, mode } = useTheme()
   return (
     <Host ignoreSafeArea="all" colorScheme={mode} style={{ width: 44, height: 44, flexShrink: 0 }}>
@@ -22,7 +24,7 @@ export function BrowserMenu({ items, onChange }: BrowserMenuProps) {
           buttonStyle('plain'),
           frame({ width: 44, height: 44 }),
           contentShape(shapes.circle(), ['interaction', 'accessibility']),
-          accessibilityLabel('Browser options'),
+          accessibilityLabel(uiText('Browser options')),
         ]}
       >
         {items.map((item) => (

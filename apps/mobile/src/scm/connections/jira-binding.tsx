@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
@@ -98,7 +99,7 @@ export function JiraProjectForm({
           project: project.trim().toUpperCase(),
         })
         if (!remove && !parsed.success) {
-          setError(validationMessages(parsed.error)[0] ?? 'Enter a Jira site and project.')
+          setError(validationMessages(parsed.error)[0] ?? uiText('Enter a Jira site and project.'))
           return
         }
         pending.current = true
@@ -165,8 +166,11 @@ export function JiraProjectForm({
   return (
     <>
       <Text style={styles.muted}>
-        Browse Jira independently of your code. Link an issue to a Dovo project when you are ready
-        to work on it.
+        <InterfaceText>
+          {
+            'Browse Jira independently of your code. Link an issue to a Dovo project when you are ready to work on it.'
+          }
+        </InterfaceText>
       </Text>
       <View
         style={{
@@ -174,15 +178,17 @@ export function JiraProjectForm({
         }}
       >
         <Text style={styles.muted}>
-          Signed-in account on {runtimeComputerName({ profile, snapshot })}
+          <InterfaceText values={{ value0: runtimeComputerName({ profile, snapshot }) }}>
+            {'Signed-in account on {value0}'}
+          </InterfaceText>
         </Text>
         <Text selectable style={styles.text}>
-          {projects?.site ?? initial?.site ?? 'Checking Jira account…'}
+          {projects?.site ?? initial?.site ?? uiText('Checking Jira account…')}
         </Text>
       </View>
       {initial && (
         <Field
-          label="Source name"
+          label={uiText('Source name')}
           value={name}
           onChangeText={setName}
           editable={!busy}
@@ -192,23 +198,33 @@ export function JiraProjectForm({
       )}
       {initial && projects && initial.site !== projects.site && (
         <Text style={styles.muted}>
-          Current source: {initial.site} · {initial.project}. Sign in to this source’s account
-          before editing it.
+          <InterfaceText values={{ value0: initial.site, value1: initial.project }}>
+            {
+              'Current source: {value0} · {value1}. Sign in to this source’s account before editing it.'
+            }
+          </InterfaceText>
         </Text>
       )}
-      {loading && <Text style={styles.muted}>Loading projects…</Text>}
+      {loading && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Loading projects…'}</InterfaceText>
+        </Text>
+      )}
       {!!loadError && (
         <>
           <Text accessibilityRole="alert" style={styles.error}>
             {loadError}
           </Text>
           <Text style={styles.muted}>
-            {uiText('On')} {runtimeComputerName({ profile, snapshot })}, sign in with acli jira auth
-            login, then retry.
+            <InterfaceText
+              values={{ value0: uiText('On'), value1: runtimeComputerName({ profile, snapshot }) }}
+            >
+              {'{value0} {value1}, sign in with acli jira auth login, then retry.'}
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Retry account"
+            label={uiText('Retry account')}
             disabled={busy || loading || !connected}
             onPress={() => retry((value) => value + 1)}
           />
@@ -216,13 +232,13 @@ export function JiraProjectForm({
       )}
       {!manual && projectItems.length > 0 && (
         <Choice
-          label="Jira space / project"
+          label={uiText('Jira space / project')}
           value={project}
           disabled={busy || loading || !!initial}
           items={[
             {
               id: '',
-              name: 'Choose a project…',
+              name: uiText('Choose a project…'),
             },
             ...projectItems,
           ]}
@@ -234,42 +250,48 @@ export function JiraProjectForm({
       )}
       {!loading && !projects?.projects.length && !loadError && (
         <Text style={styles.muted}>
-          No projects were returned by this account. Enter a project key below if you have access.
+          <InterfaceText>
+            {
+              'No projects were returned by this account. Enter a project key below if you have access.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {(manual || (!loading && !projectItems.length)) && (
         <>
           <Field
-            label="Jira Cloud site"
+            label={uiText('Jira Cloud site')}
             value={site}
             onChangeText={setSite}
             keyboardType="url"
             autoCorrect={false}
             editable={!busy && !initial}
-            placeholder="team.atlassian.net"
+            placeholder={uiText('team.atlassian.net')}
           />
           <Field
-            label="Project key"
+            label={uiText('Project key')}
             value={project}
             onChangeText={(value) => setProject(value.toUpperCase())}
             autoCapitalize="characters"
             autoCorrect={false}
             editable={!busy && !initial}
-            placeholder="TEAM"
+            placeholder={uiText('TEAM')}
           />
         </>
       )}
       {!initial && !manual && projectItems.length > 0 && (
         <Action
           secondary
-          label="Enter project manually"
+          label={uiText('Enter project manually')}
           disabled={busy || !!initial}
           onPress={() => setManual(true)}
         />
       )}
       {projects?.truncated && (
         <Text style={styles.muted}>
-          More projects are available. Enter a project key manually if yours is missing.
+          <InterfaceText>
+            {'More projects are available. Enter a project key manually if yours is missing.'}
+          </InterfaceText>
         </Text>
       )}
       {!!error && (
@@ -278,16 +300,25 @@ export function JiraProjectForm({
         </Text>
       )}
       {!connected && (
-        <Text style={styles.muted}>Reconnect to this computer to change its issue source.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Reconnect to this computer to change its issue source.'}</InterfaceText>
+        </Text>
       )}
       <Action
-        label={busy ? 'Checking connection…' : initial ? 'Save connection' : 'Add Jira source'}
+        label={
+          busy
+            ? uiText('Checking connection…')
+            : initial
+              ? uiText('Save connection')
+              : uiText('Add Jira source')
+        }
         disabled={!connected || busy || !site.trim() || !project.trim()}
         onPress={() => void save()}
       />
       {initial && (
         <Action
-          label="Remove Jira source"
+          destructive
+          label={uiText('Remove Jira source')}
           secondary
           disabled={!connected || busy}
           onPress={() => void save(true)}

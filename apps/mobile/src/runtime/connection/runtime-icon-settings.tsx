@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { View, Pressable } from 'react-native'
 import { runtimeIconChoices, runtimePreferencesSchema } from '@dovo/protocol'
 import { useRuntime } from './provider'
@@ -13,8 +14,12 @@ export function RuntimeIconSettings() {
   const supported = snapshot?.runtimeIcon !== undefined
   return (
     <View style={{ gap: 8 }}>
-      <Text style={styles.text}>Computer icon</Text>
-      <Text style={styles.muted}>Saved on this computer and shared with paired devices.</Text>
+      <Text style={styles.text}>
+        <InterfaceText>{'Computer icon'}</InterfaceText>
+      </Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Saved on this computer and shared with paired devices.'}</InterfaceText>
+      </Text>
       <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
         {runtimeIconChoices.map(({ id, name }) => {
           const selected = id === (snapshot?.runtimeIcon ?? 'desktop')
@@ -54,7 +59,11 @@ export function RuntimeIconSettings() {
           )
         })}
       </View>
-      {!supported && <Text style={styles.muted}>Update this runtime to customize its icon.</Text>}
+      {!supported && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Update this runtime to customize its icon.'}</InterfaceText>
+        </Text>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

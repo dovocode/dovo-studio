@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { mobileWorkflow, nativeEffect } from '../../../runtime/state/native-effect'
@@ -169,7 +170,7 @@ export function PullActionSheet({
             setEvent(result.pendingReviewDecision)
             setError(
               result.message ??
-                'Your comment was posted. The review decision still needs confirmation.',
+                uiText('Your comment was posted. The review decision still needs confirmation.'),
             )
             onDone()
             return
@@ -178,9 +179,9 @@ export function PullActionSheet({
           sheet.current?.dismiss(onDone)
           if (result.status === 'queued')
             Alert.alert(
-              'Merge queued',
+              uiText('Merge queued'),
               result.message ??
-                'The server is processing this merge. Refresh to see its final state.',
+                uiText('The server is processing this merge. Refresh to see its final state.'),
             )
         }).pipe(
           Effect.catch((cause) =>
@@ -207,7 +208,7 @@ export function PullActionSheet({
       busy={busy}
       footer={
         <Action
-          label={busy ? 'Submitting…' : labels[target.action]}
+          label={busy ? uiText('Submitting…') : labels[target.action]}
           disabled={busy || !connected || !!initialDetail.stale || !!initialDetail.refreshError}
           onPress={() => void submit()}
         />
@@ -224,12 +225,17 @@ export function PullActionSheet({
       {target.action === 'edit' && (
         <>
           <Field label={uiText('Title')} value={title} onChangeText={setTitle} editable={!busy} />
-          <Field label="Target branch" value={base} onChangeText={setBase} editable={!busy} />
+          <Field
+            label={uiText('Target branch')}
+            value={base}
+            onChangeText={setBase}
+            editable={!busy}
+          />
         </>
       )}
       {target.action === 'review' && (
         <Choice
-          label="Review decision"
+          label={uiText('Review decision')}
           value={event}
           onChange={setEvent}
           disabled={busy}
@@ -246,7 +252,7 @@ export function PullActionSheet({
       )}
       {textAction && (
         <Field
-          label={target.action === 'edit' ? 'Description' : 'Message'}
+          label={target.action === 'edit' ? uiText('Description') : uiText('Message')}
           multiline
           value={body}
           onChangeText={setBody}
@@ -255,34 +261,34 @@ export function PullActionSheet({
             minHeight: 150,
             textAlignVertical: 'top',
           }}
-          placeholder="Markdown supported"
+          placeholder={uiText('Markdown supported')}
         />
       )}
       {target.action === 'reviewers' && (
         <>
           <Choice
-            label="Reviewer action"
+            label={uiText('Reviewer action')}
             value={operation}
             onChange={setOperation}
             disabled={busy}
             items={[
               {
                 id: 'add',
-                name: 'Add reviewers',
+                name: uiText('Add reviewers'),
               },
               {
                 id: 'remove',
-                name: 'Remove reviewers',
+                name: uiText('Remove reviewers'),
               },
             ]}
           />
           <Field
             label={
               detail.pull.provider === 'azure-devops'
-                ? 'Reviewer identity IDs, separated by commas'
+                ? uiText('Reviewer identity IDs, separated by commas')
                 : detail.pull.provider === 'bitbucket'
-                  ? 'Reviewer UUIDs, separated by commas'
-                  : 'Reviewer usernames, separated by commas'
+                  ? uiText('Reviewer UUIDs, separated by commas')
+                  : uiText('Reviewer usernames, separated by commas')
             }
             value={reviewers}
             onChangeText={setReviewers}
@@ -290,7 +296,7 @@ export function PullActionSheet({
           />
           {!['bitbucket', 'azure-devops'].includes(detail.pull.provider ?? '') && (
             <Field
-              label="Team slugs, separated by commas"
+              label={uiText('Team slugs, separated by commas')}
               value={teams}
               onChangeText={setTeams}
               editable={!busy}
@@ -302,30 +308,46 @@ export function PullActionSheet({
         (target.action === 'auto-merge' && !detail.pull.autoMergeEnabled)) && (
         <>
           <Text style={styles.text}>
-            {target.action === 'auto-merge' ? 'Automatically merge' : 'Merge'} {detail.pull.head}{' '}
-            into {detail.pull.base}?
+            <InterfaceText
+              values={{
+                value0:
+                  target.action === 'auto-merge' ? uiText('Automatically merge') : uiText('Merge'),
+                value1: detail.pull.head,
+                value2: detail.pull.base,
+              }}
+            >
+              {'{value0} {value1} into {value2}?'}
+            </InterfaceText>
           </Text>
           <Text style={styles.muted}>
             {target.action === 'auto-merge' ? (
               <>
-                Merge when GitHub’s requirements pass. This also applies to later commits pushed to
-                this PR.
+                <InterfaceText>
+                  {
+                    'Merge when GitHub’s requirements pass. This also applies to later commits pushed to this PR.'
+                  }
+                </InterfaceText>
               </>
             ) : detail.pull.provider === 'bitbucket' ? (
               <>
-                Bitbucket merges the current source branch. Studio checks viewed revision{' '}
-                {headSha.slice(0, 8)} before submitting; later pushes may also be merged. Branch
-                policies still apply.
+                <InterfaceText values={{ value0: headSha.slice(0, 8) }}>
+                  {
+                    'Bitbucket merges the current source branch. Studio checks viewed revision {value0} before submitting; later pushes may also be merged. Branch policies still apply.'
+                  }
+                </InterfaceText>
               </>
             ) : (
               <>
-                The server will enforce branch policies. This submits the revision you reviewed:{' '}
-                {headSha.slice(0, 8)}.
+                <InterfaceText values={{ value0: headSha.slice(0, 8) }}>
+                  {
+                    'The server will enforce branch policies. This submits the revision you reviewed: {value0}.'
+                  }
+                </InterfaceText>
               </>
             )}
           </Text>
           <Choice
-            label="Merge method"
+            label={uiText('Merge method')}
             value={method}
             onChange={setMethod}
             disabled={busy}
@@ -342,24 +364,31 @@ export function PullActionSheet({
         </>
       )}
       {target.action === 'close' && (
-        <Text style={styles.text}>Close this pull request without merging its changes?</Text>
+        <Text style={styles.text}>
+          <InterfaceText>{'Close this pull request without merging its changes?'}</InterfaceText>
+        </Text>
       )}
       {target.action === 'draft' && (
         <Text style={styles.text}>
           {detail.pull.draft
-            ? 'Mark this pull request ready and notify its reviewers?'
-            : 'Return this pull request to draft while work continues?'}
+            ? uiText('Mark this pull request ready and notify its reviewers?')
+            : uiText('Return this pull request to draft while work continues?')}
         </Text>
       )}
       {target.action === 'update-branch' && (
         <Text style={styles.muted}>
-          Use GitHub Update branch to merge the latest {detail.pull.base} into this PR. Published
-          commits stay intact. Repository rules determine whether approvals remain valid.
+          <InterfaceText values={{ value0: detail.pull.base }}>
+            {
+              'Use GitHub Update branch to merge the latest {value0} into this PR. Published commits stay intact. Repository rules determine whether approvals remain valid.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {target.action === 'auto-merge' && detail.pull.autoMergeEnabled && (
         <Text style={styles.text}>
-          Stop automatically merging this pull request when its requirements pass?
+          <InterfaceText>
+            {'Stop automatically merging this pull request when its requirements pass?'}
+          </InterfaceText>
         </Text>
       )}
       {!!error && (

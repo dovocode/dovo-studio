@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState, useRef, useLayoutEffect } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -18,6 +19,8 @@ export function LinkedCheckoutEditor({
   onChange: (links: LinkedCheckout[]) => void
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const latest = useRef({ value, onChange })
@@ -32,8 +35,14 @@ export function LinkedCheckoutEditor({
   const projects = snapshot?.workspace.repositories.filter((repo) => repo.kind !== 'scratch') ?? []
   return (
     <View style={{ gap: 12 }}>
-      <Text>Linked projects</Text>
-      <Text style={styles.muted}>Same computer only. Each run creates its own new worktrees.</Text>
+      <Text>
+        <InterfaceText>{'Linked projects'}</InterfaceText>
+      </Text>
+      <Text style={styles.muted}>
+        <InterfaceText>
+          {'Same computer only. Each run creates its own new worktrees.'}
+        </InterfaceText>
+      </Text>
       {value.map((link) => (
         <LinkedFields
           key={link.id}
@@ -44,7 +53,7 @@ export function LinkedCheckoutEditor({
         />
       ))}
       <Action
-        label="Add checkout"
+        label={uiText('Add checkout')}
         disabled={disabled || !projects.length || value.length >= 12}
         onPress={() =>
           onChange([
@@ -73,6 +82,8 @@ function LinkedFields({
   onChange: (link: LinkedCheckout) => void
   onRemove: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, call } = useRuntime()
@@ -111,7 +122,7 @@ function LinkedFields({
       )
       if (generation.current !== currentGeneration) return
       setWorktrees(result.worktrees)
-      if (!result.worktrees.length) setError('No worktrees available. Choose New worktree.')
+      if (!result.worktrees.length) setError(uiText('No worktrees available. Choose New worktree.'))
       else
         onChange({
           ...link,
@@ -130,7 +141,7 @@ function LinkedFields({
   return (
     <View style={[styles.card, { gap: 10 }]}>
       <Choice
-        label="Linked project"
+        label={uiText('Linked project')}
         value={link.repositoryId}
         disabled={disabled || busy}
         items={projects.map((repo) => ({ id: repo.id, name: repo.name }))}
@@ -147,15 +158,15 @@ function LinkedFields({
         }}
       />
       <Choice
-        label="Checkout"
+        label={uiText('Checkout')}
         value={mode}
         disabled={disabled || busy}
         items={[
-          { id: 'main', name: 'Main checkout' },
+          { id: 'main', name: uiText('Main checkout') },
           ...(!repo?.kind
             ? [
-                { id: 'worktree', name: 'New worktree' },
-                { id: 'existing', name: 'Existing worktree' },
+                { id: 'worktree', name: uiText('New worktree') },
+                { id: 'existing', name: uiText('Existing worktree') },
               ]
             : []),
         ]}
@@ -165,7 +176,7 @@ function LinkedFields({
       />
       {link.existingWorktreePath && (
         <Choice
-          label="Worktree"
+          label={uiText('Worktree')}
           value={link.existingWorktreePath}
           disabled={disabled || busy}
           items={[
@@ -183,8 +194,8 @@ function LinkedFields({
       {mode === 'worktree' && (
         <>
           <Field
-            label="Base branch"
-            placeholder="Project default"
+            label={uiText('Base branch')}
+            placeholder={uiText('Project default')}
             value={link.baseBranch ?? ''}
             editable={!disabled && !busy}
             onChangeText={(baseBranch) =>
@@ -192,8 +203,8 @@ function LinkedFields({
             }
           />
           <Field
-            label="Branch name"
-            placeholder="From thread title"
+            label={uiText('Branch name')}
+            placeholder={uiText('From thread title')}
             value={link.branch ?? ''}
             editable={!disabled && !busy}
             onChangeText={(branch) => onChange({ ...link, branch: branch || undefined })}
@@ -201,24 +212,31 @@ function LinkedFields({
         </>
       )}
       <Choice
-        label="Access"
+        label={uiText('Access')}
         value={link.access}
         disabled={disabled || busy}
         items={[
-          { id: 'read-only', name: 'Reference only' },
-          { id: 'edit', name: 'Allow edits' },
+          { id: 'read-only', name: uiText('Reference only') },
+          { id: 'edit', name: uiText('Allow edits') },
         ]}
         onChange={(access) => {
           if (access === 'read-only' || access === 'edit') onChange({ ...link, access })
         }}
       />
-      <Action label="Remove link" disabled={disabled || busy} onPress={onRemove} />
+      <Action
+        destructive
+        label={uiText('Remove link')}
+        disabled={disabled || busy}
+        onPress={onRemove}
+      />
       {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )
 }
 
 export function LinkedProjects({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { call, connected } = useRuntime()
@@ -249,16 +267,21 @@ export function LinkedProjects({ task }: { task: Task }) {
     <View style={{ gap: 12 }}>
       {!!task.pendingLinkedCheckouts && (
         <Text style={styles.muted}>
-          Linked projects added by the agent take effect on the next turn.
+          <InterfaceText>
+            {'Linked projects added by the agent take effect on the next turn.'}
+          </InterfaceText>
         </Text>
       )}
       <LinkedCheckoutEditor value={links} onChange={setLinks} disabled={disabled} />
       <Text style={styles.muted}>
-        Removing a link keeps the worktree and saved history. Reference-only access also follows
-        your harness permissions.
+        <InterfaceText>
+          {
+            'Removing a link keeps the worktree and saved history. Reference-only access also follows your harness permissions.'
+          }
+        </InterfaceText>
       </Text>
       <Action
-        label="Save linked projects"
+        label={uiText('Save linked projects')}
         disabled={disabled || JSON.stringify(links) === JSON.stringify(before)}
         onPress={() => {
           void save()

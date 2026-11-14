@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { designTokens } from '@dovo/design'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Icon, type IconName } from './icon'
@@ -40,6 +41,8 @@ export function Choice({
   alignValue = 'leading',
   row = false,
 }: ChoiceProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [open, setOpen] = useApplicationState(false),
@@ -51,10 +54,10 @@ export function Choice({
   const compactControl = compact || horizontal
   const searchField = items.length > 6 && (
     <SearchField
-      label={`Search ${label.toLowerCase()}`}
+      label={uiText('Search {value0}', { value0: label.toLowerCase() })}
       value={search}
       onChangeText={setSearch}
-      placeholder="Search…"
+      placeholder={uiText('Search…')}
       clearButtonMode="while-editing"
     />
   )
@@ -104,7 +107,11 @@ export function Choice({
           {item.id === value && <Icon name="check" size={17} />}
         </Pressable>
       ))}
-      {!filtered.length && <Text style={styles.muted}>No matching options.</Text>}
+      {!filtered.length && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'No matching options.'}</InterfaceText>
+        </Text>
+      )}
     </>
   )
   return (
@@ -231,7 +238,7 @@ export function Choice({
                 >
                   {items.find((item) => item.id === value)?.name ??
                     selectedLabel ??
-                    (value || 'Choose…')}
+                    (value || uiText('Choose…'))}
                 </Text>
                 <Icon name="down" size={13} color={colors.muted} />
               </Pressable>

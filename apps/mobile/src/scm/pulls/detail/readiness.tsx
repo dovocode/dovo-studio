@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import type { PullReadiness, PullReadinessMetric, PullTone } from '@dovo/protocol'
@@ -14,6 +15,8 @@ export function PullReadinessPanel({
   onOpen: (section: PullReadinessMetric['id']) => void
   children?: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [width, setWidth] = useState<number>()
   const stacked = width === undefined || width < 340
@@ -27,7 +30,7 @@ export function PullReadinessPanel({
   const color = tones[summary.headline.tone]
   return (
     <View
-      accessibilityLabel="Pull request status"
+      accessibilityLabel={uiText('Pull request status')}
       onLayout={({ nativeEvent }) => setWidth(Math.round(nativeEvent.layout.width))}
       style={{
         borderWidth: 0.5,
@@ -101,7 +104,7 @@ export function PullReadinessPanel({
           <Pressable
             key={metric.id}
             accessibilityRole="button"
-            accessibilityLabel={`View pull request ${metric.id}`}
+            accessibilityLabel={uiText('View pull request {value0}', { value0: metric.id })}
             accessibilityHint={`${metric.signal.label}. ${metric.description}`}
             onPress={() => onOpen(metric.id)}
             style={({ pressed }) => ({

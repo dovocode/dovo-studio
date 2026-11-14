@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { decode, agentQuestionSchema, type QuestionDraft } from '@dovo/protocol'
@@ -30,6 +31,8 @@ const question = decode(agentQuestionSchema, {
 
 /** Production mobile input layer, with local simulated sending and no runtime connection. */
 export function ConversationExample({ disconnected = false }: { disconnected?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [draft, setDraft] = useState('')
   const [revision, setRevision] = useState(0)
@@ -40,11 +43,14 @@ export function ConversationExample({ disconnected = false }: { disconnected?: b
   return (
     <View style={{ gap: 16 }}>
       <Text accessibilityRole="header" style={styles.title}>
-        Conversation inputs
+        <InterfaceText>{'Conversation inputs'}</InterfaceText>
       </Text>
       <Text style={styles.muted}>
-        Production draft input and question choices. Attachments, dictation and runtime sending
-        belong to the full composer.
+        <InterfaceText>
+          {
+            'Production draft input and question choices. Attachments, dictation and runtime sending belong to the full composer.'
+          }
+        </InterfaceText>
       </Text>
       <View style={styles.card}>
         <ComposerField
@@ -54,15 +60,21 @@ export function ConversationExample({ disconnected = false }: { disconnected?: b
           value={draft}
           onChangeText={setDraft}
           onSelectionChange={() => undefined}
-          placeholder="Write a follow-up…"
+          placeholder={uiText('Write a follow-up…')}
         />
       </View>
       <View style={styles.row}>
-        <Text style={styles.text}>Simulate failed send</Text>
-        <Switch accessibilityLabel="Simulate failed send" value={fail} onValueChange={setFail} />
+        <Text style={styles.text}>
+          <InterfaceText>{'Simulate failed send'}</InterfaceText>
+        </Text>
+        <Switch
+          accessibilityLabel={uiText('Simulate failed send')}
+          value={fail}
+          onValueChange={setFail}
+        />
       </View>
       <Action
-        label="Send preview"
+        label={uiText('Send preview')}
         wide
         disabled={disconnected || !draft.trim()}
         onPress={() => {
@@ -77,13 +89,28 @@ export function ConversationExample({ disconnected = false }: { disconnected?: b
         }}
       />
       <Text accessibilityRole="status" style={styles.muted}>
-        {disconnected ? 'Disconnected: draft remains editable; sending unavailable.' : message}
+        {disconnected
+          ? uiText('Disconnected: draft remains editable; sending unavailable.')
+          : message}
       </Text>
-      {!!lastSent && <Text style={styles.text}>Local sent message: {lastSent}</Text>}
+      {!!lastSent && (
+        <Text style={styles.text}>
+          <InterfaceText values={{ value0: lastSent }}>
+            {'Local sent message: {value0}'}
+          </InterfaceText>
+        </Text>
+      )}
       <QuestionField question={question} draft={answer} onChange={setAnswer} disabled={false} />
       <Text accessibilityRole="status" style={styles.muted}>
-        Local answer:{' '}
-        {[...answer.selected, answer.text].filter(Boolean).join(', ') || 'Nothing selected'}
+        <InterfaceText
+          values={{
+            value0:
+              [...answer.selected, answer.text].filter(Boolean).join(', ') ||
+              uiText('Nothing selected'),
+          }}
+        >
+          {'Local answer: {value0}'}
+        </InterfaceText>
       </Text>
     </View>
   )

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { useLocalSearchParams } from 'expo-router'
 import { ScopedSettings, useOptionalSettingsTarget } from '../runtime/preferences/settings-target'
@@ -6,6 +7,8 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { SettingsPage } from './settings-theme'
 
 export default function TaskLifecycleScreen() {
+  const uiText = useInterfaceText()
+
   const { runtimeId } = useLocalSearchParams<{ runtimeId?: string }>()
   const applied = useRef<string | undefined>(undefined)
   const selection = useOptionalSettingsTarget()
@@ -18,7 +21,7 @@ export default function TaskLifecycleScreen() {
   }, [runtimeId, setTarget])
   return (
     <SettingsPage>
-      <ScreenHeader title="Task lifecycle" />
+      <ScreenHeader title={uiText('Task lifecycle')} />
       <ScopedSettings scrollable>
         {({ scope, repository }) => <TaskLifecycleSettings scope={scope} repository={repository} />}
       </ScopedSettings>

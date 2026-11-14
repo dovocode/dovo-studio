@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect } from 'effect'
 import { workspacePatchResultSchema } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -14,24 +15,40 @@ export function ProjectApprovalRules({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected, callEffect } = useRuntime()
   const { styles } = useTheme()
   const { act, busy, error } = useAction()
   const project = snapshot?.workspace.repositories.find((item) => item.id === repositoryId)
   const webRulesSupported = snapshot?.allowWebRequests !== undefined
   return (
-    <Sheet title="Project approval rules" busy={busy} onClose={onClose}>
+    <Sheet title={uiText('Project approval rules')} busy={busy} onClose={onClose}>
       <Text style={styles.muted}>
-        {!webRulesSupported
-          ? 'Update Dovo on this computer to use web approval rules.'
-          : snapshot?.allowWebRequests
-            ? 'Web requests are always allowed on this computer. Change that in computer preferences before changing the project rule.'
-            : `Web browsing and search ${project?.approvedWebRequests ? 'are always allowed' : 'ask for approval'} in ${project?.name ?? 'this project'}.`}{' '}
-        Shell commands and file changes keep their existing approval rules.
+        <InterfaceText
+          values={{
+            value0: !webRulesSupported
+              ? uiText('Update Dovo on this computer to use web approval rules.')
+              : snapshot?.allowWebRequests
+                ? uiText(
+                    'Web requests are always allowed on this computer. Change that in computer preferences before changing the project rule.',
+                  )
+                : uiText('Web browsing and search {value0} in {value1}.', {
+                    value0: project?.approvedWebRequests
+                      ? 'are always allowed'
+                      : 'ask for approval',
+                    value1: project?.name ?? 'this project',
+                  }),
+          }}
+        >
+          {'{value0} Shell commands and file changes keep their existing approval rules.'}
+        </InterfaceText>
       </Text>
       <Action
         label={
-          project?.approvedWebRequests ? 'Ask before web requests' : 'Always allow web requests'
+          project?.approvedWebRequests
+            ? uiText('Ask before web requests')
+            : uiText('Always allow web requests')
         }
         disabled={
           !connected || busy || !project || !webRulesSupported || snapshot?.allowWebRequests

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   createContext,
   useCallback,
@@ -82,8 +83,11 @@ export function SettingsScrollView({
         {props.children}
         {missing && (
           <Text accessibilityRole="alert" style={styles.muted}>
-            “{target}” is not available for this settings target. Choose another computer or
-            project, or reconnect and try again.
+            <InterfaceText values={{ value0: target }}>
+              {
+                '“{value0}” is not available for this settings target. Choose another computer or project, or reconnect and try again.'
+              }
+            </InterfaceText>
           </Text>
         )}
       </ScrollView>
@@ -92,29 +96,32 @@ export function SettingsScrollView({
 }
 
 export function SettingsAnchor({ label, children }: { label?: string; children: ReactNode }) {
-  const target = useContext(SettingsSearchContext)
+  const uiText = useInterfaceText()
+  const sourceTarget = useContext(SettingsSearchContext)
+  // URLs and measured scroll targets keep their authored key across language changes.
+  const matches = !!label && (label === sourceTarget || label === uiText(sourceTarget))
   const reveal = useContext(ScrollContext)
   const ref = useRef<ComponentRef<typeof View>>(null)
   const { colors } = useTheme()
   const [dismissed, setDismissed] = useState('')
-  const selected = !!label && target === label && dismissed !== target
+  const selected = matches && dismissed !== sourceTarget
   useEffect(() => {
-    if (label && target === label && ref.current) reveal?.(label, ref.current)
+    if (matches && ref.current) reveal?.(sourceTarget, ref.current)
     return () => {
-      if (label && target === label) reveal?.(label, null)
+      if (matches) reveal?.(sourceTarget, null)
     }
-  }, [label, target, reveal])
-  if (!target || label !== target) return children
+  }, [matches, sourceTarget, reveal])
+  if (!sourceTarget || !matches) return children
   return (
     <View
       ref={ref}
       testID={selected ? 'Settings search highlight' : undefined}
       collapsable={false}
       onLayout={() => {
-        if (label && ref.current) reveal?.(label, ref.current)
+        if (ref.current) reveal?.(sourceTarget, ref.current)
       }}
       onTouchStart={() => {
-        if (selected) setDismissed(target)
+        if (selected) setDismissed(sourceTarget)
       }}
       style={
         selected ? { borderWidth: 2, borderColor: colors.accent, borderRadius: 16 } : undefined

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { linkTargetHref } from './app-link-target'
 import {
@@ -84,7 +85,7 @@ export function LinkBrowser() {
       controller.open({
         url,
         origin,
-        onError: (cause) => Alert.alert('Could not open link', String(cause)),
+        onError: (cause) => Alert.alert(uiText('Could not open link'), String(cause)),
         actions: linkActions(
           url,
           targets,
@@ -117,7 +118,13 @@ export function LinkBrowser() {
   return (
     <>
       {pipeline && (
-        <Suspense fallback={<Text>Loading pipeline…</Text>}>
+        <Suspense
+          fallback={
+            <Text>
+              <InterfaceText>{'Loading pipeline…'}</InterfaceText>
+            </Text>
+          }
+        >
           <PipelinePreview
             key={JSON.stringify(pipeline)}
             target={pipeline}
@@ -128,7 +135,7 @@ export function LinkBrowser() {
       {pending && (
         <Sheet
           ref={picker}
-          title="Open link"
+          title={uiText('Open link')}
           presentation="dialog"
           busy={pending.busy}
           onClose={() => controller.dismissed(pending.request)}

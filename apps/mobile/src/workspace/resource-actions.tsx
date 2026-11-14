@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Alert } from 'react-native'
 import { responses, type TerminalInfo, type UpdateTerminal } from '@dovo/protocol'
@@ -12,6 +13,8 @@ import { Text } from '../ui/content/text'
 import type { WorkspaceItem } from './workspace-items'
 
 export function useTerminalActions(runtimeId: string, terminal: TerminalInfo | undefined) {
+  const uiText = useInterfaceText()
+
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
   const owner = overviews.find((entry) => entry.profile.id === runtimeId)
   const locked = useRef(false)
@@ -31,7 +34,7 @@ export function useTerminalActions(runtimeId: string, terminal: TerminalInfo | u
       )
       await refreshRuntime(owner.profile)
     } catch (cause: unknown) {
-      Alert.alert('Could not update terminal', String(cause))
+      Alert.alert(uiText('Could not update terminal'), String(cause))
     } finally {
       locked.current = false
       setBusy(false)
@@ -54,6 +57,8 @@ function ThreadActions({
   item: Extract<WorkspaceItem, { kind: 'thread' }>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const task =
     runtime.overviews
@@ -64,7 +69,7 @@ function ThreadActions({
     <Sheet title={item.title} onClose={onClose}>
       <Action
         secondary
-        label={task.pinned ? 'Unpin' : 'Pin'}
+        label={task.pinned ? uiText('Unpin') : uiText('Pin')}
         disabled={!lifecycle.enabled || lifecycle.busy}
         onPress={() => {
           lifecycle.togglePinned()
@@ -74,7 +79,7 @@ function ThreadActions({
         <>
           <Action
             secondary
-            label={task.archived ? 'Restore' : 'Settle'}
+            label={task.archived ? uiText('Restore') : uiText('Settle')}
             disabled={!lifecycle.enabled || lifecycle.busy || task.status === 'running'}
             onPress={() => {
               lifecycle.toggleSettled()
@@ -82,7 +87,7 @@ function ThreadActions({
           />
           <Action
             secondary
-            label="Snooze"
+            label={uiText('Snooze')}
             disabled={!lifecycle.enabled || lifecycle.busy}
             onPress={() =>
               chooseSnoozeDuration('Snooze thread', (until) => {
@@ -93,7 +98,7 @@ function ThreadActions({
           {!!task.snoozedUntil && (
             <Action
               secondary
-              label="Wake now"
+              label={uiText('Wake now')}
               onPress={() => {
                 lifecycle.snooze(null)
               }}
@@ -106,6 +111,8 @@ function ThreadActions({
   )
 }
 export function useStandaloneActions(item: Exclude<WorkspaceItem, { kind: 'thread' }>) {
+  const uiText = useInterfaceText()
+
   const browser = useBrowserWorkspace()
   const terminal = useTerminalActions(
     item.kind === 'terminal' ? item.runtimeId : '',
@@ -137,7 +144,7 @@ export function useStandaloneActions(item: Exclude<WorkspaceItem, { kind: 'threa
                 ),
         )
       } catch (cause: unknown) {
-        Alert.alert('Could not update page', String(cause))
+        Alert.alert(uiText('Could not update page'), String(cause))
       }
     }
   }
@@ -150,6 +157,8 @@ function StandaloneActions({
   item: Exclude<WorkspaceItem, { kind: 'thread' }>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { disabled, change: update } = useStandaloneActions(item)
   const change = (action: 'pin' | 'settle' | 'wake', until?: string) => {
     update(action, until)
@@ -162,19 +171,19 @@ function StandaloneActions({
       </Text>
       <Action
         secondary
-        label={item.pinned ? 'Unpin' : 'Pin'}
+        label={item.pinned ? uiText('Unpin') : uiText('Pin')}
         disabled={disabled}
         onPress={() => change('pin')}
       />
       <Action
         secondary
-        label={item.section === 'settled' ? 'Restore' : 'Settle'}
+        label={item.section === 'settled' ? uiText('Restore') : uiText('Settle')}
         disabled={disabled}
         onPress={() => change('settle')}
       />
       <Action
         secondary
-        label="Snooze"
+        label={uiText('Snooze')}
         disabled={disabled}
         onPress={() =>
           chooseSnoozeDuration(
@@ -184,7 +193,12 @@ function StandaloneActions({
         }
       />
       {item.section === 'snoozed' && (
-        <Action secondary label="Wake now" disabled={disabled} onPress={() => change('wake')} />
+        <Action
+          secondary
+          label={uiText('Wake now')}
+          disabled={disabled}
+          onPress={() => change('wake')}
+        />
       )}
       {item.kind === 'terminal' && (
         <>
@@ -194,8 +208,11 @@ function StandaloneActions({
             <Text accessibilityRole="alert">{item.terminal.recoveryError}</Text>
           )}
           <Text>
-            Idle recoverable sessions sleep when settled. Active commands continue safely on their
-            computer.
+            <InterfaceText>
+              {
+                'Idle recoverable sessions sleep when settled. Active commands continue safely on their computer.'
+              }
+            </InterfaceText>
           </Text>
         </>
       )}

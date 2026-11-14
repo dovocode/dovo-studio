@@ -3,10 +3,18 @@ import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
+import { readFileSync } from 'node:fs'
 
 const screenshotDirectory = '/tmp/dovo-mobile-settings'
 await mkdir(screenshotDirectory, { recursive: true })
 const navigationOnly = process.argv.includes('--navigation-only')
+const translationsOnly = process.argv.includes('--translations-only')
+const catalog = JSON.parse(
+  readFileSync(
+    new URL('../packages/studio-core/src/interface-catalog.json', import.meta.url),
+    'utf8',
+  ),
+)
 const root = fileURLToPath(new URL('../', import.meta.url))
 // Model RN's column layout, zero default shrink and explicit font scaling. These checks
 // exercise real settings components; UIKit/SwiftUI measurement still needs a device.
@@ -133,6 +141,9 @@ const built = await build({
       import SettingsScreen from './src/screens/settings';
       import AppearanceScreen from './src/screens/appearance';
       import {MobileAppearance} from './src/ui/appearance';
+      import {InterfaceLanguageProvider,InterfaceText,interfaceDirection} from '@dovo/studio-core/interface-language';
+      import {BotFields} from './src/bots/bot-fields';
+      function DraftProbe(){const[name,setName]=useState('Settings'),[role,setRole]=useState('Delete'),[responsibilities,setResponsibilities]=useState('<b>Folder {value0}</b>');return <><BotFields name={name} role={role} responsibilities={responsibilities} onName={setName} onRole={setRole} onResponsibilities={setResponsibilities}/><RNText><InterfaceText values={{value0:<RNText>{name}</RNText>}}>{'Folder: {value0}'}</InterfaceText></RNText></>;}
       function MotionProbe(){return <output aria-label="Reduced motion">{String(useTheme().reduceMotion)}</output>;}
       import SettingsSection from './src/app/(more)/settings/[section]';
       const computer='Dominic’s development computer with a long name';
@@ -165,7 +176,8 @@ const built = await build({
           <HarnessUpdates/>
         </ScrollView>}{sheet&&<SettingsSheet title="Edit computer" onClose={()=>setSheet(false)}><Controls/></SettingsSheet>}</SettingsPage></MobileThemeContext.Provider>;
       }
-      createRoot(document.getElementById('app')).render(<App/>);
+      function LanguageApp(){const[language,setLanguage]=useState('en-US');window.setInterfaceLanguage=setLanguage;const[fields,setFields]=useState(false);window.showDraftProbe=setFields;const content=fields?<MobileThemeContext.Provider value={createMobileTheme('dovo','dark')}><DraftProbe/></MobileThemeContext.Provider>:<App/>;return <InterfaceLanguageProvider language={language}>{window.translationsOnly?<div dir={interfaceDirection(language)} style={{display:'flex',flex:1,minWidth:0}}>{content}</div>:content}</InterfaceLanguageProvider>;}
+      createRoot(document.getElementById('app')).render(<LanguageApp/>);
     `,
   },
   plugins: [
@@ -244,7 +256,72 @@ try {
       window.platform = platform
       window.fontScale = 1
     }, platform)
+    await page.evaluate((value) => (window.translationsOnly = value), translationsOnly)
     await page.addScriptTag({ content: built.outputFiles[0].text })
+    if (translationsOnly) {
+      await page.waitForFunction(() => Boolean(window.showNavigation))
+      await page.evaluate(() => window.showNavigation())
+      for (const language of ['nl-NL', 'de-DE', 'el-GR', 'tr-TR', 'ar-AR']) {
+        const text = catalog[language.split('-')[0]]
+        await page.evaluate((language) => {
+          window.navigate('/settings')
+          window.setInterfaceLanguage(language)
+        }, language)
+        await page.getByText(text['App preferences'], { exact: true }).waitFor()
+        assert.equal(
+          await page.locator('#app>div').evaluate((element) => getComputedStyle(element).direction),
+          language.startsWith('ar') ? 'rtl' : 'ltr',
+        )
+        const search = page.getByLabel(text['Search settings'], { exact: true })
+        await search.fill(text['Tool activity'])
+        await page.getByRole('button', { name: text['Tool activity'], exact: true }).click()
+        await page.getByRole('heading', { name: text.Conversation, exact: true }).waitFor()
+        await page.getByTestId('Settings search highlight').waitFor()
+        assert.equal(
+          await page.evaluate(() => window.requestedSetting),
+          'Tool activity',
+          'Translated search keeps the stable deep-link key',
+        )
+        assert.equal(
+          await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+          true,
+        )
+        await page.screenshot({
+          path: screenshotDirectory + '/' + platform + '-' + language + '-settings.png',
+        })
+      }
+      await page.evaluate(() => {
+        window.showDraftProbe(true)
+        window.setInterfaceLanguage('nl-NL')
+      })
+      await page.getByLabel(catalog.nl['Bot name'], { exact: true }).fill('Settings $&{value0}<b>')
+      for (const language of ['de-DE', 'ar-AR', 'en-US']) {
+        const text = catalog[language.split('-')[0]]
+        await page.evaluate((language) => window.setInterfaceLanguage(language), language)
+        await page.getByLabel(text['Bot name'], { exact: true }).waitFor()
+        assert.equal(
+          await page.getByLabel(text['Bot name'], { exact: true }).inputValue(),
+          'Settings $&{value0}<b>',
+        )
+        assert.equal(await page.getByLabel(text.Role, { exact: true }).inputValue(), 'Delete')
+        assert.equal(
+          await page.getByLabel(text.Responsibilities, { exact: true }).inputValue(),
+          '<b>Folder {value0}</b>',
+        )
+        await page.getByText('Settings $&{value0}<b>', { exact: true }).waitFor()
+        assert.equal(
+          await page.locator('b').count(),
+          0,
+          'Values stay text and do not become markup',
+        )
+      }
+      assert.deepEqual(errors, [])
+      await page.screenshot({
+        path: screenshotDirectory + '/' + platform + '-translated-drafts.png',
+      })
+      await page.close()
+      continue
+    }
     if (!navigationOnly) {
       await page.getByTestId('Settings scope').waitFor()
       // Settings keep the chosen palette; higher contrast still replaces neutral surfaces.

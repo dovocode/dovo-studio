@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { StyleSheet, View } from 'react-native'
 import { Schema } from 'effect'
@@ -78,6 +79,8 @@ export function MachineHandoffNotice({
   handoff: NonNullable<Task['machineHandoff']>
   taskId: string
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const { navigate } = useNavigation()
   const { styles, colors } = useTheme()
@@ -134,13 +137,17 @@ export function MachineHandoffNotice({
           </Text>
         )}
         {status.canOpen && targetTaskId && !target && (
-          <Text style={styles.muted}>Pair {name} to open this thread.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText values={{ value0: name }}>
+              {'Pair {value0} to open this thread.'}
+            </InterfaceText>
+          </Text>
         )}
       </View>
       {status.canOpen && targetTaskId && (
         <Action
           secondary
-          label={`Open on ${name}`}
+          label={uiText('Open on {value0}', { value0: name })}
           disabled={busy || !target}
           onPress={() => {
             if (target) navigate('tasks', targetTaskId, target.profile.id)
@@ -150,7 +157,7 @@ export function MachineHandoffNotice({
       {status.canRetry && job && (
         <Action
           secondary
-          label="Retry move"
+          label={uiText('Retry move')}
           disabled={busy || !runtime.connected}
           onPress={() =>
             void act(() =>
@@ -166,7 +173,7 @@ export function MachineHandoffNotice({
       {status.canCancel && job && (
         <Action
           secondary
-          label="Cancel move"
+          label={uiText('Cancel move')}
           disabled={busy || !runtime.connected}
           onPress={() =>
             void act(() =>

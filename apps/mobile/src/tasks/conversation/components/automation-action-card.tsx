@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
@@ -138,7 +139,10 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
         return (
           <View
             key={node.id}
-            accessibilityLabel={`Step ${index + 1}: ${labels.get(node.id)}`}
+            accessibilityLabel={uiText('Step {value0}: {value1}', {
+              value0: index + 1,
+              value1: labels.get(node.id),
+            })}
             style={{
               gap: 6,
               padding: 10,
@@ -190,6 +194,8 @@ function AutomationActionBody({
   task: Task
   action: ThreadAction
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot: runtime, profile, connected, callEffect } = useRuntime()
   const { styles, colors } = useTheme()
   const navigateAfterSheet = useSheetNavigation()
@@ -286,10 +292,16 @@ function AutomationActionBody({
       style={{ padding: 12, borderWidth: 1, borderColor: colors.border, borderRadius: 12, gap: 8 }}
     >
       <Text style={styles.title}>{current.title}</Text>
-      <Text style={styles.muted}>Automation · {snapshot.workflow.name}</Text>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: snapshot.workflow.name }}>
+          {'Automation · {value0}'}
+        </InterfaceText>
+      </Text>
       <Text numberOfLines={4}>{current.prompt}</Text>
       <Text style={styles.muted}>
-        {sent ? 'Started' : 'Review the saved workflow, agents, projects and access before Start.'}
+        {sent
+          ? uiText('Started')
+          : uiText('Review the saved workflow, agents, projects and access before Start.')}
       </Text>
       {!!error && !reviewing && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -298,7 +310,7 @@ function AutomationActionBody({
       )}
       {sent ? (
         <Action
-          label="Open automation run"
+          label={uiText('Open automation run')}
           secondary
           onPress={() => {
             if (profile)
@@ -310,12 +322,12 @@ function AutomationActionBody({
       ) : (
         <>
           <Action
-            label="Review automation"
+            label={uiText('Review automation')}
             disabled={!connected || busy}
             onPress={() => setReviewing(true)}
           />
           <Action
-            label="Dismiss automation action"
+            label={uiText('Dismiss automation action')}
             secondary
             disabled={!connected || busy}
             onPress={() => {
@@ -336,21 +348,21 @@ function AutomationActionBody({
       )}
       {reviewing && current.state === 'prepared' && !sent && (
         <Sheet
-          title={`Start ${snapshot.workflow.name}`}
+          title={uiText('Start {value0}', { value0: snapshot.workflow.name })}
           busy={busy}
           onClose={() => setReviewing(false)}
           footer={
             <View style={{ gap: 8 }}>
               {!frozen && (
                 <Action
-                  label="Refresh review"
+                  label={uiText('Refresh review')}
                   secondary
                   disabled={busy || !connected}
                   onPress={review}
                 />
               )}
               <Action
-                label={frozen ? 'Retry Start' : 'Start automation'}
+                label={frozen ? uiText('Retry Start') : uiText('Start automation')}
                 wide
                 disabled={busy || !!blocked || !!draft.stale || (!frozen && !draft.text.trim())}
                 onPress={start}
@@ -360,8 +372,11 @@ function AutomationActionBody({
         >
           <View style={{ gap: 16 }}>
             <Text style={styles.muted}>
-              Start runs this saved workflow once, with your context as external user input. Change
-              the workflow itself in Automations.
+              <InterfaceText>
+                {
+                  'Start runs this saved workflow once, with your context as external user input. Change the workflow itself in Automations.'
+                }
+              </InterfaceText>
             </Text>
             {!!blocked && <Text accessibilityRole="alert">{blocked}</Text>}
             {!!error && (
@@ -371,12 +386,15 @@ function AutomationActionBody({
             )}
             {!!draft.stale && (
               <Text style={styles.muted}>
-                The computer did not start this run. Refresh the review to see the current
-                automation before Start. Your run context stays.
+                <InterfaceText>
+                  {
+                    'The computer did not start this run. Refresh the review to see the current automation before Start. Your run context stays.'
+                  }
+                </InterfaceText>
               </Text>
             )}
             <Field
-              label="Run context"
+              label={uiText('Run context')}
               multiline
               value={draft.text}
               editable={!busy && !frozen}
@@ -387,12 +405,17 @@ function AutomationActionBody({
             />
             {frozen && (
               <Text style={styles.muted}>
-                The start may have reached the computer. Retry sends the same context and revision
-                so it can recover the same run.
+                <InterfaceText>
+                  {
+                    'The start may have reached the computer. Retry sends the same context and revision so it can recover the same run.'
+                  }
+                </InterfaceText>
               </Text>
             )}
             <SnapshotView snapshot={snapshot} />
-            <Text style={styles.muted}>Closing this sheet keeps your unsent context.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Closing this sheet keeps your unsent context.'}</InterfaceText>
+            </Text>
           </View>
         </Sheet>
       )}

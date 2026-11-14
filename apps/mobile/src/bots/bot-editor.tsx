@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, type ReactNode } from 'react'
 import type { BotResources } from '@dovo/protocol'
@@ -111,7 +112,9 @@ export function BotEditor({
           onResponsibilities={(value) => setField('responsibilities', value)}
         />
         {typeof children === 'function' ? children(draft, retain) : children}
-        <Text style={styles.muted}>Closing this sheet keeps your unsaved edits.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Closing this sheet keeps your unsaved edits.'}</InterfaceText>
+        </Text>
       </View>
     </Sheet>
   )

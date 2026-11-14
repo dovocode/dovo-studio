@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { messageSourceLabel, type MessageSource as Source } from '@dovo/protocol'
 import { Alert, Pressable } from 'react-native'
 import { router } from 'expo-router'
@@ -11,6 +12,8 @@ import { useLinkOrigin } from '../../../ui/content/link-origin'
 import { useSheetNavigation } from '../../../ui/layout/sheet'
 
 export function MessageSource({ source, taskId }: { source: Source; taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { activeId, profiles, overviews } = useRuntime()
   const origin = useLinkOrigin(taskId)
@@ -21,7 +24,7 @@ export function MessageSource({ source, taskId }: { source: Source; taskId: stri
     if (source.kind === 'pipeline' || source.kind === 'pull-request') {
       navigateAfterSheet(() => {
         void openAppLink(source.url, false, origin).catch((error: unknown) =>
-          Alert.alert('Could not open source', String(error)),
+          Alert.alert(uiText('Could not open source'), String(error)),
         )
       })
     } else if (source.kind === 'thread') {
@@ -34,8 +37,8 @@ export function MessageSource({ source, taskId }: { source: Source; taskId: stri
       const owner = saved ?? (source.runtimeId === 'local' ? activeId : source.runtimeId)
       if (!owner)
         return Alert.alert(
-          'Computer unavailable',
-          'Connect the owning computer to open this thread.',
+          uiText('Computer unavailable'),
+          uiText('Connect the owning computer to open this thread.'),
         )
       navigateAfterSheet(() =>
         router.push(taskHref(owner, source.threadId, undefined, undefined, source.runtimeIdentity)),
@@ -48,7 +51,7 @@ export function MessageSource({ source, taskId }: { source: Source; taskId: stri
   return (
     <Pressable
       accessibilityRole="link"
-      accessibilityLabel={`Open source: ${label}`}
+      accessibilityLabel={uiText('Open source: {value0}', { value0: label })}
       onPress={open}
       style={{ minHeight: 44, justifyContent: 'center', minWidth: 0 }}
     >

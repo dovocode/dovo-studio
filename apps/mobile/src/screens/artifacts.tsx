@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import { ArtifactSharedBadge } from '../ui/content/artifact-shared-badge'
 import {
@@ -43,6 +44,8 @@ type Source = {
 }
 type Entry = Source & { artifact: ArtifactLibraryEntry }
 export default function ArtifactsScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles, highContrast } = useTheme()
 
   const { overviews, readRuntime, cacheForRuntime } = useRuntime()
@@ -174,23 +177,23 @@ export default function ArtifactsScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title="Artifacts"
+        title={uiText('Artifacts')}
         onBack={() => backToCollection('/')}
-        subtitle="Your creations, all in one place."
+        subtitle={uiText('Your creations, all in one place.')}
         buttons={[
           {
-            label: 'Artifact filters',
+            label: uiText('Artifact filters'),
             icon: 'filters',
             selected: filtersOpen || filtered || sort !== 'updated',
             onPress: () => setFiltersOpen((value) => !value),
           },
           {
-            label: layout === 'preview' ? 'List view' : 'Preview view',
+            label: layout === 'preview' ? uiText('List view') : uiText('Preview view'),
             icon: layout === 'preview' ? 'artifactList' : 'preview',
             onPress: () => setLayout((value) => (value === 'preview' ? 'list' : 'preview')),
           },
           {
-            label: 'Refresh artifacts',
+            label: uiText('Refresh artifacts'),
             icon: 'refresh',
             disabled: loading,
             onPress: () => setReload((value) => value + 1),
@@ -199,8 +202,8 @@ export default function ArtifactsScreen() {
       />
       <View style={[contentColumn.collection, { paddingHorizontal: 16, paddingTop: 12, gap: 12 }]}>
         <SearchField
-          label="Search artifacts"
-          placeholder="Search artifacts, threads or computers"
+          label={uiText('Search artifacts')}
+          placeholder={uiText('Search artifacts, threads or computers')}
           value={query}
           onChangeText={setQuery}
         />
@@ -220,7 +223,7 @@ export default function ArtifactsScreen() {
                       key={value}
                       accessibilityRole="button"
                       accessibilityLabel={
-                        value === 'all' ? 'All formats' : artifactFormatLabels[value]
+                        value === 'all' ? uiText('All formats') : artifactFormatLabels[value]
                       }
                       accessibilityState={{ selected: value === format }}
                       onPress={() => setFormat(value)}
@@ -244,7 +247,7 @@ export default function ArtifactsScreen() {
                           color: value === format ? colors.text : colors.muted,
                         }}
                       >
-                        {value === 'all' ? 'All' : artifactFormatLabels[value]}
+                        {value === 'all' ? uiText('All') : artifactFormatLabels[value]}
                       </Text>
                       <Text style={{ fontSize: 11, color: colors.muted }}>
                         {
@@ -266,25 +269,25 @@ export default function ArtifactsScreen() {
                   }}
                 >
                   <Choice
-                    label="Artifact thread state"
+                    label={uiText('Artifact thread state')}
                     value={state}
                     items={[
-                      { id: 'all', name: 'All threads' },
-                      { id: 'active', name: 'Active' },
-                      { id: 'settled', name: 'Settled' },
-                      { id: 'archived', name: 'Archived' },
+                      { id: 'all', name: uiText('All threads') },
+                      { id: 'active', name: uiText('Active') },
+                      { id: 'settled', name: uiText('Settled') },
+                      { id: 'archived', name: uiText('Archived') },
                     ]}
                     onChange={setState}
                     hideLabel
                     compact
                   />
                   <Choice
-                    label="Sort artifacts"
+                    label={uiText('Sort artifacts')}
                     value={sort}
                     items={[
-                      { id: 'updated', name: 'Recently updated' },
-                      { id: 'oldest', name: 'Oldest updated' },
-                      { id: 'title', name: 'Title A–Z' },
+                      { id: 'updated', name: uiText('Recently updated') },
+                      { id: 'oldest', name: uiText('Oldest updated') },
+                      { id: 'title', name: uiText('Title A–Z') },
                     ]}
                     onChange={setSort}
                     hideLabel
@@ -295,23 +298,29 @@ export default function ArtifactsScreen() {
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, minHeight: 44 }}>
               <Text accessibilityLiveRegion="polite" style={[styles.muted, { flex: 1 }]}>
-                {visible.length} {visible.length === 1 ? 'artifact' : 'artifacts'}
-                {filtered && ` of ${entries.length}`}
+                {visible.length} {visible.length === 1 ? uiText('artifact') : uiText('artifacts')}
+                {filtered && uiText(' of {value0}', { value0: entries.length })}
                 {format !== 'all' && ` · ${artifactFormatLabels[format]}`}
                 {state !== 'all' && ` · ${state}`}
               </Text>
               {filtered && visible.length > 0 && (
-                <Action secondary label="Clear filters" onPress={clearFilters} />
+                <Action secondary label={uiText('Clear filters')} onPress={clearFilters} />
               )}
             </View>
             {sources
               .filter((source) => !source.connected && !source.connecting)
               .map((source) => (
                 <Text key={source.owner} accessibilityRole="text" style={styles.muted}>
-                  {source.computerName} is offline.{' '}
-                  {states.get(source.owner)?.saved
-                    ? 'Showing saved artifacts.'
-                    : 'Connect to load its artifacts.'}
+                  <InterfaceText
+                    values={{
+                      value0: source.computerName,
+                      value1: states.get(source.owner)?.saved
+                        ? uiText('Showing saved artifacts.')
+                        : uiText('Connect to load its artifacts.'),
+                    }}
+                  >
+                    {'{value0} is offline. {value1}'}
+                  </InterfaceText>
                 </Text>
               ))}
             {errors.map((error) => (
@@ -335,31 +344,42 @@ export default function ArtifactsScreen() {
         contentContainerStyle={[contentColumn.collection, { padding: 16, gap: 12 }]}
         ListEmptyComponent={
           loading ? (
-            <ActivityIndicator color={colors.accent} accessibilityLabel="Loading artifacts" />
+            <ActivityIndicator
+              color={colors.accent}
+              accessibilityLabel={uiText('Loading artifacts')}
+            />
           ) : (
             <EmptyState
               icon="artifactList"
               title={
                 unavailable
                   ? errors.length
-                    ? 'Couldn’t load artifacts'
-                    : 'Connect a computer'
+                    ? uiText('Couldn’t load artifacts')
+                    : uiText('Connect a computer')
                   : filtered
-                    ? 'No matching artifacts'
-                    : 'Your next idea belongs here'
+                    ? uiText('No matching artifacts')
+                    : uiText('Your next idea belongs here')
               }
               description={
                 unavailable
                   ? errors.length
-                    ? 'Retry loading artifacts, or reconnect their computers.'
-                    : 'Reconnect a computer to load its artifacts. Saved artifacts appear here when available.'
+                    ? uiText('Retry loading artifacts, or reconnect their computers.')
+                    : uiText(
+                        'Reconnect a computer to load its artifacts. Saved artifacts appear here when available.',
+                      )
                   : filtered && incomplete
-                    ? 'No matches in available artifacts. Some computers could not be checked.'
+                    ? uiText(
+                        'No matches in available artifacts. Some computers could not be checked.',
+                      )
                     : sources.length
                       ? filtered
-                        ? 'Try another search or clear your filters.'
-                        : 'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.'
-                      : 'Enable Dovo Artifacts in a computer’s settings to start your collection.'
+                        ? uiText('Try another search or clear your filters.')
+                        : uiText(
+                            'Ask an agent to create a document, a graphic or an interactive tool. You’ll find it here, across all your threads.',
+                          )
+                      : uiText(
+                          'Enable Dovo Artifacts in a computer’s settings to start your collection.',
+                        )
               }
               action={
                 (errors.length > 0 || filtered) && (
@@ -367,12 +387,14 @@ export default function ArtifactsScreen() {
                     {errors.length > 0 && (
                       <Action
                         secondary
-                        label="Retry loading artifacts"
+                        label={uiText('Retry loading artifacts')}
                         disabled={loading}
                         onPress={() => setReload((value) => value + 1)}
                       />
                     )}
-                    {filtered && <Action secondary label="Clear filters" onPress={clearFilters} />}
+                    {filtered && (
+                      <Action secondary label={uiText('Clear filters')} onPress={clearFilters} />
+                    )}
                   </>
                 )
               }
@@ -391,7 +413,7 @@ export default function ArtifactsScreen() {
           >
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Open artifact ${item.artifact.title}`}
+              accessibilityLabel={uiText('Open artifact {value0}', { value0: item.artifact.title })}
               onPress={() => setSelected(item)}
               style={({ pressed }) => ({
                 flexDirection: 'column',
@@ -439,7 +461,11 @@ export default function ArtifactsScreen() {
                   </Text>
                   {item.artifact.deleteAt && (
                     <Text style={styles.error}>
-                      Scheduled deletion: {new Date(item.artifact.deleteAt).toLocaleDateString()}
+                      <InterfaceText
+                        values={{ value0: new Date(item.artifact.deleteAt).toLocaleDateString() }}
+                      >
+                        {'Scheduled deletion: {value0}'}
+                      </InterfaceText>
                     </Text>
                   )}
                 </View>

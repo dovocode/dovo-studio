@@ -1,7 +1,7 @@
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect, Schema } from 'effect'
 import { decode, mutableStruct } from '@dovo/protocol'
-import { beforeEach, expect, it, vi } from 'vite-plus/test'
+import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { runtimeProfile, snapshotSchema, taskSchema, type RuntimeOverview } from '@dovo/protocol'
 import type { useRuntime } from '../runtime/connection/provider'
 const native = vi.hoisted(() => {
@@ -43,6 +43,7 @@ vi.mock('./task-activity', () => ({
   },
 }))
 import { createActivityController, type ActivityDelivery } from './controller'
+afterEach(() => vi.restoreAllMocks())
 it('retires a native activity created before its ownership record was persisted', async () => {
   native.instances = [native.instance]
   const controller = await runClientEffect(createActivityController(vi.fn()))
@@ -218,9 +219,11 @@ it('cancels push-token registration and releases its listener on disposal', asyn
 })
 
 it('updates a live thread when its current action or queued work changes', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
   const overview = source()
   const controller = await runClientEffect(createActivityController(vi.fn()))
   await runClientEffect(controller.sync([overview], read, true))
+  clock.mockReturnValue(1_030_000)
   overview.snapshot!.workspace.tasks[0].activity = 'Running tests'
   overview.snapshot!.workspace.tasks[0].queue = [
     { id: 'queued', role: 'user', text: 'Next', createdAt: '2026-09-23T00:00:00Z' },
@@ -247,6 +250,7 @@ it('updates a live thread when its current action or queued work changes', async
 })
 
 it('keeps updating and ending locally when the background registration fails', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
   const onError = vi.fn<(message: string) => void>()
   const failedRead: ReturnType<typeof useRuntime>['readRuntimeEffect'] = () =>
     Effect.fail(new Error('Offline'))
@@ -255,6 +259,7 @@ it('keeps updating and ending locally when the background registration fails', a
   const controller = await runClientEffect(createActivityController(onError))
   await runClientEffect(controller.sync([overview], failedRead, true))
   await vi.waitFor(() => expect(onError).toHaveBeenCalled())
+  clock.mockReturnValue(1_030_000)
   overview.snapshot!.workspace.tasks[0].activity = 'New action'
   await runClientEffect(controller.sync([overview], failedRead, true))
   expect(native.instance.update).toHaveBeenLastCalledWith(
@@ -293,11 +298,13 @@ it('retries registration when the computer is not configured yet', async () => {
 })
 
 it('does not block foreground progress behind a slow token registration', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
   native.instance.getPushToken.mockResolvedValueOnce('token')
   const reader: ReturnType<typeof useRuntime>['readRuntimeEffect'] = () => Effect.never
   const controller = await runClientEffect(createActivityController(vi.fn()))
   const overview = source()
   await runClientEffect(controller.sync([overview], reader, true))
+  clock.mockReturnValue(1_030_000)
   overview.snapshot!.workspace.tasks[0].activity = 'Still updating'
   await runClientEffect(controller.sync([overview], reader, true))
   expect(native.instance.update).toHaveBeenLastCalledWith(
@@ -409,7 +416,7 @@ it('orders token rotation and removal behind in-flight registration without bloc
   await controller.dispose()
 })
 
-it('coalesces unchanged native activity updates while immediately showing changed state', async () => {
+it('batches native progress but shows input and completion without waiting', async () => {
   const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
   const controller = await runClientEffect(createActivityController(vi.fn()))
   try {
@@ -425,10 +432,44 @@ it('coalesces unchanged native activity updates while immediately showing change
     overview.snapshot!.workspace.tasks[0].title = 'New title'
     clock.mockReturnValue(1_181_000)
     await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(2)
+    overview.snapshot!.workspace.tasks[0].title = 'Latest title'
+    clock.mockReturnValue(1_210_000)
+    await runClientEffect(controller.sync([overview], read, true))
     expect(native.instance.update).toHaveBeenCalledTimes(3)
     expect(native.instance.update).toHaveBeenLastCalledWith(
-      expect.objectContaining({ title: 'New title' }),
-      new Date(1_481_000),
+      expect.objectContaining({ title: 'Latest title' }),
+      new Date(1_510_000),
+    )
+    overview.snapshot!.approvals = [
+      {
+        id: 'approval',
+        taskId: 'task',
+        title: 'Run command',
+        detail: 'Review command',
+        createdAt: '2026-09-23T00:00:00Z',
+      },
+    ]
+    clock.mockReturnValue(1_211_000)
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(4)
+    expect(native.instance.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'Needs input' }),
+      expect.any(Date),
+    )
+    overview.snapshot!.approvals = []
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.update).toHaveBeenCalledTimes(5)
+    expect(native.instance.update).toHaveBeenLastCalledWith(
+      expect.objectContaining({ status: 'Working' }),
+      expect.any(Date),
+    )
+    overview.snapshot!.workspace.tasks[0].status = 'review'
+    await runClientEffect(controller.sync([overview], read, true))
+    expect(native.instance.end).toHaveBeenCalledWith(
+      'default',
+      expect.objectContaining({ status: 'Done' }),
+      expect.any(Date),
     )
   } finally {
     await controller.dispose()

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { ACCOUNT_DIRECTORY_URL, normalizeServiceUrls } from '@dovo/protocol'
@@ -7,6 +8,8 @@ import { useSettingsTheme } from '../../screens/settings-theme'
 import { Text } from '../../ui/content/text'
 
 export function ServiceUrlSettings() {
+  const uiText = useInterfaceText()
+
   const saved = useMobilePreferences()
   const [draft, setDraft] = useState<{ connectOrigin: string; artifactsOrigin: string }>()
   const [error, setError] = useState('')
@@ -25,21 +28,25 @@ export function ServiceUrlSettings() {
       })
       setDraft(undefined)
       setError('')
-      setNotice('Service URLs saved on this device.')
+      setNotice(uiText('Service URLs saved on this device.'))
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Check the service URLs')
+      setError(cause instanceof Error ? cause.message : uiText('Check the service URLs'))
     }
   }
   return (
-    <View style={{ gap: 12 }} accessibilityLabel="Dovo service URLs">
-      <Text style={styles.title}>Dovo services</Text>
+    <View style={{ gap: 12 }} accessibilityLabel={uiText('Dovo service URLs')}>
+      <Text style={styles.title}>
+        <InterfaceText>{'Dovo services'}</InterfaceText>
+      </Text>
       <Text style={styles.text}>
-        Saved on this device. Account sessions stay separate for each Connect server. New computer
-        setups use this URL. Existing computers keep their current server until Connect is disabled
-        and enabled again through LAN / VPN pairing.
+        <InterfaceText>
+          {
+            'Saved on this device. Account sessions stay separate for each Connect server. New computer setups use this URL. Existing computers keep their current server until Connect is disabled and enabled again through LAN / VPN pairing.'
+          }
+        </InterfaceText>
       </Text>
       <Field
-        label="Dovo Connect URL"
+        label={uiText('Dovo Connect URL')}
         value={fields.connectOrigin}
         placeholder={ACCOUNT_DIRECTORY_URL}
         keyboardType="url"
@@ -50,9 +57,9 @@ export function ServiceUrlSettings() {
         }}
       />
       <Field
-        label="Dovo Artifacts URL"
+        label={uiText('Dovo Artifacts URL')}
         value={fields.artifactsOrigin}
-        placeholder="Automatic — from Connect"
+        placeholder={uiText('Automatic — from Connect')}
         keyboardType="url"
         autoCorrect={false}
         onChangeText={(artifactsOrigin) => {
@@ -61,12 +68,19 @@ export function ServiceUrlSettings() {
         }}
       />
       <Text style={styles.text}>
-        Leave Artifacts blank to use the store announced by Connect. Configure the same custom URL
-        on your Connect broker and artifact server; Studio checks they match before sharing.
+        <InterfaceText>
+          {
+            'Leave Artifacts blank to use the store announced by Connect. Configure the same custom URL on your Connect broker and artifact server; Studio checks they match before sharing.'
+          }
+        </InterfaceText>
       </Text>
-      <Action label="Save service URLs" disabled={!dirty || !saved.ready} onPress={save} />
       <Action
-        label="Use defaults"
+        label={uiText('Save service URLs')}
+        disabled={!dirty || !saved.ready}
+        onPress={save}
+      />
+      <Action
+        label={uiText('Use defaults')}
         secondary
         onPress={() => {
           setDraft({ connectOrigin: '', artifactsOrigin: '' })

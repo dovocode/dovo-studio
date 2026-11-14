@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { openAppLink } from '../../ui/content/open-link'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -15,6 +16,8 @@ import { IconButton } from '../../ui/controls/icon-button'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () => void }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { openWork } = useNavigation()
@@ -41,8 +44,8 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
           secondary
           label={
             source.kind === 'issue'
-              ? `Open issue ${issueLabel(source.id)}`
-              : `Open pipeline #${source.id}`
+              ? uiText('Open issue {value0}', { value0: issueLabel(source.id) })
+              : uiText('Open pipeline #{value0}', { value0: source.id })
           }
           onPress={() => {
             navigateAfterSheet(() => {
@@ -67,7 +70,7 @@ export function TaskSource({ task, onNavigate }: { task: Task; onNavigate?: () =
         />
         <IconButton
           icon="web"
-          label="Open source on server"
+          label={uiText('Open source on server')}
           onPress={() =>
             void runClientEffect(
               nativeEffect(() =>

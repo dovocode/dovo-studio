@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   settingsChangeCount,
   settingsChanges,
@@ -60,6 +61,8 @@ export function TaskDefaultSettings(props: {
   inline?: boolean
   scope?: SettingsScope
 }) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useApplicationState(false)
   const [editing, setEditing] = useApplicationState(false)
   const [saving, setSaving] = useApplicationState(false)
@@ -68,14 +71,14 @@ export function TaskDefaultSettings(props: {
     <View style={{ gap: 12 }}>
       <Action
         secondary
-        label={open ? 'Hide task defaults' : 'Task defaults'}
+        label={open ? uiText('Hide task defaults') : uiText('Task defaults')}
         disabled={saving}
         onPress={() => {
           if (!open || !editing) setOpen(!open)
           else
-            Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
-              { text: 'Keep editing', style: 'cancel' },
-              { text: 'Discard', style: 'destructive', onPress: () => setOpen(false) },
+            Alert.alert(uiText('Unsaved settings'), uiText('Discard unsaved settings changes?'), [
+              { text: uiText('Keep editing'), style: 'cancel' },
+              { text: uiText('Discard'), style: 'destructive', onPress: () => setOpen(false) },
             ])
         }}
       />
@@ -96,6 +99,8 @@ function TaskDefaultSettingsForm({
   onDirtyChange?: (dirty: boolean) => void
   onSavingChange?: (saving: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, call, snapshot, overviews } = useRuntime()
@@ -212,32 +217,39 @@ function TaskDefaultSettingsForm({
   useEffect(() => onSavingChange?.(busy), [busy, onSavingChange])
   return (
     <View style={{ gap: 28 }}>
-      <SettingsGroup title="New tasks">
+      <SettingsGroup title={uiText('New tasks')}>
         <View style={{ padding: 16, gap: 12 }}>
           <Text style={styles.muted}>
-            Choose the agent and access for new tasks. Source labels show where each value comes
-            from. Existing conversations keep their launch settings.
+            <InterfaceText>
+              {
+                'Choose the agent and access for new tasks. Source labels show where each value comes from. Existing conversations keep their launch settings.'
+              }
+            </InterfaceText>
           </Text>
           {!connected && (
             <Text accessibilityRole="alert" style={styles.muted}>
-              This computer is offline. Reconnect to load and save defaults.
+              <InterfaceText>
+                {'This computer is offline. Reconnect to load and save defaults.'}
+              </InterfaceText>
             </Text>
           )}
           {connected && !settings && !loadError && (
             <Text accessibilityLiveRegion="polite" style={styles.muted}>
-              Loading task defaults…
+              <InterfaceText>{'Loading task defaults…'}</InterfaceText>
             </Text>
           )}
           {dirty && !saved && (
             <Text style={styles.muted}>
-              Unsaved changes · Save changes to apply them at this level.
+              <InterfaceText>
+                {'Unsaved changes · Save changes to apply them at this level.'}
+              </InterfaceText>
             </Text>
           )}
           {!selectedScope && (
             <>
               <Choice
                 row
-                label="Settings scope"
+                label={uiText('Settings scope')}
                 value={scope}
                 disabled={busy}
                 items={settingsScopes
@@ -255,10 +267,14 @@ function TaskDefaultSettingsForm({
                   }
                   if (!dirty) select()
                   else
-                    Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
-                      { text: 'Keep editing', style: 'cancel' },
-                      { text: 'Discard', style: 'destructive', onPress: select },
-                    ])
+                    Alert.alert(
+                      uiText('Unsaved settings'),
+                      uiText('Discard unsaved settings changes?'),
+                      [
+                        { text: uiText('Keep editing'), style: 'cancel' },
+                        { text: uiText('Discard'), style: 'destructive', onPress: select },
+                      ],
+                    )
                 }}
               />
             </>
@@ -267,25 +283,28 @@ function TaskDefaultSettingsForm({
             <>
               <Choice
                 row
-                label="Default server"
+                label={uiText('Default server')}
                 disabled={disabled}
                 value={draft.defaultServerId ?? ''}
                 items={[
-                  { id: '', name: 'Automatic · prefer current server' },
+                  { id: '', name: uiText('Automatic · prefer current server') },
                   ...(draft.defaultServerId &&
                   !projectServers.some((entry) => entry.profile.id === draft.defaultServerId)
-                    ? [{ id: draft.defaultServerId, name: 'Unavailable server' }]
+                    ? [{ id: draft.defaultServerId, name: uiText('Unavailable server') }]
                     : []),
                   ...projectServers.map((entry) => ({
                     id: entry.profile.id,
-                    name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
+                    name: `${runtimeComputerName(entry)}${entry.connected ? '' : uiText(' · Offline')}`,
                   })),
                 ]}
                 onChange={(value) => change({ ...draft, defaultServerId: value || undefined })}
               />
               <Text style={styles.muted}>
-                If the default is offline, use another online copy. You can change servers in the
-                composer.
+                <InterfaceText>
+                  {
+                    'If the default is offline, use another online copy. You can change servers in the composer.'
+                  }
+                </InterfaceText>
               </Text>
               {source('defaultServerId')}
             </>
@@ -293,12 +312,12 @@ function TaskDefaultSettingsForm({
           {(snapshot?.smartModelSelectionEnabled === true || draft.modelSelection === 'smart') && (
             <Choice
               row
-              label="Model selection"
+              label={uiText('Model selection')}
               disabled={disabled}
               value={draft.modelSelection ?? ''}
               items={[
-                { id: '', name: 'Use inherited setting' },
-                { id: 'fixed', name: 'Configured harness and model' },
+                { id: '', name: uiText('Use inherited setting') },
+                { id: 'fixed', name: uiText('Configured harness and model') },
                 ...(snapshot?.smartModelSelectionEnabled === true
                   ? [{ id: 'smart', name: 'Maestro', icon: 'maestro' as const }]
                   : []),
@@ -314,18 +333,20 @@ function TaskDefaultSettingsForm({
           )}
           <Choice
             row
-            label="Agent configuration"
+            label={uiText('Agent configuration')}
             disabled={disabled}
             value={harness ? 'custom' : 'inherit'}
             items={[
               {
                 id: 'inherit',
-                name: `Inherit (${providerDisplayName(inherited?.harness?.provider ?? 'codex')})`,
+                name: uiText('Inherit ({value0})', {
+                  value0: providerDisplayName(inherited?.harness?.provider ?? 'codex'),
+                }),
               },
-              { id: 'custom', name: 'Override at this scope' },
+              { id: 'custom', name: uiText('Override at this scope') },
               ...configurations.map(({ agent }) => ({
                 id: `agent:${agent.id}`,
-                name: `Use ${agent.name}`,
+                name: uiText('Use {value0}', { value0: agent.name }),
               })),
             ]}
             onChange={(value) => {
@@ -353,22 +374,26 @@ function TaskDefaultSettingsForm({
           {source('harness')}
           <Choice
             row
-            label="Access mode"
+            label={uiText('Access mode')}
             disabled={disabled}
             value={
               permissionPolicyLabel(defaultPolicy) === 'Custom'
                 ? 'custom'
                 : (draft.permission ?? 'inherit')
             }
-            selectedLabel={permissionPolicyLabel(defaultPolicy) === 'Custom' ? 'Custom' : undefined}
+            selectedLabel={
+              permissionPolicyLabel(defaultPolicy) === 'Custom' ? uiText('Custom') : undefined
+            }
             items={[
               {
                 id: 'inherit',
-                name: `Inherit (${accessLabel(inherited?.permission ?? 'full-access')})`,
+                name: uiText('Inherit ({value0})', {
+                  value0: uiText(accessLabel(inherited?.permission ?? 'full-access')),
+                }),
               },
               ...selectableAccessModes(draft.permission).map((mode) => ({
                 id: mode.id,
-                name: mode.name,
+                name: uiText(mode.name),
               })),
             ]}
             onChange={(value) =>
@@ -383,7 +408,11 @@ function TaskDefaultSettingsForm({
           />
           {source('permission')}
           <Text style={styles.muted}>
-            Applies to new tasks across all harnesses. Existing tasks keep their access setting.
+            <InterfaceText>
+              {
+                'Applies to new tasks across all harnesses. Existing tasks keep their access setting.'
+              }
+            </InterfaceText>
           </Text>
           <PermissionPolicyControls
             value={{
@@ -415,13 +444,13 @@ function TaskDefaultSettingsForm({
             <>
               <Choice
                 row
-                label="Harness"
+                label={uiText('Harness')}
                 disabled={disabled}
                 value={harness.provider}
                 items={providerSchema.literals.map((id) => ({ id, name: providerDisplayName(id) }))}
                 onChange={(value) => {
                   const next = changeAgentProvider(
-                    { ...harness, ...defaultPolicy, id: 'defaults', name: 'Defaults' },
+                    { ...harness, ...defaultPolicy, id: 'defaults', name: uiText('Defaults') },
                     decode(providerSchema, value),
                   )
                   change({
@@ -440,7 +469,7 @@ function TaskDefaultSettingsForm({
               />
               <ModelSettings
                 disabled={disabled}
-                agent={{ ...harness, id: 'defaults', name: 'Task defaults' }}
+                agent={{ ...harness, id: 'defaults', name: uiText('Task defaults') }}
                 onChange={(agent) =>
                   change({
                     ...draft,
@@ -449,7 +478,7 @@ function TaskDefaultSettingsForm({
                 }
               />
               <Field
-                label="Instructions"
+                label={uiText('Instructions')}
                 multiline
                 editable={!disabled}
                 value={harness.instructions}
@@ -458,14 +487,22 @@ function TaskDefaultSettingsForm({
                 }
               />
               <Field
-                label={harness.provider === 'opencode' ? 'Server URL' : 'Executable (optional)'}
+                label={
+                  harness.provider === 'opencode'
+                    ? uiText('Server URL')
+                    : uiText('Executable (optional)')
+                }
                 editable={!disabled}
-                value={agentConnectionValue({ ...harness, id: 'defaults', name: 'Defaults' })}
+                value={agentConnectionValue({
+                  ...harness,
+                  id: 'defaults',
+                  name: uiText('Defaults'),
+                })}
                 onChangeText={(endpoint) =>
                   change({
                     ...draft,
                     harness: changeAgentConnection(
-                      { ...harness, id: 'defaults', name: 'Defaults' },
+                      { ...harness, id: 'defaults', name: uiText('Defaults') },
                       endpoint,
                     ),
                   })
@@ -475,7 +512,7 @@ function TaskDefaultSettingsForm({
           )}
           {!repository?.kind && (
             <SettingsGroup
-              title="Advanced workspace setup"
+              title={uiText('Advanced workspace setup')}
               advanced
               searchLabels={[
                 'Working directory',
@@ -487,16 +524,21 @@ function TaskDefaultSettingsForm({
             >
               <Choice
                 row
-                label="Working directory"
+                label={uiText('Working directory')}
                 disabled={disabled}
                 value={draft.execution ?? 'inherit'}
                 items={[
                   {
                     id: 'inherit',
-                    name: `Inherit (${inherited?.execution === 'worktree' ? 'Worktree' : 'Local checkout'})`,
+                    name: uiText('Inherit ({value0})', {
+                      value0:
+                        inherited?.execution === 'worktree'
+                          ? uiText('Worktree')
+                          : uiText('Local checkout'),
+                    }),
                   },
-                  { id: 'main', name: 'Local checkout' },
-                  { id: 'worktree', name: 'New worktree' },
+                  { id: 'main', name: uiText('Local checkout') },
+                  { id: 'worktree', name: uiText('New worktree') },
                 ]}
                 onChange={(value) =>
                   change({
@@ -508,9 +550,11 @@ function TaskDefaultSettingsForm({
               {source('execution')}
               <View style={{ gap: 4 }}>
                 <View style={[styles.row, { flexWrap: 'nowrap', gap: 12 }]}>
-                  <Text style={[styles.text, { flex: 1 }]}>Start from origin</Text>
+                  <Text style={[styles.text, { flex: 1 }]}>
+                    <InterfaceText>{'Start from origin'}</InterfaceText>
+                  </Text>
                   <Switch
-                    accessibilityLabel="Start from origin"
+                    accessibilityLabel={uiText('Start from origin')}
                     disabled={disabled}
                     value={
                       draft.worktreeFromOrigin ??
@@ -521,21 +565,24 @@ function TaskDefaultSettingsForm({
                   />
                 </View>
                 <Text style={styles.muted}>
-                  Prefers the latest matching origin branch for new worktrees, falling back to
-                  origin’s default branch. You can still select a local base branch for a task.
+                  <InterfaceText>
+                    {
+                      'Prefers the latest matching origin branch for new worktrees, falling back to origin’s default branch. You can still select a local base branch for a task.'
+                    }
+                  </InterfaceText>
                 </Text>
                 {source('worktreeFromOrigin')}
               </View>
               <Choice
                 row
-                label="Submodules"
+                label={uiText('Submodules')}
                 value={draft.submodules ?? 'inherit'}
                 disabled={disabled || !snapshot?.taskBehaviorSupported}
                 items={[
-                  { id: 'inherit', name: 'Inherit' },
-                  { id: 'none', name: 'None' },
-                  { id: 'direct', name: 'Direct' },
-                  { id: 'recursive', name: 'Recursive' },
+                  { id: 'inherit', name: uiText('Inherit') },
+                  { id: 'none', name: uiText('None') },
+                  { id: 'direct', name: uiText('Direct') },
+                  { id: 'recursive', name: uiText('Recursive') },
                 ]}
                 onChange={(value) =>
                   change({
@@ -550,7 +597,7 @@ function TaskDefaultSettingsForm({
               {source('submodules')}
               <Choice
                 row
-                label="Worktree setup"
+                label={uiText('Worktree setup')}
                 disabled={disabled}
                 value={
                   draft.setupCommand === undefined
@@ -560,9 +607,9 @@ function TaskDefaultSettingsForm({
                       : 'disabled'
                 }
                 items={[
-                  { id: 'inherit', name: 'Inherit' },
-                  { id: 'custom', name: 'Custom command' },
-                  { id: 'disabled', name: 'Disable setup' },
+                  { id: 'inherit', name: uiText('Inherit') },
+                  { id: 'custom', name: uiText('Custom command') },
+                  { id: 'disabled', name: uiText('Disable setup') },
                 ]}
                 onChange={(value) => {
                   setShowSetupCommand(value === 'custom')
@@ -580,7 +627,7 @@ function TaskDefaultSettingsForm({
               {source('setupCommand')}
               {draft.setupCommand !== undefined && showSetupCommand && (
                 <Field
-                  label="Setup command"
+                  label={uiText('Setup command')}
                   multiline
                   autoCapitalize="none"
                   autoCorrect={false}
@@ -591,24 +638,31 @@ function TaskDefaultSettingsForm({
                 />
               )}
               <Text style={styles.muted}>
-                Setup runs in each new worktree using this runtime’s shell, before the agent starts.
-                Five-minute limit. Failures stop startup; retrying the task retries setup. Use an
-                idempotent command.
+                <InterfaceText>
+                  {
+                    'Setup runs in each new worktree using this runtime’s shell, before the agent starts. Five-minute limit. Failures stop startup; retrying the task retries setup. Use an idempotent command.'
+                  }
+                </InterfaceText>
               </Text>
             </SettingsGroup>
           )}
         </View>
       </SettingsGroup>
-      <SettingsGroup title="Saved prompts">
+      <SettingsGroup title={uiText('Saved prompts')}>
         <View style={{ padding: 16, gap: 12 }}>
           {!prompts.length && !inheritedPrompts.length && (
             <Text style={styles.muted}>
-              No saved prompts. Add a reusable message to insert with #name.
+              <InterfaceText>
+                {'No saved prompts. Add a reusable message to insert with #name.'}
+              </InterfaceText>
             </Text>
           )}
           <Text style={styles.muted}>
-            Entries at this scope override earlier prompts with the same name. Type #name in the
-            composer. Remove an entry to inherit it again.
+            <InterfaceText>
+              {
+                'Entries at this scope override earlier prompts with the same name. Type #name in the composer. Remove an entry to inherit it again.'
+              }
+            </InterfaceText>
           </Text>
           {inheritedPrompts
             .filter(
@@ -619,7 +673,7 @@ function TaskDefaultSettingsForm({
               <Action
                 key={prompt.name}
                 secondary
-                label={`Override inherited #${prompt.name}`}
+                label={uiText('Override inherited #{value0}', { value0: prompt.name })}
                 disabled={disabled || prompts.length >= 40}
                 onPress={() => {
                   setSaved(false)
@@ -630,7 +684,7 @@ function TaskDefaultSettingsForm({
           {prompts.map((prompt, index) => (
             <View key={prompt.id} style={{ gap: 8 }}>
               <Field
-                label="Prompt name"
+                label={uiText('Prompt name')}
                 value={prompt.name}
                 editable={!disabled}
                 onChangeText={(name) => {
@@ -639,7 +693,7 @@ function TaskDefaultSettingsForm({
                 }}
               />
               <Field
-                label="Prompt text"
+                label={uiText('Prompt text')}
                 value={prompt.text}
                 multiline
                 editable={!disabled}
@@ -649,8 +703,9 @@ function TaskDefaultSettingsForm({
                 }}
               />
               <Action
+                destructive
                 secondary
-                label="Remove prompt override"
+                label={uiText('Remove prompt override')}
                 disabled={disabled}
                 onPress={() => {
                   setSaved(false)
@@ -661,7 +716,7 @@ function TaskDefaultSettingsForm({
           ))}
           <Action
             secondary
-            label="Add prompt"
+            label={uiText('Add prompt')}
             disabled={disabled || prompts.length >= 40}
             onPress={() => {
               setSaved(false)
@@ -734,13 +789,15 @@ function TaskDefaultSettingsForm({
       />
       <Action
         secondary
-        label="Reset task defaults to inherited settings"
+        label={uiText('Reset task defaults to inherited settings')}
         disabled={disabled}
         onPress={() => change({})}
       />
       {saved && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Settings saved at {settingsScopeLabels[scope]}. Defaults apply to new tasks.
+          <InterfaceText values={{ value0: settingsScopeLabels[scope] }}>
+            {'Settings saved at {value0}. Defaults apply to new tasks.'}
+          </InterfaceText>
         </Text>
       )}
       {!!(error || loadError) && (
@@ -750,7 +807,7 @@ function TaskDefaultSettingsForm({
           </Text>
           <Action
             secondary
-            label="Reload settings"
+            label={uiText('Reload settings')}
             disabled={!connected || busy}
             onPress={() => {
               const reload = () => {
@@ -761,11 +818,11 @@ function TaskDefaultSettingsForm({
               if (!dirty) reload()
               else
                 Alert.alert(
-                  'Discard unsaved edits?',
-                  'Load the latest saved settings and discard your edits?',
+                  uiText('Discard unsaved edits?'),
+                  uiText('Load the latest saved settings and discard your edits?'),
                   [
-                    { text: 'Keep editing', style: 'cancel' },
-                    { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                    { text: uiText('Keep editing'), style: 'cancel' },
+                    { text: uiText('Discard and reload'), style: 'destructive', onPress: reload },
                   ],
                 )
             }}

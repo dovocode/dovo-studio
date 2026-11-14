@@ -1149,7 +1149,7 @@ try {
       exact: true,
     })
     .waitFor()
-  assert.match(await runsOn.getAttribute('aria-label'), /^Runs on Choose a computer, unavailable/)
+  assert.match(await runsOn.getAttribute('aria-label'), /^Runs on Choose a computer, Unavailable/)
   assert.equal(
     await page.getByRole('button', { name: 'Create Bot', exact: true }).isDisabled(),
     true,

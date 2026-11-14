@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -59,9 +60,9 @@ export function JiraQuickViews({
       contentContainerStyle={{ gap: 8 }}
     >
       {[
-        { label: 'Open', state: 'open', assignee: 'all' as const },
-        { label: 'My issues', state: 'open', assignee: 'mine' as const },
-        { label: 'Unassigned', state: 'open', assignee: 'unassigned' as const },
+        { label: uiText('Open'), state: 'open', assignee: 'all' as const },
+        { label: uiText('My issues'), state: 'open', assignee: 'mine' as const },
+        { label: uiText('Unassigned'), state: 'open', assignee: 'unassigned' as const },
         { label: uiText('Done'), state: 'closed', assignee: 'all' as const },
       ].map((view) => (
         <JiraChip
@@ -92,6 +93,8 @@ function SuggestedFilter({
   suggestions: string[]
   onChange: (value: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const [draft, setDraft] = useState(value)
   const { styles } = useTheme()
   const matches = [...new Set(suggestions)]
@@ -105,14 +108,14 @@ function SuggestedFilter({
         maxLength={100}
         autoCapitalize="none"
         autoCorrect={false}
-        placeholder={`Search or enter ${label.toLowerCase()}…`}
+        placeholder={uiText('Search or enter {value0}…', { value0: label.toLowerCase() })}
         onChangeText={setDraft}
         onSubmitEditing={() => onChange(draft.trim())}
       />
       <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
         {!!draft.trim() && (
           <JiraChip
-            label={`Use ${draft.trim()}`}
+            label={uiText('Use {value0}', { value0: draft.trim() })}
             selected={value === draft.trim()}
             onPress={() => onChange(draft.trim())}
           />
@@ -132,7 +135,7 @@ function SuggestedFilter({
           ))}
         {!!value && (
           <JiraChip
-            label={`Clear ${label.toLowerCase()}`}
+            label={uiText('Clear {value0}', { value0: label.toLowerCase() })}
             onPress={() => {
               setDraft('')
               onChange('')
@@ -157,37 +160,47 @@ export function JiraFilterFields({
   onState: (state: string) => void
   onFilters: (filters: JiraIssueFilters) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   return (
     <View style={{ gap: 16 }}>
       <Text style={styles.muted}>
-        Suggestions come from loaded issues. Filters search Jira. My issues uses the Jira account
-        signed in on each source computer. Team uses the standard Team field; enter the team ID from
-        its Jira team URL.
+        <InterfaceText>
+          {
+            'Suggestions come from loaded issues. Filters search Jira. My issues uses the Jira account signed in on each source computer. Team uses the standard Team field; enter the team ID from its Jira team URL.'
+          }
+        </InterfaceText>
       </Text>
       <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
         {(['all', 'mine', 'unassigned'] as const).map((assignee) => (
           <JiraChip
             key={assignee}
             label={
-              assignee === 'all' ? 'Anyone' : assignee === 'mine' ? 'Assigned to me' : 'Unassigned'
+              assignee === 'all'
+                ? uiText('Anyone')
+                : assignee === 'mine'
+                  ? uiText('Assigned to me')
+                  : uiText('Unassigned')
             }
             selected={(filters.assignee ?? 'all') === assignee}
             onPress={() => onFilters({ ...filters, assignee })}
           />
         ))}
       </View>
-      <Text style={styles.muted}>Status category</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Status category'}</InterfaceText>
+      </Text>
       <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
         {(['todo', 'in-progress', 'done'] as const).map((statusCategory) => (
           <JiraChip
             key={statusCategory}
             label={
               statusCategory === 'todo'
-                ? 'To do'
+                ? uiText('To do')
                 : statusCategory === 'done'
-                  ? 'Done'
-                  : 'In progress'
+                  ? uiText('Done')
+                  : uiText('In progress')
             }
             selected={filters.statusCategory === statusCategory}
             onPress={() => {
@@ -201,7 +214,7 @@ export function JiraFilterFields({
           />
         ))}
         <JiraChip
-          label="All statuses"
+          label={uiText('All statuses')}
           selected={state === 'all' && !filters.statusCategory}
           onPress={() => {
             onState('all')
@@ -211,7 +224,7 @@ export function JiraFilterFields({
       </View>
       <SuggestedFilter
         key={`status:${state}`}
-        label="Exact workflow status"
+        label={uiText('Exact workflow status')}
         value={['all', 'open', 'closed'].includes(state) ? '' : state}
         suggestions={issues.map((issue) => issue.state)}
         onChange={(value) => {
@@ -224,16 +237,16 @@ export function JiraFilterFields({
           key={`${field}:${filters[field] ?? ''}`}
           label={
             field === 'type'
-              ? 'Issue type'
+              ? uiText('Issue type')
               : field === 'label'
-                ? 'Label'
+                ? uiText('Label')
                 : field === 'priority'
-                  ? 'Priority'
+                  ? uiText('Priority')
                   : field === 'team'
-                    ? 'Team ID'
+                    ? uiText('Team ID')
                     : field === 'component'
-                      ? 'Component'
-                      : 'Release'
+                      ? uiText('Component')
+                      : uiText('Release')
           }
           value={filters[field] ?? ''}
           suggestions={issues.flatMap((issue) =>

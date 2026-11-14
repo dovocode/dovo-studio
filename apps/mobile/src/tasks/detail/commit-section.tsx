@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Effect, Schema } from 'effect'
@@ -35,6 +36,8 @@ const commitSchema = mutableStruct({
 type GitState = Schema.Schema.Type<typeof responses.gitActionState>
 
 export function CommitSection({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(task.id)
   const { styles } = useTheme()
   const { connected, profile, snapshot, readEffect, callEffect } = useRuntime()
@@ -164,7 +167,7 @@ export function CommitSection({ task }: { task: Task }) {
   return (
     <View style={[styles.card, { gap: 8 }]}>
       <Field
-        label="Commit message"
+        label={uiText('Commit message')}
         value={message}
         onChangeText={setMessage}
         multiline
@@ -173,25 +176,27 @@ export function CommitSection({ task }: { task: Task }) {
       />
       {!!suggestion && (
         <View style={{ gap: 8 }}>
-          <Text style={styles.muted}>Generated message</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Generated message'}</InterfaceText>
+          </Text>
           <Text selectable style={styles.text}>
             {suggestion}
           </Text>
           <Action
-            label="Use generated message"
+            label={uiText('Use generated message')}
             disabled={busy}
             onPress={() => {
               setMessage(suggestion)
               setSuggestion('')
             }}
           />
-          <Action secondary label="Keep my message" onPress={() => setSuggestion('')} />
+          <Action secondary label={uiText('Keep my message')} onPress={() => setSuggestion('')} />
         </View>
       )}
       <View style={styles.row}>
         <Action
           secondary
-          label="Write message"
+          label={uiText('Write message')}
           disabled={!idle || !git?.dirty}
           onPress={() =>
             act(() =>
@@ -208,7 +213,7 @@ export function CommitSection({ task }: { task: Task }) {
         />
         <Action
           secondary
-          label="Commit all"
+          label={uiText('Commit all')}
           disabled={!idle || !git?.dirty || !message.trim()}
           onPress={() => {
             setStatus('')
@@ -216,7 +221,7 @@ export function CommitSection({ task }: { task: Task }) {
           }}
         />
         <Action
-          label={busy ? 'Working…' : primary}
+          label={busy ? uiText('Working…') : primary}
           icon={primary === 'Open PR' ? 'pulls' : 'changes'}
           disabled={
             primary === 'Open PR' ? busy : !idle || (!git?.dirty && primary !== 'Push branch')
@@ -225,7 +230,7 @@ export function CommitSection({ task }: { task: Task }) {
         />
         <Action
           secondary
-          label="Refresh Git status"
+          label={uiText('Refresh Git status')}
           icon="refresh"
           disabled={!ready || busy}
           onPress={() => act(refresh)}
@@ -233,14 +238,14 @@ export function CommitSection({ task }: { task: Task }) {
       </View>
       {!git && (
         <Text style={styles.muted}>
-          {ready ? 'Checking Git status…' : 'Git checkout is unavailable.'}
+          {ready ? uiText('Checking Git status…') : uiText('Git checkout is unavailable.')}
         </Text>
       )}
       {git && !git.dirty && primary !== 'Push branch' && primary !== 'Open PR' && (
         <Text style={styles.muted}>
           {git.behind
-            ? 'Branch is behind its upstream. Update it before pushing.'
-            : 'No changes to commit or push.'}
+            ? uiText('Branch is behind its upstream. Update it before pushing.')
+            : uiText('No changes to commit or push.')}
         </Text>
       )}
       {!!status && <Text style={styles.muted}>{status}</Text>}

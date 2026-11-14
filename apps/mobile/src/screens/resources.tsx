@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { HookSettings } from '../resources/hook-settings'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
@@ -37,9 +38,11 @@ import { ResourceEditor } from '../resources/editor'
 import { CatalogPicker } from '../resources/catalog-picker'
 import { SettingSource } from '../runtime/preferences/setting-source'
 export default function ResourcesScreen() {
+  const uiText = useInterfaceText()
+
   return (
     <SettingsPage>
-      <ScreenHeader title="MCP, skills & hooks" />
+      <ScreenHeader title={uiText('MCP, skills & hooks')} />
       <ScopedSettings scrollable>
         {({ scope, repository }) => (
           <ComputerResources selectedScope={scope} repositoryId={repository?.id} />
@@ -55,6 +58,8 @@ function ComputerResources({
   selectedScope: SettingsScope
   repositoryId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, connected } = useRuntime()
@@ -77,10 +82,15 @@ function ComputerResources({
       }}
     >
       <Text style={styles.muted}>
-        Open a scope or agent to manage its tools. Changes save automatically and apply on the next
-        turn.
+        <InterfaceText>
+          {
+            'Open a scope or agent to manage its tools. Changes save automatically and apply on the next turn.'
+          }
+        </InterfaceText>
       </Text>
-      <SettingsGroup title={connected ? 'Tools at this scope' : 'Saved tools · Offline'}>
+      <SettingsGroup
+        title={connected ? uiText('Tools at this scope') : uiText('Saved tools · Offline')}
+      >
         {visibleScopes.map((scope, index) => {
           const resources = decode(resourceSettingsSchema, scope.item.resources ?? {})
           const names = [...resources.mcpServers, ...resources.skills].map((entry) => entry.name)
@@ -88,7 +98,16 @@ function ComputerResources({
             <SettingsRow
               key={scope.id}
               title={scope.item.name}
-              subtitle={`${scope.label} · ${resources.mcpServers.length} MCP · ${resources.skills.length} skills · ${resources.hooks?.length ?? 0} hooks${names.length ? ` · ${names.join(', ')}` : ''}`}
+              subtitle={uiText(
+                '{value0} · {value1} MCP · {value2} skills · {value3} hooks{value4}',
+                {
+                  value0: scope.label,
+                  value1: resources.mcpServers.length,
+                  value2: resources.skills.length,
+                  value3: resources.hooks?.length ?? 0,
+                  value4: names.length ? ` · ${names.join(', ')}` : '',
+                },
+              )}
               icon={scope.repository ? 'folder' : 'chat'}
               last={index === visibleScopes.length - 1}
               onPress={() => setSelected(scope.id)}
@@ -98,8 +117,11 @@ function ComputerResources({
       </SettingsGroup>
       {!visibleScopes.length && (
         <Text style={styles.muted}>
-          No tools are available at this level. Choose another scope, or add a project or custom
-          agent.
+          <InterfaceText>
+            {
+              'No tools are available at this level. Choose another scope, or add a project or custom agent.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {current && (
@@ -200,19 +222,25 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
     >
-      <ScreenHeader title="MCP, skills & hooks" />
+      <ScreenHeader title={uiText('MCP, skills & hooks')} />
       <Text style={styles.muted}>
-        Defaults for all machines and projects → machine → project → project on machine. Matching
-        names override earlier scopes; agent entries apply last. Shared credentials must reference
-        host environment variables. Changes apply on the next turn.
+        <InterfaceText>
+          {
+            'Defaults for all machines and projects → machine → project → project on machine. Matching names override earlier scopes; agent entries apply last. Shared credentials must reference host environment variables. Changes apply on the next turn.'
+          }
+        </InterfaceText>
       </Text>
       {!scope ? (
-        <Text style={styles.muted}>Add a project or custom agent first.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Add a project or custom agent first.'}</InterfaceText>
+        </Text>
       ) : (
         <>
           {inherited && (
             <View style={{ gap: 8 }}>
-              <Text style={styles.title}>Inherited tools</Text>
+              <Text style={styles.title}>
+                <InterfaceText>{'Inherited tools'}</InterfaceText>
+              </Text>
               {inherited.mcpServers
                 .filter((server) => !resources.mcpServers.some((item) => item.name === server.name))
                 .map((server) => (
@@ -230,7 +258,10 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     />
                     <Action
                       secondary
-                      label={`Override MCP · ${server.name}${server.enabled ? '' : ' · Disabled'}`}
+                      label={uiText('Override MCP · {value0}{value1}', {
+                        value0: server.name,
+                        value1: server.enabled ? '' : ' · Disabled',
+                      })}
                       disabled={!connected || busy}
                       onPress={() =>
                         setEditing({ kind: 'mcp', value: server, replaceName: server.name })
@@ -255,7 +286,10 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     />
                     <Action
                       secondary
-                      label={`Override skill · ${skill.name}${skill.enabled ? '' : ' · Disabled'}`}
+                      label={uiText('Override skill · {value0}{value1}', {
+                        value0: skill.name,
+                        value1: skill.enabled ? '' : ' · Disabled',
+                      })}
                       disabled={!connected || busy}
                       onPress={() =>
                         act(() => save((value) => ({ ...value, skills: [...value.skills, skill] })))
@@ -269,7 +303,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             <Text style={styles.title}>{uiText('MCP servers')}</Text>
             <View style={styles.row}>
               <Action
-                label="Add MCP server"
+                label={uiText('Add MCP server')}
                 disabled={!connected || busy}
                 onPress={() =>
                   setEditing({
@@ -279,14 +313,16 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               />
               <Action
                 secondary
-                label="Browse MCP Registry"
+                label={uiText('Browse MCP Registry')}
                 disabled={!connected || busy}
                 onPress={() => setCatalog('mcp')}
               />
             </View>
             {!resources.mcpServers.length && (
               <Text style={styles.muted}>
-                No MCP servers set here. Add a server, or override an inherited tool above.
+                <InterfaceText>
+                  {'No MCP servers set here. Add a server, or override an inherited tool above.'}
+                </InterfaceText>
               </Text>
             )}
             {resources.mcpServers.map((server) => (
@@ -308,7 +344,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     {server.name}
                   </Text>
                   <Switch
-                    accessibilityLabel={`Enable MCP ${server.name}`}
+                    accessibilityLabel={uiText('Enable MCP {value0}', { value0: server.name })}
                     value={server.enabled}
                     disabled={!connected || busy}
                     onValueChange={(enabled) =>
@@ -336,7 +372,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 )}
                 <View style={styles.row}>
                   <Action
-                    label={`Edit MCP ${server.name}`}
+                    label={uiText('Edit MCP {value0}', { value0: server.name })}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
@@ -348,7 +384,12 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     }
                   />
                   <Action
-                    label={`${inherited?.mcpServers.some((entry) => entry.name === server.name) ? 'Reset' : 'Remove'} MCP ${server.name}`}
+                    label={uiText('{value0} MCP {value1}', {
+                      value0: inherited?.mcpServers.some((entry) => entry.name === server.name)
+                        ? 'Reset'
+                        : 'Remove',
+                      value1: server.name,
+                    })}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
@@ -384,7 +425,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             <Text style={styles.title}>{uiText('Skills')}</Text>
             <View style={styles.row}>
               <Action
-                label="Add skill"
+                label={uiText('Add skill')}
                 disabled={!connected || busy}
                 onPress={() =>
                   setEditing({
@@ -394,14 +435,16 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
               />
               <Action
                 secondary
-                label="Browse skills.sh"
+                label={uiText('Browse skills.sh')}
                 disabled={!connected || busy}
                 onPress={() => setCatalog('skill')}
               />
             </View>
             {!resources.skills.length && (
               <Text style={styles.muted}>
-                No skills set here. Add instructions, import SKILL.md or browse the catalog.
+                <InterfaceText>
+                  {'No skills set here. Add instructions, import SKILL.md or browse the catalog.'}
+                </InterfaceText>
               </Text>
             )}
             {resources.skills.map((skill) => (
@@ -423,7 +466,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     {skill.name}
                   </Text>
                   <Switch
-                    accessibilityLabel={`Enable skill ${skill.name}`}
+                    accessibilityLabel={uiText('Enable skill {value0}', { value0: skill.name })}
                     value={skill.enabled}
                     disabled={!connected || busy}
                     onValueChange={(enabled) =>
@@ -449,7 +492,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                 )}
                 <View style={styles.row}>
                   <Action
-                    label={`Edit skill ${skill.name}`}
+                    label={uiText('Edit skill {value0}', { value0: skill.name })}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
@@ -461,7 +504,12 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
                     }
                   />
                   <Action
-                    label={`${inherited?.skills.some((entry) => entry.name === skill.name) ? 'Reset' : 'Remove'} skill ${skill.name}`}
+                    label={uiText('{value0} skill {value1}', {
+                      value0: inherited?.skills.some((entry) => entry.name === skill.name)
+                        ? 'Reset'
+                        : 'Remove',
+                      value1: skill.name,
+                    })}
                     secondary
                     disabled={!connected || busy}
                     onPress={() =>
@@ -481,17 +529,19 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
       )}
       {saved && !busy && !error && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Tools saved. Changes apply on the next turn.
+          <InterfaceText>{'Tools saved. Changes apply on the next turn.'}</InterfaceText>
         </Text>
       )}
       {busy && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Saving tools…
+          <InterfaceText>{'Saving tools…'}</InterfaceText>
         </Text>
       )}
       {!connected && (
         <Text accessibilityRole="alert" style={styles.muted}>
-          This computer is offline. Showing saved tools; reconnect to make changes.
+          <InterfaceText>
+            {'This computer is offline. Showing saved tools; reconnect to make changes.'}
+          </InterfaceText>
         </Text>
       )}
       {!!error && (

@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAttachmentPicker } from '../composer/attachment-picker'
 import { FolderPicker } from './folder-picker'
@@ -81,7 +82,7 @@ export function NewTask({
     const state = workspace.current
     if (!state) return
     if (!state.repositories.some((repository) => repository.id === repositoryId)) {
-      setError('Choose an available project before opening the chat.')
+      setError(uiText('Choose an available project before opening the chat.'))
       setRequested(false)
       return
     }
@@ -96,7 +97,7 @@ export function NewTask({
     const base: Task = {
       ...taskDefaults,
       id,
-      title: template?.name ?? 'New task',
+      title: template?.name ?? uiText('New task'),
       repositoryId,
       agentId: initial?.agentId || '',
       harness: initial?.agentId ? undefined : taskDefaults.harness,
@@ -164,7 +165,9 @@ export function NewTask({
   ])
   return (
     <View style={styles.content}>
-      <Text style={styles.title}>{requested ? 'Opening draft chat…' : 'Choose a project'}</Text>
+      <Text style={styles.title}>
+        {requested ? uiText('Opening draft chat…') : uiText('Choose a project')}
+      </Text>
       <Text style={styles.muted}>
         {uiText('On')} {runtimeComputerName({ profile, snapshot })}
       </Text>
@@ -186,20 +189,24 @@ export function NewTask({
           />
           {!!templates.length && !initial && (
             <Choice
-              label="Start from"
+              label={uiText('Start from')}
               value={templateId}
               items={[
-                { id: '', name: 'Empty task' },
+                { id: '', name: uiText('Empty task') },
                 ...templates.map((template) => ({ id: template.id, name: template.name })),
               ]}
               onChange={setTemplateId}
             />
           )}
           {!snapshot?.workspace.repositories.length && (
-            <Text style={styles.muted}>Add a project on this computer before starting a task.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>
+                {'Add a project on this computer before starting a task.'}
+              </InterfaceText>
+            </Text>
           )}
           <Action
-            label="Open chat"
+            label={uiText('Open chat')}
             disabled={
               !connected ||
               !!initial?.shareError ||
@@ -214,7 +221,7 @@ export function NewTask({
           <Text style={styles.error}>{error}</Text>
           {requested && (
             <Action
-              label="Try again"
+              label={uiText('Try again')}
               disabled={!connected}
               onPress={() => setRetry((value) => value + 1)}
             />

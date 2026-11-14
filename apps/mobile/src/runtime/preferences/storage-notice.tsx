@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { Action } from '../../ui/controls/action'
@@ -6,6 +7,8 @@ import { useTheme } from '../../ui/theme'
 import { retryMobilePreferences, useMobilePreferenceStorage } from './app-preferences'
 
 export function PreferenceStorageNotice() {
+  const uiText = useInterfaceText()
+
   const status = useMobilePreferenceStorage()
   const { styles } = useTheme()
   const { busy, act } = useAction()
@@ -16,7 +19,7 @@ export function PreferenceStorageNotice() {
         {status.error}
       </Text>
       <Action
-        label="Retry saving preferences"
+        label={uiText('Retry saving preferences')}
         secondary
         disabled={busy}
         onPress={() => act(retryMobilePreferences)}

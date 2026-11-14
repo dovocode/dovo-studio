@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { useInsideSettings } from '../screens/settings-theme'
@@ -99,22 +100,26 @@ export function ModelSettings({
       }}
     >
       {!!catalog?.harness && (
-        <Text style={styles.muted}>{catalog.harness.name} · Models from this computer</Text>
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: catalog.harness.name }}>
+            {'{value0} · Models from this computer'}
+          </InterfaceText>
+        </Text>
       )}
       <Action
         secondary
-        label={manage ? 'Done managing models' : 'Model visibility & favorites'}
+        label={manage ? uiText('Done managing models') : uiText('Model visibility & favorites')}
         disabled={disabled}
         onPress={() => setManage(!manage)}
       />
       {manage && (
         <Choice
-          label="Model preference scope"
+          label={uiText('Model preference scope')}
           value={scope}
           onChange={setScope}
           items={[
-            { id: 'server', name: 'This machine' },
-            { id: 'global', name: 'All machines' },
+            { id: 'server', name: uiText('This machine') },
+            { id: 'global', name: uiText('All machines') },
           ]}
         />
       )}
@@ -160,13 +165,13 @@ export function ModelSettings({
               <Action
                 secondary
                 disabled={saving || disabled || !connected}
-                label={preference?.favorite ? '★ Favorite' : '☆ Favorite'}
+                label={preference?.favorite ? uiText('★ Favorite') : uiText('☆ Favorite')}
                 onPress={() => save({ favorite: !preference?.favorite })}
               />
               <Action
                 secondary
                 disabled={saving || disabled || !connected}
-                label={preference?.disabled ? 'Enable' : 'Disable'}
+                label={preference?.disabled ? uiText('Enable') : uiText('Disable')}
                 onPress={() => save({ disabled: !preference?.disabled })}
               />
             </View>
@@ -175,7 +180,7 @@ export function ModelSettings({
       {manage && scope === 'server' && snapshot?.defaults?.globalModelPreferences && (
         <Action
           secondary
-          label="Use global model preferences on this server"
+          label={uiText('Use global model preferences on this server')}
           disabled={!connected || saving}
           onPress={() => {
             setSaving(true)
@@ -193,7 +198,7 @@ export function ModelSettings({
           {!!models.some((model) => preferences[preferenceKey(model.id)]?.favorite) && (
             <Choice
               row
-              label="Favorites"
+              label={uiText('Favorites')}
               disabled={disabled}
               value={agent.model}
               items={models.filter((model) => preferences[preferenceKey(model.id)]?.favorite)}
@@ -208,7 +213,7 @@ export function ModelSettings({
             items={[
               {
                 id: '',
-                name: 'Provider default',
+                name: uiText('Provider default'),
               },
               ...models,
               ...(agent.model && !selected
@@ -221,7 +226,7 @@ export function ModelSettings({
                 : []),
               {
                 id: '__custom__',
-                name: 'Custom model…',
+                name: uiText('Custom model…'),
               },
             ]}
             onChange={(value) => {
@@ -231,7 +236,7 @@ export function ModelSettings({
           />
           {(custom || (!!agent.model && !selected)) && (
             <Field
-              label="Custom model ID"
+              label={uiText('Custom model ID')}
               value={agent.model}
               editable={!disabled}
               onChangeText={changeModel}
@@ -241,13 +246,17 @@ export function ModelSettings({
       )}
       <Choice
         row
-        label={agent.provider === 'opencode' ? 'Reasoning / model variant' : 'Reasoning level'}
+        label={
+          agent.provider === 'opencode'
+            ? uiText('Reasoning / model variant')
+            : uiText('Reasoning level')
+        }
         disabled={disabled}
         value={agent.reasoning ?? ''}
         items={[
           {
             id: '',
-            name: 'Provider default',
+            name: uiText('Provider default'),
           },
           ...efforts,
           ...(agent.reasoning && !efforts.some((e) => e.id === agent.reasoning)
@@ -278,11 +287,11 @@ export function ModelSettings({
           {!!catalog.acp.modes.length && (
             <Choice
               row
-              label="ACP mode"
+              label={uiText('ACP mode')}
               disabled={disabled}
               value={agent.acpMode ?? ''}
               items={[
-                { id: '', name: 'Provider default' },
+                { id: '', name: uiText('Provider default') },
                 ...(agent.acpMode && !catalog.acp.modes.some((mode) => mode.id === agent.acpMode)
                   ? [{ id: agent.acpMode, name: `${agent.acpMode} (saved)` }]
                   : []),
@@ -325,7 +334,11 @@ export function ModelSettings({
           })}
           {!!catalog.acp.commands.length && (
             <Text style={styles.muted}>
-              Commands: {catalog.acp.commands.map((command) => command.name).join(' · ')}
+              <InterfaceText
+                values={{ value0: catalog.acp.commands.map((command) => command.name).join(' · ') }}
+              >
+                {'Commands: {value0}'}
+              </InterfaceText>
             </Text>
           )}
         </ProviderOptions>
@@ -334,7 +347,7 @@ export function ModelSettings({
         <ProviderOptions labels={['Speed', 'Daybreak mode']}>
           <Choice
             row
-            label="Speed"
+            label={uiText('Speed')}
             disabled={disabled}
             value={serviceTierValue(agent.serviceTier)}
             items={modelServiceTiers(catalog, agent.model, agent.serviceTier)}
@@ -349,7 +362,7 @@ export function ModelSettings({
             serviceTierValue(agent.serviceTier) !== 'default') && (
             <Text style={styles.muted}>
               {catalog?.codex?.fastModeBlocked
-                ? 'Fast mode is disabled by the runtime’s managed policy.'
+                ? uiText('Fast mode is disabled by the runtime’s managed policy.')
                 : modelServiceTiers(catalog, agent.model, agent.serviceTier).find(
                     (tier) => tier.id === serviceTierValue(agent.serviceTier),
                   )?.description}
@@ -357,7 +370,7 @@ export function ModelSettings({
           )}
           <Choice
             row
-            label="Daybreak mode"
+            label={uiText('Daybreak mode')}
             disabled={disabled}
             value={agent.cyberAccessProgram ?? ''}
             items={daybreakChoices(catalog, agent.cyberAccessProgram)}
@@ -375,12 +388,16 @@ export function ModelSettings({
           />
           {!!agent.cyberAccessProgram && agent.cyberAccessProgram !== 'standard' && (
             <Text style={styles.muted}>
-              Daybreak applies to each turn. Codex verifies account and model access.
+              <InterfaceText>
+                {'Daybreak applies to each turn. Codex verifies account and model access.'}
+              </InterfaceText>
             </Text>
           )}
           {!!catalog && !catalog.codex?.daybreakPrograms.length && (
             <Text style={styles.muted}>
-              Daybreak needs an eligible ChatGPT account and an updated Codex harness.
+              <InterfaceText>
+                {'Daybreak needs an eligible ChatGPT account and an updated Codex harness.'}
+              </InterfaceText>
             </Text>
           )}
         </ProviderOptions>
@@ -388,26 +405,30 @@ export function ModelSettings({
       {(loading || !connected) && (
         <Text style={styles.muted}>
           {loading
-            ? 'Loading provider models…'
-            : 'Connect to discover models and reasoning levels.'}
+            ? uiText('Loading provider models…')
+            : uiText('Connect to discover models and reasoning levels.')}
         </Text>
       )}
       {connected && agent.provider === 'acp' && !canDiscover && (
         <Text style={styles.muted}>
-          Install or select an ACP agent, or enter a custom command to discover its models.
+          <InterfaceText>
+            {'Install or select an ACP agent, or enter a custom command to discover its models.'}
+          </InterfaceText>
         </Text>
       )}
       {selectionControls && (
         <Action
           secondary
-          label="Refresh models"
+          label={uiText('Refresh models')}
           disabled={disabled || !connected || loading}
           onPress={refresh}
         />
       )}
       {!!(error || discoveryError) && (
         <Text style={styles.error}>
-          {error || discoveryError} Custom model entry is still available.
+          <InterfaceText values={{ value0: error || discoveryError }}>
+            {'{value0} Custom model entry is still available.'}
+          </InterfaceText>
         </Text>
       )}
     </View>
@@ -415,8 +436,10 @@ export function ModelSettings({
 }
 
 function ProviderOptions({ children, labels }: { children: ReactNode; labels: readonly string[] }) {
+  const uiText = useInterfaceText()
+
   return useInsideSettings() ? (
-    <SettingsGroup title="Advanced model options" advanced searchLabels={labels}>
+    <SettingsGroup title={uiText('Advanced model options')} advanced searchLabels={labels}>
       {children}
     </SettingsGroup>
   ) : (

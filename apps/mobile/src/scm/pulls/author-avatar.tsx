@@ -1,15 +1,18 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Image, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function AuthorAvatar({ author, url }: { author: string; url?: string }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const [failedUrl, setFailedUrl] = useState<string>()
   const frame = { width: 20, height: 20, borderRadius: 10 }
   return url && url !== failedUrl ? (
     <Image
-      accessibilityLabel={`${author}'s avatar`}
+      accessibilityLabel={uiText("{value0}'s avatar", { value0: author })}
       source={{ uri: url }}
       onError={() => setFailedUrl(url)}
       style={frame}

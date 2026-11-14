@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import type { NestedThread } from '@dovo/protocol'
@@ -110,11 +111,14 @@ export function ThreadsExample({ disabled = false }: { disabled?: boolean }) {
     <RuntimeContext.Provider value={disconnectedRuntime}>
       <View style={{ padding: 12, gap: 8 }}>
         <Text style={{ color: colors.text, fontSize: 18, fontWeight: '700' }}>
-          Spawned thread activity
+          <InterfaceText>{'Spawned thread activity'}</InterfaceText>
         </Text>
         <Text style={{ color: colors.muted, fontSize: 13, lineHeight: 18 }}>
-          Synthetic deep thread tree · local failure acknowledgement only; child navigation is
-          disabled.
+          <InterfaceText>
+            {
+              'Synthetic deep thread tree · local failure acknowledgement only; child navigation is disabled.'
+            }
+          </InterfaceText>
         </Text>
         <NestedThreads
           thread={thread}

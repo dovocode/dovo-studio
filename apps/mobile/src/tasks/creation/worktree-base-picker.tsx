@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import { Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -19,6 +20,8 @@ export function WorktreeBasePicker({
   fromOrigin?: boolean
   onChange: (value: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { callEffect } = useRuntime()
@@ -45,7 +48,7 @@ export function WorktreeBasePicker({
   return (
     <>
       <Choice
-        label="Create worktree from branch"
+        label={uiText('Create worktree from branch')}
         disabled={!data}
         value={
           data?.branches.find((branch) => branch.ref === value || branch.name === value)?.ref ??
@@ -57,10 +60,18 @@ export function WorktreeBasePicker({
         items={data?.branches.map((branch) => ({ id: branch.ref, name: branch.name })) ?? []}
         onChange={onChange}
       />
-      {!data && !error && <Text style={styles.muted}>Loading branches…</Text>}
+      {!data && !error && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Loading branches…'}</InterfaceText>
+        </Text>
+      )}
       {data && !data.branches.length && (
         <Text style={styles.muted}>
-          No commits yet. An empty starting commit will be created only on the new task branch.
+          <InterfaceText>
+            {
+              'No commits yet. An empty starting commit will be created only on the new task branch.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {!!error && (

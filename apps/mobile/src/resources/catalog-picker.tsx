@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   useMobilePreferences,
@@ -152,22 +153,30 @@ export function CatalogPicker({
   const variant = selected?.variants.find((item) => item.id === variantId)
   return (
     <Sheet
-      title={kind === 'mcp' ? 'MCP Registry' : 'skills.sh'}
+      title={kind === 'mcp' ? uiText('MCP Registry') : 'skills.sh'}
       busy={busy || detailsLoading}
       onClose={onClose}
     >
-      <Text style={styles.muted}>{scope} · Review before saving</Text>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: scope }}>
+          {'{value0} · Review before saving'}
+        </InterfaceText>
+      </Text>
       {bundle ? (
         <>
           <Action
             secondary
-            label="Search results"
+            label={uiText('Search results')}
             disabled={busy}
             onPress={() => setBundle(null)}
           />
           <Text style={styles.title}>{bundle.source}</Text>
           <Text style={styles.muted}>
-            Includes scripts, references and assets. Matching saved skill names will be replaced.
+            <InterfaceText>
+              {
+                'Includes scripts, references and assets. Matching saved skill names will be replaced.'
+              }
+            </InterfaceText>
           </Text>
           {bundle.skills.map((skill) => (
             <View key={skill.name} style={styles.card}>
@@ -175,7 +184,7 @@ export function CatalogPicker({
               <Text style={styles.muted}>{skill.description}</Text>
               <Action
                 secondary
-                label={`${chosen.includes(skill.name) ? 'Selected' : 'Select'} ${skill.name}`}
+                label={`${chosen.includes(skill.name) ? uiText('Selected') : uiText('Select')} ${skill.name}`}
                 disabled={busy || (!chosen.includes(skill.name) && chosen.length >= 20)}
                 onPress={() =>
                   setChosen(
@@ -188,7 +197,10 @@ export function CatalogPicker({
             </View>
           ))}
           <Action
-            label={`Install ${chosen.length} ${chosen.length === 1 ? 'skill' : 'skills'}`}
+            label={uiText('Install {value0} {value1}', {
+              value0: chosen.length,
+              value1: chosen.length === 1 ? 'skill' : 'skills',
+            })}
             disabled={busy || !chosen.length}
             onPress={() =>
               act(async () => {
@@ -211,7 +223,7 @@ export function CatalogPicker({
         <>
           <Action
             secondary
-            label="Search results"
+            label={uiText('Search results')}
             disabled={detailsLoading}
             onPress={() => setSelected(undefined)}
           />
@@ -226,22 +238,29 @@ export function CatalogPicker({
             secondary
             label={
               selected.provider === 'glama'
-                ? 'View on Glama'
+                ? uiText('View on Glama')
                 : selected.provider === 'smithery'
-                  ? 'View on Smithery'
-                  : 'View registry entry'
+                  ? uiText('View on Smithery')
+                  : uiText('View registry entry')
             }
             onPress={() => act(() => openLink(selected.url))}
           />
-          {detailsLoading && <Text style={styles.muted}>Loading configuration…</Text>}
+          {detailsLoading && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading configuration…'}</InterfaceText>
+            </Text>
+          )}
           {!detailsLoading && !selected.variants.length && (
             <Text style={styles.muted}>
-              Open the provider listing for setup instructions, then add the MCP configuration
-              manually.
+              <InterfaceText>
+                {
+                  'Open the provider listing for setup instructions, then add the MCP configuration manually.'
+                }
+              </InterfaceText>
             </Text>
           )}
           <Choice
-            label="Installation variant"
+            label={uiText('Installation variant')}
             value={variantId}
             items={selected.variants.map((item) => ({
               id: item.id,
@@ -255,7 +274,7 @@ export function CatalogPicker({
             </Text>
           ))}
           <Action
-            label="Configure server"
+            label={uiText('Configure server')}
             disabled={!variant?.server}
             onPress={() => {
               if (variant?.server)
@@ -271,7 +290,7 @@ export function CatalogPicker({
         <>
           {kind === 'mcp' ? (
             <Choice
-              label="MCP registry source"
+              label={uiText('MCP registry source')}
               value={source}
               items={mcpRegistrySources.map((item) => ({ ...item }))}
               disabled={busy}
@@ -285,14 +304,14 @@ export function CatalogPicker({
             />
           ) : (
             <Choice
-              label="Browse skills"
+              label={uiText('Browse skills')}
               value={view}
               disabled={busy}
               items={[
                 { id: 'search', name: uiText('Search') },
-                { id: 'all-time', name: 'All time' },
-                { id: 'trending', name: 'Trending (24h)' },
-                { id: 'hot', name: 'Hot' },
+                { id: 'all-time', name: uiText('All time') },
+                { id: 'trending', name: uiText('Trending (24h)') },
+                { id: 'hot', name: uiText('Hot') },
               ]}
               onChange={(value) => {
                 setView(value)
@@ -301,7 +320,7 @@ export function CatalogPicker({
             />
           )}
           <Choice
-            label="Sort loaded results"
+            label={uiText('Sort loaded results')}
             value={sort}
             items={catalogSortOptions[kind]
               .filter((item) => item.id !== 'updated' || source === 'official')
@@ -310,17 +329,19 @@ export function CatalogPicker({
             onChange={setSort}
           />
           <Text style={styles.muted}>
-            Sorting applies to loaded results. Popularity does not establish safety.
+            <InterfaceText>
+              {'Sorting applies to loaded results. Popularity does not establish safety.'}
+            </InterfaceText>
           </Text>
           {kind === 'mcp' && source === 'glama' && (
             <Action
               secondary
-              label="MCP data from Glama"
+              label={uiText('MCP data from Glama')}
               onPress={() => act(() => openLink('https://glama.ai/mcp/servers'))}
             />
           )}
           <Field
-            label="Search catalog"
+            label={uiText('Search catalog')}
             value={query}
             editable={!busy && (kind === 'mcp' || view === 'search')}
             onChangeText={setQuery}
@@ -338,16 +359,16 @@ export function CatalogPicker({
                 secondary
                 label={
                   entry.provider === 'glama'
-                    ? 'View on Glama'
+                    ? uiText('View on Glama')
                     : entry.provider === 'smithery'
-                      ? 'View on Smithery'
-                      : 'View registry entry'
+                      ? uiText('View on Smithery')
+                      : uiText('View registry entry')
                 }
                 disabled={busy}
                 onPress={() => act(() => openLink(entry.url))}
               />
               <Action
-                label={`View ${entry.name}`}
+                label={uiText('View {value0}', { value0: entry.name })}
                 secondary
                 disabled={busy}
                 onPress={() => {
@@ -389,27 +410,29 @@ export function CatalogPicker({
               <Text style={styles.muted}>
                 {entry.source} · {skillInstallLabel(entry)}
               </Text>
-              <Text style={styles.muted}>Safety not assessed by Dovo.</Text>
+              <Text style={styles.muted}>
+                <InterfaceText>{'Safety not assessed by Dovo.'}</InterfaceText>
+              </Text>
               <Action
                 secondary
-                label="Review published security audits"
+                label={uiText('Review published security audits')}
                 disabled={busy}
                 onPress={() => act(() => openLink(entry.url))}
               />
               <Action
                 secondary
-                label="View source"
+                label={uiText('View source')}
                 disabled={busy}
                 onPress={() => act(() => openLink(entry.url))}
               />
               <Action
-                label={`Install package from ${entry.source}`}
+                label={uiText('Install package from {value0}', { value0: entry.source })}
                 secondary
                 disabled={busy || !entry.supported}
                 onPress={() => previewPackage(entry)}
               />
               <Action
-                label={`Import ${entry.name}`}
+                label={uiText('Import {value0}', { value0: entry.name })}
                 disabled={busy || !entry.supported}
                 onPress={() =>
                   act(() =>
@@ -430,14 +453,16 @@ export function CatalogPicker({
                 }
               />
               {!entry.supported && (
-                <Text style={styles.muted}>Import this source from a local SKILL.md.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Import this source from a local SKILL.md.'}</InterfaceText>
+                </Text>
               )}
             </View>
           ))}
           {cursor && (
             <Action
               secondary
-              label="Load more"
+              label={uiText('Load more')}
               disabled={loading || busy}
               onPress={() => {
                 const id = generation.current
@@ -490,24 +515,26 @@ export function CatalogPicker({
           {!loading && !servers.length && !skills.length && (
             <Text style={styles.muted}>
               {kind === 'skill' && view === 'search' && query.trim().length < 2
-                ? 'Type at least two characters to search.'
+                ? uiText('Type at least two characters to search.')
                 : kind === 'mcp' &&
                     source === 'official' &&
                     query.trim().length > 0 &&
                     query.trim().length < 3
-                  ? 'Type at least three characters to search the official registry.'
+                  ? uiText('Type at least three characters to search the official registry.')
                   : loadError
-                    ? 'The catalog could not be loaded.'
-                    : 'No matching entries.'}
+                    ? uiText('The catalog could not be loaded.')
+                    : uiText('No matching entries.')}
             </Text>
           )}
         </>
       )}
-      {(loading || busy) && <Text style={styles.muted}>{busy ? 'Working…' : 'Searching…'}</Text>}
+      {(loading || busy) && (
+        <Text style={styles.muted}>{busy ? uiText('Working…') : uiText('Searching…')}</Text>
+      )}
       {!!loadError && (
         <Action
           secondary
-          label="Retry catalog"
+          label={uiText('Retry catalog')}
           disabled={busy || loading}
           onPress={() => setReload((value) => value + 1)}
         />

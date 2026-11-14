@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SecretReferenceFields } from '../../agents/secret-reference-fields'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -53,6 +54,8 @@ export function QuestionForm({
   runtimeId?: string
   notificationAccessible: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const [localDrafts, setLocalDrafts] = useApplicationState<Record<string, QuestionDraft>>(() =>
@@ -101,10 +104,11 @@ export function QuestionForm({
         )
           return
         setDrafts((current) => ({ ...current, ...draft }))
-        setError('Your notification answer was not confirmed. Review it and send again.')
+        setError(uiText('Your notification answer was not confirmed. Review it and send again.'))
       })
       .catch(() => {
-        if (!disposed) setError('Could not restore your notification answer. Enter it again.')
+        if (!disposed)
+          setError(uiText('Could not restore your notification answer. Enter it again.'))
       })
     return () => {
       disposed = true
@@ -137,7 +141,9 @@ export function QuestionForm({
           if (runtimeId)
             yield* nativeEffect(() =>
               clearNotificationAnswerDraft(runtimeId, request.id).catch(() => {
-                setError('Answer sent, but the saved notification draft could not be cleared.')
+                setError(
+                  uiText('Answer sent, but the saved notification draft could not be cleared.'),
+                )
               }),
             )
         }).pipe(
@@ -180,7 +186,9 @@ export function QuestionForm({
         {request.prompt.title}
       </Text>
       {request.prompt.blocking === false && (
-        <Text style={styles.muted}>Answer when ready. You can keep chatting.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Answer when ready. You can keep chatting.'}</InterfaceText>
+        </Text>
       )}
       <ScrollView
         style={{
@@ -212,8 +220,8 @@ export function QuestionForm({
                   secondary
                   label={
                     Object.hasOwn(references, q.id)
-                      ? 'Type secret instead'
-                      : 'Use a secret reference'
+                      ? uiText('Type secret instead')
+                      : uiText('Use a secret reference')
                   }
                   disabled={busy || !connected}
                   onPress={() => {
@@ -230,8 +238,11 @@ export function QuestionForm({
                 {Object.hasOwn(references, q.id) && (
                   <>
                     <Text style={styles.muted}>
-                      The computer reads this value and sends it to the agent’s secret response.
-                      Dovo hides it from the activity log.
+                      <InterfaceText>
+                        {
+                          'The computer reads this value and sends it to the agent’s secret response. Dovo hides it from the activity log.'
+                        }
+                      </InterfaceText>
                     </Text>
                     <SecretReferenceFields
                       value={references[q.id]}
@@ -251,13 +262,13 @@ export function QuestionForm({
       <View style={[styles.row, { justifyContent: 'space-between' }]}>
         <Action
           secondary
-          label={request.prompt.unanswered ? 'Dismiss' : 'Decline'}
+          label={request.prompt.unanswered ? uiText('Dismiss') : uiText('Decline')}
           disabled={busy || !connected || attachmentsBusy}
           onPress={() => void submit(null)}
         />
         {request.prompt.unanswered && (
           <Action
-            label="I replied in chat"
+            label={uiText('I replied in chat')}
             secondary
             disabled={busy || !connected || attachmentsBusy}
             onPress={() =>
@@ -269,12 +280,16 @@ export function QuestionForm({
           />
         )}
         <Action
-          label="Send answers"
+          label={uiText('Send answers')}
           disabled={busy || !connected || attachmentsBusy}
           onPress={() => void submit(questionDraftAnswers(drafts))}
         />
       </View>
-      {!connected && <Text style={styles.muted}>Reconnect to answer</Text>}
+      {!connected && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Reconnect to answer'}</InterfaceText>
+        </Text>
+      )}
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

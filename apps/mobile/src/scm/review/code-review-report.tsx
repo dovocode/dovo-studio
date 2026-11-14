@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -38,6 +39,8 @@ export function CodeReviewReport({
   onSince: (id: string) => void
   editing?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected } = useRuntime(),
     { styles, colors } = useTheme()
   const [agentId, setAgentId] = useState(''),
@@ -72,10 +75,10 @@ export function CodeReviewReport({
             key={value}
             label={
               value === 'diff'
-                ? 'Diff & comments'
+                ? uiText('Diff & comments')
                 : value === 'findings'
-                  ? `Findings${selected ? ` (${open.length})` : ''}`
-                  : 'Verification'
+                  ? uiText('Findings{value0}', { value0: selected ? ` (${open.length})` : '' })
+                  : uiText('Verification')
             }
             secondary={tab !== value}
             disabled={editing}
@@ -87,24 +90,24 @@ export function CodeReviewReport({
         {onScope && (
           <Action
             secondary
-            label={scope === 'branch' ? 'Branch + local edits' : 'Local edits'}
+            label={scope === 'branch' ? uiText('Branch + local edits') : uiText('Local edits')}
             disabled={editing || review.busy}
             onPress={() => onScope(scope === 'working' ? 'branch' : 'working')}
           />
         )}
         <Action
           secondary
-          label={optionsOpen ? 'Hide review options' : 'Review options'}
+          label={optionsOpen ? uiText('Hide review options') : uiText('Review options')}
           onPress={() => setOptionsOpen(!optionsOpen)}
         />
       </View>
       {optionsOpen && (
         <Choice
-          label="Reviewer configuration"
+          label={uiText('Reviewer configuration')}
           value={agentId}
           disabled={disabled}
           items={[
-            { id: '', name: 'Thread model · fresh session' },
+            { id: '', name: uiText('Thread model · fresh session') },
             ...(snapshot?.workspace.agents
               .filter((agent) => supportsAccess(agent.provider, 'read-only'))
               .map((agent) => ({
@@ -119,10 +122,10 @@ export function CodeReviewReport({
         <Action
           label={
             latest?.status === 'running'
-              ? 'Reviewing…'
+              ? uiText('Reviewing…')
               : latest
-                ? 'Re-review'
-                : 'Independent review'
+                ? uiText('Re-review')
+                : uiText('Independent review')
           }
           disabled={disabled || (scope === 'working' && !task.files.length)}
           onPress={() => {
@@ -137,7 +140,7 @@ export function CodeReviewReport({
         {latest?.status === 'running' && (
           <Action
             secondary
-            label="Stop review"
+            label={uiText('Stop review')}
             disabled={review.busy || !connected}
             onPress={() => void review.run('stop', { reviewId: latest.id })}
           />
@@ -145,7 +148,7 @@ export function CodeReviewReport({
         {selected && (
           <Action
             secondary
-            label={selected === latest ? 'Since last review' : 'Since this review'}
+            label={selected === latest ? uiText('Since last review') : uiText('Since this review')}
             disabled={editing || review.busy}
             onPress={() => onSince(selected.id)}
           />
@@ -154,13 +157,13 @@ export function CodeReviewReport({
           (approvalIsCurrent(selected) ? (
             <Action
               secondary
-              label="Approved · Undo"
+              label={uiText('Approved · Undo')}
               disabled={review.busy || !connected || editing}
               onPress={() => void review.run('approve', { reviewId: selected.id, approved: false })}
             />
           ) : (
             <Action
-              label="Approve changes"
+              label={uiText('Approve changes')}
               disabled={
                 review.busy ||
                 !connected ||
@@ -175,32 +178,49 @@ export function CodeReviewReport({
       {selected?.status === 'completed' &&
         (approvalIsCurrent(selected) ? (
           <Text accessibilityRole="summary" style={styles.muted}>
-            Approved {new Date(selected.approval!.approvedAt).toLocaleString()} · This reviewed
-            revision.
+            <InterfaceText
+              values={{ value0: new Date(selected.approval!.approvedAt).toLocaleString() }}
+            >
+              {'Approved {value0} · This reviewed revision.'}
+            </InterfaceText>
           </Text>
         ) : selected.approval ? (
           <Text accessibilityRole="alert" style={styles.muted}>
-            Approved revision moved or was superseded. Review approval is no longer current.
+            <InterfaceText>
+              {'Approved revision moved or was superseded. Review approval is no longer current.'}
+            </InterfaceText>
           </Text>
         ) : open.length ? (
-          <Text style={styles.muted}>Resolve or dismiss open findings to approve changes.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Resolve or dismiss open findings to approve changes.'}</InterfaceText>
+          </Text>
         ) : null)}
       {!!review.error && (
         <>
           <Text accessibilityRole="alert" style={styles.error}>
             {review.error}
           </Text>
-          <Action secondary label="Retry review report" onPress={() => void review.refresh()} />
+          <Action
+            secondary
+            label={uiText('Retry review report')}
+            onPress={() => void review.refresh()}
+          />
         </>
       )}
       {selected === latest && latest && !review.report?.current && (
         <Text style={styles.muted}>
-          Changes have moved since this review. Run a fresh pass before relying on its findings.
+          <InterfaceText>
+            {
+              'Changes have moved since this review. Run a fresh pass before relying on its findings.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {selected && selected !== latest && (
         <Text style={styles.muted}>
-          Earlier review · File links open the current checkout; line numbers may have moved.
+          <InterfaceText>
+            {'Earlier review · File links open the current checkout; line numbers may have moved.'}
+          </InterfaceText>
         </Text>
       )}
     </View>
@@ -209,7 +229,7 @@ export function CodeReviewReport({
     <View style={{ gap: 12, paddingHorizontal: 16, paddingBottom: 16 }}>
       {reports.length > 1 && (
         <Choice
-          label="Review round"
+          label={uiText('Review round')}
           value={selected?.id ?? ''}
           items={reports.map((report, index) => ({
             id: report.id,
@@ -220,13 +240,15 @@ export function CodeReviewReport({
       )}
       {!selected && (
         <Text style={styles.muted}>
-          Start a fresh read-only review of the diff and its surrounding callers.
+          <InterfaceText>
+            {'Start a fresh read-only review of the diff and its surrounding callers.'}
+          </InterfaceText>
         </Text>
       )}
       {selected && (
         <View style={{ gap: 6 }}>
           <Text style={styles.text}>
-            {selected.reviewer} · {selected.model || 'Default model'} · {selected.status}
+            {selected.reviewer} · {selected.model || uiText('Default model')} · {selected.status}
           </Text>
           {!!selected.summary && <Text style={styles.text}>{selected.summary}</Text>}
           {!!selected.error && (
@@ -236,8 +258,11 @@ export function CodeReviewReport({
           )}
           {selected.status === 'running' && (
             <Text style={styles.muted}>
-              The reviewer is inspecting the checkout. Results appear here without waking the
-              author.
+              <InterfaceText>
+                {
+                  'The reviewer is inspecting the checkout. Results appear here without waking the author.'
+                }
+              </InterfaceText>
             </Text>
           )}
         </View>
@@ -246,18 +271,27 @@ export function CodeReviewReport({
         <>
           {selected?.status === 'completed' && !selected.findings.length && (
             <Text style={styles.text}>
-              No concrete problems reported. Check Verification for remaining uncertainty.
+              <InterfaceText>
+                {'No concrete problems reported. Check Verification for remaining uncertainty.'}
+              </InterfaceText>
             </Text>
           )}
           {comparison && previous && (
             <Text style={styles.muted}>
-              {comparison.newFindings.length} new · {comparison.persisting.length} still reported ·{' '}
-              {comparison.noLongerReported.length} no longer reported.
+              <InterfaceText
+                values={{
+                  value0: comparison.newFindings.length,
+                  value1: comparison.persisting.length,
+                  value2: comparison.noLongerReported.length,
+                }}
+              >
+                {'{value0} new · {value1} still reported · {value2} no longer reported.'}
+              </InterfaceText>
             </Text>
           )}
           {!!open.length && (
             <Action
-              label="Ask author to fix all"
+              label={uiText('Ask author to fix all')}
               disabled={disabled}
               onPress={() =>
                 void review.run('fix', {
@@ -273,9 +307,9 @@ export function CodeReviewReport({
               <Text style={{ color: finding.severity === 'high' ? colors.error : colors.muted }}>
                 {finding.severity.toUpperCase()} ·{' '}
                 {finding.status === 'addressed'
-                  ? 'Fix requested · needs re-review'
+                  ? uiText('Fix requested · needs re-review')
                   : finding.status === 'resolved'
-                    ? 'Resolved manually'
+                    ? uiText('Resolved manually')
                     : finding.status}
               </Text>
               <Action
@@ -287,29 +321,43 @@ export function CodeReviewReport({
               <Action
                 secondary
                 label={
-                  expandedFinding === finding.id ? 'Hide evidence' : 'Evidence & suggested fix'
+                  expandedFinding === finding.id
+                    ? uiText('Hide evidence')
+                    : uiText('Evidence & suggested fix')
                 }
                 onPress={() => setExpandedFinding(expandedFinding === finding.id ? '' : finding.id)}
               />
               {expandedFinding === finding.id && (
                 <View style={{ gap: 6 }}>
-                  <Text style={styles.text}>Trigger: {finding.trigger}</Text>
-                  <Text style={styles.text}>Impact: {finding.impact}</Text>
-                  <Text style={styles.text}>Suggested fix: {finding.suggestion}</Text>
+                  <Text style={styles.text}>
+                    <InterfaceText values={{ value0: finding.trigger }}>
+                      {'Trigger: {value0}'}
+                    </InterfaceText>
+                  </Text>
+                  <Text style={styles.text}>
+                    <InterfaceText values={{ value0: finding.impact }}>
+                      {'Impact: {value0}'}
+                    </InterfaceText>
+                  </Text>
+                  <Text style={styles.text}>
+                    <InterfaceText values={{ value0: finding.suggestion }}>
+                      {'Suggested fix: {value0}'}
+                    </InterfaceText>
+                  </Text>
                 </View>
               )}
               {!!finding.resolution && <Text style={styles.muted}>{finding.resolution}</Text>}
               {finding.status === 'addressed' && (
                 <Action
                   secondary
-                  label="Inspect fix delta"
+                  label={uiText('Inspect fix delta')}
                   disabled={editing || review.busy}
                   onPress={() => onSince(selected!.id)}
                 />
               )}
               <View style={[styles.row, { flexWrap: 'wrap' }]}>
                 <Action
-                  label="Ask author to fix"
+                  label={uiText('Ask author to fix')}
                   disabled={
                     disabled || finding.status === 'resolved' || finding.status === 'dismissed'
                   }
@@ -323,7 +371,9 @@ export function CodeReviewReport({
                 />
                 <Action
                   secondary
-                  label={finding.status === 'resolved' ? 'Reopen' : 'Resolve manually'}
+                  label={
+                    finding.status === 'resolved' ? uiText('Reopen') : uiText('Resolve manually')
+                  }
                   disabled={!connected || review.busy}
                   onPress={() =>
                     void review.run('finding', {
@@ -335,7 +385,7 @@ export function CodeReviewReport({
                 />
                 <Action
                   secondary
-                  label={finding.status === 'dismissed' ? 'Restore' : 'Dismiss'}
+                  label={finding.status === 'dismissed' ? uiText('Restore') : uiText('Dismiss')}
                   disabled={!connected || review.busy}
                   onPress={() =>
                     void review.run('finding', {
@@ -352,25 +402,27 @@ export function CodeReviewReport({
             <View key={finding.id} style={[styles.card, { gap: 8 }]}>
               <Text style={styles.text}>
                 {selected?.verifiedFixes?.some((fix) => fix.findingId === finding.id)
-                  ? 'Fix verified by reviewer'
-                  : 'No longer reported'}{' '}
+                  ? uiText('Fix verified by reviewer')
+                  : uiText('No longer reported')}{' '}
                 · {finding.path}:{finding.line} — {finding.title}
               </Text>
               <Text style={styles.muted}>
                 {selected?.verifiedFixes?.find((fix) => fix.findingId === finding.id)?.evidence ??
-                  'Absent from this pass; inspect the change before marking the original finding resolved.'}
+                  uiText(
+                    'Absent from this pass; inspect the change before marking the original finding resolved.',
+                  )}
               </Text>
               {selected?.verifiedFixes?.find((fix) => fix.findingId === finding.id) && (
                 <Text style={styles.muted}>
                   {selected.verifiedFixes.find((fix) => fix.findingId === finding.id)?.command} ·{' '}
                   {review.report?.current && selected === latest
-                    ? 'passed on reviewed revision'
-                    : 'older evidence · rerun checks'}
+                    ? uiText('passed on reviewed revision')
+                    : uiText('older evidence · rerun checks')}
                 </Text>
               )}
               <Action
                 secondary
-                label="Mark original resolved"
+                label={uiText('Mark original resolved')}
                 disabled={review.busy || !connected}
                 onPress={() =>
                   void review.run('finding', {
@@ -388,12 +440,17 @@ export function CodeReviewReport({
       {tab === 'verification' && (
         <>
           <Text style={styles.muted}>
-            Recorded command results, separate from reviewer conclusions. An older or unknown
-            revision does not verify the current diff.
+            <InterfaceText>
+              {
+                'Recorded command results, separate from reviewer conclusions. An older or unknown revision does not verify the current diff.'
+              }
+            </InterfaceText>
           </Text>
           {!!selected?.notVerified.length && (
             <View style={[styles.card, { gap: 6 }]}>
-              <Text style={[styles.text, { fontWeight: '600' }]}>Not verified by the reviewer</Text>
+              <Text style={[styles.text, { fontWeight: '600' }]}>
+                <InterfaceText>{'Not verified by the reviewer'}</InterfaceText>
+              </Text>
               {selected.notVerified.map((item, index) => (
                 <Text key={index} style={styles.text}>
                   • {item}
@@ -403,7 +460,9 @@ export function CodeReviewReport({
           )}
           {!review.report?.commands.length && (
             <Text style={styles.text}>
-              No command evidence recorded. Tests and manual behavior remain unverified.
+              <InterfaceText>
+                {'No command evidence recorded. Tests and manual behavior remain unverified.'}
+              </InterfaceText>
             </Text>
           )}
           {review.report?.commands.map((command) => (
@@ -418,8 +477,10 @@ export function CodeReviewReport({
                         : colors.muted,
                 }}
               >
-                {command.status === 'unknown' ? 'Exit status unknown' : command.status}
-                {command.exitCode !== undefined ? ` · exit ${command.exitCode}` : ''}
+                {command.status === 'unknown' ? uiText('Exit status unknown') : command.status}
+                {command.exitCode !== undefined
+                  ? uiText(' · exit {value0}', { value0: command.exitCode })
+                  : ''}
               </Text>
               <Text selectable style={styles.text}>
                 {command.command}
@@ -429,27 +490,31 @@ export function CodeReviewReport({
                 {command.revision && command.revision === selected?.baseline
                   ? command.source === 'reviewer'
                     ? review.report?.current && selected === latest
-                      ? 'Current reviewed snapshot · read-only session'
-                      : 'Older reviewed snapshot · rerun checks'
-                    : 'Turn producing reviewed snapshot (check timing unknown)'
+                      ? uiText('Current reviewed snapshot · read-only session')
+                      : uiText('Older reviewed snapshot · rerun checks')
+                    : uiText('Turn producing reviewed snapshot (check timing unknown)')
                   : command.revision
-                    ? 'Earlier revision'
-                    : 'Revision not recorded'}
+                    ? uiText('Earlier revision')
+                    : uiText('Revision not recorded')}
               </Text>
               <Action
                 secondary
-                label={expandedCommand === command.id ? 'Hide output' : 'Show output'}
+                label={
+                  expandedCommand === command.id ? uiText('Hide output') : uiText('Show output')
+                }
                 onPress={() => setExpandedCommand(expandedCommand === command.id ? '' : command.id)}
               />
               {expandedCommand === command.id && (
                 <Text selectable style={styles.muted}>
-                  {command.output || 'No output recorded.'}
+                  {command.output || uiText('No output recorded.')}
                 </Text>
               )}
             </View>
           ))}
           {review.report?.evidenceLimited && (
-            <Text style={styles.muted}>Only the most recent command evidence is shown.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Only the most recent command evidence is shown.'}</InterfaceText>
+            </Text>
           )}
         </>
       )}
@@ -463,9 +528,11 @@ export function CodeReviewReport({
           <Text style={[styles.text, { fontWeight: '600' }]}>{focusedFinding.title}</Text>
           <Text style={styles.muted}>
             {focusedFinding.path}:{focusedFinding.line} ·{' '}
-            {review.report?.current ? 'Reviewed revision' : 'Older review · line may have moved'}
+            {review.report?.current
+              ? uiText('Reviewed revision')
+              : uiText('Older review · line may have moved')}
           </Text>
-          <Action secondary label="Finding details" onPress={() => onTab('findings')} />
+          <Action secondary label={uiText('Finding details')} onPress={() => onTab('findings')} />
         </View>
       )}
     </View>

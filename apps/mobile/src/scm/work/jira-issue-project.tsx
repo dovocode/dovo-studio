@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { View } from 'react-native'
@@ -18,6 +19,8 @@ export function JiraIssueProject({
   issueId: string
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, callEffect } = useRuntime()
@@ -35,10 +38,14 @@ export function JiraIssueProject({
         gap: 6,
       }}
     >
-      <Text style={styles.muted}>Dovo project · {projectDisplayName(project, 'Not linked')}</Text>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: projectDisplayName(project, 'Not linked') }}>
+          {'Dovo project · {value0}'}
+        </InterfaceText>
+      </Text>
       <Action
         secondary
-        label={project ? 'Change linked project' : 'Link a project'}
+        label={project ? uiText('Change linked project') : uiText('Link a project')}
         disabled={disabled || busy}
         onPress={() => {
           setSelected(project?.id ?? '')
@@ -46,19 +53,21 @@ export function JiraIssueProject({
         }}
       />
       {open && (
-        <Sheet title="Link a Dovo project" busy={busy} onClose={() => setOpen(false)}>
+        <Sheet title={uiText('Link a Dovo project')} busy={busy} onClose={() => setOpen(false)}>
           <Text style={styles.muted}>
-            This link is saved in Dovo. The Jira issue and its fields stay unchanged.
+            <InterfaceText>
+              {'This link is saved in Dovo. The Jira issue and its fields stay unchanged.'}
+            </InterfaceText>
           </Text>
           <Choice
-            label="Project"
+            label={uiText('Project')}
             value={selected}
             onChange={setSelected}
             disabled={busy}
             items={[
               {
                 id: '',
-                name: 'No project',
+                name: uiText('No project'),
               },
               ...projects.map((project) => ({
                 id: project.id,
@@ -68,7 +77,9 @@ export function JiraIssueProject({
           />
           {!projects.length && (
             <Text style={styles.muted}>
-              Add a project to this computer when you are ready to start a task.
+              <InterfaceText>
+                {'Add a project to this computer when you are ready to start a task.'}
+              </InterfaceText>
             </Text>
           )}
           {!!error && (
@@ -77,7 +88,7 @@ export function JiraIssueProject({
             </Text>
           )}
           <Action
-            label={busy ? 'Saving…' : 'Save link'}
+            label={busy ? uiText('Saving…') : uiText('Save link')}
             disabled={disabled || busy}
             onPress={() =>
               act(() =>

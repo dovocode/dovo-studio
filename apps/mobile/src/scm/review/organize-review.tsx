@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -31,6 +32,8 @@ export function MobileOrganizeReview({
   onOrganized: () => void
   onOpenFile: (path: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected } = useRuntime()
   const { styles } = useTheme()
   const [open, setOpen] = useState(false)
@@ -45,10 +48,10 @@ export function MobileOrganizeReview({
         secondary
         label={
           review.organizing
-            ? 'Organizing review…'
+            ? uiText('Organizing review…')
             : review.featureGroups
-              ? 'Organize review · Features active'
-              : 'Organize review'
+              ? uiText('Organize review · Features active')
+              : uiText('Organize review')
         }
         disabled={disabled || !connected}
         onPress={() => setOpen(true)}
@@ -65,13 +68,16 @@ export function MobileOrganizeReview({
       )}
       {!!review.error && <Text style={styles.error}>{review.error}</Text>}
       {open && (
-        <Sheet title="Organize review" onClose={() => setOpen(false)}>
+        <Sheet title={uiText('Organize review')} onClose={() => setOpen(false)}>
           <Text style={styles.muted}>
-            Group changes by feature and explain linked impact. The model reads the diff in a
-            separate ephemeral session. Verify its suggestions as you review.
+            <InterfaceText>
+              {
+                'Group changes by feature and explain linked impact. The model reads the diff in a separate ephemeral session. Verify its suggestions as you review.'
+              }
+            </InterfaceText>
           </Text>
           <Choice
-            label="Review organizer harness"
+            label={uiText('Review organizer harness')}
             value={
               !agent
                 ? 'titles'
@@ -83,7 +89,7 @@ export function MobileOrganizeReview({
             }
             disabled={disabled || review.organizing}
             items={[
-              { id: 'titles', name: 'Title harness & model (default)' },
+              { id: 'titles', name: uiText('Title harness & model (default)') },
               ...providerSchema.literals
                 .filter((provider) => supportsUtilities(provider) && provider !== 'acp')
                 .map((provider) => ({ id: provider, name: harnessNames[provider] })),
@@ -135,16 +141,18 @@ export function MobileOrganizeReview({
             />
           ) : (
             <Text style={styles.muted}>
-              Uses the title harness and model configured on the connected computer.
+              <InterfaceText>
+                {'Uses the title harness and model configured on the connected computer.'}
+              </InterfaceText>
             </Text>
           )}
           <Action
             label={
               review.organizing
-                ? 'Organizing…'
+                ? uiText('Organizing…')
                 : review.featureGroups
-                  ? 'Regroup by feature'
-                  : 'Organize by feature'
+                  ? uiText('Regroup by feature')
+                  : uiText('Organize by feature')
             }
             disabled={blocked}
             onPress={() => {
@@ -160,7 +168,7 @@ export function MobileOrganizeReview({
           />
           {!!review.progress?.revision && (
             <Action
-              label="Generate guided review"
+              label={uiText('Generate guided review')}
               disabled={blocked}
               onPress={() => {
                 void review
@@ -177,7 +185,7 @@ export function MobileOrganizeReview({
           {review.featureGroups && (
             <Action
               secondary
-              label="Reset to folders"
+              label={uiText('Reset to folders')}
               disabled={disabled || review.organizing}
               onPress={() => {
                 review.clearGroups()

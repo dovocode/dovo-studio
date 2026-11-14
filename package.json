@@ -134,7 +134,7 @@
     "test:conversation-history:browser": "node scripts/check-conversation-history-browser.mjs",
     "test:mobile-composer:browser": "node scripts/check-native-composer-bridge-browser.mjs && node scripts/check-mobile-composer-browser.mjs && node scripts/check-mobile-composer-actions-browser.mjs && node scripts/check-mobile-file-mentions-browser.mjs && node scripts/check-mobile-sidechat-selection-browser.mjs && node scripts/check-mobile-agent-side-chats-browser.mjs",
     "test:mobile-appearance:browser": "node scripts/check-mobile-appearance-browser.mjs",
-    "test:mobile-settings-layout:browser": "node scripts/check-mobile-settings-layout-browser.mjs && node scripts/check-mobile-preference-storage-browser.mjs",
+    "test:mobile-settings-layout:browser": "node scripts/check-mobile-settings-layout-browser.mjs && node scripts/check-mobile-settings-layout-browser.mjs --translations-only && node scripts/check-mobile-preference-storage-browser.mjs",
     "test:mobile-energy:browser": "node scripts/check-mobile-energy-browser.mjs",
     "test:mobile-history-memory:browser": "node apps/mobile/src/tasks/conversation/state/history-cache.browser.mjs && node scripts/check-mobile-history-memory-browser.mjs",
     "test:mobile-previews:browser": "node scripts/check-mobile-previews-browser.mjs && node scripts/check-mobile-browser-toolbar-browser.mjs && node scripts/check-mobile-browser-navigation-browser.mjs",
@@ -248,6 +248,7 @@
     "test:weekly-features:browser": "node scripts/check-weekly-features-browser.mjs && node scripts/check-response-replies-browser.mjs"
   },
   "devDependencies": {
+    "@babel/parser": "^7.29.14",
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
     "effect": "4.1.4",

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useOpenAppLink } from '../../ui/content/open-link'
 import { Pressable, View } from 'react-native'
@@ -32,6 +33,8 @@ function PrimaryPullStatus({
   title?: string
   inline?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
 
@@ -55,8 +58,12 @@ function PrimaryPullStatus({
           accessibilityRole="link"
           accessibilityLabel={
             title
-              ? `Open PR #${status.number}: ${title}. ${pullStatusLabel(status)}`
-              : `${pullStatusLabel(status)}. Opens the pull request.`
+              ? uiText('Open PR #{value0}: {value1}. {value2}', {
+                  value0: status.number,
+                  value1: title,
+                  value2: pullStatusLabel(status),
+                })
+              : uiText('{value0}. Opens the pull request.', { value0: pullStatusLabel(status) })
           }
           onPress={() => (onOpen ? onOpen(status.url) : act(() => openLink(status.url)))}
           style={({ pressed }) => ({
@@ -78,7 +85,7 @@ function PrimaryPullStatus({
         {failing && task.status !== 'running' && (
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Ask the agent to fix the failing checks"
+            accessibilityLabel={uiText('Ask the agent to fix the failing checks')}
             disabled={!connected || busy}
             onPress={() =>
               act(() =>
@@ -97,13 +104,17 @@ function PrimaryPullStatus({
               opacity: pressed || !connected || busy ? 0.55 : 1,
             })}
           >
-            <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }}>Fix checks</Text>
+            <Text style={{ color: colors.text, fontSize: 13, fontWeight: '600' }}>
+              <InterfaceText>{'Fix checks'}</InterfaceText>
+            </Text>
           </Pressable>
         )}
       </View>
       {!!status.failedChecks?.length && failing && (
         <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 12 }}>
-          Failing: {status.failedChecks.join(', ')}
+          <InterfaceText values={{ value0: status.failedChecks.join(', ') }}>
+            {'Failing: {value0}'}
+          </InterfaceText>
         </Text>
       )}
       {!!error && <Text style={{ color: colors.error, fontSize: 12 }}>{error}</Text>}
@@ -122,6 +133,8 @@ export function PullStatus({
   showLinked?: boolean
   inline?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(task.id)
   const { colors } = useTheme()
 
@@ -137,7 +150,7 @@ export function PullStatus({
     if (!pulls.length) return null
     return (
       <View
-        accessibilityLabel="Linked pull requests"
+        accessibilityLabel={uiText('Linked pull requests')}
         style={{
           flexDirection: 'row',
           flexWrap: 'wrap',
@@ -160,7 +173,10 @@ export function PullStatus({
             <Pressable
               key={pull.url}
               accessibilityRole="link"
-              accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+              accessibilityLabel={uiText('Open PR #{value0}: {value1}', {
+                value0: pull.number,
+                value1: pull.title,
+              })}
               onPress={() => {
                 if (onOpen) return onOpen(pull.url)
                 setLinkError('')
@@ -175,7 +191,9 @@ export function PullStatus({
               })}
             >
               <PullRequestIcon size={16} />
-              <Text style={{ color: colors.text, fontSize: 13 }}>PR #{pull.number}</Text>
+              <Text style={{ color: colors.text, fontSize: 13 }}>
+                <InterfaceText values={{ value0: pull.number }}>{'PR #{value0}'}</InterfaceText>
+              </Text>
             </Pressable>
           ),
         )}
@@ -200,14 +218,21 @@ export function PullStatus({
             style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36 }}
           >
             <Icon name="pulls" size={14} color={colors.muted} />
-            <Text style={{ color: colors.muted, fontSize: 13 }}>Linked PRs ({links.length})</Text>
+            <Text style={{ color: colors.muted, fontSize: 13 }}>
+              <InterfaceText values={{ value0: links.length }}>
+                {'Linked PRs ({value0})'}
+              </InterfaceText>
+            </Text>
           </Pressable>
           {expanded &&
             links.map((pull) => (
               <Pressable
                 key={pull.url}
                 accessibilityRole="link"
-                accessibilityLabel={`Open PR #${pull.number}: ${pull.title}`}
+                accessibilityLabel={uiText('Open PR #{value0}: {value1}', {
+                  value0: pull.number,
+                  value1: pull.title,
+                })}
                 onPress={() => {
                   if (onOpen) {
                     onOpen(pull.url)

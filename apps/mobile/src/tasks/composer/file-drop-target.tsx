@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
 import { useState, type ComponentType } from 'react'
 import { Alert, View, type ViewProps } from 'react-native'
@@ -27,6 +28,8 @@ export function FileDropTarget({
   enabled: boolean
   upload: (assets: AttachmentAsset[]) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [active, setActive] = useState(false)
   if (!NativeDrop) return <View {...props}>{children}</View>
@@ -36,7 +39,7 @@ export function FileDropTarget({
       enabled={enabled}
       onDropActive={({ nativeEvent }) => setActive(nativeEvent.active)}
       onDropError={({ nativeEvent }) =>
-        Alert.alert('Could not attach dropped files', nativeEvent.message)
+        Alert.alert(uiText('Could not attach dropped files'), nativeEvent.message)
       }
       onFilesDropped={({ nativeEvent }) => {
         setActive(false)
@@ -46,7 +49,7 @@ export function FileDropTarget({
             await upload(nativeEvent.files)
           } catch (error) {
             Alert.alert(
-              'Could not attach dropped files',
+              uiText('Could not attach dropped files'),
               error instanceof Error ? error.message : String(error),
             )
           } finally {
@@ -77,7 +80,9 @@ export function FileDropTarget({
             justifyContent: 'center',
           }}
         >
-          <Text style={styles.text}>Drop files to attach</Text>
+          <Text style={styles.text}>
+            <InterfaceText>{'Drop files to attach'}</InterfaceText>
+          </Text>
         </View>
       )}
     </NativeDrop>

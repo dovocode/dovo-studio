@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { File, Paths } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
@@ -29,6 +30,8 @@ export function ChatImageEditProvider({
   busy: boolean
   onBusy: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { readEffect, connected, connection } = useRuntime()
   const [working, setWorking] = useState(false)
   const locked = useRef(false)
@@ -92,7 +95,10 @@ export function ChatImageEditProvider({
         await upload([{ uri: file.uri, name, mimeType: mime }], true)
     } catch (cause) {
       if (current.current)
-        Alert.alert('Couldn’t attach image', cause instanceof Error ? cause.message : String(cause))
+        Alert.alert(
+          uiText('Couldn’t attach image'),
+          cause instanceof Error ? cause.message : String(cause),
+        )
     } finally {
       if (file?.exists) file.delete()
       locked.current = false

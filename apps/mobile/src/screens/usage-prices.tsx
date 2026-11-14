@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useState } from 'react'
 import { View } from 'react-native'
@@ -28,6 +29,8 @@ export function UsagePrices({
   histories: Record<string, UsageHistoryResult>
   onSaved: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const [open, setOpen] = useState(false),
@@ -38,18 +41,21 @@ export function UsagePrices({
   return (
     <View style={{ gap: 12 }}>
       <Action
-        label={open ? 'Hide custom prices' : 'Custom API-equivalent prices'}
+        label={open ? uiText('Hide custom prices') : uiText('Custom API-equivalent prices')}
         onPress={() => setOpen(!open)}
         secondary
       />
       {open && (
         <>
           <Text style={styles.muted}>
-            USD per million tokens, saved on selected computers and applied to recorded usage. These
-            estimates do not change subscription allowance.
+            <InterfaceText>
+              {
+                'USD per million tokens, saved on selected computers and applied to recorded usage. These estimates do not change subscription allowance.'
+              }
+            </InterfaceText>
           </Text>
           <Choice
-            label="Model to price"
+            label={uiText('Model to price')}
             value={encodeURIComponent(selected.key)}
             items={rows.map((row) => ({ id: encodeURIComponent(row.key), name: row.label }))}
             onChange={(value) =>
@@ -79,6 +85,8 @@ function PriceForm({
   histories: Record<string, UsageHistoryResult>
   onSaved: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { overviews, readRuntime } = useRuntime()
@@ -134,22 +142,32 @@ function PriceForm({
   return (
     <View style={{ gap: 12 }}>
       <Text style={styles.muted}>
-        {hosts.length} connected computers will receive these prices. Offline computers are skipped.
+        <InterfaceText values={{ value0: hosts.length }}>
+          {'{value0} connected computers will receive these prices. Offline computers are skipped.'}
+        </InterfaceText>
       </Text>
-      {mixed && <Text style={styles.muted}>Mixed prices across selected computers.</Text>}
+      {mixed && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Mixed prices across selected computers.'}</InterfaceText>
+        </Text>
+      )}
       {fields.map((field) => (
         <Field
           key={field}
           label={labels[field]}
           keyboardType="decimal-pad"
           value={values[field]}
-          placeholder={field.startsWith('cache') ? 'Input rate' : ''}
+          placeholder={field.startsWith('cache') ? uiText('Input rate') : ''}
           onChangeText={(value) => setValues((previous) => ({ ...previous, [field]: value }))}
         />
       ))}
-      <Action label="Save prices" onPress={() => void write()} disabled={busy || !hosts.length} />
       <Action
-        label="Use published prices"
+        label={uiText('Save prices')}
+        onPress={() => void write()}
+        disabled={busy || !hosts.length}
+      />
+      <Action
+        label={uiText('Use published prices')}
         onPress={() => void write(true)}
         disabled={busy || !hosts.length}
         secondary

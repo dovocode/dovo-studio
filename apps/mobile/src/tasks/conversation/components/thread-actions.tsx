@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -113,6 +114,8 @@ function initialSelection(
   }
 }
 export function ThreadActionCard({ task, action }: { task: Task; action: ThreadAction }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile, connected, callEffect } = useRuntime()
   const { navigate } = useNavigation()
   const { styles, colors } = useTheme()
@@ -130,7 +133,9 @@ export function ThreadActionCard({ task, action }: { task: Task; action: ThreadA
       <Text style={styles.title}>{current.title}</Text>
       <Text numberOfLines={4}>{current.prompt}</Text>
       <Text style={styles.muted}>
-        {current.state === 'sent' ? 'Sent' : 'Review and edit before starting a new thread.'}
+        {current.state === 'sent'
+          ? uiText('Sent')
+          : uiText('Review and edit before starting a new thread.')}
       </Text>
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
@@ -139,7 +144,7 @@ export function ThreadActionCard({ task, action }: { task: Task; action: ThreadA
       )}
       {current.sent ? (
         <Action
-          label="Open sent thread"
+          label={uiText('Open sent thread')}
           secondary
           onPress={() => {
             if (profile && current.sent) navigate('tasks', current.sent.taskId, profile.id)
@@ -148,12 +153,12 @@ export function ThreadActionCard({ task, action }: { task: Task; action: ThreadA
       ) : (
         <>
           <Action
-            label="Review new thread"
+            label={uiText('Review new thread')}
             disabled={!connected || !repository || busy}
             onPress={() => setEditing(true)}
           />
           <Action
-            label="Dismiss thread action"
+            label={uiText('Dismiss thread action')}
             secondary
             disabled={!connected || busy}
             onPress={() =>

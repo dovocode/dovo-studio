@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import {
   projectOrganizationBlocked,
@@ -23,6 +24,8 @@ export function ProjectOrganizationSettings({
   /** Only offer Unarchive, for settings screens targeting an archived project. */
   compact?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { call, refresh, connected, snapshot } = useRuntime()
   const { busy, error, act } = useAction()
@@ -45,7 +48,7 @@ export function ProjectOrganizationSettings({
   const archive = (
     <Action
       secondary
-      label={repository.archived ? 'Unarchive project' : 'Archive project'}
+      label={repository.archived ? uiText('Unarchive project') : uiText('Archive project')}
       disabled={disabled}
       onPress={() => save({ projectArchived: !repository.archived })}
     />
@@ -63,25 +66,35 @@ export function ProjectOrganizationSettings({
   if (compact)
     return repository.archived ? (
       <View style={{ gap: 8, paddingHorizontal: 16 }}>
-        <Text style={styles.muted}>Archived · hidden from new-thread project choices.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Archived · hidden from new-thread project choices.'}</InterfaceText>
+        </Text>
         {archive}
         {feedback}
       </View>
     ) : null
   return (
-    <View accessibilityLabel="Project organization" style={{ gap: 8 }}>
-      <Text style={styles.text}>Organize</Text>
+    <View accessibilityLabel={uiText('Project organization')} style={{ gap: 8 }}>
+      <Text style={styles.text}>
+        <InterfaceText>{'Organize'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        Pinned projects come first in project pickers. Archived projects leave new-thread project
-        choices; their threads, settings and files are kept.{' '}
-        {sharedProjectKey(repository)
-          ? 'Syncs across paired computers with the same Git remote.'
-          : 'Applies to this project on this computer.'}
+        <InterfaceText
+          values={{
+            value0: sharedProjectKey(repository)
+              ? uiText('Syncs across paired computers with the same Git remote.')
+              : uiText('Applies to this project on this computer.'),
+          }}
+        >
+          {
+            'Pinned projects come first in project pickers. Archived projects leave new-thread project choices; their threads, settings and files are kept. {value0}'
+          }
+        </InterfaceText>
       </Text>
       <View style={styles.row}>
         <Action
           secondary
-          label={repository.pinned ? 'Unpin project' : 'Pin project'}
+          label={repository.pinned ? uiText('Unpin project') : uiText('Pin project')}
           disabled={disabled}
           onPress={() => save({ projectPinned: !repository.pinned })}
         />

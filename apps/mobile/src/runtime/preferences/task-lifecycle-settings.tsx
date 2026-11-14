@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, View } from 'react-native'
@@ -136,13 +137,15 @@ export function TaskLifecycleSettings({
   return (
     <View style={{ gap: 20 }}>
       <Text style={styles.muted}>
-        Project on computer overrides Project, then Computer, then shared defaults. Restart and PR
-        settling fall back to computer defaults. Archiving uses the computer inactivity policy when
-        no scoped rule is set.
+        <InterfaceText>
+          {
+            'Project on computer overrides Project, then Computer, then shared defaults. Restart and PR settling fall back to computer defaults. Archiving uses the computer inactivity policy when no scoped rule is set.'
+          }
+        </InterfaceText>
       </Text>
       <Action
         secondary
-        label="Open computer running-task defaults"
+        label={uiText('Open computer running-task defaults')}
         onPress={() =>
           router.push({
             pathname: '/settings/task-behavior',
@@ -152,19 +155,25 @@ export function TaskLifecycleSettings({
       />
       {!connected && (
         <Text style={styles.muted}>
-          Offline · your unsaved edits are kept here. Reconnect to save.
+          <InterfaceText>
+            {'Offline · your unsaved edits are kept here. Reconnect to save.'}
+          </InterfaceText>
         </Text>
       )}
       {!snapshot?.taskBehaviorSupported && (
         <Text style={styles.muted}>
-          Update this computer’s runtime to configure scoped lifecycle settings.
+          <InterfaceText>
+            {'Update this computer’s runtime to configure scoped lifecycle settings.'}
+          </InterfaceText>
         </Text>
       )}
       {snapshot?.taskBehaviorSupported && (
-        <SettingsGroup title="Task lifecycle">
+        <SettingsGroup title={uiText('Task lifecycle')}>
           <View style={{ padding: 16, gap: 12 }}>
             <Text style={styles.muted}>
-              Applies to existing tasks too. Off overrides an inherited On.
+              <InterfaceText>
+                {'Applies to existing tasks too. Off overrides an inherited On.'}
+              </InterfaceText>
             </Text>
             {(
               [
@@ -232,9 +241,11 @@ export function TaskLifecycleSettings({
               </View>
             ))}
             <Field
-              label="Days of inactivity before settling"
+              label={uiText('Days of inactivity before settling')}
               value={dayInputs.inactiveDays ?? String(behavior.inactiveDays ?? '')}
-              placeholder={`Inherit (${inheritedBehavior.inactiveDays ?? 3})`}
+              placeholder={uiText('Inherit ({value0})', {
+                value0: inheritedBehavior.inactiveDays ?? 3,
+              })}
               editable={!disabled}
               keyboardType="number-pad"
               error={
@@ -267,7 +278,7 @@ export function TaskLifecycleSettings({
                 value: behavior.inactiveDays,
                 inheritedValue: inheritedBehavior.inactiveDays ?? 3,
               }}
-              label="Days of inactivity before settling"
+              label={uiText('Days of inactivity before settling')}
               disabled={disabled}
               onReset={() => {
                 setBehavior({ ...behavior, inactiveDays: undefined })
@@ -276,15 +287,20 @@ export function TaskLifecycleSettings({
               }}
             />
             <Text style={styles.muted}>
-              Archive only after a task stays in Settled for this period. Reopening resets the
-              clock.
+              <InterfaceText>
+                {
+                  'Archive only after a task stays in Settled for this period. Reopening resets the clock.'
+                }
+              </InterfaceText>
             </Text>
             <Field
-              label="Days in Settled before archiving"
+              label={uiText('Days in Settled before archiving')}
               value={
                 dayInputs.archiveAfterSettledDays ?? String(behavior.archiveAfterSettledDays ?? '')
               }
-              placeholder={`Inherit (${inheritedBehavior.archiveAfterSettledDays ?? 7})`}
+              placeholder={uiText('Inherit ({value0})', {
+                value0: inheritedBehavior.archiveAfterSettledDays ?? 7,
+              })}
               editable={!disabled && !!snapshot?.threadBehaviorSupported}
               keyboardType="number-pad"
               error={
@@ -318,7 +334,7 @@ export function TaskLifecycleSettings({
                 value: behavior.archiveAfterSettledDays,
                 inheritedValue: inheritedBehavior.archiveAfterSettledDays ?? 7,
               }}
-              label="Days in Settled before archiving"
+              label={uiText('Days in Settled before archiving')}
               disabled={disabled}
               onReset={() => {
                 setBehavior({ ...behavior, archiveAfterSettledDays: undefined })
@@ -337,7 +353,7 @@ export function TaskLifecycleSettings({
           </Text>
           <Action
             secondary
-            label="Reload settings"
+            label={uiText('Reload settings')}
             disabled={!connected || busy}
             onPress={() => {
               const reload = () => {
@@ -347,11 +363,11 @@ export function TaskLifecycleSettings({
               if (!dirty) reload()
               else
                 Alert.alert(
-                  'Discard unsaved edits?',
-                  'Load the latest saved settings and discard your edits?',
+                  uiText('Discard unsaved edits?'),
+                  uiText('Load the latest saved settings and discard your edits?'),
                   [
-                    { text: 'Keep editing', style: 'cancel' },
-                    { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                    { text: uiText('Keep editing'), style: 'cancel' },
+                    { text: uiText('Discard and reload'), style: 'destructive', onPress: reload },
                   ],
                 )
             }}

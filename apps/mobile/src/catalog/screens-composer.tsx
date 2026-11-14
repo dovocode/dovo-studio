@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { ConversationProvider } from '../tasks/conversation/state/provider'
 import { Composer } from '../tasks/composer/composer'
@@ -13,8 +14,11 @@ export function MobileComposerScreen() {
   return (
     <View style={{ flex: 1, justifyContent: 'flex-end', minHeight: 560 }}>
       <Text style={{ color: colors.muted, padding: 16 }}>
-        Full native composer · disconnected synthetic computer. Local drafts are saved only in the
-        catalog app.
+        <InterfaceText>
+          {
+            'Full native composer · disconnected synthetic computer. Local drafts are saved only in the catalog app.'
+          }
+        </InterfaceText>
       </Text>
       <ConversationProvider
         task={catalogScreenTask}

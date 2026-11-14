@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { Modal, Pressable, Switch, TextInput, View } from 'react-native'
@@ -72,7 +73,7 @@ export function MobileFileReview({
     <View>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Browse changed files"
+        accessibilityLabel={uiText('Browse changed files')}
         accessibilityValue={{ text: `${file?.path ?? ''}. ${index + 1} of ${files.length}` }}
         disabled={navigationDisabled}
         onPress={() => setOpen(true)}
@@ -90,7 +91,7 @@ export function MobileFileReview({
           ellipsizeMode="head"
           style={{ color: colors.text, fontSize: 13, fontWeight: '600', flex: 1, minWidth: 0 }}
         >
-          {file?.path ?? 'Browse changed files'}
+          {file?.path ?? uiText('Browse changed files')}
         </Text>
         {file?.additions !== undefined && (
           <Text numberOfLines={1} style={{ color: colors.success, fontSize: 12, flexShrink: 1 }}>
@@ -110,7 +111,7 @@ export function MobileFileReview({
       <View style={[styles.row, { justifyContent: 'space-between', flexWrap: 'wrap', gap: 8 }]}>
         <Pressable
           accessibilityRole="checkbox"
-          accessibilityLabel="File viewed"
+          accessibilityLabel={uiText('File viewed')}
           accessibilityState={{
             checked: file?.viewed ?? false,
             disabled: disabled || busy || !file,
@@ -137,7 +138,7 @@ export function MobileFileReview({
               importantForAccessibility="no-hide-descendants"
               style={{ opacity: 0, fontSize: 12 }}
             >
-              Saving…
+              <InterfaceText>{'Saving…'}</InterfaceText>
             </Text>
             <Text
               accessibilityLiveRegion="polite"
@@ -149,7 +150,7 @@ export function MobileFileReview({
                 fontSize: 12,
               }}
             >
-              {busy ? 'Saving…' : 'Viewed'}
+              {busy ? uiText('Saving…') : uiText('Viewed')}
             </Text>
           </View>
         </Pressable>
@@ -164,7 +165,7 @@ export function MobileFileReview({
         >
           <Action
             secondary
-            label="Previous file"
+            label={uiText('Previous file')}
             icon="back"
             disabled={navigationDisabled || index <= 0}
             onPress={() => {
@@ -174,7 +175,7 @@ export function MobileFileReview({
           />
           <Action
             secondary
-            label="Next file"
+            label={uiText('Next file')}
             icon="next"
             disabled={navigationDisabled || index < 0 || index >= files.length - 1}
             onPress={() => {
@@ -184,7 +185,7 @@ export function MobileFileReview({
           />
           <Action
             secondary
-            label="Next unviewed"
+            label={uiText('Next unviewed')}
             icon="moveDown"
             disabled={navigationDisabled || !nextUnviewed}
             onPress={() => {
@@ -194,7 +195,7 @@ export function MobileFileReview({
           {wrapLines !== undefined && onWrapLinesChange && (
             <Pressable
               accessibilityRole="switch"
-              accessibilityLabel="Wrap diff lines"
+              accessibilityLabel={uiText('Wrap diff lines')}
               accessibilityState={{ checked: wrapLines }}
               onPress={() => onWrapLinesChange(!wrapLines)}
               style={({ pressed }) => ({
@@ -213,17 +214,19 @@ export function MobileFileReview({
                   color: wrapLines ? colors.accent : colors.muted,
                 }}
               >
-                Wrap
+                <InterfaceText>{'Wrap'}</InterfaceText>
               </Text>
             </Pressable>
           )}
-          {onOptions && <Action secondary label="File actions" icon="more" onPress={onOptions} />}
+          {onOptions && (
+            <Action secondary label={uiText('File actions')} icon="more" onPress={onOptions} />
+          )}
         </View>
       </View>
       {!!error && (
         <View>
           <Text style={styles.error}>{error}</Text>
-          <Action secondary label="Retry viewed progress" onPress={onRetry} />
+          <Action secondary label={uiText('Retry viewed progress')} onPress={onRetry} />
         </View>
       )}
       <Modal visible={open} animationType="slide" onRequestClose={() => setOpen(false)}>
@@ -242,16 +245,20 @@ export function MobileFileReview({
               accessibilityRole="header"
               style={{ color: colors.text, fontSize: 20, fontWeight: '600' }}
             >
-              Changed files
+              <InterfaceText>{'Changed files'}</InterfaceText>
             </Text>
             <Action secondary label={uiText('Close')} onPress={() => setOpen(false)} />
           </View>
           <Text style={styles.muted}>
-            {files.filter((file) => file.viewed).length} of {files.length} viewed
+            <InterfaceText
+              values={{ value0: files.filter((file) => file.viewed).length, value1: files.length }}
+            >
+              {'{value0} of {value1} viewed'}
+            </InterfaceText>
           </Text>
           <TextInput
-            accessibilityLabel="Search changed files"
-            placeholder="Search files…"
+            accessibilityLabel={uiText('Search changed files')}
+            placeholder={uiText('Search files…')}
             placeholderTextColor={colors.muted}
             value={query}
             onChangeText={setQuery}
@@ -263,14 +270,16 @@ export function MobileFileReview({
             {groups.some((group) => group.basis === 'feature') && (
               <Action
                 secondary
-                label={related ? 'Features' : 'Folders'}
+                label={related ? uiText('Features') : uiText('Folders')}
                 onPress={() => onRelatedChange(!related)}
               />
             )}
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
-              <Text style={styles.muted}>Unviewed only</Text>
+              <Text style={styles.muted}>
+                <InterfaceText>{'Unviewed only'}</InterfaceText>
+              </Text>
               <Switch
-                accessibilityLabel="Unviewed only"
+                accessibilityLabel={uiText('Unviewed only')}
                 value={unviewed}
                 onValueChange={setUnviewed}
               />
@@ -278,7 +287,7 @@ export function MobileFileReview({
           </View>
           {!filtered.length ? (
             <Text style={styles.muted}>
-              {unviewed && !filter ? 'All files viewed.' : 'No matching files.'}
+              {unviewed && !filter ? uiText('All files viewed.') : uiText('No matching files.')}
             </Text>
           ) : (
             <MobileFileTree

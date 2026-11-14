@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useTheme } from '../../../ui/theme'
 import { Host, Picker, Text } from '@expo/ui/swift-ui'
 import { controlSize, frame, pickerStyle, tag } from '@expo/ui/swift-ui/modifiers'
@@ -12,6 +13,8 @@ export function PullTabs({
   items: Array<{ id: string; name: string }>
   onChange: (id: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { mode: appearanceMode } = useTheme()
 
   return (
@@ -23,7 +26,7 @@ export function PullTabs({
         style={{ width: '100%' }}
       >
         <Picker
-          label="Pull request view"
+          label={uiText('Pull request view')}
           selection={value}
           onSelectionChange={onChange}
           modifiers={[pickerStyle('segmented'), controlSize('regular'), frame({ minHeight: 44 })]}

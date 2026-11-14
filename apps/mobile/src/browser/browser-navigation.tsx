@@ -48,7 +48,7 @@ export function BrowserNavigation({
   }
   return (
     <View
-      accessibilityLabel="Browser navigation"
+      accessibilityLabel={uiText('Browser navigation')}
       style={{ paddingHorizontal: 8, paddingVertical: 6 }}
     >
       <Glass
@@ -61,7 +61,7 @@ export function BrowserNavigation({
           minHeight: 52,
         }}
       >
-        <IconButton label="Browser options" icon="more" onPress={onOptions} />
+        <IconButton label={uiText('Browser options')} icon="more" onPress={onOptions} />
         {!focused && (
           <>
             <IconButton
@@ -71,7 +71,7 @@ export function BrowserNavigation({
               onPress={onBack}
             />
             <IconButton
-              label="Forward"
+              label={uiText('Forward')}
               icon="next"
               disabled={disabled || !forward}
               onPress={onForward}
@@ -80,9 +80,9 @@ export function BrowserNavigation({
         )}
         <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: 'center' }}>
           <TextInput
-            accessibilityLabel="Search or enter address"
+            accessibilityLabel={uiText('Search or enter address')}
             testID="Search or enter address"
-            placeholder="Search or enter address"
+            placeholder={uiText('Search or enter address')}
             placeholderTextColor={colors.muted}
             selectionColor={colors.accent}
             value={address}
@@ -119,20 +119,20 @@ export function BrowserNavigation({
                 numberOfLines={1}
                 style={{ color: colors.text, fontSize: 16, textAlign: 'center' }}
               >
-                {domain || 'Search or enter address'}
+                {domain || uiText('Search or enter address')}
               </Text>
             </View>
           )}
         </View>
         <IconButton
-          label={changed ? 'Go' : 'Reload'}
+          label={changed ? uiText('Go') : uiText('Reload')}
           icon={changed ? 'next' : 'refresh'}
           disabled={disabled || !address.trim()}
           onPress={onNavigate}
         />
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Tabs (${tabs})`}
+          accessibilityLabel={uiText('Tabs ({value0})', { value0: tabs })}
           onPress={onTabs}
           style={{ width: 44, height: 44, alignItems: 'center', justifyContent: 'center' }}
         >

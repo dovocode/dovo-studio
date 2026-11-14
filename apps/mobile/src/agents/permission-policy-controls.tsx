@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   approvalPolicySchema,
   sandboxModeSchema,
@@ -50,6 +51,8 @@ export function PermissionPolicyControls({
   resetFields?: readonly ('approvalPolicy' | 'sandboxMode')[]
   onResetField?: (field: 'approvalPolicy' | 'sandboxMode') => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [expanded, setExpanded] = useState(false)
   const capabilities = permissionPolicyCapabilities(value.provider)
@@ -71,7 +74,11 @@ export function PermissionPolicyControls({
         accessibilityState={{ expanded }}
         onPress={() => setExpanded(!expanded)}
       >
-        <Text style={styles.muted}>Advanced · {permissionPolicyLabel(displayed)}</Text>
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: permissionPolicyLabel(displayed) }}>
+            {'Advanced · {value0}'}
+          </InterfaceText>
+        </Text>
       </Pressable>
       {expanded && (
         <>
@@ -89,18 +96,20 @@ export function PermissionPolicyControls({
                   : onChange({ approvalPolicy: undefined, sandboxMode: undefined })
               }
             >
-              <Text>Reset to access mode</Text>
+              <Text>
+                <InterfaceText>{'Reset to access mode'}</InterfaceText>
+              </Text>
             </Pressable>
           )}
           <Choice
             row
-            label="Approval policy"
+            label={uiText('Approval policy')}
             value={
               resetFields?.includes('approvalPolicy') ? 'access-mode' : (value.approvalPolicy ?? '')
             }
             disabled={disabled || !supported}
             items={[
-              ...(onResetField ? [{ id: 'access-mode', name: 'From access mode' }] : []),
+              ...(onResetField ? [{ id: 'access-mode', name: uiText('From access mode') }] : []),
               {
                 id: '',
                 name: inherited?.approvalPolicy
@@ -130,11 +139,11 @@ export function PermissionPolicyControls({
           <Text style={styles.muted}>{capabilities.approvalDescription}</Text>
           <Choice
             row
-            label="Sandbox"
+            label={uiText('Sandbox')}
             value={resetFields?.includes('sandboxMode') ? 'access-mode' : (value.sandboxMode ?? '')}
             disabled={disabled || !supported}
             items={[
-              ...(onResetField ? [{ id: 'access-mode', name: 'From access mode' }] : []),
+              ...(onResetField ? [{ id: 'access-mode', name: uiText('From access mode') }] : []),
               {
                 id: '',
                 name: inherited?.sandboxMode
@@ -167,16 +176,24 @@ export function PermissionPolicyControls({
           )}
           {issue && (
             <Text accessibilityRole="alert" style={styles.error}>
-              {issue}. Clear the override to inherit.
+              <InterfaceText values={{ value0: issue }}>
+                {'{value0}. Clear the override to inherit.'}
+              </InterfaceText>
             </Text>
           )}
           {supported && effective.readOnly && (
             <Text style={styles.muted}>
-              Read-only access takes precedence over approval and sandbox overrides.
+              <InterfaceText>
+                {'Read-only access takes precedence over approval and sandbox overrides.'}
+              </InterfaceText>
             </Text>
           )}
           <Text style={styles.muted}>
-            Wider access applies on the next turn. Tightening access stops affected running agents.
+            <InterfaceText>
+              {
+                'Wider access applies on the next turn. Tightening access stops affected running agents.'
+              }
+            </InterfaceText>
           </Text>
         </>
       )}

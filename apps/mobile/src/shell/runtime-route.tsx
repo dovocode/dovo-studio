@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { LinkOriginProvider } from '../ui/content/link-origin'
 import { jiraDestination } from '../scm/source-key'
@@ -91,17 +92,23 @@ function RuntimeRouteContent({
           <ActivityIndicator color={colors.accent} />
         ) : !owner ? (
           <>
-            <Text style={styles.title}>Computer unavailable</Text>
-            <Text style={styles.muted}>
-              This link belongs to a computer that is no longer saved on this device.
+            <Text style={styles.title}>
+              <InterfaceText>{'Computer unavailable'}</InterfaceText>
             </Text>
-            <Action label="Open computer settings" onPress={() => navigate('settings')} />
+            <Text style={styles.muted}>
+              <InterfaceText>
+                {'This link belongs to a computer that is no longer saved on this device.'}
+              </InterfaceText>
+            </Text>
+            <Action label={uiText('Open computer settings')} onPress={() => navigate('settings')} />
           </>
         ) : activeId !== runtimeId ? (
           <>
-            <Text style={styles.title}>Loading saved connection…</Text>
+            <Text style={styles.title}>
+              <InterfaceText>{'Loading saved connection…'}</InterfaceText>
+            </Text>
             <Action
-              label="Refresh connection"
+              label={uiText('Refresh connection')}
               disabled={busy || !focused}
               onPress={() => act(() => refreshRuntime(owner))}
             />
@@ -111,17 +118,21 @@ function RuntimeRouteContent({
             <Text style={styles.title}>
               {snapshot
                 ? jiraSourceId
-                  ? 'Jira source unavailable'
-                  : 'Project unavailable'
-                : 'Loading workspace…'}
+                  ? uiText('Jira source unavailable')
+                  : uiText('Project unavailable')
+                : uiText('Loading workspace…')}
             </Text>
             <Text style={styles.muted}>
               {snapshot
-                ? 'This source may have been removed. Return to the list or refresh this computer.'
-                : 'Waiting for this computer’s workspace. Saved details remain available offline.'}
+                ? uiText(
+                    'This source may have been removed. Return to the list or refresh this computer.',
+                  )
+                : uiText(
+                    'Waiting for this computer’s workspace. Saved details remain available offline.',
+                  )}
             </Text>
             <Action
-              label={connected ? 'Refresh workspace' : 'Reconnect'}
+              label={connected ? uiText('Refresh workspace') : uiText('Reconnect')}
               disabled={busy || !focused}
               onPress={() => act(refresh)}
             />

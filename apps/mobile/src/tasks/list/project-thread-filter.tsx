@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { projectMachineGroups } from '@dovo/protocol'
@@ -97,18 +98,18 @@ export function ProjectThreadFilter({
         <View style={{ flex: 1, minWidth: 0 }}>
           <Text numberOfLines={1} style={styles.text}>
             {group.name}
-            {group.pinned ? ' · Pinned' : ''}
+            {group.pinned ? uiText(' · Pinned') : ''}
           </Text>
           <Text numberOfLines={1} style={styles.muted}>
             {group.entries[0].repository.kind === 'scratch'
-              ? 'Conversations without a project'
-              : (group.identity ?? 'Local repository')}
+              ? uiText('Conversations without a project')
+              : (group.identity ?? uiText('Local repository'))}
           </Text>
         </View>
       </Pressable>
       <Icon name="device" size={15} color={colors.muted} />
       <IconButton
-        label={`Settings for ${group.name}`}
+        label={uiText('Settings for {value0}', { value0: group.name })}
         icon="settings"
         variant="plain"
         onPress={() => {
@@ -122,7 +123,7 @@ export function ProjectThreadFilter({
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Filter threads by project"
+        accessibilityLabel={uiText('Filter threads by project')}
         onPress={() => {
           setOpen(true)
           setQuery('')
@@ -158,13 +159,13 @@ export function ProjectThreadFilter({
               : [styles.text, { flex: 1 }]
           }
         >
-          {selected?.name ?? 'All projects'}
+          {selected?.name ?? uiText('All projects')}
         </Text>
         <Icon name={compact ? 'next' : 'down'} size={compact ? 11 : 13} color={colors.muted} />
       </Pressable>
       {open && (
         <Sheet title={uiText('Projects')} onClose={() => setOpen(false)}>
-          <SearchField label="Search projects" value={query} onChangeText={setQuery} />
+          <SearchField label={uiText('Search projects')} value={query} onChangeText={setQuery} />
           <Pressable
             accessibilityRole="button"
             accessibilityState={{ selected: !value }}
@@ -172,7 +173,9 @@ export function ProjectThreadFilter({
             style={{ minHeight: 48, flexDirection: 'row', alignItems: 'center', gap: 10 }}
           >
             <Icon name="folder" size={20} color={colors.muted} />
-            <Text style={[styles.text, { flex: 1 }]}>All projects</Text>
+            <Text style={[styles.text, { flex: 1 }]}>
+              <InterfaceText>{'All projects'}</InterfaceText>
+            </Text>
             {!value && <Icon name="check" size={16} color={colors.muted} />}
           </Pressable>
           {visible.filter((group) => !group.archived).map(row)}
@@ -184,7 +187,11 @@ export function ProjectThreadFilter({
               style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 10 }}
             >
               <Icon name="archive" size={18} color={colors.muted} />
-              <Text style={[styles.muted, { flex: 1 }]}>Archived ({archived.length})</Text>
+              <Text style={[styles.muted, { flex: 1 }]}>
+                <InterfaceText values={{ value0: archived.length }}>
+                  {'Archived ({value0})'}
+                </InterfaceText>
+              </Text>
               <Icon
                 name={showArchived || query.trim() ? 'down' : 'next'}
                 size={13}
@@ -193,11 +200,18 @@ export function ProjectThreadFilter({
             </Pressable>
           )}
           {(showArchived || !!query.trim()) && archived.map(row)}
-          {!visible.length && <Text style={styles.muted}>No matching projects.</Text>}
+          {!visible.length && (
+            <Text style={styles.muted}>
+              <InterfaceText>{'No matching projects.'}</InterfaceText>
+            </Text>
+          )}
         </Sheet>
       )}
       {managed && (
-        <Sheet title={`${managed.name} settings`} onClose={() => setSettings(null)}>
+        <Sheet
+          title={uiText('{value0} settings', { value0: managed.name })}
+          onClose={() => setSettings(null)}
+        >
           {managed.entries[0].repository.kind !== 'scratch' &&
             (organizer ? (
               <RuntimeScope runtimeId={organizer.entry.profile.id}>
@@ -205,7 +219,9 @@ export function ProjectThreadFilter({
               </RuntimeScope>
             ) : (
               <Text style={styles.muted}>
-                Reconnect a computer with this project to pin or archive it.
+                <InterfaceText>
+                  {'Reconnect a computer with this project to pin or archive it.'}
+                </InterfaceText>
               </Text>
             ))}
           {managed.entries.map(({ repository, entry }) => (
@@ -213,7 +229,7 @@ export function ProjectThreadFilter({
               <View style={{ gap: 8 }}>
                 <Text style={styles.text}>
                   {runtimeComputerName(entry)}
-                  {entry.connected ? '' : ' · Offline'}
+                  {entry.connected ? '' : uiText(' · Offline')}
                 </Text>
                 <Text style={styles.muted}>{repository.path}</Text>
                 {entry.connected ? (
@@ -225,7 +241,9 @@ export function ProjectThreadFilter({
                   </>
                 ) : (
                   <Text style={styles.muted}>
-                    Reconnect this machine to edit its project settings.
+                    <InterfaceText>
+                      {'Reconnect this machine to edit its project settings.'}
+                    </InterfaceText>
                   </Text>
                 )}
               </View>

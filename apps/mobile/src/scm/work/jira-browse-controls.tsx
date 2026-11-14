@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import type { JiraIssueFilters } from '@dovo/protocol'
@@ -19,14 +20,20 @@ export function JiraBrowseControls({
   onFilters: (value: JiraIssueFilters) => void
   enabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [closed, setClosed] = useState(false)
   const { boards, sprints } = useJiraBrowse(source, filters.board, closed, enabled)
   return (
     <View style={{ gap: 12 }}>
-      {!source && <Text style={styles.muted}>Choose one source to browse its saved boards.</Text>}
+      {!source && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Choose one source to browse its saved boards.'}</InterfaceText>
+        </Text>
+      )}
       <Choice
-        label="Saved Jira board"
+        label={uiText('Saved Jira board')}
         value={filters.board ?? ''}
         disabled={!source}
         onChange={(board) => {
@@ -34,7 +41,7 @@ export function JiraBrowseControls({
           onFilters({ ...filters, board: board || undefined, sprint: undefined })
         }}
         items={[
-          { id: '', name: 'All project issues' },
+          { id: '', name: uiText('All project issues') },
           ...(filters.board && !boards.value?.boards.some((board) => board.id === filters.board)
             ? [{ id: filters.board, name: `Board ${filters.board}` }]
             : []),
@@ -45,16 +52,16 @@ export function JiraBrowseControls({
         ]}
       />
       <Choice
-        label="Jira sprint"
+        label={uiText('Jira sprint')}
         value={filters.sprint ?? ''}
         onChange={(sprint) => onFilters({ ...filters, sprint: sprint || undefined })}
         items={[
-          { id: '', name: 'All sprints' },
+          { id: '', name: uiText('All sprints') },
           ...(!filters.board
             ? [
-                { id: 'active', name: 'Active sprints' },
-                { id: 'future', name: 'Future sprints' },
-                { id: 'none', name: 'No sprint' },
+                { id: 'active', name: uiText('Active sprints') },
+                { id: 'future', name: uiText('Future sprints') },
+                { id: 'none', name: uiText('No sprint') },
               ]
             : []),
           ...(filters.sprint &&
@@ -71,13 +78,13 @@ export function JiraBrowseControls({
       {!!filters.board && (
         <Action
           secondary
-          label={closed ? 'Show active & future sprints' : 'Show closed sprints'}
+          label={closed ? uiText('Show active & future sprints') : uiText('Show closed sprints')}
           onPress={() => setClosed((value) => !value)}
         />
       )}
       <Action
         secondary
-        label="Refresh board choices"
+        label={uiText('Refresh board choices')}
         disabled={!source?.connected || boards.busy || sprints.busy}
         onPress={() => {
           boards.retry()
@@ -86,7 +93,7 @@ export function JiraBrowseControls({
       />
       {(boards.busy || sprints.busy) && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-          Loading boards & sprints…
+          <InterfaceText>{'Loading boards & sprints…'}</InterfaceText>
         </Text>
       )}
       {[boards, sprints].map((resource, index) =>
@@ -97,7 +104,7 @@ export function JiraBrowseControls({
             </Text>
             <Action
               secondary
-              label={`Retry ${index ? 'sprints' : 'boards'}`}
+              label={uiText('Retry {value0}', { value0: index ? 'sprints' : 'boards' })}
               disabled={!source?.connected || resource.busy}
               onPress={resource.retry}
             />
@@ -105,14 +112,21 @@ export function JiraBrowseControls({
         ) : null,
       )}
       {(boards.value?.stale || sprints.value?.stale) && (
-        <Text style={styles.muted}>Saved board and sprint choices.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Saved board and sprint choices.'}</InterfaceText>
+        </Text>
       )}
       {(boards.value?.truncated || sprints.value?.truncated) && (
-        <Text style={styles.muted}>Some choices are omitted. Open Jira for the full list.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Some choices are omitted. Open Jira for the full list.'}</InterfaceText>
+        </Text>
       )}
       <Text style={styles.muted}>
-        Boards select available sprints. Choose a sprint to narrow issues to that board. Results
-        stay within this source’s project.
+        <InterfaceText>
+          {
+            'Boards select available sprints. Choose a sprint to narrow issues to that board. Results stay within this source’s project.'
+          }
+        </InterfaceText>
       </Text>
     </View>
   )

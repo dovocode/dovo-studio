@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect } from 'react'
 import { Alert, View } from 'react-native'
 import * as Crypto from 'expo-crypto'
@@ -11,6 +12,8 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolean) => void }) {
+  const uiText = useInterfaceText()
+
   const { profile, snapshot, connected, call, refresh, connect } = useRuntime()
   const {
     client,
@@ -72,21 +75,36 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
     await connectAccount()
   }
   return (
-    <View style={{ gap: 8 }} accessibilityLabel={`Dovo Connect for ${name}`}>
-      <Text style={styles.title}>Dovo Connect + relay</Text>
+    <View
+      style={{ gap: 8 }}
+      accessibilityLabel={uiText('Dovo Connect for {value0}', { value0: name })}
+    >
+      <Text style={styles.title}>
+        <InterfaceText>{'Dovo Connect + relay'}</InterfaceText>
+      </Text>
       {!!snapshot?.internet?.origin && (
-        <Text style={styles.muted}>Connect server: {snapshot.internet.origin}</Text>
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: snapshot.internet.origin }}>
+            {'Connect server: {value0}'}
+          </InterfaceText>
+        </Text>
       )}
       <Text style={styles.muted}>
         {snapshot?.internet?.enabled
           ? snapshot.internet.connected
-            ? 'Enabled · Online. Same-account devices can connect directly or through encrypted TURN relay.'
-            : 'Enabled · Connecting to Dovo Connect…'
-          : 'Enable account access and encrypted TURN fallback on this computer. LAN / VPN pairing stays available.'}
+            ? uiText(
+                'Enabled · Online. Same-account devices can connect directly or through encrypted TURN relay.',
+              )
+            : uiText('Enabled · Connecting to Dovo Connect…')
+          : uiText(
+              'Enable account access and encrypted TURN fallback on this computer. LAN / VPN pairing stays available.',
+            )}
       </Text>
       {snapshot?.internetSetupSupported === undefined ? (
         <Text style={styles.muted}>
-          Update Dovo on this computer to enable Connect from a paired device.
+          <InterfaceText>
+            {'Update Dovo on this computer to enable Connect from a paired device.'}
+          </InterfaceText>
         </Text>
       ) : (
         !snapshot.internet?.enabled &&
@@ -94,26 +112,41 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
           <>
             {login ? (
               <>
-                <Text style={styles.text}>Confirm code {login.code} in your browser.</Text>
-                <Action label="Cancel sign-in" onPress={client.cancel} />
+                <Text style={styles.text}>
+                  <InterfaceText values={{ value0: login.code }}>
+                    {'Confirm code {value0} in your browser.'}
+                  </InterfaceText>
+                </Text>
+                <Action label={uiText('Cancel sign-in')} onPress={client.cancel} />
               </>
             ) : !directory ? (
               <Action
-                label="Sign in to enable Dovo Connect"
+                label={uiText('Sign in to enable Dovo Connect')}
                 disabled={!loaded || accountBusy}
                 onPress={() => void client.signIn()}
               />
             ) : (
               <Action
-                label={busy ? 'Enabling…' : 'Enable Dovo Connect + relay'}
+                label={busy ? uiText('Enabling…') : uiText('Enable Dovo Connect + relay')}
                 disabled={!connected || busy || accountBusy || deletionPending}
                 onPress={() =>
                   Alert.alert(
-                    `Enable Dovo Connect on ${name}?`,
-                    `Devices signed in as ${directory.user.name}${directory.user.organization ? ` (${directory.user.organization.name})` : ''} will have access to files, agents and terminal commands on this computer. Encrypted traffic may pass through Dovo TURN servers when a direct connection fails.${directory.user.organization ? ' Organization relay settings will be applied automatically unless this computer has a manual TURN override.' : ''}`,
+                    uiText('Enable Dovo Connect on {value0}?', { value0: name }),
+                    uiText(
+                      'Devices signed in as {value0}{value1} will have access to files, agents and terminal commands on this computer. Encrypted traffic may pass through Dovo TURN servers when a direct connection fails.{value2}',
+                      {
+                        value0: directory.user.name,
+                        value1: directory.user.organization
+                          ? ` (${directory.user.organization.name})`
+                          : '',
+                        value2: directory.user.organization
+                          ? ' Organization relay settings will be applied automatically unless this computer has a manual TURN override.'
+                          : '',
+                      },
+                    ),
                     [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Enable Connect + relay', onPress: () => act(enable) },
+                      { text: uiText('Cancel'), style: 'cancel' },
+                      { text: uiText('Enable Connect + relay'), onPress: () => act(enable) },
                     ],
                   )
                 }
@@ -127,7 +160,7 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
         !profile.connection.accountSession &&
         !profile.connection.internet && (
           <Action
-            label={busy ? 'Connecting…' : 'Use Dovo Connect fallback'}
+            label={busy ? uiText('Connecting…') : uiText('Use Dovo Connect fallback')}
             disabled={
               !connected ||
               busy ||

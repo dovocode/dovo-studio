@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { createContext, useContext } from 'react'
 import type { ChatImageSource } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -20,6 +21,8 @@ export function EditChatImage({
   onEdit?: () => void
   glass?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const context = useContext(ChatImageEditContext)
   const { connected } = useRuntime()
   if (!context) return null
@@ -27,7 +30,7 @@ export function EditChatImage({
     <IconButton
       icon="edit"
       variant={glass ? 'glass' : 'plain'}
-      label={`Edit and attach ${label}`}
+      label={uiText('Edit and attach {value0}', { value0: label })}
       disabled={!connected || context.disabled || context.busy}
       onPress={() => {
         onEdit?.()

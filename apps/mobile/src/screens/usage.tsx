@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { hubPlanLimitSources } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
@@ -33,6 +34,8 @@ import { SettingsGroup } from './settings-group'
 const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
 
 const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const tokens = row.tokenTurns ? ` · ${formatUsageTokens(row.tokens)} tokens` : ''
@@ -51,14 +54,26 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
       </Text>
       <Text style={styles.muted}>
         {row.detail ? `${row.detail} · ` : ''}
-        {row.turns} {row.turns === 1 ? 'turn' : 'turns'}
-        {row.failed ? ` (${row.failed} failed)` : ''} · {formatUsageDuration(row.durationMs)}
+        {row.turns} {row.turns === 1 ? uiText('turn') : uiText('turns')}
+        {row.failed ? uiText(' ({value0} failed)', { value0: row.failed }) : ''} ·{' '}
+        {formatUsageDuration(row.durationMs)}
         {tokens}
-        {row.pricedTurns ? ` · ${formatUsageCost(row.estimatedCostUsd)} est.` : ''}
+        {row.pricedTurns
+          ? uiText(' · {value0} est.', { value0: formatUsageCost(row.estimatedCostUsd) })
+          : ''}
       </Text>
       {(row.tokenTurns < row.turns || row.pricedTurns < row.turns) && (
         <Text style={styles.muted}>
-          {row.tokenTurns}/{row.turns} turns reported tokens · {row.pricedTurns}/{row.turns} priced
+          <InterfaceText
+            values={{
+              value0: row.tokenTurns,
+              value1: row.turns,
+              value2: row.pricedTurns,
+              value3: row.turns,
+            }}
+          >
+            {'{value0}/{value1} turns reported tokens · {value2}/{value3} priced'}
+          </InterfaceText>
         </Text>
       )}
     </View>
@@ -152,7 +167,7 @@ export default function UsageScreen() {
   )
   return (
     <SettingsPage>
-      <ScreenHeader title="Usage & limits" />
+      <ScreenHeader title={uiText('Usage & limits')} />
       <FlatList
         data={view === 'limits' ? [] : summary[breakdown]}
         keyExtractor={(row) => row.key}
@@ -175,7 +190,9 @@ export default function UsageScreen() {
         ListEmptyComponent={
           view === 'limits' ? undefined : (
             <Text style={[styles.muted, { paddingVertical: 16 }]}>
-              No turns in this period. Try the last 30 days or run a new task.
+              <InterfaceText>
+                {'No turns in this period. Try the last 30 days or run a new task.'}
+              </InterfaceText>
             </Text>
           )
         }
@@ -184,12 +201,12 @@ export default function UsageScreen() {
             <View style={{ gap: 12 }}>
               <SettingsGroup>
                 <Choice
-                  label="Usage view"
+                  label={uiText('Usage view')}
                   value={view}
                   items={[
-                    { id: 'costs', name: 'Costs' },
-                    { id: 'tokens', name: 'Tokens' },
-                    { id: 'limits', name: 'Limits' },
+                    { id: 'costs', name: uiText('Costs') },
+                    { id: 'tokens', name: uiText('Tokens') },
+                    { id: 'limits', name: uiText('Limits') },
                   ]}
                   onChange={(value) => {
                     if (value === 'costs' || value === 'tokens' || value === 'limits')
@@ -198,10 +215,10 @@ export default function UsageScreen() {
                 />
                 {overviews.length > 1 && (
                   <Choice
-                    label="Computer"
+                    label={uiText('Computer')}
                     value={computer}
                     items={[
-                      { id: 'all', name: 'All computers' },
+                      { id: 'all', name: uiText('All computers') },
                       ...overviews.map((entry) => ({
                         id: entry.profile.id,
                         name: `${runtimeComputerName(entry)}${entry.connected ? '' : ' · Offline'}`,
@@ -212,14 +229,16 @@ export default function UsageScreen() {
                 )}
               </SettingsGroup>
               <Action
-                label={busy ? 'Refreshing…' : 'Refresh usage'}
+                label={busy ? uiText('Refreshing…') : uiText('Refresh usage')}
                 onPress={refresh}
                 disabled={busy || !hosts.some((entry) => entry.connected)}
                 secondary
               />
               {!hosts.length && (
                 <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                  Connect a computer to see recorded usage and account limits.
+                  <InterfaceText>
+                    {'Connect a computer to see recorded usage and account limits.'}
+                  </InterfaceText>
                 </Text>
               )}
               {hosts.map(
@@ -235,13 +254,13 @@ export default function UsageScreen() {
               <>
                 <View style={{ gap: 12 }}>
                   <Choice
-                    label="Period"
+                    label={uiText('Period')}
                     value={period}
                     items={[
-                      { id: 'day', name: 'Last 24 hours' },
-                      { id: 'week', name: 'Last 7 days' },
-                      { id: 'month', name: 'Last 30 days' },
-                      { id: 'quarter', name: 'Last 90 days' },
+                      { id: 'day', name: uiText('Last 24 hours') },
+                      { id: 'week', name: uiText('Last 7 days') },
+                      { id: 'month', name: uiText('Last 30 days') },
+                      { id: 'quarter', name: uiText('Last 90 days') },
                     ]}
                     onChange={(value) => {
                       if (
@@ -254,31 +273,39 @@ export default function UsageScreen() {
                     }}
                   />
                   <Text style={styles.muted}>
-                    {hosts.filter((entry) => entry.snapshot).length}{' '}
-                    {hosts.filter((entry) => entry.snapshot).length === 1
-                      ? 'computer'
-                      : 'computers'}{' '}
-                    with usage data · Dovo turns and CLI requests · Includes running turns
+                    <InterfaceText
+                      values={{
+                        value0: hosts.filter((entry) => entry.snapshot).length,
+                        value1:
+                          hosts.filter((entry) => entry.snapshot).length === 1
+                            ? uiText('computer')
+                            : uiText('computers'),
+                      }}
+                    >
+                      {
+                        '{value0} {value1} with usage data · Dovo turns and CLI requests · Includes running turns'
+                      }
+                    </InterfaceText>
                   </Text>
                   <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                     {[
                       {
-                        label: 'Usage records',
+                        label: uiText('Usage records'),
                         value: String(total.turns),
                         detail: total.failed ? `${total.failed} failed` : 'No failed turns',
                       },
                       {
-                        label: 'Agent time',
+                        label: uiText('Agent time'),
                         value: formatUsageDuration(total.durationMs),
                         detail: 'Across computers',
                       },
                       {
-                        label: 'Reported tokens',
+                        label: uiText('Reported tokens'),
                         value: total.tokenTurns ? formatUsageTokens(total.tokens) : '—',
                         detail: `${total.tokenTurns} of ${total.turns} reported`,
                       },
                       {
-                        label: 'API-equivalent cost',
+                        label: uiText('API-equivalent cost'),
                         value: total.pricedTurns ? formatUsageCost(total.estimatedCostUsd) : '—',
                         detail: `${total.pricedTurns} of ${total.turns} priced`,
                       },
@@ -299,14 +326,17 @@ export default function UsageScreen() {
                     ))}
                   </View>
                   <Text style={styles.muted}>
-                    Cost estimates use reported tokens and cached API rates, not your subscription
-                    bill. Partial totals are lower bounds.
+                    <InterfaceText>
+                      {
+                        'Cost estimates use reported tokens and cached API rates, not your subscription bill. Partial totals are lower bounds.'
+                      }
+                    </InterfaceText>
                   </Text>
                 </View>
                 <View style={{ gap: 8 }}>
                   <Text style={styles.title}>
-                    {period === 'day' ? 'Hourly' : 'Daily'}{' '}
-                    {view === 'tokens' ? 'tokens' : 'API-equivalent cost'}
+                    {period === 'day' ? uiText('Hourly') : uiText('Daily')}{' '}
+                    {view === 'tokens' ? uiText('tokens') : uiText('API-equivalent cost')}
                   </Text>
                   <View
                     style={[
@@ -329,7 +359,7 @@ export default function UsageScreen() {
                             key={day.key}
                             accessible
                             accessibilityRole="image"
-                            accessibilityLabel={`${day.label}: ${view === 'tokens' ? (day.tokenTurns ? formatUsageTokens(value) + ' tokens' : day.turns ? 'Tokens not reported' : 'No usage') : day.pricedTurns ? formatUsageCost(value) : day.turns ? 'Unpriced' : 'No usage'}`}
+                            accessibilityLabel={`${day.label}: ${view === 'tokens' ? (day.tokenTurns ? uiText('{value0} tokens', { value0: formatUsageTokens(value) }) : day.turns ? uiText('Tokens not reported') : uiText('No usage')) : day.pricedTurns ? formatUsageCost(value) : day.turns ? uiText('Unpriced') : uiText('No usage')}`}
                             style={{
                               flex: 1,
                               height: `${Math.max(value ? 2 : 0, (value / maximum) * 100)}%`,
@@ -351,15 +381,26 @@ export default function UsageScreen() {
                   </View>
                   {view === 'tokens' && (
                     <Text style={styles.muted}>
-                      Input {formatUsageTokens(total.input)} · Output{' '}
-                      {formatUsageTokens(total.output)} · Cache read{' '}
-                      {formatUsageTokens(total.cacheRead)} · Cache write{' '}
-                      {formatUsageTokens(total.cacheWrite)}. Older turns may report totals only.
+                      <InterfaceText
+                        values={{
+                          value0: formatUsageTokens(total.input),
+                          value1: formatUsageTokens(total.output),
+                          value2: formatUsageTokens(total.cacheRead),
+                          value3: formatUsageTokens(total.cacheWrite),
+                        }}
+                      >
+                        {
+                          'Input {value0} · Output {value1} · Cache read {value2} · Cache write {value3}. Older turns may report totals only.'
+                        }
+                      </InterfaceText>
                     </Text>
                   )}
                   <Text style={styles.muted}>
-                    {chartDays[0]?.label} — {chartDays.at(-1)?.label} · Recorded usage survives
-                    thread deletion.
+                    <InterfaceText
+                      values={{ value0: chartDays[0]?.label, value1: chartDays.at(-1)?.label }}
+                    >
+                      {'{value0} — {value1} · Recorded usage survives thread deletion.'}
+                    </InterfaceText>
                   </Text>
                 </View>
               </>
@@ -375,8 +416,12 @@ export default function UsageScreen() {
                         {runtimeComputerName(entry)} · {hub.label}:{' '}
                         {hub.error ??
                           (hub.limits.length
-                            ? `Updated ${hub.checkedAt ? new Date(hub.checkedAt).toLocaleString() : 'unknown'}`
-                            : 'No supported account limits reported.')}
+                            ? uiText('Updated {value0}', {
+                                value0: hub.checkedAt
+                                  ? new Date(hub.checkedAt).toLocaleString()
+                                  : 'unknown',
+                              })
+                            : uiText('No supported account limits reported.'))}
                       </Text>
                     )),
                 )}
@@ -390,13 +435,18 @@ export default function UsageScreen() {
                   )}
                 />
                 <SettingsGroup
-                  title="Account limits"
-                  footer="Limits are reported by Codex, Claude, and OpenCode agents on connected computers. API-key usage may not have subscription windows."
+                  title={uiText('Account limits')}
+                  footer={uiText(
+                    'Limits are reported by Codex, Claude, and OpenCode agents on connected computers. API-key usage may not have subscription windows.',
+                  )}
                 >
                   {!limits.length && (
                     <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 12 }]}>
-                      No account limits reported. Refresh to check connected computers. API-key
-                      accounts may not have subscription limits.
+                      <InterfaceText>
+                        {
+                          'No account limits reported. Refresh to check connected computers. API-key accounts may not have subscription limits.'
+                        }
+                      </InterfaceText>
                     </Text>
                   )}
                   {accountLimitGroups(limits).map((group) => {
@@ -422,13 +472,19 @@ export default function UsageScreen() {
                                 <Text style={styles.text}>
                                   {limit.window} ·{' '}
                                   {expired
-                                    ? 'Awaiting reading'
-                                    : `${Math.round(remaining)}% left${state === 'fresh' ? '' : ` · ${state}`}`}
+                                    ? uiText('Awaiting reading')
+                                    : uiText('{value0}% left{value1}', {
+                                        value0: Math.round(remaining),
+                                        value1: state === 'fresh' ? '' : ` · ${state}`,
+                                      })}
                                 </Text>
                                 {!expired && (
                                   <View
                                     accessibilityRole="progressbar"
-                                    accessibilityLabel={`${provider} ${limit.window} remaining`}
+                                    accessibilityLabel={uiText('{value0} {value1} remaining', {
+                                      value0: provider,
+                                      value1: limit.window,
+                                    })}
                                     accessibilityValue={{
                                       min: 0,
                                       max: 100,
@@ -456,17 +512,26 @@ export default function UsageScreen() {
                                   </View>
                                 )}
                                 <Text style={styles.muted}>
-                                  Reported by {limit.computers.join(', ')} · Updated{' '}
-                                  {new Date(limit.updatedAt).toLocaleString()} ·{' '}
-                                  {formatQuotaReset(limit.resetsAt, now)}
+                                  <InterfaceText
+                                    values={{
+                                      value0: limit.computers.join(', '),
+                                      value1: new Date(limit.updatedAt).toLocaleString(),
+                                      value2: formatQuotaReset(limit.resetsAt, now),
+                                    }}
+                                  >
+                                    {'Reported by {value0} · Updated {value1} · {value2}'}
+                                  </InterfaceText>
                                 </Text>
                               </View>
                             )
                           })
                         ) : (
                           <Text style={styles.muted}>
-                            No subscription windows reported. Refresh checks the signed-in host
-                            account without starting a turn.
+                            <InterfaceText>
+                              {
+                                'No subscription windows reported. Refresh checks the signed-in host account without starting a turn.'
+                              }
+                            </InterfaceText>
                           </Text>
                         )}
                       </View>
@@ -485,9 +550,11 @@ export default function UsageScreen() {
             )}
             {view !== 'limits' && (
               <View style={{ gap: 8 }}>
-                <Text style={styles.title}>Usage breakdown</Text>
+                <Text style={styles.title}>
+                  <InterfaceText>{'Usage breakdown'}</InterfaceText>
+                </Text>
                 <Choice
-                  label="Group usage by"
+                  label={uiText('Group usage by')}
                   value={breakdown}
                   items={[
                     { id: 'accounts', name: uiText('Accounts') },
@@ -501,8 +568,8 @@ export default function UsageScreen() {
                 />
                 <Text style={styles.muted}>
                   {breakdown === 'tasks'
-                    ? '10 busiest threads by agent time'
-                    : 'Sorted by agent time'}
+                    ? uiText('10 busiest threads by agent time')
+                    : uiText('Sorted by agent time')}
                 </Text>
               </View>
             )}

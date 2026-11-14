@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, AppState, Pressable, View } from 'react-native'
 import WebView from 'react-native-webview'
@@ -28,22 +29,28 @@ export function TemplateCard({
   template: ArtifactTemplate
   onUse?: (prompt: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   return (
     <View
-      accessibilityLabel={`${template.name} template`}
+      accessibilityLabel={uiText('{value0} template', { value0: template.name })}
       style={{ padding: 14, borderWidth: 1, borderColor: colors.border, borderRadius: 12, gap: 8 }}
     >
       <Text>{template.name}</Text>
-      <Text style={styles.muted}>{template.kind.replaceAll('-', ' ')} template</Text>
+      <Text style={styles.muted}>
+        <InterfaceText values={{ value0: template.kind.replaceAll('-', ' ') }}>
+          {'{value0} template'}
+        </InterfaceText>
+      </Text>
       <Action
-        label={onUse ? 'Use template' : 'Copy template prompt'}
+        label={onUse ? uiText('Use template') : uiText('Copy template prompt')}
         onPress={() => {
           const prompt = artifactTemplatePrompt(template)
           if (onUse) onUse(prompt)
           else
             void Clipboard.setStringAsync(prompt).catch((error: unknown) =>
-              Alert.alert('Could not copy prompt', String(error)),
+              Alert.alert(uiText('Could not copy prompt'), String(error)),
             )
         }}
       />
@@ -66,6 +73,8 @@ export function RichFile({
   previewOnly?: boolean
   onClose?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { read, connected, connection } = useRuntime()
   const { colors, styles } = useTheme()
   const [opened, setOpened] = useState(previewOnly)
@@ -153,7 +162,7 @@ export function RichFile({
   const launch = (download: boolean) => {
     if (url)
       void openAppLink(url + (local && download ? '?download=1' : ''), true).catch(
-        (cause: unknown) => Alert.alert('Could not open file', String(cause)),
+        (cause: unknown) => Alert.alert(uiText('Could not open file'), String(cause)),
       )
   }
   // Only the trusted capability page runs scripts; file HTML/SVG stays sandboxed.
@@ -214,17 +223,19 @@ export function RichFile({
   const status = error ? (
     <View style={{ gap: 8 }}>
       <Text style={styles.muted}>{error}</Text>
-      <Action label="Retry preview" secondary onPress={retry} />
+      <Action label={uiText('Retry preview')} secondary onPress={retry} />
     </View>
   ) : !url ? (
-    <Text style={styles.muted}>Loading preview…</Text>
+    <Text style={styles.muted}>
+      <InterfaceText>{'Loading preview…'}</InterfaceText>
+    </Text>
   ) : null
   return (
     <View style={{ gap: 8 }}>
       {!previewOnly && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Preview ${label}`}
+          accessibilityLabel={uiText('Preview {value0}', { value0: label })}
           onPress={() => setOpened(true)}
           style={{
             flexDirection: 'row',
@@ -240,7 +251,9 @@ export function RichFile({
           <View style={{ flex: 1, minWidth: 0 }}>
             <Text numberOfLines={1}>{label}</Text>
             <Text numberOfLines={1} style={styles.muted}>
-              {markdownFileName(path)} · Preview
+              <InterfaceText values={{ value0: markdownFileName(path) }}>
+                {'{value0} · Preview'}
+              </InterfaceText>
             </Text>
           </View>
         </Pressable>
@@ -258,19 +271,23 @@ export function RichFile({
             {status || preview}
             {local && (
               <Action
-                label="Refresh preview"
+                label={uiText('Refresh preview')}
                 secondary
                 disabled={!connected || !taskId || (!url && !error)}
                 onPress={retry}
               />
             )}
             <Action
-              label="Open preview in browser"
+              label={uiText('Open preview in browser')}
               secondary
               disabled={!url}
               onPress={() => launch(false)}
             />
-            <Action label="Download original" disabled={!url} onPress={() => launch(true)} />
+            <Action
+              label={uiText('Download original')}
+              disabled={!url}
+              onPress={() => launch(true)}
+            />
           </View>
         </Sheet>
       )}

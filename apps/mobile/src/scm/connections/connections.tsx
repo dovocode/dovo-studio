@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   runtimeComputerName,
@@ -57,18 +58,24 @@ const ok = mutableStruct({
   ok: Schema.Boolean,
 })
 export default function SourceControlSettings() {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
 
   const { overviews } = useRuntime()
   return (
     <SettingsPage>
-      <ScreenHeader title="Source control" />
+      <ScreenHeader title={uiText('Source control')} />
       <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
         <Text style={styles.muted}>
-          Accounts and linked projects across your computers. Credentials stay on their host.
+          <InterfaceText>
+            {'Accounts and linked projects across your computers. Credentials stay on their host.'}
+          </InterfaceText>
         </Text>
         {!overviews.length && (
-          <Text style={styles.muted}>Connect a computer to manage source-control accounts.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Connect a computer to manage source-control accounts.'}</InterfaceText>
+          </Text>
         )}
         {overviews.map((entry) => (
           <RuntimeScope key={clientScopeKey(entry.profile.connection)} runtimeId={entry.profile.id}>
@@ -79,7 +86,7 @@ export default function SourceControlSettings() {
             >
               <Text style={styles.text}>
                 {runtimeComputerName(entry)}
-                {entry.connected ? '' : ' · Offline'}
+                {entry.connected ? '' : uiText(' · Offline')}
               </Text>
               <ConnectionsContent />
             </View>
@@ -118,7 +125,7 @@ function ConnectionsContent() {
           ),
           Effect.catch(() =>
             Effect.sync(() => {
-              if (active) setError('Could not load saved accounts.')
+              if (active) setError(uiText('Could not load saved accounts.'))
             }),
           ),
         ),
@@ -141,7 +148,9 @@ function ConnectionsContent() {
                   Effect.catch((_error) =>
                     nativeEffect(() => {
                       if (active)
-                        setError('Accounts loaded, but could not be saved for offline access.')
+                        setError(
+                          uiText('Accounts loaded, but could not be saved for offline access.'),
+                        )
                     }),
                   ),
                 )
@@ -206,27 +215,37 @@ function ConnectionsContent() {
       >
         {!connected && (
           <Text style={styles.muted}>
-            Offline · Showing saved accounts. Reconnect this computer to make changes.
+            <InterfaceText>
+              {'Offline · Showing saved accounts. Reconnect this computer to make changes.'}
+            </InterfaceText>
           </Text>
         )}
         {loading && (
           <Text accessibilityLiveRegion="polite" style={styles.muted}>
-            Loading accounts…
+            <InterfaceText>{'Loading accounts…'}</InterfaceText>
           </Text>
         )}
-        <SettingsGroup title="Automatic GitHub CLI">
+        <SettingsGroup title={uiText('Automatic GitHub CLI')}>
           <GithubConnectionStatus automatic key={`automatic:${revision}`} />
           <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 16 }]}>
-            Projects using automatic detection ({automaticProjects.length})
-            {automaticProjects.length
-              ? ` · ${automaticProjects.map((repo) => repo.name).join(', ')}`
-              : ' · No projects yet'}
+            <InterfaceText
+              values={{
+                value0: automaticProjects.length,
+                value1: automaticProjects.length
+                  ? ` · ${automaticProjects.map((repo) => repo.name).join(', ')}`
+                  : uiText(' · No projects yet'),
+              }}
+            >
+              {'Projects using automatic detection ({value0}){value1}'}
+            </InterfaceText>
           </Text>
         </SettingsGroup>
-        <SettingsGroup title="Saved accounts">
+        <SettingsGroup title={uiText('Saved accounts')}>
           {!loading && !error && !connections.length && (
             <Text style={[styles.muted, { padding: 16 }]}>
-              No saved accounts. Projects can use automatic GitHub CLI detection above.
+              <InterfaceText>
+                {'No saved accounts. Projects can use automatic GitHub CLI detection above.'}
+              </InterfaceText>
             </Text>
           )}
           {connections.map((connection, index) => (
@@ -243,19 +262,32 @@ function ConnectionsContent() {
                 <GithubConnectionStatus connectionId={connection.id} />
               )}
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 16 }]}>
-                Projects using this account ·{' '}
-                {projects
-                  .filter((repo) => repo.forge?.connectionId === connection.id)
-                  .map((repo) => repo.name)
-                  .join(', ') || 'None'}
+                <InterfaceText
+                  values={{
+                    value0:
+                      projects
+                        .filter((repo) => repo.forge?.connectionId === connection.id)
+                        .map((repo) => repo.name)
+                        .join(', ') || uiText('None'),
+                  }}
+                >
+                  {'Projects using this account · {value0}'}
+                </InterfaceText>
               </Text>
             </View>
           ))}
         </SettingsGroup>
-        <Action label="Connect account" disabled={!connected} onPress={() => setEditing('new')} />
+        <Action
+          label={uiText('Connect account')}
+          disabled={!connected}
+          onPress={() => setEditing('new')}
+        />
         <Text style={styles.muted}>
-          GitHub projects already use the runtime’s GitHub CLI login. Add a connection to use a
-          different GitHub user, wrapper selector, host or provider.
+          <InterfaceText>
+            {
+              'GitHub projects already use the runtime’s GitHub CLI login. Add a connection to use a different GitHub user, wrapper selector, host or provider.'
+            }
+          </InterfaceText>
         </Text>
         <SettingsGroup title={uiText('Projects')}>
           {projects.map((repo, index) => (
@@ -266,8 +298,8 @@ function ConnectionsContent() {
                 title={projectDisplayName(repo)}
                 subtitle={
                   repo.forge
-                    ? `${connections.find((connection) => connection.id === repo.forge?.connectionId)?.name ?? 'Account'} · ${repo.forge.repository}`
-                    : 'Automatic GitHub connection'
+                    ? `${connections.find((connection) => connection.id === repo.forge?.connectionId)?.name ?? uiText('Account')} · ${repo.forge.repository}`
+                    : uiText('Automatic GitHub connection')
                 }
                 icon="folder"
                 disabled={!connected}
@@ -287,7 +319,7 @@ function ConnectionsContent() {
         </SettingsGroup>
         <Action
           secondary
-          label="Clone a project"
+          label={uiText('Clone a project')}
           disabled={!connected || !connections.length}
           onPress={() => setProject('new')}
         />
@@ -299,7 +331,7 @@ function ConnectionsContent() {
         {!!error && (
           <Action
             secondary
-            label="Retry accounts"
+            label={uiText('Retry accounts')}
             disabled={!connected}
             onPress={() => setRevision((value) => value + 1)}
           />
@@ -343,6 +375,8 @@ function ConnectionForm({
   onDone: () => void
   onRemove?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -427,9 +461,13 @@ function ConnectionForm({
     )
   }
   return (
-    <Sheet title={initial ? 'Edit account' : 'Connect account'} onClose={onClose} busy={busy}>
+    <Sheet
+      title={initial ? uiText('Edit account') : uiText('Connect account')}
+      onClose={onClose}
+      busy={busy}
+    >
       <Choice
-        label="Provider"
+        label={uiText('Provider')}
         value={provider}
         onChange={(value) => {
           const next = decode(forgeProviderSchema, value)
@@ -448,9 +486,9 @@ function ConnectionForm({
           name: forgeLabels[id],
         }))}
       />
-      <Field label="Account name" value={name} onChangeText={setName} editable={!busy} />
+      <Field label={uiText('Account name')} value={name} onChangeText={setName} editable={!busy} />
       <Field
-        label="Server URL"
+        label={uiText('Server URL')}
         value={baseUrl}
         onChangeText={setBaseUrl}
         editable={!busy && provider !== 'bitbucket'}
@@ -459,7 +497,7 @@ function ConnectionForm({
       />
       {provider === 'github' && (
         <Choice
-          label="Authentication"
+          label={uiText('Authentication')}
           value={credential}
           onChange={(next) => {
             if (
@@ -474,30 +512,36 @@ function ConnectionForm({
           }}
           disabled={busy}
           items={[
-            { id: 'gh', name: 'GitHub CLI account' },
-            { id: 'gh-wrapper', name: 'GitHub CLI wrapper · environment selector' },
-            { id: 'environment', name: 'Token from runtime environment' },
-            { id: 'token', name: 'API token' },
+            { id: 'gh', name: uiText('GitHub CLI account') },
+            { id: 'gh-wrapper', name: uiText('GitHub CLI wrapper · environment selector') },
+            { id: 'environment', name: uiText('Token from runtime environment') },
+            { id: 'token', name: uiText('API token') },
           ]}
         />
       )}
       {provider === 'github' && (credential === 'gh' || credential === 'gh-wrapper') ? (
         <Text style={styles.muted}>
-          Run gh auth login --hostname{' '}
-          {(() => {
-            try {
-              return new URL(baseUrl).hostname
-            } catch {
-              return 'your-github-host'
+          <InterfaceText
+            values={{
+              value0: (() => {
+                try {
+                  return new URL(baseUrl).hostname
+                } catch {
+                  return 'your-github-host'
+                }
+              })(),
+            }}
+          >
+            {
+              'Run gh auth login --hostname {value0} on this runtime. GitHub CLI stores the credential and supplies repository access.'
             }
-          })()}{' '}
-          on this runtime. GitHub CLI stores the credential and supplies repository access.
+          </InterfaceText>
         </Text>
       ) : (
         <>
           {provider === 'bitbucket' && credential !== 'cli' && (
             <Field
-              label="Atlassian account email"
+              label={uiText('Atlassian account email')}
               value={username}
               onChangeText={setUsername}
               editable={!busy}
@@ -507,7 +551,7 @@ function ConnectionForm({
           )}
           {provider !== 'github' && (
             <Choice
-              label="Credential"
+              label={uiText('Credential')}
               value={credential}
               onChange={(value) => {
                 const next =
@@ -528,17 +572,17 @@ function ConnectionForm({
               items={[
                 ...(['gitlab'].includes(provider)
                   ? []
-                  : [{ id: 'cli', name: 'Signed-in CLI account' }]),
+                  : [{ id: 'cli', name: uiText('Signed-in CLI account') }]),
                 {
                   id: 'token',
-                  name: 'API token on runtime',
+                  name: uiText('API token on runtime'),
                 },
                 {
                   id: 'environment',
-                  name: 'Runtime environment variable',
+                  name: uiText('Runtime environment variable'),
                 },
                 ...(provider === 'bitbucket'
-                  ? [{ id: 'reference', name: 'Secret manager reference' }]
+                  ? [{ id: 'reference', name: uiText('Secret manager reference') }]
                   : []),
               ]}
             />
@@ -547,31 +591,38 @@ function ConnectionForm({
             <>
               {['gitea', 'forgejo'].includes(provider) && (
                 <Choice
-                  label="CLI"
+                  label={uiText('CLI')}
                   value={cliTool}
                   onChange={(v) => setCliTool(v === 'fj' ? 'fj' : 'tea')}
                   disabled={busy}
                   items={[
                     {
                       id: 'fj',
-                      name: 'Forgejo CLI (fj)',
+                      name: uiText('Forgejo CLI (fj)'),
                     },
                     {
                       id: 'tea',
-                      name: 'Gitea CLI (tea)',
+                      name: uiText('Gitea CLI (tea)'),
                     },
                   ]}
                 />
               )}
 
               <Text style={styles.muted}>
-                Uses{' '}
-                {provider === 'bitbucket'
-                  ? 'gildas/bitbucket-cli (bb)'
-                  : provider === 'azure-devops'
-                    ? 'az login'
-                    : cliTool}{' '}
-                on this runtime. Sign in there first. Git uses its own credential helper for fj/tea.
+                <InterfaceText
+                  values={{
+                    value0:
+                      provider === 'bitbucket'
+                        ? uiText('gildas/bitbucket-cli (bb)')
+                        : provider === 'azure-devops'
+                          ? uiText('az login')
+                          : cliTool,
+                  }}
+                >
+                  {
+                    'Uses {value0} on this runtime. Sign in there first. Git uses its own credential helper for fj/tea.'
+                  }
+                </InterfaceText>
               </Text>
             </>
           ) : credential === 'reference' ? (
@@ -581,7 +632,7 @@ function ConnectionForm({
                 {retainedSecretName && (
                   <Action
                     secondary
-                    label={`Keep saved ${retainedSecretName} reference`}
+                    label={uiText('Keep saved {value0} reference', { value0: retainedSecretName })}
                     disabled={busy}
                     onPress={() => setSecret(undefined)}
                   />
@@ -591,12 +642,15 @@ function ConnectionForm({
               <>
                 <Text style={styles.muted}>
                   {retainedSecretName
-                    ? `${retainedSecretName} reference saved on this runtime. It is not shown on other devices.`
-                    : 'Enter the secret manager reference for this account.'}
+                    ? uiText(
+                        '{value0} reference saved on this runtime. It is not shown on other devices.',
+                        { value0: retainedSecretName },
+                      )
+                    : uiText('Enter the secret manager reference for this account.')}
                 </Text>
                 <Action
                   secondary
-                  label={retainedSecretName ? 'Replace reference' : 'Add reference'}
+                  label={retainedSecretName ? uiText('Replace reference') : uiText('Add reference')}
                   disabled={busy}
                   onPress={() => setSecret(defaultSecretReference('onepassword'))}
                 />
@@ -604,16 +658,18 @@ function ConnectionForm({
             )
           ) : credential === 'environment' ? (
             <Field
-              label="Token environment variable"
+              label={uiText('Token environment variable')}
               value={tokenEnv}
               onChangeText={setTokenEnv}
               editable={!busy}
-              placeholder="DOVO_FORGE_TOKEN"
+              placeholder={'DOVO_FORGE_TOKEN'}
               autoCorrect={false}
             />
           ) : (
             <Field
-              label={initial ? 'Replace API token (leave blank to keep)' : 'API token'}
+              label={
+                initial ? uiText('Replace API token (leave blank to keep)') : uiText('API token')
+              }
               value={token}
               onChangeText={setToken}
               editable={!busy}
@@ -624,13 +680,23 @@ function ConnectionForm({
           {credential !== 'cli' && (
             <Text style={styles.muted}>
               {provider === 'bitbucket'
-                ? 'Use a scoped Atlassian API token with repository, pull request and pipeline access for the features you use.'
+                ? uiText(
+                    'Use a scoped Atlassian API token with repository, pull request and pipeline access for the features you use.',
+                  )
                 : provider === 'azure-devops'
-                  ? 'Use an Azure DevOps PAT with Code, Work Items and Build permissions for the features you use.'
-                  : 'Use a personal access token with access to the repositories, issues and pipeline actions you use. Repository-limited tokens can be linked by entering the repository directly.'}{' '}
+                  ? uiText(
+                      'Use an Azure DevOps PAT with Code, Work Items and Build permissions for the features you use.',
+                    )
+                  : uiText(
+                      'Use a personal access token with access to the repositories, issues and pipeline actions you use. Repository-limited tokens can be linked by entering the repository directly.',
+                    )}{' '}
               {credential === 'reference'
-                ? 'The runtime reads the token with its own secret manager login and never returns the token or reference to clients. A rejected token or an explicit refresh reads the reference again.'
-                : 'Tokens are stored in the runtime’s private database, outside workspace sync.'}
+                ? uiText(
+                    'The runtime reads the token with its own secret manager login and never returns the token or reference to clients. A rejected token or an explicit refresh reads the reference again.',
+                  )
+                : uiText(
+                    'Tokens are stored in the runtime’s private database, outside workspace sync.',
+                  )}
             </Text>
           )}
         </>
@@ -638,7 +704,7 @@ function ConnectionForm({
       {credential === 'gh-wrapper' && (
         <>
           <Field
-            label="Wrapper selectors · NAME=value per line"
+            label={uiText('Wrapper selectors · NAME=value per line')}
             value={cliEnvironment}
             onChangeText={setCliEnvironment}
             editable={!busy}
@@ -646,8 +712,11 @@ function ConnectionForm({
             autoCorrect={false}
           />
           <Text style={styles.muted}>
-            Configure the gh wrapper in Runtime commands. These selectors are non-secret settings
-            shared with paired clients.
+            <InterfaceText>
+              {
+                'Configure the gh wrapper in Runtime commands. These selectors are non-secret settings shared with paired clients.'
+              }
+            </InterfaceText>
           </Text>
         </>
       )}
@@ -669,18 +738,19 @@ function ConnectionForm({
         importantForAccessibility={error || busy ? 'auto' : 'no-hide-descendants'}
         style={[error ? styles.error : styles.muted, { opacity: error || busy ? 1 : 0 }]}
       >
-        {error || 'Saving account…'}
+        {error || uiText('Saving account…')}
       </Text>
       <Action
         wide
-        label="Save account"
+        label={uiText('Save account')}
         disabled={busy || !connected}
         onPress={() => void submit()}
       />
       {onRemove && (
         <Action
+          destructive={confirmRemove ? false : true}
           secondary
-          label={confirmRemove ? 'Confirm remove account' : 'Remove account'}
+          label={confirmRemove ? uiText('Confirm remove account') : uiText('Remove account')}
           disabled={busy || !connected}
           onPress={() => (confirmRemove ? onRemove() : setConfirmRemove(true))}
         />
@@ -699,6 +769,8 @@ function ProjectConnection({
   onClose: () => void
   onDone: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, connected, readEffect, callEffect } = useRuntime()
@@ -822,7 +894,7 @@ function ProjectConnection({
   }
   return (
     <Sheet
-      title={browsing ? 'Choose folder' : project ? project.name : 'Clone project'}
+      title={browsing ? uiText('Choose folder') : project ? project.name : uiText('Clone project')}
       scrollable={!browsing}
       onClose={onClose}
       busy={busy}
@@ -839,7 +911,7 @@ function ProjectConnection({
       ) : (
         <>
           <Choice
-            label="Account"
+            label={uiText('Account')}
             value={connectionId}
             onChange={(id) => {
               setConnection(id)
@@ -855,7 +927,7 @@ function ProjectConnection({
             }))}
           />
           <Field
-            label="Repository"
+            label={uiText('Repository')}
             value={repository}
             onChangeText={setRepository}
             editable={!busy}
@@ -863,24 +935,24 @@ function ProjectConnection({
             placeholder={
               connections.find((connection) => connection.id === connectionId)?.provider ===
               'azure-devops'
-                ? 'project/repository'
+                ? uiText('project/repository')
                 : ['gitlab'].includes(
                       connections.find((connection) => connection.id === connectionId)?.provider ??
                         '',
                     )
-                  ? 'group/subgroup/project'
-                  : 'owner/repository'
+                  ? uiText('group/subgroup/project')
+                  : uiText('owner/repository')
             }
           />
           <Action
             secondary
-            label="Browse repositories"
+            label={uiText('Browse repositories')}
             disabled={busy || !connected || !connectionId}
             onPress={() => void browse()}
           />
           {!!choices.length && (
             <Choice
-              label="Accessible repositories"
+              label={uiText('Accessible repositories')}
               value={repository}
               onChange={(value) => {
                 setRepository(value)
@@ -893,7 +965,7 @@ function ProjectConnection({
           {hasMore && (
             <Action
               secondary
-              label="Load more repositories"
+              label={uiText('Load more repositories')}
               disabled={busy}
               onPress={() => void browse(page + 1)}
             />
@@ -901,13 +973,13 @@ function ProjectConnection({
           {!project && (
             <>
               <Field
-                label="Project name (optional)"
+                label={uiText('Project name (optional)')}
                 value={name}
                 onChangeText={setName}
                 editable={!busy}
               />
               <Field
-                label="Clone parent folder on runtime"
+                label={uiText('Clone parent folder on runtime')}
                 value={directory}
                 autoCorrect={false}
                 onChangeText={setDirectory}
@@ -915,7 +987,7 @@ function ProjectConnection({
               />
               <Action
                 secondary
-                label="Browse folders"
+                label={uiText('Browse folders')}
                 disabled={busy || !connected}
                 onPress={() => setBrowsing(true)}
               />
@@ -927,7 +999,13 @@ function ProjectConnection({
             </Text>
           )}
           <Action
-            label={busy ? 'Working…' : project ? 'Connect project' : 'Clone project'}
+            label={
+              busy
+                ? uiText('Working…')
+                : project
+                  ? uiText('Connect project')
+                  : uiText('Clone project')
+            }
             disabled={
               busy ||
               !connected ||
@@ -940,7 +1018,7 @@ function ProjectConnection({
           {project?.forge && (
             <Action
               secondary
-              label="Use automatic GitHub connection"
+              label={uiText('Use automatic GitHub connection')}
               disabled={busy || !connected}
               onPress={() => void submit(true)}
             />

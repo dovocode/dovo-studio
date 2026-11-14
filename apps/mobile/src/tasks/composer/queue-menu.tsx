@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState, type ComponentRef } from 'react'
 import { Pressable, View } from 'react-native'
 import { ActionMenu, type MenuAction, type MenuAnchor } from '../../ui/controls/action-menu'
@@ -8,6 +9,8 @@ export type QueueMenuProps = { label: string; actions: MenuAction[] }
 
 /** Keep queue actions anchored to their row, outside the bounded queue's clipping area. */
 export function QueueMenu({ label, actions }: QueueMenuProps) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const trigger = useRef<ComponentRef<typeof View>>(null)
   const [anchor, setAnchor] = useState<MenuAnchor | null>(null)
@@ -31,7 +34,7 @@ export function QueueMenu({ label, actions }: QueueMenuProps) {
         anchor={anchor}
         actions={actions}
         onClose={() => setAnchor(null)}
-        dismissLabel="Dismiss queued message actions"
+        dismissLabel={uiText('Dismiss queued message actions')}
       />
     </View>
   )

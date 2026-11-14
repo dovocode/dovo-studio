@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { CredentialEditor } from './credential-editor'
@@ -50,6 +51,8 @@ export function ResourceEditor({
   onClose: () => void
   onSave: (selection: ResourceSelection) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
@@ -105,7 +108,7 @@ export function ResourceEditor({
   const value = editing.kind === 'skill' ? skill : server
   return (
     <Sheet
-      title={editing.kind === 'mcp' ? 'MCP server' : 'Skill'}
+      title={editing.kind === 'mcp' ? uiText('MCP server') : uiText('Skill')}
       busy={busy}
       validationAttempt={validationAttempt}
       onClose={onClose}
@@ -114,7 +117,9 @@ export function ResourceEditor({
       {value.sourceUrl && (
         <Action
           secondary
-          label={`Source · ${value.sourceRevision?.slice(0, 12) ?? 'Catalog'}`}
+          label={uiText('Source · {value0}', {
+            value0: value.sourceRevision?.slice(0, 12) ?? 'Catalog',
+          })}
           onPress={() => act(() => openLink(value.sourceUrl!))}
         />
       )}
@@ -126,7 +131,7 @@ export function ResourceEditor({
             </Text>
           ))}
           <Field
-            label="Server name"
+            label={uiText('Server name')}
             error={fieldError('name')}
             value={server.name}
             editable={!busy}
@@ -138,17 +143,17 @@ export function ResourceEditor({
             }
           />
           <Choice
-            label="Transport"
+            label={uiText('Transport')}
             value={server.transport}
             disabled={busy}
             items={[
               {
                 id: 'stdio',
-                name: 'Local command (stdio)',
+                name: uiText('Local command (stdio)'),
               },
               {
                 id: 'http',
-                name: 'Streamable HTTP',
+                name: uiText('Streamable HTTP'),
               },
             ]}
             onChange={(transport) =>
@@ -162,7 +167,7 @@ export function ResourceEditor({
           {server.transport === 'stdio' ? (
             <>
               <Field
-                label="Executable"
+                label={uiText('Executable')}
                 error={fieldError('command')}
                 value={server.command}
                 editable={!busy}
@@ -174,14 +179,14 @@ export function ResourceEditor({
                 }
               />
               <Field
-                label="Arguments (one per line)"
+                label={uiText('Arguments (one per line)')}
                 multiline
                 value={args}
                 editable={!busy}
                 onChangeText={setArgs}
               />
               <Field
-                label="Environment bindings (JSON)"
+                label={uiText('Environment bindings (JSON)')}
                 multiline
                 value={env}
                 editable={!busy}
@@ -192,7 +197,7 @@ export function ResourceEditor({
           ) : (
             <>
               <Field
-                label="Server URL"
+                label={uiText('Server URL')}
                 error={fieldError('url')}
                 value={server.url}
                 editable={!busy}
@@ -204,7 +209,7 @@ export function ResourceEditor({
                 }
               />
               <Field
-                label="Bearer token environment variable"
+                label={uiText('Bearer token environment variable')}
                 error={fieldError('bearerTokenEnv')}
                 value={server.bearerTokenEnv}
                 editable={!busy}
@@ -216,17 +221,17 @@ export function ResourceEditor({
                 }
               />
               <Choice
-                label="MCP-over-ACP (MCP 2026-07-28 servers only)"
+                label={uiText('MCP-over-ACP (MCP 2026-07-28 servers only)')}
                 value={server.acpTransport ? 'true' : 'false'}
                 disabled={busy}
                 items={[
-                  { id: 'false', name: 'Use HTTP' },
-                  { id: 'true', name: 'Prefer when agent supports it' },
+                  { id: 'false', name: uiText('Use HTTP') },
+                  { id: 'true', name: uiText('Prefer when agent supports it') },
                 ]}
                 onChange={(value) => setServer({ ...server, acpTransport: value === 'true' })}
               />
               <Field
-                label="Header bindings (JSON)"
+                label={uiText('Header bindings (JSON)')}
                 multiline
                 value={headers}
                 editable={!busy}
@@ -236,15 +241,21 @@ export function ResourceEditor({
             </>
           )}
           <Text style={styles.muted}>
-            Bindings map names to environment variable names on the runtime host, for example{' '}
-            {JSON.stringify({
-              API_KEY: 'MY_API_KEY',
-            })}
-            . Testing starts the server and lists its tools.
+            <InterfaceText
+              values={{
+                value0: JSON.stringify({
+                  API_KEY: 'MY_API_KEY',
+                }),
+              }}
+            >
+              {
+                'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.'
+              }
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Test connection"
+            label={uiText('Test connection')}
             disabled={busy || !connected}
             onPress={() =>
               act(() =>
@@ -264,14 +275,14 @@ export function ResourceEditor({
       ) : (
         <>
           <Field
-            label="SKILL.md path on runtime"
+            label={uiText('SKILL.md path on runtime')}
             value={path}
             editable={!busy}
             onChangeText={setPath}
           />
           <Action
             secondary
-            label="Import SKILL.md"
+            label={uiText('Import SKILL.md')}
             disabled={busy || !connected || !path.trim()}
             onPress={() =>
               act(() =>
@@ -290,7 +301,7 @@ export function ResourceEditor({
             }
           />
           <Field
-            label="Skill name"
+            label={uiText('Skill name')}
             error={fieldError('name')}
             value={skill.name}
             editable={!busy}
@@ -302,7 +313,7 @@ export function ResourceEditor({
             }
           />
           <Field
-            label="When to use"
+            label={uiText('When to use')}
             error={fieldError('description')}
             value={skill.description}
             multiline
@@ -315,7 +326,7 @@ export function ResourceEditor({
             }
           />
           <Field
-            label="Skill instructions"
+            label={uiText('Skill instructions')}
             error={fieldError('content')}
             value={skill.content}
             multiline
@@ -337,11 +348,13 @@ export function ResourceEditor({
           {skill.sourcePath && (
             <View style={{ gap: 8 }}>
               <Text selectable style={styles.muted}>
-                Supporting files: {skill.sourcePath}
+                <InterfaceText values={{ value0: skill.sourcePath }}>
+                  {'Supporting files: {value0}'}
+                </InterfaceText>
               </Text>
               <Action
                 secondary
-                label="Use instructions only"
+                label={uiText('Use instructions only')}
                 disabled={busy}
                 onPress={() =>
                   setSkill({
@@ -354,8 +367,11 @@ export function ResourceEditor({
                 }
               />
               <Text style={styles.muted}>
-                Supporting files stay on this environment. This copy will contain only the
-                instructions.
+                <InterfaceText>
+                  {
+                    'Supporting files stay on this environment. This copy will contain only the instructions.'
+                  }
+                </InterfaceText>
               </Text>
             </View>
           )}
@@ -369,7 +385,7 @@ export function ResourceEditor({
       )}
       <Action
         wide
-        label={editing.kind === 'mcp' ? 'Save server' : 'Save skill'}
+        label={editing.kind === 'mcp' ? uiText('Save server') : uiText('Save skill')}
         disabled={busy || !connected}
         onPress={() =>
           act(() =>

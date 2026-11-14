@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAppActive, useForegroundInterval } from '../../../runtime/state/app-active'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { ActivityIndicator, Animated, Easing, Platform, StyleSheet, View } from 'react-native'
@@ -22,6 +23,8 @@ export function PreparationProgress({
   retrying?: boolean
   retryError?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, reduceMotion: prefersReducedMotion } = useTheme()
   const local = useMemo(() => preparationStyles(colors), [colors])
   const { failed } = preparation
@@ -101,7 +104,7 @@ export function PreparationProgress({
     <View
       accessible
       accessibilityRole={failed ? undefined : 'progressbar'}
-      accessibilityLabel={`${failed ? 'Thread startup stopped' : 'Starting thread'}. ${active ? active.label : ''}`}
+      accessibilityLabel={`${failed ? uiText('Thread startup stopped') : uiText('Starting thread')}. ${active ? active.label : ''}`}
       accessibilityValue={
         failed ? undefined : { min: 0, max: 100, now: Math.round(preparation.progress * 100) }
       }
@@ -109,7 +112,9 @@ export function PreparationProgress({
     >
       <View style={local.header}>
         <Icon name="changes" size={16} color={colors.muted} />
-        <Text style={local.title}>{failed ? 'Thread startup stopped' : 'Starting thread'}</Text>
+        <Text style={local.title}>
+          {failed ? uiText('Thread startup stopped') : uiText('Starting thread')}
+        </Text>
         {!!elapsed && <Text style={local.elapsed}>{elapsed}</Text>}
       </View>
       {activity && activityIcon && (
@@ -159,7 +164,9 @@ export function PreparationProgress({
           </View>
           <View style={local.stepText}>
             <Text style={local.activityStep}>
-              Step {stepIndex + 1} of {preparation.steps.length}
+              <InterfaceText values={{ value0: stepIndex + 1, value1: preparation.steps.length }}>
+                {'Step {value0} of {value1}'}
+              </InterfaceText>
             </Text>
             <Text style={local.activityTitle}>{failed ? activity.stopped : activity.title}</Text>
             <Text style={local.activityDescription}>{activity.description}</Text>
@@ -218,12 +225,12 @@ export function PreparationProgress({
           {onRetry && (
             <>
               <Action
-                label={retrying ? 'Retrying…' : 'Retry'}
+                label={retrying ? uiText('Retrying…') : uiText('Retry')}
                 disabled={retrying}
                 onPress={onRetry}
               />
               <Text style={local.hint}>
-                {retryError || 'Your message stays queued until the run starts.'}
+                {retryError || uiText('Your message stays queued until the run starts.')}
               </Text>
             </>
           )}

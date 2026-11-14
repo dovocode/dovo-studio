@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import {
   agentHookSchema,
@@ -34,6 +35,8 @@ export function HookSettings({
   origin: (name: string) => Parameters<typeof SettingSource>[0]['source']
   save: (update: (value: ResourceSettings) => ResourceSettings) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const { act, busy, error, fieldError, validationAttempt } = useAction()
   const [editing, setEditing] = useApplicationState<{
@@ -47,14 +50,18 @@ export function HookSettings({
     agentHookEventChoices.find((entry) => entry.id === hook.event)?.name
   return (
     <View style={styles.card}>
-      <Text style={styles.title}>Lifecycle hooks</Text>
+      <Text style={styles.title}>
+        <InterfaceText>{'Lifecycle hooks'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
-        One configuration for every harness. Commands receive JSON event context on stdin. Tool
-        hooks observe execution; permission-request hooks can deny approval. Failed after-turn
-        checks allow two repair turns.
+        <InterfaceText>
+          {
+            'One configuration for every harness. Commands receive JSON event context on stdin. Tool hooks observe execution; permission-request hooks can deny approval. Failed after-turn checks allow two repair turns.'
+          }
+        </InterfaceText>
       </Text>
       <Action
-        label="Add hook"
+        label={uiText('Add hook')}
         disabled={blocked}
         onPress={() =>
           setEditing({
@@ -68,13 +75,17 @@ export function HookSettings({
           })
         }
       />
-      {!hooks.length && !inherited.length && <Text style={styles.muted}>No hooks yet.</Text>}
+      {!hooks.length && !inherited.length && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'No hooks yet.'}</InterfaceText>
+        </Text>
+      )}
       {hooks.map((hook) => (
         <View key={hook.name} style={{ gap: 8 }}>
           <View style={styles.row}>
             <Text style={[styles.text, { flex: 1 }]}>{hook.name}</Text>
             <Switch
-              accessibilityLabel={`Enable hook ${hook.name}`}
+              accessibilityLabel={uiText('Enable hook {value0}', { value0: hook.name })}
               value={hook.enabled}
               disabled={blocked}
               onValueChange={(enabled) =>
@@ -94,13 +105,16 @@ export function HookSettings({
           <View style={styles.row}>
             <Action
               secondary
-              label={`Edit hook ${hook.name}`}
+              label={uiText('Edit hook {value0}', { value0: hook.name })}
               disabled={blocked}
               onPress={() => setEditing({ value: hook, previousName: hook.name })}
             />
             <Action
               secondary
-              label={`${inherited.some((item) => item.name === hook.name) ? 'Reset' : 'Remove'} hook ${hook.name}`}
+              label={uiText('{value0} hook {value1}', {
+                value0: inherited.some((item) => item.name === hook.name) ? 'Reset' : 'Remove',
+                value1: hook.name,
+              })}
               disabled={blocked}
               onPress={() =>
                 act(() => change((items) => items.filter((item) => item.name !== hook.name)))
@@ -119,7 +133,10 @@ export function HookSettings({
             </Text>
             <Action
               secondary
-              label={`Override hook ${hook.name}${hook.enabled ? '' : ' · Disabled'}`}
+              label={uiText('Override hook {value0}{value1}', {
+                value0: hook.name,
+                value1: hook.enabled ? '' : ' · Disabled',
+              })}
               disabled={blocked}
               onPress={() => act(() => change((items) => [...items, hook]))}
             />
@@ -132,20 +149,24 @@ export function HookSettings({
       )}
       {editing && (
         <Sheet
-          title={editing.previousName ? `Edit hook · ${editing.previousName}` : 'New hook'}
+          title={
+            editing.previousName
+              ? uiText('Edit hook · {value0}', { value0: editing.previousName })
+              : uiText('New hook')
+          }
           busy={busy}
           validationAttempt={validationAttempt}
           onClose={() => setEditing(null)}
         >
           <Field
-            label="Hook name"
+            label={uiText('Hook name')}
             value={editing.value.name}
             error={fieldError('name')}
             editable={!blocked}
             onChangeText={(name) => setEditing({ ...editing, value: { ...editing.value, name } })}
           />
           <Choice
-            label="When"
+            label={uiText('When')}
             value={editing.value.event}
             items={agentHookEventChoices}
             disabled={blocked}
@@ -155,7 +176,7 @@ export function HookSettings({
             }}
           />
           <Field
-            label="Matcher (optional)"
+            label={uiText('Matcher (optional)')}
             value={editing.value.matcher ?? ''}
             error={fieldError('matcher')}
             editable={!blocked}
@@ -164,11 +185,14 @@ export function HookSettings({
             }
           />
           <Text style={styles.muted}>
-            Regular expression matching tool category, tool name, subagent name or approval title.
-            Empty or * matches all.
+            <InterfaceText>
+              {
+                'Regular expression matching tool category, tool name, subagent name or approval title. Empty or * matches all.'
+              }
+            </InterfaceText>
           </Text>
           <Field
-            label="Hook command"
+            label={uiText('Hook command')}
             value={editing.value.command}
             error={fieldError('command')}
             editable={!blocked}
@@ -178,7 +202,7 @@ export function HookSettings({
             }
           />
           <Field
-            label="Timeout (seconds, 1–600)"
+            label={uiText('Timeout (seconds, 1–600)')}
             value={String(editing.value.timeoutSeconds)}
             error={fieldError('timeoutSeconds')}
             keyboardType="number-pad"
@@ -193,7 +217,7 @@ export function HookSettings({
             </Text>
           )}
           <Action
-            label="Save hook"
+            label={uiText('Save hook')}
             disabled={blocked}
             onPress={() =>
               act(async () => {

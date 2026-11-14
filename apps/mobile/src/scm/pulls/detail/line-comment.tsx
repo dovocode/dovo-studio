@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow, nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -37,6 +38,8 @@ export function LineComment({
   onClose: () => void
   onDone: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const detail = useRef(initialDetail).current
   const { styles } = useTheme()
 
@@ -121,28 +124,28 @@ export function LineComment({
     )
   }
   return (
-    <Sheet ref={sheet} title="Comment on code" onClose={onClose} busy={busy}>
+    <Sheet ref={sheet} title={uiText('Comment on code')} onClose={onClose} busy={busy}>
       <Text selectable style={styles.muted}>
         {path}
       </Text>
       <Choice
-        label="Version"
+        label={uiText('Version')}
         value={side}
         onChange={setSide}
         disabled={busy}
         items={[
           {
             id: 'additions',
-            name: 'New version',
+            name: uiText('New version'),
           },
           {
             id: 'deletions',
-            name: 'Old version',
+            name: uiText('Old version'),
           },
         ]}
       />
       <Field
-        label="Line in the diff"
+        label={uiText('Line in the diff')}
         value={line}
         onChangeText={setLine}
         keyboardType="number-pad"
@@ -150,7 +153,7 @@ export function LineComment({
       />
       {detail.capabilities?.inlineRange && (
         <Field
-          label="End line (optional)"
+          label={uiText('End line (optional)')}
           value={end}
           onChangeText={setEnd}
           keyboardType="number-pad"
@@ -158,7 +161,7 @@ export function LineComment({
         />
       )}
       <Field
-        label="Comment"
+        label={uiText('Comment')}
         value={body}
         onChangeText={setBody}
         multiline
@@ -174,7 +177,7 @@ export function LineComment({
         </Text>
       )}
       <Action
-        label={busy ? 'Posting…' : 'Post comment'}
+        label={busy ? uiText('Posting…') : uiText('Post comment')}
         disabled={busy || !connected || !!detail.stale || !!detail.refreshError}
         onPress={() => void submit()}
       />

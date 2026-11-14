@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { designTokens } from '@dovo/design'
 import { NativeIcon, NativeIconLabel } from './native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -22,12 +23,15 @@ import type { ChoiceProps } from './choice'
 
 /** Short choices stay anchored to their control instead of opening another sheet. */
 export function ChoiceMenu(props: ChoiceProps) {
+  const uiText = useInterfaceText()
   const { colors, mode: appearanceMode } = useTheme()
 
   const [width, setWidth] = useApplicationState<number | undefined>(undefined)
   const selectedIcon = props.items.find((item) => item.id === props.value)?.icon
   const selected =
-    props.items.find((item) => item.id === props.value)?.name ?? props.selectedLabel ?? 'Choose…'
+    props.items.find((item) => item.id === props.value)?.name ??
+    props.selectedLabel ??
+    uiText('Choose…')
   return (
     <View
       onLayout={({ nativeEvent }) => setWidth(Math.floor(nativeEvent.layout.width))}

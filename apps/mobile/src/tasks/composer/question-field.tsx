@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Keyboard, Pressable, View } from 'react-native'
 import { Text } from '../../ui/content/text'
 import { toggleQuestionChoice, type AgentQuestion, type QuestionDraft } from '@dovo/protocol'
@@ -14,18 +15,24 @@ export function QuestionField({
   onChange: (value: QuestionDraft) => void
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   return (
     <View style={{ gap: 6 }}>
       <Text style={[styles.text, { color: colors.muted, fontWeight: '500', fontSize: 12 }]}>
         {q.header}
-        {q.required ? '' : ' (optional)'}
+        {q.required ? '' : uiText(' (optional)')}
       </Text>
       <Text style={[styles.text, { fontSize: 14, lineHeight: 20, fontWeight: '600' }]}>
         {q.question}
       </Text>
-      {q.multiple && <Text style={[styles.muted, { fontSize: 11 }]}>Select all that apply</Text>}
+      {q.multiple && (
+        <Text style={[styles.muted, { fontSize: 11 }]}>
+          <InterfaceText>{'Select all that apply'}</InterfaceText>
+        </Text>
+      )}
       {q.options.map((option) => (
         <Pressable
           key={option.value}
@@ -83,9 +90,11 @@ export function QuestionField({
       ))}
       {q.custom && (
         <Field
-          label={`Answer: ${q.header || q.question}`}
+          label={uiText('Answer: {value0}', { value0: q.header || q.question })}
           hideLabel
-          placeholder={q.options.length ? 'Or write your own answer…' : 'Your answer…'}
+          placeholder={
+            q.options.length ? uiText('Or write your own answer…') : uiText('Your answer…')
+          }
           secureTextEntry={q.secret}
           keyboardType={q.inputType === 'number' ? 'numbers-and-punctuation' : 'default'}
           autoCorrect={false}

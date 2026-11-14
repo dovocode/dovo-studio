@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { requestMessageReveal } from '../tasks/conversation/message-reveal'
 import { BotMemoryLearning } from './bot-memory-learning'
@@ -70,12 +71,17 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
   return (
     <Sheet title={uiText('Memory')} onClose={onClose} busy={busy}>
       <Text style={styles.muted}>
-        Dovo memory tools keep these notes separate from other threads and child agents. A
-        full-access agent on this computer can read files.
+        <InterfaceText>
+          {
+            'Dovo memory tools keep these notes separate from other threads and child agents. A full-access agent on this computer can read files.'
+          }
+        </InterfaceText>
       </Text>
       {!connected && (
         <Text accessibilityRole="alert">
-          Reconnect this computer or update its runtime to manage Bot memory.
+          <InterfaceText>
+            {'Reconnect this computer or update its runtime to manage Bot memory.'}
+          </InterfaceText>
         </Text>
       )}
       {!!error && (
@@ -83,43 +89,53 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
           </Text>
-          <Action label="Retry memory" onPress={() => setReload((value) => value + 1)} />
+          <Action label={uiText('Retry memory')} onPress={() => setReload((value) => value + 1)} />
         </>
       )}
       <Action
         secondary
-        label={learning ? 'Hide background learning' : 'Background learning'}
+        label={learning ? uiText('Hide background learning') : uiText('Background learning')}
         onPress={() => setLearning(!learning)}
       />
       {learning && (
         <BotMemoryLearning taskId={taskId} onChanged={() => setReload((value) => value + 1)} />
       )}
       <Text style={styles.muted}>
-        {total} {total === 1 ? 'saved note' : 'saved notes'}
+        {total} {total === 1 ? uiText('saved note') : uiText('saved notes')}
       </Text>
       <Field
-        label="Search loaded notes"
-        placeholder="Find a name or phrase…"
+        label={uiText('Search loaded notes')}
+        placeholder={uiText('Find a name or phrase…')}
         value={query}
         onChangeText={setQuery}
       />
       {query.trim() && entries.length < total ? (
         <Text style={styles.muted}>
-          Search covers {entries.length} loaded notes. Load more to search the rest.
+          <InterfaceText values={{ value0: entries.length }}>
+            {'Search covers {value0} loaded notes. Load more to search the rest.'}
+          </InterfaceText>
         </Text>
       ) : null}
       <Action
-        label="Add memory note"
+        label={uiText('Add memory note')}
         disabled={!connected || busy}
         onPress={() => setSelected(null)}
       />
-      {!entries.length && !busy && !error && <Text style={styles.muted}>No memory notes yet.</Text>}
+      {!entries.length && !busy && !error && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'No memory notes yet.'}</InterfaceText>
+        </Text>
+      )}
       {!!query.trim() &&
         !entries.some((entry) =>
           `${entry.key} ${entry.content}`
             .toLocaleLowerCase()
             .includes(query.trim().toLocaleLowerCase()),
-        ) && <Text style={styles.muted}>No matching loaded notes.</Text>}
+        ) && (
+          <Text style={styles.muted}>
+            <InterfaceText>{'No matching loaded notes.'}</InterfaceText>
+          </Text>
+        )}
       {entries
         .filter((entry) =>
           `${entry.key} ${entry.content}`
@@ -133,13 +149,18 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
               {entry.content}
             </Text>
             <Text style={styles.muted}>
-              Updated {new Date(entry.updatedAt).toLocaleDateString()}
+              <InterfaceText values={{ value0: new Date(entry.updatedAt).toLocaleDateString() }}>
+                {'Updated {value0}'}
+              </InterfaceText>
             </Text>
             {entry.evidence && (
               <View style={{ gap: 4 }}>
                 <Action
                   secondary
-                  label={`${sources.includes(entry.key) ? 'Hide' : 'Show'} sources for ${entry.key}`}
+                  label={uiText('{value0} sources for {value1}', {
+                    value0: sources.includes(entry.key) ? 'Hide' : 'Show',
+                    value1: entry.key,
+                  })}
                   onPress={() =>
                     setSources((current) =>
                       current.includes(entry.key)
@@ -149,15 +170,24 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
                   }
                 />
                 <Text style={styles.muted}>
-                  {entry.evidence.sources.length} source{' '}
-                  {entry.evidence.sources.length === 1 ? 'message' : 'messages'}
+                  <InterfaceText
+                    values={{
+                      value0: entry.evidence.sources.length,
+                      value1:
+                        entry.evidence.sources.length === 1
+                          ? uiText('message')
+                          : uiText('messages'),
+                    }}
+                  >
+                    {'{value0} source {value1}'}
+                  </InterfaceText>
                 </Text>
                 {sources.includes(entry.key) &&
                   entry.evidence.sources.map((source) => (
                     <View key={source.messageId}>
                       <Text>{source.quote}</Text>
                       <Action
-                        label="View source message"
+                        label={uiText('View source message')}
                         secondary
                         disabled={!profile?.connection}
                         onPress={() => {
@@ -172,7 +202,7 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
               </View>
             )}
             <Action
-              label={`Edit ${entry.key}`}
+              label={uiText('Edit {value0}', { value0: entry.key })}
               secondary
               disabled={!connected || busy}
               onPress={() => setSelected(entry)}
@@ -181,7 +211,7 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
         ))}
       {entries.length < total && (
         <Action
-          label="Load more notes"
+          label={uiText('Load more notes')}
           disabled={!connected || busy}
           onPress={() =>
             act(async () => {
@@ -227,6 +257,8 @@ function MemoryNote({
   onClose: () => void
   onSaved: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { profile, connected: online, snapshot, callEffect } = useRuntime()
   const connected = online && snapshot?.botsSupported === true
   const { styles } = useTheme()
@@ -245,31 +277,37 @@ function MemoryNote({
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [versions, setVersions] = useState<MemoryEntry[]>([])
   return (
-    <Sheet title={note ? 'Edit memory note' : 'New memory note'} busy={busy} onClose={onClose}>
+    <Sheet
+      title={note ? uiText('Edit memory note') : uiText('New memory note')}
+      busy={busy}
+      onClose={onClose}
+    >
       <Text style={styles.muted}>
         {draft.key !== (note?.key ?? '') || draft.content !== (note?.content ?? '')
-          ? 'Unsaved changes · Draft kept on this device'
+          ? uiText('Unsaved changes · Draft kept on this device')
           : note
-            ? 'Saved note'
-            : 'Write a note for future replies'}
+            ? uiText('Saved note')
+            : uiText('Write a note for future replies')}
       </Text>
       <Field
-        label="Note name"
+        label={uiText('Note name')}
         maxLength={120}
         hint={
           note
-            ? 'The name stays fixed. Edit the content below.'
-            : 'Use a short, clear name for this note.'
+            ? uiText('The name stays fixed. Edit the content below.')
+            : uiText('Use a short, clear name for this note.')
         }
         value={draft.key}
         editable={!note && connected && !busy}
         onChangeText={(value) => setField('key', value)}
       />
       <Field
-        label="Note content"
+        label={uiText('Note content')}
         maxLength={16000}
         style={{ minHeight: 260, lineHeight: 24 }}
-        hint={`${draft.content.length.toLocaleString()} / 16,000 characters`}
+        hint={uiText('{value0} / 16,000 characters', {
+          value0: draft.content.length.toLocaleString(),
+        })}
         value={draft.content}
         multiline
         editable={connected && !busy}
@@ -282,9 +320,9 @@ function MemoryNote({
       )}
       {snapshot?.botMemoryVersionsSupported && (
         <Field
-          label="Expires at (UTC, optional)"
+          label={uiText('Expires at (UTC, optional)')}
           placeholder="2026-12-01T12:00:00Z"
-          hint="Expired notes stay here for review. Agents cannot use them."
+          hint={uiText('Expired notes stay here for review. Agents cannot use them.')}
           value={draft.expiresAt}
           editable={connected && !busy}
           onChangeText={(value) => setField('expiresAt', value)}
@@ -293,7 +331,7 @@ function MemoryNote({
       {note && snapshot?.botMemoryVersionsSupported && (
         <Action
           secondary
-          label="Read previous versions"
+          label={uiText('Read previous versions')}
           disabled={!connected || busy}
           onPress={() =>
             act(async () => {
@@ -311,13 +349,13 @@ function MemoryNote({
           <Text selectable>{version.content}</Text>
           <Action
             secondary
-            label="Use this text in draft"
+            label={uiText('Use this text in draft')}
             onPress={() => setField('content', version.content)}
           />
         </View>
       ))}
       <Action
-        label="Save memory note"
+        label={uiText('Save memory note')}
         disabled={!connected || busy || !draft.key.trim() || !draft.content.trim()}
         onPress={() =>
           act(async () => {
@@ -340,19 +378,22 @@ function MemoryNote({
           })
         }
       />
-      <Action secondary label="Close editor" disabled={busy} onPress={onClose} />
-      <Text style={styles.muted}>Closing keeps your draft. Save applies it to this Bot.</Text>
+      <Action secondary label={uiText('Close editor')} disabled={busy} onPress={onClose} />
+      <Text style={styles.muted}>
+        <InterfaceText>{'Closing keeps your draft. Save applies it to this Bot.'}</InterfaceText>
+      </Text>
       {confirmDelete && (
         <Action
           secondary
-          label="Cancel delete"
+          label={uiText('Cancel delete')}
           disabled={busy}
           onPress={() => setConfirmDelete(false)}
         />
       )}
       {note && (
         <Action
-          label={confirmDelete ? 'Confirm delete note' : 'Delete memory note'}
+          destructive={confirmDelete ? false : true}
+          label={confirmDelete ? uiText('Confirm delete note') : uiText('Delete memory note')}
           secondary
           disabled={!connected || busy}
           onPress={() => {

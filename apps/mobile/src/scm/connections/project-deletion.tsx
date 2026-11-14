@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { responses, type Repository } from '@dovo/protocol'
 import { Effect } from 'effect'
 import { Alert, View } from 'react-native'
@@ -11,6 +12,8 @@ import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
 
 export function DeleteProjectAction({ repository }: { repository: Repository }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { connected, profile, readRuntimeEffect, refreshRuntimeEffect } = useRuntime()
   const { navigate } = useNavigation()
@@ -18,12 +21,14 @@ export function DeleteProjectAction({ repository }: { repository: Repository }) 
   const { busy, error, act } = useAction()
   const confirm = () =>
     Alert.alert(
-      `Delete “${repository.name}”?`,
-      'This removes the project and its task and conversation history from Dovo. Repository and worktree files stay on disk. Active work must finish before you can delete this project.',
+      uiText('Delete “{value0}”?', { value0: repository.name }),
+      uiText(
+        'This removes the project and its task and conversation history from Dovo. Repository and worktree files stay on disk. Active work must finish before you can delete this project.',
+      ),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: uiText('Cancel'), style: 'cancel' },
         {
-          text: 'Delete project and history',
+          text: uiText('Delete project and history'),
           style: 'destructive',
           onPress: () => {
             if (!profile) return
@@ -42,8 +47,11 @@ export function DeleteProjectAction({ repository }: { repository: Repository }) 
                   Effect.catch((cause) =>
                     nativeEffect(() =>
                       Alert.alert(
-                        'Project deleted',
-                        `The project was removed from Dovo, but the project list could not refresh: ${cause instanceof Error ? cause.message : String(cause)}`,
+                        uiText('Project deleted'),
+                        uiText(
+                          'The project was removed from Dovo, but the project list could not refresh: {value0}',
+                          { value0: cause instanceof Error ? cause.message : String(cause) },
+                        ),
                       ),
                     ),
                   ),
@@ -58,10 +66,10 @@ export function DeleteProjectAction({ repository }: { repository: Repository }) 
     <View style={{ gap: 4 }}>
       <View style={{ alignItems: 'flex-end' }}>
         <WorkMenu
-          label={`Actions for ${repository.name}`}
+          label={uiText('Actions for {value0}', { value0: repository.name })}
           actions={[
             {
-              label: 'Delete project…',
+              label: uiText('Delete project…'),
               disabled: !connected || busy,
               onPress: confirm,
               destructive: true,

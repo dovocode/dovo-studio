@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ACCOUNT_DIRECTORY_URL, diagnosticMessage } from '@dovo/protocol'
 import { useMobileAccount } from '../runtime/connection/account-provider'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -34,6 +35,8 @@ const Context = createContext({
 })
 export const usePushNotifications = () => useContext(Context)
 export function PushNotificationProvider({ children }: { children: ReactNode }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const account = useMobileAccount()
   const accountRef = useRef(account)
@@ -125,7 +128,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
               ? 'Could not open the notification. Tap it again to retry.'
               : 'Could not clear the opened notification'
           setResponseError(message)
-          if (operation === 'open') Alert.alert('Notification', message)
+          if (operation === 'open') Alert.alert(uiText('Notification'), message)
         },
       })
       responseConsumer.current = consumer
@@ -323,7 +326,9 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         } catch (error) {
           if (!disposed)
             setError(
-              error instanceof Error ? error.message : 'Could not configure push notifications',
+              error instanceof Error
+                ? error.message
+                : uiText('Could not configure push notifications'),
             )
         } finally {
           toggling = false
@@ -336,7 +341,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
             nativeToken = token.data
             registered.clear()
             void sync().catch(() => {
-              if (!disposed) setError('Could not update the push token')
+              if (!disposed) setError(uiText('Could not update the push token'))
             })
           }
         }),
@@ -356,7 +361,7 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           registered.delete(id)
           await sync()
         } catch {
-          if (!disposed) setError('Could not update server notifications. Try again.')
+          if (!disposed) setError(uiText('Could not update server notifications. Try again.'))
         } finally {
           toggling = false
           if (!disposed) setBusy(false)
@@ -374,7 +379,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       updateEnabled(saved === 'true')
       const refresh = () => {
         void sync().catch(() => {
-          if (!disposed) setError('Could not register push notifications. Check your connection.')
+          if (!disposed)
+            setError(uiText('Could not register push notifications. Check your connection.'))
         })
       }
       refreshRegistration.current = refresh

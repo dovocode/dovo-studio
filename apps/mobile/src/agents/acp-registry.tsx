@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect, Result, Schema } from 'effect'
 import { useEffect, useState } from 'react'
@@ -144,27 +145,31 @@ export function AcpRegistry({
   )
   return (
     <View style={[styles.card, { gap: 10 }]}>
-      <Text style={styles.text}>ACP agents</Text>
+      <Text style={styles.text}>
+        <InterfaceText>{'ACP agents'}</InterfaceText>
+      </Text>
       <Text style={styles.muted}>
         {management
-          ? 'Install and manage agents on this runtime. Installing does not create a custom agent.'
-          : 'Choose an installed agent or use your own ACP command.'}
+          ? uiText(
+              'Install and manage agents on this runtime. Installing does not create a custom agent.',
+            )
+          : uiText('Choose an installed agent or use your own ACP command.')}
       </Text>
       <Action
         secondary
-        label="Refresh registry"
+        label={uiText('Refresh registry')}
         disabled={!connected || busy || loading}
         onPress={() => setRefresh((value) => value + 1)}
       />
       {!management && (
         <Choice
-          label="ACP agent installation"
+          label={uiText('ACP agent installation')}
           value={agent.acpInstallationId ?? '__custom__'}
           disabled={!connected || busy}
           items={[
-            { id: '__custom__', name: 'Custom ACP command' },
+            { id: '__custom__', name: uiText('Custom ACP command') },
             ...(agent.acpInstallationId && !selected
-              ? [{ id: agent.acpInstallationId, name: 'Saved installation (not listed)' }]
+              ? [{ id: agent.acpInstallationId, name: uiText('Saved installation (not listed)') }]
               : []),
             ...installations.map((item) => ({
               id: item.id,
@@ -176,10 +181,10 @@ export function AcpRegistry({
       )}
       {management && installations.length > 0 && (
         <Choice
-          label="Manage installed ACP agent"
+          label={uiText('Manage installed ACP agent')}
           value={managedId}
           items={[
-            { id: '', name: 'Choose an installed agent to manage' },
+            { id: '', name: uiText('Choose an installed agent to manage') },
             ...installations.map((item) => ({
               id: item.id,
               name: `${item.name} · ${item.version}`,
@@ -193,8 +198,8 @@ export function AcpRegistry({
           secondary
           label={
             selected.needsRepair
-              ? 'Repair installation in this runtime'
-              : 'Check installation / update'
+              ? uiText('Repair installation in this runtime')
+              : uiText('Check installation / update')
           }
           disabled={!connected || busy}
           onPress={() =>
@@ -214,7 +219,11 @@ export function AcpRegistry({
       )}
       {selected?.needsRepair && (
         <Text style={styles.muted}>
-          Repair the installation’s old folder before signing in. Existing threads keep their agent.
+          <InterfaceText>
+            {
+              'Repair the installation’s old folder before signing in. Existing threads keep their agent.'
+            }
+          </InterfaceText>
         </Text>
       )}
       {selected && !selected.needsRepair && (
@@ -230,8 +239,10 @@ export function AcpRegistry({
             secondary
             label={
               browseOpen
-                ? 'Hide registry'
-                : `Browse registry${catalog ? ` · ${catalog.agents.length}` : ''}`
+                ? uiText('Hide registry')
+                : uiText('Browse registry{value0}', {
+                    value0: catalog ? ` · ${catalog.agents.length}` : '',
+                  })
             }
             disabled={!connected}
             onPress={() => setBrowseOpen((value) => !value)}
@@ -239,15 +250,21 @@ export function AcpRegistry({
           {browseOpen && (
             <>
               <SearchField
-                label="Search ACP registry"
+                label={uiText('Search ACP registry')}
                 value={search}
                 onChangeText={setSearch}
-                placeholder="Search agents…"
+                placeholder={uiText('Search agents…')}
               />
-              {loading && <Text style={styles.muted}>Loading registered agents…</Text>}
+              {loading && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Loading registered agents…'}</InterfaceText>
+                </Text>
+              )}
               {!!loadError && <Text style={styles.error}>{loadError}</Text>}
               {!loading && catalog?.agents.length === 0 && (
-                <Text style={styles.muted}>No agents are available in this registry.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No agents are available in this registry.'}</InterfaceText>
+                </Text>
               )}
               {catalog?.agents.map((entry) => {
                 if (
@@ -269,26 +286,29 @@ export function AcpRegistry({
                           secondary
                           label={
                             management
-                              ? 'Manage'
+                              ? uiText('Manage')
                               : agent.acpInstallationId === installed.id
-                                ? 'Selected'
-                                : 'Use'
+                                ? uiText('Selected')
+                                : uiText('Use')
                           }
                           disabled={busy || !connected}
                           onPress={() => selectInstallation(installed.id)}
                         />
                         <Action
+                          destructive
                           secondary
                           label={uiText('Remove')}
                           disabled={busy || !connected}
                           onPress={() =>
                             Alert.alert(
-                              'Remove ACP agent?',
-                              `Remove ${entry.name} from the connected runtime?`,
+                              uiText('Remove ACP agent?'),
+                              uiText('Remove {value0} from the connected runtime?', {
+                                value0: entry.name,
+                              }),
                               [
-                                { text: 'Cancel', style: 'cancel' },
+                                { text: uiText('Cancel'), style: 'cancel' },
                                 {
-                                  text: 'Remove',
+                                  text: uiText('Remove'),
                                   style: 'destructive',
                                   onPress: () =>
                                     act(() =>
@@ -318,7 +338,13 @@ export function AcpRegistry({
                     ) : (
                       <Action
                         secondary
-                        label={!entry.available ? 'Unavailable' : busy ? 'Working…' : 'Install'}
+                        label={
+                          !entry.available
+                            ? uiText('Unavailable')
+                            : busy
+                              ? uiText('Working…')
+                              : uiText('Install')
+                        }
                         disabled={busy || !connected || !entry.available}
                         onPress={() =>
                           act(() =>
@@ -357,6 +383,8 @@ function AcpAuthentication({
   installation: AcpInstallation
   agent: Agent
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { callEffect, readEffect, connected } = useRuntime()
@@ -465,20 +493,22 @@ function AcpAuthentication({
           setTerminal(status.terminal?.id ?? '')
           setNotice(
             methodId === 'logout'
-              ? 'Sign-out request completed.'
+              ? uiText('Sign-out request completed.')
               : terminalIssued
-                ? 'Complete sign-in in the terminal, then check the connection.'
-                : 'Sign-in started. Follow the instructions below.',
+                ? uiText('Complete sign-in in the terminal, then check the connection.')
+                : uiText('Sign-in started. Follow the instructions below.'),
           )
         })
       }),
     )
   return (
     <View style={{ gap: 6 }}>
-      <Text style={styles.muted}>Authentication</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Authentication'}</InterfaceText>
+      </Text>
       <Action
         secondary
-        label="Refresh sign-in status"
+        label={uiText('Refresh sign-in status')}
         disabled={!connected || busy}
         onPress={() =>
           act(() =>
@@ -503,16 +533,18 @@ function AcpAuthentication({
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>
             {waiting
-              ? 'Waiting for sign-in…'
+              ? uiText('Waiting for sign-in…')
               : methods.authentication.status === 'completed'
-                ? 'Sign-in completed. Check the connection to verify access.'
+                ? uiText('Sign-in completed. Check the connection to verify access.')
                 : methods.authentication.error}
           </Text>
           {methods.authentication.urls.map((url) => (
             <Action
               key={url}
               secondary
-              label={`Open sign-in in browser · ${new URL(url).hostname}`}
+              label={uiText('Open sign-in in browser · {value0}', {
+                value0: new URL(url).hostname,
+              })}
               onPress={() => act(() => nativeEffect(() => Linking.openURL(url)))}
             />
           ))}
@@ -524,7 +556,7 @@ function AcpAuthentication({
           {waiting && (
             <Action
               secondary
-              label="Cancel sign-in"
+              label={uiText('Cancel sign-in')}
               onPress={() =>
                 act(() =>
                   mobileWorkflow(function* () {
@@ -545,11 +577,14 @@ function AcpAuthentication({
             ) && (
               <View style={{ gap: 6 }}>
                 <Text style={styles.muted}>
-                  If the browser returns to an unreachable localhost page, copy its full address
-                  here to finish sign-in on this server.
+                  <InterfaceText>
+                    {
+                      'If the browser returns to an unreachable localhost page, copy its full address here to finish sign-in on this server.'
+                    }
+                  </InterfaceText>
                 </Text>
                 <Field
-                  label="Browser sign-in callback URL"
+                  label={uiText('Browser sign-in callback URL')}
                   value={callbackUrl}
                   onChangeText={setCallbackUrl}
                   autoCapitalize="none"
@@ -557,7 +592,7 @@ function AcpAuthentication({
                 />
                 <Action
                   secondary
-                  label="Complete remote sign-in"
+                  label={uiText('Complete remote sign-in')}
                   disabled={!callbackUrl.trim() || busy}
                   onPress={() =>
                     act(() =>
@@ -585,7 +620,13 @@ function AcpAuthentication({
           </View>
           <Action
             secondary
-            label={busy ? 'Waiting…' : method.type === 'terminal' ? 'Open terminal' : 'Sign in'}
+            label={
+              busy
+                ? uiText('Waiting…')
+                : method.type === 'terminal'
+                  ? uiText('Open terminal')
+                  : uiText('Sign in')
+            }
             disabled={!connected || busy || !!terminal}
             onPress={() => run(method.id)}
           />
@@ -594,7 +635,7 @@ function AcpAuthentication({
       {methods?.canLogout && (
         <Action
           secondary
-          label="Sign out"
+          label={uiText('Sign out')}
           disabled={!connected || busy || !!terminal}
           onPress={() => run('logout')}
         />
@@ -602,7 +643,7 @@ function AcpAuthentication({
       {!!inspectError && <Text style={styles.error}>{inspectError}</Text>}
       <Action
         secondary
-        label={sessionsOpen ? 'Refresh agent sessions' : 'Load agent sessions'}
+        label={sessionsOpen ? uiText('Refresh agent sessions') : uiText('Load agent sessions')}
         disabled={!connected || busy}
         onPress={() => {
           setSessionsOpen(true)
@@ -621,7 +662,9 @@ function AcpAuthentication({
       />
       {sessionsOpen && sessions && (
         <View style={{ gap: 8 }}>
-          <Text style={styles.muted}>Agent sessions on this runtime</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Agent sessions on this runtime'}</InterfaceText>
+          </Text>
           {sessions.sessions.map((session) => (
             <View key={session.sessionId} style={[styles.card, { gap: 4 }]}>
               <Text style={styles.text}>{session.title || session.sessionId}</Text>
@@ -630,17 +673,18 @@ function AcpAuthentication({
               </Text>
               {sessions.canDelete && (
                 <Action
+                  destructive
                   secondary
-                  label="Delete session"
+                  label={uiText('Delete session')}
                   disabled={!connected || busy}
                   onPress={() =>
                     Alert.alert(
-                      'Delete agent session?',
-                      'This permanently removes the agent’s saved session context.',
+                      uiText('Delete agent session?'),
+                      uiText('This permanently removes the agent’s saved session context.'),
                       [
-                        { text: 'Cancel', style: 'cancel' },
+                        { text: uiText('Cancel'), style: 'cancel' },
                         {
-                          text: 'Delete',
+                          text: uiText('Delete'),
                           style: 'destructive',
                           onPress: () =>
                             act(() =>
@@ -671,7 +715,7 @@ function AcpAuthentication({
           {!!sessions.nextCursor && (
             <Action
               secondary
-              label="Load more sessions"
+              label={uiText('Load more sessions')}
               disabled={!connected || busy}
               onPress={() =>
                 act(() =>
@@ -699,11 +743,13 @@ function AcpAuthentication({
       {!!terminal && (
         <View style={{ gap: 6 }}>
           <Text style={styles.muted}>
-            Complete sign-in in the terminal, then check the connection.
+            <InterfaceText>
+              {'Complete sign-in in the terminal, then check the connection.'}
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Stop sign-in terminal"
+            label={uiText('Stop sign-in terminal')}
             disabled={!connected || busy}
             onPress={() =>
               act(() =>
@@ -722,7 +768,7 @@ function AcpAuthentication({
       {!terminal && (
         <Action
           secondary
-          label={busy ? 'Checking connection…' : 'Check connection'}
+          label={busy ? uiText('Checking connection…') : uiText('Check connection')}
           disabled={!connected || busy}
           onPress={() =>
             act(() =>
@@ -741,7 +787,11 @@ function AcpAuthentication({
                   modelCatalogSchema,
                 )
                 yield* nativeEffect(() =>
-                  setNotice(`Connection check succeeded · ${catalog.models.length} model choices.`),
+                  setNotice(
+                    uiText('Connection check succeeded · {value0} model choices.', {
+                      value0: catalog.models.length,
+                    }),
+                  ),
                 )
               }),
             )

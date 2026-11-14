@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { dictationStatusSchema, responses, type DictationStatus } from '@dovo/protocol'
@@ -24,6 +25,8 @@ export function RuntimeSpeechSettings() {
   )
 }
 function ComputerSpeech({ runtimeId }: { runtimeId: string }) {
+  const uiText = useInterfaceText()
+
   const { call, connected } = useRuntime()
   const preferences = useMobilePreferences()
   const { styles } = useSettingsTheme()
@@ -56,11 +59,13 @@ function ComputerSpeech({ runtimeId }: { runtimeId: string }) {
   }, [call, connected])
   return (
     <SettingsGroup
-      title="Dictation on the selected computer"
-      footer="Off by default on each device. Finished recordings go only to the thread’s computer. No cloud fallback. The computer needs FFmpeg to read phone recordings. Update the phone app to enable recording."
+      title={uiText('Dictation on the selected computer')}
+      footer={uiText(
+        'Off by default on each device. Finished recordings go only to the thread’s computer. No cloud fallback. The computer needs FFmpeg to read phone recordings. Update the phone app to enable recording.',
+      )}
     >
       <SettingsSwitchRow
-        label="Use this computer for dictation"
+        label={uiText('Use this computer for dictation')}
         value={preferences.runtimeDictationIds.includes(runtimeId)}
         disabled={
           !preferences.runtimeDictationIds.includes(runtimeId) && (!connected || !status?.model)
@@ -77,21 +82,25 @@ function ComputerSpeech({ runtimeId }: { runtimeId: string }) {
       <View style={{ padding: 12, gap: 8 }}>
         <Text style={styles.muted}>
           {status?.model
-            ? 'Speech model downloaded.'
-            : 'Download the 751 MB speech model once on this computer.'}
+            ? uiText('Speech model downloaded.')
+            : uiText('Download the 751 MB speech model once on this computer.')}
         </Text>
         {!status?.engine && (
           <Text style={styles.muted}>
-            Update the computer’s server package or run pnpm prepare:dictation there.
+            <InterfaceText>
+              {'Update the computer’s server package or run pnpm prepare:dictation there.'}
+            </InterfaceText>
           </Text>
         )}
         {status?.downloading && (
           <Text style={styles.muted}>
-            Downloading… {Math.floor((status.downloaded / 751094240) * 100)}%
+            <InterfaceText values={{ value0: Math.floor((status.downloaded / 751094240) * 100) }}>
+              {'Downloading… {value0}%'}
+            </InterfaceText>
           </Text>
         )}
         <SettingsAction
-          label="Download model on computer"
+          label={uiText('Download model on computer')}
           disabled={!connected || !status?.engine || status.downloading || !!operation}
           onPress={() => {
             const id = randomUUID()
@@ -106,7 +115,7 @@ function ComputerSpeech({ runtimeId }: { runtimeId: string }) {
         {!!operation && (
           <SettingsAction
             secondary
-            label="Cancel download"
+            label={uiText('Cancel download')}
             onPress={() => {
               void call('/api/dictation/cancel', { id: operation }, responses.ok).catch(
                 (cause: unknown) => setError(String(cause)),

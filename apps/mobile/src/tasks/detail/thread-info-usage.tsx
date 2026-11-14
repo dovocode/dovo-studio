@@ -1,14 +1,17 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { contextMeter, type Task } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function ThreadInfoUsage({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const meter = contextMeter(task)
   const usage = task.contextUsage
   return (
-    <View accessibilityLabel="Context usage" style={{ gap: 8 }}>
+    <View accessibilityLabel={uiText('Context usage')} style={{ gap: 8 }}>
       <View
         style={{
           flexDirection: 'row',
@@ -17,11 +20,13 @@ export function ThreadInfoUsage({ task }: { task: Task }) {
           gap: 12,
         }}
       >
-        <Text style={styles.muted}>Context</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Context'}</InterfaceText>
+        </Text>
         <Text style={styles.text}>
           {meter
-            ? `${meter.short}${meter.percent !== undefined ? ' used' : ' tokens'}`
-            : 'Not reported'}
+            ? `${meter.short}${meter.percent !== undefined ? uiText(' used') : uiText(' tokens')}`
+            : uiText('Not reported')}
         </Text>
       </View>
       {meter?.percent !== undefined && (
@@ -48,8 +53,12 @@ export function ThreadInfoUsage({ task }: { task: Task }) {
       )}
       <Text style={styles.muted}>
         {usage?.used !== undefined
-          ? `${usage.used.toLocaleString()}${usage.limit ? ` of ${usage.limit.toLocaleString()}` : ''} tokens in this session${usage.limit ? '.' : ' · Window size not reported.'}`
-          : 'Available after the provider reports context usage.'}
+          ? uiText('{value0}{value1} tokens in this session{value2}', {
+              value0: usage.used.toLocaleString(),
+              value1: usage.limit ? ` of ${usage.limit.toLocaleString()}` : '',
+              value2: usage.limit ? '.' : ' · Window size not reported.',
+            })
+          : uiText('Available after the provider reports context usage.')}
       </Text>
     </View>
   )

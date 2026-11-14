@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { artifactPublicationInput, type Artifact } from '@dovo/protocol'
 import { useMobileAccount } from '../../runtime/connection/account-provider'
@@ -14,14 +15,18 @@ export function ArtifactSharing({
   artifact: Artifact
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const account = useMobileAccount(),
     { styles } = useTheme()
   if (!account.directory || account.deletionPending) return null
   return (
-    <Sheet title="Share artifact" onClose={onClose}>
+    <Sheet title={uiText('Share artifact')} onClose={onClose}>
       <View style={{ gap: 12 }}>
         <Text style={styles.muted}>
-          {artifact.title} · Version {artifact.revision}
+          <InterfaceText values={{ value0: artifact.title, value1: artifact.revision }}>
+            {'{value0} · Version {value1}'}
+          </InterfaceText>
         </Text>
         <SharingPanel
           key={`${account.client.sessionId()}:${artifact.id}:${artifact.revision}`}

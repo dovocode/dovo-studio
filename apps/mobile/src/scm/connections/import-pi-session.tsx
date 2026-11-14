@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
@@ -17,6 +18,8 @@ export function ImportPiSession({
   repositoryId: string
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const { styles } = useTheme()
   const [open, setOpen] = useState(false)
@@ -32,7 +35,7 @@ export function ImportPiSession({
     <>
       <Action
         secondary
-        label="Import Pi terminal session"
+        label={uiText('Import Pi terminal session')}
         disabled={disabled || !runtime.connected}
         onPress={() => {
           picker.refresh()
@@ -42,27 +45,31 @@ export function ImportPiSession({
       {open && (
         <Sheet
           ref={sheet}
-          title="Import Pi terminal session"
+          title={uiText('Import Pi terminal session')}
           busy={picker.importing}
           onClose={() => setOpen(false)}
         >
           <Text style={styles.muted}>
-            Preview a session from this project on the selected computer. Dovo creates a private
-            copy for continuation and leaves the terminal source untouched. Pi tools are disabled
-            unless you choose full access; extensions and MCP remain disabled. Continuation requires
-            @earendil-works/pi-coding-agent 1.4 or newer.
+            <InterfaceText>
+              {
+                'Preview a session from this project on the selected computer. Dovo creates a private copy for continuation and leaves the terminal source untouched. Pi tools are disabled unless you choose full access; extensions and MCP remain disabled. Continuation requires @earendil-works/pi-coding-agent 1.4 or newer.'
+              }
+            </InterfaceText>
           </Text>
           <Text selectable style={styles.muted}>
-            Install or update on this computer: npm install -g --ignore-scripts
-            @earendil-works/pi-coding-agent
+            <InterfaceText>
+              {
+                'Install or update on this computer: npm install -g --ignore-scripts @earendil-works/pi-coding-agent'
+              }
+            </InterfaceText>
           </Text>
           <Choice
-            label="Pi configuration"
+            label={uiText('Pi configuration')}
             value={picker.agentId}
             disabled={picker.importing}
             onChange={picker.setAgentId}
             items={[
-              { id: '', name: 'Project / default Pi home' },
+              { id: '', name: uiText('Project / default Pi home') },
               ...(runtime.snapshot?.workspace.agents ?? [])
                 .filter((agent) => agent.provider === 'pi')
                 .map((agent) => ({ id: agent.id, name: agent.name })),
@@ -70,7 +77,7 @@ export function ImportPiSession({
           />
           <Action
             secondary
-            label="Refresh sessions"
+            label={uiText('Refresh sessions')}
             disabled={picker.importing}
             onPress={picker.refresh}
           />
@@ -81,17 +88,21 @@ export function ImportPiSession({
           )}
           {!!picker.notice && <Text style={styles.muted}>{picker.notice}</Text>}
           {!picker.sessions ? (
-            <Text style={styles.muted}>Finding Pi sessions…</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Finding Pi sessions…'}</InterfaceText>
+            </Text>
           ) : !picker.sessions.length ? (
             <Text style={styles.muted}>
-              No terminal Pi sessions found for this project and configuration.
+              <InterfaceText>
+                {'No terminal Pi sessions found for this project and configuration.'}
+              </InterfaceText>
             </Text>
           ) : (
             picker.sessions.map((session) => (
               <View key={session.key} style={{ gap: 4, marginVertical: 6 }}>
                 <Action
                   secondary
-                  label={`${session.title}${session.taskId ? ' · In Dovo' : ''}`}
+                  label={`${session.title}${session.taskId ? uiText(' · In Dovo') : ''}`}
                   disabled={picker.importing}
                   onPress={() => picker.select(session.key)}
                 />
@@ -102,26 +113,32 @@ export function ImportPiSession({
             ))
           )}
           {!!picker.selected && !picker.preview && !picker.error && (
-            <Text style={styles.muted}>Loading session preview…</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Loading session preview…'}</InterfaceText>
+            </Text>
           )}
           {!!picker.preview && (
-            <View accessibilityLabel="Pi session preview" style={{ gap: 12 }}>
+            <View accessibilityLabel={uiText('Pi session preview')} style={{ gap: 12 }}>
               <Text style={styles.muted}>
-                {picker.preview.session.model || 'Native model'} ·{' '}
+                {picker.preview.session.model || uiText('Native model')} ·{' '}
                 {picker.preview.session.sessionId}
               </Text>
               <Text style={styles.text}>{picker.preview.notice}</Text>
               {!!picker.preview.olderMessages && (
                 <Text style={styles.muted}>
-                  Showing the latest 100 messages. All{' '}
-                  {picker.preview.olderMessages + picker.preview.messages.length} messages will be
-                  saved.
+                  <InterfaceText
+                    values={{
+                      value0: picker.preview.olderMessages + picker.preview.messages.length,
+                    }}
+                  >
+                    {'Showing the latest 100 messages. All {value0} messages will be saved.'}
+                  </InterfaceText>
                 </Text>
               )}
               {picker.preview.messages.map((message) => (
                 <View key={message.id} style={{ gap: 4 }}>
                   <Text style={styles.muted}>
-                    {message.role === 'user' ? 'You · Imported' : 'Pi'}
+                    {message.role === 'user' ? uiText('You · Imported') : uiText('Pi')}
                   </Text>
                   <Text selectable style={styles.text}>
                     {message.text}
@@ -132,7 +149,7 @@ export function ImportPiSession({
           )}
           {picker.preview?.session.taskId ? (
             <Action
-              label="Open existing thread"
+              label={uiText('Open existing thread')}
               onPress={() => {
                 const id = picker.preview?.session.taskId
                 if (id) navigate(id)
@@ -140,7 +157,7 @@ export function ImportPiSession({
             />
           ) : (
             <Action
-              label={picker.importing ? 'Importing…' : 'Import session'}
+              label={picker.importing ? uiText('Importing…') : uiText('Import session')}
               disabled={
                 picker.importing ||
                 picker.preview?.status !== 'available' ||

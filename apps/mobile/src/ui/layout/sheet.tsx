@@ -139,7 +139,7 @@ export function Sheet({
           style={{ flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 }}
         >
           <Pressable
-            accessibilityLabel={`Dismiss ${title}`}
+            accessibilityLabel={uiText('Dismiss {value0}', { value0: title })}
             accessibilityRole="button"
             disabled={busy}
             onPress={close}
@@ -274,17 +274,20 @@ export function Sheet({
                   {keyboard && (
                     <NativeMenuButton
                       testID="Dismiss keyboard"
-                      label="Dismiss keyboard"
+                      label={uiText('Dismiss keyboard')}
                       icon="keyboard"
                       onPress={() => Keyboard.dismiss()}
-                      modifiers={[labelStyle('iconOnly'), accessibilityLabel('Dismiss keyboard')]}
+                      modifiers={[
+                        labelStyle('iconOnly'),
+                        accessibilityLabel(uiText('Dismiss keyboard')),
+                      ]}
                     />
                   )}
                   <Button
                     testID="Close"
                     role="close"
                     onPress={() => close()}
-                    modifiers={[disabled(busy || !presented), accessibilityLabel('Close')]}
+                    modifiers={[disabled(busy || !presented), accessibilityLabel(uiText('Close'))]}
                   >
                     <NativeIcon name="close" color={colors.text} />
                   </Button>
@@ -324,7 +327,7 @@ export function Sheet({
             <View style={{ width: 44, height: 44, flexShrink: 0 }}>
               {keyboard && (
                 <IconButton
-                  label="Dismiss keyboard"
+                  label={uiText('Dismiss keyboard')}
                   icon="keyboard"
                   onPress={() => Keyboard.dismiss()}
                 />

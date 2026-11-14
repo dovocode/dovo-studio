@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Icon } from '../../ui/controls/icon'
 import { SettingsScrollView } from '../../screens/settings-search'
 import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
@@ -35,6 +36,8 @@ const Context = createContext<{
   registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
 } | null>(null)
 export function SettingsTargetProvider({ children }: { children: ReactNode }) {
+  const uiText = useInterfaceText()
+
   const [target, updateTarget] = useApplicationState<SettingsTarget>({
     environmentId: '',
     projectId: '',
@@ -64,9 +67,9 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
     if (values.some((draft) => draft.saving)) return
     if (!values.some((draft) => draft.dirty)) proceed()
     else
-      Alert.alert('Unsaved settings', 'Discard unsaved settings changes?', [
-        { text: 'Keep editing', style: 'cancel' },
-        { text: 'Discard', style: 'destructive', onPress: proceed },
+      Alert.alert(uiText('Unsaved settings'), uiText('Discard unsaved settings changes?'), [
+        { text: uiText('Keep editing'), style: 'cancel' },
+        { text: uiText('Discard'), style: 'destructive', onPress: proceed },
       ])
   }
   const setTarget = (next: SettingsTarget) => {
@@ -126,6 +129,8 @@ export function ScopedSettings({
   children: (selection: { scope: SettingsScope; repository?: Repository }) => ReactNode
   scrollable?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [headerHeight, setHeaderHeight] = useState(0)
   const { target, setTarget, source, scope, repository, projectName, computerName } =
@@ -137,7 +142,7 @@ export function ScopedSettings({
     <View
       key="target"
       onLayout={(event) => setHeaderHeight(event.nativeEvent.layout.height)}
-      accessibilityLabel="Settings target"
+      accessibilityLabel={uiText('Settings target')}
       style={[
         styles.card,
         { paddingHorizontal: 16, paddingVertical: 8, backgroundColor: colors.surface },
@@ -147,24 +152,32 @@ export function ScopedSettings({
         <Text style={[styles.text, { fontWeight: '600', flex: 1 }]}>{summary.title}</Text>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="Settings inheritance details"
+          accessibilityLabel={uiText('Settings inheritance details')}
           onPress={() => Alert.alert(summary.title, `${summary.description}\n\n${summary.storage}`)}
           style={{ minWidth: 44, minHeight: 44, alignItems: 'center', justifyContent: 'center' }}
         >
           <Icon name="stack" size={18} color={colors.muted} />
         </Pressable>
       </View>
-      {source && !source.connected && <Text style={styles.muted}>Offline · edits kept here</Text>}
+      {source && !source.connected && (
+        <Text style={styles.muted}>
+          <InterfaceText>{'Offline · edits kept here'}</InterfaceText>
+        </Text>
+      )}
     </View>,
-    <View key="choices" accessibilityLabel="Settings choices" style={[styles.card, { gap: 8 }]}>
+    <View
+      key="choices"
+      accessibilityLabel={uiText('Settings choices')}
+      style={[styles.card, { gap: 8 }]}
+    >
       <Choice
-        label="Project"
+        label={uiText('Project')}
         row
         value={target.projectId}
         items={[
-          { id: '', name: 'All projects' },
+          { id: '', name: uiText('All projects') },
           ...(target.projectId && !projects.some((project) => project.id === target.projectId)
-            ? [{ id: target.projectId, name: 'Project unavailable' }]
+            ? [{ id: target.projectId, name: uiText('Project unavailable') }]
             : []),
           ...projects.map((project) => ({
             id: project.id,
@@ -175,14 +188,14 @@ export function ScopedSettings({
       />
       {overviews.length > 1 && (
         <Choice
-          label="Computer"
+          label={uiText('Computer')}
           row
           value={target.environmentId}
           items={[
-            { id: '', name: 'All computers' },
+            { id: '', name: uiText('All computers') },
             ...(target.environmentId &&
             !overviews.some((entry) => entry.profile.id === target.environmentId)
-              ? [{ id: target.environmentId, name: 'Computer unavailable' }]
+              ? [{ id: target.environmentId, name: uiText('Computer unavailable') }]
               : []),
             ...overviews.map((entry) => ({
               id: entry.profile.id,
@@ -195,7 +208,11 @@ export function ScopedSettings({
       {overviews.length === 1 && (
         <Action
           secondary
-          label={target.environmentId ? 'Edit shared defaults' : 'Edit computer overrides'}
+          label={
+            target.environmentId
+              ? uiText('Edit shared defaults')
+              : uiText('Edit computer overrides')
+          }
           onPress={() => {
             const environmentId = target.environmentId ? '' : overviews[0].profile.id
             const choices = settingsProjectChoices(overviews, environmentId)
@@ -213,8 +230,10 @@ export function ScopedSettings({
       {!source ? (
         <Text style={[styles.muted, { padding: 16 }]}>
           {overviews.length
-            ? 'This project is not available on the selected computer. Choose another target.'
-            : 'Connect a computer to configure defaults and project tools.'}
+            ? uiText(
+                'This project is not available on the selected computer. Choose another target.',
+              )
+            : uiText('Connect a computer to configure defaults and project tools.')}
         </Text>
       ) : (
         <RuntimeScope
@@ -223,7 +242,9 @@ export function ScopedSettings({
         >
           {!source.connected && (
             <Text style={[styles.muted, { paddingHorizontal: 16 }]}>
-              This computer is offline. Reconnect to make changes.
+              <InterfaceText>
+                {'This computer is offline. Reconnect to make changes.'}
+              </InterfaceText>
             </Text>
           )}
           {repository && <ProjectOrganizationSettings repository={repository} compact />}

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import {
   decode,
@@ -21,11 +22,13 @@ export function PeerRelayChoice({
   disabled?: boolean
   approval?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   return (
     <View style={{ gap: 6 }}>
       <Choice
-        label="Relay fallback"
+        label={uiText('Relay fallback')}
         value={value ?? 'direct'}
         items={PEER_RELAY_CHOICES}
         disabled={disabled}
@@ -36,8 +39,11 @@ export function PeerRelayChoice({
       <Text style={styles.muted}>{peerRelayDescription(value)}</Text>
       {value === 'dovo' && !approval && (
         <Text style={styles.muted}>
-          The computer must allow relay in its pairing QR. For a Direct-only pairing, generate a new
-          Dovo-enabled QR on the computer and pair again.
+          <InterfaceText>
+            {
+              'The computer must allow relay in its pairing QR. For a Direct-only pairing, generate a new Dovo-enabled QR on the computer and pair again.'
+            }
+          </InterfaceText>
         </Text>
       )}
     </View>

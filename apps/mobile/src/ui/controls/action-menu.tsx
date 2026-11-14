@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { designTokens } from '@dovo/design'
 import { useEffect, useRef } from 'react'
 import { FullWindowOverlay } from 'react-native-screens'
@@ -31,7 +32,7 @@ export function ActionMenu({
   actions,
   onClose,
   align = 'end',
-  dismissLabel = `Dismiss ${label}`,
+  dismissLabel,
 }: {
   label: string
   anchor: MenuAnchor | null
@@ -40,6 +41,7 @@ export function ActionMenu({
   align?: 'start' | 'end'
   dismissLabel?: string
 }) {
+  const uiText = useInterfaceText()
   const { colors } = useTheme()
   const viewport = useWindowDimensions()
   const insets = useSafeAreaInsets()
@@ -92,7 +94,7 @@ export function ActionMenu({
     <View style={{ flex: 1 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={dismissLabel}
+        accessibilityLabel={dismissLabel ?? uiText('Dismiss {value0}', { value0: label })}
         onPressIn={() => {
           freshPress.current = 'backdrop'
         }}

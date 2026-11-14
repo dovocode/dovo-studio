@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import * as Crypto from 'expo-crypto'
 import { configureSharingRandom } from '@dovo/protocol'
@@ -20,6 +21,8 @@ export function SharingExample({
   kind?: 'thread' | 'artifact'
   offline?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const [fixture] = useState(() => createSharingFixture({ kind, withKey: published })),
     [ready, setReady] = useState(false),
@@ -29,7 +32,12 @@ export function SharingExample({
   useEffect(() => {
     void fixture.ready(published).then(() => setReady(true))
   }, [fixture, published])
-  if (!ready) return <Text style={styles.text}>Preparing sharing example…</Text>
+  if (!ready)
+    return (
+      <Text style={styles.text}>
+        <InterfaceText>{'Preparing sharing example…'}</InterfaceText>
+      </Text>
+    )
   return (
     <MobileAccountContext.Provider value={{ ...fixture.client.snapshot(), client: fixture.client }}>
       <View style={{ gap: 16 }}>
@@ -42,12 +50,12 @@ export function SharingExample({
             }
           />
         )}
-        <Action label="Manage sharing" onPress={() => setOpen(true)} />
+        <Action label={uiText('Manage sharing')} onPress={() => setOpen(true)} />
         {open && (
-          <Sheet title={`Share ${kind}`} onClose={() => setOpen(false)}>
+          <Sheet title={uiText('Share {value0}', { value0: kind })} onClose={() => setOpen(false)}>
             <Action
               secondary
-              label={failed ? 'Restore connection' : 'Simulate connection failure'}
+              label={failed ? uiText('Restore connection') : uiText('Simulate connection failure')}
               onPress={() => {
                 fixture.fail(!failed)
                 setFailed(!failed)
@@ -61,7 +69,11 @@ export function SharingExample({
             />
           </Sheet>
         )}
-        {!!draft && <Text style={styles.text}>Composer draft: {draft}</Text>}
+        {!!draft && (
+          <Text style={styles.text}>
+            <InterfaceText values={{ value0: draft }}>{'Composer draft: {value0}'}</InterfaceText>
+          </Text>
+        )}
       </View>
     </MobileAccountContext.Provider>
   )

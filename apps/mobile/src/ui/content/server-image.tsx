@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, Image, ScrollView, View, Pressable } from 'react-native'
 import { clientTaskScope } from '@dovo/client-runtime'
@@ -18,7 +19,7 @@ type Source =
   | { uri: string }
 export function ServerImage({
   source,
-  label = 'Image',
+  label: labelOverride,
   onOpenOriginal,
   compact = false,
   taskId,
@@ -29,6 +30,9 @@ export function ServerImage({
   compact?: boolean
   taskId?: string
 }) {
+  const uiText = useInterfaceText()
+  const label = labelOverride ?? uiText('Image')
+
   const original = useAction()
   const { readEffect, connected, connection } = useRuntime(),
     { styles, colors } = useTheme()
@@ -141,7 +145,7 @@ export function ServerImage({
           {onOpenOriginal && (
             <Action
               secondary
-              label="Open original & download"
+              label={uiText('Open original & download')}
               disabled={original.busy}
               onPress={() => original.act(onOpenOriginal)}
             />
@@ -153,14 +157,14 @@ export function ServerImage({
           )}
           <Action
             secondary
-            label={`Retry ${label}`}
+            label={uiText('Retry {value0}', { value0: label })}
             onPress={() => setRevision((value) => value + 1)}
           />
         </View>
       ) : uri ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`Open ${label}`}
+          accessibilityLabel={uiText('Open {value0}', { value0: label })}
           onPress={() => setPreview(true)}
           style={({ pressed }) => ({ opacity: pressed ? 0.7 : 1 })}
         >
@@ -179,7 +183,10 @@ export function ServerImage({
         </Pressable>
       ) : (
         <View style={{ height: compact ? 96 : 80, justifyContent: 'center' }}>
-          <ActivityIndicator color={colors.muted} accessibilityLabel={`Loading ${label}`} />
+          <ActivityIndicator
+            color={colors.muted}
+            accessibilityLabel={uiText('Loading {value0}', { value0: label })}
+          />
         </View>
       )}
       {compact && !error && (
@@ -201,7 +208,7 @@ export function ServerImage({
             {onOpenOriginal && (
               <Action
                 secondary
-                label="Open original & download"
+                label={uiText('Open original & download')}
                 disabled={original.busy}
                 onPress={() => original.act(onOpenOriginal)}
               />
@@ -213,7 +220,10 @@ export function ServerImage({
             )}
             {expanded?.error && <Text style={styles.muted}>{expanded.error}</Text>}
             {preview && connected && !('uri' in source) && !expanded && (
-              <ActivityIndicator color={colors.muted} accessibilityLabel="Loading sharper image" />
+              <ActivityIndicator
+                color={colors.muted}
+                accessibilityLabel={uiText('Loading sharper image')}
+              />
             )}
             {uri && (
               <Image
@@ -259,7 +269,7 @@ export function ServerImage({
               />
             )}
             <IconButton
-              label="Close image"
+              label={uiText('Close image')}
               icon="close"
               variant="glass"
               onPress={() => setPreview(false)}

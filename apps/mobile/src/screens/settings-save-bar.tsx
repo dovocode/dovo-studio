@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import {
   createContext,
@@ -23,7 +24,7 @@ export function SettingsSaveBar({
   dirty,
   inline = false,
   saving,
-  saveLabel = 'Save changes',
+  saveLabel: saveLabelOverride,
   disabled,
   saved,
   changeCount,
@@ -46,6 +47,9 @@ export function SettingsSaveBar({
   onSave: () => void
   onDiscard: () => void
 }) {
+  const uiText = useInterfaceText()
+  const saveLabel = saveLabelOverride ?? uiText('Save changes')
+
   const footer = useContext(SettingsFooterContext)
   const setFooter = inline ? null : footer
   const { colors, styles } = useTheme()
@@ -88,7 +92,7 @@ export function SettingsSaveBar({
   const content = useMemo(
     () => (
       <View
-        accessibilityLabel="Settings save actions"
+        accessibilityLabel={uiText('Settings save actions')}
         accessibilityState={{ busy: saving }}
         style={{
           ...contentColumn.form,
@@ -100,7 +104,9 @@ export function SettingsSaveBar({
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={dirty && !saving ? 'Review unsaved settings changes' : status}
+              accessibilityLabel={
+                dirty && !saving ? uiText('Review unsaved settings changes') : status
+              }
               accessibilityValue={dirty && !saving ? { text: status } : undefined}
               accessibilityState={{ expanded: review, disabled: !dirty }}
               disabled={!dirty || !changes.length}
@@ -139,8 +145,9 @@ export function SettingsSaveBar({
               }}
             >
               <SettingsAction
+                destructive
                 secondary
-                label="Discard"
+                label={uiText('Discard')}
                 disabled={!dirty || saving}
                 onPress={() => handlers.current.onDiscard()}
               />
@@ -152,8 +159,13 @@ export function SettingsSaveBar({
             </View>
           </View>
           {dirty && review && (
-            <ScrollView style={{ maxHeight: 180 }} accessibilityLabel="Settings change review">
-              <Text style={styles.text}>Your changes</Text>
+            <ScrollView
+              style={{ maxHeight: 180 }}
+              accessibilityLabel={uiText('Settings change review')}
+            >
+              <Text style={styles.text}>
+                <InterfaceText>{'Your changes'}</InterfaceText>
+              </Text>
               {changes.map((change) => (
                 <View key={change.key} style={{ paddingVertical: 4 }}>
                   <Text style={styles.text}>{change.label}</Text>
@@ -164,7 +176,9 @@ export function SettingsSaveBar({
               ))}
               {latest && (
                 <>
-                  <Text style={styles.text}>Latest saved changes · your draft is kept</Text>
+                  <Text style={styles.text}>
+                    <InterfaceText>{'Latest saved changes · your draft is kept'}</InterfaceText>
+                  </Text>
                   {latest.length ? (
                     latest.map((change) => (
                       <View key={change.key} style={{ paddingVertical: 4 }}>
@@ -175,10 +189,14 @@ export function SettingsSaveBar({
                       </View>
                     ))
                   ) : (
-                    <Text style={styles.muted}>No remotely changed fields found.</Text>
+                    <Text style={styles.muted}>
+                      <InterfaceText>{'No remotely changed fields found.'}</InterfaceText>
+                    </Text>
                   )}
                   <Text style={styles.muted}>
-                    Discard and reload to use the latest saved settings.
+                    <InterfaceText>
+                      {'Discard and reload to use the latest saved settings.'}
+                    </InterfaceText>
                   </Text>
                 </>
               )}
@@ -186,7 +204,9 @@ export function SettingsSaveBar({
           )}
           {!!reviewError && (
             <Text accessibilityRole="alert" style={styles.error}>
-              Could not read latest saved changes: {reviewError}. Your draft is kept.
+              <InterfaceText values={{ value0: reviewError }}>
+                {'Could not read latest saved changes: {value0}. Your draft is kept.'}
+              </InterfaceText>
             </Text>
           )}
         </Glass>
@@ -206,6 +226,7 @@ export function SettingsSaveBar({
       review,
       latest,
       reviewError,
+      uiText,
     ],
   )
   useLayoutEffect(() => {

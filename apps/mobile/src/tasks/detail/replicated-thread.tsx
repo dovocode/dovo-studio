@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
@@ -20,10 +21,14 @@ type Message = Task['messages'][number]
 const followDistance = 48
 
 const ReplicaMessage = memo(function ReplicaMessage({ message }: { message: Message }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   return (
     <View style={{ paddingVertical: 12 }}>
-      <Text style={styles.muted}>{message.role === 'user' ? 'You' : 'Assistant'}</Text>
+      <Text style={styles.muted}>
+        {message.role === 'user' ? uiText('You') : uiText('Assistant')}
+      </Text>
       <Text selectable>{message.text}</Text>
     </View>
   )
@@ -129,11 +134,13 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
           {owner?.projectName} · {view.status}
         </Text>
         <Text style={styles.muted}>
-          Stored recovery copy. Connect to {owner?.ownerName} to continue this thread.
+          <InterfaceText values={{ value0: owner?.ownerName }}>
+            {'Stored recovery copy. Connect to {value0} to continue this thread.'}
+          </InterfaceText>
         </Text>
         <View style={styles.row}>
           <Action
-            label="Refresh messages"
+            label={uiText('Refresh messages')}
             disabled={!connected}
             onPress={() => setReload((value) => value + 1)}
           />
@@ -144,7 +151,9 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
           </Text>
         )}
         {!view.messages.length && (
-          <Text style={styles.muted}>No messages are stored in this recovery copy.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'No messages are stored in this recovery copy.'}</InterfaceText>
+          </Text>
         )}
       </View>
       <FlatList
@@ -170,7 +179,7 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
         ListFooterComponent={
           before ? (
             <Action
-              label="Load older messages"
+              label={uiText('Load older messages')}
               disabled={!connected || paging}
               onPress={() => void older()}
             />

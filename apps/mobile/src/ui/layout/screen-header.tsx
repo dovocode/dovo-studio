@@ -71,7 +71,7 @@ export function ScreenHeader({
   const heading = titleMenu ? (
     <Pressable
       accessibilityRole="button"
-      accessibilityLabel="Thread actions"
+      accessibilityLabel={uiText('Thread actions')}
       disabled={titleMenuDisabled}
       accessibilityState={{ disabled: titleMenuDisabled }}
       onPress={() => setMenu(true)}
@@ -151,7 +151,7 @@ export function ScreenHeader({
             <Stack.Toolbar.Menu
               icon={iconAssets.more}
               iconRenderingMode="template"
-              accessibilityLabel="More actions"
+              accessibilityLabel={uiText('More actions')}
               tintColor={colors.text}
             >
               {groupHeaderActions(buttons).map(({ name, actions }) => {
@@ -254,7 +254,7 @@ export function ScreenHeader({
             ))}
           {/* Android has no toolbar menu; the same overflow actions open in a sheet. */}
           {buttons?.some((button) => button.overflow) && (
-            <IconButton label="More actions" icon="more" onPress={() => setMenu(true)} />
+            <IconButton label={uiText('More actions')} icon="more" onPress={() => setMenu(true)} />
           )}
           {actions}
         </View>

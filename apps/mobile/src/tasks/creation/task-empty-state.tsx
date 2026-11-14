@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { View } from 'react-native'
 import { Text } from '../../ui/content/text'
@@ -36,11 +37,11 @@ export function TaskEmptyState({
           maxWidth: 420,
         }}
       >
-        What would you like to work on?
+        <InterfaceText>{'What would you like to work on?'}</InterfaceText>
       </Text>
       {projectName && !startModes && (
         <Text style={[styles.muted, { textAlign: 'center', maxWidth: 420, fontSize: 12 }]}>
-          In {projectName}
+          <InterfaceText values={{ value0: projectName }}>{'In {value0}'}</InterfaceText>
         </Text>
       )}
       {startModes}

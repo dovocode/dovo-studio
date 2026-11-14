@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable, ScrollView, View } from 'react-native'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
@@ -10,6 +11,8 @@ export function PullTabs({
   items: Array<{ id: string; name: string }>
   onChange: (id: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, highContrast } = useTheme()
 
   return (
@@ -21,7 +24,7 @@ export function PullTabs({
     >
       <View
         accessibilityRole="tablist"
-        accessibilityLabel="Pull request tabs"
+        accessibilityLabel={uiText('Pull request tabs')}
         style={{
           flexDirection: 'row',
           padding: 3,

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { Effect } from 'effect'
 import { Pressable, ScrollView, View } from 'react-native'
@@ -26,6 +27,8 @@ export function ProjectFileBrowser({
   active?: boolean
   onSelect: (path: string, line?: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { readEffect, connected, connection } = useRuntime()
   const { styles, colors } = useTheme()
   const [mode, setMode] = useState('files')
@@ -107,16 +110,16 @@ export function ProjectFileBrowser({
       <View style={{ paddingHorizontal: 12, gap: 6 }}>
         <Choice
           compact
-          label="Project search mode"
+          label={uiText('Project search mode')}
           value={mode}
           items={[
-            { id: 'files', name: 'File names' },
-            { id: 'content', name: 'Code contents' },
+            { id: 'files', name: uiText('File names') },
+            { id: 'content', name: uiText('Code contents') },
           ]}
           onChange={setMode}
         />
         <SearchField
-          label={mode === 'content' ? 'Search project code' : 'Search files'}
+          label={mode === 'content' ? uiText('Search project code') : uiText('Search files')}
           value={query}
           onChangeText={(value) => {
             setQuery(value.slice(0, 256))
@@ -124,7 +127,9 @@ export function ProjectFileBrowser({
         />
         {mode === 'content' && (
           <Text style={styles.muted}>
-            Case-sensitive literal search · up to 200 matching lines.
+            <InterfaceText>
+              {'Case-sensitive literal search · up to 200 matching lines.'}
+            </InterfaceText>
           </Text>
         )}
       </View>
@@ -144,11 +149,15 @@ export function ProjectFileBrowser({
           />
         </View>
         {!query && mode === 'files' ? null : !connected ? (
-          <Text style={styles.muted}>Reconnect to browse files.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Reconnect to browse files.'}</InterfaceText>
+          </Text>
         ) : mode === 'content' && !query ? (
-          <Text style={styles.muted}>Enter text to search this checkout’s code.</Text>
+          <Text style={styles.muted}>
+            <InterfaceText>{'Enter text to search this checkout’s code.'}</InterfaceText>
+          </Text>
         ) : !current ? (
-          <Text>{query ? 'Searching…' : 'Loading folder…'}</Text>
+          <Text>{query ? uiText('Searching…') : uiText('Loading folder…')}</Text>
         ) : (
           <>
             {current.error && (
@@ -158,7 +167,7 @@ export function ProjectFileBrowser({
                 </Text>
                 <Action
                   secondary
-                  label="Retry file search"
+                  label={uiText('Retry file search')}
                   onPress={() => {
                     setRetry((value) => value + 1)
                   }}
@@ -181,7 +190,10 @@ export function ProjectFileBrowser({
               <Pressable
                 key={`${match.path}:${match.line}`}
                 accessibilityRole="button"
-                accessibilityLabel={`Open ${match.path} line ${match.line}`}
+                accessibilityLabel={uiText('Open {value0} line {value1}', {
+                  value0: match.path,
+                  value1: match.line,
+                })}
                 onPress={() => onSelect(match.path, match.line)}
                 style={{ minHeight: 56, paddingVertical: 8 }}
               >
@@ -199,19 +211,28 @@ export function ProjectFileBrowser({
             ))}
             {(current.truncated || current.content?.truncated) && (
               <Text style={styles.muted}>
-                Some files are omitted. Narrow the search or open a smaller folder.
+                <InterfaceText>
+                  {'Some files are omitted. Narrow the search or open a smaller folder.'}
+                </InterfaceText>
               </Text>
             )}
             {current.paths && current.truncated === undefined && (
               <Text style={styles.muted}>
-                Listing completeness is unknown. Search covers returned files.
+                <InterfaceText>
+                  {'Listing completeness is unknown. Search covers returned files.'}
+                </InterfaceText>
               </Text>
             )}
             {!!current.content?.skippedFiles && (
               <Text style={styles.muted}>
-                {current.content.skippedFiles}{' '}
-                {current.content.skippedFiles === 1 ? 'item' : 'items'} skipped because they changed
-                or exceeded read limits.
+                <InterfaceText
+                  values={{
+                    value0: current.content.skippedFiles,
+                    value1: current.content.skippedFiles === 1 ? uiText('item') : uiText('items'),
+                  }}
+                >
+                  {'{value0} {value1} skipped because they changed or exceeded read limits.'}
+                </InterfaceText>
               </Text>
             )}
             {(current.paths?.length === 0 || current.content?.matches.length === 0) && (
@@ -219,10 +240,10 @@ export function ProjectFileBrowser({
                 {query
                   ? current.paths
                     ? current.truncated === false
-                      ? 'No matching files.'
-                      : 'No matching files in this listing.'
-                    : 'No matches in the searched files.'
-                  : 'No matching files.'}
+                      ? uiText('No matching files.')
+                      : uiText('No matching files in this listing.')
+                    : uiText('No matches in the searched files.')
+                  : uiText('No matching files.')}
               </Text>
             )}
           </>

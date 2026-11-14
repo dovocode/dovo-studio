@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { pullCommentsByFile } from '@dovo/protocol'
 import { type ComponentRef, useEffect, useMemo, useState } from 'react'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -59,6 +60,8 @@ export function PullChanges({
   onAnchor?: (node: ComponentRef<typeof View>) => void
   viewportHeight?: number
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { height } = useWindowDimensions()
@@ -164,7 +167,9 @@ export function PullChanges({
       <View>
         {summary}
         <Text style={styles.muted}>
-          {detail.files.length ? 'No matching files.' : 'No changed files returned.'}
+          {detail.files.length
+            ? uiText('No matching files.')
+            : uiText('No changed files returned.')}
         </Text>
       </View>
     )
@@ -228,15 +233,21 @@ export function PullChanges({
         </View>
         {file.previousPath && (
           <Text selectable style={[styles.muted, { paddingHorizontal: 12 }]}>
-            Renamed from {file.previousPath}
+            <InterfaceText values={{ value0: file.previousPath }}>
+              {'Renamed from {value0}'}
+            </InterfaceText>
           </Text>
         )}
         {reason && !file.attributes?.binary && (
           <>
-            <Text style={styles.muted}>{reason} · marked in .gitattributes</Text>
+            <Text style={styles.muted}>
+              <InterfaceText values={{ value0: reason }}>
+                {'{value0} · marked in .gitattributes'}
+              </InterfaceText>
+            </Text>
             <Action
               secondary
-              label={collapsed ? 'Show changes' : 'Hide changes'}
+              label={collapsed ? uiText('Show changes') : uiText('Hide changes')}
               onPress={() =>
                 (() => {
                   const next = new Set(expanded)
@@ -250,7 +261,9 @@ export function PullChanges({
         )}
       </View>
       {file.attributes?.binary ? (
-        <Text style={styles.muted}>Text diff disabled by .gitattributes (binary or -diff).</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Text diff disabled by .gitattributes (binary or -diff).'}</InterfaceText>
+        </Text>
       ) : collapsed ? null : file.patch ? (
         <View
           testID="PR code viewport"
@@ -267,10 +280,16 @@ export function PullChanges({
           />
         </View>
       ) : (
-        <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'No text patch available. Open this PR on its server.'}</InterfaceText>
+        </Text>
       )}
       {onAskAgent && (
-        <Action secondary label="Ask agent about this file" onPress={() => onAskAgent(file.path)} />
+        <Action
+          secondary
+          label={uiText('Ask agent about this file')}
+          onPress={() => onAskAgent(file.path)}
+        />
       )}
       {(!!comments.length || canComment) && (
         <View
@@ -284,19 +303,25 @@ export function PullChanges({
           {!!comments.length && (
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={`Feedback on this file (${comments.length})`}
+              accessibilityLabel={uiText('Feedback on this file ({value0})', {
+                value0: comments.length,
+              })}
               accessibilityState={{ expanded: feedbackOpen }}
               onPress={() => setFeedbackPath(feedbackOpen ? '' : file.path)}
               style={{ flex: 1, minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 6 }}
             >
               <Icon name={feedbackOpen ? 'down' : 'next'} size={14} color={colors.muted} />
-              <Text style={styles.muted}>Feedback ({comments.length})</Text>
+              <Text style={styles.muted}>
+                <InterfaceText values={{ value0: comments.length }}>
+                  {'Feedback ({value0})'}
+                </InterfaceText>
+              </Text>
             </Pressable>
           )}
           {canComment && (
             <Action
               secondary
-              label="Comment on line"
+              label={uiText('Comment on line')}
               icon="chat"
               onPress={() => onLineComment?.(file.path)}
             />

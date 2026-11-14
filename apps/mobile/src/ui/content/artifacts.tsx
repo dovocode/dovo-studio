@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { ArtifactSharedBadge } from './artifact-shared-badge'
 import { SafeModal } from '../layout/safe-modal'
@@ -47,6 +48,8 @@ export const ArtifactCard = memo(function ArtifactCard({
 }: {
   reference: ArtifactReference
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { activeId, snapshot } = useRuntime()
@@ -56,7 +59,7 @@ export const ArtifactCard = memo(function ArtifactCard({
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={`Open artifact ${reference.title}`}
+        accessibilityLabel={uiText('Open artifact {value0}', { value0: reference.title })}
         onPress={() => setOpen(true)}
         style={({ pressed }) => ({
           flexDirection: 'row',
@@ -77,7 +80,11 @@ export const ArtifactCard = memo(function ArtifactCard({
             {reference.title}
           </Text>
           <Text style={styles.muted}>
-            {artifactLabel(reference)} · Version {reference.revision}
+            <InterfaceText
+              values={{ value0: artifactLabel(reference), value1: reference.revision }}
+            >
+              {'{value0} · Version {value1}'}
+            </InterfaceText>
           </Text>
           <ArtifactSharedBadge artifact={reference} />
         </View>
@@ -148,6 +155,8 @@ export function ArtifactBrowser({
   initialId?: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const openLink = useOpenAppLink(taskId)
@@ -257,7 +266,7 @@ export function ArtifactBrowser({
       )
       setEditingExport({ key: exportKey, content })
     } catch (cause) {
-      Alert.alert('Could not prepare export editor', String(cause))
+      Alert.alert(uiText('Could not prepare export editor'), String(cause))
     } finally {
       editorRequest.current = false
       setPreparingEditor(false)
@@ -347,7 +356,7 @@ export function ArtifactBrowser({
               : {}),
       })
     } catch (cause) {
-      Alert.alert('Could not share artifact', String(cause))
+      Alert.alert(uiText('Could not share artifact'), String(cause))
     } finally {
       if (file?.exists) file.delete()
       sharingRequest.current = false
@@ -375,21 +384,24 @@ export function ArtifactBrowser({
             )}
             <View style={{ flex: 1, gap: 4 }}>
               <Text numberOfLines={2} style={{ fontSize: 18, fontWeight: '600' }}>
-                {link?.title ?? artifact?.title ?? metadata?.title ?? 'Thread artifacts'}
+                {link?.title ?? artifact?.title ?? metadata?.title ?? uiText('Thread artifacts')}
               </Text>
               <Text style={styles.muted}>
                 {link
                   ? artifactLinkLabel(link.provider)
                   : metadata
                     ? artifactLabel(metadata)
-                    : 'Saved in this thread'}
+                    : uiText('Saved in this thread')}
                 {artifact &&
-                  ` · Version ${artifact.revision}${revision === undefined ? ' · Latest' : ''}`}
+                  uiText(' · Version {value0}{value1}', {
+                    value0: artifact.revision,
+                    value1: revision === undefined ? ' · Latest' : '',
+                  })}
               </Text>
             </View>
             {canShare && (
               <IconButton
-                label="Share artifact"
+                label={uiText('Share artifact')}
                 icon="share"
                 disabled={!artifact}
                 onPress={() => setSharingArtifact(artifact)}
@@ -409,7 +421,7 @@ export function ArtifactBrowser({
             <ArtifactAction
               icon="artifactList"
               caption="Artifacts"
-              label="Choose artifact"
+              label={uiText('Choose artifact')}
               selected={picker === 'artifacts'}
               onPress={() => setPicker('artifacts')}
               disabled={!items?.length && !links.length}
@@ -419,8 +431,8 @@ export function ArtifactBrowser({
               caption="Versions"
               label={
                 revision
-                  ? `Choose version · current version ${revision}`
-                  : 'Choose version · latest version'
+                  ? uiText('Choose version · current version {value0}', { value0: revision })
+                  : uiText('Choose version · latest version')
               }
               selected={picker === 'versions'}
               onPress={() => setPicker('versions')}
@@ -429,14 +441,14 @@ export function ArtifactBrowser({
             <ArtifactAction
               icon={source ? 'preview' : 'code'}
               caption={source ? 'Preview' : 'Code'}
-              label={source ? 'Show artifact preview' : 'View artifact source code'}
+              label={source ? uiText('Show artifact preview') : uiText('View artifact source code')}
               onPress={() => setSource((value) => !value)}
               disabled={!artifact}
             />
             <ArtifactAction
               icon="share"
               caption="Export"
-              label="Export artifact"
+              label={uiText('Export artifact')}
               selected={picker === 'export'}
               onPress={() => setPicker('export')}
               disabled={!artifact || sharing}
@@ -444,21 +456,21 @@ export function ArtifactBrowser({
             <ArtifactAction
               icon="refresh"
               caption="Reload"
-              label="Refresh artifact"
+              label={uiText('Refresh artifact')}
               onPress={() => setReload((value) => value + 1)}
               disabled={!connected}
             />
             <ArtifactAction
               icon="close"
               caption="Close"
-              label="Close artifact preview"
+              label={uiText('Close artifact preview')}
               onPress={onClose}
             />
           </View>
           {artifact?.files && (
             <Action
               secondary
-              label={`Browse files · ${artifact.files.length}`}
+              label={uiText('Browse files · {value0}', { value0: artifact.files.length })}
               onPress={() => setPicker('files')}
             />
           )}
@@ -473,9 +485,13 @@ export function ArtifactBrowser({
           {items?.length === 0 && links.length === 0 && (
             <View style={{ alignItems: 'center', gap: 8, paddingVertical: 32 }}>
               <Icon name="artifactList" size={32} color={colors.muted} />
-              <Text style={[styles.text, { fontWeight: '600' }]}>No artifacts yet</Text>
+              <Text style={[styles.text, { fontWeight: '600' }]}>
+                <InterfaceText>{'No artifacts yet'}</InterfaceText>
+              </Text>
               <Text style={[styles.muted, { textAlign: 'center' }]}>
-                Ask your agent to create a document, an interactive preview or a graphic.
+                <InterfaceText>
+                  {'Ask your agent to create a document, an interactive preview or a graphic.'}
+                </InterfaceText>
               </Text>
             </View>
           )}
@@ -492,21 +508,25 @@ export function ArtifactBrowser({
             style={{ flex: 1, minHeight: 0 }}
             contentContainerStyle={{ padding: 16, gap: 16 }}
           >
-            <Text style={styles.muted}>Save or share this saved version.</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Save or share this saved version.'}</InterfaceText>
+            </Text>
             <Action
-              label={preparingEditor ? 'Preparing editor…' : 'Edit before export'}
+              label={preparingEditor ? uiText('Preparing editor…') : uiText('Edit before export')}
               secondary
               disabled={!artifact || !connected || sharing || preparingEditor}
               onPress={() => void editExport()}
             />
             <Text style={styles.muted}>
               {draftHtml !== undefined
-                ? 'Edited copy applied to PDF and MHTML. Saved source is unchanged.'
-                : 'Edit text, remove elements or mark them as non-printable for PDF and MHTML.'}
+                ? uiText('Edited copy applied to PDF and MHTML. Saved source is unchanged.')
+                : uiText(
+                    'Edit text, remove elements or mark them as non-printable for PDF and MHTML.',
+                  )}
             </Text>
             {draftHtml !== undefined && (
               <Action
-                label="Reset edits"
+                label={uiText('Reset edits')}
                 secondary
                 disabled={sharing}
                 onPress={() => setExportDraft(undefined)}
@@ -520,41 +540,53 @@ export function ArtifactBrowser({
             />
             {sharing && (
               <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                Preparing export…
+                <InterfaceText>{'Preparing export…'}</InterfaceText>
               </Text>
             )}
             {artifact?.files && (
               <>
                 <Action
-                  label="Interactive HTML"
+                  label={uiText('Interactive HTML')}
                   disabled={!connected || sharing}
                   onPress={() => void share('html')}
                 />
-                <Text style={styles.muted}>One file with working controls.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'One file with working controls.'}</InterfaceText>
+                </Text>
                 <Action
-                  label="MHTML snapshot"
+                  label={uiText('MHTML snapshot')}
                   disabled={!connected || sharing}
                   onPress={() => void share('mhtml')}
                 />
-                <Text style={styles.muted}>Offline page archive without interaction.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Offline page archive without interaction.'}</InterfaceText>
+                </Text>
                 <Action
-                  label="Share folder (ZIP)"
+                  label={uiText('Share folder (ZIP)')}
                   disabled={!connected || sharing}
                   onPress={() => void share('folder')}
                 />
               </>
             )}
             <Action
-              label="Share source"
+              label={uiText('Share source')}
               secondary
               disabled={!artifact || sharing}
               onPress={() => void share('source')}
             />
-            <Action label="Back to preview" secondary onPress={() => setPicker(undefined)} />
+            <Action
+              label={uiText('Back to preview')}
+              secondary
+              onPress={() => setPicker(undefined)}
+            />
           </ScrollView>
         ) : picker === 'files' ? (
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
-            <Action secondary label="Back to preview" onPress={() => setPicker(undefined)} />
+            <Action
+              secondary
+              label={uiText('Back to preview')}
+              onPress={() => setPicker(undefined)}
+            />
             {artifact?.files?.map((file) => (
               <Pressable
                 key={file.path}
@@ -577,18 +609,24 @@ export function ArtifactBrowser({
               >
                 <Text style={styles.text}>{file.path}</Text>
                 {file.path === artifact.entrypoint && (
-                  <Text style={styles.muted}>Preview entry file</Text>
+                  <Text style={styles.muted}>
+                    <InterfaceText>{'Preview entry file'}</InterfaceText>
+                  </Text>
                 )}
               </Pressable>
             ))}
           </ScrollView>
         ) : picker ? (
           <ScrollView contentContainerStyle={{ padding: 16, gap: 8 }}>
-            <Action secondary label="Back to preview" onPress={() => setPicker(undefined)} />
+            <Action
+              secondary
+              label={uiText('Back to preview')}
+              onPress={() => setPicker(undefined)}
+            />
             {picker === 'versions' && (
               <Action
                 secondary
-                label="Latest version"
+                label={uiText('Latest version')}
                 onPress={() => {
                   setRevision(undefined)
                   setPicker(undefined)
@@ -628,7 +666,9 @@ export function ArtifactBrowser({
                 <ArtifactFormatIcon format={item.format} />
                 <View style={{ flex: 1, gap: 4 }}>
                   <Text style={styles.text}>
-                    {picker === 'artifacts' ? item.title : `Version ${item.revision}`}
+                    {picker === 'artifacts'
+                      ? item.title
+                      : uiText('Version {value0}', { value0: item.revision })}
                   </Text>
                   <Text style={styles.muted}>
                     {artifactLabel(item)} · {new Date(item.updatedAt).toLocaleString()}
@@ -680,10 +720,10 @@ export function ArtifactBrowser({
               {link.url}
             </Text>
             <Action
-              label={`Open ${artifactLinkLabel(link.provider)}`}
+              label={uiText('Open {value0}', { value0: artifactLinkLabel(link.provider) })}
               onPress={() => {
                 void openLink(link.url).catch((cause: unknown) =>
-                  Alert.alert('Could not open link', String(cause)),
+                  Alert.alert(uiText('Could not open link'), String(cause)),
                 )
               }}
             />

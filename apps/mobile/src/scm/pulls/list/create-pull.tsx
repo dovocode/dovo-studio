@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pullPageSchema,
@@ -177,7 +178,9 @@ export function CreatePull({
       }
       if (!stopped)
         setError(
-          'Showing the first 10 pages. Open another parent PR and choose Stack a PR to use it.',
+          uiText(
+            'Showing the first 10 pages. Open another parent PR and choose Stack a PR to use it.',
+          ),
         )
     })().catch((error: unknown) => {
       if (!stopped) setError(error instanceof Error ? error.message : String(error))
@@ -255,9 +258,9 @@ export function CreatePull({
     )
   }
   return (
-    <Sheet ref={sheet} title="Create pull request" onClose={onClose} busy={busy}>
+    <Sheet ref={sheet} title={uiText('Create pull request')} onClose={onClose} busy={busy}>
       <Choice
-        label="Project"
+        label={uiText('Project')}
         value={repositoryId}
         onChange={(id) => {
           setRepository(id)
@@ -275,7 +278,7 @@ export function CreatePull({
       <Field label={uiText('Title')} value={title} onChangeText={setTitle} editable={!busy} />
       <Action
         secondary
-        label={describing ? 'Writing…' : 'Write title and description'}
+        label={describing ? uiText('Writing…') : uiText('Write title and description')}
         disabled={busy || describing || !connected || !head.trim() || !base.trim()}
         onPress={() => {
           setDescribing(true)
@@ -303,13 +306,13 @@ export function CreatePull({
       {!!sourceTasks.length && (
         <Choice
           row
-          label="From task"
+          label={uiText('From task')}
           value={sourceTask}
           disabled={busy}
           items={[
             {
               id: '',
-              name: 'Choose a task…',
+              name: uiText('Choose a task…'),
             },
             ...sourceTasks.map((task) => ({
               id: task.id,
@@ -328,14 +331,16 @@ export function CreatePull({
           }}
         />
       )}
-      <Text style={styles.muted}>Stack on a PR (optional)</Text>
+      <Text style={styles.muted}>
+        <InterfaceText>{'Stack on a PR (optional)'}</InterfaceText>
+      </Text>
       <Choice
         value={String(parent?.number ?? '')}
         disabled={busy || parentBusy}
         onChange={(value) => void chooseParent(value)}
-        label="Parent pull request"
+        label={uiText('Parent pull request')}
         items={[
-          { id: '', name: 'Independent PR' },
+          { id: '', name: uiText('Independent PR') },
           ...[
             ...new Map(
               [...(parent ? [parent] : []), ...parents].map((pull) => [pull.number, pull]),
@@ -344,27 +349,33 @@ export function CreatePull({
         ]}
       />
       <Text style={styles.muted}>
-        The next PR targets the parent’s branch, keeping its changes separate.
+        <InterfaceText>
+          {'The next PR targets the parent’s branch, keeping its changes separate.'}
+        </InterfaceText>
       </Text>
       <Field
-        label="Source branch"
+        label={uiText('Source branch')}
         value={head}
         onChangeText={setHead}
         editable={!busy}
-        placeholder="feature/my-change"
+        placeholder={uiText('feature/my-change')}
       />
       <Field
-        label="Target branch"
+        label={uiText('Target branch')}
         value={base}
         onChangeText={(value) => {
           setParent(undefined)
           setBase(value)
         }}
         editable={!busy}
-        placeholder="main"
+        placeholder={uiText('main')}
       />
       <Text style={styles.muted}>
-        Use branches already pushed to this project. Creating a PR does not push local commits.
+        <InterfaceText>
+          {
+            'Use branches already pushed to this project. Creating a PR does not push local commits.'
+          }
+        </InterfaceText>
       </Text>
       <Field
         label={uiText('Description')}
@@ -386,9 +397,11 @@ export function CreatePull({
             },
           ]}
         >
-          <Text style={styles.text}>Draft</Text>
+          <Text style={styles.text}>
+            <InterfaceText>{'Draft'}</InterfaceText>
+          </Text>
           <Switch
-            accessibilityLabel="Draft pull request"
+            accessibilityLabel={uiText('Draft pull request')}
             value={draft}
             onValueChange={setDraft}
             disabled={busy}
@@ -401,7 +414,7 @@ export function CreatePull({
         </Text>
       )}
       <Action
-        label={busy ? 'Creating…' : 'Create pull request'}
+        label={busy ? uiText('Creating…') : uiText('Create pull request')}
         disabled={busy || parentBusy || !source.ready || !connected || !repositoryId}
         onPress={() => void submit()}
       />

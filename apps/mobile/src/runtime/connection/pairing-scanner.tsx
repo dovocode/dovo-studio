@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SafeModal } from '../../ui/layout/safe-modal'
 import { useEffect, useRef } from 'react'
@@ -47,22 +48,29 @@ export function PairingScanner({
     >
       <View style={[styles.screen, { padding: 20, gap: 16 }]}>
         <View style={[styles.row, { justifyContent: 'space-between' }]}>
-          <Text style={styles.title}>Scan pairing QR code</Text>
+          <Text style={styles.title}>
+            <InterfaceText>{'Scan pairing QR code'}</InterfaceText>
+          </Text>
           <Action secondary label={uiText('Cancel')} onPress={onClose} />
         </View>
         <Text style={styles.muted}>
-          Point your camera at the QR code shown by Dovo Studio or the server’s pair command.
+          <InterfaceText>
+            {'Point your camera at the QR code shown by Dovo Studio or the server’s pair command.'}
+          </InterfaceText>
         </Text>
         {!permission ? (
           <ActivityIndicator color={colors.accent} />
         ) : !permission.granted ? (
           <View style={{ gap: 12 }}>
             <Text style={styles.text}>
-              Allow camera access to scan a pairing code. You can also enter the address and code
-              manually.
+              <InterfaceText>
+                {
+                  'Allow camera access to scan a pairing code. You can also enter the address and code manually.'
+                }
+              </InterfaceText>
             </Text>
             <Action
-              label={permission.canAskAgain ? 'Allow camera' : 'Open Settings'}
+              label={permission.canAskAgain ? uiText('Allow camera') : uiText('Open Settings')}
               disabled={busy}
               onPress={() =>
                 act(() => (permission.canAskAgain ? requestPermission() : Linking.openSettings()))
@@ -95,14 +103,14 @@ export function PairingScanner({
         {!!scanError && (
           <Action
             secondary
-            label="Try another code"
+            label={uiText('Try another code')}
             onPress={() => {
               consumed.current = false
               setScanError('')
             }}
           />
         )}
-        <Action secondary label="Enter address and code manually" onPress={onClose} />
+        <Action secondary label={uiText('Enter address and code manually')} onPress={onClose} />
       </View>
     </SafeModal>
   )

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import {
@@ -15,6 +16,8 @@ import { useTheme } from '../../../ui/theme'
 
 /** The agent's own review as a list; fix one finding or all of them. */
 export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => void }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -32,13 +35,24 @@ export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => voi
   return (
     <View style={[styles.card, { marginHorizontal: 16, marginBottom: 6, gap: 6 }]}>
       <Text style={[styles.text, { fontWeight: '600' }]}>
-        {findings.length} review {findings.length === 1 ? 'finding' : 'findings'}
+        <InterfaceText
+          values={{
+            value0: findings.length,
+            value1: findings.length === 1 ? uiText('finding') : uiText('findings'),
+          }}
+        >
+          {'{value0} review {value1}'}
+        </InterfaceText>
       </Text>
       {findings.slice(0, 8).map((finding, index) => (
         <View key={index} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={`${finding.path} line ${finding.line}: ${finding.text}. Opens changes.`}
+            accessibilityLabel={uiText('{value0} line {value1}: {value2}. Opens changes.', {
+              value0: finding.path,
+              value1: finding.line,
+              value2: finding.text,
+            })}
             onPress={onOpen}
             style={({ pressed }) => ({ flex: 1, opacity: pressed ? 0.55 : 1 })}
           >
@@ -51,14 +65,24 @@ export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => voi
           </Pressable>
           <Action
             secondary
-            label="Fix"
+            label={uiText('Fix')}
             disabled={!connected || busy}
             onPress={() => fix([finding])}
           />
         </View>
       ))}
-      {findings.length > 8 && <Text style={styles.muted}>And {findings.length - 8} more.</Text>}
-      <Action label="Fix all" disabled={!connected || busy} onPress={() => fix(findings)} />
+      {findings.length > 8 && (
+        <Text style={styles.muted}>
+          <InterfaceText values={{ value0: findings.length - 8 }}>
+            {'And {value0} more.'}
+          </InterfaceText>
+        </Text>
+      )}
+      <Action
+        label={uiText('Fix all')}
+        disabled={!connected || busy}
+        onPress={() => fix(findings)}
+      />
       {!!error && <Text style={styles.error}>{error}</Text>}
     </View>
   )

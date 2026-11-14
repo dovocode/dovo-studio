@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
@@ -24,11 +25,17 @@ export default function AgentsScreen() {
           <>
             <ScopedAgents scope={scope} repository={repository} />
             <View style={[styles.card, { gap: 8 }]}>
-              <Text style={styles.text}>Default agent for new tasks</Text>
-              <Text style={styles.muted}>Choose a profile and permissions in Task defaults.</Text>
+              <Text style={styles.text}>
+                <InterfaceText>{'Default agent for new tasks'}</InterfaceText>
+              </Text>
+              <Text style={styles.muted}>
+                <InterfaceText>
+                  {'Choose a profile and permissions in Task defaults.'}
+                </InterfaceText>
+              </Text>
               <Action
                 secondary
-                label="Open task defaults"
+                label={uiText('Open task defaults')}
                 onPress={() => router.push('/settings/task-defaults')}
               />
             </View>
@@ -40,7 +47,11 @@ export default function AgentsScreen() {
             )}
             {(scope === 'global' || scope === 'project') && (
               <Text style={styles.muted}>
-                Choose the Computer level to manage installations, accounts, titles and dictation.
+                <InterfaceText>
+                  {
+                    'Choose the Computer level to manage installations, accounts, titles and dictation.'
+                  }
+                </InterfaceText>
               </Text>
             )}
           </>
@@ -57,13 +68,17 @@ function EnvironmentTools() {
     <View style={{ gap: 12 }}>
       {connected ? (
         <>
-          <Text style={styles.text}>Installations & text generation · this computer</Text>
+          <Text style={styles.text}>
+            <InterfaceText>{'Installations & text generation · this computer'}</InterfaceText>
+          </Text>
           <HarnessUpdates />
           <AcpRegistrySettings />
         </>
       ) : (
         <Text style={styles.muted}>
-          Reconnect this computer to manage installations and text generation.
+          <InterfaceText>
+            {'Reconnect this computer to manage installations and text generation.'}
+          </InterfaceText>
         </Text>
       )}
       <TitleSettings />

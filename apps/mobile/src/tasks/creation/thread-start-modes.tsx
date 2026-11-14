@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Icon } from '../../ui/controls/icon'
 import type { ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
@@ -19,10 +20,12 @@ export function ThreadStartModes({
   server: ReactNode
   home?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   return (
     <View
-      accessibilityLabel={home ? 'Start a terminal' : 'Start a thread'}
+      accessibilityLabel={home ? uiText('Start a terminal') : uiText('Start a thread')}
       style={{
         width: '100%',
         maxWidth: 520,
@@ -45,8 +48,12 @@ export function ThreadStartModes({
       >
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={home ? 'Start in home folder' : 'Start without a project'}
-          accessibilityHint={home ? 'Open a shell in your home folder' : 'Start without a project'}
+          accessibilityLabel={
+            home ? uiText('Start in home folder') : uiText('Start without a project')
+          }
+          accessibilityHint={
+            home ? uiText('Open a shell in your home folder') : uiText('Start without a project')
+          }
           accessibilityState={{ selected, disabled }}
           disabled={disabled}
           onPress={onGeneral}
@@ -78,7 +85,7 @@ export function ThreadStartModes({
               fontWeight: selected ? '600' : '500',
             }}
           >
-            {home ? 'Home folder' : 'No Project'}
+            {home ? uiText('Home folder') : uiText('No Project')}
           </Text>
           {selected && <Icon name="check" size={14} color={colors.accent} />}
         </Pressable>

@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useCallback, useMemo, useState, useRef } from 'react'
 import {
   FlatList,
@@ -33,6 +34,8 @@ export function DiffView({
   annotations = [],
   wrapLines,
 }: ReviewDiffProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles, code, syntaxTheme } = useTheme()
   const codeColors = code
     ? {
@@ -105,7 +108,10 @@ export function DiffView({
           style={{ justifyContent: 'flex-start' }}
           disabled={!onLinePress || (item.after === undefined && item.before === undefined)}
           accessibilityRole="button"
-          accessibilityLabel={`Comment on ${item.kind === 'deletion' ? 'old' : 'new'} line ${item.kind === 'deletion' ? item.before : item.after}`}
+          accessibilityLabel={uiText('Comment on {value0} line {value1}', {
+            value0: item.kind === 'deletion' ? 'old' : 'new',
+            value1: item.kind === 'deletion' ? item.before : item.after,
+          })}
           onPress={() => {
             const line = item.kind === 'deletion' ? item.before : item.after
             if (line !== undefined)
@@ -162,7 +168,9 @@ export function DiffView({
         )
         .map((annotation, index) => (
           <View key={index} style={{ padding: 12, backgroundColor: colors.surface }}>
-            <Text style={styles.muted}>Review comment</Text>
+            <Text style={styles.muted}>
+              <InterfaceText>{'Review comment'}</InterfaceText>
+            </Text>
             <Text style={styles.text}>{annotation.text}</Text>
           </View>
         ))}
@@ -203,8 +211,14 @@ export function DiffView({
             backgroundColor: colors.surface,
           }}
         >
-          <Text style={styles.muted}>Wrap lines</Text>
-          <Switch accessibilityLabel="Wrap diff lines" value={wrap} onValueChange={setWrap} />
+          <Text style={styles.muted}>
+            <InterfaceText>{'Wrap lines'}</InterfaceText>
+          </Text>
+          <Switch
+            accessibilityLabel={uiText('Wrap diff lines')}
+            value={wrap}
+            onValueChange={setWrap}
+          />
         </View>
       )}
       {syntax?.error && (

@@ -108,6 +108,11 @@ export function liveTaskProps(
 /** Refresh unchanged activities sparingly; keep enough stale-date headroom for delivery jitter. */
 export const liveActivityRefreshMs = 3 * 60_000
 export const liveActivityStaleMs = 5 * 60_000
+/** Coalesce progress changes. Status changes bypass this interval. */
+export const liveActivityProgressMs = 30_000
+export function liveActivityPriority(props: LiveTaskProps, ended: boolean): 5 | 10 {
+  return ended || props.status !== 'Working' ? 10 : 5
+}
 
 const identity = maxValue(minValue(Schema.String, 1), 200)
 export const managedLiveActivitySchema = mutableStruct({

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import type { Attachment } from '@dovo/protocol'
@@ -26,6 +27,8 @@ export function QuestionAttachments({
   onRemove: (id: string) => void
   onBusy: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { profile, discardAttachment } = useRuntime()
   const [removing, setRemoving] = useState(false)
@@ -48,8 +51,9 @@ export function QuestionAttachments({
             {file.name}
           </Text>
           <Action
+            destructive
             secondary
-            label={`Remove ${file.name}`}
+            label={uiText('Remove {value0}', { value0: file.name })}
             disabled={disabled}
             onPress={() => {
               if (!profile || removing) return
@@ -68,13 +72,13 @@ export function QuestionAttachments({
       <View style={[styles.row, { gap: 8 }]}>
         <Action
           secondary
-          label={attachments.busy ? 'Attaching…' : 'Attach files to answer'}
+          label={attachments.busy ? uiText('Attaching…') : uiText('Attach files to answer')}
           disabled={disabled || count >= 5}
           onPress={attachments.pick}
         />
         <Action
           secondary
-          label="Paste image"
+          label={uiText('Paste image')}
           disabled={disabled || count >= 5}
           onPress={attachments.pasteImage}
         />

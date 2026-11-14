@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import { useOperationGuard } from '../../runtime/state/use-operation-guard'
@@ -352,8 +353,8 @@ export function Composer({
     }
     if (text.length > 20000) {
       Alert.alert(
-        'Side chat message too long',
-        'Side chat drafts can contain up to 20,000 characters.',
+        uiText('Side chat message too long'),
+        uiText('Side chat drafts can contain up to 20,000 characters.'),
       )
       return
     }
@@ -387,7 +388,7 @@ export function Composer({
       router.push(taskHref(activeId, chat.id))
     } catch (cause) {
       Alert.alert(
-        'Could not start side chat',
+        uiText('Could not start side chat'),
         cause instanceof Error ? cause.message : String(cause),
       )
     } finally {
@@ -438,7 +439,7 @@ export function Composer({
     )
   }
   useEffect(() => {
-    if (commandAction.error) Alert.alert('Could not run the command', commandAction.error)
+    if (commandAction.error) Alert.alert(uiText('Could not run the command'), commandAction.error)
   }, [commandAction.error])
   const runCommand = (id: ComposerCommandId) => {
     if (id === 'compact')
@@ -455,12 +456,12 @@ export function Composer({
       )
     if (id === 'new-session')
       return Alert.alert(
-        'Start a new agent session?',
-        'The next message starts the agent fresh, with this conversation as context.',
+        uiText('Start a new agent session?'),
+        uiText('The next message starts the agent fresh, with this conversation as context.'),
         [
-          { text: 'Cancel', style: 'cancel' },
+          { text: uiText('Cancel'), style: 'cancel' },
           {
-            text: 'Start fresh',
+            text: uiText('Start fresh'),
             onPress: () =>
               commandAction.act(() =>
                 commandCall('/api/tasks/new-session', { id: task.id }, responses.ok),
@@ -473,14 +474,20 @@ export function Composer({
       (turn?.checkpoint?.restorePending ? turn.id : task.historyTotals?.pendingUndoTurnId) ??
       turn?.id ??
       task.historyTotals?.undoableTurnId
-    if (!turnId) return Alert.alert('Nothing to undo', 'No turn has file changes left to undo.')
+    if (!turnId)
+      return Alert.alert(
+        uiText('Nothing to undo'),
+        uiText('No turn has file changes left to undo.'),
+      )
     Alert.alert(
-      'Undo the last turn’s changes?',
-      'Those files go back to how they were before it. Your current files are saved first, so you can redo this.',
+      uiText('Undo the last turn’s changes?'),
+      uiText(
+        'Those files go back to how they were before it. Your current files are saved first, so you can redo this.',
+      ),
       [
-        { text: 'Cancel', style: 'cancel' },
+        { text: uiText('Cancel'), style: 'cancel' },
         {
-          text: 'Undo changes',
+          text: uiText('Undo changes'),
           style: 'destructive',
           onPress: () =>
             commandAction.act(() =>
@@ -528,8 +535,10 @@ export function Composer({
   const backgroundStartActions: MenuAction[] = showBackgroundStart
     ? [
         {
-          title: actions.backgroundSubmitting ? 'Starting in background…' : 'Start in background',
-          label: 'Start in background',
+          title: actions.backgroundSubmitting
+            ? uiText('Starting in background…')
+            : uiText('Start in background'),
+          label: uiText('Start in background'),
           icon: 'sendBackground' as const,
           disabled: machineMoving || !canSend || !actions.canStartInBackground || fork.busy,
           onPress: () => {
@@ -552,8 +561,8 @@ export function Composer({
           ...(stageSupported
             ? [
                 {
-                  title: 'Add without starting',
-                  label: 'Add without starting',
+                  title: uiText('Add without starting'),
+                  label: uiText('Add without starting'),
                   icon: 'queue' as const,
                   disabled: !canSend || busy,
                   onPress: () => send('stage'),
@@ -576,8 +585,8 @@ export function Composer({
           (task.queuePaused || task.queue?.[0]?.paused)
             ? [
                 {
-                  title: 'Send now',
-                  label: 'Send now',
+                  title: uiText('Send now'),
+                  label: uiText('Send now'),
                   icon: 'send' as const,
                   disabled: !canSend || busy,
                   onPress: () => send('direct'),
@@ -587,8 +596,8 @@ export function Composer({
           ...(showFork
             ? [
                 {
-                  title: 'Fork',
-                  label: 'Fork',
+                  title: uiText('Fork'),
+                  label: uiText('Fork'),
                   icon: 'changes' as const,
                   disabled: !canSend || busy || !!turnSettings || plan,
                   onPress: fork.start,
@@ -598,19 +607,19 @@ export function Composer({
           {
             title:
               task.status === 'running' && defaultSendMode === 'stage'
-                ? 'Add and run queue'
-                : 'Queue follow-up',
+                ? uiText('Add and run queue')
+                : uiText('Queue follow-up'),
             label:
               task.status === 'running' && defaultSendMode === 'stage'
-                ? 'Add and run queue'
-                : 'Queue follow-up',
+                ? uiText('Add and run queue')
+                : uiText('Queue follow-up'),
             icon: 'queue',
             disabled: !canSend || busy,
             onPress: () => send('queue'),
           },
           {
-            title: 'Steer agent',
-            label: 'Steer agent',
+            title: uiText('Steer agent'),
+            label: uiText('Steer agent'),
             icon: 'steer',
             disabled: !canSend || busy || !!turnSettings || plan,
             onPress: () => send('steer'),
@@ -625,8 +634,8 @@ export function Composer({
         ]
   const draftMenuActions: MenuAction[] = [
     {
-      title: 'Message history',
-      label: 'Message history',
+      title: uiText('Message history'),
+      label: uiText('Message history'),
       icon: 'history',
       disabled: !canBrowseHistory,
       onPress: composerHistory.begin,
@@ -634,8 +643,8 @@ export function Composer({
     ...(!task.bot && planSupported && !showPlanButton
       ? [
           {
-            title: plan ? 'Turn off Plan' : 'Plan',
-            label: 'Plan',
+            title: plan ? uiText('Turn off Plan') : uiText('Plan'),
+            label: uiText('Plan'),
             icon: 'checklist' as const,
             disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
             onPress: () => setPlan(!plan),
@@ -644,8 +653,8 @@ export function Composer({
       : []),
     ...(
       [
-        { source: 'camera', title: 'Camera', icon: 'camera' },
-        { source: 'photos', title: 'Photos', icon: 'fileImage' },
+        { source: 'camera', title: uiText('Camera'), icon: 'camera' },
+        { source: 'photos', title: uiText('Photos'), icon: 'fileImage' },
         { source: 'files', title: uiText('Files'), icon: 'attach' },
       ] as const
     ).map(({ source, title, icon }) => ({
@@ -662,8 +671,8 @@ export function Composer({
       onPress: () => attachmentPicker.select(source),
     })),
     {
-      title: 'Paste Image',
-      label: 'Paste Image',
+      title: uiText('Paste Image'),
+      label: uiText('Paste Image'),
       icon: 'fileImage',
       disabled:
         (!!editing && !snapshot?.fullTurnSettingsSupported) ||
@@ -675,8 +684,8 @@ export function Composer({
       onPress: attachmentPicker.pasteImage,
     },
     {
-      title: 'Stashed drafts',
-      label: 'Stashed drafts',
+      title: uiText('Stashed drafts'),
+      label: uiText('Stashed drafts'),
       icon: 'save',
       disabled:
         !stashRuntimeId ||
@@ -690,8 +699,8 @@ export function Composer({
       onPress: () => setDraftTools('stash'),
     },
     {
-      title: 'Attach thread context',
-      label: 'Attach thread context',
+      title: uiText('Attach thread context'),
+      label: uiText('Attach thread context'),
       icon: 'chat',
       disabled:
         !connected ||
@@ -846,8 +855,8 @@ export function Composer({
                 secondary
                 label={
                   task.linkedCheckouts?.length
-                    ? `Link projects (${task.linkedCheckouts.length})`
-                    : 'Link projects'
+                    ? uiText('Link projects ({value0})', { value0: task.linkedCheckouts.length })
+                    : uiText('Link projects')
                 }
                 disabled={busy || !connected || !draft.ready || attaching || dictation.active}
                 onPress={() => {
@@ -872,14 +881,14 @@ export function Composer({
               <View style={{ gap: 8 }}>
                 {task.autoProject && snapshot?.autoProjectSelectionEnabled === true && (
                   <View
-                    accessibilityLabel="Scope checkout"
+                    accessibilityLabel={uiText('Scope checkout')}
                     style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}
                   >
                     {(
                       [
-                        { label: 'Project defaults', value: undefined },
-                        { label: 'New worktrees', value: 'worktree' },
-                        { label: 'Local checkouts', value: 'main' },
+                        { label: uiText('Project defaults'), value: undefined },
+                        { label: uiText('New worktrees'), value: 'worktree' },
+                        { label: uiText('Local checkouts'), value: 'main' },
                       ] as const
                     ).map(({ label, value }) => (
                       <Pressable
@@ -919,7 +928,7 @@ export function Composer({
                   <Pressable
                     testID="Checkout & branch"
                     accessibilityRole="button"
-                    accessibilityLabel="Checkout & branch"
+                    accessibilityLabel={uiText('Checkout & branch')}
                     accessibilityValue={{ text: checkoutLabel }}
                     accessibilityState={{
                       disabled: busy,
@@ -968,9 +977,10 @@ export function Composer({
         {task.execution === 'worktree' && task.pullRequest && !task.checkoutBranch && (
           <Text style={styles.muted}>
             {task.pullRequest.checkoutMode === 'pr-branch'
-              ? 'PR branch in new worktree:'
-              : 'New worktree from'}{' '}
-            {task.pullRequest.headBranch || `PR #${task.pullRequest.number}`}
+              ? uiText('PR branch in new worktree:')
+              : uiText('New worktree from')}{' '}
+            {task.pullRequest.headBranch ||
+              uiText('PR #{value0}', { value0: task.pullRequest.number })}
           </Text>
         )}
       </>
@@ -1041,7 +1051,9 @@ export function Composer({
       {!task.bot && meter && meter.level !== 'ok' && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={commandAction.busy ? 'Compacting context' : 'Compact context'}
+          accessibilityLabel={
+            commandAction.busy ? uiText('Compacting context') : uiText('Compact context')
+          }
           accessibilityHint={meter.label}
           accessibilityState={{ disabled: compactDisabled }}
           disabled={compactDisabled}
@@ -1071,7 +1083,7 @@ export function Composer({
               <Icon name="collapse" size={12} color={colors.muted} />
             )}
             <Text style={{ color: colors.muted, fontSize: 12 }}>
-              {commandAction.busy ? 'Compacting…' : 'Compact context'}
+              {commandAction.busy ? uiText('Compacting…') : uiText('Compact context')}
             </Text>
           </View>
         </Pressable>
@@ -1081,12 +1093,14 @@ export function Composer({
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
           <Text style={[styles.muted, { flex: 1 }]}>
             {task.queue?.some((message) => message.id === editing.message.id)
-              ? 'Edit queued message'
-              : 'This message already started or was removed. Your edit is kept in the composer.'}
+              ? uiText('Edit queued message')
+              : uiText(
+                  'This message already started or was removed. Your edit is kept in the composer.',
+                )}
           </Text>
           <Action
             secondary
-            label="Cancel edit"
+            label={uiText('Cancel edit')}
             disabled={busy || attaching || dictation.active}
             onPress={cancelEdit}
           />
@@ -1122,7 +1136,7 @@ export function Composer({
             <View style={{ flexDirection: 'row', gap: 8, padding: 10 }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Use suggested next prompt"
+                accessibilityLabel={uiText('Use suggested next prompt')}
                 style={{ flex: 1 }}
                 onPress={() => {
                   draft.update(nextPrompt.text)
@@ -1133,16 +1147,20 @@ export function Composer({
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Dismiss suggested next prompt"
+                accessibilityLabel={uiText('Dismiss suggested next prompt')}
                 onPress={nextPrompt.dismiss}
               >
-                <Text style={{ color: colors.muted }}>Dismiss</Text>
+                <Text style={{ color: colors.muted }}>
+                  <InterfaceText>{'Dismiss'}</InterfaceText>
+                </Text>
               </Pressable>
             </View>
           )}
           {!task.bot && nextPrompt.error && (
             <Text style={{ color: colors.muted, fontSize: 12 }}>
-              Prompt suggestion unavailable. {nextPrompt.error}
+              <InterfaceText values={{ value0: nextPrompt.error }}>
+                {'Prompt suggestion unavailable. {value0}'}
+              </InterfaceText>
             </Text>
           )}
           {focused && !composerHistory.active && (
@@ -1178,7 +1196,9 @@ export function Composer({
             {(composerHistory.loading || composerHistory.error) && (
               <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 4 }}>
                 <Text accessibilityRole="text" style={styles.muted}>
-                  {composerHistory.loading ? 'Loading message history…' : composerHistory.error}
+                  {composerHistory.loading
+                    ? uiText('Loading message history…')
+                    : composerHistory.error}
                 </Text>
                 <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
               </View>
@@ -1197,8 +1217,10 @@ export function Composer({
                 <View
                   accessible
                   accessibilityRole="adjustable"
-                  accessibilityLabel="Message history"
-                  accessibilityHint="Swipe right for older messages and left for newer messages. Typing or sending uses this text. Cancel restores your draft."
+                  accessibilityLabel={uiText('Message history')}
+                  accessibilityHint={uiText(
+                    'Swipe right for older messages and left for newer messages. Typing or sending uses this text. Cancel restores your draft.',
+                  )}
                   accessibilityValue={{
                     min: 0,
                     max: composerHistory.count,
@@ -1217,10 +1239,15 @@ export function Composer({
                 >
                   <Text style={[styles.muted, { fontSize: 12 }]}>
                     {composerHistory.index === -1
-                      ? 'Current draft'
-                      : `History · ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}`}
+                      ? uiText('Current draft')
+                      : uiText('History · {value0} of {value1}', {
+                          value0: (composerHistory.index ?? 0) + 1,
+                          value1: composerHistory.count,
+                        })}
                   </Text>
-                  <Text style={[styles.muted, { fontSize: 11 }]}>← Newer · Older →</Text>
+                  <Text style={[styles.muted, { fontSize: 11 }]}>
+                    <InterfaceText>{'← Newer · Older →'}</InterfaceText>
+                  </Text>
                 </View>
                 <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
               </View>
@@ -1250,16 +1277,16 @@ export function Composer({
                   onSelectionChange={select}
                   placeholder={
                     editing
-                      ? 'Edit queued message…'
+                      ? uiText('Edit queued message…')
                       : dictation.isRecording
-                        ? 'Listening…'
+                        ? uiText('Listening…')
                         : task.archivedAt
-                          ? 'Restore this archived thread to continue'
+                          ? uiText('Restore this archived thread to continue')
                           : firstMessage
-                            ? 'Send a message…'
+                            ? uiText('Send a message…')
                             : task.status === 'running'
-                              ? 'Add a follow-up…'
-                              : 'Ask a follow-up…'
+                              ? uiText('Add a follow-up…')
+                              : uiText('Ask a follow-up…')
                   }
                   value={draft.text}
                   revision={draft.revision}
@@ -1293,7 +1320,7 @@ export function Composer({
                   {focused && (
                     <Animated.View entering={reveal} exiting={conceal}>
                       <IconButton
-                        label="Dismiss keyboard"
+                        label={uiText('Dismiss keyboard')}
                         variant="plain"
                         icon="keyboard"
                         onPress={() => dismissComposerKeyboard()}
@@ -1325,7 +1352,7 @@ export function Composer({
               {Platform.OS === 'ios' ? (
                 <IconButton
                   icon="add"
-                  label="Add to draft"
+                  label={uiText('Add to draft')}
                   color={!showPlanButton && plan ? colors.accent : undefined}
                   disabled={
                     busy ||
@@ -1342,7 +1369,7 @@ export function Composer({
                   {/* Keep the menu trigger in the TextInput responder tree so it retains the keyboard. */}
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel="Add to draft"
+                    accessibilityLabel={uiText('Add to draft')}
                     accessibilityState={{
                       expanded: !!toolsAnchor,
                       disabled:
@@ -1399,7 +1426,7 @@ export function Composer({
                 {!task.bot && turnModelOpen && agent && (
                   <Sheet
                     ref={turnModelSheet}
-                    title="Agent & model"
+                    title={uiText('Agent & model')}
                     onClose={() => setTurnModelOpen(false)}
                   >
                     {snapshot?.fullTurnSettingsSupported ? (
@@ -1432,7 +1459,7 @@ export function Composer({
                   >
                     <Pressable
                       accessibilityRole="button"
-                      accessibilityLabel="Agent & model"
+                      accessibilityLabel={uiText('Agent & model')}
                       accessibilityValue={{
                         text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
                       }}
@@ -1507,8 +1534,10 @@ export function Composer({
                     <Animated.View entering={reveal} exiting={conceal}>
                       <Pressable
                         accessibilityRole="switch"
-                        accessibilityLabel="Plan"
-                        accessibilityHint="Runs the next message read-only and replies with a plan"
+                        accessibilityLabel={uiText('Plan')}
+                        accessibilityHint={uiText(
+                          'Runs the next message read-only and replies with a plan',
+                        )}
                         accessibilityState={{
                           checked: plan,
                           disabled: busy || !!task.archivedAt || (!plan && !!planModeIssue(agent)),
@@ -1537,7 +1566,7 @@ export function Composer({
                             plan && { color: colors.accent, fontWeight: '600' },
                           ]}
                         >
-                          Plan
+                          <InterfaceText>{'Plan'}</InterfaceText>
                         </Text>
                       </Pressable>
                     </Animated.View>
@@ -1570,7 +1599,7 @@ export function Composer({
               <IconButton
                 variant="plain"
                 icon={listening ? 'waveform' : 'microphone'}
-                label={listening ? 'Finish dictation' : 'Dictate message'}
+                label={listening ? uiText('Finish dictation') : uiText('Dictate message')}
                 color={listening ? colors.accent : undefined}
                 selected={listening}
                 disabled={dictation.isStopping || (!listening && !canDictate)}
@@ -1601,16 +1630,16 @@ export function Composer({
                   }
                   label={
                     editing
-                      ? 'Save changes'
+                      ? uiText('Save changes')
                       : !connected && hasInput
-                        ? 'Send when online'
+                        ? uiText('Send when online')
                         : defaultSendMode === 'stage' && hasInput
-                          ? 'Add to queue'
+                          ? uiText('Add to queue')
                           : task.status === 'running'
                             ? hasInput
-                              ? 'Queue follow-up'
-                              : 'Stop'
-                            : 'Send'
+                              ? uiText('Queue follow-up')
+                              : uiText('Stop')
+                            : uiText('Send')
                   }
                   disabled={
                     machineMoving ||
@@ -1634,13 +1663,13 @@ export function Composer({
               </View>
             </Animated.View>
             <ActionMenu
-              label="Message actions"
+              label={uiText('Message actions')}
               anchor={showMessageMenu ? messageActions : null}
               onClose={() => setMessageActions(null)}
               actions={messageMenuActions}
             />
             <ActionMenu
-              label="Add to draft"
+              label={uiText('Add to draft')}
               anchor={toolsAnchor}
               onClose={() => setToolsAnchor(null)}
               align="start"
@@ -1711,19 +1740,23 @@ export function Composer({
                 {dictationStatus}
               </Text>
               {dictation.state?.status === 'cleaning' && (
-                <Action secondary label="Keep original" onPress={dictation.keepOriginal} />
+                <Action
+                  secondary
+                  label={uiText('Keep original')}
+                  onPress={dictation.keepOriginal}
+                />
               )}
               {dictation.state?.status === 'done' && (
-                <Action secondary label="Undo cleanup" onPress={dictation.keepOriginal} />
+                <Action secondary label={uiText('Undo cleanup')} onPress={dictation.keepOriginal} />
               )}
               {dictation.state?.status === 'failed' && connected && (
-                <Action secondary label="Retry cleanup" onPress={dictation.retry} />
+                <Action secondary label={uiText('Retry cleanup')} onPress={dictation.retry} />
               )}
               {dictation.state?.status !== 'cleaning' && !dictation.active && (
                 <IconButton
                   variant="plain"
                   icon="close"
-                  label="Dismiss dictation status"
+                  label={uiText('Dismiss dictation status')}
                   onPress={dictation.reset}
                 />
               )}
@@ -1757,7 +1790,7 @@ export function Composer({
           {dictation.permissionDenied && (
             <Action
               secondary
-              label="Open Settings"
+              label={uiText('Open Settings')}
               onPress={() => act(() => Linking.openSettings())}
             />
           )}
@@ -1768,7 +1801,7 @@ export function Composer({
         repository?.kind === 'scratch' &&
         !task.autoProject && (
           <Sheet
-            title="Linked projects"
+            title={uiText('Linked projects')}
             onClose={() => setLinkingProjects(false)}
             busy={linkedProjectsAction.busy}
           >
@@ -1796,7 +1829,7 @@ export function Composer({
           </Sheet>
         )}
       {checkout && checkoutEditable && hasGit && (
-        <Sheet title="Checkout & branch" onClose={() => setCheckout(false)}>
+        <Sheet title={uiText('Checkout & branch')} onClose={() => setCheckout(false)}>
           <CheckoutChoice
             value={task.existingWorktreePath ? 'existing' : (task.execution ?? 'main')}
             branch={
@@ -1822,15 +1855,18 @@ export function Composer({
           {choosingWorktree && (
             <View style={{ gap: 8 }}>
               <Text style={styles.muted}>
-                Choose a worktree on this computer. The task uses its current files; only one task
-                can run there at a time.
+                <InterfaceText>
+                  {
+                    'Choose a worktree on this computer. The task uses its current files; only one task can run there at a time.'
+                  }
+                </InterfaceText>
               </Text>
               {!!worktreeAction.error && <Text style={styles.error}>{worktreeAction.error}</Text>}
               {worktrees?.worktrees.map((item) => (
                 <Action
                   key={item.path}
                   secondary
-                  label={`${item.branch || item.path.split('/').at(-1)}${item.dirty ? ' · Changed files' : ''}`}
+                  label={`${item.branch || item.path.split('/').at(-1)}${item.dirty ? uiText(' · Changed files') : ''}`}
                   disabled={!connected || busy || worktreeAction.busy}
                   onPress={() =>
                     act(() =>
@@ -1850,10 +1886,14 @@ export function Composer({
                 />
               ))}
               {worktrees && !worktrees.worktrees.length && (
-                <Text style={styles.muted}>No available worktrees for this project.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'No available worktrees for this project.'}</InterfaceText>
+                </Text>
               )}
               {!worktrees && !worktreeAction.error && (
-                <Text style={styles.muted}>Loading worktrees…</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Loading worktrees…'}</InterfaceText>
+                </Text>
               )}
             </View>
           )}
@@ -1861,7 +1901,9 @@ export function Composer({
             <>
               <Action
                 secondary
-                label={`${task.worktreeIncludeChanges ? '✓ ' : ''}Include uncommitted changes`}
+                label={uiText('{value0}Include uncommitted changes', {
+                  value0: task.worktreeIncludeChanges ? '✓ ' : '',
+                })}
                 disabled={busy || !connected}
                 onPress={() =>
                   act(() =>
@@ -1877,7 +1919,9 @@ export function Composer({
               />
               {task.worktreeIncludeChanges ? (
                 <Text style={styles.muted}>
-                  Starts from current files, including changes. Source stays unchanged.
+                  <InterfaceText>
+                    {'Starts from current files, including changes. Source stays unchanged.'}
+                  </InterfaceText>
                 </Text>
               ) : (
                 <WorktreeBasePicker
@@ -1904,33 +1948,48 @@ export function Composer({
       )}
       {showFork && !!turnSettings && (
         <Text style={styles.muted}>
-          Fork uses the thread’s settings. Select Use thread defaults to fork.
+          <InterfaceText>
+            {'Fork uses the thread’s settings. Select Use thread defaults to fork.'}
+          </InterfaceText>
         </Text>
       )}
       {!!fork.pending && (
         <View style={{ gap: 8 }}>
-          <Text accessibilityRole="alert">A fork request is waiting for this computer.</Text>
+          <Text accessibilityRole="alert">
+            <InterfaceText>{'A fork request is waiting for this computer.'}</InterfaceText>
+          </Text>
           <Text numberOfLines={3}>{fork.pending.text}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
-            <Action label="Retry fork" disabled={!connected || busy} onPress={fork.retry} />
-            <Action label="Discard fork request" disabled={busy} onPress={fork.discard} secondary />
+            <Action
+              label={uiText('Retry fork')}
+              disabled={!connected || busy}
+              onPress={fork.retry}
+            />
+            <Action
+              destructive
+              label={uiText('Discard fork request')}
+              disabled={busy}
+              onPress={fork.discard}
+              secondary
+            />
           </View>
         </View>
       )}
       {!!actions.pendingRestore && (
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="alert">
-            A queued message is waiting to return to this draft.
+            <InterfaceText>{'A queued message is waiting to return to this draft.'}</InterfaceText>
           </Text>
           <Text numberOfLines={3}>{actions.pendingRestore.text}</Text>
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 8 }}>
             <Action
-              label="Retry restore"
+              label={uiText('Retry restore')}
               disabled={!connected || busy}
               onPress={actions.retryRestore}
             />
             <Action
-              label="Discard restore"
+              destructive
+              label={uiText('Discard restore')}
               disabled={busy}
               onPress={actions.discardRestore}
               secondary
@@ -1940,16 +1999,21 @@ export function Composer({
       )}
       {attachmentPicker.failedUploads.map((file) => (
         <View key={file.id} style={{ gap: 8 }}>
-          <Text accessibilityRole="alert">{file.name} did not upload.</Text>
+          <Text accessibilityRole="alert">
+            <InterfaceText values={{ value0: file.name }}>
+              {'{value0} did not upload.'}
+            </InterfaceText>
+          </Text>
           <View style={{ flexDirection: 'row', gap: 8 }}>
             <Action
-              label={`Retry ${file.name}`}
+              label={uiText('Retry {value0}', { value0: file.name })}
               disabled={busy || attaching}
               onPress={() => attachmentPicker.retryUpload(file.id)}
             />
             <Action
+              destructive
               secondary
-              label={`Remove ${file.name}`}
+              label={uiText('Remove {value0}', { value0: file.name })}
               disabled={busy || attaching}
               onPress={() => attachmentPicker.discardFailedUpload(file.id)}
             />

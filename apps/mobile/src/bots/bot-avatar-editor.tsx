@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
@@ -60,7 +61,7 @@ export function BotAvatarEditor({
     name: id.startsWith('harness:') ? providerDisplayName(agent.provider) : agent.name,
   }))
   if (draft.harnessId && !harnesses.some((choice) => choice.id === draft.harnessId))
-    harnesses.push({ id: draft.harnessId, name: 'Unavailable harness' })
+    harnesses.push({ id: draft.harnessId, name: uiText('Unavailable harness') })
   const retain = (value: Draft) => {
     drafts.set(key, value)
     setDraft(value)
@@ -94,9 +95,13 @@ export function BotAvatarEditor({
     <Sheet title={uiText('Avatar')} onClose={onClose}>
       <View style={{ gap: 12 }}>
         <BotAvatar name={task.title} avatar={draft.preview ?? task.bot?.avatar} size={96} />
-        {!snapshot?.botAvatarsSupported && <Text>Update this runtime to set a Bot avatar.</Text>}
+        {!snapshot?.botAvatarsSupported && (
+          <Text>
+            <InterfaceText>{'Update this runtime to set a Bot avatar.'}</InterfaceText>
+          </Text>
+        )}
         <Action
-          label="Choose avatar image"
+          label={uiText('Choose avatar image')}
           disabled={disabled}
           onPress={() =>
             void act(async () => {
@@ -121,26 +126,34 @@ export function BotAvatarEditor({
           }
         />
         <Choice
-          label="Avatar generation harness"
+          label={uiText('Avatar generation harness')}
           value={draft.harnessId ?? ''}
-          items={[{ id: '', name: 'Use Bot harness' }, ...harnesses]}
+          items={[{ id: '', name: uiText('Use Bot harness') }, ...harnesses]}
           disabled={disabled || !!draft.request || !snapshot?.botAvatarHarnessSelectionSupported}
           onChange={(harnessId) => retain({ ...draft, harnessId: harnessId || undefined })}
         />
         <Field
-          label="Avatar description"
+          label={uiText('Avatar description')}
           value={draft.prompt}
           editable={!disabled && !draft.request}
           maxLength={2000}
           onChangeText={(prompt) => retain({ ...draft, prompt })}
         />
         <Text>
-          A temporary chat uses the selected harness, this Bot’s access limits and installed image
-          tools. It returns a preview without posting to the conversation. Image generation can
-          incur provider charges.
+          <InterfaceText>
+            {
+              'A temporary chat uses the selected harness, this Bot’s access limits and installed image tools. It returns a preview without posting to the conversation. Image generation can incur provider charges.'
+            }
+          </InterfaceText>
         </Text>
         <Action
-          label={busy ? 'Working…' : draft.request ? 'Retry generation' : 'Generate avatar'}
+          label={
+            busy
+              ? uiText('Working…')
+              : draft.request
+                ? uiText('Retry generation')
+                : uiText('Generate avatar')
+          }
           disabled={disabled || !draft.prompt.trim()}
           onPress={() =>
             void act(async () => {
@@ -160,7 +173,7 @@ export function BotAvatarEditor({
         {draft.request && (
           <Action
             secondary
-            label="Cancel generation"
+            label={uiText('Cancel generation')}
             disabled={!connected}
             onPress={() => {
               if (!draft.request) return
@@ -176,15 +189,16 @@ export function BotAvatarEditor({
         {draft.preview && (
           <>
             <Action
-              label="Use avatar"
+              label={uiText('Use avatar')}
               disabled={disabled}
               onPress={() => {
                 if (draft.preview) void save(draft.preview)
               }}
             />
             <Action
+              destructive
               secondary
-              label="Discard preview"
+              label={uiText('Discard preview')}
               disabled={busy}
               onPress={() => retain({ ...draft, preview: undefined })}
             />
@@ -192,8 +206,9 @@ export function BotAvatarEditor({
         )}
         {task.bot?.avatar && (
           <Action
+            destructive
             secondary
-            label="Remove avatar"
+            label={uiText('Remove avatar')}
             disabled={disabled}
             onPress={() => void save(null)}
           />

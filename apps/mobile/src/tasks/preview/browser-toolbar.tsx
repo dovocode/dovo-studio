@@ -81,7 +81,7 @@ export function BrowserToolbar({
   const [focused, setFocused] = useApplicationState(false)
   return (
     <View
-      accessibilityLabel="Browser navigation"
+      accessibilityLabel={uiText('Browser navigation')}
       style={{
         paddingHorizontal: 8,
         paddingVertical: 4,
@@ -112,7 +112,7 @@ export function BrowserToolbar({
             <Field
               inputRef={addressRef}
               selectTextOnFocus
-              placeholder={focused ? 'Enter website address' : ''}
+              placeholder={focused ? uiText('Enter website address') : ''}
               style={{
                 backgroundColor: 'transparent',
                 borderWidth: 0,
@@ -125,7 +125,7 @@ export function BrowserToolbar({
                 textAlign: 'left',
                 color: focused ? colors.text : 'transparent',
               }}
-              label="Preview URL"
+              label={uiText('Preview URL')}
               hideLabel
               value={address}
               multiline={false}
@@ -166,12 +166,12 @@ export function BrowserToolbar({
                   textAlign: 'center',
                 }}
               >
-                {address ? addressLabel(address) : 'Enter website address'}
+                {address ? addressLabel(address) : uiText('Enter website address')}
               </Text>
             </View>
           </View>
           <IconButton
-            label="Go to address"
+            label={uiText('Go to address')}
             icon="next"
             disabled={!available || !address.trim()}
             onPress={onNavigate}
@@ -187,33 +187,43 @@ export function BrowserToolbar({
             onPress={onBack}
           />
           <IconButton
-            label="Forward"
+            label={uiText('Forward')}
             icon="next"
             disabled={!available || !forward}
             onPress={onForward}
           />
           <IconButton
-            label={available ? 'Reload' : 'Reconnect'}
+            label={available ? uiText('Reload') : uiText('Reconnect')}
             icon="refresh"
             disabled={available ? reloadDisabled || !address : !onReconnect}
             onPress={available ? onReload : () => onReconnect?.()}
           />
           {onKeyboard && (
             <IconButton
-              label="Keyboard"
+              label={uiText('Keyboard')}
               icon="keyboard"
               disabled={!available}
               onPress={onKeyboard}
             />
           )}
           {!onKeyboard && onExternal && (
-            <IconButton label="Open in default browser" icon="external" onPress={onExternal} />
+            <IconButton
+              label={uiText('Open in default browser')}
+              icon="external"
+              onPress={onExternal}
+            />
           )}
           <View style={{ width: 44, height: 44, flexShrink: 0 }}>
             <BrowserMenu
               items={[
                 ...(onExternal
-                  ? [{ id: 'external', name: 'Open in default browser', icon: 'external' as const }]
+                  ? [
+                      {
+                        id: 'external',
+                        name: uiText('Open in default browser'),
+                        icon: 'external' as const,
+                      },
+                    ]
                   : []),
                 ...(onMode && browserMode
                   ? [
@@ -225,11 +235,11 @@ export function BrowserToolbar({
                     ]
                   : []),
                 ...(onExpand
-                  ? [{ id: 'expand', name: 'Expand page', icon: 'expand' as const }]
+                  ? [{ id: 'expand', name: uiText('Expand page'), icon: 'expand' as const }]
                   : []),
                 {
                   id: 'screenshot',
-                  name: 'Take screenshot',
+                  name: uiText('Take screenshot'),
                   disabled: !available || screenshotDisabled,
                 },
                 ...previewPresets.map((item) => ({
@@ -239,11 +249,13 @@ export function BrowserToolbar({
                 })),
                 {
                   id: 'rotate',
-                  name: 'Rotate viewport',
+                  name: uiText('Rotate viewport'),
                   disabled: !available || preset === 'fill',
                 },
-                ...(onDiagnostics ? [{ id: 'diagnostics', name: 'Connection details' }] : []),
-                ...(onCloseSession ? [{ id: 'close', name: 'Close browser session' }] : []),
+                ...(onDiagnostics
+                  ? [{ id: 'diagnostics', name: uiText('Connection details') }]
+                  : []),
+                ...(onCloseSession ? [{ id: 'close', name: uiText('Close browser session') }] : []),
               ]}
               onChange={(value) => {
                 if (value === 'screenshot') onScreenshot()

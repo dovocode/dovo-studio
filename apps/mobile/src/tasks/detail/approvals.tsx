@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { taskHref } from '../../shell/task-route'
 import {
@@ -18,6 +19,8 @@ import { useMemo } from 'react'
 import { useConversationSelector } from '../conversation/state/provider'
 import { NotificationInputView } from '../../notifications/viewport-view'
 export function TaskApprovals({ taskId }: { taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, connected, profile, callEffect } = useRuntime(),
@@ -46,9 +49,20 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           enabled={visible && connected && !busy && item.taskId === taskId}
         >
           <Text style={styles.muted}>
-            Permission request · {runtimeComputerName({ profile, snapshot })}
-            {item.taskId !== taskId &&
-              ` · For child thread: ${snapshot?.workspace.tasks.find((child) => child.id === item.taskId)?.title ?? item.taskId}`}
+            <InterfaceText
+              values={{
+                value0: runtimeComputerName({ profile, snapshot }),
+                value1:
+                  item.taskId !== taskId &&
+                  uiText(' · For child thread: {value0}', {
+                    value0:
+                      snapshot?.workspace.tasks.find((child) => child.id === item.taskId)?.title ??
+                      item.taskId,
+                  }),
+              }}
+            >
+              {'Permission request · {value0}{value1}'}
+            </InterfaceText>
           </Text>
           <Text
             style={[
@@ -89,12 +103,20 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
       {remoteInputs.map((input) => (
         <View key={JSON.stringify([input.runtimeIdentity, input.id])} style={styles.card}>
           <Text style={styles.muted}>
-            {input.kind === 'approval' ? 'Permission request' : 'Question'} · For child thread:{' '}
-            {input.threadTitle} · {input.computerName}
+            <InterfaceText
+              values={{
+                value0:
+                  input.kind === 'approval' ? uiText('Permission request') : uiText('Question'),
+                value1: input.threadTitle,
+                value2: input.computerName,
+              }}
+            >
+              {'{value0} · For child thread: {value1} · {value2}'}
+            </InterfaceText>
           </Text>
           <Text>{input.title}</Text>
           <Action
-            label="Review request"
+            label={uiText('Review request')}
             secondary
             onPress={() =>
               router.push(

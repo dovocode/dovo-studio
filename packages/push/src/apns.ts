@@ -33,20 +33,20 @@ export class Apns {
   async send(
     token: string,
     payload: object,
-    options: { type?: 'alert' | 'liveactivity'; id?: string } = {},
+    options: { type?: 'alert' | 'liveactivity'; id?: string; priority?: 5 | 10 } = {},
   ): Promise<number> {
     return (await this.deliver(token, payload, options)).status
   }
   sendAlert(token: string, payload: object, id: string) {
     return this.deliver(token, payload, { type: 'alert', id })
   }
-  sendLiveActivity(token: string, payload: object, id: string) {
-    return this.deliver(token, payload, { type: 'liveactivity', id })
+  sendLiveActivity(token: string, payload: object, id: string, priority: 5 | 10 = 5) {
+    return this.deliver(token, payload, { type: 'liveactivity', id, priority })
   }
   private async deliver(
     token: string,
     payload: object,
-    options: { type?: 'alert' | 'liveactivity'; id?: string } = {},
+    options: { type?: 'alert' | 'liveactivity'; id?: string; priority?: 5 | 10 } = {},
   ): Promise<{ status: number; reason?: string }> {
     if (!this.jwt || this.jwt.expires < Date.now()) {
       const pending = (this.signing ??= (async () => {
@@ -94,7 +94,7 @@ export class Apns {
             : `${this.config.bundleId}.push-type.liveactivity`,
         'apns-push-type': options.type ?? 'liveactivity',
         ...(options.id ? { 'apns-collapse-id': options.id } : {}),
-        'apns-priority': '10',
+        'apns-priority': String(options.priority ?? (options.type === 'alert' ? 10 : 5)),
         'apns-expiration':
           options.type === 'alert' ? String(Math.floor(Date.now() / 1000) + 3600) : '0',
         'content-type': 'application/json',

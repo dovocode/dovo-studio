@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SecretReferenceFields } from './secret-reference-fields'
 import { SettingsSaveBar } from '../screens/settings-save-bar'
 import { useSettingsDraft } from '../runtime/preferences/settings-target'
@@ -30,6 +31,8 @@ import { SettingsAction as Action } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 export function TitleSettings({ selection = false }: { selection?: boolean }) {
+  const uiText = useInterfaceText()
+
   const settingsPath = selection ? '/api/agents/selection-settings' : '/api/agents/title-settings'
   const { styles } = useTheme()
 
@@ -93,13 +96,13 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
       <View style={{ gap: 12 }}>
         <Text accessibilityLiveRegion="polite" style={loadError ? styles.error : styles.muted}>
           {!connected
-            ? 'This computer is offline. Reconnect to load title settings.'
-            : loadError || 'Loading title settings…'}
+            ? uiText('This computer is offline. Reconnect to load title settings.')
+            : loadError || uiText('Loading title settings…')}
         </Text>
         {!!loadError && (
           <Action
             secondary
-            label="Retry title settings"
+            label={uiText('Retry title settings')}
             disabled={!connected || busy}
             onPress={() => setRetry(retry + 1)}
           />
@@ -115,30 +118,36 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
   const agent = {
     ...(harness ?? defaultTaskHarness('codex')),
     id: 'title',
-    name: 'Title generator',
+    name: uiText('Title generator'),
     model: settings.model,
     reasoning: settings.reasoning,
   }
   return (
     <View style={styles.card}>
       <Text style={[styles.title, { fontWeight: '600' }]}>
-        {selection ? 'Scope, Tune & Maestro selector (experimental)' : 'Titles & dictation'}
+        {selection
+          ? uiText('Scope, Tune & Maestro selector (experimental)')
+          : uiText('Titles & dictation')}
       </Text>
       <Text style={styles.muted}>
         {selection
-          ? 'Selects projects, harnesses and coding models. Inherits the explicit title model unless overridden.'
-          : 'Choose a coding harness or direct API model for titles, commit and PR text, and dictation cleanup.'}
+          ? uiText(
+              'Selects projects, harnesses and coding models. Inherits the explicit title model unless overridden.',
+            )
+          : uiText(
+              'Choose a coding harness or direct API model for titles, commit and PR text, and dictation cleanup.',
+            )}
       </Text>
       {snapshot?.textGeneratorsSupported && !(selection && settings.inheritTitleModel) && (
         <View style={{ gap: 10 }}>
           <Choice
-            label="Generate text with"
+            label={uiText('Generate text with')}
             value={settings.generator?.kind ?? 'harness'}
             disabled={busy}
             items={[
-              { id: 'harness', name: 'Coding harness' },
-              { id: 'openai', name: 'OpenAI-compatible API' },
-              { id: 'anthropic', name: 'Anthropic API' },
+              { id: 'harness', name: uiText('Coding harness') },
+              { id: 'openai', name: uiText('OpenAI-compatible API') },
+              { id: 'anthropic', name: uiText('Anthropic API') },
             ]}
             onChange={(kind) => {
               if (kind === 'harness') setSettings({ ...settings, generator: undefined })
@@ -163,25 +172,25 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           {settings.generator && (
             <>
               <Field
-                label="API base URL"
+                label={uiText('API base URL')}
                 value={settings.generator.baseUrl}
                 onChangeText={(baseUrl) =>
                   setSettings({ ...settings, generator: { ...settings.generator!, baseUrl } })
                 }
               />
               <Field
-                label="API model ID"
+                label={uiText('API model ID')}
                 value={settings.generator.model}
                 onChangeText={(model) =>
                   setSettings({ ...settings, generator: { ...settings.generator!, model } })
                 }
               />
               <Choice
-                label="API key"
+                label={uiText('API key')}
                 value={settings.generator.apiKey ? 'reference' : 'none'}
                 items={[
-                  { id: 'reference', name: 'Host or vault reference' },
-                  { id: 'none', name: 'No key (local API)' },
+                  { id: 'reference', name: uiText('Host or vault reference') },
+                  { id: 'none', name: uiText('No key (local API)') },
                 ]}
                 onChange={(value) =>
                   setSettings({
@@ -206,15 +215,20 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
                 />
               )}
               <Text style={styles.muted}>
-                Sends utility text to this API. The harness below handles work that needs checkout
-                tools.
+                <InterfaceText>
+                  {
+                    'Sends utility text to this API. The harness below handles work that needs checkout tools.'
+                  }
+                </InterfaceText>
               </Text>
             </>
           )}
         </View>
       )}
       <Choice
-        label={selection ? 'Scope, Tune & Maestro selector harness' : 'Title harness'}
+        label={
+          selection ? uiText('Scope, Tune & Maestro selector harness') : uiText('Title harness')
+        }
         value={
           selection && settings.inheritTitleModel
             ? 'title'
@@ -228,8 +242,8 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         }
         disabled={busy}
         items={[
-          { id: 'default', name: 'Choose a harness' },
-          ...(selection ? [{ id: 'title', name: 'Inherit title model' }] : []),
+          { id: 'default', name: uiText('Choose a harness') },
+          ...(selection ? [{ id: 'title', name: uiText('Inherit title model') }] : []),
           ...(['codex', 'claude', 'opencode', 'copilot', 'cursor', 'acp'] as const).map(
             (provider) => ({
               id: `harness:${provider}`,
@@ -294,7 +308,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         !(selection && settings.inheritTitleModel) &&
         (agent.provider === 'acp' || agent.provider === 'opencode') && (
           <Field
-            label="Title harness endpoint"
+            label={uiText('Title harness endpoint')}
             editable={!busy}
             value={settings.harness.endpoint}
             onChangeText={(endpoint) =>
@@ -310,7 +324,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         )}
       {!(selection && settings.inheritTitleModel) && settings.harness?.provider === 'acp' && (
         <Field
-          label="Title ACP arguments"
+          label={uiText('Title ACP arguments')}
           editable={!busy}
           value={settings.harness.args?.join('\n') ?? ''}
           multiline
@@ -329,17 +343,25 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
         <View style={{ gap: 12 }}>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel="Additional prompts (optional)"
+            accessibilityLabel={uiText('Additional prompts (optional)')}
             accessibilityState={{ expanded: promptsOpen }}
             onPress={() => setPromptsOpen(!promptsOpen)}
             style={{ minHeight: 44, justifyContent: 'center' }}
           >
-            <Text style={styles.text}>{promptsOpen ? '▾' : '▸'} Additional prompts (optional)</Text>
+            <Text style={styles.text}>
+              <InterfaceText values={{ value0: promptsOpen ? '▾' : '▸' }}>
+                {'{value0} Additional prompts (optional)'}
+              </InterfaceText>
+            </Text>
           </Pressable>
           {promptsOpen && (
             <>
               <Text style={styles.muted}>
-                Add preferences to the built-in selection instructions. Leave blank to use defaults.
+                <InterfaceText>
+                  {
+                    'Add preferences to the built-in selection instructions. Leave blank to use defaults.'
+                  }
+                </InterfaceText>
               </Text>
               {(
                 [
@@ -350,7 +372,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               ).map(([key, label]) => (
                 <Field
                   key={key}
-                  label={`${label} additional prompt`}
+                  label={uiText('{value0} additional prompt', { value0: label })}
                   multiline
                   maxLength={12000}
                   editable={!busy}
@@ -407,8 +429,8 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
       {saved && (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>
           {selection
-            ? 'Selection model settings saved.'
-            : 'Title settings saved. Applies to new titles and dictation cleanup.'}
+            ? uiText('Selection model settings saved.')
+            : uiText('Title settings saved. Applies to new titles and dictation cleanup.')}
         </Text>
       )}
       {!!error && (
@@ -418,7 +440,7 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
           </Text>
           <Action
             secondary
-            label="Reload settings"
+            label={uiText('Reload settings')}
             disabled={!connected || busy}
             onPress={() => {
               const reload = () => {
@@ -429,11 +451,11 @@ export function TitleSettings({ selection = false }: { selection?: boolean }) {
               if (!dirty) reload()
               else
                 Alert.alert(
-                  'Discard unsaved edits?',
-                  'Load the latest saved settings and discard your edits?',
+                  uiText('Discard unsaved edits?'),
+                  uiText('Load the latest saved settings and discard your edits?'),
                   [
-                    { text: 'Keep editing', style: 'cancel' },
-                    { text: 'Discard and reload', style: 'destructive', onPress: reload },
+                    { text: uiText('Keep editing'), style: 'cancel' },
+                    { text: uiText('Discard and reload'), style: 'destructive', onPress: reload },
                   ],
                 )
             }}

@@ -1,4 +1,11 @@
-import { activityPayload, liveActivityRefreshMs, type RelayLiveActivity } from '@dovo/protocol'
+import {
+  activityPayload,
+  liveActivityRefreshMs,
+  liveActivityProgressMs,
+  liveActivityPriority,
+  liveTaskPropsSchema,
+  type RelayLiveActivity,
+} from '@dovo/protocol'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
@@ -19,6 +26,7 @@ const rowSchema = mutableStruct({
     expires: Schema.Number.pipe(Schema.check(Schema.isFinite())),
     fingerprint: Schema.String,
     sentAt: Schema.Number.pipe(Schema.check(Schema.isFinite())),
+    status: Schema.optional(liveTaskPropsSchema.fields.status),
   },
 })
 export { activityPayload } from '@dovo/protocol'
@@ -184,7 +192,14 @@ export class LiveActivities {
           props,
           ended,
         })
-        if (row.fingerprint === fingerprint && now - row.sentAt < liveActivityRefreshMs) continue
+        const elapsed = now - row.sentAt
+        if (
+          !ended &&
+          row.status === props.status &&
+          elapsed < liveActivityRefreshMs &&
+          (row.fingerprint === fingerprint || elapsed < liveActivityProgressMs)
+        )
+          continue
         const message: RelayLiveActivity | undefined =
           row.runtimeId && row.environment
             ? {
@@ -211,7 +226,9 @@ export class LiveActivities {
               : this.managedSend(message, row.managedToken)
           if (this.relay.send && message) return this.relay.send(message)
           if (!this.apns) throw new Error('Live Activity push delivery is not configured')
-          const status = await this.apns.send(row.pushToken, activityPayload(props, ended, now))
+          const status = await this.apns.send(row.pushToken, activityPayload(props, ended, now), {
+            priority: liveActivityPriority(props, ended),
+          })
           if (status !== 200 && status !== 400 && status !== 410)
             throw new Error(`APNs returned ${status}`)
           return { delivered: status === 200, invalidToken: status === 410 || status === 400 }
@@ -239,6 +256,7 @@ export class LiveActivities {
                 ...row,
                 fingerprint,
                 sentAt: now,
+                status: props.status,
               }),
               row.deviceId,
               row.activityId,

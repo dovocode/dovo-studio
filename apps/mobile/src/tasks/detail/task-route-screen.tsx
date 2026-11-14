@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   taskParentReference,
@@ -43,6 +44,8 @@ type ThreadRouteParams = {
 }
 
 export function TaskRouteScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const params = useLocalSearchParams<ThreadRouteParams>()
   // Keep creation mounted when committing clears the draft flag in the URL.
@@ -69,9 +72,15 @@ export function TaskRouteScreen() {
       {!!switching.error && (
         <View style={styles.content}>
           <Text accessibilityRole="alert" style={styles.error}>
-            Could not save the selected computer. {switching.error}
+            <InterfaceText values={{ value0: switching.error }}>
+              {'Could not save the selected computer. {value0}'}
+            </InterfaceText>
           </Text>
-          <Action label="Retry saving computer" disabled={!focused} onPress={switching.retry} />
+          <Action
+            label={uiText('Retry saving computer')}
+            disabled={!focused}
+            onPress={switching.retry}
+          />
         </View>
       )}
       {owner && !startup ? <RuntimeScope runtimeId={owner.id}>{content}</RuntimeScope> : content}
@@ -137,7 +146,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
           runtimeId: params.parentRuntimeId,
           runtimeIdentity: params.parentRuntimeIdentity,
           taskId: params.parentTaskId,
-          title: params.parentTitle ?? 'Parent thread',
+          title: params.parentTitle ?? uiText('Parent thread'),
         }
       : savedParent && parentRuntime
         ? {
@@ -149,7 +158,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
         : undefined
   const parentButton = parent ? (
     <Action
-      label={`Back to parent · ${parent.title}`}
+      label={uiText('Back to parent · {value0}', { value0: parent.title })}
       secondary
       onPress={() =>
         router.replace(
@@ -189,7 +198,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title="Task"
+        title={uiText('Task')}
         subtitle={owner?.name}
         leading={<Action label={uiText('Back')} secondary onPress={backToTasks} />}
       />
@@ -199,26 +208,34 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
           <ActivityIndicator color={colors.accent} />
         ) : !owner ? (
           <>
-            <Text style={styles.title}>Pair computer to open this thread</Text>
+            <Text style={styles.title}>
+              <InterfaceText>{'Pair computer to open this thread'}</InterfaceText>
+            </Text>
             <Text style={styles.muted}>
-              Pair the computer running this thread. Your selected thread and parent will be
-              preserved; another computer will not open it automatically.
+              <InterfaceText>
+                {
+                  'Pair the computer running this thread. Your selected thread and parent will be preserved; another computer will not open it automatically.'
+                }
+              </InterfaceText>
             </Text>
             {!pairing ? (
-              <Action label="Pair thread computer" onPress={() => setPairing(true)} />
+              <Action label={uiText('Pair thread computer')} onPress={() => setPairing(true)} />
             ) : (
               <PairComputer />
             )}
             {!params.runtimeIdentity && (
               <>
                 <Text style={styles.muted}>
-                  This older link has no computer identity. Choose its owning computer after
-                  pairing.
+                  <InterfaceText>
+                    {
+                      'This older link has no computer identity. Choose its owning computer after pairing.'
+                    }
+                  </InterfaceText>
                 </Text>
                 {profiles.map((profile) => (
                   <Action
                     key={profile.id}
-                    label={`Open on ${profile.name}`}
+                    label={uiText('Open on {value0}', { value0: profile.name })}
                     onPress={() => router.setParams({ runtimeId: profile.id })}
                   />
                 ))}
@@ -227,14 +244,18 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
           </>
         ) : (
           <>
-            <Text style={styles.title}>{snapshot ? 'Task unavailable' : 'Loading task…'}</Text>
+            <Text style={styles.title}>
+              {snapshot ? uiText('Task unavailable') : uiText('Loading task…')}
+            </Text>
             <Text style={styles.muted}>
               {snapshot
-                ? 'It may have been removed. Return to Threads or refresh this computer.'
-                : 'Waiting for this computer’s workspace. Cached tasks remain available offline.'}
+                ? uiText('It may have been removed. Return to Threads or refresh this computer.')
+                : uiText(
+                    'Waiting for this computer’s workspace. Cached tasks remain available offline.',
+                  )}
             </Text>
             <Action
-              label={connected ? 'Refresh task' : 'Reconnect'}
+              label={connected ? uiText('Refresh task') : uiText('Reconnect')}
               disabled={busy || !focused}
               onPress={() => act(refresh)}
             />
@@ -273,12 +294,17 @@ export function NewTaskScreen() {
     return (
       <View style={styles.content}>
         <ScreenHeader title={uiText('New thread')} />
-        <Text style={styles.title}>Connect a computer</Text>
-        <Text style={styles.muted}>
-          Connect once to load a computer’s projects and settings. You can then draft and save
-          messages offline.
+        <Text style={styles.title}>
+          <InterfaceText>{'Connect a computer'}</InterfaceText>
         </Text>
-        <Action label="Open computer settings" onPress={() => navigate('settings')} />
+        <Text style={styles.muted}>
+          <InterfaceText>
+            {
+              'Connect once to load a computer’s projects and settings. You can then draft and save messages offline.'
+            }
+          </InterfaceText>
+        </Text>
+        <Action label={uiText('Open computer settings')} onPress={() => navigate('settings')} />
         <Action label={uiText('Back')} secondary onPress={backToTasks} />
       </View>
     )

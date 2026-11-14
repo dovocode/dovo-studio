@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   defaultSecretReference,
   secretReferenceProviders,
@@ -16,10 +17,12 @@ export function SecretReferenceFields({
   onChange: (value: AgentSecretReference) => void
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <>
       <Choice
-        label="Secret manager"
+        label={uiText('Secret manager')}
         value={value.provider}
         disabled={disabled}
         items={[...secretReferenceProviders]}
@@ -31,28 +34,28 @@ export function SecretReferenceFields({
       <Field
         label={
           value.provider === 'onepassword'
-            ? 'Secret reference'
+            ? uiText('Secret reference')
             : value.provider === 'bitwarden'
-              ? 'Item ID'
+              ? uiText('Item ID')
               : value.provider === 'infisical'
-                ? 'Secret name'
-                : 'Host environment variable'
+                ? uiText('Secret name')
+                : uiText('Host environment variable')
         }
         value={value.reference}
         editable={!disabled}
         autoCorrect={false}
         placeholder={
           value.provider === 'onepassword'
-            ? 'op://vault/item/field'
+            ? uiText('op://vault/item/field')
             : value.provider === 'bitwarden'
-              ? 'Item ID'
+              ? uiText('Item ID')
               : 'API_KEY'
         }
         onChangeText={(reference) => onChange({ ...value, reference })}
       />
       {value.provider === 'onepassword' && (
         <Field
-          label="1Password account (optional)"
+          label={uiText('1Password account (optional)')}
           value={value.account ?? ''}
           editable={!disabled}
           autoCorrect={false}
@@ -61,12 +64,12 @@ export function SecretReferenceFields({
       )}
       {value.provider === 'bitwarden' && (
         <Choice
-          label="Bitwarden field"
+          label={uiText('Bitwarden field')}
           value={value.field ?? 'password'}
           disabled={disabled}
           items={[
-            { id: 'password', name: 'Password' },
-            { id: 'username', name: 'Username' },
+            { id: 'password', name: uiText('Password') },
+            { id: 'username', name: uiText('Username') },
           ]}
           onChange={(field) =>
             onChange({ ...value, field: field === 'username' ? 'username' : undefined })
@@ -76,22 +79,22 @@ export function SecretReferenceFields({
       {value.provider === 'infisical' && (
         <>
           <Field
-            label="Infisical project ID"
+            label={uiText('Infisical project ID')}
             value={value.projectId}
             editable={!disabled}
             autoCorrect={false}
             onChangeText={(projectId) => onChange({ ...value, projectId })}
           />
           <Field
-            label="Infisical environment"
+            label={uiText('Infisical environment')}
             value={value.environment}
             editable={!disabled}
             autoCorrect={false}
-            placeholder="dev"
+            placeholder={uiText('dev')}
             onChangeText={(environment) => onChange({ ...value, environment })}
           />
           <Field
-            label="Infisical secret folder"
+            label={uiText('Infisical secret folder')}
             value={value.path}
             editable={!disabled}
             autoCorrect={false}
@@ -99,12 +102,12 @@ export function SecretReferenceFields({
             onChangeText={(path) => onChange({ ...value, path })}
           />
           <Field
-            label="Infisical domain (optional)"
+            label={uiText('Infisical domain (optional)')}
             value={value.domain ?? ''}
             editable={!disabled}
             autoCorrect={false}
             keyboardType="url"
-            placeholder="CLI default"
+            placeholder={uiText('CLI default')}
             onChangeText={(domain) => onChange({ ...value, domain: domain || undefined })}
           />
         </>

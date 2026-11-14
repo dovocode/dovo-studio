@@ -1,9 +1,12 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { router, useRootNavigationState } from 'expo-router'
 import { Platform } from 'react-native'
 import * as QuickActions from 'expo-quick-actions'
 let consumedInitial = false
 export function TaskQuickActions() {
+  const uiText = useInterfaceText()
+
   const navigation = useRootNavigationState()
   const navigationReady = useRef(false)
   navigationReady.current = !!navigation?.key
@@ -32,8 +35,8 @@ export function TaskQuickActions() {
           await QuickActions.setItems([
             {
               id: 'dovo.launch',
-              title: 'Start a task',
-              subtitle: 'Choose server, project and favorite agent',
+              title: uiText('Start a task'),
+              subtitle: uiText('Choose server, project and favorite agent'),
               ...(Platform.OS === 'ios' ? { icon: 'compose' } : {}),
               params: { href: '/launch' },
             },

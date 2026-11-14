@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ConnectionProgress } from './connection-progress'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { useRef } from 'react'
@@ -46,6 +47,8 @@ export function FleetOverview({
   compact?: boolean
   source?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const connectionType = useConnectionTypes()
 
@@ -85,7 +88,7 @@ export function FleetOverview({
       ]
         .filter(Boolean)
         .join(', ')}
-      accessibilityHint="Show device activity and connection details."
+      accessibilityHint={uiText('Show device activity and connection details.')}
       onPress={() => setSelected(entry.profile.id)}
       style={({ pressed }) => ({
         width: compact ? undefined : Math.min(248, viewportWidth || 248),
@@ -163,11 +166,11 @@ export function FleetOverview({
         <Pressable
           testID="Device overview"
           accessibilityRole="button"
-          accessibilityLabel="Device overview"
+          accessibilityLabel={uiText('Device overview')}
           accessibilityValue={{
             text: compactSummary,
           }}
-          accessibilityHint="Show activity across your computers."
+          accessibilityHint={uiText('Show activity across your computers.')}
           onPress={() => setOpen(true)}
           style={({ pressed }) => [
             styles.row,
@@ -208,7 +211,7 @@ export function FleetOverview({
       {(open || detail) && (
         <Sheet
           ref={sheet}
-          title={(detail ? runtimeComputerName(detail) : undefined) ?? 'Your computers'}
+          title={(detail ? runtimeComputerName(detail) : undefined) ?? uiText('Your computers')}
           onClose={() => {
             setOpen(false)
             setSelected('')
@@ -216,7 +219,7 @@ export function FleetOverview({
         >
           {!detail && (
             <Action
-              label="Show all devices"
+              label={uiText('Show all devices')}
               secondary
               onPress={() => {
                 onSelectSource('all')
@@ -283,7 +286,7 @@ export function FleetOverview({
               testID="Runtime details"
             >
               {compact && (
-                <Action label="All computers" secondary onPress={() => setSelected('')} />
+                <Action label={uiText('All computers')} secondary onPress={() => setSelected('')} />
               )}
               <View
                 style={[
@@ -307,10 +310,16 @@ export function FleetOverview({
               )}
               <Text style={styles.text}>{activity(detail)}</Text>
               {!detail.connected && detail.snapshot && (
-                <Text style={styles.muted}>Showing saved activity</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Showing saved activity'}</InterfaceText>
+                </Text>
               )}
               {!!detail.lastSeen && !detail.connected && (
-                <Text style={styles.muted}>Last connected {formatDateTime(detail.lastSeen)}</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText values={{ value0: formatDateTime(detail.lastSeen) }}>
+                    {'Last connected {value0}'}
+                  </InterfaceText>
+                </Text>
               )}
               <Text selectable style={styles.muted}>
                 {detail.profile.connection.address}
@@ -320,7 +329,7 @@ export function FleetOverview({
               <View style={styles.separator} />
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Open pull requests"
+                accessibilityLabel={uiText('Open pull requests')}
                 onPress={() =>
                   sheet.current?.dismiss(() => leaveParentSheet(() => navigate('pulls')))
                 }
@@ -342,18 +351,28 @@ export function FleetOverview({
                   ]}
                 >
                   {detail.pulls
-                    ? `${detail.pulls.needsAttention} PRs need action · ${detail.pulls.total} open${detail.pulls.partial ? '+' : ''}`
-                    : 'Pull requests'}
+                    ? uiText('{value0} PRs need action · {value1} open{value2}', {
+                        value0: detail.pulls.needsAttention,
+                        value1: detail.pulls.total,
+                        value2: detail.pulls.partial ? '+' : '',
+                      })
+                    : uiText('Pull requests')}
                 </Text>
                 <Icon name="next" size={13} color={colors.muted} />
               </Pressable>
-              {!!detail.pullError && <Text style={styles.muted}>PR summary could not refresh</Text>}
+              {!!detail.pullError && (
+                <Text style={styles.muted}>
+                  <InterfaceText>{'PR summary could not refresh'}</InterfaceText>
+                </Text>
+              )}
               {detail.pulls?.partial && (
-                <Text style={styles.muted}>Partial results · open PRs to load more</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Partial results · open PRs to load more'}</InterfaceText>
+                </Text>
               )}
               <View style={styles.separator} />
               <Action
-                label="View tasks on this device"
+                label={uiText('View tasks on this device')}
                 secondary
                 onPress={() => {
                   onSelectSource(detail.profile.id)
@@ -362,7 +381,7 @@ export function FleetOverview({
                 }}
               />
               <Action
-                label="Manage computers"
+                label={uiText('Manage computers')}
                 secondary
                 onPress={() =>
                   sheet.current?.dismiss(() => leaveParentSheet(() => navigate('settings')))

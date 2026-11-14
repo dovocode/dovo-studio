@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '../../../runtime/state/application-state'
 import { Pressable } from 'react-native'
 import { Text } from '../../../ui/content/text'
@@ -19,6 +20,8 @@ export type PullMenuProps = {
   actionDisabled: boolean
 }
 export function PullMenu(props: PullMenuProps) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
 
   const [open, setOpen] = useApplicationState(false)
@@ -31,7 +34,7 @@ export function PullMenu(props: PullMenuProps) {
       <Pressable
         testID="PR actions"
         accessibilityRole="button"
-        accessibilityLabel="PR actions"
+        accessibilityLabel={uiText('PR actions')}
         style={({ pressed }) => ({
           width: 44,
           height: 44,
@@ -51,7 +54,7 @@ export function PullMenu(props: PullMenuProps) {
         </Text>
       </Pressable>
       {open && (
-        <Sheet title="PR actions" onClose={() => setOpen(false)}>
+        <Sheet title={uiText('PR actions')} onClose={() => setOpen(false)}>
           {props.actions.map((option) => (
             <Action
               key={option.action}
@@ -69,24 +72,24 @@ export function PullMenu(props: PullMenuProps) {
           ))}
           <Action
             secondary
-            label="New branch from PR"
+            label={uiText('New branch from PR')}
             disabled={props.taskDisabled}
             onPress={() => choose(() => props.onStartTask('new-branch'))}
           />
           <Action
             secondary
-            label="Use PR branch"
+            label={uiText('Use PR branch')}
             disabled={props.taskDisabled || !props.prBranchAvailable}
             onPress={() => choose(() => props.onStartTask('pr-branch'))}
           />
           <Action
             secondary
-            label={`Open on ${props.providerName ?? 'GitHub'}`}
+            label={uiText('Open on {value0}', { value0: props.providerName ?? 'GitHub' })}
             onPress={() => choose(props.onOpen)}
           />
           <Action
             secondary
-            label="Refresh details"
+            label={uiText('Refresh details')}
             disabled={props.refreshDisabled}
             onPress={() => choose(props.onRefresh)}
           />

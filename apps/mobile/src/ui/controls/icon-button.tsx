@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button, Host, Menu } from '@expo/ui/swift-ui'
 import {
   accessibilityAddTraits,
@@ -198,6 +199,8 @@ export function NativeActionMenu({
 }
 
 export function IconButton(props: IconButtonProps) {
+  const uiText = useInterfaceText()
+
   const { colors, mode: appearanceMode } = useTheme()
   const held = useRef(false)
 
@@ -267,9 +270,9 @@ export function IconButton(props: IconButtonProps) {
             }
           : undefined
       }
-      accessibilityHint={onLongPress ? 'Hold for message actions' : undefined}
+      accessibilityHint={onLongPress ? uiText('Hold for message actions') : undefined}
       accessibilityActions={
-        onLongPress ? [{ name: 'messageActions', label: 'Message actions' }] : undefined
+        onLongPress ? [{ name: 'messageActions', label: uiText('Message actions') }] : undefined
       }
       onAccessibilityAction={(event) => {
         if (event.nativeEvent.actionName === 'messageActions') onLongPress?.()

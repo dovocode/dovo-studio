@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { LinkedCheckoutEditor } from '../tasks/detail/linked-projects'
@@ -74,33 +75,35 @@ export function StepFields({
   return (
     <View style={{ gap: 12 }}>
       <Field
-        label="Step name"
+        label={uiText('Step name')}
         value={data.label}
         editable={!disabled}
         onChangeText={(label) => onChange({ label })}
       />
       {data.kind === 'review' ? (
         <Text style={styles.muted}>
-          Pause here until you approve this run. Rejecting stops the remaining steps.
+          <InterfaceText>
+            {'Pause here until you approve this run. Rejecting stops the remaining steps.'}
+          </InterfaceText>
         </Text>
       ) : (
         <>
           <Field
-            label="Instructions"
+            label={uiText('Instructions')}
             value={data.objective}
             editable={!disabled}
             onChangeText={(objective) => onChange({ objective })}
-            placeholder="What should the agent do and verify?"
+            placeholder={uiText('What should the agent do and verify?')}
             multiline
             style={{ minHeight: 96, textAlignVertical: 'top' }}
           />
           {(snapshot?.botsSupported || data.botId) && (
             <Choice
-              label="Destination"
+              label={uiText('Destination')}
               value={data.botId ?? ''}
               disabled={disabled}
               items={[
-                { id: '', name: 'New thread for each run' },
+                { id: '', name: uiText('New thread for each run') },
                 ...(snapshot?.workspace.tasks
                   .filter((task) => task.bot && (!task.archivedAt || task.id === data.botId))
                   .map((task) => ({
@@ -109,7 +112,7 @@ export function StepFields({
                   })) ?? []),
                 ...(data.botId &&
                 !snapshot?.workspace.tasks.some((task) => task.id === data.botId && task.bot)
-                  ? [{ id: data.botId, name: 'Unavailable Bot' }]
+                  ? [{ id: data.botId, name: uiText('Unavailable Bot') }]
                   : []),
               ]}
               onChange={(botId) => onChange({ botId: botId || undefined })}
@@ -117,13 +120,16 @@ export function StepFields({
           )}
           {data.botId ? (
             <Text style={styles.muted}>
-              This step uses an isolated worker with the Bot’s harness and permissions. Its chat
-              stays available. A paused Bot must resume before this step can run.
+              <InterfaceText>
+                {
+                  'This step uses an isolated worker with the Bot’s harness and permissions. Its chat stays available. A paused Bot must resume before this step can run.'
+                }
+              </InterfaceText>
             </Text>
           ) : (
             <>
               <Choice
-                label="Project"
+                label={uiText('Project')}
                 value={data.repositoryId}
                 items={workspace.repositories.map((repository) => ({
                   id: repository.id,
@@ -133,7 +139,7 @@ export function StepFields({
                 onChange={(repositoryId) => onChange({ repositoryId })}
               />
               <Choice
-                label="Harness"
+                label={uiText('Harness')}
                 value={taskHarnessSelection(task)}
                 items={taskHarnessChoices(
                   task,
@@ -158,7 +164,7 @@ export function StepFields({
               <Choice
                 label={uiText('Permissions')}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
-                selectedLabel={permissionPolicyLabel(agent)}
+                selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={disabled}
                 items={selectableAccessModes(agent.permission, agent.provider)
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
@@ -175,22 +181,28 @@ export function StepFields({
               {(agent.provider === 'opencode' ||
                 (agent.provider === 'acp' && !agent.acpInstallationId)) && (
                 <Field
-                  label={agent.provider === 'acp' ? 'ACP executable' : 'OpenCode server URL'}
+                  label={
+                    agent.provider === 'acp'
+                      ? uiText('ACP executable')
+                      : uiText('OpenCode server URL')
+                  }
                   value={agent.endpoint}
                   editable={!disabled}
                   onChangeText={(endpoint) => changeAgent({ ...agent, endpoint })}
                 />
               )}
               {!workspace.repositories.length && (
-                <Text style={styles.muted}>Add a project in Threads → Projects first.</Text>
+                <Text style={styles.muted}>
+                  <InterfaceText>{'Add a project in Threads → Projects first.'}</InterfaceText>
+                </Text>
               )}
               <Choice
-                label="Checkout"
+                label={uiText('Checkout')}
                 value={data.execution ?? 'main'}
                 disabled={disabled}
                 items={[
-                  { id: 'worktree', name: 'New worktree' },
-                  { id: 'main', name: 'Local checkout' },
+                  { id: 'worktree', name: uiText('New worktree') },
+                  { id: 'main', name: uiText('Local checkout') },
                 ]}
                 onChange={(execution) => {
                   if (execution === 'worktree' || execution === 'main') onChange({ execution })
@@ -202,7 +214,9 @@ export function StepFields({
                 onChange={(linkedCheckouts) => onChange({ linkedCheckouts })}
               />
               <Text style={styles.muted}>
-                Each task has its own chat. A new worktree keeps its changes separate.
+                <InterfaceText>
+                  {'Each task has its own chat. A new worktree keeps its changes separate.'}
+                </InterfaceText>
               </Text>
             </>
           )}

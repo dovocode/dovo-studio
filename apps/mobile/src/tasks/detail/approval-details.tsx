@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { approvalDetails, type ApprovalDetailField } from '@dovo/protocol'
@@ -41,6 +42,8 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
 }
 
 export function ApprovalDetails({ detail }: { detail: string }) {
+  const uiText = useInterfaceText()
+
   const presentation = useMemo(() => approvalDetails(detail), [detail])
   const [expanded, setExpanded] = useState(false)
   const { styles, colors } = useTheme()
@@ -53,12 +56,16 @@ export function ApprovalDetails({ detail }: { detail: string }) {
         <>
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={expanded ? 'Hide full JSON' : 'Show full JSON'}
+            accessibilityLabel={expanded ? uiText('Hide full JSON') : uiText('Show full JSON')}
             accessibilityState={{ expanded }}
             onPress={() => setExpanded(!expanded)}
             style={{ minHeight: 44, justifyContent: 'center', alignSelf: 'flex-start' }}
           >
-            <Text style={[styles.muted, { fontSize: 12 }]}>{expanded ? '▾' : '▸'} Full JSON</Text>
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              <InterfaceText values={{ value0: expanded ? '▾' : '▸' }}>
+                {'{value0} Full JSON'}
+              </InterfaceText>
+            </Text>
           </Pressable>
           {expanded && (
             <ScrollView

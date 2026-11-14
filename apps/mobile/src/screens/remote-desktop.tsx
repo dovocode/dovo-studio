@@ -1,3 +1,4 @@
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { AppState, View } from 'react-native'
@@ -64,7 +65,9 @@ export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
       if (live.current.id === id) live.current.id = null
     } catch {
       if (live.current.active)
-        setError('Stop could not be confirmed. The host ends idle sessions after 30 seconds.')
+        setError(
+          uiText('Stop could not be confirmed. The host ends idle sessions after 30 seconds.'),
+        )
     }
   }
   const stopCurrent = useRef(stop)
@@ -100,7 +103,9 @@ export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
           { paddingHorizontal: 16, paddingVertical: 8, justifyContent: 'space-between' },
         ]}
       >
-        <Text style={styles.text}>Remote desktop</Text>
+        <Text style={styles.text}>
+          <InterfaceText>{'Remote desktop'}</InterfaceText>
+        </Text>
         <Action label={uiText('Close')} secondary onPress={onClose} />
       </View>
       {error ? (
@@ -202,7 +207,9 @@ export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
           }}
         />
       ) : (
-        <Text style={styles.muted}>Sharing ended while Studio was in the background.</Text>
+        <Text style={styles.muted}>
+          <InterfaceText>{'Sharing ended while Studio was in the background.'}</InterfaceText>
+        </Text>
       )}
     </SafeModal>
   )

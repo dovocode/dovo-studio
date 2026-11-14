@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -52,6 +53,8 @@ function ResponseActionBody({
   onTerminal,
   draftKey: key,
 }: Props & { draftKey: string }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected, callEffect } = useRuntime()
   const { styles, colors } = useTheme()
   const { act, busy, error } = useAction()
@@ -133,12 +136,15 @@ function ResponseActionBody({
       <Text style={styles.title}>{current.title}</Text>
       <Text style={styles.muted}>
         {response.kind === 'prompt'
-          ? 'This thread'
+          ? uiText('This thread')
           : response.kind === 'form'
-            ? 'Custom form'
+            ? uiText('Custom form')
             : response.kind === 'command'
-              ? 'Command'
-              : `MCP · ${response.server} · ${response.tool}`}
+              ? uiText('Command')
+              : uiText('MCP · {value0} · {value1}', {
+                  value0: response.server,
+                  value1: response.tool,
+                })}
       </Text>
       <Text numberOfLines={4}>{responseActionText(response)}</Text>
       {!!error && !editing && (
@@ -150,15 +156,15 @@ function ResponseActionBody({
         <>
           <Text accessibilityRole="text">
             {result?.status === 'running'
-              ? 'Running…'
+              ? uiText('Running…')
               : prompt
-                ? 'Sent to this thread'
-                : (result?.status ?? 'Accepted')}
+                ? uiText('Sent to this thread')
+                : (result?.status ?? uiText('Accepted'))}
           </Text>
           {!!result?.output && <Text selectable>{result.output}</Text>}
           {!!result?.terminalId && !!onTerminal && (
             <Action
-              label="Open terminal"
+              label={uiText('Open terminal')}
               secondary
               onPress={() => {
                 const id = result.terminalId
@@ -168,7 +174,7 @@ function ResponseActionBody({
           )}
           {result?.status === 'running' && (
             <Action
-              label="Refresh result"
+              label={uiText('Refresh result')}
               secondary
               disabled={busy || !connected}
               onPress={() => review()}
@@ -179,13 +185,17 @@ function ResponseActionBody({
         <>
           <Action
             label={
-              response.kind === 'form' ? 'Open form' : prompt ? 'Review prompt' : 'Review action'
+              response.kind === 'form'
+                ? uiText('Open form')
+                : prompt
+                  ? uiText('Review prompt')
+                  : uiText('Review action')
             }
             disabled={busy || !connected}
             onPress={() => (frozen || response.kind === 'form' ? setEditing(true) : review())}
           />
           <Action
-            label="Dismiss response action"
+            label={uiText('Dismiss response action')}
             secondary
             disabled={busy || !connected || frozen}
             onPress={() =>
@@ -213,7 +223,7 @@ function ResponseActionBody({
             <View style={{ gap: 8 }}>
               {!frozen && (response.kind !== 'form' || !!draft.actionId) && (
                 <Action
-                  label="Refresh review"
+                  label={uiText('Refresh review')}
                   secondary
                   disabled={busy || !connected}
                   onPress={() => review()}
@@ -222,7 +232,13 @@ function ResponseActionBody({
               <Action
                 wide
                 label={
-                  busy ? 'Sending…' : frozen ? 'Retry' : prompt ? 'Send to thread' : 'Run action'
+                  busy
+                    ? uiText('Sending…')
+                    : frozen
+                      ? uiText('Retry')
+                      : prompt
+                        ? uiText('Send to thread')
+                        : uiText('Run action')
                 }
                 disabled={
                   busy || !connected || (!frozen && (!reviewed || (prompt && !draft.text.trim())))
@@ -243,7 +259,7 @@ function ResponseActionBody({
                       label={field.label}
                       value={draft.values?.[field.id] ?? ''}
                       items={[
-                        { id: '', name: 'Choose…' },
+                        { id: '', name: uiText('Choose…') },
                         ...(field.options ?? []).map((option) => ({
                           id: option.value,
                           name: option.label,
@@ -273,7 +289,7 @@ function ResponseActionBody({
                 {response.actions.map((item) => (
                   <Action
                     key={item.id}
-                    label={`Review ${item.title}`}
+                    label={uiText('Review {value0}', { value0: item.title })}
                     secondary
                     disabled={busy || frozen || !connected}
                     onPress={() => review(item.id)}
@@ -284,17 +300,21 @@ function ResponseActionBody({
             {operation && (
               <>
                 <Text>
-                  {prompt ? 'Destination: this thread' : 'Runs on this thread’s computer'}
+                  {prompt
+                    ? uiText('Destination: this thread')
+                    : uiText('Runs on this thread’s computer')}
                 </Text>
                 {!!current.responseReview?.directory && (
                   <Text selectable style={styles.muted}>
-                    Directory: {current.responseReview.directory}
+                    <InterfaceText values={{ value0: current.responseReview.directory }}>
+                      {'Directory: {value0}'}
+                    </InterfaceText>
                   </Text>
                 )}
                 <Text>{current.responseReview?.description}</Text>
                 {prompt ? (
                   <Field
-                    label="Prompt"
+                    label={uiText('Prompt')}
                     multiline
                     value={draft.text}
                     editable={!busy && !frozen}
@@ -302,7 +322,7 @@ function ResponseActionBody({
                     onChangeText={(text) => setField('text', text)}
                   />
                 ) : (
-                  <Text selectable accessibilityLabel="Exact action">
+                  <Text selectable accessibilityLabel={uiText('Exact action')}>
                     {responseActionText(operation)}
                   </Text>
                 )}
@@ -310,17 +330,29 @@ function ResponseActionBody({
             )}
             {operation && !prompt && (
               <Text style={styles.muted}>
-                Run executes this exact action once. Commands use a new terminal. MCP results stay
-                on this card.
+                <InterfaceText>
+                  {
+                    'Run executes this exact action once. Commands use a new terminal. MCP results stay on this card.'
+                  }
+                </InterfaceText>
               </Text>
             )}
             {frozen && (
               <Text>
-                The request may have reached the computer. Retry checks the same receipt and will
-                not run a direct action twice.
+                <InterfaceText>
+                  {
+                    'The request may have reached the computer. Retry checks the same receipt and will not run a direct action twice.'
+                  }
+                </InterfaceText>
               </Text>
             )}
-            {!!draft.stale && <Text>Refresh the review before running. Your prompt stays.</Text>}
+            {!!draft.stale && (
+              <Text>
+                <InterfaceText>
+                  {'Refresh the review before running. Your prompt stays.'}
+                </InterfaceText>
+              </Text>
+            )}
             {!!error && (
               <Text accessibilityRole="alert" style={styles.error}>
                 {error}

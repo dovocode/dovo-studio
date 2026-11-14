@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   createRuntimeClient,
   responses,
@@ -26,6 +27,8 @@ export function UpgradeInternet({
   profile: RuntimeProfile
   onBusyChange?: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { upgradeInternetEffect, connected } = useRuntime()
   const { act, busy, error } = useAction()
@@ -102,21 +105,26 @@ export function UpgradeInternet({
   return (
     <View style={{ gap: 8 }}>
       <Text style={styles.muted}>
-        Enable internet access for this paired computer without scanning another QR. Stay connected
-        over LAN or VPN until approval finishes.
+        <InterfaceText>
+          {
+            'Enable internet access for this paired computer without scanning another QR. Stay connected over LAN or VPN until approval finishes.'
+          }
+        </InterfaceText>
       </Text>
       {!pending && <PeerRelayChoice value={relay} onChange={setRelay} disabled={busy} approval />}
       {pending ? (
         <>
           <Text accessibilityRole="text" style={styles.muted}>
             {finishing
-              ? 'Testing and saving internet connection…'
-              : 'Waiting for approval on the computer. In Dovo, open Settings → Devices & runtime → Trusted devices. On a server, run dovo-server pair devices, then dovo-server pair approve <request-id>.'}
+              ? uiText('Testing and saving internet connection…')
+              : uiText(
+                  'Waiting for approval on the computer. In Dovo, open Settings → Devices & runtime → Trusted devices. On a server, run dovo-server pair devices, then dovo-server pair approve <request-id>.',
+                )}
           </Text>
           {!finishing && (
             <Action
               secondary
-              label="Cancel internet request"
+              label={uiText('Cancel internet request')}
               disabled={busy}
               onPress={() =>
                 act(async () => {
@@ -135,7 +143,7 @@ export function UpgradeInternet({
         </>
       ) : (
         <Action
-          label="Enable internet connection"
+          label={uiText('Enable internet connection')}
           disabled={busy || !connected}
           onPress={() =>
             act(async () => {

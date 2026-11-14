@@ -1,3 +1,4 @@
+import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { randomUUID } from 'expo-crypto'
 import { router } from 'expo-router'
@@ -40,6 +41,8 @@ export function PullAgentChat({
   sourceIdentity?: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [detail, setDetail] = useState(initialDetail)
   const [path, setPath] = useState(initialPath)
   const { connected, snapshot, profile, call, legacyDraftRuntimeId } = useRuntime()
@@ -131,29 +134,49 @@ export function PullAgentChat({
       }
     })
   return (
-    <Sheet ref={sheet} title="Ask agent about this PR" onClose={onClose} busy={action.busy}>
+    <Sheet
+      ref={sheet}
+      title={uiText('Ask agent about this PR')}
+      onClose={onClose}
+      busy={action.busy}
+    >
       <Text style={styles.muted}>
-        PR #{detail.pull.number} · {detail.pull.headSha.slice(0, 8)}
-        {path ? ` · ${path}` : ''}
+        <InterfaceText
+          values={{
+            value0: detail.pull.number,
+            value1: detail.pull.headSha.slice(0, 8),
+            value2: path ? ` · ${path}` : '',
+          }}
+        >
+          {'PR #{value0} · {value1}{value2}'}
+        </InterfaceText>
       </Text>
       <Text style={styles.muted}>
-        The PR and selected diff are added to an editable agent draft. Choose the model and send
-        when ready.
+        <InterfaceText>
+          {
+            'The PR and selected diff are added to an editable agent draft. Choose the model and send when ready.'
+          }
+        </InterfaceText>
       </Text>
       {sourceChanged && (
         <Text accessibilityRole="alert" style={styles.error}>
-          The PR source changed. Close and reopen this review action.
+          <InterfaceText>
+            {'The PR source changed. Close and reopen this review action.'}
+          </InterfaceText>
         </Text>
       )}
       {revisionChanged && !sourceChanged && (
         <>
           <Text accessibilityRole="alert" style={styles.muted}>
-            New commits are available. Keep your question and use the latest revision; selected
-            lines will be cleared.
+            <InterfaceText>
+              {
+                'New commits are available. Keep your question and use the latest revision; selected lines will be cleared.'
+              }
+            </InterfaceText>
           </Text>
           <Action
             secondary
-            label="Use latest revision"
+            label={uiText('Use latest revision')}
             disabled={
               action.busy || !connected || !!latestDetail.stale || !!latestDetail.refreshError
             }
@@ -168,32 +191,32 @@ export function PullAgentChat({
         </>
       )}
       <Choice
-        label="Conversation"
+        label={uiText('Conversation')}
         value={parentId}
         items={[
-          { id: '', name: 'New review thread', disabled: !repository || !!repository.kind },
+          { id: '', name: uiText('New review thread'), disabled: !repository || !!repository.kind },
           ...parents.map((task) => ({ id: task.id, name: `Side chat of ${task.title}` })),
         ]}
         onChange={setParentId}
         disabled={action.busy}
       />
       <Field
-        label="Question or task"
+        label={uiText('Question or task')}
         value={question}
         onChangeText={setQuestion}
         multiline
         maxLength={4000}
         editable={!action.busy}
-        placeholder="What would you like the agent to review?"
+        placeholder={uiText('What would you like the agent to review?')}
       />
       {!!path && (
         <>
           <Choice
-            label="Diff side"
+            label={uiText('Diff side')}
             value={side}
             items={[
-              { id: 'additions', name: 'After' },
-              { id: 'deletions', name: 'Before' },
+              { id: 'additions', name: uiText('After') },
+              { id: 'deletions', name: uiText('Before') },
             ]}
             onChange={(value) => {
               if (value === 'additions' || value === 'deletions') setSide(value)
@@ -201,14 +224,14 @@ export function PullAgentChat({
             disabled={action.busy}
           />
           <Field
-            label="Start line (optional)"
+            label={uiText('Start line (optional)')}
             value={line}
             onChangeText={setLine}
             keyboardType="number-pad"
             editable={!action.busy}
           />
           <Field
-            label="End line (optional)"
+            label={uiText('End line (optional)')}
             value={end}
             onChangeText={setEnd}
             keyboardType="number-pad"
@@ -217,7 +240,7 @@ export function PullAgentChat({
         </>
       )}
       <Action
-        label={parentId ? 'Create agent side chat' : 'Create review thread'}
+        label={parentId ? uiText('Create agent side chat') : uiText('Create review thread')}
         disabled={
           !connected ||
           sourceChanged ||

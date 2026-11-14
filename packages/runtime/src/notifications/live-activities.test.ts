@@ -265,6 +265,40 @@ it('refreshes unchanged background activities only after three minutes, with imm
   }
 })
 
+it('coalesces progress for thirty seconds and sends the latest state, with urgent input and end delivery', async () => {
+  const clock = vi.spyOn(Date, 'now').mockReturnValue(1_000_000)
+  try {
+    const f = setup()
+    f.service.register(f.device, f.registration)
+    await f.service.flush()
+    expect(f.send.mock.calls[0]?.[2]).toEqual({ priority: 5 })
+    for (let second = 3; second < 30; second += 3) {
+      clock.mockReturnValue(1_000_000 + second * 1000)
+      f.store.updateTask('task', (task) => ({ ...task, activity: `Step ${second}` }))
+      await f.service.flush()
+    }
+    expect(f.send).toHaveBeenCalledOnce()
+    clock.mockReturnValue(1_030_000)
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(2)
+    expect(f.send.mock.calls[1]?.[1]).toMatchObject({
+      aps: { 'content-state': { props: expect.stringContaining('Step 27') } },
+    })
+    clock.mockReturnValue(1_031_000)
+    f.input()
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(3)
+    expect(f.send.mock.calls[2]?.[2]).toEqual({ priority: 10 })
+    f.store.updateTask('task', (task) => ({ ...task, status: 'failed' }))
+    await f.service.flush()
+    expect(f.send).toHaveBeenCalledTimes(4)
+    expect(f.send.mock.calls[3]?.[2]).toEqual({ priority: 10 })
+    expect(f.send.mock.calls[3]?.[1]).toMatchObject({ aps: { event: 'end' } })
+  } finally {
+    clock.mockRestore()
+  }
+})
+
 it('updates and ends through a scoped managed grant without host Apple credentials', async () => {
   const managed = vi.fn<ManagedSend>().mockResolvedValue({ delivered: true, invalidToken: false })
   const f = setup({ managed })

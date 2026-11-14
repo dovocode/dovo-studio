@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 // WebView + xterm.js renderer: the Expo web build and the fallback for native binaries built
 // without the expo-libghostty module (for example an older development client).
 import { createRuntimeClient, mutableStruct, decode, responses } from '@dovo/protocol'
@@ -13,6 +14,8 @@ import { useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
 export function WebViewTerminalSession({ id, visible = true }: { id: string; visible?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { terminalFontFamily, terminalFontSize } = useMobilePreferences()
 
@@ -85,7 +88,7 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
           )
         })
       },
-      (error) => setError(`${error.message} Reconnecting…`),
+      (error) => setError(uiText('{value0} Reconnecting…', { value0: error.message })),
     )
     // Effect cleanup closes the socket and cancels retries on a true background stay.
     // Inactive permission prompts and Control Center preserve the healthy session.
@@ -148,7 +151,7 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
               setError(message.error)
             }
           } catch {
-            setError('The terminal sent an invalid status message.')
+            setError(uiText('The terminal sent an invalid status message.'))
           }
         }}
       />
