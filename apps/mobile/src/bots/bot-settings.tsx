@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Choice } from '../ui/controls/choice'
 import { taskHref } from '../shell/task-route'
 import { BotSkillProposals } from './bot-skill-proposals'
@@ -61,6 +62,8 @@ function BotSettingsEditor({
   onDeleted?: () => void
   initialSection?: BotSection
 }) {
+  const uiText = useInterfaceText()
+
   const { profile, connected, snapshot, callEffect } = useRuntime()
   const { act, busy, error } = useAction()
   const [deleting, setDeleting] = useState(false)
@@ -233,7 +236,7 @@ function BotSettingsEditor({
                 </Text>
               </>
             )}
-            <Action label="Avatar" secondary onPress={() => setAvatar(true)} />
+            <Action label={uiText('Avatar')} secondary onPress={() => setAvatar(true)} />
             <Action
               label="Harness, model and tool permissions"
               secondary
@@ -241,12 +244,16 @@ function BotSettingsEditor({
             />
             {snapshot?.botResourcesSupported && (
               <>
-                <Action label="MCP servers" secondary onPress={() => setResources('mcp')} />
-                <Action label="Skills" secondary onPress={() => setResources('skill')} />
+                <Action
+                  label={uiText('MCP servers')}
+                  secondary
+                  onPress={() => setResources('mcp')}
+                />
+                <Action label={uiText('Skills')} secondary onPress={() => setResources('skill')} />
               </>
             )}
-            <Action label="Routines" secondary onPress={() => setRoutines(true)} />
-            <Action label="Memory" secondary onPress={() => setMemory(true)} />
+            <Action label={uiText('Routines')} secondary onPress={() => setRoutines(true)} />
+            <Action label={uiText('Memory')} secondary onPress={() => setMemory(true)} />
             <Action
               label="Delete Bot…"
               secondary
@@ -275,7 +282,12 @@ function BotSettingsEditor({
               </Text>
               <BotDeletionResult deleted={deleted} busy={busy} onDeleted={onDeleted} />
               {!!error && <Text accessibilityRole="alert">{error}</Text>}
-              <Action label="Cancel" secondary disabled={busy} onPress={() => setDeleting(false)} />
+              <Action
+                label={uiText('Cancel')}
+                secondary
+                disabled={busy}
+                onPress={() => setDeleting(false)}
+              />
               <Action
                 label="Delete Bot"
                 disabled={
@@ -320,7 +332,7 @@ function BotSettingsEditor({
           {harness && <HarnessSettings task={task} onClose={() => setHarness(false)} />}
           {memory && <BotMemory taskId={task.id} onClose={() => setMemory(false)} />}
           {routines && (
-            <Sheet title="Routines" onClose={() => setRoutines(false)}>
+            <Sheet title={uiText('Routines')} onClose={() => setRoutines(false)}>
               <BotRoutines taskId={task.id} />
             </Sheet>
           )}

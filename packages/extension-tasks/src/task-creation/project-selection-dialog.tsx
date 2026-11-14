@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import { useAppPreferences, projectActivity, useWorkspace } from '@dovo/studio-core'
 import { pinnedFirst, projectMachineGroups } from '@dovo/protocol'
@@ -38,6 +39,8 @@ export function ProjectSelectionDialog({
   suggestedProject,
   onSelect,
 }: ProjectSelectionDialogProps) {
+  const uiText = useInterfaceText()
+
   const preferences = useAppPreferences()
   const { activeRuntimeId } = useWorkspace()
   const [machine, setMachine] = useState<string | null | undefined>(undefined)
@@ -220,7 +223,7 @@ export function ProjectSelectionDialog({
                     {source.online ? (
                       <ChevronRight className="size-3.5" />
                     ) : (
-                      <span className="text-xs">Offline</span>
+                      <span className="text-xs">{uiText('Offline')}</span>
                     )}
                   </Button>
                 )

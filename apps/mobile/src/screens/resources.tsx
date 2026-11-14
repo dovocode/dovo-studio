@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { HookSettings } from '../resources/hook-settings'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import {
@@ -110,6 +111,8 @@ function ComputerResources({
   )
 }
 function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, connected, callEffect } = useRuntime(),
@@ -263,7 +266,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             </View>
           )}
           <View style={styles.card}>
-            <Text style={styles.title}>MCP servers</Text>
+            <Text style={styles.title}>{uiText('MCP servers')}</Text>
             <View style={styles.row}>
               <Action
                 label="Add MCP server"
@@ -378,7 +381,7 @@ function ResourceScopeScreen({ scopeId }: { scopeId: string }) {
             save={save}
           />
           <View style={styles.card}>
-            <Text style={styles.title}>Skills</Text>
+            <Text style={styles.title}>{uiText('Skills')}</Text>
             <View style={styles.row}>
               <Action
                 label="Add skill"

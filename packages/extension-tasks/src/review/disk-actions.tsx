@@ -1,7 +1,10 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace, updateTask, type Task, type ChangedFile } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
+  const uiText = useInterfaceText()
+
   const { connected, request, setWorkspace } = useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false),
@@ -100,7 +103,7 @@ export function DiskActions({ task, file }: { task: Task; file: ChangedFile }) {
               disabled={busy}
               onClick={() => setConfirming(false)}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
           </span>
         ) : (

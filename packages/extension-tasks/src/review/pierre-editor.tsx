@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useMemo, useRef, type ComponentProps } from 'react'
 import {
@@ -57,6 +58,8 @@ export function PierreEditor({
   onSave: (contents: string) => void
   onReference?: (text: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const taskId = task.id
   const [ready, setReady] = useApplicationState(false)
   const [loadError, setLoadError] = useApplicationState<Error | null>(null)
@@ -275,7 +278,7 @@ export function PierreEditor({
               setDirty(false)
             }}
           >
-            Cancel
+            {uiText('Cancel')}
           </Button>
         )}
         {!readOnly && (

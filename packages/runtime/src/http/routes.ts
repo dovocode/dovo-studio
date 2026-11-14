@@ -1,3 +1,4 @@
+import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
 import { proposeBotSkill } from '../agent-tools/bot-skills.js'
 import { workflowTool } from '../agent-tools/workflows.js'
@@ -343,6 +344,11 @@ export function route(
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
       if (path === '/api/tasks/pending-harness' && agentDeviceAccess)
         throw new HttpError(403, 'Pending model changes require a paired human client.')
+      if (method === 'POST' && path === '/api/agent/conversation')
+        return conversationRead(
+          s.store,
+          decode(conversationReadSchema, yield* serviceResult(body(request, 4096))),
+        )
       if (method === 'POST' && path === '/api/agent/help')
         return productHelp(decode(productHelpSchema, yield* serviceResult(body(request, 4096))))
       if (method === 'POST' && path === '/api/secure-input/submit') {
@@ -1419,6 +1425,15 @@ export function route(
             ? { format: Number(format) }
             : {}),
         }
+      }
+      if (method === 'POST' && path === '/api/tasks/composer-history') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Composer history requires a paired human client')
+        const input = decode(
+          mutableStruct({ id: idSchema }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return s.store.composerHistory(input.id)
       }
       if (method === 'POST' && path === '/api/tasks/history') {
         const input = decode(

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
 import { useWorkspace, type Task } from '@dovo/studio-core'
@@ -29,6 +30,8 @@ export function CodeReviewReport({
   onOpen: (finding: CodeFinding) => void
   onSince: (id: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, connected, snapshot } = useWorkspace()
   const [agentId, setAgentId] = useState(''),
     [selectedId, setSelectedId] = useState('')
@@ -195,7 +198,7 @@ export function CodeReviewReport({
         <p role="alert" className="px-3 pb-2 text-xs text-destructive">
           {review.error}{' '}
           <button className="underline" onClick={() => void review.refresh()}>
-            Retry
+            {uiText('Retry')}
           </button>
         </p>
       )}

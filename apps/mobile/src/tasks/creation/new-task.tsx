@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAttachmentPicker } from '../composer/attachment-picker'
 import { FolderPicker } from './folder-picker'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -28,6 +29,8 @@ export function NewTask({
   onCreated: (id: string) => void
   onCancel: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot, call, connected, profile } = useRuntime()
@@ -162,7 +165,9 @@ export function NewTask({
   return (
     <View style={styles.content}>
       <Text style={styles.title}>{requested ? 'Opening draft chat…' : 'Choose a project'}</Text>
-      <Text style={styles.muted}>On {runtimeComputerName({ profile, snapshot })}</Text>
+      <Text style={styles.muted}>
+        {uiText('On')} {runtimeComputerName({ profile, snapshot })}
+      </Text>
       {!!initial?.files?.length && (
         <Text style={styles.muted}>{initial.files.map((file) => file.name).join(', ')}</Text>
       )}
@@ -217,7 +222,7 @@ export function NewTask({
         </>
       )}
       {attachments.editor}
-      <Action label="Cancel" secondary onPress={onCancel} />
+      <Action label={uiText('Cancel')} secondary onPress={onCancel} />
     </View>
   )
 }

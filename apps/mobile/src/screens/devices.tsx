@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AccountPanel } from '../runtime/connection/account-panel'
 import { ServiceUrlSettings } from '../runtime/connection/service-url-settings'
 import { RuntimeIconSettings } from '../runtime/connection/runtime-icon-settings'
@@ -44,6 +45,8 @@ import { useAction } from '../ui/controls/use-action'
 import { SettingsGroup, SettingsRow } from './settings-group'
 import { ScreenHeader } from '../ui/layout/screen-header'
 export default function DevicesScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const runtime = useRuntime()
@@ -112,7 +115,7 @@ export default function DevicesScreen() {
   return (
     <SettingsPage>
       <ScreenHeader
-        title="Computers"
+        title={uiText('Computers')}
         buttons={
           profiles.length
             ? [

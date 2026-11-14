@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useVerifiedRead } from '../../connections/verified-read'
 import { integrationMutationError } from '../../connections/mutation-error'
 import {
@@ -44,6 +45,8 @@ export function CreatePull({
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, request, connected } = useWorkspace()
   const host = useStudioHost()
   const mounted = useRef(true)
@@ -300,7 +303,7 @@ export function CreatePull({
               </p>
             )}
           </FormField>
-          <FormField label="Title">
+          <FormField label={uiText('Title')}>
             <div className="flex gap-2">
               <Input
                 aria-label="New PR title"
@@ -361,7 +364,7 @@ export function CreatePull({
               />
             </FormField>
           </div>
-          <FormField label="Description">
+          <FormField label={uiText('Description')}>
             <Textarea
               aria-label="New PR description"
               className="min-h-32"
@@ -408,7 +411,7 @@ export function CreatePull({
           )}
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               type="submit"

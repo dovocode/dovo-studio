@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useEffectEvent } from 'react'
 import { watchRuntimeSettled } from '@dovo/protocol'
 import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
@@ -18,6 +19,8 @@ export function AddPullsToThread({
   pulls: PullSummary[]
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
 
   const { overviews, readRuntime, refreshRuntime } = useRuntime()
@@ -124,7 +127,7 @@ export function AddPullsToThread({
           ListEmptyComponent={<Text>No matching threads.</Text>}
         />
         {!!error && <Text style={{ color: colors.error }}>{error}</Text>}
-        <Action label="Cancel" secondary disabled={busy} onPress={onClose} />
+        <Action label={uiText('Cancel')} secondary disabled={busy} onPress={onClose} />
       </View>
     </Sheet>
   )

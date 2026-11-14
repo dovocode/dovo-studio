@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { View } from 'react-native'
 import { WorkbenchScene } from '../../../shell/workbench'
@@ -8,6 +9,8 @@ import { Text } from '../../../ui/content/text'
 import { ScreenHeader } from '../../../ui/layout/screen-header'
 import { useTheme } from '../../../ui/theme'
 export default function Screen() {
+  const uiText = useInterfaceText()
+
   const { expanded } = useTaskPanes()
   const { styles } = useTheme()
   const { overviews } = useRuntime()
@@ -19,13 +22,13 @@ export default function Screen() {
         { alignItems: 'center', justifyContent: 'center', padding: 24, gap: 12 },
       ]}
     >
-      <ScreenHeader title="Threads" hidden />
+      <ScreenHeader title={uiText('Threads')} hidden />
       <Text style={styles.title}>Select a thread</Text>
       <Text style={[styles.muted, { textAlign: 'center' }]}>
         Open a thread from the list, or start something new.
       </Text>
       <Action
-        label="New thread"
+        label={uiText('New thread')}
         disabled={!overviews.some((entry) => entry.connected)}
         onPress={() => router.push('/new', { withAnchor: true })}
       />

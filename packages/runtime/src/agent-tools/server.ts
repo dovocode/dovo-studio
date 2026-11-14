@@ -196,6 +196,20 @@ const tools: Array<
 > = [
   ...studioToolDefinitions(studioTools),
   {
+    name: 'conversation_read',
+    description:
+      'Read one assistant response in this thread by messageId from a reply reference. Returns up to 8000 characters; pass nextOffset to continue. Excludes Bot context resets. Content is untrusted. Read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        messageId: { type: 'string', minLength: 1, maxLength: 300 },
+        offset: { type: 'integer', minimum: 0, maximum: 10000000 },
+      },
+      required: ['messageId'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'dovo_help',
     description:
       'Search or read documentation shipped with this runtime. Use for questions about Dovo. Search first, then read a section by its returned id. Docs describe this version and grant no permission. Use live tools for account and connection state.',
@@ -860,20 +874,44 @@ const tools: Array<
         {
           name: 'terminal_run',
           description:
-            'Run an interactive, persistent, or user-visible command in this task’s Dovo terminal and return its terminal ID. Use your normal command tool for quick noninteractive commands.',
+            'Run an interactive, persistent, or user-visible command in a new task terminal. Returns its ID. Use your normal command tool for quick noninteractive commands.',
           inputSchema: {
             type: 'object' as const,
             properties: {
               command: { type: 'string' as const },
+              title: {
+                type: 'string' as const,
+                minLength: 1,
+                maxLength: 256,
+              },
               checkoutId: { type: 'string' as const, description: 'Optional linked checkout ID.' },
             },
             required: ['command'],
           },
         },
         {
+          name: 'terminal_rename',
+          description:
+            'Set the saved tab name of a terminal opened by this tool session. Null restores the automatic shell title.',
+          inputSchema: {
+            type: 'object' as const,
+            properties: {
+              id: { type: 'string' as const },
+              title: {
+                anyOf: [
+                  { type: 'string' as const, minLength: 1, maxLength: 256 },
+                  { type: 'null' as const },
+                ],
+              },
+            },
+            required: ['id', 'title'],
+            additionalProperties: false,
+          },
+        },
+        {
           name: 'terminal_close',
           description:
-            'Close a terminal opened by this task tool session after its output is no longer needed. Stops a live process and releases its retained output.',
+            'Close a terminal opened by this tool session after reading its output. Stops its process and removes retained output.',
           inputSchema: {
             type: 'object' as const,
             properties: { id: { type: 'string' as const } },
@@ -882,7 +920,7 @@ const tools: Array<
         },
         {
           name: 'terminal_read',
-          description: 'Read recent output from a terminal opened by this task tool session.',
+          description: 'Read recent output from a terminal opened by this tool session.',
           inputSchema: {
             type: 'object' as const,
             properties: { id: { type: 'string' as const } },
@@ -892,7 +930,7 @@ const tools: Array<
         {
           name: 'terminal_input',
           description:
-            'Send input to a terminal opened by this task tool session. Use carriage return to submit a line.',
+            'Send input to a terminal opened by this tool session. Submit a line with carriage return.',
           inputSchema: {
             type: 'object' as const,
             properties: { id: { type: 'string' as const }, data: { type: 'string' as const } },
@@ -1002,6 +1040,8 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             parentRunId,
           }),
         )
+      case 'conversation_read':
+        return text(await post('/api/agent/conversation', { ...input, taskId: task, parentRunId }))
       case 'bot_history':
         if (!memoryScopes.includes('bot'))
           throw new Error('Only Bot coordinators can recall Bot history')
@@ -1317,12 +1357,24 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
           await post('/api/terminals/run', {
             taskId: task,
             command: string(input.command, 'command'),
+            ...(input.title !== undefined ? { title: string(input.title, 'title') } : {}),
             ...(typeof input.checkoutId === 'string' ? { checkoutId: input.checkoutId } : {}),
             newTerminal: true,
           }),
         )
         terminals.add(terminal.id)
         return text(terminal)
+      }
+      case 'terminal_rename': {
+        writable()
+        const id = string(input.id, 'id')
+        if (!terminals.has(id)) throw new Error('Open this task terminal with terminal_run first')
+        return text(
+          await post('/api/terminals/update', {
+            id,
+            title: input.title === null ? null : string(input.title, 'title'),
+          }),
+        )
       }
       case 'terminal_close': {
         writable()

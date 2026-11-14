@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import {
   usageHubsSchema,
@@ -55,6 +56,8 @@ export function UsageHubs({ computer, onSaved }: { computer: string; onSaved: ()
   )
 }
 function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () => void }) {
+  const uiText = useInterfaceText()
+
   const { readRuntime } = useWorkspace()
   const [hubs, setHubs] = useState<UsageHub[]>([])
   const [draft, setDraft] = useState({
@@ -147,10 +150,10 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
                 setConfirm('')
               }}
             >
-              Edit {hub.label}
+              {uiText('Edit')} {hub.label}
             </Button>
             <Button variant="outline" disabled={busy} onClick={() => setConfirm(hub.id)}>
-              Remove {hub.label}
+              {uiText('Remove')} {hub.label}
             </Button>
           </div>
           {confirm === hub.id && (
@@ -162,7 +165,7 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
                 Confirm removal
               </Button>{' '}
               <Button variant="outline" onClick={() => setConfirm('')}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
             </div>
           )}

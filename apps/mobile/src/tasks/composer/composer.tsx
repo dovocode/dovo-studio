@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import { useOperationGuard } from '../../runtime/state/use-operation-guard'
 import { prepareRuntimeSideThread, finishRuntimeSideThread } from '../draft/runtime-drafts'
@@ -115,6 +116,8 @@ export function Composer({
     autoProjectExecution?: Task['autoProjectExecution'],
   ) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles, reduceMotion } = useTheme()
   const { showContextUsage, minimalComposer, showPlanButton } = useMobilePreferences()
   const motion = reduceMotion ? ReduceMotion.Always : ReduceMotion.System
@@ -496,7 +499,12 @@ export function Composer({
   const [typing, setTyping] = useApplicationState(false)
   const showOptions =
     !minimalComposer || focused || hasInput || dictation.active || composerHistory.active
-  const canBrowseHistory = composerHistory.available && !busy && !attaching && !dictation.active
+  const canBrowseHistory =
+    composerHistory.available &&
+    !composerHistory.loading &&
+    !busy &&
+    !attaching &&
+    !dictation.active
   const canAskAside =
     !task.bot &&
     !task.sideThread &&
@@ -608,8 +616,8 @@ export function Composer({
             onPress: () => send('steer'),
           },
           {
-            title: 'Stop',
-            label: 'Stop',
+            title: uiText('Stop'),
+            label: uiText('Stop'),
             icon: 'stop',
             disabled: !connected || stopping || machineMoving,
             onPress: stop,
@@ -638,7 +646,7 @@ export function Composer({
       [
         { source: 'camera', title: 'Camera', icon: 'camera' },
         { source: 'photos', title: 'Photos', icon: 'fileImage' },
-        { source: 'files', title: 'Files', icon: 'attach' },
+        { source: 'files', title: uiText('Files'), icon: 'attach' },
       ] as const
     ).map(({ source, title, icon }) => ({
       title,
@@ -851,12 +859,12 @@ export function Composer({
             {(task.autoProject || hasGit) && !dictation.active && (
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="Advanced"
+                accessibilityLabel={uiText('Advanced')}
                 accessibilityState={{ expanded: advanced }}
                 onPress={() => setAdvanced(!advanced)}
                 style={[styles.row, { minHeight: 44, paddingHorizontal: 12 }]}
               >
-                <Text style={[styles.muted, { flex: 1 }]}>Advanced</Text>
+                <Text style={[styles.muted, { flex: 1 }]}>{uiText('Advanced')}</Text>
                 <Icon name={advanced ? 'down' : 'next'} size={14} color={colors.muted} />
               </Pressable>
             )}
@@ -992,7 +1000,7 @@ export function Composer({
             },
           ]}
         >
-          <Action label="Stop" disabled={!connected || stopping} onPress={stop} />
+          <Action label={uiText('Stop')} disabled={!connected || stopping} onPress={stop} />
           {!!error && <Text style={styles.error}>{error}</Text>}
         </View>
       </>
@@ -1167,6 +1175,14 @@ export function Composer({
             older={composerHistory.older}
             newer={composerHistory.newer}
           >
+            {(composerHistory.loading || composerHistory.error) && (
+              <View style={{ paddingHorizontal: 12, paddingVertical: 8, gap: 4 }}>
+                <Text accessibilityRole="text" style={styles.muted}>
+                  {composerHistory.loading ? 'Loading message history…' : composerHistory.error}
+                </Text>
+                <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
+              </View>
+            )}
             {composerHistory.active && (
               <View
                 testID="Composer history browser"
@@ -1206,7 +1222,7 @@ export function Composer({
                   </Text>
                   <Text style={[styles.muted, { fontSize: 11 }]}>← Newer · Older →</Text>
                 </View>
-                <Action secondary label="Cancel" onPress={composerHistory.cancel} />
+                <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
               </View>
             )}
             <Animated.View
@@ -1773,7 +1789,7 @@ export function Composer({
               </Text>
             )}
             <Action
-              label="Done"
+              label={uiText('Done')}
               disabled={linkedProjectsAction.busy}
               onPress={() => setLinkingProjects(false)}
             />
@@ -1883,7 +1899,7 @@ export function Composer({
               )}
             </>
           )}
-          <Action label="Done" onPress={() => setCheckout(false)} />
+          <Action label={uiText('Done')} onPress={() => setCheckout(false)} />
         </Sheet>
       )}
       {showFork && !!turnSettings && (

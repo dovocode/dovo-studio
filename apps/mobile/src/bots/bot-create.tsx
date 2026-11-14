@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -158,6 +159,8 @@ export function CreateBot({
   /** `runtimeId` is the computer that received the request, not the current selection. */
   onCreated: (id: string, runtimeId: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const { colors, styles } = useTheme()
   const { draft, setField, clear } = useDetailDraft(drafts, draftKey, emptyDraft)
@@ -282,7 +285,7 @@ export function CreateBot({
 
   return (
     <Sheet
-      title="New Bot"
+      title={uiText('New Bot')}
       busy={busy}
       onClose={onClose}
       footer={

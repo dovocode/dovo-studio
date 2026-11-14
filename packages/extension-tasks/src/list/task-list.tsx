@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotStrip } from '../bots/bot-strip'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -104,6 +105,8 @@ export function TaskList({
   busy: boolean
   error: string
 }) {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   const store = useTaskActionStore()
   const scope = JSON.stringify([activeRuntimeId, clientScopeKey(store.connection)])
@@ -911,8 +914,8 @@ export function TaskList({
               size="icon"
               variant="ghost"
               className="studio-thread-new size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
-              aria-label="New thread"
-              title="New thread"
+              aria-label={uiText('New thread')}
+              title={uiText('New thread')}
               onClick={onNewThread}
               disabled={busy}
             >
@@ -958,7 +961,7 @@ export function TaskList({
               </div>
             ) : (
               <span className="min-w-0 flex-1 px-1 text-xs font-medium text-muted-foreground">
-                Threads
+                {uiText('Threads')}
               </span>
             )}
             <div className="studio-thread-toolbar flex shrink-0 items-center gap-1.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
@@ -1169,7 +1172,7 @@ export function TaskList({
                 </Button>
               ) : (
                 <Button size="sm" disabled={busy} onClick={onNewThread}>
-                  New thread
+                  {uiText('New thread')}
                 </Button>
               )}
             </div>

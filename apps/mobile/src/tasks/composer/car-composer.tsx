@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ActivityIndicator, Linking, Pressable, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import type { Task } from '@dovo/protocol'
@@ -9,6 +10,8 @@ import { useTheme } from '../../ui/theme'
 /** Car mode: speech first. One large button starts and finishes dictation, the transcript
  * stays readable at a glance, and sending is a single large target. */
 export function CarComposer({ task, onType }: { task: Task; onType: () => void }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const insets = useSafeAreaInsets()
@@ -110,7 +113,12 @@ export function CarComposer({ task, onType }: { task: Task; onType: () => void }
               onPress={() => send()}
             />
           ) : (
-            <CarButton label="Stop" secondary disabled={!connected || stopping} onPress={stop} />
+            <CarButton
+              label={uiText('Stop')}
+              secondary
+              disabled={!connected || stopping}
+              onPress={stop}
+            />
           )}
         </View>
       )}

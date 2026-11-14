@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botScope } from './bots/bot-scope'
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
 import type { SelectRemoteProject } from './chat/composer/composer-project'
@@ -120,6 +121,8 @@ export default function TasksView({
   embedded = false,
   onBotDeleted,
 }: StudioViewProps & { embedded?: boolean; onBotDeleted?: (id: string) => void }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const { workspace, setWorkspace, activeRuntimeId, switchRuntime } = store
   const { snapshot, connected, runtimes } = store
@@ -768,7 +771,7 @@ export default function TasksView({
     () =>
       registerCommand({
         id: 'tasks.new',
-        title: 'New thread',
+        title: uiText('New thread'),
         aliases: ['new thread', 'new chat', 'start conversation'],
         run: newThread,
       }),
@@ -1141,7 +1144,7 @@ export default function TasksView({
                 data-window-edge
                 data-window-right-edge={!splitTask || undefined}
               >
-                New thread
+                {uiText('New thread')}
               </header>
             </HeaderContent>
           ) : (
@@ -1677,7 +1680,7 @@ export default function TasksView({
                     ) : (
                       <FloatingPreview
                         key={threadKey}
-                        title="Browser"
+                        title={uiText('Browser')}
                         placement={browserPlacement}
                         onPlacementChange={(placement) =>
                           setBrowserPlacements((current) => ({
@@ -2008,7 +2011,7 @@ export default function TasksView({
               event.preventDefault()
           }}
         >
-          <DialogTitle className="px-4 pt-4">Threads</DialogTitle>
+          <DialogTitle className="px-4 pt-4">{uiText('Threads')}</DialogTitle>
           <DialogDescription className="sr-only">Select or create a thread.</DialogDescription>
           <TaskList
             projectId={projectId}

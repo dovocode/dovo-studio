@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { Field } from '../ui/controls/field'
 
@@ -19,11 +20,13 @@ export function BotFields({
   onRole: (value: string) => void
   onResponsibilities: (value: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <View style={{ gap: 16 }}>
       <Field label="Bot name" value={name} onChangeText={onName} editable={!disabled} />
       <Field
-        label="Role"
+        label={uiText('Role')}
         maxLength={120}
         value={role}
         onChangeText={onRole}
@@ -31,7 +34,7 @@ export function BotFields({
         hint="Describe the assistant’s purpose."
       />
       <Field
-        label="Responsibilities"
+        label={uiText('Responsibilities')}
         maxLength={8000}
         value={responsibilities}
         onChangeText={onResponsibilities}

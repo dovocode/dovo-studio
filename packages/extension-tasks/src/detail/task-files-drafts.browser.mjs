@@ -11,9 +11,10 @@ const bundle = await bundleBrowser(
       contents: `
     import {createRoot} from 'react-dom/client';import {useState} from 'react';
     import {TaskFiles} from '${detail}task-files.tsx';import {fileDrafts} from '${detail}file-drafts.ts';
-    window.drafts=fileDrafts;window.writes=[];window.files={'a.txt':'original','b.txt':'second'};
+    window.drafts=fileDrafts;window.writes=[];window.files={'a.txt':'original','b.txt':'second','data.csv':'Name,Value'};
     const request=async(path,input)=>{
       if(path.endsWith('/directory'))return {entries:Object.keys(window.files).map(path=>({path,kind:'file'})),truncated:false};
+      if(path.endsWith('/spreadsheet'))return {sheets:['Data'],sheet:'Data',rows:[['Name','Value']],truncated:false};
       if(path.endsWith('/read')){if(!window.files[input.path])throw Error('File removed');return {contents:window.files[input.path],size:8,complete:true,truncated:false,startLine:1,hasMore:false}};
       if(path.endsWith('/write')){window.writes.push(input);if(window.fail)throw Error('save failed');if(window.delay)await new Promise(resolve=>window.complete=resolve);if(window.files[input.path]!==input.expectedContents)throw Error('conflict');window.files[input.path]=input.contents;return {contents:input.contents}};
       throw Error(path);
@@ -97,6 +98,22 @@ try {
   await page.goto('http://studio.test/')
   await boot()
   const button = (name) => page.getByRole('button', { name, exact: true })
+  await button('data.csv').click()
+  await button('Edit').waitFor()
+  await button('Table preview').click()
+  await page.getByRole('table', { name: 'Data' }).waitFor()
+  await button('Text view').click()
+  await button('Edit').click()
+  await page.getByRole('textbox', { name: 'File editor' }).fill('Changed CSV')
+  assert.equal(
+    await button('Table preview').count(),
+    0,
+    'A table toggle cannot hide a live text draft',
+  )
+  await button('Save').click()
+  await button('Table preview').waitFor()
+  assert.equal(await page.evaluate(() => window.files['data.csv']), 'Changed CSV')
+
   await button('a.txt').click()
   await page.evaluate(() => {
     window.unmountOnEdit = true

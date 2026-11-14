@@ -59,3 +59,11 @@ it('can begin recall when the live window and an older page contain no user mess
   history.appendOlder([{ role: 'user', text: 'Delayed response' }])
   expect(history.active).toBe(false)
 })
+
+it('bounds composer recall to the latest 50 user messages', () => {
+  const history = createComposerHistory()
+  const messages = Array.from({ length: 65 }, (_, i) => ({ role: 'user', text: `Sent ${i}` }))
+  let text = history.move('older', '', messages)!
+  for (let i = 0; i < 70; i++) text = history.move('older', text, messages)!
+  expect(text).toBe('Sent 15')
+})

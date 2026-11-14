@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -21,6 +22,8 @@ export function GithubRepositoryPicker({
   onSelect: (repository: GithubRepositoryChoice) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { call, connected, callEffect } = useRuntime()
@@ -103,7 +106,7 @@ export function GithubRepositoryPicker({
             {error}
           </Text>
           <Action
-            label="Retry"
+            label={uiText('Retry')}
             secondary
             disabled={busy || !connected}
             onPress={() =>
@@ -172,7 +175,7 @@ export function GithubRepositoryPicker({
           }}
         />
       )}
-      <Action label="Back" secondary onPress={onClose} />
+      <Action label={uiText('Back')} secondary onPress={onClose} />
     </View>
   )
 }

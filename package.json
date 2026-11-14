@@ -244,21 +244,22 @@
     "test:mobile-workspaces:browser": "node scripts/check-mobile-workspace-browser.mjs && node scripts/check-mobile-workspace-overview-browser.mjs",
     "prepare:workspace-router": "node scripts/packaging/workspace-router-model.mjs",
     "test:workspace-router:model": "pnpm --filter @dovo/runtime... -r build && node scripts/check-workspace-router-model.mjs",
-    "test:t3-features:browser": "node scripts/check-t3-features-browser.mjs && node scripts/check-runtime-dictation-browser.mjs"
+    "test:t3-features:browser": "node scripts/check-t3-features-browser.mjs && node scripts/check-runtime-dictation-browser.mjs",
+    "test:weekly-features:browser": "node scripts/check-weekly-features-browser.mjs && node scripts/check-response-replies-browser.mjs"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.5",
     "@types/node": "^26.6.6",
-    "effect": "4.1.2",
+    "effect": "4.1.4",
     "electron-builder": "^26.18.0",
     "esbuild": "^0.28.2",
-    "fallow": "^3.41.0",
-    "googleapis": "189.0.0",
+    "fallow": "^3.42.0",
+    "googleapis": "190.0.0",
     "playwright": "^1.65.0",
     "tailwindcss": "^4.3.5",
     "typescript": "^7.0.2",
     "vite-plus": "catalog:",
-    "ws": "^8.22.1"
+    "ws": "^8.23.0"
   },
   "engines": {
     "node": ">=26.0.0"

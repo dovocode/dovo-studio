@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from './content-column'
 import { ValidationFields } from '../controls/validation-fields'
 import { SafeModal } from './safe-modal'
@@ -72,6 +73,8 @@ export function Sheet({
   footer?: ReactNode
   headerAction?: { label: string; icon: IconName; onPress: () => void; disabled?: boolean }
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles, mode: appearanceMode } = useTheme()
 
   const [presented, setPresented] = useApplicationState(true)
@@ -167,7 +170,7 @@ export function Sheet({
                 <IconButton {...headerAction} disabled={busy || !!headerAction.disabled} />
               )}
               <IconButton
-                label="Close"
+                label={uiText('Close')}
                 icon="close"
                 variant="glass"
                 disabled={busy}
@@ -336,7 +339,7 @@ export function Sheet({
               />
             )}
             <IconButton
-              label="Close"
+              label={uiText('Close')}
               icon="close"
               variant="glass"
               disabled={busy}

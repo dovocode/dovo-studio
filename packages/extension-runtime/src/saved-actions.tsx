@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { useWorkspace, type RuntimeProfile } from '@dovo/studio-core'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
@@ -9,6 +10,8 @@ export function SavedActions({
   profile: RuntimeProfile
   connected: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { mutationStatus, retryMutations, discardMutations, runtimes } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -111,7 +114,7 @@ export function SavedActions({
             <p className="text-sm text-muted-foreground">No saved actions remain.</p>
           )}
           <Button variant="ghost" disabled={busy} onClick={() => setOpen(false)}>
-            Close
+            {uiText('Close')}
           </Button>
         </DialogContent>
       </Dialog>

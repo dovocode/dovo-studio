@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ServiceUrlSettings } from './service-url-settings'
 import { useEffect, useRef, useState } from 'react'
 import { AccountPanel } from './account-panel'
@@ -23,6 +24,8 @@ import { PairingClient } from './pairing-client'
 import { DeviceManager } from './device-manager'
 import { WindowsRuntimeSettings } from './windows-runtime'
 export default function RuntimeView({ threadConnection }: StudioViewProps) {
+  const uiText = useInterfaceText()
+
   const sources = useRuntimeSources()
   const studio = useStudioHost()
   const { runtimeRegistry, runtimes } = useWorkspace()
@@ -90,7 +93,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
                 : studio.navigate({ viewId: 'tasks' })
             }
           >
-            Cancel
+            {uiText('Cancel')}
           </Button>
         </section>
       )}
@@ -189,7 +192,7 @@ export default function RuntimeView({ threadConnection }: StudioViewProps) {
                 </WorkspaceScope>
               </>
             ) : (
-              <Button onClick={() => setManaging(null)}>Close</Button>
+              <Button onClick={() => setManaging(null)}>{uiText('Close')}</Button>
             )}
           </DialogContent>
         </Dialog>

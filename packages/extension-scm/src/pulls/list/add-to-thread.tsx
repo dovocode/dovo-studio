@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useEffectEvent } from 'react'
 import { watchRuntimeSettled } from '@dovo/protocol'
 import { runtimeComputerName } from '@dovo/protocol'
@@ -20,6 +21,8 @@ export function AddPullsToThread({
   pulls: PullSummary[]
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { runtimes, activeRuntimeId, workspace, readRuntime, refreshRuntime } = useWorkspace()
   const connections = JSON.stringify(runtimes.map((runtime) => runtime.profile.connection))
   const subscribe = useEffectEvent(() =>
@@ -90,7 +93,9 @@ export function AddPullsToThread({
       }}
     >
       <DialogContent className="max-w-lg">
-        <DialogTitle>Add {pulls.length === 1 ? 'PR' : `${pulls.length} PRs`} to thread</DialogTitle>
+        <DialogTitle>
+          {uiText('Add')} {pulls.length === 1 ? 'PR' : `${pulls.length} PRs`} to thread
+        </DialogTitle>
         <DialogDescription>
           Choose a thread on any computer. Its checkout stays the same.
         </DialogDescription>

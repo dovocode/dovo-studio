@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useConfirmation } from '@dovo/studio-core'
 import { useEffect, useId, useRef, useState } from 'react'
 import {
@@ -72,6 +73,8 @@ export function TaskBehaviorSettings({
   repository?: Repository
   onOpenRuntime?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const id = useId()
   const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace()
   const computer = runtimeComputerName(
@@ -280,8 +283,8 @@ export function TaskBehaviorSettings({
                         ? 'Inherit'
                         : `Inherit (${fallback(key) ? 'On' : 'Off'})`}
                     </SelectItem>
-                    <SelectItem value="on">On</SelectItem>
-                    <SelectItem value="off">Off</SelectItem>
+                    <SelectItem value="on">{uiText('On')}</SelectItem>
+                    <SelectItem value="off">{uiText('Off')}</SelectItem>
                   </SelectContent>
                 </Select>
                 {draft[key] === undefined &&

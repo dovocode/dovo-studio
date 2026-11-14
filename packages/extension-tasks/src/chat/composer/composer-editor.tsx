@@ -63,7 +63,6 @@ export const ComposerEditor = memo(function ComposerEditor({
   placeholder,
   messages = [],
   onAlternativeSubmit,
-  historyBefore,
   historyRevision = 0,
   historyScope,
   loadHistory,
@@ -90,10 +89,9 @@ export const ComposerEditor = memo(function ComposerEditor({
   /** Recalled with Up. A getter keeps streaming replies from re-rendering the editor. */
   messages?: readonly HistoryMessage[] | (() => readonly HistoryMessage[])
   onAlternativeSubmit?: () => void
-  historyBefore?: string
   historyRevision?: number
   historyScope?: string
-  loadHistory?: (before: string, signal: AbortSignal) => Promise<ConversationPage>
+  loadHistory?: (signal: AbortSignal) => Promise<ConversationPage>
   placeholder: string
   /**
    * The input element was replaced, as when switching modes. Focus cannot be tracked by
@@ -207,8 +205,6 @@ export const ComposerEditor = memo(function ComposerEditor({
   )
   const history = useRef(createComposerHistory())
   const historyCaret = useRef(false)
-  const cursor = useRef(historyBefore)
-  const cache = useRef(new Map<string, ConversationPage>())
   const pending = useRef<AbortController | null>(null)
   const [historyStatus, setHistoryStatus] = useState<{ busy: boolean; error: string }>({
     busy: false,
@@ -216,7 +212,6 @@ export const ComposerEditor = memo(function ComposerEditor({
   })
   useEffect(() => {
     history.current.reset()
-    cache.current.clear()
     pending.current?.abort()
     pending.current = null
     setHistoryStatus({ busy: false, error: '' })
@@ -240,46 +235,26 @@ export const ComposerEditor = memo(function ComposerEditor({
       setDraft(text)
     }
   }
-  const loadOlder = async () => {
-    if (!loadHistory || !cursor.current || pending.current) return
+  const loadRecent = async () => {
+    if (!loadHistory || pending.current) return
     const operation = new AbortController()
     pending.current = operation
     const generation = history.current.generation
     const draftRevision = controller.revision
     setHistoryStatus({ busy: true, error: '' })
     try {
-      while (cursor.current && history.current.atOldest) {
-        const before: string = cursor.current
-        const cached = cache.current.get(before)
-        const page: ConversationPage = cached ?? (await loadHistory(before, operation.signal))
-        if (
-          operation.signal.aborted ||
-          history.current.generation !== generation ||
-          controller.revision !== draftRevision
-        )
-          return
-        if ((page.historyRevision ?? 0) !== historyRevision)
-          throw new Error(
-            'Conversation changed. Reload the thread before recalling older messages.',
-          )
-        // Cached pages retain only user messages; an assistant-only page is valid there.
-        if (page.before === before || (!cached && !page.messages.length && page.before))
-          throw new Error('History did not advance. Reload the thread before trying again.')
-        cache.current.set(before, {
-          ...page,
-          messages: page.messages.filter((message) => message.role === 'user'),
-          turns: [],
-        })
-        cursor.current = page.before
-        history.current.appendOlder(page.messages)
-      }
+      const page = await loadHistory(operation.signal)
       if (
         operation.signal.aborted ||
         history.current.generation !== generation ||
         controller.revision !== draftRevision
       )
         return
-      const recalled = history.current.move('older', controller.text, recallable())
+      if ((page.historyRevision ?? 0) !== historyRevision)
+        throw new Error(
+          'Conversation changed. Reload the thread before recalling earlier messages.',
+        )
+      const recalled = history.current.move('older', controller.text, page.messages)
       if (recalled !== undefined) applyRecall(recalled)
     } catch (error) {
       if (
@@ -386,26 +361,15 @@ export const ComposerEditor = memo(function ComposerEditor({
       event.preventDefault()
       return
     }
-    if (!history.current.active && older) cursor.current = historyBefore
-    const atOldest = history.current.atOldest
-    const recalled = history.current.move(
-      event.key === 'ArrowUp' ? 'older' : 'newer',
-      controller.text,
-      recallable(),
-    )
-    if (
-      older &&
-      (atOldest || recalled === undefined) &&
-      history.current.active &&
-      cursor.current &&
-      loadHistory
-    ) {
+    if (older && !history.current.active && controller.text.trim()) return
+    if (older && !history.current.active && loadHistory) {
       event.preventDefault()
-      void loadOlder()
+      void loadRecent()
       return
     }
+    const recalled = history.current.move(older ? 'older' : 'newer', controller.text, recallable())
     if (recalled === undefined) {
-      if (!cursor.current || !loadHistory) history.current.reset()
+      history.current.reset()
       return
     }
     event.preventDefault()

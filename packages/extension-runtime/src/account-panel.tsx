@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
@@ -25,6 +26,8 @@ function AccountPanelContent({
   open: (url: string) => Promise<void>
   onPair: (address: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const services = useAppPreferences()
   const { client, directory, login, busy, error, loaded, deletionPending } = useAccount(
     storage,
@@ -166,7 +169,7 @@ function AccountPanelContent({
                 Delete account permanently
               </Button>
               <Button variant="ghost" disabled={busy} onClick={() => setConfirmDelete(false)}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
             </>
           ) : (

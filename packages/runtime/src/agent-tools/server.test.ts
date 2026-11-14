@@ -692,6 +692,7 @@ it('keeps read-only providers from sending task terminal or device input', async
   try {
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'conversation_read',
       'dovo_help',
       'ask_question',
       'thread_prepare',
@@ -1238,7 +1239,31 @@ it('isolates agent commands from the user shell and closes only terminals opened
     })
     const user = s.terminals.create(task.id, f.directory)
     const input = vi.spyOn(s.terminals, 'input')
-    const config = taskToolsServer(task.id, runtime.port, token, '127.0.0.1')
+    const runId = randomUUID()
+    s.store.updateTask(task.id, (current) => ({ ...current, activeRunId: runId }))
+    const runToken = s.runCredentials.issue(
+      {
+        taskId: task.id,
+        runId,
+        permissions: { provider: 'codex', permission: 'ask' },
+        readOnly: false,
+        artifacts: false,
+        pipelineWatching: false,
+        pullRequestWatching: false,
+        deviceHub: false,
+        memoryScopes: [],
+      },
+      new AbortController().signal,
+    )
+    const config = taskToolsServer(
+      task.id,
+      runtime.port,
+      runToken,
+      '127.0.0.1',
+      false,
+      false,
+      runId,
+    )
     transport = new StdioClientTransport({
       command: process.execPath,
       args: [
@@ -1251,12 +1276,54 @@ it('isolates agent commands from the user shell and closes only terminals opened
     })
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('terminal_close')
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('terminal_rename')
+    for (const title of ['   ', 'bad\nname', '\u202eSpoof', 'x'.repeat(257)]) {
+      expect(
+        (
+          await client.callTool({
+            name: 'terminal_run',
+            arguments: { command: 'printf invalid', title },
+          })
+        ).isError,
+      ).toBe(true)
+      expect(s.terminals.list().map((terminal) => terminal.id)).toEqual([user.id])
+      expect(input).not.toHaveBeenCalled()
+    }
     const opened = await client.callTool({
       name: 'terminal_run',
-      arguments: { command: 'printf tool-output' },
+      arguments: { command: 'printf tool-output', title: '  Build server  ' },
     })
     const { id } = decode(mutableStruct({ id: Schema.String }), JSON.parse(decodeToolText(opened)))
     expect(id).not.toBe(user.id)
+    expect(s.terminals.get(id).info).toMatchObject({
+      title: 'Build server',
+      customTitle: 'Build server',
+    })
+    const terminalProcess = s.terminals.get(id).process
+    expect(
+      (
+        await client.callTool({
+          name: 'terminal_rename',
+          arguments: { id: user.id, title: 'Forbidden' },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(
+      (await client.callTool({ name: 'terminal_rename', arguments: { id, title: '   ' } })).isError,
+    ).toBe(true)
+    expect(s.terminals.get(id).info.title).toBe('Build server')
+    expect(
+      (await client.callTool({ name: 'terminal_rename', arguments: { id, title: '  Tests  ' } }))
+        .isError,
+    ).not.toBe(true)
+    expect(s.terminals.get(id).info).toMatchObject({ title: 'Tests', customTitle: 'Tests' })
+    expect(
+      (await client.callTool({ name: 'terminal_rename', arguments: { id, title: null } })).isError,
+    ).not.toBe(true)
+    expect(s.terminals.get(id).info.customTitle).toBeUndefined()
+    expect(s.terminals.get(id).info.title).not.toBe('Tests')
+    expect(s.terminals.get(id).process).toBe(terminalProcess)
+    expect(input).toHaveBeenCalledTimes(1)
     expect(input).toHaveBeenCalledWith(id, 'printf tool-output\r')
     expect(input.mock.calls.every(([target]) => target === id)).toBe(true)
     const command = s.activity
@@ -1274,6 +1341,10 @@ it('isolates agent commands from the user shell and closes only terminals opened
       true,
     )
     expect(s.terminals.list().map((terminal) => terminal.id)).toEqual([user.id])
+    expect(
+      (await client.callTool({ name: 'terminal_rename', arguments: { id, title: 'Closed' } }))
+        .isError,
+    ).toBe(true)
   } finally {
     await client.close()
     await transport?.close()
@@ -1687,6 +1758,7 @@ it('omits host terminal execution under an explicit restricted native sandbox wh
     expect(names).toContain('subagent_spawn')
     expect(names).not.toContain('terminal_run')
     expect(names).not.toContain('terminal_input')
+    expect(names).not.toContain('terminal_rename')
     expect(
       (await client.callTool({ name: 'terminal_run', arguments: { command: 'fixture' } })).isError,
     ).toBe(true)

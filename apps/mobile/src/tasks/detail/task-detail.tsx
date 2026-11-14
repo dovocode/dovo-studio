@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotCall } from '../../bots/bot-call'
 import { BotWorkSummary } from '../../bots/bot-work-summary'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
@@ -238,6 +239,8 @@ export function TaskDetail({
   startup?: StartupControls
   parentNavigation?: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { width } = useWindowDimensions()
 
   const {
@@ -342,7 +345,7 @@ export function TaskDetail({
       <View style={{ flex: 1 }}>
         <ScreenHeader
           title={task.title}
-          leading={<Action secondary label="Back" onPress={onBack} />}
+          leading={<Action secondary label={uiText('Back')} onPress={onBack} />}
           titleMenu
           titleMenuDisabled
           buttons={[
@@ -425,6 +428,8 @@ function TaskDetailContent({
   startup?: StartupControls
   parentNavigation?: ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { focused, navigate } = useNavigation()
@@ -883,11 +888,17 @@ function TaskDetailContent({
               ? onBack
               : undefined
         }
-        leading={<Action secondary label="Back" onPress={pane === 'diff' ? backToChat : onBack} />}
+        leading={
+          <Action
+            secondary
+            label={uiText('Back')}
+            onPress={pane === 'diff' ? backToChat : onBack}
+          />
+        }
         collapsedMenuGroups={['Project', 'Advanced']}
         buttons={
           startup?.temporary
-            ? [{ label: 'New thread', icon: 'add', onPress: startup.onNewThread }]
+            ? [{ label: uiText('New thread'), icon: 'add', onPress: startup.onNewThread }]
             : (
                 [
                   'chat',
@@ -1298,7 +1309,7 @@ function TaskDetailContent({
           >
             Couldn’t save read status.
           </Text>
-          <Action secondary label="Retry" disabled={viewed.busy} onPress={viewed.retry} />
+          <Action secondary label={uiText('Retry')} disabled={viewed.busy} onPress={viewed.retry} />
         </View>
       )}
       <View style={{ flex: 1, display: native ? 'none' : 'flex' }}>
@@ -1451,7 +1462,7 @@ function TaskDetailContent({
                           : 'continue with a follow-up'}
                       </Text>
                       <Action
-                        label="Continue"
+                        label={uiText('Continue')}
                         disabled={!connected || resume.busy}
                         onPress={() =>
                           resume.act(() =>

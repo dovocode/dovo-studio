@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   taskParentReference,
   resolveThreadRuntime,
@@ -79,6 +80,8 @@ export function TaskRouteScreen() {
 }
 
 function TaskRouteContent({ startup }: { startup: boolean }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const params = useLocalSearchParams<ThreadRouteParams>()
   const { ready, activeId, profiles, overviews, snapshot, refresh, connected } = useRuntime()
@@ -188,7 +191,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
       <ScreenHeader
         title="Task"
         subtitle={owner?.name}
-        leading={<Action label="Back" secondary onPress={backToTasks} />}
+        leading={<Action label={uiText('Back')} secondary onPress={backToTasks} />}
       />
       {parentButton}
       <View style={styles.content}>
@@ -248,6 +251,8 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
 }
 
 export function NewTaskScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [id] = useState(randomUUID)
@@ -260,21 +265,21 @@ export function NewTaskScreen() {
   if (!ready)
     return (
       <>
-        <ScreenHeader title="New thread" />
+        <ScreenHeader title={uiText('New thread')} />
         <ActivityIndicator style={{ flex: 1 }} color={colors.accent} />
       </>
     )
   if (!owner)
     return (
       <View style={styles.content}>
-        <ScreenHeader title="New thread" />
+        <ScreenHeader title={uiText('New thread')} />
         <Text style={styles.title}>Connect a computer</Text>
         <Text style={styles.muted}>
           Connect once to load a computer’s projects and settings. You can then draft and save
           messages offline.
         </Text>
         <Action label="Open computer settings" onPress={() => navigate('settings')} />
-        <Action label="Back" secondary onPress={backToTasks} />
+        <Action label={uiText('Back')} secondary onPress={backToTasks} />
       </View>
     )
   const href = taskHref(owner.profile.id, id)

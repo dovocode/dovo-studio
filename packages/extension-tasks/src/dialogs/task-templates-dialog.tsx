@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { useConfirmDiscardChanges } from './unsaved-changes'
 import { Trash2 } from 'lucide-react'
@@ -23,6 +24,8 @@ export function TaskTemplatesDialog({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, setWorkspace } = useWorkspace()
   const repository = workspace.repositories.find((item) => item.id === repositoryId)
   const [rows, setRows] = useState<TaskTemplate[]>(() => repository?.templates ?? [])
@@ -179,9 +182,9 @@ export function TaskTemplatesDialog({
         )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={close}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save}>{uiText('Save')}</Button>
         </div>
       </DialogContent>
     </Dialog>

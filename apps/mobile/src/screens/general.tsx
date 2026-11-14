@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
 import { RuntimeSpeechSettings } from './runtime-speech'
 import { SnoozeSchedule } from './snooze-schedule'
 import { SettingsScrollView } from './settings-search'
@@ -134,9 +136,24 @@ function LocalSettingsPage({ title, children }: { title: string; children: React
 }
 
 export default function GeneralScreen() {
+  const uiText = useInterfaceText()
+
   const preferences = useMobilePreferences()
   return (
-    <LocalSettingsPage title="General">
+    <LocalSettingsPage title={uiText('General')}>
+      <SettingsGroup
+        title={uiText('Interface language')}
+        footer="Language for navigation, settings labels, and common controls. Other copy falls back to English. Speech recognition keeps its own language."
+      >
+        <Choice
+          label={uiText('Interface language')}
+          value={preferences.interfaceLanguage}
+          items={interfaceLanguages}
+          onChange={(value) =>
+            updateMobilePreferences({ interfaceLanguage: decode(interfaceLanguageSchema, value) })
+          }
+        />
+      </SettingsGroup>
       <SettingsGroup title="Startup" footer="The page Dovo shows when it opens.">
         <Choice
           label="Open on launch"
@@ -171,7 +188,7 @@ export default function GeneralScreen() {
           label="Time format"
           value={preferences.timeFormat}
           items={[
-            { id: 'auto', name: 'Automatic' },
+            { id: 'auto', name: uiText('Automatic') },
             { id: '12h', name: '12-hour' },
             { id: '24h', name: '24-hour' },
           ]}
@@ -227,7 +244,7 @@ export default function GeneralScreen() {
           onPress={() => router.push('/settings/task-preferences')}
         />
         <SettingsRow
-          title="Notifications"
+          title={uiText('Notifications')}
           subtitle="Task alerts, computer subscriptions and Live Activities"
           icon="settings"
           onPress={() => router.push('/settings/notifications')}
@@ -270,6 +287,8 @@ export function BatterySettingsScreen() {
 }
 
 export function TaskPreferencesScreen() {
+  const uiText = useInterfaceText()
+
   const preferences = useMobilePreferences()
   const { setView } = useTaskListView()
   return (
@@ -329,7 +348,7 @@ export function TaskPreferencesScreen() {
         />
       </SettingsGroup>
       <SettingsGroup
-        title="Pull requests"
+        title={uiText('Pull requests')}
         footer="The merge method is preselected when merging and falls back to the forge’s default. Draft applies where the forge supports it."
       >
         <Choice
@@ -419,6 +438,8 @@ export function ConversationSettingsScreen() {
 }
 
 export function SpeechSettingsScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const preferences = useMobilePreferences()
   const [recognitionLanguages, setRecognitionLanguages] = useState<string[]>([])
@@ -470,7 +491,7 @@ export function SpeechSettingsScreen() {
     <LocalSettingsPage title="Speech & driving">
       <RuntimeSpeechSettings />
       <SettingsGroup
-        title="Speech"
+        title={uiText('Speech')}
         footer="Saved on this phone. Siri voices appear when iOS makes them available to apps; additional voices can be downloaded in iPhone speech settings."
       >
         {loadingSpeech && <Text style={styles.muted}>Loading speech options…</Text>}
@@ -483,7 +504,7 @@ export function SpeechSettingsScreen() {
           label="Dictation language"
           value={preferences.dictationLanguage}
           items={[
-            { id: '', name: 'Automatic' },
+            { id: '', name: uiText('Automatic') },
             ...[...recognitionLanguages].sort().map((language) => ({
               id: language,
               name: dictationLanguages.find(([code]) => code === language)?.[1] ?? language,
@@ -495,7 +516,7 @@ export function SpeechSettingsScreen() {
           label="Read aloud language"
           value={preferences.speechLanguage}
           items={[
-            { id: '', name: 'Automatic' },
+            { id: '', name: uiText('Automatic') },
             ...speechLanguages.map((language) => ({ id: language, name: language })),
           ]}
           onChange={(speechLanguage) =>

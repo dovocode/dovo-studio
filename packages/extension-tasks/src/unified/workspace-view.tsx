@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotStrip } from '../bots/bot-strip'
 import {
   Activity,
@@ -179,6 +180,8 @@ export default function UnifiedWorkspace() {
 }
 
 function WorkspaceContent() {
+  const uiText = useInterfaceText()
+
   const preferences = useAppPreferences()
   const store = useWorkspace()
   const computers = useWorkspaceComputers()
@@ -1117,8 +1120,8 @@ function WorkspaceContent() {
                     </IconButton>
                   )}
                   <IconButton
-                    label="New thread"
-                    title="New thread"
+                    label={uiText('New thread')}
+                    title={uiText('New thread')}
                     className="size-7"
                     disabled={switching || !store.activeRuntimeId}
                     onClick={() =>
@@ -1374,7 +1377,7 @@ function WorkspaceContent() {
                       }
                     >
                       <MessageSquare className="size-3.5" />
-                      New thread
+                      {uiText('New thread')}
                     </Button>
                     <Button
                       size="sm"
@@ -1440,7 +1443,7 @@ function WorkspaceContent() {
                     className="mt-3"
                     onClick={() => setSwitchAttempt((attempt) => attempt + 1)}
                   >
-                    Retry
+                    {uiText('Retry')}
                   </Button>
                 </div>
               )}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode, resolveScopedAgents } from '@dovo/protocol'
@@ -44,6 +45,8 @@ export function HarnessDialog({
   initialValue?: TaskHarness
   onSave?: (value: TaskHarness) => Promise<boolean>
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, setWorkspace, flush, request, connected, snapshot } = useWorkspace()
   const agents = resolveScopedAgents(
     snapshot?.defaults,
@@ -182,7 +185,7 @@ export function HarnessDialog({
           )}
           <DialogFooter>
             <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               disabled={

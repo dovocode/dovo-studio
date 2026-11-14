@@ -11,6 +11,7 @@ import { nativeEffect } from '../../../runtime/state/native-effect'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
 import {
+  conversationPageSchema,
   type TurnSettings,
   type Attachment,
   sameTurnSettings,
@@ -180,6 +181,14 @@ export function useConversationActions(task: Task) {
     text: storedDraft.text,
     revision: storedDraft.revision,
     messages: task.messages,
+    loadHistory: async (signal) => {
+      if (!connected) throw new Error('Reconnect to recall earlier messages.')
+      const page = await Effect.runPromise(
+        readEffect('/api/tasks/composer-history', { id: task.id }, conversationPageSchema),
+        { signal },
+      )
+      return page.messages
+    },
     enabled:
       storedDraft.ready &&
       !editing &&

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import { Effect } from 'effect'
 import { SlidersHorizontal, WandSparkles } from 'lucide-react'
@@ -338,6 +339,8 @@ export function RunningTaskPreferences({
 
 /** PR lifecycle and explicit monitoring tools, saved per computer. */
 export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { runtimeRegistry } = useWorkspace()
   const retrievalHosts = runtimeRegistry.profiles.flatMap((profile) =>
     profile.connection.runtimeId ? [{ id: profile.connection.runtimeId, name: profile.name }] : [],
@@ -365,7 +368,7 @@ export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?:
           />
         </SettingRow>
       </SettingsGroup>
-      <SettingsGroup title="Pull requests">
+      <SettingsGroup title={uiText('Pull requests')}>
         <SettingRow
           label="Automatically link pull requests"
           description="Links matching branches and verified PR URLs in messages. Keeps the current checkout."
@@ -436,7 +439,7 @@ export function PullRequestPreferences({ showSaveInfo = true }: { showSaveInfo?:
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="auto">Automatic</SelectItem>
+              <SelectItem value="auto">{uiText('Automatic')}</SelectItem>
               {retrievalHosts.map((profile) => (
                 <SelectItem key={profile.id} value={profile.id}>
                   {profile.name}

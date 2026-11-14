@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotSkillProposals } from './bot-skill-proposals'
 import { BotAvatarEditor } from './bot-avatar-editor'
 import { BotResourceEditor } from './bot-resource-editor'
@@ -52,6 +53,8 @@ export function BotSettings({
   onDeleted?: () => void
   section?: 'settings' | 'mcp' | 'skill' | 'memory' | 'routines'
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const confirm = useConfirmation()
   const mounted = useRef(true)
@@ -264,7 +267,7 @@ export function BotSettings({
                 </p>
               </FormField>
             )}
-            <FormField label="Name">
+            <FormField label={uiText('Name')}>
               <Input
                 aria-label="Bot name"
                 required
@@ -272,7 +275,7 @@ export function BotSettings({
                 onChange={(event) => change({ name: event.target.value })}
               />
             </FormField>
-            <FormField label="Role">
+            <FormField label={uiText('Role')}>
               <Input
                 aria-label="Bot role"
                 required
@@ -281,7 +284,7 @@ export function BotSettings({
                 onChange={(event) => change({ role: event.target.value })}
               />
             </FormField>
-            <FormField label="Responsibilities">
+            <FormField label={uiText('Responsibilities')}>
               <Textarea
                 aria-label="Bot responsibilities"
                 maxLength={8000}

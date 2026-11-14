@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { integrationMutationError } from '../../connections/mutation-error'
 import { useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -20,6 +21,8 @@ export function StartPullTask({
   open?: boolean
   onOpenChange?: (open: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, activeRuntimeId, runtimeRegistry, switchRuntime } = useWorkspace()
   const host = useStudioHost()
   const [busy, setBusy] = useApplicationState(false)
@@ -92,7 +95,7 @@ export function StartPullTask({
             size="sm"
             variant="outline"
             className="@max-sm/pr-detail:hidden"
-            aria-label="New thread"
+            aria-label={uiText('New thread')}
             title="Start a thread from this PR"
             disabled={!connected || busy}
           >

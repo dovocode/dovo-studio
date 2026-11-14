@@ -40,7 +40,7 @@ async function read(s: Services, force: boolean): Promise<Result> {
       return agent ? [{ ...agent, id: agent.id || `task:${task.id}` }] : []
     }),
   ]) {
-    if (agent.provider !== 'codex' && agent.provider !== 'claude') continue
+    if (!['codex', 'claude', 'opencode'].includes(agent.provider)) continue
     const key = JSON.stringify(modelDiscoveryInput(agent))
     let agents = configurations.get(key)
     if (!agents) {

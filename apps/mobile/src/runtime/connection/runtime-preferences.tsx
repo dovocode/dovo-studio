@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { MobileRemoteDesktop } from '../../screens/remote-desktop'
 import { useSettingsDraft } from '../preferences/settings-target'
 import { router } from 'expo-router'
@@ -42,6 +43,8 @@ export type RuntimePreferencesSection =
   | 'activity'
 
 export function RuntimePreferences({ section }: { section?: RuntimePreferencesSection }) {
+  const uiText = useInterfaceText()
+
   const [desktopOpen, setDesktopOpen] = useState(false)
   const show = (group: RuntimePreferencesSection) => !section || section === group
   const { styles } = useTheme()
@@ -536,7 +539,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
                 value={value?.preferredRetrievalHost || 'auto'}
                 disabled={disabled || value?.enableSharedRetrieval === false}
                 items={[
-                  { id: 'auto', name: 'Automatic' },
+                  { id: 'auto', name: uiText('Automatic') },
                   ...overviews.flatMap((entry) =>
                     entry.profile.connection.runtimeId
                       ? [{ id: entry.profile.connection.runtimeId, name: entry.profile.name }]
@@ -633,7 +636,7 @@ export function RuntimePreferences({ section }: { section?: RuntimePreferencesSe
             </Section>
           )}
           {show('memory') && (
-            <Section title="Memory">
+            <Section title={uiText('Memory')}>
               <Text style={[styles.muted, { paddingHorizontal: 16, paddingBottom: 12 }]}>
                 Optional notes stored locally on this computer and shared across its threads. Each
                 scope starts off. Disabling a scope keeps its notes and stops agent access. Manage

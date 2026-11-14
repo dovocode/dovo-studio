@@ -6,7 +6,7 @@ export const usageAccountSchema = mutableStruct({
   subscription: Schema.optional(Schema.String),
 })
 export const planLimitSchema = mutableStruct({
-  provider: Schema.Literals(['codex', 'claude']),
+  provider: Schema.Literals(['codex', 'claude', 'opencode']),
   account: Schema.optional(usageAccountSchema),
   sourceTaskId: Schema.optional(Schema.String),
   agentId: Schema.optional(Schema.String),
@@ -15,6 +15,7 @@ export const planLimitSchema = mutableStruct({
   durationMins: Schema.optional(
     Schema.Number.pipe(Schema.check(Schema.isFinite()), Schema.check(Schema.isGreaterThan(0))),
   ),
+  modelIds: Schema.optional(mutableArray(Schema.String)),
   window: Schema.String,
   usedPercent: Schema.Number.pipe(Schema.check(Schema.isFinite())),
   resetsAt: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
@@ -362,7 +363,7 @@ export const resetCreditResultSchema = mutableStruct({ outcome: Schema.String })
 
 export const usageHubAccountSchema = mutableStruct({
   id: Schema.String,
-  provider: Schema.Literals(['codex', 'claude']),
+  provider: Schema.Literals(['codex', 'claude', 'opencode']),
   account: usageAccountSchema,
   status: Schema.Literals(['ok', 'failed', 'unsupported']),
 })

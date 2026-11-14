@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { useCallback, useEffect, useState } from 'react'
 import {
@@ -10,6 +11,8 @@ import { useWorkspace } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 
 export function RuntimeDiagnosticsPanel() {
+  const uiText = useInterfaceText()
+
   const { request, connected, snapshot } = useWorkspace()
   const policy = snapshot?.managedPolicy
   const [status, setStatus] = useState<RuntimeDiagnostics | null>(null)
@@ -95,7 +98,7 @@ export function RuntimeDiagnosticsPanel() {
           disabled={busy || !connected}
           onClick={() => void run(false)}
         >
-          Refresh
+          {uiText('Refresh')}
         </Button>
       </div>
       {error && (

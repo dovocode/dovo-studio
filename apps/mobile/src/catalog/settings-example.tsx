@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import {
@@ -17,6 +18,8 @@ export function SettingsExample({
 }: {
   initialState?: SettingsExampleState
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const [section, setSection] = useState<'index' | 'connection'>(
     initialState === 'idle' ? 'index' : 'connection',
@@ -174,7 +177,7 @@ export function SettingsExample({
               <View style={styles.row}>
                 <Action
                   secondary
-                  label="Cancel"
+                  label={uiText('Cancel')}
                   onPress={() => {
                     setAddress(savedAddress)
                     setState('idle')
@@ -223,7 +226,7 @@ export function SettingsExample({
                 setConfirmation(false)
               }}
             />
-            <Action secondary label="Cancel" onPress={() => setConfirmation(false)} />
+            <Action secondary label={uiText('Cancel')} onPress={() => setConfirmation(false)} />
           </View>
         </SettingsSheet>
       )}

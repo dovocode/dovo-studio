@@ -21,7 +21,7 @@ import {ComposerField} from '${root}/apps/mobile/src/tasks/composer/composer-fie
 import {useDraft} from '${root}/apps/mobile/src/tasks/draft/use-draft.ts';
 import {useComposerHistory} from '${root}/apps/mobile/src/tasks/composer/use-composer-history.ts';
 window.mounts=0;window.writes=[];window.clears=0;window.storageText=()=>localStorage.getItem('dovo.draft.computer.task');
-function App(){const [focusKey,setFocusKey]=useState(undefined);window.editFocus=()=>setFocusKey('queued');const savedDraft=useDraft('task','Recovered draft');const history=useComposerHistory({scope:savedDraft.key,text:savedDraft.text,revision:savedDraft.revision,messages:[{role:'user',text:'First sent message'},{role:'assistant',text:'Reply'},{role:'user',text:'Latest sent message'}],enabled:savedDraft.ready});window.historyBrowse=history;const update=useCallback((text,source)=>{history.cancel();savedDraft.update(text,source)},[history.cancel,savedDraft.update]);const draft={...savedDraft,text:history.text,revision:JSON.stringify([savedDraft.revision,history.index]),update};const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField focusKey={focusKey} key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
+function App(){const [remote,setRemote]=useState(false);window.remoteHistory=setRemote;const [focusKey,setFocusKey]=useState(undefined);window.editFocus=()=>setFocusKey('queued');const savedDraft=useDraft('task','Recovered draft');const history=useComposerHistory({scope:savedDraft.key,text:savedDraft.text,revision:savedDraft.revision,loadHistory:remote?async(signal)=>{window.historyRequests=(window.historyRequests??0)+1;if(window.holdHistory)await new Promise(resolve=>window.releaseHistory=resolve);return Array.from({length:65},(_,i)=>({role:'user',text:'Remote '+i}))}:undefined,messages:remote?[]:[{role:'user',text:'First sent message'},{role:'assistant',text:'Reply'},{role:'user',text:'Latest sent message'}],enabled:savedDraft.ready});window.historyBrowse=history;const update=useCallback((text,source)=>{history.cancel();savedDraft.update(text,source)},[history.cancel,savedDraft.update]);const draft={...savedDraft,text:history.text,revision:JSON.stringify([savedDraft.revision,history.index]),update};const [echo,setEcho]=useState(null);const [sending,setSending]=useState(false);const [stream,setStream]=useState(0);const type=useCallback(text=>draft.update(text,'keyboard'),[draft.update]);const select=useCallback(()=>{},[]);window.draft=draft;window.echo=text=>flushSync(()=>setEcho(text));window.stream=()=>flushSync(()=>setStream(n=>n+1));window.switchRuntime=id=>{window.runtimeId=id;flushSync(()=>setStream(n=>n+1))};window.apply=text=>flushSync(()=>{setEcho(null);setSending(false);draft.update(text)});window.send=()=>flushSync(()=>{setEcho(null);setSending(true)});window.fail=()=>flushSync(()=>setSending(false));return <div data-stream={stream}><ComposerField focusKey={focusKey} key={draft.key} value={echo??(sending?'':draft.text)} revision={JSON.stringify([draft.revision,sending])} onChangeText={type} onSelectionChange={select} editable={draft.ready} showOptions placeholder="Message"/></div>};
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     loader: 'tsx',
@@ -84,6 +84,30 @@ try {
     1,
     'Browsing never remounts the native input',
   )
+  await page.evaluate(() => window.remoteHistory(true))
+  await page.waitForFunction(() => window.historyBrowse.available)
+  await page.evaluate(() => window.historyBrowse.begin())
+  await page.waitForFunction(() => window.historyBrowse.active && window.historyBrowse.count === 50)
+  assert.equal(await input.inputValue(), 'Remote 64')
+  for (let i = 0; i < 55; i++) await page.evaluate(() => window.historyBrowse.older())
+  assert.equal(await input.inputValue(), 'Remote 15')
+  await page.evaluate(() => window.historyBrowse.cancel())
+  assert.equal(await input.inputValue(), 'Recovered draft')
+  await page.evaluate(() => {
+    window.holdHistory = true
+    window.historyBrowse.begin()
+  })
+  await page.waitForFunction(() => window.historyBrowse.loading)
+  await page.evaluate(() => window.apply('Edited while loading'))
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.waitForFunction(() => !window.historyBrowse.loading)
+  assert.equal(await input.inputValue(), 'Edited while loading')
+  assert.equal(await page.evaluate(() => window.historyBrowse.active), false)
+  assert.equal(await page.evaluate(() => window.historyRequests), 2)
+  await page.evaluate(() => window.remoteHistory(false))
   await page.evaluate(() => window.apply('Start end'))
   await input.focus()
   await input.evaluate((e) => e.setSelectionRange(6, 6))

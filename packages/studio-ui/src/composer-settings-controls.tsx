@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import {
@@ -58,6 +59,8 @@ export function ComposerSettingsControls({
   modelSelectionDifficulty?: string
   onSelectDifficulty?: (reasoning: string) => Promise<boolean>
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot } = useWorkspace()
   const policySupported = snapshot?.permissionPolicySupported === true
   const capabilities = permissionPolicyCapabilities(value.provider)
@@ -148,7 +151,7 @@ export function ComposerSettingsControls({
             </DropdownMenu.RadioGroup>
             <DropdownMenu.Separator className="mx-2 my-2 border-t" />
             <DropdownMenu.Label className="px-3 py-2 text-xs text-muted-foreground">
-              Advanced
+              {uiText('Advanced')}
             </DropdownMenu.Label>
             <p className="px-3 py-2 text-xs text-muted-foreground">
               {permissionPolicySummary(value)}

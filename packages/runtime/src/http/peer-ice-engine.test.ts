@@ -33,7 +33,7 @@ it('preserves all TURN URL transports and their credentials through configuratio
     pc.setConfiguration({ iceServers: servers })
     expect(pc.iceTransports[0]?.connection.options.turnServers).toEqual(expected)
     pc.setConfiguration({ iceServers: [] })
-    expect(pc.iceTransports[0]?.connection.options.turnServers).toBeUndefined()
+    expect(pc.iceTransports[0]?.connection.options.turnServers).toEqual([])
     expect(pc.iceTransports[0]?.connection.turnServer).toBeUndefined()
   } finally {
     await pc.close()

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
 
@@ -26,6 +27,8 @@ export function ComposerCommandDialog({
   onConfirm: () => void
   onRefresh: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const refreshButton = useRef<HTMLButtonElement>(null)
   const busy = commandBusy || refreshing
   useEffect(() => {
@@ -73,7 +76,7 @@ export function ComposerCommandDialog({
         ) : null}
         <div className="flex justify-end gap-2">
           <Button variant="outline" disabled={busy} onClick={() => onClose()}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
           {command === 'undo' && needsRefresh && (
             <Button ref={refreshButton} disabled={busy || !connected} onClick={onRefresh}>

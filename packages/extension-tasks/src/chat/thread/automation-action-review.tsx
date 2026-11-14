@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { githubEventChoices, type AutomationData, type ThreadAction } from '@dovo/protocol'
 import {
   Button,
@@ -56,6 +57,8 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
 }
 
 function ResourceRows({ resource }: { resource: Resource }) {
+  const uiText = useInterfaceText()
+
   const { agent } = resource
   const selection = agent.modelSelection
   return (
@@ -68,7 +71,7 @@ function ResourceRows({ resource }: { resource: Resource }) {
           </p>
         </>
       )}
-      <Row label="Agent">
+      <Row label={uiText('Agent')}>
         {selection
           ? selection === 'inherit'
             ? 'Inherit · Project model applied at start'
@@ -85,7 +88,7 @@ function ResourceRows({ resource }: { resource: Resource }) {
         </Row>
       )}
       {resource.projects.length > 0 && (
-        <Row label="Projects">
+        <Row label={uiText('Projects')}>
           <ul className="grid gap-0.5">
             {resource.projects.map((project) => (
               <li key={project.id}>
@@ -102,6 +105,8 @@ function ResourceRows({ resource }: { resource: Resource }) {
 
 /** Read-only view of the exact saved workflow and its effective resources. */
 export function AutomationSnapshotView({ snapshot }: { snapshot: AutomationActionSnapshot }) {
+  const uiText = useInterfaceText()
+
   const { workflow } = snapshot
   const labels = new Map(workflow.nodes.map((node) => [node.id, node.data.label || node.id]))
   return (
@@ -139,7 +144,7 @@ export function AutomationSnapshotView({ snapshot }: { snapshot: AutomationActio
       })}
       {workflow.edges.length > 0 && (
         <section aria-label="Workflow connections" className="grid gap-1 text-xs">
-          <h4 className="text-sm font-medium">Connections</h4>
+          <h4 className="text-sm font-medium">{uiText('Connections')}</h4>
           <ul className="grid gap-0.5">
             {workflow.edges.map((edge) => (
               <li key={edge.id}>
@@ -179,6 +184,8 @@ export function AutomationActionReview({
   onRefresh: () => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <Dialog
       open
@@ -236,7 +243,7 @@ export function AutomationActionReview({
           )}
           <div className="flex flex-wrap justify-end gap-2">
             <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Close
+              {uiText('Close')}
             </Button>
             {!frozen && (
               <Button type="button" variant="outline" disabled={busy} onClick={onRefresh}>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import {
   prepareSideThread,
@@ -132,6 +133,8 @@ export function Composer({
   composerInsert?: { id: string; text: string; once?: boolean; replaceKey?: string } | null
   onComposerInsertApplied?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const {
     workspace,
     setWorkspace,
@@ -145,10 +148,10 @@ export function Composer({
     runtimeRegistry,
     refreshRuntime,
   } = useWorkspaceSelector(selectComposerWorkspace, sameComposerWorkspace)
-  const loadComposerHistory = useCommittedCallback((before: string, signal: AbortSignal) => {
+  const loadComposerHistory = useCommittedCallback((signal: AbortSignal) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
     return Effect.runPromise(
-      requestEffect('/api/tasks/history', { id: task.id, before }, conversationPageSchema),
+      requestEffect('/api/tasks/composer-history', { id: task.id }, conversationPageSchema),
       { signal },
     )
   })
@@ -1661,7 +1664,7 @@ export function Composer({
                 data-composer-stop=""
                 data-labeled=""
                 className="studio-destructive-accent h-8 w-8 rounded-full border border-border bg-transparent p-0 text-xs text-foreground shadow-none hover:bg-muted"
-                aria-label="Stop"
+                aria-label={uiText('Stop')}
                 aria-busy={stopping}
                 title="Stop the agent and pause queued messages"
                 disabled={!connected || stopping || task.archived}
@@ -1777,7 +1780,7 @@ export function Composer({
               disabled={sending || attachments.busy}
               onClick={() => attachments.discardFailedUpload(file.id)}
             >
-              Remove
+              {uiText('Remove')}
             </button>
           </div>
         ))}
@@ -1854,7 +1857,6 @@ export function Composer({
           }
           controller={editorController}
           messages={historyMessages}
-          historyBefore={task.historyBefore}
           historyRevision={task.historyRevision}
           historyScope={JSON.stringify([activeRuntimeId, connection?.address, connection?.token])}
           loadHistory={loadComposerHistory}

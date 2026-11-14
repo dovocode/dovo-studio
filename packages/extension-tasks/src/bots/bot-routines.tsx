@@ -1,9 +1,12 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { formatDateTime, useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { botRoutines, botRunStatusLabels, botWorkInbox } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
 
 /** Run links use the normal automation history, with its owning computer intact. */
 export function BotRoutines({ taskId }: { taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { workspace, snapshot, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   const routines = botRoutines(taskId, workspace.automations, snapshot?.runs ?? [])
@@ -28,7 +31,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
         : {}),
     })
   return (
-    <section className="grid gap-3" aria-label="Routines">
+    <section className="grid gap-3" aria-label={uiText('Routines')}>
       <h2 className="font-semibold">Work inbox</h2>
       <p className="text-xs text-muted-foreground">
         Work runs in isolated workers. Your conversation stays available. Review requests and
@@ -56,7 +59,7 @@ export function BotRoutines({ taskId }: { taskId: string }) {
       ) : (
         <p className="text-xs text-muted-foreground">No work yet.</p>
       )}
-      <h2 className="font-semibold">Routines</h2>
+      <h2 className="font-semibold">{uiText('Routines')}</h2>
       {routines.map(({ flow: routine, runs, triggers, steps }) => {
         return (
           <div key={routine.id} className="grid min-w-0 gap-2 rounded-lg border p-3">

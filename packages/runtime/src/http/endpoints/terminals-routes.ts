@@ -11,6 +11,7 @@ import {
   updateTerminalSchema,
   createWorkspaceTerminalSchema,
   terminalShellsResponseSchema,
+  terminalTitleSchema,
   type TerminalInfo,
 } from '@dovo/protocol'
 import { minValue, maxValue, decode } from '@dovo/protocol'
@@ -72,7 +73,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
       if (method === 'POST' && path === '/api/terminals/update') {
         const input = decode(updateTerminalSchema, yield* serviceResult(body(request)))
         return yield* runtimeOperation(() => {
-          s.devices.authenticate(token)
+          authenticateRuntimeOperation(s, token)
           return s.terminals.update(input)
         })
       }
@@ -217,12 +218,13 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
       if (method === 'POST' && path === '/api/terminals/run') {
         // Chat code blocks reuse an open terminal. Agent tools request a fresh one so a
         // foreground program in the user's terminal never receives a shell command as input.
-        const { taskId, command, newTerminal, checkoutId } = decode(
+        const { taskId, command, newTerminal, checkoutId, title } = decode(
           mutableStruct({
             taskId: idSchema,
             checkoutId: Schema.optional(idSchema),
             command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
             newTerminal: Schema.optional(Schema.Boolean),
+            title: Schema.optional(terminalTitleSchema),
           }),
           yield* serviceResult(body(request)),
         )
@@ -256,13 +258,18 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
                     !terminal.exited,
                 ),
             )
-        const terminal =
+        let terminal =
           open ??
           (yield* runtimeOperation(async () => {
             const cwd = await s.checkouts.selectedDirectory(taskId, checkoutId)
             authorize()
             return s.terminals.create(taskId, cwd, checkoutId)
           }))
+        if (title !== undefined)
+          terminal = yield* runtimeOperation(() => {
+            authorize()
+            return s.terminals.update({ id: terminal.id, title })
+          })
         yield* runtimeOperation(() => {
           authorize()
           s.terminals.input(terminal.id, `${command.replace(/\r?\n/g, '\r')}\r`)

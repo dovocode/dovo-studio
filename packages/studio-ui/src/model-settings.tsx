@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RefreshCw } from 'lucide-react'
 import { Disclosure } from './disclosure'
 import { Schema } from 'effect'
@@ -43,6 +44,8 @@ export function ModelSettings({
   modes?: boolean
   layout?: 'settings'
 }) {
+  const uiText = useInterfaceText()
+
   const [catalog, setCatalog] = useApplicationState<ModelCatalog | null>(null),
     [error, setError] = useApplicationState(''),
     [loading, setLoading] = useApplicationState(false),
@@ -126,10 +129,10 @@ export function ModelSettings({
           : selected?.description
   return (
     <div className="grid gap-3">
-      <FormField label="Model" layout={layout}>
+      <FormField label={uiText('Model')} layout={layout}>
         <div className="relative flex min-w-0 items-center">
           <ChoicePicker
-            aria-label="Model"
+            aria-label={uiText('Model')}
             className="h-9 w-full rounded-md border bg-background pl-2 pr-12! text-xs"
             value={custom ? '__custom__' : agent.model}
             onValueChange={(selection) => {

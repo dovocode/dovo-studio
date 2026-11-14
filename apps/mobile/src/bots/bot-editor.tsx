@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, type ReactNode } from 'react'
 import type { BotResources } from '@dovo/protocol'
 import { View } from 'react-native'
@@ -38,6 +39,8 @@ export function BotEditor({
   onSave: (value: BotText, retain: (value: Partial<BotText>) => void) => Promise<unknown>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const currentKey = useRef(draftKey)
   currentKey.current = draftKey
   const mounted = useRef(true)
@@ -55,12 +58,12 @@ export function BotEditor({
   const { busy, error, act } = useAction()
   return (
     <Sheet
-      title="Settings"
+      title={uiText('Settings')}
       busy={busy}
       onClose={onClose}
       footer={
         <Action
-          label="Save Bot"
+          label={uiText('Save Bot')}
           wide
           disabled={busy || !!unavailable || !draft.name.trim() || !draft.role.trim()}
           onPress={() =>

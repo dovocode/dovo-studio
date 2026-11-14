@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -54,6 +55,8 @@ const personalCache = createPullStateCache<'all' | 'authored' | 'assigned' | 'in
   20,
 )
 export default function PullRequestsView({ entityId, pullTarget, navigationKey }: StudioViewProps) {
+  const uiText = useInterfaceText()
+
   const [sidebarVisible] = useLeftSidebar()
   const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
@@ -352,7 +355,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
           <div
             className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background'}`}
           >
-            <PageHeader title="Pull requests" embedded={hasDetail}>
+            <PageHeader title={uiText('Pull requests')} embedded={hasDetail}>
               <Button
                 size="icon"
                 variant="ghost"
@@ -367,13 +370,13 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               <Button
                 size="sm"
                 variant="ghost"
-                aria-label="Connections"
+                aria-label={uiText('Connections')}
                 title="Source control connections"
                 disabled={!sources.some((source) => source.connected)}
                 onClick={() => setPicking('connections')}
               >
                 <Plug className="size-3.5" />
-                <span className="hidden xl:inline">Connections</span>
+                <span className="hidden xl:inline">{uiText('Connections')}</span>
               </Button>
               <Button
                 size="sm"

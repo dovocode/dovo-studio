@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
   decodeResult,
@@ -28,6 +29,8 @@ export function SecretEnvironmentEditor({
   onRefresh: () => Promise<void>
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const [name, setName] = useState('')
   const [error, setError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
@@ -56,7 +59,7 @@ export function SecretEnvironmentEditor({
                 onChange(next)
               }}
             >
-              Remove {key}
+              {uiText('Remove')} {key}
             </Button>
           </div>
           <Select

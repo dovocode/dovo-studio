@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { hubPlanLimitSources } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
 import { UsagePool } from './usage-pool'
@@ -27,6 +28,8 @@ import { SettingsGroup, SettingsPage, Segmented } from './layout'
 const periods = { day: 1, week: 7, month: 30, quarter: 90 } as const
 
 const Rows = memo(function Rows({ rows }: { rows: UsageRow[] }) {
+  const uiText = useInterfaceText()
+
   if (!rows.length)
     return (
       <p className="p-4 text-xs text-muted-foreground">
@@ -42,7 +45,7 @@ const Rows = memo(function Rows({ rows }: { rows: UsageRow[] }) {
         <thead className="text-left text-xs text-muted-foreground">
           <tr>
             <th scope="col" className="py-1.5 font-normal">
-              Name
+              {uiText('Name')}
             </th>
             <th scope="col" className="py-1.5 text-right font-normal">
               Turns / requests
@@ -407,7 +410,7 @@ export default function UsageSettings() {
           <div>
             <h2 className="text-sm font-medium">Account limits</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Codex and Claude subscription windows reported by connected agents.
+              Subscription windows and OpenCode budgets reported by connected agents.
             </p>
           </div>
           {!limits.length && (
@@ -426,7 +429,12 @@ export default function UsageSettings() {
                 <div key={group.key} className="rounded-lg border bg-card p-4">
                   <div className="flex items-center justify-between gap-2">
                     <h3 className="text-sm font-semibold">
-                      {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
+                      {provider === 'codex'
+                        ? 'Codex'
+                        : provider === 'opencode'
+                          ? 'OpenCode'
+                          : 'Claude'}{' '}
+                      · {group.label}
                     </h3>
                     <span className="text-xs text-muted-foreground">
                       {windows.length

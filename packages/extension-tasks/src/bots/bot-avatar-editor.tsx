@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import {
   botAvatarPreviewSchema,
@@ -28,6 +29,8 @@ export function BotAvatarEditor({
   task: Task
   onSaved: (result: BotResult) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, snapshot, connected, activeRuntimeId, connection } = useWorkspace()
   const scope = `${botScope(snapshot?.runtimeId ?? activeRuntimeId, connection)}:${task.id}`
   const [draft, setDraft] = useState<Draft>(
@@ -78,8 +81,8 @@ export function BotAvatarEditor({
       retain({ ...draft, preview: undefined, request: undefined })
     })
   return (
-    <section aria-label="Avatar" className="grid gap-3">
-      <h2 className="font-semibold">Avatar</h2>
+    <section aria-label={uiText('Avatar')} className="grid gap-3">
+      <h2 className="font-semibold">{uiText('Avatar')}</h2>
       <BotAvatar avatar={draft.preview ?? task.bot?.avatar} name={task.title} className="size-20" />
       {!snapshot?.botAvatarsSupported && (
         <p className="text-xs text-muted-foreground">Update this runtime to set a Bot avatar.</p>

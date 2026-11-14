@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { integrationMutationError } from '../../connections/mutation-error'
 import { PullMarkdownEditor } from '../detail/markdown-editor'
 import { PullStatusSources, Signal } from '../detail/status'
@@ -288,6 +289,8 @@ function PullActionDialog({
   onClose: () => void
   onCompleted: (message: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   // A background refresh must not reverse the operation being confirmed.
   // The server still validates this captured head and account before writing.
   const detail = useRef(initialDetail).current
@@ -534,7 +537,7 @@ function PullActionDialog({
           <div data-pull-action-body className="-mx-1 grid min-h-0 gap-4 overflow-y-auto px-1">
             {kind === 'edit' && (
               <>
-                <FormField label="Title">
+                <FormField label={uiText('Title')}>
                   <Input
                     aria-label="PR title"
                     value={title}
@@ -842,7 +845,7 @@ function PullActionDialog({
               )}
               <div className="flex flex-wrap justify-end gap-2">
                 <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
                 <Button type="submit" disabled={!valid || busy || !connected}>
                   {busy ? 'Submitting…' : label}

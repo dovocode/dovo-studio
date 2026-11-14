@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SafeModal } from '../../ui/layout/safe-modal'
 import { useEffect, useRef } from 'react'
 import { ActivityIndicator, AppState, Linking, View } from 'react-native'
@@ -16,6 +17,8 @@ export function PairingScanner({
   onScanned: (invitation: PairingInvitation) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const [permission, requestPermission, refreshPermission] = useCameraPermissions()
@@ -45,7 +48,7 @@ export function PairingScanner({
       <View style={[styles.screen, { padding: 20, gap: 16 }]}>
         <View style={[styles.row, { justifyContent: 'space-between' }]}>
           <Text style={styles.title}>Scan pairing QR code</Text>
-          <Action secondary label="Cancel" onPress={onClose} />
+          <Action secondary label={uiText('Cancel')} onPress={onClose} />
         </View>
         <Text style={styles.muted}>
           Point your camera at the QR code shown by Dovo Studio or the server’s pair command.

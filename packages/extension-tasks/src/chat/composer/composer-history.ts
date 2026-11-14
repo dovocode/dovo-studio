@@ -43,6 +43,7 @@ export function createComposerHistory() {
         if (direction !== 'older' || draft.trim()) return
         history = messages
           .filter((message) => message.role === 'user' && message.text.trim())
+          .slice(-50)
           .map((message) => message.text)
           .reverse()
         original = draft

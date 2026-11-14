@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { router } from 'expo-router'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
@@ -14,12 +15,14 @@ export default function ExperimentalBrowserScreen() {
 }
 
 function BrowserRoute({ enabled }: { enabled: boolean }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const native = useNativeBrowser()
   if (!enabled)
     return (
       <View style={{ flex: 1 }}>
-        <ScreenHeader title="Browser" />
+        <ScreenHeader title={uiText('Browser')} />
         <View style={[styles.content, { gap: 12 }]}>
           <Text>Experimental Browser is off.</Text>
           {!!native.error && (

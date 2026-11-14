@@ -27,7 +27,11 @@ it('targets keyboard and scroll input independently of the active element', asyn
     const ref = line && /\[ref=([^\]]+)\]/.exec(line)?.[1]
     if (!ref) throw new Error('Missing Name reference')
     await read('document.querySelector("#other").focus()')
-    await call({ action: 'key', selector: `ref=${ref}`, key: 'End' })
+    await call({
+      action: 'key',
+      selector: `ref=${ref}`,
+      key: process.platform === 'darwin' ? 'Meta+ArrowRight' : 'End',
+    })
     await call({ action: 'key', selector: '#name', key: '!' })
     expect(await read('document.querySelector("#name").value')).toBe('Name!')
     expect(await read('document.querySelector("#other").value')).toBe('Other')

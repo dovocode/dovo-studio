@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useIssueDiscussion } from './use-issue-discussion'
 import { usePipelineSections } from './use-pipeline-sections'
 import { PipelineSectionStatus } from './pipeline-section-status'
@@ -106,6 +107,8 @@ function WorkItemContent({
   onBack,
   preview = false,
 }: WorkItemProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { read, connected, snapshot, profile, readCache, readEffect: mutationEffect } = useRuntime()
@@ -940,7 +943,7 @@ function WorkItemContent({
                   },
                 ]}
               >
-                Description
+                {uiText('Description')}
               </Text>
               {!issue.issue.body && !issue.issue.preview && (
                 <Text style={styles.muted}>No description provided.</Text>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { BookMarked, Lock, Globe } from 'lucide-react'
 import { useEffect } from 'react'
@@ -15,6 +16,8 @@ export function GithubRepositoryPicker({
   onSelect: (repository: GithubRepositoryChoice) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [load, setLoad] = useApplicationState({
     page: 1,
@@ -88,7 +91,7 @@ export function GithubRepositoryPicker({
               })
             }
           >
-            Retry
+            {uiText('Retry')}
           </Button>
         </>
       )}
@@ -141,7 +144,7 @@ export function GithubRepositoryPicker({
       )}
       <div className="flex justify-between gap-2">
         <Button type="button" variant="outline" onClick={onClose}>
-          Back
+          {uiText('Back')}
         </Button>
         {data?.nextPage != null && (
           <Button

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { mobileWorkflow, nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -53,6 +54,8 @@ export function PullActionSheet({
   onClose: () => void
   onDone: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const detail = useRef(initialDetail).current
   const { styles } = useTheme()
 
@@ -220,7 +223,7 @@ export function PullActionSheet({
       )}
       {target.action === 'edit' && (
         <>
-          <Field label="Title" value={title} onChangeText={setTitle} editable={!busy} />
+          <Field label={uiText('Title')} value={title} onChangeText={setTitle} editable={!busy} />
           <Field label="Target branch" value={base} onChangeText={setBase} editable={!busy} />
         </>
       )}

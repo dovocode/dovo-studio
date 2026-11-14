@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { Schema } from 'effect'
@@ -34,6 +35,8 @@ export function TaskBranchMenu({
   verifiedBranch?: string | null
   panel?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, workspace } = useWorkspace()
   const host = useStudioHost()
   const [creating, setCreating] = useApplicationState(false)
@@ -205,7 +208,7 @@ export function TaskBranchMenu({
           )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" disabled={moveBusy} onClick={() => setMoving(false)}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button disabled={moveBusy || !connected} onClick={move}>
               {moveBusy ? 'Moving…' : 'Move thread'}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
   canChangeTaskCheckout,
@@ -55,6 +56,8 @@ export function ComposerProject({
     sourceTask?: Task,
   ) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const search = useRef<HTMLInputElement>(null)
   const projects = useRef<HTMLDivElement>(null)
   const store = useWorkspace()
@@ -396,7 +399,7 @@ export function ComposerProject({
           <div
             ref={projects}
             role="group"
-            aria-label="Projects"
+            aria-label={uiText('Projects')}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) return

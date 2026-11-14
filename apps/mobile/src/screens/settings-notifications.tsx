@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Linking, View } from 'react-native'
 import { responses, diagnosticMessage } from '@dovo/protocol'
 import { SettingsAction as Action } from './settings-controls'
@@ -14,6 +15,8 @@ import { SettingsPage, useSettingsTheme } from './settings-theme'
 import { SettingsGroup, SettingsSwitchRow } from './settings-group'
 
 export default function NotificationsSettingsScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useSettingsTheme()
   const notifications = usePushNotifications()
   const activity = useLiveActivities()
@@ -22,7 +25,7 @@ export default function NotificationsSettingsScreen() {
   const [message, setMessage] = useApplicationState('')
   return (
     <SettingsPage>
-      <ScreenHeader title="Notifications" />
+      <ScreenHeader title={uiText('Notifications')} />
       <SettingsScrollView contentContainerStyle={styles.content}>
         <Text style={styles.muted}>
           This device only · choose which paired computers can send alerts to this phone

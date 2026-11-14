@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAppPreferences } from '@dovo/studio-core'
 import { useRef, useState } from 'react'
 import { responses, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
@@ -24,6 +25,8 @@ function ConnectSettingsContent({
   storage: NonNullable<ReturnType<typeof useStudioHost>['accountStorage']>
   open: (url: string) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const services = useAppPreferences()
   const { client, directory, login, loaded, busy, error, deletionPending } = useAccount(
     storage,
@@ -119,7 +122,7 @@ function ConnectSettingsContent({
                   {saving ? 'Enabling…' : 'Confirm Connect + relay'}
                 </Button>
                 <Button variant="ghost" disabled={saving} onClick={() => setConfirm(false)}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
               </>
             ) : (

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Action } from '../ui/controls/action'
 import { DateTimePicker } from '../ui/controls/date-time-picker'
@@ -15,6 +16,8 @@ export function BrowserSnoozeSheet({
   onSnooze: (until: number) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const sheet = useRef<SheetHandle>(null)
   const [value, setValue] = useState(() => {
     const date = new Date(until && until > Date.now() ? until : Date.now() + 3600000)
@@ -48,7 +51,7 @@ export function BrowserSnoozeSheet({
           }
         }}
       />
-      <Action secondary label="Cancel" onPress={() => sheet.current?.dismiss(onClose)} />
+      <Action secondary label={uiText('Cancel')} onPress={() => sheet.current?.dismiss(onClose)} />
     </Sheet>
   )
 }

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import {
   RuntimeRequestError,
@@ -59,6 +60,8 @@ function ResponseActionBody({
   onTerminal?: (id: string) => void
   scope: string
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const [receipt, setReceipt] = useState<ThreadAction>()
   const [draft, setDraft] = useState<Draft>(
@@ -388,7 +391,7 @@ function ResponseActionBody({
               )}
               <div className="flex flex-wrap justify-end gap-2">
                 <Button variant="ghost" disabled={busy} onClick={() => setEditing(false)}>
-                  Close
+                  {uiText('Close')}
                 </Button>
                 {!frozen && (response.kind !== 'form' || !!draft.actionId) && (
                   <Button

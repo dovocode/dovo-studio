@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useConfirmation } from '@dovo/studio-core'
 import { useEffect, useRef } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -32,6 +33,8 @@ export default function DeviceHostsView({ entityId }: { entityId?: string }) {
 }
 
 function DeviceHostSettings() {
+  const uiText = useInterfaceText()
+
   const { request, connected, runtimes, connection } = useWorkspace()
   const [settings, setSettings] = useApplicationState<
     typeof deviceHostSettingsResultSchema.Type | null
@@ -187,7 +190,7 @@ function DeviceHostSettings() {
                       setResult(null)
                     }}
                   >
-                    Edit
+                    {uiText('Edit')}
                   </Button>
                   <Button
                     size="sm"
@@ -230,7 +233,7 @@ function DeviceHostSettings() {
                         )
                     }}
                   >
-                    Remove
+                    {uiText('Remove')}
                   </Button>
                 </div>
               </SettingRow>
@@ -315,7 +318,7 @@ function DeviceHostSettings() {
                   : 'Add device host'}
               </h2>
               <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
-                <FormField label="Name">
+                <FormField label={uiText('Name')}>
                   <Input
                     required
                     value={draft.name}
@@ -438,7 +441,7 @@ function DeviceHostSettings() {
                     setResult(null)
                   }}
                 >
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
               </div>
             </form>
@@ -495,7 +498,7 @@ function DeviceHostSettings() {
               disabled={busy}
               onClick={() => setRetry((value) => value + 1)}
             >
-              Retry
+              {uiText('Retry')}
             </Button>
           )}
         </div>

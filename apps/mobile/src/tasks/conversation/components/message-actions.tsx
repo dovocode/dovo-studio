@@ -1,3 +1,4 @@
+import { responseReply } from '@dovo/protocol'
 import { botResultSchema, taskIsWorking } from '@dovo/protocol'
 import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
 import { useEffect, useMemo, useState } from 'react'
@@ -15,7 +16,7 @@ import {
   type CodeBlock,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { useConversationSelector } from '../state/provider'
+import { useAppendConversationTemplate, useConversationSelector } from '../state/provider'
 import { router } from 'expo-router'
 import { Schema } from 'effect'
 import { modelCatalogSchema, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
@@ -48,6 +49,7 @@ export function MessageActions({
       }),
     [blocks],
   )
+  const appendReply = useAppendConversationTemplate()
   const task = useConversationSelector((value) => value.task)
   const setBookmark = useConversationSelector((value) => value.history.setBookmark)
   const openTerminal = useConversationSelector((value) => value.openTerminal)
@@ -232,6 +234,17 @@ export function MessageActions({
         onPress={() => copy(text, 'message')}
         onLongPress={() => void shareText(text).catch(() => undefined)}
       />
+      {!user && !!messageId && !!text && (
+        <ActionButton
+          testID="Reply to response"
+          hint="Adds a quote to your draft."
+          label="Reply to response"
+          icon="chat"
+          onPress={() => {
+            appendReply(responseReply({ id: messageId, text }))
+          }}
+        />
+      )}
       {!user && !!messageId && (
         <Pressable
           accessibilityRole="button"
@@ -410,9 +423,9 @@ function ActionButton(props: {
   testID: string
   label: string
   hint: string
-  icon: 'copy' | 'check'
+  icon: 'copy' | 'check' | 'chat'
   onPress: () => void
-  onLongPress: () => void
+  onLongPress?: () => void
 }) {
   const { colors } = useTheme()
 

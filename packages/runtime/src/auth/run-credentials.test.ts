@@ -298,6 +298,9 @@ it('denies guessed terminal IDs even in the same task', async () => {
   const { s, token, post } = await setup()
   expect(() => authorizeRunTerminal(s, token, 'user-terminal')).toThrow('outside')
   expect((await post('/api/terminals/ticket', { id: 'user-terminal' })).status).toBe(403)
+  expect(
+    (await post('/api/terminals/update', { id: 'user-terminal', title: 'Forbidden' })).status,
+  ).toBe(403)
   expect((await post('/api/terminals/close', { id: 'other-task-terminal' })).status).toBe(403)
 })
 
@@ -561,7 +564,7 @@ it('rechecks revoked credentials in delayed browser work', async () => {
 })
 
 it('allows run-owned terminal tickets and input, then rejects revoked WebSocket input', async () => {
-  const { s, runtime, taskId, token, controller, post } = await setup()
+  const { s, runtime, taskId, otherId, token, controller, post } = await setup()
   s.store.update((workspace) => ({
     ...workspace,
     repositories: [{ id: 'repo', name: 'Test', path: tmpdir(), branch: 'main' }],
@@ -572,10 +575,41 @@ it('allows run-owned terminal tickets and input, then rejects revoked WebSocket 
     taskId,
     command: 'echo scoped-terminal',
     newTerminal: true,
+    title: '  Agent build  ',
   })
   expect(opened.status).toBe(200)
   const terminal = decode(Schema.Struct({ id: Schema.String }), await opened.json())
   expect(() => authorizeRunTerminal(s, token, terminal.id)).not.toThrow()
+  expect(s.terminals.get(terminal.id).info).toMatchObject({
+    title: 'Agent build',
+    customTitle: 'Agent build',
+  })
+  const renamed = await post('/api/terminals/update', { id: terminal.id, title: '  Tests  ' })
+  expect(renamed.status).toBe(200)
+  expect(await renamed.json()).toMatchObject({
+    id: terminal.id,
+    title: 'Tests',
+    customTitle: 'Tests',
+  })
+  for (const extra of [
+    { pinned: true },
+    { settled: true },
+    { snoozedUntil: null },
+    { unknown: true },
+  ])
+    expect(
+      (await post('/api/terminals/update', { id: terminal.id, title: 'Blocked', ...extra })).status,
+    ).toBe(403)
+  expect((await post('/api/terminals/update', { id: terminal.id })).status).toBe(403)
+  for (const title of ['', '   ', '\u202eSpoof', 'a\nb', 'x'.repeat(257)])
+    expect((await post('/api/terminals/update', { id: terminal.id, title })).status).toBe(400)
+  expect(s.terminals.get(terminal.id).info.title).toBe('Tests')
+  const user = s.terminals.create(taskId, tmpdir())
+  const foreign = s.terminals.create(otherId, tmpdir())
+  for (const id of [user.id, foreign.id])
+    expect((await post('/api/terminals/update', { id, title: 'Forbidden' })).status).toBe(403)
+  expect((await post('/api/terminals/update', { id: terminal.id, title: null })).status).toBe(200)
+  expect(s.terminals.get(terminal.id).info.customTitle).toBeUndefined()
   const ticketResponse = await post('/api/terminals/ticket', { id: terminal.id })
   expect(ticketResponse.status).toBe(200)
   const { ticket } = decode(Schema.Struct({ ticket: Schema.String }), await ticketResponse.json())
@@ -593,7 +627,23 @@ it('allows run-owned terminal tickets and input, then rejects revoked WebSocket 
   await closed
   expect(input).not.toHaveBeenCalled()
   expect((await post('/api/terminals/ticket', { id: terminal.id })).status).toBe(401)
+  expect((await post('/api/terminals/update', { id: terminal.id, title: 'Revoked' })).status).toBe(
+    401,
+  )
 })
+
+it.each([{ readOnly: true }, { sandboxMode: 'workspace-write' as const }])(
+  'denies terminal naming in restricted runs: %j',
+  async (policy) => {
+    const { s, taskId, token, post } = await setup(policy)
+    const terminal = s.terminals.create(taskId, tmpdir())
+    s.runCredentials.addTerminal(token, terminal.id)
+    expect(
+      (await post('/api/terminals/update', { id: terminal.id, title: 'Blocked' })).status,
+    ).toBe(403)
+    expect(s.terminals.get(terminal.id).info.customTitle).toBeUndefined()
+  },
+)
 
 it('keeps a bounded native-child grant only for the originating live session', async () => {
   const { s, policy, taskId, token, post } = await setup()
@@ -922,4 +972,64 @@ it('limits read-only history recall to the owning Bot and denies run audit manag
   expect((await post('/api/jobs/audit', { id: runId })).status).toBe(403)
   controller.abort()
   expect((await post('/api/memory/agent/history', { taskId, query: 'research' })).status).toBe(401)
+})
+
+it('reads one referenced response without loading the thread and excludes private reset ranges', async () => {
+  const { s, taskId, otherId, runId, post } = await setup({ readOnly: true })
+  const now = new Date().toISOString()
+  s.store.updateTaskHistory(taskId, (task) => ({
+    ...task,
+    bot: {
+      role: 'Helper',
+      responsibilities: '',
+      state: 'active',
+      revision: randomUUID(),
+      createdAt: now,
+      updatedAt: now,
+      contextResets: [
+        {
+          requestRevision: randomUUID(),
+          turnId: 'old',
+          afterMessageId: 'start',
+          throughMessageId: 'reset',
+          at: now,
+        },
+      ],
+    },
+    messages: [
+      { id: 'start', role: 'user', text: 'Question' },
+      { id: 'private', role: 'assistant', text: 'Excluded fact' },
+      { id: 'reset', role: 'assistant', text: 'Reset boundary' },
+      { id: 'reply', role: 'assistant', text: 'Retained answer '.repeat(1000) },
+    ],
+  }))
+  const full = vi.spyOn(s.store, 'task')
+  const response = await post('/api/agent/conversation', {
+    taskId,
+    parentRunId: runId,
+    messageId: 'reply',
+  })
+  expect(response.status).toBe(200)
+  const result = await response.json()
+  expect(result.text).toHaveLength(8000)
+  expect(result.nextOffset).toBe(8000)
+  expect(full).not.toHaveBeenCalled()
+  expect(
+    (await post('/api/agent/conversation', { taskId, parentRunId: runId, messageId: 'private' }))
+      .status,
+  ).toBe(404)
+  expect(
+    (await post('/api/agent/conversation', { taskId, parentRunId: runId, messageId: 'start' }))
+      .status,
+  ).toBe(404)
+  expect(
+    (
+      await post('/api/agent/conversation', {
+        taskId: otherId,
+        parentRunId: runId,
+        messageId: 'reply',
+      })
+    ).status,
+  ).toBe(403)
+  expect((await post('/api/agent/conversation', { taskId, messageId: 'reply' })).status).toBe(403)
 })

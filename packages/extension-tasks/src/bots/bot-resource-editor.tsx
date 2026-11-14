@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
   applyBotResources,
@@ -29,6 +30,8 @@ export function BotResourceEditor({
   disabled: boolean
   onChange: (value: BotResources) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const [editing, setEditing] = useState<Editing | null>(null)
   const [error, setError] = useState('')
   const [catalog, setCatalog] = useState<'mcp' | 'skill' | null>(null)
@@ -64,7 +67,7 @@ export function BotResourceEditor({
       )}
       {kind !== 'skill' && (
         <>
-          <h3 className="font-medium">MCP servers</h3>
+          <h3 className="font-medium">{uiText('MCP servers')}</h3>
           <Button size="sm" variant="outline" disabled={disabled} onClick={() => setCatalog('mcp')}>
             Browse MCP Registry
           </Button>
@@ -150,7 +153,7 @@ export function BotResourceEditor({
       )}
       {kind !== 'mcp' && (
         <>
-          <h3 className="font-medium">Skills</h3>
+          <h3 className="font-medium">{uiText('Skills')}</h3>
           <Button
             size="sm"
             variant="outline"

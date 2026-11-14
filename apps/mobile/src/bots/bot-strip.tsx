@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { Alert, Pressable, ScrollView, View, type DimensionValue } from 'react-native'
 import { compareBotActivity, hasUnreadTaskActivity } from '@dovo/protocol'
@@ -19,6 +20,8 @@ export function BotStrip({
   entries: readonly TaskListRowData[]
   onOpen: (id: string, runtimeId: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { botLayout, botsInThreads } = useMobilePreferences()
   const rows = botLayout === 'rows'
@@ -46,7 +49,7 @@ export function BotStrip({
       {onCreate && (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel="New Bot"
+          accessibilityLabel={uiText('New Bot')}
           accessibilityHint="Choose a computer and create a Bot."
           disabled={createDisabled}
           onPress={onCreate}
@@ -78,7 +81,7 @@ export function BotStrip({
           </View>
           {!!entries.length && (
             <Text style={[styles.muted, { fontSize: 12, lineHeight: 16, textAlign: 'center' }]}>
-              New Bot
+              {uiText('New Bot')}
             </Text>
           )}
         </Pressable>
@@ -88,7 +91,7 @@ export function BotStrip({
   return (
     <View
       testID={`Bot layout ${botLayout}`}
-      accessibilityLabel="Bots"
+      accessibilityLabel={uiText('Bots')}
       style={{ gap: 6, paddingTop: 8, paddingBottom: 10 }}
     >
       {horizontal ? (

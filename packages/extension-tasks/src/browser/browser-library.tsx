@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileName } from './browser-profile-label'
 import { useWorkspace } from '@dovo/studio-core'
@@ -86,12 +87,14 @@ export function BrowserLibrary({
   onClearHistory,
   onReopen,
 }: BrowserLibraryProps) {
+  const uiText = useInterfaceText()
+
   const [query, setQuery] = useState('')
   const title = view === 'history' ? 'History' : 'Bookmarks'
   const sections =
     view === 'history'
       ? [
-          { title: 'History', tabs: visits },
+          { title: uiText('History'), tabs: visits },
           { title: 'Recently closed', tabs: closed },
         ]
       : [{ title: 'Bookmarks', tabs: bookmarks }]

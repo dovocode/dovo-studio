@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import {
@@ -158,6 +159,8 @@ function WindowsRuntimeControl({
   onApplied?: (connection: { address: string; token: string }) => Promise<void> | void
   initialError?: string
 }) {
+  const uiText = useInterfaceText()
+
   const [status, setStatus] = useState<WindowsRuntimeStatus>()
   const [mode, setMode] = useState<'native' | 'wsl'>('native')
   const [distribution, setDistribution] = useState('')
@@ -323,7 +326,7 @@ function WindowsRuntimeControl({
               : 'Continue'}
         </Button>
         <Button variant="outline" disabled={busy} onClick={() => setRefresh((value) => value + 1)}>
-          Refresh
+          {uiText('Refresh')}
         </Button>
       </div>
       <WindowsSecurityControl />

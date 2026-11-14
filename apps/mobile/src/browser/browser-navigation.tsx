@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
 import { Glass } from '../ui/layout/glass'
@@ -35,6 +36,8 @@ export function BrowserNavigation({
   onTabs: () => void
   onOptions: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
   const [focused, setFocused] = useState(false)
   let domain = address
@@ -61,7 +64,12 @@ export function BrowserNavigation({
         <IconButton label="Browser options" icon="more" onPress={onOptions} />
         {!focused && (
           <>
-            <IconButton label="Back" icon="back" disabled={disabled || !back} onPress={onBack} />
+            <IconButton
+              label={uiText('Back')}
+              icon="back"
+              disabled={disabled || !back}
+              onPress={onBack}
+            />
             <IconButton
               label="Forward"
               icon="next"

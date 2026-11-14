@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pipelineSignal,
   pipelineStatusSummary,
@@ -79,6 +80,8 @@ export function WorkScreen({
   pullNumber?: string
   onBack?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { overviews, activeId } = useRuntime()
@@ -814,7 +817,7 @@ export function WorkScreen({
                 : []),
               {
                 id: 'title',
-                name: 'Title',
+                name: uiText('Title'),
               },
             ]}
           />

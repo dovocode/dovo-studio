@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { createDraftStash, randomUUID, restoreStashedText, type StashedDraft } from '@dovo/protocol'
 import {
   Button,
@@ -27,6 +28,8 @@ export function DraftStash(props: {
   disabled?: boolean
   showLabel?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useState(false)
   const [entries, setEntries] = useState<StashedDraft[]>([])
   const [busy, setBusy] = useState(false)
@@ -182,7 +185,7 @@ export function DraftStash(props: {
           )}
           <DialogFooter>
             <Button variant="outline" onClick={() => setOpen(false)}>
-              Close
+              {uiText('Close')}
             </Button>
             <Button
               disabled={busy || props.disabled || props.hasAttachments || !props.getText().trim()}

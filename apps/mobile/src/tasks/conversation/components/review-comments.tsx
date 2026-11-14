@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { pendingReviewComments, responses, reviewCommentsPrompt, type Task } from '@dovo/protocol'
@@ -12,6 +13,8 @@ import { useTheme } from '../../../ui/theme'
 
 /** Review comments left on the computer that the agent has not received yet. */
 export function ReviewComments({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connected, callEffect } = useRuntime()
@@ -62,7 +65,7 @@ export function ReviewComments({ task }: { task: Task }) {
               <Text style={styles.text}>{comment.diffComment?.body ?? comment.text}</Text>
               <Action
                 secondary
-                label="Remove"
+                label={uiText('Remove')}
                 disabled={!connected || busy}
                 onPress={() =>
                   act(() =>

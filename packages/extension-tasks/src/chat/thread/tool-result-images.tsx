@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { useEffect, useState } from 'react'
 import { ChatImageFrame, EditChatImage } from '../composer/chat-image-edit-context'
@@ -22,6 +23,8 @@ function ResultImage({
   reference?: ToolImageReference
   uri?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, connection } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [revision, setRevision] = useState(0)
@@ -65,7 +68,7 @@ function ResultImage({
       <div role="alert">
         {current.error}{' '}
         <Button size="sm" onClick={() => setRevision((value) => value + 1)}>
-          Retry {label}
+          {uiText('Retry')} {label}
         </Button>
       </div>
     ) : image ? (

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   createRuntimeClient,
   mcpAppDownloads,
@@ -30,6 +31,8 @@ export const McpAppView = memo(function McpAppView({
   reference: McpAppReference
   visible: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const openLink = useOpenAppLink(reference.taskId)
@@ -315,7 +318,7 @@ export const McpAppView = memo(function McpAppView({
         <SafeModal onRequestClose={() => setFull(false)}>
           <View style={{ flex: 1, backgroundColor: colors.background }}>
             <View style={{ padding: 12, alignItems: 'flex-end' }}>
-              <Action label="Close" secondary onPress={() => setFull(false)} />
+              <Action label={uiText('Close')} secondary onPress={() => setFull(false)} />
             </View>
             {browser}
           </View>

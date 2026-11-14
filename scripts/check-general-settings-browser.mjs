@@ -61,8 +61,9 @@ const built = await build({
   stdin: {
     contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {builtInAgentPresets,defaultTaskHarness} from '@dovo/protocol';
-import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions,updateAppPreferences} from '@dovo/studio-core';
-window.updateAppPreferences=updateAppPreferences;
+import {SettingsTargetProvider,useConfirmSettingsNavigation,useDiffOptions,updateAppPreferences,readAppPreferences} from '@dovo/studio-core';
+window.updateAppPreferences=updateAppPreferences;window.readPreferences=readAppPreferences;
+import {AppInterfaceLanguage} from '${root}/packages/studio-shell/src/interface-language';
 import {SettingsNav} from '${root}/packages/studio-shell/src/settings-nav.tsx';
 import {SidebarHeaderLayout,HeaderFallback} from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 import {TitleBar} from '${root}/packages/studio-shell/src/title-bar.tsx';
@@ -110,7 +111,7 @@ window.updates={state:async()=>window.updateState,subscribe:fn=>{window.updateLi
 const localPages={appearance:Appearance,notifications:Notifications,shortcuts:Shortcuts,'browser-settings':Browser,'pull-request-monitoring-settings':PullRequests,diffs:Diffs,usage:Usage,'task-list-settings':TaskList};
 const views=[appSettingsExtension,agentsExtension,runtimeExtension,scmExtension,tasksExtension].flatMap(extension=>extension.views).filter(view=>view.navigationGroup==='settings');
 function Content(){useAppearance();window.diffOptions=useDiffOptions();const [view,setView]=useState('general');const Local=localPages[view];const confirm=useConfirmSettingsNavigation();window.changeView=async id=>{if(id===view)return true;if(!(await confirm()))return false;setView(id);return true};return <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-background text-foreground md:flex-row"><SettingsNav views={views} activeId={view} onSelect={window.changeView}/><main data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">{view==='task-behavior'?<TaskBehavior/>:Local?<Local/>:view==='general'?<General/>:view==='conversation-settings'?<Conversation/>:view==='updates-settings'?<About/>:view==='agents'?<Agents/>:<TaskDefaults/>}</main></div>}
-function App(){const [collapsed,setCollapsed]=useState(false);return <StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>}createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [collapsed,setCollapsed]=useState(false);return <StudioConfirmationProvider><SettingsTargetProvider><TooltipProvider><SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar platform={window.headerScreenshots ? 'darwin' : undefined} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.headerScreenshots ? 'darwin' : undefined}><HeaderFallback><TitleBar platform={window.headerScreenshots ? 'darwin' : undefined} section="Settings" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><Content/></div></SidebarHeaderLayout></TooltipProvider></SettingsTargetProvider></StudioConfirmationProvider>}createRoot(document.getElementById('app')).render(<AppInterfaceLanguage><App/></AppInterfaceLanguage>);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -1414,6 +1415,17 @@ try {
   await choose('Settings section', 'General')
   if (process.env.DOVO_GENERAL_SCREENSHOT)
     await page.screenshot({ path: process.env.DOVO_GENERAL_SCREENSHOT, fullPage: true })
+  const speechLanguage = await page.evaluate(() => window.readPreferences().dictationLanguage)
+  await choose('Interface language', 'Nederlands')
+  await page.getByRole('heading', { name: 'Algemeen', exact: true, level: 1 }).waitFor()
+  assert.equal(await page.locator('html').getAttribute('lang'), 'nl-NL')
+  assert.equal(
+    await page.evaluate(() => window.readPreferences().dictationLanguage),
+    speechLanguage,
+  )
+  assert.equal(await page.evaluate(() => window.readPreferences().interfaceLanguage), 'nl-NL')
+  await choose('Interfacetaal', 'English (US)')
+  await page.getByRole('heading', { name: 'General', exact: true, level: 1 }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Settings: permanently expanded navigation, shared page frames, category/control search, storage labels, all app pages, persisted preferences, notification permissions, local/remote profiles, update states, scoped agents/lifecycle, navigation and narrow layouts passed.',

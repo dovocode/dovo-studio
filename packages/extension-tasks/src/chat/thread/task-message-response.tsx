@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
 import { selectConversationConnection } from './workspace-selection'
@@ -58,6 +59,8 @@ function TaskImage({
   alt: string
   onPreview: (path: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connection, connected } = useWorkspaceSelector(
     selectConversationConnection,
     sameWorkspaceFields,
@@ -92,7 +95,7 @@ function TaskImage({
       <span role="alert">
         {current.error}{' '}
         <button type="button" onClick={() => setRevision((value) => value + 1)}>
-          Retry
+          {uiText('Retry')}
         </button>{' '}
         <button type="button" onClick={() => onPreview(path)}>
           Open original

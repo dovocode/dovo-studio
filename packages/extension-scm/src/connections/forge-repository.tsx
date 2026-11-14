@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
 import {
@@ -24,6 +25,8 @@ function RepositoryResults({
   repositoryId?: string
   onSelect: (repo: ForgeRepository) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [load, setLoad] = useApplicationState({
     page: 1,
@@ -132,7 +135,7 @@ function RepositoryResults({
               })
             }
           >
-            Retry
+            {uiText('Retry')}
           </Button>
         </>
       )}
@@ -282,6 +285,8 @@ export function ForgeRepositoryFields({
   )
 }
 export function ProjectForgeBinding({ repo }: { repo: Repository }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [value, setValue] = useApplicationState<Binding>({
     connectionId: repo.forge?.connectionId ?? '',
@@ -329,7 +334,7 @@ export function ProjectForgeBinding({ repo }: { repo: Repository }) {
           })
       }}
     >
-      <h3 className="text-sm font-medium">Pull requests</h3>
+      <h3 className="text-sm font-medium">{uiText('Pull requests')}</h3>
       <ForgeRepositoryFields
         repositoryId={repo.id}
         value={value}

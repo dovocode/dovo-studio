@@ -9,6 +9,7 @@ import {
   type useWorkspace,
 } from '@dovo/studio-core'
 import {
+  responseReply,
   artifactReferences,
   watchMessage,
   hasToolImages,
@@ -20,7 +21,7 @@ import { WatchMessageCard } from './watch-message'
 import { MessageSource } from './message-source'
 import { Message, MessageContent, Button } from '@dovo/studio-ui'
 import { TaskMessageResponse } from './task-message-response'
-import { Star } from 'lucide-react'
+import { Reply, Star } from 'lucide-react'
 import { threadTimeline, finalReplyIndex } from './thread-timeline'
 import { TurnCheckpoint } from './turn-checkpoint'
 import { MessageAttachments } from '../composer/message-attachments'
@@ -273,6 +274,17 @@ export const ChatMessage = memo(function ChatMessage({
               </time>
             )}
             {!!message.text && <MessageCopy text={message.text} />}
+            {message.role === 'assistant' && !!message.text && onUseTemplate && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="size-7 p-0"
+                aria-label="Reply to response"
+                onClick={() => onUseTemplate(responseReply(message))}
+              >
+                <Reply className="size-3.5" />
+              </Button>
+            )}
             {message.role === 'assistant' && turn?.status !== 'running' && (
               <Button
                 size="sm"

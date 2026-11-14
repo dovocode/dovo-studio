@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useId, useState } from 'react'
 import { useSharingPeople, type SharingPeople } from '@dovo/studio-core'
 import type { AccountClient, PeopleAction } from '@dovo/protocol'
@@ -18,6 +19,8 @@ export function SharingPeopleManager({
   people: SharingPeople
   userId: string
 }) {
+  const uiText = useInterfaceText()
+
   const friendListId = useId()
   const [friend, setFriend] = useState(''),
     [name, setName] = useState(''),
@@ -296,7 +299,7 @@ export function SharingPeopleManager({
               disabled={people.busy}
               onClick={() => setConfirmation(undefined)}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
           </div>
         </div>

@@ -1164,6 +1164,36 @@ export class WorkspaceStore {
       ? retained.messages.find((message) => message.id === messageId)
       : this.conversations.message(id, messageId)
   }
+  /** One message, with Bot context-reset exclusions, without loading the transcript. */
+  contextMessage(id: string, messageId: string) {
+    const summary = this.taskSummary(id)
+    const resets = summary.bot?.contextResets ?? []
+    const seed = this.seed?.get(id)
+    if (seed && resets.length) {
+      const position = seed.messages.findIndex((message) => message.id === messageId)
+      if (
+        resets.some((reset) => {
+          const start = seed.messages.findIndex((message) => message.id === reset.afterMessageId)
+          const end = seed.messages.findIndex((message) => message.id === reset.throughMessageId)
+          return start >= 0 && end >= 0 && position > start && position <= end
+        })
+      )
+        return undefined
+    } else if (this.conversations.contextExcluded(id, messageId, resets)) return undefined
+    return this.taskMessage(id, messageId)
+  }
+  /** Latest sent user messages for composer recall, independent of the visible history window. */
+  composerHistory(id: string) {
+    const summary = this.taskSummary(id)
+    const seed = this.seed?.get(id)
+    return {
+      messages: seed
+        ? seed.messages.filter((m) => m.role === 'user' && m.text.trim()).slice(-50)
+        : this.conversations.recentUserMessages(id),
+      turns: [],
+      historyRevision: summary.historyRevision,
+    }
+  }
   /** Attachments referenced by any committed message, without loading histories. */
   messageAttachmentIds() {
     return this.histories.attachmentIds()

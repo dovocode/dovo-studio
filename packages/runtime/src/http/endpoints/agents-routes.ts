@@ -1,3 +1,5 @@
+import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
+import { isSpreadsheet } from '@dovo/protocol'
 import { botPaused } from '@dovo/protocol'
 import { forgetThreadActions } from '../../agent-tools/thread-actions.js'
 import { validateShared } from '../../storage/shared-settings-validation.js'
@@ -1352,6 +1354,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           path === '/api/tasks/files/directory' ||
           path === '/api/tasks/files/search-content' ||
           path === '/api/tasks/files/search-paths' ||
+          path === '/api/tasks/files/spreadsheet' ||
           path === '/api/tasks/files/preview' ||
           path === '/api/tasks/files/read' ||
           path === '/api/tasks/files/write')
@@ -1361,6 +1364,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             id: idSchema,
             checkoutId: Schema.optional(idSchema),
             fresh: Schema.optional(Schema.Boolean),
+            sheet: Schema.optional(maxValue(Schema.String, 200)),
             directory: Schema.optional(maxValue(Schema.String, 4000)),
             cursor: Schema.optional(maxValue(Schema.String, 100)),
             query: Schema.optional(maxValue(minValue(Schema.String, 1), 256)),
@@ -1438,6 +1442,31 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         const filename = yield* serviceResult(safeFile(root, input.path))
         const details = yield* serviceResult(stat(filename))
         if (!details.isFile()) throw new HttpError(400, 'Choose a regular file')
+        if (path === '/api/tasks/files/spreadsheet') {
+          if (!isSpreadsheet(input.path))
+            throw new HttpError(415, 'Choose an XLSX, XLS, ODS, CSV or TSV file.')
+          const filePath = input.path
+          return yield* runtimeOperation(async () => {
+            const { handle } = await openContainedPreview(root, filePath)
+            try {
+              const info = await handle.stat()
+              if (info.size > 8 * 1024 * 1024)
+                throw new HttpError(413, 'Spreadsheet previews support files up to 8 MB.')
+              const data = Buffer.alloc(Math.min(info.size + 1, 8 * 1024 * 1024 + 1))
+              let length = 0
+              while (length < data.length) {
+                const { bytesRead } = await handle.read(data, length, data.length - length, length)
+                if (!bytesRead) break
+                length += bytesRead
+              }
+              if (length > info.size)
+                throw new HttpError(409, 'Spreadsheet changed while reading. Try again.')
+              return await spreadsheetPreview(data.subarray(0, length), input.sheet)
+            } finally {
+              await handle.close()
+            }
+          })
+        }
         if (path === '/api/tasks/files/preview') {
           const filePath = input.path
           return yield* runtimeOperation(async () => {

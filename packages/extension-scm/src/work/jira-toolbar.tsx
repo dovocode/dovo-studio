@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { JiraBrowseControls } from './jira-browse-controls'
 import { SlidersHorizontal, X, List, Columns3 } from 'lucide-react'
@@ -39,6 +40,8 @@ export function JiraToolbar({
   onSort: (value: string) => void
   onClear: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [search, setSearch] = useState('')
   const [open, setOpen] = useState(false)
   const browseSource = sources.find((entry) => entry.key === source)
@@ -46,7 +49,7 @@ export function JiraToolbar({
     { name: 'Open', state: 'open', assignee: 'all' },
     { name: 'My issues', state: 'open', assignee: 'mine' },
     { name: 'Unassigned', state: 'open', assignee: 'unassigned' },
-    { name: 'Done', state: 'closed', assignee: 'all' },
+    { name: uiText('Done'), state: 'closed', assignee: 'all' },
   ] as const
   const choices = [
     {

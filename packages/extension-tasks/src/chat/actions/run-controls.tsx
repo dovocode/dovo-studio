@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   runtimeComputerName,
   approvalActions,
@@ -12,6 +13,8 @@ import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-
 import { Button } from '@dovo/studio-ui'
 import { ApprovalDetails } from './approval-details'
 export function RunControls({ task }: { task: Task }) {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   const remoteInputs = taskRemoteHumanInputs(task)
   const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
@@ -109,7 +112,7 @@ export function RunControls({ task }: { task: Task }) {
               : 'continue with a follow-up'}
           </p>
           <Button size="sm" disabled={busy || !connected} onClick={continueStopped}>
-            Continue
+            {uiText('Continue')}
           </Button>
         </div>
       )}

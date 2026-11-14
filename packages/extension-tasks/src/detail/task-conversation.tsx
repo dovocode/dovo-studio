@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskPipelineProgress } from './task-pipeline-progress'
 import type { WorkspaceControls } from '../chat/composer/composer-workspace'
 import { InlineThreadSuggestions } from '../chat/thread-sharing'
@@ -91,6 +92,8 @@ export function TaskConversation({
   composerInsert?: { id: string; text: string; once?: boolean; replaceKey?: string } | null
   onComposerInsertApplied?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { collapseComposerOnScroll, minimalComposer } = useAppPreferences()
   const [templateInsert, setTemplateInsert] = useState<{
     id: string
@@ -99,7 +102,10 @@ export function TaskConversation({
   } | null>(null)
   const pendingTemplate = templateInsert?.taskId === task.id ? templateInsert : null
   const useTemplate = useCallback(
-    (text: string) => setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id }),
+    (text: string) => {
+      setComposerCollapsed(false)
+      setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+    },
     [task.id],
   )
   const [composerCollapsed, setComposerCollapsed] = useState(false)
@@ -346,7 +352,7 @@ export function TaskConversation({
             >
               <span title={viewed.error}>Couldn’t update read status.</span>
               <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={viewed.retry}>
-                Retry
+                {uiText('Retry')}
               </Button>
             </div>
           )}

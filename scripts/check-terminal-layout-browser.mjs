@@ -86,6 +86,7 @@ export const startReconnecting=(connect,onError)=>{const controller=new AbortCon
 export * from '${root}/packages/studio-ui/src/components/ui/dialog';
 export * as ContextMenu from '@radix-ui/react-context-menu';
 export const cn=(...parts)=>parts.filter(Boolean).join(' ');
+export const Input=props=><input {...props}/>;
 export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;
 export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;
 export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;`,
@@ -140,7 +141,30 @@ try {
       connection: { address: 'http://runtime.local', token: 'test' },
       workspace: { tasks: [{ id: 'task', execution: 'local' }], repositories: [] },
       snapshot: { terminals: [{ id: 'session', taskId: 'task', title: 'Shell' }] },
+      activeRuntimeId: 'fixture',
+      runtimes: [
+        {
+          profile: {
+            id: 'fixture',
+            connection: { address: 'http://runtime.local', token: 'test' },
+          },
+        },
+      ],
+      refreshRuntime: async () => {},
       request: async (path, input) => {
+        if (path === '/api/terminals/update') {
+          window.renames ??= []
+          window.renames.push(input)
+          if (window.holdRename)
+            await new Promise((resolve) => {
+              window.finishRename = resolve
+            })
+          if (window.failRename) throw Error('Rename failed')
+          const terminal = window.runtime.snapshot.terminals.find((t) => t.id === input.id)
+          Object.assign(terminal, { customTitle: input.title, title: input.title ?? 'Shell' })
+          window.render()
+          return terminal
+        }
         if (path === '/api/terminals') {
           const session = {
             id: 'session-' + ++window.created,
@@ -388,12 +412,76 @@ try {
   await page.waitForTimeout(300)
   assert.ok((await header.boundingBox()).y >= 0, 'Tab bar remains visible after resizing')
   await page.setViewportSize({ width: 1200, height: 850 })
+  const enginesBeforeRename = await page.evaluate(() => window.terminals.length)
+  const socketsBeforeRename = await page.evaluate(() => window.sockets.length)
+  await terminal.getByRole('button', { name: 'Rename Shell', exact: true }).click()
+  const renameDialog = page.getByRole('dialog', { name: 'Rename terminal', exact: true })
+  const titleInput = renameDialog.getByRole('textbox', { name: 'Terminal title' })
+  await titleInput.fill('   ')
+  assert.equal(
+    await renameDialog.getByRole('button', { name: 'Save', exact: true }).isDisabled(),
+    true,
+  )
+  await titleInput.fill('  Build server  ')
+  await page.evaluate(() => {
+    window.failRename = true
+  })
+  await renameDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await renameDialog.getByRole('alert').filter({ hasText: 'Rename failed' }).waitFor()
+  assert.equal(await titleInput.inputValue(), '  Build server  ', 'Failed save keeps the name')
+  await page.evaluate(() => {
+    window.failRename = false
+    window.holdRename = true
+  })
+  await renameDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await page.waitForFunction(() => !!window.finishRename)
+  assert.equal(
+    await renameDialog.getByRole('button', { name: 'Save', exact: true }).isDisabled(),
+    true,
+  )
+  assert.equal(
+    await renameDialog.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(),
+    true,
+  )
+  await page.evaluate(() => {
+    window.holdRename = false
+    window.finishRename()
+  })
+  await renameDialog.waitFor({ state: 'detached' })
+  await terminal.getByRole('button', { name: 'Build server', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.renames), [
+    { id: 'session', title: 'Build server' },
+    { id: 'session', title: 'Build server' },
+  ])
+  assert.equal(
+    await page.evaluate(() => window.terminals.length),
+    enginesBeforeRename,
+    'Rename keeps the terminal engine',
+  )
+  assert.equal(
+    await page.evaluate(() => window.sockets.length),
+    socketsBeforeRename,
+    'Rename keeps the shell connection',
+  )
+  await terminal.getByRole('button', { name: 'Rename Build server', exact: true }).click()
+  await renameDialog.getByRole('button', { name: 'Use automatic title', exact: true }).click()
+  await renameDialog.waitFor({ state: 'detached' })
+  await terminal.getByRole('button', { name: 'Shell', exact: true }).waitFor()
   const split = terminal.getByRole('button', {
     name: 'Split terminal left/right (Ctrl+Shift+D, max 4 panes)',
     exact: true,
   })
   await split.click()
   await terminal.locator('.dovo-terminal-canvas:visible').nth(1).waitFor()
+  await terminal.getByRole('button', { name: 'Rename Shell 1 pane', exact: true }).click()
+  await titleInput.fill('Tests')
+  await renameDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await renameDialog.waitFor({ state: 'detached' })
+  await terminal.getByRole('button', { name: 'Rename Tests pane', exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.renames.at(-1)), {
+    id: 'session-1',
+    title: 'Tests',
+  })
   await terminal.locator('[data-terminal-session="session"]').click()
   await terminal.getByRole('button', { name: 'Next pane', exact: true }).click()
   await page.waitForFunction(
@@ -838,7 +926,7 @@ try {
 
   assert.deepEqual(errors, [])
   console.log(
-    'Terminal: scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration, wrapped file locations, standalone anchor isolation, delayed split membership, partial/successful close events and legacy split restoration passed.',
+    'Terminal: tab/split rename, failed-save draft, automatic title, retained shell connection, scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration, wrapped file locations, standalone anchor isolation, delayed split membership, partial/successful close events and legacy split restoration passed.',
   )
 } finally {
   await browser.close()

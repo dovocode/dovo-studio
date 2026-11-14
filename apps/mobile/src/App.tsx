@@ -1,3 +1,6 @@
+import { InterfaceLanguageProvider, interfaceDirection } from '@dovo/studio-core/interface-language'
+import { resolveInterfaceLanguage } from '@dovo/protocol'
+import { getLocales } from 'expo-localization'
 import { MobileAccountProvider } from './runtime/connection/account-provider'
 import { SettingsTargetProvider } from './runtime/preferences/settings-target'
 import { PushNotificationProvider } from './notifications/provider'
@@ -29,7 +32,7 @@ export default function App() {
 }
 function ThemedApp() {
   const { colors, mode } = useTheme()
-  const { browserWorkspaceEnabled } = useMobilePreferences()
+  const { browserWorkspaceEnabled, interfaceLanguage } = useMobilePreferences()
   const base = mode === 'dark' ? DarkTheme : DefaultTheme
   const theme = {
     ...base,
@@ -44,34 +47,49 @@ function ThemedApp() {
     },
   }
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <SafeAreaProvider>
-        <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
-        <ThemeProvider value={theme}>
-          <RegistryProvider>
-            <RuntimeProvider>
-              <MobileAccountProvider>
-                <SettingsTargetProvider>
-                  <PushNotificationProvider>
-                    <LiveActivityProvider>
-                      <TaskWidgetProvider>
-                        <NativeBrowserProvider enabled={browserWorkspaceEnabled}>
-                          <BrowserWorkspaceProvider>
-                            <WorkspaceViewProvider>
-                              <Workbench />
-                            </WorkspaceViewProvider>
-                          </BrowserWorkspaceProvider>
-                        </NativeBrowserProvider>
-                        <TaskQuickActions />
-                      </TaskWidgetProvider>
-                    </LiveActivityProvider>
-                  </PushNotificationProvider>
-                </SettingsTargetProvider>
-              </MobileAccountProvider>
-            </RuntimeProvider>
-          </RegistryProvider>
-        </ThemeProvider>
-      </SafeAreaProvider>
-    </GestureHandlerRootView>
+    <InterfaceLanguageProvider
+      language={interfaceLanguage}
+      deviceLanguages={getLocales().map((locale) => locale.languageTag)}
+    >
+      <GestureHandlerRootView
+        style={{
+          flex: 1,
+          direction: interfaceDirection(
+            resolveInterfaceLanguage(
+              interfaceLanguage,
+              getLocales().map((locale) => locale.languageTag),
+            ),
+          ),
+        }}
+      >
+        <SafeAreaProvider>
+          <StatusBar style={mode === 'dark' ? 'light' : 'dark'} />
+          <ThemeProvider value={theme}>
+            <RegistryProvider>
+              <RuntimeProvider>
+                <MobileAccountProvider>
+                  <SettingsTargetProvider>
+                    <PushNotificationProvider>
+                      <LiveActivityProvider>
+                        <TaskWidgetProvider>
+                          <NativeBrowserProvider enabled={browserWorkspaceEnabled}>
+                            <BrowserWorkspaceProvider>
+                              <WorkspaceViewProvider>
+                                <Workbench />
+                              </WorkspaceViewProvider>
+                            </BrowserWorkspaceProvider>
+                          </NativeBrowserProvider>
+                          <TaskQuickActions />
+                        </TaskWidgetProvider>
+                      </LiveActivityProvider>
+                    </PushNotificationProvider>
+                  </SettingsTargetProvider>
+                </MobileAccountProvider>
+              </RuntimeProvider>
+            </RegistryProvider>
+          </ThemeProvider>
+        </SafeAreaProvider>
+      </GestureHandlerRootView>
+    </InterfaceLanguageProvider>
   )
 }

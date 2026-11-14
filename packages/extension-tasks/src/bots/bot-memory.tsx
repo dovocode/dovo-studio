@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotMemoryLearning } from './bot-memory-learning'
 import { botScope } from './bot-scope'
 import { useCallback, useEffect, useRef, useState } from 'react'
@@ -16,6 +17,8 @@ const drafts = new Map<string, NoteDraft>()
 const blank: NoteDraft = { key: '', content: '' }
 
 export function BotMemory({ taskId }: { taskId: string }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, snapshot, activeRuntimeId, connection } = useWorkspace()
   const scope = JSON.stringify([
     botScope(snapshot?.runtimeId ?? activeRuntimeId, connection),
@@ -109,9 +112,9 @@ export function BotMemory({ taskId }: { taskId: string }) {
     }
   }
   return (
-    <section className="grid gap-3" aria-label="Memory">
+    <section className="grid gap-3" aria-label={uiText('Memory')}>
       <div className="flex items-center justify-between gap-2">
-        <h2 className="font-semibold">Memory</h2>
+        <h2 className="font-semibold">{uiText('Memory')}</h2>
         <span className="text-xs text-muted-foreground">
           {total} {total === 1 ? 'note' : 'notes'}
         </span>
@@ -217,7 +220,7 @@ export function BotMemory({ taskId }: { taskId: string }) {
                     })
                   }
                 >
-                  Delete
+                  {uiText('Delete')}
                 </Button>
               </div>
               <p className="line-clamp-3 whitespace-pre-wrap break-words text-sm text-muted-foreground">

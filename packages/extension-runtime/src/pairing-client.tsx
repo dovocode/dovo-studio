@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { LinuxSetupGuide } from './linux-setup-guide'
 import { SavedActions } from './saved-actions'
@@ -39,6 +40,8 @@ export function PairingClient({
   onManage: (profile: RuntimeProfile) => void
   discovered?: { address: string }
 }) {
+  const uiText = useInterfaceText()
+
   const {
     connect,
     cancelPairing,
@@ -625,7 +628,7 @@ export function PairingClient({
             )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={cancel}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button disabled={busy || !!pending}>
                 {pending ? 'Connecting…' : 'Connect runtime'}

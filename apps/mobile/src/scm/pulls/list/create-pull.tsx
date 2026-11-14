@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pullPageSchema,
   projectDisplayName,
@@ -61,6 +62,8 @@ export function CreatePull({
   onClose: () => void
   onCreated: (repositoryId: string, number: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, snapshot, callEffect, connection } = useRuntime()
@@ -269,7 +272,7 @@ export function CreatePull({
           name: projectDisplayName(repo),
         }))}
       />
-      <Field label="Title" value={title} onChangeText={setTitle} editable={!busy} />
+      <Field label={uiText('Title')} value={title} onChangeText={setTitle} editable={!busy} />
       <Action
         secondary
         label={describing ? 'Writing…' : 'Write title and description'}
@@ -364,7 +367,7 @@ export function CreatePull({
         Use branches already pushed to this project. Creating a PR does not push local commits.
       </Text>
       <Field
-        label="Description"
+        label={uiText('Description')}
         value={body}
         onChangeText={setBody}
         editable={!busy}

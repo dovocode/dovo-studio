@@ -112,10 +112,10 @@ const token = s.runCredentials.issue(
   new AbortController().signal,
 )
 const origin = `http://127.0.0.1:${runtime.port}`
-async function call(part, command, expected = 200, runtimeId) {
+async function call(part, command, expected = 200, runtimeId, credential = token) {
   const result = await fetch(origin + '/api/studio/tools', {
     method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({ taskId, parentRunId: runId, part, command, runtimeId }),
   })
   const body = await result.json()
@@ -167,7 +167,15 @@ try {
         'true' && !document.querySelector('[aria-label="Diagnostics"]').disabled,
   )
   const { sessions } = await call('ui', { action: 'list' })
-  const sessionId = sessions.at(-1).id
+  let sessionId = sessions.at(-1).id
+  const appearance = await call('ui', { action: 'theme-read', sessionId })
+  assert.ok(appearance.palettes.length > 1)
+  const palette = appearance.palettes.find((item) => item.id !== appearance.palette).id
+  const changed = await call('ui', { action: 'theme-set', sessionId, mode: 'light', palette })
+  assert.equal(changed.mode, 'light')
+  assert.equal(changed.palette, palette)
+  const invalid = await call('ui', { action: 'theme-set', sessionId, palette: 'unlisted-palette' })
+  assert.match(invalid.error, /Unknown theme palette/)
   const snapshot = await call('ui', { action: 'snapshot', sessionId })
   assert.ok(snapshot.text.includes('Studio tools fixture'))
   const prompt = snapshot.controls.find((control) => control.label === 'Prompt')
@@ -272,13 +280,43 @@ try {
   })
   await page.waitForTimeout(100)
   await call('diagnostics', { action: 'health' }, 404, paired.id)
+  await page.reload()
+  await page.getByRole('heading', { name: 'Studio Tools (experimental)' }).waitFor()
+  sessionId = (await call('ui', { action: 'list' })).sessions.at(-1).id
+  assert.equal((await call('ui', { action: 'theme-read', sessionId })).palette, palette)
+  const readOnly = s.runCredentials.issue(
+    {
+      taskId,
+      runId,
+      permissions: { provider: 'codex', permission: 'read-only' },
+      readOnly: true,
+      artifacts: false,
+      pipelineWatching: false,
+      pullRequestWatching: false,
+      deviceHub: false,
+      memoryScopes: [],
+      studioTools: {
+        threads: true,
+        automations: true,
+        browsers: true,
+        ui: true,
+        diagnostics: true,
+      },
+    },
+    new AbortController().signal,
+  )
+  assert.equal(
+    (await call('ui', { action: 'theme-read', sessionId }, 200, undefined, readOnly)).palette,
+    palette,
+  )
+  await call('ui', { action: 'theme-set', sessionId, mode: 'dark' }, 403, undefined, readOnly)
   await page.getByRole('switch', { name: 'UI interaction', exact: true }).click()
   await page.waitForFunction(
     () =>
       document.querySelector('[aria-label="UI interaction"]').getAttribute('aria-checked') ===
       'false',
   )
-  await call('ui', { action: 'snapshot', sessionId }, 403)
+  await call('ui', { action: 'snapshot', sessionId }, 403, undefined, readOnly)
   console.log(
     'Studio Tools: independent persisted toggles, live UI inspection/interaction, review protection, browser sessions/screenshots/logs passed.',
   )

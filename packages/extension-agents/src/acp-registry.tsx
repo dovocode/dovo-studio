@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useConfirmation } from '@dovo/studio-core'
 import { Disclosure } from '@dovo/studio-ui'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -396,6 +397,8 @@ function AcpAuthentication({
   disabled: boolean
   request: Request
 }) {
+  const uiText = useInterfaceText()
+
   const { browser } = useStudioHost()
   const [methods, setMethods] = useApplicationState<Schema.Schema.Type<
     typeof acpInspectionSchema
@@ -771,7 +774,7 @@ function AcpAuthentication({
                       disabled={sessionsBusy || disabled}
                       onClick={() => void deleteSession(session.sessionId)}
                     >
-                      Delete
+                      {uiText('Delete')}
                     </Button>
                   )}
                 </div>

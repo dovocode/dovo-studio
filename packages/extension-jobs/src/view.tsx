@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { randomUUID, resolveRuntimeTarget } from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { SearchField } from '@dovo/studio-ui/search-field'
@@ -44,6 +45,8 @@ type Creation = {
   name: string
 }
 export default function JobsView({ entityId, automationTarget, navigationKey }: StudioViewProps) {
+  const uiText = useInterfaceText()
+
   const {
     runtimes,
     activeRuntimeId,
@@ -215,8 +218,8 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
           <Button
             size="icon"
             variant="ghost"
-            aria-label="Refresh"
-            title="Refresh"
+            aria-label={uiText('Refresh')}
+            title={uiText('Refresh')}
             className="size-8"
             disabled={busy || refreshing}
             onClick={() => {
@@ -415,7 +418,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
           <DialogTitle>New automation</DialogTitle>
           <DialogDescription>Choose where it runs, then connect its steps.</DialogDescription>
           <label className="grid gap-2 text-xs text-muted-foreground">
-            <span>Name</span>
+            <span>{uiText('Name')}</span>
             <Input
               autoFocus
               placeholder="e.g. Review incoming changes"
@@ -447,7 +450,7 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
           )}
           <DialogFooter>
             <Button variant="outline" disabled={busy} onClick={() => setCreating(false)}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               disabled={

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotAvatar } from '../../bots/bot-avatar'
 import { NestedThreads } from './nested-threads'
 import type { NestedThread } from '@dovo/protocol'
@@ -119,6 +120,8 @@ function TaskListRowView({
   selected?: boolean
   current?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles, highContrast } = useTheme()
   const { fontScale } = useWindowDimensions()
   const rowElement = useRef<ComponentRef<typeof View>>(null)
@@ -606,7 +609,7 @@ function TaskListRowView({
                 {title}
                 {general && executionIcons}
                 {general && row.reachability === 'offline' && (
-                  <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                  <CloudOff size={12} color={colors.muted} accessibilityLabel={uiText('Offline')} />
                 )}
               </View>
               {hasFooter && (
@@ -651,7 +654,11 @@ function TaskListRowView({
                   )}
                   {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
                   {row.reachability === 'offline' && (
-                    <CloudOff size={12} color={colors.muted} accessibilityLabel="Offline" />
+                    <CloudOff
+                      size={12}
+                      color={colors.muted}
+                      accessibilityLabel={uiText('Offline')}
+                    />
                   )}
                 </View>
               )}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { useEffect, useRef } from 'react'
@@ -30,6 +31,8 @@ export function JiraSourcesDialog({
   onClose: () => void
   onSaved?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, activeRuntimeId, refreshRuntime } = useWorkspace()
   const runtimes = useRuntimeSources()
   const [selected, setSelected] = useApplicationState<
@@ -137,7 +140,9 @@ export function JiraSourcesDialog({
                     <h3 className="text-sm font-medium">
                       {runtime.name}
                       {!runtime.connected && (
-                        <span className="ml-2 text-xs text-muted-foreground">Offline</span>
+                        <span className="ml-2 text-xs text-muted-foreground">
+                          {uiText('Offline')}
+                        </span>
                       )}
                     </h3>
                     <Button
@@ -199,6 +204,8 @@ function JiraForm({
   busy: boolean
   setBusy: (value: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [site, setSite] = useApplicationState(initial?.site ?? ''),
     [project, setProject] = useApplicationState(initial?.project ?? '')
@@ -431,7 +438,10 @@ function JiraForm({
           aria-label="Remove Jira source?"
           className="rounded-lg border p-3 text-sm"
         >
-          <p>Remove {initial.name || initial.project} from Dovo? Issues in Jira stay unchanged.</p>
+          <p>
+            {uiText('Remove')} {initial.name || initial.project} from Dovo? Issues in Jira stay
+            unchanged.
+          </p>
           <div className="mt-3 flex justify-end gap-2">
             <Button
               type="button"

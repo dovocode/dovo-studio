@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { sharedSettingsIssue } from '@dovo/protocol'
 import { Disclosure } from '@dovo/studio-ui'
 import { settingsChanges } from '@dovo/protocol'
@@ -72,6 +73,8 @@ export function AgentEditor({
   fixedProvider?: boolean
   shared?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, snapshot, request } = useWorkspace()
   const pending = useRef(false)
   const form = useRef<HTMLFormElement>(null)
@@ -234,9 +237,9 @@ export function AgentEditor({
               {(step === 1 || !creating) && (
                 <section className="space-y-4">
                   {!creating && !inline && <h3 className="text-sm font-semibold">Profile</h3>}
-                  <FormField layout="settings" label="Name">
+                  <FormField layout="settings" label={uiText('Name')}>
                     <Input
-                      aria-label="Name"
+                      aria-label={uiText('Name')}
                       required
                       value={agent.name}
                       placeholder="Give this profile a name"
@@ -384,8 +387,8 @@ export function AgentEditor({
                             </SelectTrigger>
                             <SelectContent>
                               <SelectItem value="default">Provider default</SelectItem>
-                              <SelectItem value="true">Enabled</SelectItem>
-                              <SelectItem value="false">Disabled</SelectItem>
+                              <SelectItem value="true">{uiText('Enabled')}</SelectItem>
+                              <SelectItem value="false">{uiText('Disabled')}</SelectItem>
                             </SelectContent>
                           </Select>
                         </FormField>
@@ -604,7 +607,7 @@ export function AgentEditor({
                         setStep(step - 1)
                       }}
                     >
-                      Back
+                      {uiText('Back')}
                     </Button>
                   )}
                   <Button

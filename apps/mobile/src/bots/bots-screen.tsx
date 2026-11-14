@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useMemo, useState } from 'react'
 import { compareBotActivity } from '@dovo/protocol'
 import { FlatList, View } from 'react-native'
@@ -16,6 +17,8 @@ import { BotSettings } from './bot-settings'
 import { useAction } from '../ui/controls/use-action'
 
 export default function BotsScreen() {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const preferences = useMobilePreferences()
   const { navigate } = useNavigation()
@@ -52,10 +55,10 @@ export default function BotsScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title="Bots"
+        title={uiText('Bots')}
         buttons={[
           {
-            label: 'New Bot',
+            label: uiText('New Bot'),
             icon: 'add',
             disabled: !runtime.overviews.some(
               (owner) => owner.connected && owner.snapshot?.botsSupported,

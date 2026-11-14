@@ -142,6 +142,13 @@ const selector = maxValue(minValue(Schema.String, 1), 4096)
 export const studioUICommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
   mutableStruct({ action: Schema.Literal('snapshot'), sessionId: id }),
+  mutableStruct({ action: Schema.Literal('theme-read'), sessionId: id }),
+  mutableStruct({
+    action: Schema.Literal('theme-set'),
+    sessionId: id,
+    mode: Schema.optional(Schema.Literals(['dark', 'light', 'system'])),
+    palette: Schema.optional(maxValue(minValue(Schema.String, 1), 100)),
+  }),
   mutableStruct({ action: Schema.Literal('click'), sessionId: id, selector }),
   mutableStruct({ action: Schema.Literal('fill'), sessionId: id, selector, text }),
   mutableStruct({

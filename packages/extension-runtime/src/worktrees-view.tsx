@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useState } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -41,6 +42,8 @@ const stateLabels = {
 } as const
 
 function WorktreeList({ revision }: { revision: number }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, snapshot, connection } = useWorkspace()
   const [list, setList] = useApplicationState<WorktreeList | null>(null)
   const [orphanedOnly, setOrphanedOnly] = useApplicationState(false)
@@ -137,7 +140,7 @@ function WorktreeList({ revision }: { revision: number }) {
       >
         <DialogContent>
           <DialogTitle>
-            Remove {removal.length} worktree{removal.length === 1 ? '' : 's'} on{' '}
+            {uiText('Remove')} {removal.length} worktree{removal.length === 1 ? '' : 's'} on{' '}
             {runtimeComputerName({ snapshot }) || connection?.address}?
           </DialogTitle>
           <DialogDescription>
@@ -146,7 +149,7 @@ function WorktreeList({ revision }: { revision: number }) {
           </DialogDescription>
           <DialogFooter>
             <Button variant="ghost" disabled={!!busy} onClick={() => setRemoval([])}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               variant="destructive"

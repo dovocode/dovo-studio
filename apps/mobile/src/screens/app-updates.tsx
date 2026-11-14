@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router } from 'expo-router'
 import { useOpenAppLink } from '../ui/content/open-link'
 import { nativeEffect, mobileWorkflow } from '../runtime/state/native-effect'
@@ -13,6 +14,8 @@ import { SettingsAction as Action, SettingsChoice as Choice } from './settings-c
 import { useSettingsTheme as useTheme, SettingsPage } from './settings-theme'
 import { SettingsGroup, SettingsRow } from './settings-group'
 export default function AppUpdates() {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
@@ -157,7 +160,7 @@ export default function AppUpdates() {
         )}
         <SettingsGroup title="Related settings">
           <SettingsRow
-            title="Notifications"
+            title={uiText('Notifications')}
             subtitle="Task alerts and Live Activities on this device"
             icon="settings"
             onPress={() => router.push('/settings/notifications')}

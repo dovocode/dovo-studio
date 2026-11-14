@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { CredentialEditor } from './credential-editor'
 import {
@@ -59,6 +60,8 @@ export function McpEditor({
   onSave: (server: McpServer) => Promise<void>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request } = useWorkspace()
   const [draft, setDraft] = useApplicationState<McpServer>(
     initial ?? {
@@ -158,7 +161,7 @@ export function McpEditor({
                 ))}
               </ul>
             )}
-            <FormField label="Name" error={fieldError('name')}>
+            <FormField label={uiText('Name')} error={fieldError('name')}>
               <Input
                 required
                 value={draft.name}
@@ -304,7 +307,7 @@ export function McpEditor({
             )}
             <div className="flex flex-wrap justify-end gap-2">
               <Button type="button" variant="ghost" onClick={onClose}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button type="button" variant="outline" onClick={() => void perform(true)}>
                 {busy === 'test' ? 'Testing…' : 'Test connection'}

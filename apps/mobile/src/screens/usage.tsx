@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { hubPlanLimitSources } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
 import { UsagePool } from './usage-pool'
@@ -66,6 +67,8 @@ const Row = memo(function Row({ row, first }: { row: UsageRow; first: boolean })
 
 /** Agent time, turns and tokens across saved computers. */
 export default function UsageScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { width, fontScale } = useWindowDimensions()
@@ -388,7 +391,7 @@ export default function UsageScreen() {
                 />
                 <SettingsGroup
                   title="Account limits"
-                  footer="Limits are reported by Codex and Claude agents on connected computers. API-key usage may not have subscription windows."
+                  footer="Limits are reported by Codex, Claude, and OpenCode agents on connected computers. API-key usage may not have subscription windows."
                 >
                   {!limits.length && (
                     <Text accessibilityLiveRegion="polite" style={[styles.muted, { padding: 12 }]}>
@@ -401,7 +404,12 @@ export default function UsageScreen() {
                     return (
                       <View key={group.key} style={{ padding: 12, gap: 12 }}>
                         <Text style={[styles.text, { fontWeight: '600' }]}>
-                          {provider === 'codex' ? 'Codex' : 'Claude'} · {group.label}
+                          {provider === 'codex'
+                            ? 'Codex'
+                            : provider === 'opencode'
+                              ? 'OpenCode'
+                              : 'Claude'}{' '}
+                          · {group.label}
                         </Text>
                         {group.windows[0] && <ResetCredits window={group.windows[0]} />}
                         {windows.length ? (
@@ -482,9 +490,9 @@ export default function UsageScreen() {
                   label="Group usage by"
                   value={breakdown}
                   items={[
-                    { id: 'accounts', name: 'Accounts' },
-                    { id: 'models', name: 'Models' },
-                    { id: 'tasks', name: 'Threads' },
+                    { id: 'accounts', name: uiText('Accounts') },
+                    { id: 'models', name: uiText('Models') },
+                    { id: 'tasks', name: uiText('Threads') },
                   ]}
                   onChange={(value) => {
                     if (value === 'accounts' || value === 'models' || value === 'tasks')

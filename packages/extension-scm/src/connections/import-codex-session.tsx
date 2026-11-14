@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { useCodexSessionImport, useWorkspace, useStudioHost } from '@dovo/studio-core'
 import {
@@ -20,6 +21,8 @@ export function ImportCodexSession({
   disabled?: boolean
   onNavigate?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const host = useStudioHost()
   const [open, setOpen] = useState(false)
@@ -148,7 +151,7 @@ export function ImportCodexSession({
           </div>
           <DialogFooter>
             <Button variant="outline" disabled={picker.importing} onClick={() => setOpen(false)}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             {picker.preview?.session.taskId ? (
               <Button

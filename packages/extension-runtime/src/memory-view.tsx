@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useConfirmation } from '@dovo/studio-core'
 import { SearchField } from '@dovo/studio-ui'
 import { useCallback, useEffect, useRef } from 'react'
@@ -32,10 +33,12 @@ import {
 import { HostPage } from './host-page'
 
 export default function MemoryView({ entityId }: { entityId?: string }) {
+  const uiText = useInterfaceText()
+
   return (
     <HostPage
       initialRuntimeId={entityId}
-      title="Memory"
+      title={uiText('Memory')}
       description="Optional saved notes for agents on this computer. Every scope starts off."
     >
       <MemorySettings />
@@ -44,6 +47,8 @@ export default function MemoryView({ entityId }: { entityId?: string }) {
 }
 
 function MemorySettings() {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [settings, setSettings] = useApplicationState<MemorySettings | null>(null)
   const [projects, setProjects] = useApplicationState<typeof memoryProjectsSchema.Type.projects>([])
@@ -254,7 +259,7 @@ function MemorySettings() {
               })
             }
           >
-            Refresh
+            {uiText('Refresh')}
           </Button>
         </div>
         <SearchField
@@ -302,7 +307,7 @@ function MemorySettings() {
                     noteRef.current?.focus()
                   }}
                 >
-                  Edit
+                  {uiText('Edit')}
                 </Button>
                 <Button
                   size="sm"
@@ -311,7 +316,7 @@ function MemorySettings() {
                   aria-label={`Delete ${entry.key}`}
                   onClick={() => setDeleting(entry)}
                 >
-                  Delete
+                  {uiText('Delete')}
                 </Button>
               </li>
             ))}
@@ -325,7 +330,7 @@ function MemorySettings() {
               disabled={disabled || offset === 0}
               onClick={() => setOffset(Math.max(0, offset - memoryPageSize))}
             >
-              Previous
+              {uiText('Previous')}
             </Button>
             <span className="text-xs text-muted-foreground">
               {offset + 1}–{Math.min(offset + memoryPageSize, result.total)} of {result.total}
@@ -336,7 +341,7 @@ function MemorySettings() {
               disabled={disabled || offset + memoryPageSize >= result.total}
               onClick={() => setOffset(offset + memoryPageSize)}
             >
-              Next
+              {uiText('Next')}
             </Button>
           </div>
         )}
@@ -359,7 +364,7 @@ function MemorySettings() {
           )}
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={busy} onClick={() => setDeleting(null)}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               type="button"

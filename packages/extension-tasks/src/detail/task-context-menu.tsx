@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { studioReference, taskSnoozeMenuChoices } from '@dovo/protocol'
 import { ProjectTransferDialog } from '@dovo/extension-scm/project-transfer'
@@ -114,6 +115,8 @@ export function TaskContextMenu({
   /** Reports an open menu, dialog or action, so a windowed list keeps this row mounted. */
   onActiveChange?: (active: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
   const Menu = dropdown ? DropdownMenu : ContextMenu
   const host = useStudioHost()
@@ -475,7 +478,7 @@ export function TaskContextMenu({
               <>
                 <Menu.Sub>
                   <Menu.SubTrigger className={itemClass}>
-                    <Plus /> New thread <ChevronRight className="ml-auto" />
+                    <Plus /> {uiText('New thread')} <ChevronRight className="ml-auto" />
                   </Menu.SubTrigger>
                   <Menu.Portal>
                     <Menu.SubContent className={menuClass} collisionPadding={8}>
@@ -571,7 +574,7 @@ export function TaskContextMenu({
             <Menu.Sub>
               <Menu.SubTrigger className={itemClass} disabled={blocked}>
                 <Copy />
-                Copy
+                {uiText('Copy')}
                 <ChevronRight className="ml-auto" />
               </Menu.SubTrigger>
               <Menu.Portal>
@@ -626,7 +629,7 @@ export function TaskContextMenu({
             </Menu.Sub>
             <Menu.Sub>
               <Menu.SubTrigger className={itemClass}>
-                <Sparkles /> Advanced <ChevronRight className="ml-auto" />
+                <Sparkles /> {uiText('Advanced')} <ChevronRight className="ml-auto" />
               </Menu.SubTrigger>
               <Menu.Portal>
                 <Menu.SubContent className={menuClass} collisionPadding={8}>
@@ -905,7 +908,7 @@ export function TaskContextMenu({
               </p>
             )}
             <Button type="submit" disabled={pending}>
-              Save
+              {uiText('Save')}
             </Button>
           </form>
         </DialogContent>
@@ -1012,7 +1015,7 @@ export function TaskContextMenu({
                 disabled={pending}
                 onClick={() => setDialog(null)}
               >
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button
                 type="submit"
@@ -1048,7 +1051,7 @@ export function TaskContextMenu({
                 })
             }}
           >
-            <FormField label="Title">
+            <FormField label={uiText('Title')}>
               <Input
                 autoFocus
                 value={title}
@@ -1068,7 +1071,7 @@ export function TaskContextMenu({
                 disabled={pending}
                 onClick={() => setDialog(null)}
               >
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button type="submit" disabled={!canEdit || !title.trim()}>
                 {pending ? 'Saving…' : 'Save title'}
@@ -1117,7 +1120,7 @@ export function TaskContextMenu({
               disabled={pending}
               onClick={() => setDialog(null)}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               variant="destructive"

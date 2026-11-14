@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useBrowserWorkspace } from './browser-workspace'
 import { BrowserNavigation } from './browser-navigation'
 import * as Clipboard from 'expo-clipboard'
@@ -82,6 +83,8 @@ import {
 
 /** Parent owns the experimental route/menu gate. Local WebView has one device cookie session. */
 export function BrowserScreen({ unified = false }: { unified?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
   const runtime = useRuntime()
   const runtimeRef = useRef(runtime)
@@ -1200,7 +1203,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             {active.kind === 'local' ? (
               <>
                 <IconButton
-                  label="Back"
+                  label={uiText('Back')}
                   icon="back"
                   disabled={!navigation.back || busy || nativeOpening}
                   onPress={() =>
@@ -1495,7 +1498,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
           <Action
             secondary
-            label="History"
+            label={uiText('History')}
             onPress={() => {
               optionsSheet.current?.dismiss(() => {
                 setQuery('')
@@ -1760,7 +1763,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   })
                 }
               />
-              <Text style={styles.title}>History</Text>
+              <Text style={styles.title}>{uiText('History')}</Text>
               <Action
                 secondary
                 label="Clear history"

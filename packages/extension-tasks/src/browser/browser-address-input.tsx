@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useId, useState, type RefObject } from 'react'
 import {
   History,
@@ -93,6 +94,8 @@ export function BrowserAddressInput({
   onNavigate: (url: string, newTab: boolean) => void
   onEditing: (editing: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const id = useId()
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState(false)
@@ -314,7 +317,7 @@ export function BrowserAddressInput({
             >
               <Search size={14} className="shrink-0 text-muted-foreground" />
               <span className="min-w-0 flex-1 truncate">
-                Search {provider} for “{query}”
+                {uiText('Search')} {provider} for “{query}”
               </span>
               <ArrowUpRight size={14} className="shrink-0 text-muted-foreground" />
             </div>

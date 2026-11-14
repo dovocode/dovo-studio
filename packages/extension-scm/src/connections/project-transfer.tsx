@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Schema } from 'effect'
 import { MonitorUp, ChevronDown, Info } from 'lucide-react'
@@ -38,6 +39,8 @@ export function ProjectTransferSettings({
   continuation?: boolean
   initiallyOpen?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const host = useStudioHost()
   const [open, setOpen] = useState(initiallyOpen),
@@ -785,7 +788,7 @@ export function ProjectTransferSettings({
             disabled={busy || !store.connected}
             onClick={() => void load()}
           >
-            Refresh
+            {uiText('Refresh')}
           </Button>
         </div>
       )}

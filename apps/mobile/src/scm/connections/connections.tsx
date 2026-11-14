@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   runtimeComputerName,
   parseAgentEnvironment,
@@ -89,6 +90,8 @@ export default function SourceControlSettings() {
   )
 }
 function ConnectionsContent() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connected, snapshot, readCache, callEffect, readEffect } = useRuntime()
@@ -254,7 +257,7 @@ function ConnectionsContent() {
           GitHub projects already use the runtime’s GitHub CLI login. Add a connection to use a
           different GitHub user, wrapper selector, host or provider.
         </Text>
-        <SettingsGroup title="Projects">
+        <SettingsGroup title={uiText('Projects')}>
           {projects.map((repo, index) => (
             <View
               key={`${repo.id}:${repo.path}:${repo.forge?.connectionId ?? ''}:${repo.forge?.repository ?? ''}:${revision}`}

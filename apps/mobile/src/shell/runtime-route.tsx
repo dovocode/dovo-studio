@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { LinkOriginProvider } from '../ui/content/link-origin'
 import { jiraDestination } from '../scm/source-key'
 import { Fragment, type ReactNode } from 'react'
@@ -40,6 +41,8 @@ function RuntimeRouteContent({
   children,
   onBack,
 }: RuntimeRouteProps) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { ready, activeId, profiles, snapshot, refresh, refreshRuntime, connected } = useRuntime()
@@ -76,7 +79,11 @@ function RuntimeRouteContent({
         title={title}
         subtitle={owner?.name}
         leading={
-          <Action secondary label="Back" onPress={onBack ?? (() => backToCollection(backTo))} />
+          <Action
+            secondary
+            label={uiText('Back')}
+            onPress={onBack ?? (() => backToCollection(backTo))}
+          />
         }
       />
       <View style={styles.content}>

@@ -1,6 +1,6 @@
 FROM node:26-slim AS build
 WORKDIR /workspace
-RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
+RUN npm install --global pnpm@12.18.0
 COPY . .
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @dovo/auth-server... -r build

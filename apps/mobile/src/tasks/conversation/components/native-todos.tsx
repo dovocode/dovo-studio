@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
@@ -17,6 +18,8 @@ export function NativeTodos({
   onClear?: (items: NonNullable<Task['nativeTodos']>) => Promise<unknown>
   clearDisabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [open, setOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
@@ -176,7 +179,7 @@ export function NativeTodos({
                 style={{ minHeight: 44, justifyContent: 'center', paddingHorizontal: 8 }}
                 onPress={() => setConfirmation(undefined)}
               >
-                <Text style={styles.text}>Cancel</Text>
+                <Text style={styles.text}>{uiText('Cancel')}</Text>
               </Pressable>
             )}
           </View>

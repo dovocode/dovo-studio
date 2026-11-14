@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { ScrollView, View } from 'react-native'
 import {
@@ -30,6 +31,8 @@ export function ArtifactLibraryActions({
   onDeleted: () => void
   onOpenSource?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { overviews, readRuntime } = useRuntime()
   const { navigate } = useNavigation()
   const { styles } = useTheme()
@@ -200,7 +203,12 @@ export function ArtifactLibraryActions({
             }
             onPress={() => void run()}
           />
-          <Action secondary label="Cancel" disabled={busy} onPress={() => setAction(undefined)} />
+          <Action
+            secondary
+            label={uiText('Cancel')}
+            disabled={busy}
+            onPress={() => setAction(undefined)}
+          />
         </ScrollView>
       </SafeModal>
     </>

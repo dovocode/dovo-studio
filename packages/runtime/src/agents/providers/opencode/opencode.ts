@@ -1,3 +1,4 @@
+import { readOpenCodeServerLimits } from './opencode-limits.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { opencodeNative } from './opencode-native.js'
 import { mutableStruct } from '@dovo/protocol'
@@ -664,4 +665,13 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     dispose: () => servers.dispose(),
   }
 }
-export const opencodeAdapter = createOpenCodeAdapter()
+const sharedServers = new OpenCodeServers()
+export const opencodeAdapter = createOpenCodeAdapter(sharedServers)
+export async function readOpenCodeLimits(agent: import('@dovo/protocol').Agent) {
+  const lease = await sharedServers.acquire(agent)
+  try {
+    return await readOpenCodeServerLimits(lease.agent)
+  } finally {
+    lease.release()
+  }
+}

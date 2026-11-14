@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import {
   artifactDeleteResponseSchema,
@@ -30,6 +31,8 @@ export function ArtifactLibraryActions({
   onDeleted: () => void
   compact?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { runtimes, readRuntime, switchRuntime } = useWorkspace()
   const host = useStudioHost()
   const runtime = runtimes.find((entry) => entry.profile.id === profile.id)
@@ -251,7 +254,7 @@ export function ArtifactLibraryActions({
           )}
           <div className="flex justify-end gap-2">
             <Button variant="outline" disabled={busy} onClick={() => setAction(undefined)}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               variant={action === 'delete' ? 'destructive' : 'default'}

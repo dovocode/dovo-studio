@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
@@ -91,6 +92,8 @@ const savedTime = (value: string) =>
   })
 
 export default function ArtifactsView() {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
   const { runtimes, readRuntime, runtimeReadCache } = useWorkspace()
@@ -264,7 +267,7 @@ export default function ArtifactsView() {
       {!selection && (
         <PageHeader title="Artifacts">
           <IconButton
-            label="Refresh"
+            label={uiText('Refresh')}
             className="size-8"
             onClick={() => setReload((value) => value + 1)}
             disabled={loading}

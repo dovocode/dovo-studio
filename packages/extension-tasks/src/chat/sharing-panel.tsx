@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useId, useState, type ReactNode } from 'react'
 import { Schema } from 'effect'
 import { useEncryptedSharing, useSharingPeople, type SharingRuntime } from '@dovo/studio-core'
@@ -45,6 +46,8 @@ export function SharingPanel({
   renderFeed?: (share: OpenShare, origin: string, update: (share: OpenShare) => void) => ReactNode
   legacy?: ArtifactSourcePublication[]
 }) {
+  const uiText = useInterfaceText()
+
   const sharing = useEncryptedSharing({ client, sourceId, kind, content, runtime })
   const contacts = useSharingPeople(client)
   const organizationName = (id: string) =>
@@ -154,7 +157,7 @@ export function SharingPanel({
                       disabled={sharing.busy}
                       onClick={() => setConfirmReset(false)}
                     >
-                      Cancel
+                      {uiText('Cancel')}
                     </Button>
                   </div>
                 ) : (
@@ -267,7 +270,7 @@ export function SharingPanel({
                 className="min-w-0 flex-1"
               />
               <Button type="submit" disabled={unavailable || !recipient.trim()}>
-                Add
+                {uiText('Add')}
               </Button>
             </form>
             <p className="text-xs text-muted-foreground">
@@ -419,7 +422,7 @@ export function SharingPanel({
               if (!event.currentTarget.open) sharing.hideRecovery()
             }}
           >
-            <summary className={disclosure}>Advanced</summary>
+            <summary className={disclosure}>{uiText('Advanced')}</summary>
             <div className="space-y-4 pt-4">
               <details>
                 <summary className={disclosure}>Review shared content</summary>
@@ -647,7 +650,7 @@ export function SharingPanel({
                         disabled={sharing.busy}
                         onClick={() => setConfirmDelete(false)}
                       >
-                        Cancel
+                        {uiText('Cancel')}
                       </Button>
                     </div>
                   ) : (

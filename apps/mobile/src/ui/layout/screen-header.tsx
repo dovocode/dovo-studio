@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { appChannel } from '../../runtime/preferences/app-build'
 import { createContext, useContext, useRef, type ReactNode } from 'react'
 import { Stack } from 'expo-router'
@@ -58,6 +59,8 @@ export function ScreenHeader({
   gestureEnabled?: boolean
   hidden?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, mode } = useTheme()
 
   const title = appChannel ? `${screenTitle} · ${appChannel}` : screenTitle
@@ -120,10 +123,10 @@ export function ScreenHeader({
             <Stack.Toolbar.Button
               icon={iconAssets.back}
               iconRenderingMode="template"
-              accessibilityLabel="Back"
+              accessibilityLabel={uiText('Back')}
               onPress={back}
             >
-              Back
+              {uiText('Back')}
             </Stack.Toolbar.Button>
           </Stack.Toolbar>
         )}
@@ -217,7 +220,8 @@ export function ScreenHeader({
         gap: 10,
       }}
     >
-      {leading ?? (back && !inSheet && <IconButton label="Back" icon="back" onPress={back} />)}
+      {leading ??
+        (back && !inSheet && <IconButton label={uiText('Back')} icon="back" onPress={back} />)}
       <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
         {heading ?? (
           <>

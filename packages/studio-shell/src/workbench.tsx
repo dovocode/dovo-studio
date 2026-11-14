@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { AppInterfaceLanguage } from './interface-language'
 import { PreferenceSaveNotice } from './preference-save-notice'
 import { previewUrl, browserLinkProfile } from '@dovo/protocol'
 import { RemoteDesktopSharing } from './remote-desktop-sharing'
@@ -163,7 +165,9 @@ export function Workbench(props: WorkbenchProps) {
           <SettingsTargetProvider>
             <TooltipProvider delayDuration={350}>
               <WorkbenchErrorBoundary appInfo={props.appInfo}>
-                <WorkbenchContent {...props} />
+                <AppInterfaceLanguage>
+                  <WorkbenchContent {...props} />
+                </AppInterfaceLanguage>
               </WorkbenchErrorBoundary>
             </TooltipProvider>
           </SettingsTargetProvider>
@@ -225,6 +229,8 @@ function WorkbenchContent({
   taskLauncher,
   windowColors,
 }: WorkbenchProps) {
+  const uiText = useInterfaceText()
+
   const {
     botsOverviewEnabled,
     showIssues,
@@ -1014,7 +1020,7 @@ function WorkbenchContent({
           <HeaderFallback>
             {browserWindowId ? (
               <header className="studio-titlebar" data-platform={desktopPlatform}>
-                <span className="studio-titlebar-brand">Browser</span>
+                <span className="studio-titlebar-brand">{uiText('Browser')}</span>
                 <HeaderMainSlot />
               </header>
             ) : (

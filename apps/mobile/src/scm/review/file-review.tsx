@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { Modal, Pressable, Switch, TextInput, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -41,6 +42,8 @@ export function MobileFileReview({
   onWrapLinesChange?: (value: boolean) => void
   onOptions?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const insets = useSafeAreaInsets()
   const [open, setOpen] = useState(false),
@@ -241,7 +244,7 @@ export function MobileFileReview({
             >
               Changed files
             </Text>
-            <Action secondary label="Close" onPress={() => setOpen(false)} />
+            <Action secondary label={uiText('Close')} onPress={() => setOpen(false)} />
           </View>
           <Text style={styles.muted}>
             {files.filter((file) => file.viewed).length} of {files.length} viewed

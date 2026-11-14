@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Switch, View } from 'react-native'
 import {
@@ -25,6 +26,8 @@ export function WebsiteCustomizationEditor({
   onSave: (website: BrowserWebsiteCustomization | null) => Promise<void>
   onAgent?: (website: BrowserWebsiteCustomization) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const sheet = useRef<SheetHandle>(null)
   const [draft, setDraft] = useState(website)
@@ -106,7 +109,7 @@ export function WebsiteCustomizationEditor({
           onPress={() => sheet.current?.dismiss(() => onAgent(draft))}
         />
       )}
-      <Action label="Remove" secondary disabled={busy} onPress={() => void save(true)} />
+      <Action label={uiText('Remove')} secondary disabled={busy} onPress={() => void save(true)} />
       <Action
         label={busy ? 'Saving…' : 'Save and reload'}
         disabled={busy}

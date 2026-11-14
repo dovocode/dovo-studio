@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotAvatar } from '@dovo/studio-ui'
 import { botCreateHosts, botPairing } from './bot-create-host'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -18,6 +19,8 @@ import { ResizableSidebar } from '../detail/resizable-sidebar'
 import { BotCreateForm } from './bot-create'
 
 export default function BotsView({ entityId }: StudioViewProps) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const latest = useRef(store)
   latest.current = store
@@ -115,7 +118,7 @@ export default function BotsView({ entityId }: StudioViewProps) {
       .includes(search.toLowerCase()),
   )
   return (
-    <section aria-label="Bots" className="flex min-h-0 min-w-0 flex-1">
+    <section aria-label={uiText('Bots')} className="flex min-h-0 min-w-0 flex-1">
       {!sidebar?.collapsed && (
         <ResizableSidebar
           preference="threadSidebarWidth"
@@ -128,10 +131,10 @@ export default function BotsView({ entityId }: StudioViewProps) {
           <SidebarHeader />
           <div className="grid shrink-0 gap-2 border-b p-3">
             <div className="flex items-center justify-between gap-2">
-              <h1 className="text-sm font-semibold">Bots</h1>
+              <h1 className="text-sm font-semibold">{uiText('Bots')}</h1>
               <Button size="sm" variant="ghost" disabled={!canCreate || busy} onClick={beginCreate}>
                 <Plus className="size-4" />
-                New Bot
+                {uiText('New Bot')}
               </Button>
             </div>
             <Input

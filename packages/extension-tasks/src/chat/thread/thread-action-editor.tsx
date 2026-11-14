@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import {
   RuntimeRequestError,
@@ -41,6 +42,8 @@ export function ThreadActionEditor({
   onSend: (selection: ThreadActionSelection) => Promise<void>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, snapshot, workspace } = useWorkspace()
   const [draft, setDraft] = useState<Draft>(() => drafts.get(draftKey) ?? initial)
   const repository = workspace.repositories.find((item) => item.id === draft.repositoryId)
@@ -178,7 +181,7 @@ export function ThreadActionEditor({
           )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Close
+              {uiText('Close')}
             </Button>
             <Button
               type="submit"

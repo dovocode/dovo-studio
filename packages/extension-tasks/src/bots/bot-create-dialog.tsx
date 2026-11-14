@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
@@ -6,6 +7,8 @@ import type { RuntimeProfile } from '@dovo/protocol'
 import { botCreateHosts, botPairing } from './bot-create-host'
 
 export function BotCreateDialog({ onClose }: { onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const host = useStudioHost()
   const latest = useRef(store)
@@ -50,7 +53,7 @@ export function BotCreateDialog({ onClose }: { onClose: () => void }) {
       }}
     >
       <DialogContent className="flex max-h-[90dvh] max-w-4xl flex-col overflow-y-auto">
-        <DialogTitle>New Bot</DialogTitle>
+        <DialogTitle>{uiText('New Bot')}</DialogTitle>
         <DialogDescription>Choose a computer and give your Bot a role.</DialogDescription>
         <BotCreateForm
           navigating={busy}

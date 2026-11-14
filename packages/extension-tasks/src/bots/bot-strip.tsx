@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
 import { Pin, Plus } from 'lucide-react'
@@ -17,6 +18,8 @@ export function BotStrip({
   onPin: (entry: TaskEntry) => void
   busy?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { botLayout, botsInThreads } = useAppPreferences()
   const rows = botLayout === 'rows'
   const tileClass = rows
@@ -25,7 +28,7 @@ export function BotStrip({
   const [creating, setCreating] = useState(false)
   if (botsInThreads === false) return null
   return (
-    <section aria-label="Bots" className="mb-2 shrink-0 border-b border-border/50 pb-2">
+    <section aria-label={uiText('Bots')} className="mb-2 shrink-0 border-b border-border/50 pb-2">
       <div
         data-bot-layout={botLayout}
         className={`px-1 py-1.5 ${botLayout === 'horizontal' ? 'flex gap-1 overflow-x-auto' : botLayout === 'rows' ? 'flex flex-col gap-1' : `grid gap-1 ${botLayout === 'grid-2' ? 'grid-cols-2' : botLayout === 'grid-4' ? 'grid-cols-4' : 'grid-cols-3'}`}`}
@@ -88,8 +91,8 @@ export function BotStrip({
           })}
         <button
           type="button"
-          aria-label="New Bot"
-          title="New Bot"
+          aria-label={uiText('New Bot')}
+          title={uiText('New Bot')}
           onClick={() => setCreating(true)}
           className={tileClass}
         >
@@ -98,7 +101,9 @@ export function BotStrip({
           >
             <Plus size={20} />
           </span>
-          {!!entries.length && <span className="leading-4 text-muted-foreground">New Bot</span>}
+          {!!entries.length && (
+            <span className="leading-4 text-muted-foreground">{uiText('New Bot')}</span>
+          )}
         </button>
       </div>
       {creating && <BotCreateDialog onClose={() => setCreating(false)} />}

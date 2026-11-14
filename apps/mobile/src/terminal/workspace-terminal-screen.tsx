@@ -11,8 +11,6 @@ import {
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
 import { ScreenHeader } from '../ui/layout/screen-header'
-import { Sheet } from '../ui/layout/sheet'
-import { Field } from '../ui/controls/field'
 import { Action } from '../ui/controls/action'
 import { EmptyState } from '../ui/content/empty-state'
 import { Text } from '../ui/content/text'
@@ -20,6 +18,7 @@ import { useTheme } from '../ui/theme'
 import { ResourceActions, useTerminalActions } from '../workspace/resource-actions'
 import { workspaceItems } from '../workspace/workspace-items'
 import { TerminalSession } from './terminal-session'
+import { TerminalRename } from './terminal-rename'
 
 export function WorkspaceTerminalScreen({
   runtimeId,
@@ -42,7 +41,15 @@ export function WorkspaceTerminalScreen({
   const actions = useTerminalActions(runtimeId, terminal)
   const [menu, setMenu] = useState(false)
   const [renaming, setRenaming] = useState(false)
-  const [title, setTitle] = useState('')
+  useEffect(() => {
+    setRenaming(false)
+  }, [
+    runtimeId,
+    terminalId,
+    focused,
+    owner?.profile.connection.address,
+    owner?.profile.connection.token,
+  ])
   const [generation, setGeneration] = useState(0)
   const [closing, setClosing] = useState(false)
   const status = terminal && terminalStatus(terminal, !!owner?.connected)
@@ -96,7 +103,6 @@ export function WorkspaceTerminalScreen({
                   overflow: true,
                   disabled: actions.disabled,
                   onPress: () => {
-                    setTitle(terminal.customTitle ?? terminal.title)
                     setRenaming(true)
                   },
                 },
@@ -187,24 +193,8 @@ export function WorkspaceTerminalScreen({
         </>
       )}
       {menu && item && <ResourceActions item={item} onClose={() => setMenu(false)} />}
-      {renaming && (
-        <Sheet title="Rename terminal" onClose={() => setRenaming(false)}>
-          <Field
-            label="Terminal title"
-            value={title}
-            onChangeText={setTitle}
-            maxLength={256}
-            autoFocus
-          />
-          <Action
-            label="Save title"
-            disabled={actions.disabled || !title.trim()}
-            onPress={() => {
-              void actions.update({ title: title.trim() })
-              setRenaming(false)
-            }}
-          />
-        </Sheet>
+      {renaming && terminal && owner && focused && (
+        <TerminalRename session={terminal} owner={owner} onClose={() => setRenaming(false)} />
       )}
     </View>
   )

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import {
@@ -77,6 +78,8 @@ export function WorkspaceInput({
   onOpen: (tab: WorkspaceTab) => void
   onBrowser: (url: string, target?: { runtimeId: string; profileId: string }) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const { minimalComposer, browserProfiles } = useAppPreferences()
   const [editorFocused, setEditorFocused] = useState(false)
@@ -662,8 +665,8 @@ export function WorkspaceInput({
                   onValueChange={chooseMode}
                 >
                   <option value="auto">Auto</option>
-                  <option value="browser">Browser</option>
-                  <option value="terminal">Terminal</option>
+                  <option value="browser">{uiText('Browser')}</option>
+                  <option value="terminal">{uiText('Terminal')}</option>
                   <option value="thread">Thread</option>
                 </ChoicePicker>
                 {mode === 'thread' && !threadId && (
@@ -874,7 +877,7 @@ export function WorkspaceInput({
                   setThreadId(id)
                 }}
               >
-                <option value="">New thread</option>
+                <option value="">{uiText('New thread')}</option>
                 {threadId && (
                   <option value={threadId}>
                     Continue: {thread?.title ?? 'Unavailable thread'}

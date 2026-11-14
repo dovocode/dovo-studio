@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
@@ -32,6 +33,8 @@ export function AutomationCard({
   onEdit: () => void
   onDeleted: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, activeId, callEffect } = useRuntime()
@@ -223,7 +226,12 @@ export function AutomationCard({
                 )
               }
             />
-            <Action label="Cancel" secondary disabled={busy} onPress={() => setDeletingOn(null)} />
+            <Action
+              label={uiText('Cancel')}
+              secondary
+              disabled={busy}
+              onPress={() => setDeletingOn(null)}
+            />
           </View>
         </SettingsSheet>
       )}

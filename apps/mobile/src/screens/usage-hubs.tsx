@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import {
@@ -60,6 +61,8 @@ export function UsageHubs({ computer, onSaved }: { computer: string; onSaved: ()
   )
 }
 function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () => void }) {
+  const uiText = useInterfaceText()
+
   const { readRuntime } = useRuntime()
   const { styles } = useSettingsTheme()
   const [hubs, setHubs] = useState<UsageHub[]>([])
@@ -165,7 +168,7 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
                 Remove this hub from the dashboard? Its accounts and agent routing stay unchanged.
               </Text>
               <Action label="Confirm removal" disabled={busy} onPress={() => void write(hub.id)} />
-              <Action label="Cancel" secondary onPress={() => setConfirm('')} />
+              <Action label={uiText('Cancel')} secondary onPress={() => setConfirm('')} />
             </>
           )}
         </View>
@@ -206,8 +209,8 @@ function HubForm({ profile, onSaved }: { profile: RuntimeProfile; onSaved: () =>
         disabled={busy}
         value={draft.enabled ? 'yes' : 'no'}
         items={[
-          { id: 'yes', name: 'Enabled' },
-          { id: 'no', name: 'Disabled' },
+          { id: 'yes', name: uiText('Enabled') },
+          { id: 'no', name: uiText('Disabled') },
         ]}
         onChange={(value) => setDraft({ ...draft, enabled: value === 'yes' })}
       />

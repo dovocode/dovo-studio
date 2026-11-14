@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -31,6 +32,8 @@ export function JiraProjectForm({
   onSaved?: () => void
   onBusyChange: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connected, profile, snapshot, callEffect, readEffect } = useRuntime()
@@ -200,8 +203,8 @@ export function JiraProjectForm({
             {loadError}
           </Text>
           <Text style={styles.muted}>
-            On {runtimeComputerName({ profile, snapshot })}, sign in with acli jira auth login, then
-            retry.
+            {uiText('On')} {runtimeComputerName({ profile, snapshot })}, sign in with acli jira auth
+            login, then retry.
           </Text>
           <Action
             secondary

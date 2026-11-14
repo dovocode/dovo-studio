@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   readTerminalLayout,
   saveTerminalLayout,
@@ -15,10 +16,11 @@ import {
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ChevronDown, Plus, X, Columns2, Rows2 } from 'lucide-react'
+import { ChevronDown, Plus, X, Columns2, Rows2, Pencil } from 'lucide-react'
 import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn, ChoicePicker } from '@dovo/studio-ui'
 import { TerminalCloseDialog } from './terminal-close-dialog'
+import { TerminalRename } from './terminal-rename'
 import { TerminalSession } from './terminal-session'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 function scopedTerminalLayout(scope: string, previousScope: string, anchor?: string) {
@@ -74,6 +76,8 @@ export function TerminalPane({
   /** Confirmed successful closes only, including the successful subset of a failed batch. */
   onSessionsClosed?: (ids: readonly string[]) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, workspace, connected, request, connection } = useWorkspace()
   const scopedSession = taskId === STUDIO_TERMINAL_SCOPE ? sessionScopeId : undefined
   const sharedScope = JSON.stringify([connection?.runtimeId ?? connection?.address, taskId])
@@ -402,7 +406,7 @@ export function TerminalPane({
   return (
     <section
       className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-t bg-background text-foreground"
-      aria-label="Terminal"
+      aria-label={uiText('Terminal')}
       onKeyDownCapture={(event) => {
         if (
           event.nativeEvent.isComposing ||
@@ -463,11 +467,23 @@ export function TerminalPane({
                   onClick={() => focusPane(session.id)}
                 >
                   {tab.sessions.length > 1
-                    ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
+                    ? `${session.title} · ${tab.sessions.length} panes`
                     : session.title}
                   {task?.linkedCheckouts?.length ? ` · ${checkoutLabel(session)}` : ''}
                   {session.exited ? ' · exited' : ''}
                 </Button>
+                <TerminalRename session={session} onError={setError}>
+                  {(rename) => (
+                    <IconButton
+                      label={`Rename ${session.title}`}
+                      className="size-6"
+                      disabled={!connected || busy}
+                      onClick={rename}
+                    >
+                      <Pencil size={12} />
+                    </IconButton>
+                  )}
+                </TerminalRename>
                 <IconButton
                   label={`Close terminal tab ${index + 1}`}
                   className="size-6"
@@ -577,9 +593,23 @@ export function TerminalPane({
               >
                 {group && group.sessions.length > 1 && (
                   <div className="flex h-7 shrink-0 items-center justify-between px-2 text-[0.625rem] text-muted-foreground">
-                    <span title={checkoutLabel(session)}>
-                      {session.title} · {checkoutLabel(session)}
-                    </span>
+                    <TerminalRename session={session} onError={setError}>
+                      {(rename) => (
+                        <button
+                          type="button"
+                          aria-label={`Rename ${session.title} pane`}
+                          title={checkoutLabel(session)}
+                          disabled={!connected || busy}
+                          onClick={rename}
+                          className="flex min-w-0 items-center gap-1 text-left"
+                        >
+                          <span className="truncate">
+                            {session.title} · {checkoutLabel(session)}
+                          </span>
+                          <Pencil size={12} className="shrink-0" />
+                        </button>
+                      )}
+                    </TerminalRename>
                     <IconButton
                       label={`Close ${session.title} pane`}
                       className="size-6"

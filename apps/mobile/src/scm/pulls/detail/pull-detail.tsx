@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullReadinessPanel } from './readiness'
 import { PullAgentChat } from './agent-chat'
 import { PullLinkedThreads } from './linked-threads'
@@ -78,6 +79,8 @@ export function PullDetail({
   backLabel?: string
   embedded?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { connected, snapshot, profile, readCache, connection, readEffect } = useRuntime()
@@ -368,7 +371,7 @@ export function PullDetail({
               },
               {
                 id: 'changes',
-                name: 'Files',
+                name: uiText('Files'),
               },
               {
                 id: 'discussion',
@@ -755,7 +758,7 @@ export function PullDetail({
                   display: tab === 'changes' ? 'flex' : 'none',
                 }}
               >
-                <PullSectionStatus label="Files" section={sections.changes} />
+                <PullSectionStatus label={uiText('Files')} section={sections.changes} />
                 <PullSectionStatus label="Code discussion" section={sections.discussion} />
                 {!sections.changes.ready && changesDetail && (
                   <Text style={styles.muted} accessibilityRole="text">

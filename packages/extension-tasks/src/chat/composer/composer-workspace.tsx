@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import type { TaskSource } from '../../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
@@ -51,6 +52,8 @@ export function ComposerWorkspace({
     sourceTask?: Task,
   ) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, setWorkspace, request, connected, snapshot } = useWorkspace()
   const editable = canChangeTaskCheckout(task)
   const machineControl = editable && (
@@ -167,7 +170,7 @@ export function ComposerWorkspace({
                     )
                   }
                 />
-                <Button onClick={() => setLinkingProjects(false)}>Done</Button>
+                <Button onClick={() => setLinkingProjects(false)}>{uiText('Done')}</Button>
               </DialogContent>
             </Dialog>
           </>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
@@ -127,10 +128,12 @@ function NotificationSettingsRows() {
 }
 
 export default function NotificationSettings() {
+  const uiText = useInterfaceText()
+
   return (
     <SettingsPage
       local
-      title="Notifications"
+      title={uiText('Notifications')}
       description="Choose which thread events need your attention."
     >
       <NotificationSettingsRows />

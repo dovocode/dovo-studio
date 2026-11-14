@@ -30,7 +30,7 @@ services:
       retries: 3
       start_period: 10s
   turn:
-    image: coturn/coturn:4.6.3
+    image: coturn/coturn:4.19.0
     restart: unless-stopped
     network_mode: host
     read_only: true

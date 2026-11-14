@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useConfirmSettingsNavigation } from '../runtime/preferences/settings-target'
 import { SettingsScrollView } from './settings-search'
 import { useLocalSearchParams } from 'expo-router'
@@ -79,7 +80,9 @@ export function ArtifactSettingsScreen() {
   return <ComputerSettingsPage title="Artifacts" section="artifacts" />
 }
 export function MemorySettingsScreen() {
-  return <ComputerSettingsPage title="Memory" section="memory" />
+  const uiText = useInterfaceText()
+
+  return <ComputerSettingsPage title={uiText('Memory')} section="memory" />
 }
 export function WorktreeSettingsScreen() {
   return <ComputerSettingsPage title="Worktrees" section="worktrees" />

@@ -144,3 +144,12 @@ local storage. Its Chromium check passed with 237 typed characters, two composer
 12.4 ms input-to-frame p95 on this workstation. Recall, delayed history, edit preservation and
 submit key checks also passed. This editor fixture does not measure per-edit draft storage; the
 separate controller protection timing probe above covers that path.
+
+## Sent message history
+
+Desktop Up-arrow recall and mobile Message history request the latest 50 sent user messages from
+`/api/tasks/composer-history` when browsing starts. The request runs even when the transcript has
+not loaded those messages. It does not load the full thread, assistant messages or turns. Each new
+browsing session refreshes this snapshot. Editing, cancelling or switching computers cancels the
+request and prevents a late reply from replacing the draft. Connection failures keep the draft and
+show an error. Bot agent history lookup is separate and keeps its existing search behavior.

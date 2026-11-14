@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
 import type { ForgeIssue, JiraIssueFilters } from '@dovo/protocol'
@@ -49,6 +50,8 @@ export function JiraQuickViews({
   filters: JiraIssueFilters
   onChange: (state: string, filters: JiraIssueFilters) => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <ScrollView
       horizontal
@@ -59,7 +62,7 @@ export function JiraQuickViews({
         { label: 'Open', state: 'open', assignee: 'all' as const },
         { label: 'My issues', state: 'open', assignee: 'mine' as const },
         { label: 'Unassigned', state: 'open', assignee: 'unassigned' as const },
-        { label: 'Done', state: 'closed', assignee: 'all' as const },
+        { label: uiText('Done'), state: 'closed', assignee: 'all' as const },
       ].map((view) => (
         <JiraChip
           key={view.label}

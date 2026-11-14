@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { nativeAgentWorking, taskFamilyIds } from '@dovo/protocol'
 import { responses, useStudioHost, useWorkspace, type Repository } from '@dovo/studio-core'
@@ -19,6 +20,8 @@ export function ProjectDeletion({
   repository: Repository
   onDeleted?: (refreshError?: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   const { connected, activeRuntimeId, readRuntime, refreshRuntime, runtimes, workspace, snapshot } =
     useWorkspace()
@@ -148,7 +151,7 @@ export function ProjectDeletion({
           setConfirmation({ repositoryId: repository.id, runtimeId: activeRuntimeId })
         }}
       >
-        Delete {repository.name}…
+        {uiText('Delete')} {repository.name}…
       </Button>
       {error && (
         <p role="alert" className="text-sm text-destructive">
@@ -217,7 +220,7 @@ export function ProjectDeletion({
               disabled={busy}
               onClick={() => setConfirmation(null)}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               type="button"

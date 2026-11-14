@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -23,6 +24,8 @@ export function DirectoryPicker({
   onSelect: (path: string) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, snapshot } = useWorkspace()
   const [location, setLocation] = useApplicationState({
     path: initialPath,
@@ -327,7 +330,7 @@ export function DirectoryPicker({
             disabled={!connected}
             onClick={() => update({})}
           >
-            Retry
+            {uiText('Retry')}
           </Button>
         </div>
       )}
@@ -407,7 +410,7 @@ export function DirectoryPicker({
               })
             }
           >
-            Previous
+            {uiText('Previous')}
           </Button>
           <span>
             {entries.length ? `${location.offset + 1}–${location.offset + entries.length}` : '0'}
@@ -425,7 +428,7 @@ export function DirectoryPicker({
                 })
             }}
           >
-            Next
+            {uiText('Next')}
           </Button>
         </div>
       )}

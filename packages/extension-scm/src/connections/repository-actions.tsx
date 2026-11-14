@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { RuntimeRequestError } from '@dovo/protocol'
 import type { Schema } from 'effect'
@@ -193,6 +194,8 @@ function CheckoutActions({
   taskId?: string
   onReviewChange?: (reviewing: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const openRepository = useRepositoryOpen()
   const host = useStudioHost()
   const { request, connected } = useWorkspace(),
@@ -820,7 +823,7 @@ function CheckoutActions({
               })
             }
           >
-            Pull requests
+            {uiText('Pull requests')}
           </Button>
           <Button
             size="sm"

@@ -1,3 +1,5 @@
+import { ProjectSpreadsheet } from './project-spreadsheet'
+import { isSpreadsheet } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, Image, ScrollView, View } from 'react-native'
 import { filePreviewSchema, markdownMediaKind, responses, type Task } from '@dovo/protocol'
@@ -45,6 +47,7 @@ export function TaskFiles({
   const [selected, setSelected] = useState(draft?.path ?? '')
   const [focusedLine, setFocusedLine] = useState<number>()
   const [fullRead, setFullRead] = useState(!!draft)
+  const [tablePreviewKey, setTablePreviewKey] = useState('')
   const [revision, setRevision] = useState(0)
   const [result, setResult] = useState<{ key: string; file: FileResult }>()
   const [saving, setSaving] = useState(false)
@@ -60,7 +63,10 @@ export function TaskFiles({
     task.delegation?.checkoutId,
   ])
   const listKey = JSON.stringify([owner, revision])
-  const fileKey = JSON.stringify([listKey, selected, focusedLine, fullRead])
+  const tableKey = JSON.stringify([owner, selected])
+  const delimitedText = /\.(csv|tsv)$/i.test(selected)
+  const sheetPreview = isSpreadsheet(selected) && (!delimitedText || tablePreviewKey === tableKey)
+  const fileKey = JSON.stringify([listKey, selected, focusedLine, fullRead, sheetPreview])
   const currentKey = useRef(fileKey)
   currentKey.current = fileKey
   const mounted = useRef(true)
@@ -91,6 +97,7 @@ export function TaskFiles({
           error: side?.image ? undefined : 'This image format cannot be previewed.',
         }
       }
+      if (sheetPreview) return { path: selected }
       const result = await call(
         '/api/tasks/files/read',
         {
@@ -121,7 +128,7 @@ export function TaskFiles({
     return () => {
       active = false
     }
-  }, [call, connected, task.id, checkoutId, selected, focusedLine, fullRead, fileKey])
+  }, [call, connected, task.id, checkoutId, selected, focusedLine, fullRead, fileKey, sheetPreview])
   const discardThen = (action: () => void) => {
     if (saving) return
     const proceed = () => {
@@ -266,6 +273,13 @@ export function TaskFiles({
           <Text selectable style={{ color: colors.text, fontWeight: '600' }}>
             {selected}
           </Text>
+          {delimitedText && !editing && (
+            <Action
+              secondary
+              label={sheetPreview ? 'Text view' : 'Table preview'}
+              onPress={() => setTablePreviewKey(sheetPreview ? '' : tableKey)}
+            />
+          )}
           {!!file?.error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {file.error}
@@ -276,7 +290,9 @@ export function TaskFiles({
               {saveError}
             </Text>
           )}
-          {!file && connected && !editing && <Text style={styles.muted}>Loading file…</Text>}
+          {!file && connected && !editing && !sheetPreview && (
+            <Text style={styles.muted}>Loading file…</Text>
+          )}
           {editing ? (
             <>
               <Field
@@ -312,6 +328,14 @@ export function TaskFiles({
                 </Text>
               )}
             </>
+          ) : sheetPreview ? (
+            <ProjectSpreadsheet
+              key={JSON.stringify([owner, selected])}
+              taskId={task.id}
+              checkoutId={checkoutId || undefined}
+              path={selected}
+              revision={revision}
+            />
           ) : (
             <>
               {file?.contents !== undefined && (

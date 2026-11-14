@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { type ComponentRef, type Ref } from 'react'
 import { type TextInput, View } from 'react-native'
 import { previewPresets } from '@dovo/protocol'
@@ -74,6 +75,8 @@ export function BrowserToolbar({
   onReconnect?: () => void
   onEditing?: (editing: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, highContrast } = useTheme()
   const [focused, setFocused] = useApplicationState(false)
   return (
@@ -177,7 +180,12 @@ export function BrowserToolbar({
         <View
           style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
         >
-          <IconButton label="Back" icon="back" disabled={!available || !back} onPress={onBack} />
+          <IconButton
+            label={uiText('Back')}
+            icon="back"
+            disabled={!available || !back}
+            onPress={onBack}
+          />
           <IconButton
             label="Forward"
             icon="next"

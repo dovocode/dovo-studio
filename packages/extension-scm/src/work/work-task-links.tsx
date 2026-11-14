@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { integrationMutationError } from '../connections/mutation-error'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -32,6 +33,8 @@ export function WorkTaskLinks({
   source: ForgeIssue | ForgePipeline
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const {
     workspace,
     request,
@@ -335,7 +338,7 @@ export function WorkTaskLinks({
                 disabled={busy}
                 onClick={() => setPicking(false)}
               >
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button type="submit" disabled={!destination || busy || disabled || !connected}>
                 {busy ? 'Preparing…' : error ? 'Retry thread creation' : 'Create thread draft'}

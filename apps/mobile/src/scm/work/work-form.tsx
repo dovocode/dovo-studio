@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { decode } from '@dovo/protocol'
@@ -66,6 +67,8 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { read, connected, readEffect: mutationEffect, connection, snapshot } = useRuntime()
@@ -452,7 +455,7 @@ export function WorkForm({
       ) : (
         <>
           {kind !== 'comment' && (
-            <Field label="Title" value={title} onChangeText={setTitle} editable={!busy} />
+            <Field label={uiText('Title')} value={title} onChangeText={setTitle} editable={!busy} />
           )}
           <Field
             label={

@@ -1,3 +1,6 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { ProjectSpreadsheet } from './project-spreadsheet'
+import { isSpreadsheet } from '@dovo/protocol'
 import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@dovo/protocol'
 import { ProjectImagePreview } from './project-image-preview'
 import { ProjectFileBrowser } from './project-file-browser'
@@ -48,6 +51,8 @@ function HighlightedFile({
   onSave: (contents: string, expectedContents: string) => Promise<void>
   onSavedElsewhere: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [ready, setReady] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [selection, setSelection] = useApplicationState<{ start: number; end: number } | null>(null)
@@ -234,7 +239,7 @@ function HighlightedFile({
                 setEditRevision((value) => value + 1)
               }}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button
               size="sm"
@@ -246,7 +251,7 @@ function HighlightedFile({
                 setEditRevision((value) => value + 1)
               }}
             >
-              Save
+              {uiText('Save')}
             </Button>
           </>
         ) : (
@@ -257,7 +262,7 @@ function HighlightedFile({
             disabled={readOnly || !!selection || !canEdit}
             onClick={startEditing}
           >
-            Edit
+            {uiText('Edit')}
           </Button>
         )}
       </div>
@@ -349,6 +354,7 @@ export function TaskFiles({
     hasMore: boolean
   } | null>(null)
   const [fullRead, setFullRead] = useApplicationState(false)
+  const [tablePreviewKey, setTablePreviewKey] = useApplicationState('')
   useEffect(() => {
     if (!reveal) return
     setCheckoutId(reveal.checkoutId)
@@ -370,6 +376,8 @@ export function TaskFiles({
     task.delegation?.checkoutId,
   ])
   const draftKey = JSON.stringify([draftScope, selected])
+  const delimitedText = /\.(csv|tsv)$/i.test(selected)
+  const sheetPreview = isSpreadsheet(selected) && (!delimitedText || tablePreviewKey === draftKey)
   useSyncExternalStore(drafts.subscribe, drafts.snapshot, drafts.snapshot)
   const imageFile = markdownMediaKind(selected) === 'image'
   const selectedRef = useRef(selected)
@@ -438,7 +446,7 @@ export function TaskFiles({
       sourceRef.current.taskId === task.id &&
       sourceRef.current.draftScope === draftScope
     try {
-      if (imageFile) {
+      if (imageFile || (sheetPreview && !drafts.get(draftKey))) {
         setReadError('')
         return
       }
@@ -493,6 +501,7 @@ export function TaskFiles({
     selected,
     revision,
     imageFile,
+    sheetPreview,
     draftScope,
     checkoutId,
     focusedLine,
@@ -560,6 +569,19 @@ export function TaskFiles({
           </IconButton>
         )}
       </header>
+      {delimitedText && !drafts.get(draftKey) && (
+        <div className="border-b px-3 py-1">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => {
+              setTablePreviewKey(sheetPreview ? '' : draftKey)
+            }}
+          >
+            {sheetPreview ? 'Text view' : 'Table preview'}
+          </Button>
+        </div>
+      )}
       {drafts.entries().length > 0 && (
         <div
           className="flex max-h-48 shrink-0 flex-wrap gap-2 overflow-auto border-b px-3 py-2 text-xs"
@@ -637,6 +659,14 @@ export function TaskFiles({
                 </div>
               ) : loading && !drafts.get(draftKey) ? (
                 <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
+              ) : sheetPreview && !drafts.get(draftKey) ? (
+                <ProjectSpreadsheet
+                  key={JSON.stringify([draftScope, selected])}
+                  taskId={task.id}
+                  checkoutId={checkoutId}
+                  path={selected}
+                  revision={revision}
+                />
               ) : imageFile ? (
                 <ProjectImagePreview
                   taskId={task.id}

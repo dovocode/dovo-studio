@@ -948,18 +948,27 @@ export class GitService {
     )
       .trim()
       .split('\t')
-    if (remote === '.')
+    const configuration = (await this.command(cwd, ['config', '--null', '--list']))
+      .split('\0')
+      .reverse()
+    const configured = (key: string) =>
+      configuration.find((value) => value.startsWith(`${key}\n`))?.slice(key.length + 1)
+    const pushRemote = configured(`branch.${branch}.pushremote`) || configured('remote.pushdefault')
+    if (remote === '.' && !pushRemote)
       throw new HttpError(
         409,
-        'This branch tracks a local branch. Configure a remote upstream first.',
+        'This branch tracks a local branch. Configure a remote push destination first.',
       )
-    const remotes = remote ? [] : (await this.folderStatus(cwd)).remotes
+    const remotes = remote || pushRemote ? [] : (await this.folderStatus(cwd)).remotes
     const destination =
+      pushRemote ||
       remote ||
       (remotes.includes('origin') ? 'origin' : remotes.length === 1 ? remotes[0] : undefined)
     if (!destination)
       throw new HttpError(409, 'Choose a Git remote or create a GitHub repository before pushing')
-    const ref = remote ? upstreamRef : `refs/heads/${branch}`
+    if (destination === '.')
+      throw new HttpError(409, 'Choose a remote push destination, not the local repository')
+    const ref = remote && destination === remote ? upstreamRef : `refs/heads/${branch}`
     const sourceUrl = source?.checkoutMode === 'pr-branch' ? source.headCloneUrl : undefined
     const authorization =
       sourceUrl && source?.connectionId
@@ -980,7 +989,7 @@ export class GitService {
         '-c',
         `credential.https://${host}.helper=!${gh} auth git-credential`,
         'push',
-        '--set-upstream',
+        ...(!remote ? ['--set-upstream'] : []),
         '--',
         destination,
         `HEAD:${ref}`,

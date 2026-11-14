@@ -73,6 +73,38 @@ export class Conversations {
     const { value } = decode(mutableStruct({ value: Schema.String }), row)
     return decode(messageSchema, JSON.parse(value))
   }
+  contextExcluded(
+    taskId: string,
+    messageId: string,
+    resets: readonly { afterMessageId: string; throughMessageId: string }[],
+  ) {
+    if (!resets.length) return false
+    const statement = this.db.prepare(
+      "SELECT ordinal FROM conversation_items WHERE task_id = ? AND kind = 'message' AND item_id = ?",
+    )
+    const position = (id: string) => decode(ordinalSchema, statement.get(taskId, id))?.ordinal
+    const current = position(messageId)
+    if (current === undefined) return false
+    return resets.some((reset) => {
+      const start = position(reset.afterMessageId),
+        end = position(reset.throughMessageId)
+      return start !== undefined && end !== undefined && current > start && current <= end
+    })
+  }
+  /** Composer recall reads only user messages and never materializes the conversation. */
+  recentUserMessages(taskId: string) {
+    const rows = this.db
+      .prepare(`
+      SELECT value FROM conversation_items
+      WHERE task_id = ? AND kind = 'message' AND json_extract(value, '$.role') = 'user'
+        AND trim(json_extract(value, '$.text')) != ''
+      ORDER BY ordinal DESC LIMIT 50
+    `)
+      .all(taskId)
+    return decode(valuesSchema, rows)
+      .reverse()
+      .map(({ value }) => decode(messageSchema, JSON.parse(value)))
+  }
   constructor(private readonly db: Database.Database) {
     const hadSearch = !!db
       .prepare(

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSettingsDraftState } from '../../../runtime/preferences/settings-target'
 import { usePreventRemove } from 'expo-router'
 import { useState } from 'react'
@@ -72,6 +73,8 @@ const screens: Readonly<Partial<Record<string, ComponentType>>> = {
 }
 
 export default function SettingsSection() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const draftFlags = useSettingsDraftState()
   const [leaving, setLeaving] = useState(false)
@@ -107,7 +110,7 @@ export default function SettingsSection() {
         </ScreenBackContext.Provider>
       ) : (
         <View style={styles.screen}>
-          <ScreenHeader title="Settings" />
+          <ScreenHeader title={uiText('Settings')} />
           <Action label="Back to Settings" onPress={() => router.dismissTo('/settings')} />
         </View>
       )}

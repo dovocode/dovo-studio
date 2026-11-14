@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -11,6 +12,8 @@ import { useWorkspace, type Repository } from '@dovo/studio-core'
 import { Button, Input, Popover, ProjectIcon } from '@dovo/studio-ui'
 
 export function ProjectIconSettings({ repository }: { repository: Repository }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, refreshRuntime, runtimes, activeRuntimeId } = useWorkspace()
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
@@ -223,7 +226,7 @@ export function ProjectIconSettings({ repository }: { repository: Repository }) 
             disabled={!connected || busy}
             onClick={() => void save(undefined)}
           >
-            Reset
+            {uiText('Reset')}
           </Button>
         )}
       </div>

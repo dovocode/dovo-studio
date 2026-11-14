@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Sheet } from '../ui/layout/sheet'
 import { Choice } from '../ui/controls/choice'
 import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
@@ -13,6 +14,7 @@ import { IconButton } from '../ui/controls/icon-button'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { TerminalSession } from './terminal-session'
+import { TerminalRename } from './terminal-rename'
 export function TerminalPane({
   task,
   selected,
@@ -24,6 +26,8 @@ export function TerminalPane({
   onSelect: (id: string) => void
   visible: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { snapshot, connected, callEffect, connection } = useRuntime(),
@@ -62,6 +66,10 @@ export function TerminalPane({
   }, [scope, callEffect, visible, connected])
   const [generation, setGeneration] = useApplicationState(0)
   const [checkoutId, setCheckoutId] = useApplicationState('')
+  const [renaming, setRenaming] = useApplicationState('')
+  useEffect(() => {
+    setRenaming('')
+  }, [scope, visible, connected])
   const autoTried = useRef(false)
   const terminals = snapshot?.terminals.filter((t) => t.taskId === task.id) ?? [],
     active =
@@ -72,6 +80,7 @@ export function TerminalPane({
           ?.sessions.includes(terminal.id),
       ) ??
       terminals[0]
+  const renameTarget = terminals.find((terminal) => terminal.id === renaming)
   const groups = terminalGroups(
     savedGroups,
     terminals.map((terminal) => terminal.id),
@@ -140,6 +149,9 @@ export function TerminalPane({
   }, [connected, shellReady, task.id, terminals, selected])
   return (
     <View style={styles.screen}>
+      {renameTarget && visible && connected && (
+        <TerminalRename session={renameTarget} onClose={() => setRenaming('')} />
+      )}
       {closing && closing.generation === owner.current.generation && visible && connected && (
         <Sheet
           title={
@@ -154,7 +166,7 @@ export function TerminalPane({
             This terminates the shell and any running processes in {closing.labels.join(', ')} and
             clears their terminal history. Hide the terminal instead to keep them running.
           </Text>
-          <Action secondary label="Cancel" onPress={cancelClose} />
+          <Action secondary label={uiText('Cancel')} onPress={cancelClose} />
           <Action label="Close terminal" onPress={confirmClose} />
         </Sheet>
       )}
@@ -213,10 +225,16 @@ export function TerminalPane({
                     secondary
                     label={
                       tab.sessions.length > 1
-                        ? `Terminal ${index + 1} · ${tab.sessions.length} panes`
+                        ? `${terminal.title} · ${tab.sessions.length} panes`
                         : `${terminal.title}${terminal.exited ? ' · exited' : ''}`
                     }
                     onPress={() => onSelect(terminal.id)}
+                  />
+                  <IconButton
+                    icon="edit"
+                    label={`Rename ${terminal.title}`}
+                    disabled={!connected || busy}
+                    onPress={() => setRenaming(terminal.id)}
                   />
                   <IconButton
                     icon="close"
@@ -276,6 +294,12 @@ export function TerminalPane({
                     <Text numberOfLines={1} style={[styles.muted, { flex: 1, fontSize: 12 }]}>
                       {terminal.title}
                     </Text>
+                    <IconButton
+                      icon="edit"
+                      label={`Rename ${terminal.title} pane`}
+                      disabled={!connected || busy}
+                      onPress={() => setRenaming(terminal.id)}
+                    />
                     <IconButton
                       icon="close"
                       label={`Close ${terminal.title}`}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
   browserWebsiteCustomizationSchema,
@@ -27,6 +28,8 @@ export function WebsiteCustomizationEditor({
   onAgent: (website: BrowserWebsiteCustomization) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [draft, setDraft] = useState(website)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -113,7 +116,7 @@ export function WebsiteCustomizationEditor({
             Customize with agent…
           </Button>
           <Button variant="ghost" disabled={busy} onClick={() => void save(true)}>
-            Remove
+            {uiText('Remove')}
           </Button>
           <Button disabled={busy} onClick={() => void save()}>
             {busy ? 'Saving…' : 'Save and reload'}

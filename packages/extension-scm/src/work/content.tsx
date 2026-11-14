@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { jiraPromiseReader } from '@dovo/studio-core/jira-reads'
 import { useIssueDiscussion } from './use-issue-discussion'
 import { usePipelineSections } from './use-pipeline-sections'
@@ -87,6 +88,8 @@ export function WorkContent({
   preview?: boolean
   onChanged?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [options, setOptions] = useApplicationState<ForgeWorkOptions | undefined>(undefined)
   const [rows, setRows] = useApplicationState<Array<ForgeIssue | ForgePipeline>>([])
   const [search, setSearch] = useApplicationState(initialSearch ?? '')
@@ -733,7 +736,7 @@ export function WorkContent({
             disabled={!readConnected || busy}
             onClick={() => reload((v) => v + 1)}
           >
-            <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> Refresh
+            <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> {uiText('Refresh')}
           </Button>
         </PageHeader>
       )}
@@ -781,7 +784,8 @@ export function WorkContent({
                 disabled={!readConnected || busy}
                 onClick={() => reload((v) => v + 1)}
               >
-                <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} /> Refresh
+                <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />{' '}
+                {uiText('Refresh')}
               </Button>
             )}
 

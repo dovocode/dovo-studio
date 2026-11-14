@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AgentSideChats } from './agent-side-chats'
 import { useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Alert, View } from 'react-native'
@@ -52,6 +53,8 @@ function ReadOnlySideQuestion({
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   onAgents: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, call, callEffect } = useRuntime()
@@ -247,7 +250,7 @@ function ReadOnlySideQuestion({
               )
             }
           />
-          <Action secondary label="Cancel" onPress={() => setRenaming(false)} />
+          <Action secondary label={uiText('Cancel')} onPress={() => setRenaming(false)} />
         </View>
       )}
       {chat?.messages.map((entry) => (

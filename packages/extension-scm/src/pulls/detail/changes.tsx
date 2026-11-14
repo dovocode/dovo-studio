@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   buildPullReviewObjective,
   pullCommentsByFile,
@@ -50,6 +51,8 @@ export function PullChanges({
   onSteer: (objective: string, baseline?: { headSha: string; expectedDestination?: string }) => void
   onPosted: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { hideWhitespaceChanges } = useAppPreferences()
   const [guidePath, setGuidePath] = useState('')
   const visibleFiles = useMemo(
@@ -243,7 +246,7 @@ export function PullChanges({
         <p role="alert" className="flex items-center gap-2 text-xs text-destructive">
           {review.error}
           <Button size="sm" variant="ghost" onClick={review.reload}>
-            Retry
+            {uiText('Retry')}
           </Button>
         </p>
       )}

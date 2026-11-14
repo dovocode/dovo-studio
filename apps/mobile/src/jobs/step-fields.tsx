@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { LinkedCheckoutEditor } from '../tasks/detail/linked-projects'
 import { View } from 'react-native'
@@ -38,6 +39,8 @@ export function StepFields({
   disabled: boolean
   onChange: (patch: Partial<AutomationData>) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { snapshot } = useRuntime()
@@ -153,7 +156,7 @@ export function StepFields({
               />
               <ModelSettings agent={agent} onChange={changeAgent} disabled={disabled} />
               <Choice
-                label="Permissions"
+                label={uiText('Permissions')}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 selectedLabel={permissionPolicyLabel(agent)}
                 disabled={disabled}

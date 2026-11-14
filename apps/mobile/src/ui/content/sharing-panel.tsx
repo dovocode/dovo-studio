@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { usePreviewActive } from '../../tasks/preview/use-preview-active'
 import { Schema } from 'effect'
 import { useState, type ReactNode } from 'react'
@@ -36,6 +37,8 @@ export function SharingPanel({
   renderFeed?: (share: OpenShare, origin: string, update: (share: OpenShare) => void) => ReactNode
   legacy?: ArtifactSourcePublication[]
 }) {
+  const uiText = useInterfaceText()
+
   const account = useMobileAccount(),
     { styles, colors } = useTheme()
   const active = usePreviewActive()
@@ -259,7 +262,7 @@ export function SharingPanel({
               </View>
               <Action
                 variant="outline"
-                label="Add"
+                label={uiText('Add')}
                 disabled={unavailable || !recipient.trim()}
                 onPress={() => {
                   void sharing.invite(recipient.trim()).then((ok) => {
@@ -397,7 +400,7 @@ export function SharingPanel({
             <SharingPeopleManager people={contacts} userId={account.directory.user.id} />
           )}
           <SharingDisclosure
-            title="Advanced"
+            title={uiText('Advanced')}
             onOpenChange={(open) => {
               if (!open) {
                 sharing.hideRecovery()

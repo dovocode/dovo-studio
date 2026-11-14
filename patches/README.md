@@ -6,14 +6,13 @@ prosemirror-view (1.42.6) and KaTeX (0.18.2).
 These packages currently have no published upstream fix for the listed advisory. pnpm applies the
 checked-in patches on install; version-based `pnpm audit` still lists their original versions.
 
-- **node-forge 1.4.0 — GHSA-86w9-cpqp-85rv:** reject extra elements inside the RSA PKCS#1 v1.5
-  DigestAlgorithm sequence. Retain the valid OID with optional empty NULL representation. This
-  changes validation only, using the library's existing RSA/ASN.1 implementation.
 - **braces 3.0.3 — GHSA-vfj7-8cjw-p6xm:** bound both brace and parenthesis nesting to 256 parser
   levels before downstream recursive processing. Excessive patterns fail with `SyntaxError`.
 - **sprintf-js 1.1.3 — GHSA-hp3w-g68c-fv3c:** clamp numeric `e`, `f`, `g` precision to ECMAScript's
   valid native formatter range (maximum 100; minimum 1 for `g`). Ordinary formatting is unchanged;
   excessive precision produces bounded output rather than a native range failure.
+
+Node-forge now uses upstream 1.4.3. Its RSA validation and TLS fixes need no local patch.
 
 Run `node --test scripts/packaging/security-backports.test.mjs` for adversarial RSA signatures,
 nested patterns and excessive numeric precision. Replace backports with compatible upstream fixes
@@ -34,18 +33,21 @@ without checking the applied patch and its fixture.
   of resetting their viewport to 25 pixels after load; responsive extensions such as Proton Pass
   otherwise retain the collapsed dimensions. Apply to both CommonJS and ESM. Verify with
   `node apps/desktop/scripts/check-browser-extensions-native.mjs --proton`.
-- **werift 0.25.1:** add an opt-in `setLocalDescription(description, { trickle: true })` path so
-  answers start ICE checks while discovery continues. Keep checks alive for late local and remote
-  candidates, pair late TURN allocations, finish exhausted checklists, and close transports that
-  finish gathering after cancellation. Preserve all TURN URL transports and credentials through
-  configuration updates and gather alternatives concurrently; Dovo bounds those allocations to four
-  URLs covering UDP/TCP/TLS. The default still waits for complete gathering. Apply to CommonJS and
-  bundled ESM entrypoints, including polyfills. Verify with `peer-ice-engine.test.ts`,
-  `peer-connections.test.ts` and `pnpm test:peer-connection:browser`; set `DOVO_TEST_TURN_BINARY`
-  for real UDP/TCP/TLS coturn coverage, including unavailable TLS and blocked UDP alternatives.
-- **react-native-enriched-markdown 1.1.1:** retain streaming render coalescing, live accessibility
-  geometry and query predicate evaluation. Verify with
+- **werift 0.27.0:** retain the opt-in `setLocalDescription(description, { trickle: true })` path so
+  answers start ICE checks while discovery continues. Also retain one-time ICE failure completion
+  when all pairs fail before end-of-candidates. Upstream now preserves multiple TURN transports,
+  credentials, configuration updates and gathering cancellation. Those fixes no longer need a local
+  patch. Verify both the local option and upstream behavior with `peer-ice-engine.test.ts`,
+  `peer-connections.test.ts` and `pnpm test:peer-connection:browser`. Set `DOVO_TEST_TURN_BINARY`
+  for real coturn UDP/TCP/TLS coverage.
+- **react-native-enriched-markdown 1.2.0:** retain live accessibility geometry and query predicate
+  evaluation. Upstream now coalesces streaming renders. The patch also blocks an apply callback if
+  rendering becomes disabled while its work is pending. Verify with
   `node scripts/check-mobile-markdown-highlighting.mjs`.
+- **node-pty 1.2.0-beta.18:** dispose the Windows ConPTY output worker on socket close, including an
+  exit with no final data. This keeps the existing prerelease line needed by the runtime.
+- **expo-modules-autolinking 58.1.0:** keep the bounded 30-second Apple module scan. Cold CI hosts
+  can exceed the upstream five-second deadline.
 - **react-native-webview 14.0.1:** its declaration defaults extra props to `undefined`, making
   `WebViewProps & P` resolve to `never`. Default to `unknown` so normal props and typed refs work.
   The workspace mobile typecheck exercises the consumers; runtime behavior is unchanged.

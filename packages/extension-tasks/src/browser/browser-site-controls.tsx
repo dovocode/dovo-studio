@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import {
   SlidersHorizontal,
@@ -61,6 +62,8 @@ export function BrowserSiteControls({
   url: string
   profileName: string
 }) {
+  const uiText = useInterfaceText()
+
   const { browser } = useStudioHost()
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<BrowserSitePermissions>()
@@ -212,7 +215,7 @@ export function BrowserSiteControls({
                     variant="ghost"
                     onClick={() => setConfirmClear(false)}
                   >
-                    Cancel
+                    {uiText('Cancel')}
                   </Button>
                 </div>
               </div>

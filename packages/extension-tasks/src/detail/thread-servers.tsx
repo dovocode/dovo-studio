@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Globe, RefreshCw, Square } from 'lucide-react'
 import { threadServersSchema, responses, type ThreadServer } from '@dovo/protocol'
@@ -12,6 +13,8 @@ export function ThreadServers({
   taskId: string
   onOpen: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connection, connected, snapshot } = useWorkspace()
   const scope = JSON.stringify([taskId, connection?.address, connection?.token])
   const [listing, setListing] = useState<{ scope: string; servers: ThreadServer[] }>({
@@ -129,7 +132,7 @@ export function ThreadServers({
         <div role="status" className="mt-2 text-xs text-destructive">
           <p className="break-words">Could not refresh servers: {error}</p>
           <Button variant="ghost" size="sm" onClick={() => setRetry((value) => value + 1)}>
-            <RefreshCw className="size-3" /> Retry
+            <RefreshCw className="size-3" /> {uiText('Retry')}
           </Button>
         </div>
       )}

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
   Button,
@@ -24,6 +25,8 @@ export function SnoozeDialog({
   onSnooze: (until: number) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [value, setValue] = useState(() =>
     localDateTime(until && until > Date.now() ? until : Date.now() + 3600000),
   )
@@ -76,7 +79,7 @@ export function SnoozeDialog({
           )}
           <div className="flex justify-end gap-2">
             <Button type="button" variant="outline" onClick={onClose}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button type="submit">Snooze</Button>
           </div>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { useInsideSettings } from '../screens/settings-theme'
 import { SettingsGroup } from '../screens/settings-group'
@@ -43,6 +44,8 @@ export function ModelSettings({
   disabled?: boolean
   onChange: (agent: Agent) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, callEffect, snapshot, profile, refresh: refreshRuntime } = useRuntime()
@@ -199,7 +202,7 @@ export function ModelSettings({
           )}
           <Choice
             row
-            label="Model"
+            label={uiText('Model')}
             disabled={disabled}
             value={custom ? '__custom__' : agent.model}
             items={[

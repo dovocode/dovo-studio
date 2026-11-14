@@ -22,7 +22,7 @@ function Composer() {
   const [submitBusy,setSubmitBusy]=useState(false);window.setSubmitBusy=setSubmitBusy;
   const [composingNextDraft,setComposingNextDraft]=useState(false);window.setComposingNextDraft=setComposingNextDraft;
   const [paged,setPaged]=useState(false);window.setPagedHistory=setPaged;useEffect(()=>{window.pagedHistoryCommitted=paged},[paged]);
-  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={async(before,signal)=>window.loadHistory(before,signal)} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
+  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={paged ? async(signal)=>window.loadHistory(signal) : undefined} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
     <button type="submit" disabled={!hasText||submitBusy}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
@@ -208,23 +208,15 @@ try {
     throw new Error('Completing the send replaced the newer draft')
   await page.evaluate(() => {
     window.historyCalls = []
-    window.loadHistory = async (before) => {
-      window.historyCalls.push(before)
+    window.loadHistory = async () => {
+      window.historyCalls.push('latest50')
       if (window.holdHistory) await new Promise((resolve) => (window.releaseHistory = resolve))
       return {
         turns: [],
         historyRevision: 0,
-        ...(before === 'recent'
-          ? { messages: [{ role: 'assistant', text: 'A long assistant page' }], before: 'earlier' }
-          : before === 'earlier'
-            ? {
-                messages: [
-                  { role: 'user', text: 'Earlier 1' },
-                  { role: 'user', text: 'Earlier 2' },
-                ],
-                before: 'oldest',
-              }
-            : { messages: [{ role: 'user', text: 'Oldest' }] }),
+        messages: ['Oldest', 'Earlier 1', 'Earlier 2', 'First message', 'Second message'].map(
+          (text) => ({ role: 'user', text }),
+        ),
       }
     }
     window.setPagedHistory(true)
@@ -235,10 +227,9 @@ try {
     await page.waitForFunction((expected) => window.controller.text === expected, expected)
   }
   if (
-    JSON.stringify(await page.evaluate(() => window.historyCalls)) !==
-    JSON.stringify(['recent', 'earlier', 'oldest'])
+    JSON.stringify(await page.evaluate(() => window.historyCalls)) !== JSON.stringify(['latest50'])
   )
-    throw new Error('History did not load pages on demand')
+    throw new Error('History did not request the latest user messages')
   for (const expected of ['Earlier 1', 'Earlier 2', 'First message', 'Second message', '']) {
     await input.press('ArrowDown')
     await page.waitForFunction((expected) => window.controller.text === expected, expected)
@@ -247,8 +238,8 @@ try {
     await input.press('ArrowUp')
     await page.waitForFunction((expected) => window.controller.text === expected, expected)
   }
-  if ((await page.evaluate(() => window.historyCalls.length)) !== 3)
-    throw new Error('Repeated recall downloaded cached history')
+  if ((await page.evaluate(() => window.historyCalls.length)) !== 2)
+    throw new Error('A new history session did not refresh user messages')
   await page.evaluate(() => window.setPagedHistory(false))
   await page.waitForFunction(() => window.pagedHistoryCommitted === false)
   await input.fill('')
@@ -284,7 +275,7 @@ try {
   await input.press('ArrowUp')
   await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
   await input.press('ArrowDown')
-  await page.waitForFunction(() => window.controller.text === 'Second message')
+  await page.waitForFunction(() => window.controller.text === '')
   await page.evaluate(() => {
     window.holdHistory = false
     window.releaseHistory()
@@ -292,11 +283,11 @@ try {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
-  if ((await input.inputValue()) !== 'Second message')
-    throw new Error('A delayed page overwrote newer history navigation')
+  if ((await input.inputValue()) !== '')
+    throw new Error('A delayed response overwrote cancelled history navigation')
   if (errors.length) throw new Error(JSON.stringify(errors))
   console.log(
-    'Paged recall crosses the live window, skips assistant-only pages, reuses cached history and preserves edits during delayed loads.',
+    'Composer recall requests recent user messages on each session and preserves edits during delayed loads.',
   )
   console.log(
     'Enter submits the default and Alt+Enter submits the alternative without a duplicate submission.',

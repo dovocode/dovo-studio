@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { decode } from '@dovo/protocol'
 import { resourceError } from './error'
@@ -24,6 +25,8 @@ export function SkillEditor({
   onSave: (skill: ManagedSkill) => Promise<void>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request } = useWorkspace()
   const [draft, setDraft] = useApplicationState<ManagedSkill>(
     initial ?? {
@@ -100,7 +103,7 @@ export function SkillEditor({
               Import copies the instructions into the fields below. Supporting files stay where they
               are on this computer.
             </p>
-            <FormField label="Name">
+            <FormField label={uiText('Name')}>
               <Input
                 required
                 value={draft.name}
@@ -181,7 +184,7 @@ export function SkillEditor({
             )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={onClose}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button type="submit">{busy === 'save' ? 'Saving…' : 'Save skill'}</Button>
             </div>

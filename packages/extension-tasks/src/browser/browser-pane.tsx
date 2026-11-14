@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { BrowserStarter } from './browser-starter'
 import { BrowserAddressInput } from './browser-address-input'
@@ -341,6 +342,8 @@ function BrowserContent({
   taskId: string
   onClose?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
     {
@@ -2467,7 +2470,7 @@ function BrowserContent({
                     onClick={() => setLibraryView('history')}
                   >
                     <History size={16} />
-                    History
+                    {uiText('History')}
                   </Button>
                 </Popover.Close>
               </div>
@@ -3624,7 +3627,7 @@ function BrowserContent({
                 Refresh windows
               </Button>
               <Button disabled={windowMoving} variant="ghost" onClick={cancelCreatedWindow}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
             </div>
             {!!windowMoveError && (
@@ -3687,7 +3690,7 @@ function BrowserContent({
               )}
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="ghost" onClick={() => setHomeEditor(null)}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
                 <Button type="submit">Save home</Button>
               </div>
@@ -4040,7 +4043,7 @@ function BrowserContent({
                 disabled={busy || !connected}
                 onClick={() => void act(loadDevices)}
               >
-                Refresh
+                {uiText('Refresh')}
               </Button>
             </div>
           )}

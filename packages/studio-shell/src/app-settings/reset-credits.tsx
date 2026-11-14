@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useRef, useState } from 'react'
@@ -17,6 +18,8 @@ import {
   DialogDescription,
 } from '@dovo/studio-ui'
 export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: string } }) {
+  const uiText = useInterfaceText()
+
   const { runtimes, readRuntime, refreshRuntime } = useWorkspace()
   const sources = runtimes.flatMap((entry) => {
     const limit = entry.snapshot?.workspace.planLimits?.find(
@@ -165,7 +168,7 @@ export function ResetCredits({ window }: { window: PlanLimit & { sourceId?: stri
               )}
               {confirming && (
                 <Button variant="ghost" disabled={busy} onClick={() => setConfirming(false)}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
               )}
             </div>

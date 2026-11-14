@@ -41,7 +41,41 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 49 : 22)
+      expect(tools).toHaveLength(full ? 51 : 24)
+      const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
+      expect(terminalRename).toBeDefined()
+      const renameCharacters = JSON.stringify(terminalRename).length + 1
+      expect(renameCharacters).toBeLessThanOrEqual(650)
+      expect(terminalRename?.description?.length ?? 0).toBeLessThanOrEqual(160)
+      const conversation = tools.find((tool) => tool.name === 'conversation_read')
+      expect(conversation).toBeDefined()
+      const conversationCharacters = JSON.stringify(conversation).length + 1
+      expect(conversationCharacters).toBeLessThanOrEqual(1200)
+      expect(conversation?.description?.length ?? 0).toBeLessThanOrEqual(300)
+      // Theme commands extend the existing UI union. Bound that addition separately.
+      const ui = tools.find((tool) => tool.name === 'studio_ui')
+      const withoutThemes =
+        ui &&
+        JSON.stringify(ui, (_key, value: unknown) => {
+          if (!Array.isArray(value)) return value
+          return value.filter((entry: unknown) => {
+            if (!entry || typeof entry !== 'object' || !('properties' in entry)) return true
+            const properties = entry.properties
+            if (!properties || typeof properties !== 'object' || !('action' in properties))
+              return true
+            const action = properties.action
+            return (
+              !action ||
+              typeof action !== 'object' ||
+              !('enum' in action) ||
+              !Array.isArray(action.enum) ||
+              !action.enum.some((value) => value === 'theme-read' || value === 'theme-set')
+            )
+          })
+        })
+      const themeCharacters = ui ? JSON.stringify(ui).length - (withoutThemes?.length ?? 0) : 0
+      expect(themeCharacters > 0).toBe(full)
+      expect(themeCharacters).toBeLessThanOrEqual(1000)
       // Preserve the existing budget for all prior tools. Account for the new private-input
       // schema separately so adding this tool cannot hide growth in unrelated tools.
       const secureInput = tools.find((tool) => tool.name === 'secure_input')
@@ -79,18 +113,23 @@ it.each([false, true])(
       )
       expect(
         characters -
+          renameCharacters -
           secureCharacters -
           prepareCharacters -
           automationCharacters -
           workflowCharacters -
-          helpCharacters,
+          helpCharacters -
+          conversationCharacters -
+          themeCharacters,
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
+          (terminalRename?.description?.length ?? 0) -
           (secureInput?.description?.length ?? 0) -
           (threadPrepare?.description?.length ?? 0) -
           (workflow?.description?.length ?? 0) -
           (help?.description?.length ?? 0) -
+          (conversation?.description?.length ?? 0) -
           automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
@@ -102,6 +141,7 @@ it.each([false, true])(
           'subagent_spawn',
           'subagent_answer',
           'terminal_run',
+          'terminal_rename',
         ]),
       )
       expect(tools.map((tool) => tool.name)).toEqual(

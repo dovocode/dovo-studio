@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { IconName } from '../ui/controls/icon'
 import { mobileSettingsFields } from './settings-search-data'
 import { SettingsScrollView } from './settings-search'
@@ -45,6 +46,8 @@ function settingsLocation(path: string, local: boolean): { icon: IconName; descr
 }
 
 export default function SettingsScreen({ categorySlug }: { categorySlug?: string } = {}) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { profiles, overviews, snapshot } = useRuntime()
@@ -75,7 +78,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       path: '/settings/app-preferences',
       items: [
         {
-          title: 'Appearance',
+          title: uiText('Appearance'),
           subtitle: 'Colors, accessibility, density and fonts',
           icon: 'preview',
           path: '/settings/appearance',
@@ -85,7 +88,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'theme system light dark colors palette display terminal font density code syntax accessibility colorblind color blindness contrast motion animation reduce blue orange',
         },
         {
-          title: 'General',
+          title: uiText('General'),
           subtitle: 'Startup page and time format',
           icon: 'settings',
           path: '/settings/general',
@@ -115,7 +118,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
             'speech voice siri language dictation read replies aloud speaking speed driving car',
         },
         {
-          title: 'Notifications',
+          title: uiText('Notifications'),
           subtitle: 'Task alerts, computer subscriptions and Live Activities',
           icon: 'settings',
           path: '/settings/notifications',
@@ -208,7 +211,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       path: '/settings/agent-settings',
       items: [
         {
-          title: 'Agents',
+          title: uiText('Agents'),
           subtitle: 'Codex, Claude Code and agent profiles',
           icon: 'chat',
           tint: '#bb9aff',
@@ -226,7 +229,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           keywords: 'resources integrations servers registry tools',
         },
         {
-          title: 'Memory',
+          title: uiText('Memory'),
           subtitle: 'System, General and project notes',
           icon: 'fileText',
           path: '/settings/memory',
@@ -286,7 +289,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'Computers',
+      title: uiText('Computers'),
       path: '/settings/computer-settings',
       footer: profiles.length
         ? undefined
@@ -327,7 +330,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
       ],
     },
     {
-      title: 'History',
+      title: uiText('History'),
       path: '/settings/history-settings',
       items: [
         {

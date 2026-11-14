@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSoftwareKeyboard } from './use-software-keyboard'
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { LinkBrowser } from '../ui/content/open-link'
@@ -66,6 +67,8 @@ const SceneContext = createContext<{
 } | null>(null)
 /** Only actual bottom tabs live in this navigator; menu destinations use the parent stack. */
 export function WorkbenchTabs() {
+  const uiText = useInterfaceText()
+
   const context = useContext(SceneContext)
   const { colors } = useTheme()
   const { browserWorkspaceEnabled, terminalWorkspaceEnabled } = useMobilePreferences()
@@ -89,7 +92,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.tasks} renderingMode="template" />
-        <NativeTabs.Trigger.Label>Threads</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{uiText('Threads')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="pulls"
@@ -114,7 +117,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.web} renderingMode="template" />
-        <NativeTabs.Trigger.Label>Browser</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{uiText('Browser')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="terminal"
@@ -126,13 +129,13 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.terminal} renderingMode="template" />
-        <NativeTabs.Trigger.Label>Terminal</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label>{uiText('Terminal')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
       <NativeTabs.Trigger
         name="compose"
         role="search"
         hidden={Platform.OS !== 'ios'}
-        accessibilityLabel="New thread"
+        accessibilityLabel={uiText('New thread')}
         testID="New thread"
         disabled={!hasOnlineComputer}
         // This is an action: preserve the current tab and its navigation history.
@@ -147,7 +150,7 @@ export function WorkbenchTabs() {
         }}
       >
         <NativeTabs.Trigger.Icon src={iconAssets.add} renderingMode="template" />
-        <NativeTabs.Trigger.Label hidden>New thread</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Label hidden>{uiText('New thread')}</NativeTabs.Trigger.Label>
       </NativeTabs.Trigger>
     </NativeTabs>
   )
@@ -256,6 +259,8 @@ export function WorkbenchDetailRoute({
   )
 }
 export function Workbench() {
+  const uiText = useInterfaceText()
+
   const { colors, styles, mode } = useTheme()
 
   const runtime = useRuntime(),
@@ -597,7 +602,7 @@ export function Workbench() {
               <FloatingPills>
                 <NativeView style={{ alignSelf: 'flex-end', paddingRight: 16 }}>
                   <IconButton
-                    label="New thread"
+                    label={uiText('New thread')}
                     icon="add"
                     variant="filled"
                     size={48}

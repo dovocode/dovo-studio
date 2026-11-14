@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   useMobilePreferences,
   updateMobilePreferences,
@@ -46,6 +47,8 @@ export function CatalogPicker({
   onSelect: (entry: ResourceSelection) => void
   onSkills: (skills: ManagedSkill[]) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const openLink = useOpenAppLink(undefined)
   const { styles } = useTheme()
 
@@ -286,7 +289,7 @@ export function CatalogPicker({
               value={view}
               disabled={busy}
               items={[
-                { id: 'search', name: 'Search' },
+                { id: 'search', name: uiText('Search') },
                 { id: 'all-time', name: 'All time' },
                 { id: 'trending', name: 'Trending (24h)' },
                 { id: 'hot', name: 'Hot' },

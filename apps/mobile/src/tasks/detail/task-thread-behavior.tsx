@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { Effect } from 'effect'
@@ -12,6 +13,8 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
 export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { connected, callEffect } = useRuntime()
   const { styles } = useTheme()
   const { act, busy, error } = useAction()
@@ -45,8 +48,8 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
           value={settle?.[key] === undefined ? 'inherit' : settle[key] ? 'on' : 'off'}
           items={[
             { id: 'inherit', name: 'Inherit project' },
-            { id: 'on', name: 'On' },
-            { id: 'off', name: 'Off' },
+            { id: 'on', name: uiText('On') },
+            { id: 'off', name: uiText('Off') },
           ]}
           disabled={busy || !connected}
           onChange={(value) =>
@@ -64,8 +67,8 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
         disabled={busy || !connected}
         items={[
           { id: 'inherit', name: 'Inherit project' },
-          { id: 'off', name: 'Off' },
-          { id: 'on', name: 'On' },
+          { id: 'off', name: uiText('Off') },
+          { id: 'on', name: uiText('On') },
         ]}
       />
       {archive === 'on' && (
@@ -84,7 +87,7 @@ export function TaskThreadBehavior({ task, onClose }: { task: Task; onClose: () 
       )}
       <View style={styles.row}>
         <Action
-          label="Save"
+          label={uiText('Save')}
           disabled={!connected || busy || !valid}
           onPress={() =>
             act(() =>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullReadinessPanel } from './readiness'
 import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
@@ -112,6 +113,8 @@ function PullDetailContent({
   initialFragment = '',
   linkedThread,
 }: PullDetailProps) {
+  const uiText = useInterfaceText()
+
   const { connected, workspace } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const changed = () => {
@@ -710,7 +713,9 @@ function PullDetailContent({
                   >
                     <h3 className="flex items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs font-medium">
                       {detail.pull.author}
-                      <span className="font-normal text-muted-foreground">Description</span>
+                      <span className="font-normal text-muted-foreground">
+                        {uiText('Description')}
+                      </span>
                     </h3>
                     <div className="min-w-0 p-4 text-sm leading-7">
                       <MessageResponse
@@ -906,7 +911,7 @@ function PullDetailContent({
               aria-labelledby="pr-tab-changes"
               hidden={tab !== 'changes'}
             >
-              <PullSectionStatus label="Files" section={sections.changes} />
+              <PullSectionStatus label={uiText('Files')} section={sections.changes} />
               <PullSectionStatus label="Code discussion" section={sections.discussion} />
               {!sections.changes.ready && changesDetail && (
                 <p role="status" className="mb-3 text-xs text-muted-foreground">

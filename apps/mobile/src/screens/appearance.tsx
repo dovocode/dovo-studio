@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botLayouts, isBotLayout } from '@dovo/protocol'
 import { SettingsScrollView } from './settings-search'
 import { CircleCheck, CircleX, TriangleAlert } from 'lucide-react-native'
@@ -17,6 +18,8 @@ import { SettingsGroup, SettingsSwitchRow } from './settings-group'
 import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const {
     theme,
@@ -33,11 +36,11 @@ export default function AppearanceScreen() {
   } = useMobilePreferences()
   return (
     <SettingsPage>
-      <ScreenHeader title="Appearance" />
+      <ScreenHeader title={uiText('Appearance')} />
       <SettingsScrollView contentContainerStyle={[styles.content, { paddingTop: 8, gap: 24 }]}>
         <Text style={[styles.muted, { fontSize: 13 }]}>This device · saved automatically</Text>
         <SettingsGroup
-          title="Accessibility"
+          title={uiText('Accessibility')}
           footer="Status icons and labels work without color. Text follows your phone’s text size setting."
         >
           <Choice
@@ -78,7 +81,7 @@ export default function AppearanceScreen() {
             label="Animations"
             value={motion}
             items={[
-              { id: 'system', name: 'System' },
+              { id: 'system', name: uiText('System') },
               { id: 'reduce', name: 'Reduce' },
             ]}
             onChange={(value) => {
@@ -124,14 +127,17 @@ export default function AppearanceScreen() {
             }}
           />
         </SettingsGroup>
-        <SettingsGroup title="Theme" footer="System follows your phone’s light or dark mode.">
+        <SettingsGroup
+          title={uiText('Theme')}
+          footer="System follows your phone’s light or dark mode."
+        >
           <Choice
             label="Color scheme"
             value={theme}
             items={[
-              { id: 'system', name: 'System' },
-              { id: 'light', name: 'Light' },
-              { id: 'dark', name: 'Dark' },
+              { id: 'system', name: uiText('System') },
+              { id: 'light', name: uiText('Light') },
+              { id: 'dark', name: uiText('Dark') },
             ]}
             onChange={(value) => {
               if (value === 'system' || value === 'light' || value === 'dark')
@@ -183,7 +189,7 @@ export default function AppearanceScreen() {
         </SettingsGroup>
         <CodeThemeSettings />
         <SettingsGroup
-          title="Terminal"
+          title={uiText('Terminal')}
           footer="JetBrains Mono Nerd Font is bundled for offline shell and developer icons. Changes apply to open terminals."
         >
           <Choice

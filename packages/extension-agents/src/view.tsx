@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { SettingsScopePage, Button, Disclosure } from '@dovo/studio-ui'
@@ -6,10 +7,12 @@ import { HarnessUpdates } from './harness-updates'
 import { AcpRegistrySettings } from './acp-registry'
 import { HarnessInstructions } from './harness-instructions'
 export default function AgentsView() {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   return (
     <SettingsScopePage
-      title="Agents"
+      title={uiText('Agents')}
       description="Agent profiles: the provider, model, access and instructions each coding agent uses."
       supportsEditing={(snapshot) => snapshot?.scopedAgentsSupported === true}
       saveInfo="Profile edits apply after saving."

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   prepareSideThread,
   finishSideThread,
@@ -67,6 +68,8 @@ export function PullAskAgent({
   selection?: PullReviewSelection
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const {
     workspace,
     request,
@@ -294,7 +297,7 @@ export function PullAskAgent({
           )}
           <DialogFooter>
             <Button type="button" variant="ghost" disabled={busy} onClick={onClose}>
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button type="submit" disabled={!connected || busy || sourceChanged || newerRevision}>
               {busy ? 'Creating…' : parentId ? 'Create side chat draft' : 'Create review thread'}

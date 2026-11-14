@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { agentHookSchema, agentHookEventChoices } from '@dovo/protocol'
 import {
@@ -143,6 +144,8 @@ function ResourceScopeView({
   collection: 'agents' | 'repositories' | 'settings'
   id: string
 }) {
+  const uiText = useInterfaceText()
+
   const {
     workspace,
     snapshot,
@@ -304,7 +307,7 @@ function ResourceScopeView({
             </p>
           )}
           <ResourceSection
-            title="MCP servers"
+            title={uiText('MCP servers')}
             description="Tool servers the agent can call: local commands or Streamable HTTP endpoints."
             actions={
               <>
@@ -378,7 +381,7 @@ function ResourceScopeView({
             ))}
           </ResourceSection>
           <ResourceSection
-            title="Skills"
+            title={uiText('Skills')}
             description="Reusable instructions. Enabled skills are offered to the agent, which applies them when relevant."
             actions={
               <>
@@ -555,6 +558,8 @@ export function HookSettings({
   disabled: boolean
   change: (update: (value: ResourceSettings) => ResourceSettings) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const [draft, setDraft] = useApplicationState<AgentHook | null>(null)
   const [previousName, setPreviousName] = useApplicationState<string | null>(null)
   const [validation, setValidation] = useApplicationState('')
@@ -677,7 +682,7 @@ export function HookSettings({
             {previousName ? `Edit hook · ${previousName}` : 'New hook'}
           </h4>
           <div className="grid gap-4 sm:grid-cols-2">
-            <FormField label="Name">
+            <FormField label={uiText('Name')}>
               <Input
                 autoFocus
                 required
@@ -754,7 +759,7 @@ export function HookSettings({
                 setValidation('')
               }}
             >
-              Cancel
+              {uiText('Cancel')}
             </Button>
             <Button type="submit" size="sm" disabled={disabled}>
               Save hook
@@ -824,6 +829,8 @@ function ResourceRow({
   onEdit: () => void
   onRemove: () => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <div className="flex items-center gap-3 border-t border-border/50 py-3">
       <Switch
@@ -852,7 +859,7 @@ function ResourceRow({
         size="icon"
         variant="ghost"
         aria-label={`Edit ${kind} ${name}`}
-        title="Edit"
+        title={uiText('Edit')}
         disabled={disabled}
         onClick={onEdit}
       >

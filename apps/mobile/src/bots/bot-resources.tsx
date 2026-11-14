@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { View } from 'react-native'
@@ -38,6 +39,8 @@ export function BotResources({
   save: (update: (current: BotResourceSettings) => BotResourceSettings) => Promise<void>
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { act, busy, error } = useAction()
   const [editing, setEditing] = useState<Editing>()
@@ -115,7 +118,7 @@ export function BotResources({
         ))}
       {kind !== 'skill' && (
         <>
-          <Text style={styles.title}>MCP servers</Text>
+          <Text style={styles.title}>{uiText('MCP servers')}</Text>
           <Action
             label="Browse MCP Registry"
             secondary
@@ -177,7 +180,7 @@ export function BotResources({
       )}
       {kind !== 'mcp' && (
         <>
-          <Text style={styles.title}>Skills</Text>
+          <Text style={styles.title}>{uiText('Skills')}</Text>
           <Action
             label="Browse skills.sh"
             secondary

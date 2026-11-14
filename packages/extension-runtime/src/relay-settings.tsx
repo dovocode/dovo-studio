@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { useState } from 'react'
 import {
@@ -17,6 +18,8 @@ export function RelaySettings() {
   return <RelaySettingsContent key={activeRuntimeId} />
 }
 function RelaySettingsContent() {
+  const uiText = useInterfaceText()
+
   const { snapshot, connected, request, runtimeRegistry, activeRuntimeId, refreshRuntime } =
     useWorkspace()
   const profile = runtimeRegistry.profiles.find((item) => item.id === activeRuntimeId)
@@ -168,7 +171,7 @@ function RelaySettingsContent() {
                 {busy ? 'Saving…' : 'Confirm relay settings'}
               </Button>
               <Button variant="ghost" disabled={busy} onClick={() => setConfirm(undefined)}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
             </>
           ) : (

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDeferredValue, useMemo, useState } from 'react'
 import { pullFileKind, type FileKind, type ReviewGroup, type FileTreeEntry } from '@dovo/protocol'
 import { ChevronRight, Layers } from 'lucide-react'
@@ -28,6 +29,8 @@ export function FileReviewControls({
   error?: string
   onRetry: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const index = files.findIndex((file) => file.path === selected)
   const file = files[index]
   const nextUnviewed = [...files.slice(index + 1), ...files.slice(0, index)].find(
@@ -97,7 +100,7 @@ export function FileReviewControls({
         <p role="alert" className="flex items-center gap-2 text-xs text-destructive">
           {error}
           <Button size="sm" variant="ghost" onClick={onRetry}>
-            Retry
+            {uiText('Retry')}
           </Button>
         </p>
       )}

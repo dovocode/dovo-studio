@@ -1,3 +1,4 @@
+import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
   pullProjectVisibilitySchema,
@@ -27,6 +28,7 @@ import {
 
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  interfaceLanguage: interfaceLanguageSchema,
   ...serviceUrlsSchema.fields,
   motion: Schema.Literals(['system', 'reduce']),
   theme: Schema.Literals(['system', 'light', 'dark']),
@@ -94,6 +96,7 @@ const defaults: MobilePreferences = {
   artifactsOrigin: '',
   motion: 'system',
   theme: 'dark',
+  interfaceLanguage: 'en-US',
   themePalette: 'dovo',
   colorVision: 'default',
   highContrast: false,

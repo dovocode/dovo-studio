@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -76,6 +77,8 @@ export function ContinueElsewhere({
   onMachine: () => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
   const { snapshot, connected, call } = useRuntime()
   const [step, setStep] = useState<'choose' | 'harness'>('choose')
@@ -253,7 +256,12 @@ export function ContinueElsewhere({
             disabled={blocked}
             onPress={() => void submit()}
           />
-          <Action secondary label="Back" disabled={busy} onPress={() => setStep('choose')} />
+          <Action
+            secondary
+            label={uiText('Back')}
+            disabled={busy}
+            onPress={() => setStep('choose')}
+          />
         </View>
       )}
       {!!error && (

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSettingsDraft, useConfirmSettingsNavigation, useConfirmation } from '@dovo/studio-core'
 import {
   runtimeComputerName,
@@ -127,6 +128,8 @@ function ProfileName({
   onSave: (profile: BrowserProfile) => Promise<boolean>
   onRemove: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const [edits, setEdits] = useState<
     Partial<{
       name: string
@@ -346,7 +349,7 @@ function ProfileName({
           (!dirty && unchangedSearch)
         }
       >
-        Save
+        {uiText('Save')}
       </Button>
       {profile.id !== 'default' && (
         <Button
@@ -357,7 +360,7 @@ function ProfileName({
           disabled={disabled}
           onClick={onRemove}
         >
-          Remove
+          {uiText('Remove')}
         </Button>
       )}
     </form>
@@ -531,6 +534,8 @@ function RemoteProfiles({
   )
 }
 export default function BrowserSettings() {
+  const uiText = useInterfaceText()
+
   const preferences = useAppPreferences()
   const confirmNavigation = useConfirmSettingsNavigation()
   const { browser } = useStudioHost()
@@ -539,7 +544,7 @@ export default function BrowserSettings() {
   const runtime = runtimes.find((entry) => entry.profile.id === runtimeId) ?? runtimes[0]
   return (
     <SettingsPage
-      title="Browser"
+      title={uiText('Browser')}
       description="Configure previews and browsing profiles. Remote profiles and logins stay on the selected computer."
       storageInfo={<span>This device · preferences save automatically; profiles use Save</span>}
     >

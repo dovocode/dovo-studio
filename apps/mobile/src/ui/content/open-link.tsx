@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { linkTargetHref } from './app-link-target'
 import {
   resolveLinkTargets,
@@ -56,6 +57,8 @@ export function useOpenAppLink(taskId?: string, repositoryId?: string, jiraSourc
 }
 
 export function LinkBrowser() {
+  const uiText = useInterfaceText()
+
   const { colors } = useTheme()
 
   const { overviews, activeId } = useRuntime()
@@ -167,7 +170,7 @@ export function LinkBrowser() {
               paddingHorizontal: 16,
             }}
           >
-            <Action label="Close" secondary onPress={() => setUrl(null)} />
+            <Action label={uiText('Close')} secondary onPress={() => setUrl(null)} />
             <Text
               numberOfLines={1}
               style={{ flex: 1, marginLeft: 16, color: colors.text, fontSize: 14, lineHeight: 20 }}

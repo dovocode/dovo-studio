@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadInfoSettingsSlot } from './thread-info-panel'
 import { ThreadInfoUsage } from './thread-info-usage'
 import { ThreadSharing } from '../chat/thread-sharing'
@@ -130,6 +131,8 @@ export function TaskProjectPanel({
   onSurface: (surface: TaskSurface) => void
   onBrowser?: (url: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, snapshot, connected, connection, request, runtimes, activeRuntimeId } =
     useWorkspace()
   const updates = useRuntimeReleaseCheck()
@@ -586,7 +589,7 @@ export function TaskProjectPanel({
                   disabled={!connected}
                   onClick={() => onSurface('terminal')}
                 >
-                  <Terminal className="size-3.5" /> Terminal
+                  <Terminal className="size-3.5" /> {uiText('Terminal')}
                 </Button>
               )}
             </div>
@@ -618,12 +621,14 @@ export function TaskProjectPanel({
       <>
         {show('pulls') && (
           <section
-            aria-label="Pull requests"
+            aria-label={uiText('Pull requests')}
             className="studio-project-section border-t border-border/60"
           >
             {!!displayedPulls.length && (
               <div className="mb-1 flex items-center justify-between gap-2">
-                <h3 className="text-xs font-medium text-muted-foreground">Pull requests</h3>
+                <h3 className="text-xs font-medium text-muted-foreground">
+                  {uiText('Pull requests')}
+                </h3>
                 <IconButton
                   label="Link pull request"
                   className="size-6"

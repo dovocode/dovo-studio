@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { View } from 'react-native'
 import { ScopedSettings } from '../runtime/preferences/settings-target'
 import { router } from 'expo-router'
@@ -12,10 +13,12 @@ import { AcpRegistrySettings } from '../agents/acp-registry'
 import { TitleSettings } from '../agents/title-settings'
 import { HarnessInstructions } from '../agents/harness-instructions'
 export default function AgentsScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   return (
     <SettingsPage>
-      <ScreenHeader title="Agents" />
+      <ScreenHeader title={uiText('Agents')} />
       <ScopedSettings scrollable>
         {({ scope, repository }) => (
           <>

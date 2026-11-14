@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button, Dialog, DialogContent, DialogTitle, DialogDescription } from '@dovo/studio-ui'
 
 /** Shared by pane, tab and keyboard close actions. Cancel is the initial focus target. */
@@ -12,6 +13,8 @@ export function TerminalCloseDialog({
   onConfirm: () => void
   onRestoreFocus: () => void
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <Dialog
       open
@@ -34,7 +37,7 @@ export function TerminalCloseDialog({
         </DialogDescription>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={onCancel}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
           <Button variant="destructive" onClick={onConfirm}>
             Close terminal{labels.length > 1 ? ' panes' : ''}

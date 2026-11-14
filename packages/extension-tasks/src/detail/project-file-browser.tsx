@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useMemo, useState } from 'react'
 import { Effect } from 'effect'
 import { responses, useWorkspace } from '@dovo/studio-core'
@@ -23,6 +24,8 @@ export function ProjectFileBrowser({
   changedFiles: readonly ChangedFile[]
   onSelect: (path: string, line?: number) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { requestEffect, connected, connection, activeRuntimeId } = useWorkspace()
   const changed = useMemo(
     () => new Map(changedFiles.map((file) => [file.path, file])),
@@ -124,7 +127,7 @@ export function ProjectFileBrowser({
             aria-pressed={mode === 'files'}
             onClick={() => setMode('files')}
           >
-            Files
+            {uiText('Files')}
           </Button>
           <Button
             size="sm"

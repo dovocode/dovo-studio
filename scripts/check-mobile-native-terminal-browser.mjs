@@ -13,6 +13,7 @@ const built = await bundleBrowser(
     stdin: {
       contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from './src/terminal/terminal-session.native.tsx';import {WorkspaceTerminalScreen} from './src/terminal/workspace-terminal-screen.tsx';import {runtimeProfile} from '${root}packages/protocol/src/index.ts';
 window.tickets=0;window.runtime={ready:true,connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async(path,input)=>{if(path!=='/api/terminals/ticket'||input.id!=='terminal')throw Error('Unexpected request '+path);window.tickets++;return {ticket:'ticket-'+window.tickets}}};
+window.renames=[];window.runtime.readRuntime=async(profile,path,input)=>{if(path!=='/api/terminals/update')throw Error('Unexpected owner request '+path);window.renames.push({owner:profile.id,...input});if(window.failRename)throw Error('Rename unavailable');const terminal=window.runtime.overviews[0].snapshot.terminals[0];Object.assign(terminal,{title:input.title??'Shell',customTitle:input.title});window.renderStandalone();return terminal};window.runtime.refreshRuntime=async()=>{};
 window.focused=true;window.runtime.connected=true;window.runtime.overviews=[{profile:{id:'computer',name:'Computer',connection:window.runtime.connection},connected:true,snapshot:{terminals:[{id:'terminal',taskId:'studio:terminals',title:'Shell'}]}}];
 const node=createRoot(document.getElementById('app'));window.renderTerminal=(visible=true)=>flushSync(()=>node.render(<TerminalSession id="terminal" visible={visible}/>));window.renderStandalone=()=>flushSync(()=>node.render(<WorkspaceTerminalScreen runtimeId="computer" terminalId="terminal"/>));window.renderTerminal();`,
       loader: 'tsx',
@@ -103,9 +104,15 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
     {
       path: '../ui/layout/sheet',
       importer,
-      contents: 'export const Sheet=({children})=><div>{children}</div>;',
+      contents:
+        'export const Sheet=({children,title,onClose,busy})=><div role="dialog" aria-label={title}>{children}<button disabled={busy} onClick={onClose}>Dismiss</button></div>;',
     },
-    { path: '../ui/controls/field', importer, contents: 'export const Field=()=>null;' },
+    {
+      path: '../ui/controls/field',
+      importer,
+      contents:
+        'export const Field=({label,value,onChangeText,maxLength,autoFocus,editable})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)} maxLength={maxLength} autoFocus={autoFocus} disabled={editable===false}/>;',
+    },
     {
       path: '../ui/controls/action',
       importer,
@@ -424,6 +431,45 @@ try {
   await standalone.waitForFunction(
     () => !document.body.textContent.includes('Replaying terminal history…'),
   )
+  await standalone.getByRole('button', { name: 'Rename', exact: true }).click()
+  const renameDialog = standalone.getByRole('dialog', { name: 'Rename terminal', exact: true })
+  await renameDialog.getByRole('textbox', { name: 'Terminal title' }).fill('Build server')
+  await standalone.evaluate(() => {
+    window.failRename = true
+  })
+  await renameDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await renameDialog.getByText('Rename unavailable', { exact: true }).waitFor()
+  assert.equal(await renameDialog.getByRole('textbox').inputValue(), 'Build server')
+  await standalone.evaluate(() => {
+    window.failRename = false
+  })
+  await renameDialog.getByRole('button', { name: 'Save', exact: true }).click()
+  await renameDialog.waitFor({ state: 'detached' })
+  await standalone.locator('header').getByText('Build server', { exact: false }).waitFor()
+  assert.deepEqual(await standalone.evaluate(() => window.renames.at(-1)), {
+    owner: 'computer',
+    id: 'terminal',
+    title: 'Build server',
+  })
+  assert.equal(
+    await standalone.evaluate(() => window.mounts),
+    2,
+    'Renaming does not remount the native terminal adapter',
+  )
+  assert.equal(
+    await standalone.evaluate(() => window.sockets.length),
+    2,
+    'Renaming keeps its shell connection',
+  )
+  assert.ok((await standalone.evaluate(() => window.writes)).includes('Retained standalone output'))
+  await standalone.getByRole('button', { name: 'Rename', exact: true }).click()
+  await renameDialog.getByRole('button', { name: 'Use automatic title', exact: true }).click()
+  await renameDialog.waitFor({ state: 'detached' })
+  assert.deepEqual(await standalone.evaluate(() => window.renames.at(-1)), {
+    owner: 'computer',
+    id: 'terminal',
+    title: null,
+  })
   const mounts = await standalone.evaluate(() => window.mounts)
   await standalone.evaluate(() => {
     window.runtime.connected = false
@@ -482,7 +528,7 @@ try {
   await standalone.getByText('This computer is no longer paired.', { exact: true }).waitFor()
   assert.equal(await standalone.getByTestId('ghostty').count(), 0)
   console.log(
-    'Native terminal adapters: clipboard, replay, fonts and standalone offline retention passed.',
+    'Native terminal adapters: owner-scoped rename, automatic title, failed-save draft, retained shell connection/output, clipboard, replay, fonts and standalone offline retention passed.',
   )
 } finally {
   await browser.close()

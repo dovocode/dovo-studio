@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { sharedSettingsIssue } from '@dovo/protocol'
 import { SettingsSaveBar } from '../screens/settings-save-bar'
 import { SecretEnvironmentEditor } from './secret-environment-editor'
@@ -41,6 +42,8 @@ export function AgentEditor({
   fixedProvider?: boolean
   shared?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { connected, profile, snapshot, call } = useRuntime(),
@@ -87,7 +90,7 @@ export function AgentEditor({
       onClose={close}
     >
       <Field
-        label="Name"
+        label={uiText('Name')}
         editable={!busy}
         value={draft.name}
         onChangeText={(name) =>
@@ -123,8 +126,8 @@ export function AgentEditor({
             }
             items={[
               { id: 'default', name: 'Provider default' },
-              { id: 'true', name: 'Enabled' },
-              { id: 'false', name: 'Disabled' },
+              { id: 'true', name: uiText('Enabled') },
+              { id: 'false', name: uiText('Disabled') },
             ]}
             onChange={(value) =>
               setDraft({
@@ -325,7 +328,7 @@ export function AgentEditor({
             }
             onPress={() => act(save)}
           />
-          <Action secondary label="Cancel" disabled={busy} onPress={close} />
+          <Action secondary label={uiText('Cancel')} disabled={busy} onPress={close} />
         </View>
       )}
       {!!error && <Text style={styles.error}>{error}</Text>}

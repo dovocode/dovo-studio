@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { AppState, View } from 'react-native'
 import { WebView } from 'react-native-webview'
@@ -39,6 +40,8 @@ const messageSchema = Schema.Union([
 
 /** Only desktop commands and one-use socket tickets cross this bridge, never Mac credentials. */
 export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
   const { connected, snapshot, connection, readEffect } = useRuntime()
   const web = useRef<WebView>(null)
@@ -98,7 +101,7 @@ export function MobileRemoteDesktop({ onClose }: { onClose: () => void }) {
         ]}
       >
         <Text style={styles.text}>Remote desktop</Text>
-        <Action label="Close" secondary onPress={onClose} />
+        <Action label={uiText('Close')} secondary onPress={onClose} />
       </View>
       {error ? (
         <Text accessibilityRole="alert" style={styles.error}>

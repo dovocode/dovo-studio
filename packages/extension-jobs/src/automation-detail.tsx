@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RoutineOptions } from './routine-options'
 import { automationBotJobSummary, githubEventChoices } from '@dovo/protocol'
 import { PageHeader } from '@dovo/studio-ui'
@@ -35,6 +36,8 @@ export function AutomationDetail({
   initialSurface?: 'runs' | 'canvas'
   initialRunId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, flow, selectedNode, selectNode, messages, setMessages, update, drafts } =
     useAutomation(automationId)
   const { snapshot, connected } = useWorkspace()
@@ -173,7 +176,7 @@ export function AutomationDetail({
             )}
             <div className="flex justify-end gap-2">
               <Button variant="outline" disabled={actions.busy} onClick={() => setDeleting(false)}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button
                 variant="destructive"

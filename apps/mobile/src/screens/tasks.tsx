@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { CreateBot } from '../bots/bot-create'
 import { BotStrip } from '../bots/bot-strip'
 import { requestMessageReveal } from '../tasks/conversation/message-reveal'
@@ -94,6 +95,8 @@ type TaskListItem =
   | { kind: 'task'; entry: RuntimeTask; section?: string }
 const sortOptions = taskSortOptions.filter((option) => option.id !== 'status')
 export default function TasksScreen({ archived = false }: { archived?: boolean }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const panes = useTaskPanes()
   const { width } = useWindowDimensions()
@@ -745,7 +748,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                         onPress: () => setFiltering(true),
                       },
                       {
-                        label: 'Projects',
+                        label: uiText('Projects'),
                         icon: 'projects' as const,
                         overflow: true,
                         onPress: () => {
@@ -767,7 +770,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 ...(panes.expanded
                   ? [
                       {
-                        label: 'New thread',
+                        label: uiText('New thread'),
                         icon: 'add' as const,
                         disabled: !overviews.some((entry) => entry.connected),
                         onPress: () => router.push('/new', { withAnchor: true }),
@@ -1150,7 +1153,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                   />
                 ) : (
                   <Action
-                    label="New thread"
+                    label={uiText('New thread')}
                     disabled={!overviews.some((entry) => entry.connected)}
                     onPress={() => router.push('/new', { withAnchor: true })}
                   />
@@ -1198,13 +1201,15 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
 
 /** First run: one clear step instead of a settings list full of disabled rows. */
 function Welcome() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { navigate } = useNavigation()
   const moreActions = useMoreActions(navigate)
 
   return (
     <View style={styles.screen}>
-      <ScreenHeader title="Threads" buttons={moreActions} />
+      <ScreenHeader title={uiText('Threads')} buttons={moreActions} />
       <ScrollView
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', padding: 24, gap: 24 }}

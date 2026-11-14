@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import * as Popover from '@radix-ui/react-popover'
 import { Check, ChevronDown } from 'lucide-react'
 import type { SettingsChange } from '@dovo/protocol'
@@ -37,6 +38,8 @@ export function SettingsPage({
   toolbar?: ReactNode
   wide?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const content = useRef<HTMLDivElement>(null)
   const toolbarElement = useRef<HTMLDivElement>(null)
   const hasToolbar = !!toolbar
@@ -68,7 +71,7 @@ export function SettingsPage({
       <PageHeader
         title={
           <span className="flex min-w-0 items-center gap-2">
-            <span className="shrink-0 text-muted-foreground">Settings</span>
+            <span className="shrink-0 text-muted-foreground">{uiText('Settings')}</span>
             <span aria-hidden="true" className="shrink-0 text-muted-foreground/50">
               /
             </span>

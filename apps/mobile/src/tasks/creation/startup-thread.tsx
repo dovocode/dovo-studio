@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
@@ -33,6 +34,8 @@ export function StartupThread({
   taskId: string
   runtimeId: string
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const mounted = useRef(true)
@@ -72,7 +75,7 @@ export function StartupThread({
           ...resolveTaskDefaults(entry?.snapshot?.defaults, repository),
           ...defaultTaskProjectSelection(entry?.snapshot, repository),
           id,
-          title: 'New thread',
+          title: uiText('New thread'),
           repositoryId: repository.id,
           agentId: '',
           status: 'draft',
@@ -182,7 +185,7 @@ export function StartupThread({
                 task: {
                   ...resolveTaskDefaults(destination?.snapshot?.defaults, target),
                   id,
-                  title: 'New thread',
+                  title: uiText('New thread'),
                   repositoryId: target.id,
                   agentId: '',
                   status: 'draft',

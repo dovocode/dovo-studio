@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { requestMessageReveal } from '../tasks/conversation/message-reveal'
 import { BotMemoryLearning } from './bot-memory-learning'
 import { useEffect, useState } from 'react'
@@ -36,6 +37,8 @@ export function BotMemory(props: { taskId: string; onClose: () => void }) {
   )
 }
 function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => void }) {
+  const uiText = useInterfaceText()
+
   const { profile, connected: online, snapshot, callEffect } = useRuntime()
   const connected = online && snapshot?.botsSupported === true
   const { styles } = useTheme()
@@ -65,7 +68,7 @@ function BotMemoryEditor({ taskId, onClose }: { taskId: string; onClose: () => v
     }
   }, [taskId, profile?.connection, connected, reload])
   return (
-    <Sheet title="Memory" onClose={onClose} busy={busy}>
+    <Sheet title={uiText('Memory')} onClose={onClose} busy={busy}>
       <Text style={styles.muted}>
         Dovo memory tools keep these notes separate from other threads and child agents. A
         full-access agent on this computer can read files.

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { EmptyState } from '../ui/content/empty-state'
 import { contentColumn } from '../ui/layout/content-column'
 import { PullRequestIcon } from '../ui/content/pull-request-icon'
@@ -58,6 +59,8 @@ const pullPreferences = createDetailDrafts<{
   sort: string
 }>({ isClean: () => true })
 export default function PullsScreen() {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const { pullProjectVisibility } = useMobilePreferences()
 
@@ -163,7 +166,7 @@ export default function PullsScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title="Pull requests"
+        title={uiText('Pull requests')}
         subtitle={`${!connected ? 'Offline · ' : ''}${pulls.length} pull request${pulls.length === 1 ? '' : 's'}${!connected ? ' saved' : busy && pulls.length ? ' · Updating' : ''}`}
         buttons={[
           {

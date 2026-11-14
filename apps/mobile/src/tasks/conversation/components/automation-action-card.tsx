@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
@@ -74,6 +75,8 @@ const accessText = ({ agent }: Resource) =>
 
 /** Read-only view of the exact saved workflow and its effective resources. */
 function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
+  const uiText = useInterfaceText()
+
   const { styles, colors } = useTheme()
   const { workflow } = snapshot
   const labels = new Map(workflow.nodes.map((node) => [node.id, node.data.label || node.id]))
@@ -158,7 +161,7 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
       })}
       {workflow.edges.length > 0 && (
         <View style={{ gap: 4 }}>
-          <Text style={{ fontWeight: '600' }}>Connections</Text>
+          <Text style={{ fontWeight: '600' }}>{uiText('Connections')}</Text>
           {workflow.edges.map((edge) => (
             <Text key={edge.id}>
               {labels.get(edge.source) ?? edge.source} → {labels.get(edge.target) ?? edge.target}

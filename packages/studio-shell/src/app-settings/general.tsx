@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
 import { useEffect, useState } from 'react'
 import { taskLauncherShortcuts } from '@dovo/protocol'
 import {
@@ -13,6 +15,8 @@ const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator
 const mod = mac ? '⌘' : 'Ctrl'
 
 export default function GeneralSettings() {
+  const uiText = useInterfaceText()
+
   const host = useStudioHost()
   const { taskLauncher } = host
   const preferences = useAppPreferences()
@@ -35,9 +39,24 @@ export default function GeneralSettings() {
   return (
     <SettingsPage
       local
-      title="General"
+      title={uiText('General')}
       description="Navigation, date and time, and everyday app behavior on this device."
     >
+      <SettingsGroup title={uiText('Interface language')}>
+        <SettingRow
+          label={uiText('Interface language')}
+          description="Language for navigation, settings labels, and common controls. Other copy falls back to English. Speech recognition keeps its own language."
+        >
+          <SettingsSelect
+            label={uiText('Interface language')}
+            value={preferences.interfaceLanguage}
+            options={interfaceLanguages.map((item) => [item.id, item.name])}
+            onChange={(value) =>
+              updateAppPreferences({ interfaceLanguage: decode(interfaceLanguageSchema, value) })
+            }
+          />
+        </SettingRow>
+      </SettingsGroup>
       <SettingsGroup title="Navigation & shortcuts">
         {taskLauncher && (
           <SettingRow

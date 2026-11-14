@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -82,6 +83,8 @@ function WorkView({
   sourceKind?: 'issues' | 'jira'
   entityId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { activeRuntimeId, runtimes } = useWorkspace()
   const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
@@ -472,8 +475,8 @@ function WorkView({
               <Button
                 size="icon"
                 variant="ghost"
-                aria-label="Refresh"
-                title="Refresh"
+                aria-label={uiText('Refresh')}
+                title={uiText('Refresh')}
                 className="size-8"
                 disabled={busy || !visiblePages.some((page) => page.reader.connected)}
                 onClick={refresh}
@@ -484,12 +487,12 @@ function WorkView({
                 <Button
                   size="sm"
                   variant="ghost"
-                  aria-label="Connections"
+                  aria-label={uiText('Connections')}
                   disabled={opening}
                   onClick={() => void chooseSource('settings')}
                 >
                   <Plug className="size-3.5" />
-                  <span className="sr-only sm:not-sr-only">Connections</span>
+                  <span className="sr-only sm:not-sr-only">{uiText('Connections')}</span>
                 </Button>
               )}
               <Button
@@ -693,7 +696,7 @@ function WorkView({
                       >
                         <option value="updated">Recently updated</option>
                         <option value="project">Source</option>
-                        <option value="title">Title</option>
+                        <option value="title">{uiText('Title')}</option>
                       </ChoicePicker>
                       {(hasFilters || sort !== 'updated') && (
                         <Button
@@ -814,7 +817,7 @@ function WorkView({
                         disabled={busy || !page.reader.connected}
                         onClick={refresh}
                       >
-                        Retry
+                        {uiText('Retry')}
                       </Button>
                     )}
                     {mode === 'issues' && (

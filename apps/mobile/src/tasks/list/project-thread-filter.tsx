@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { projectMachineGroups } from '@dovo/protocol'
 import { Pressable, View } from 'react-native'
@@ -24,6 +25,8 @@ export function ProjectThreadFilter({
   /** Match the compact computer selector in the task list. */
   compact?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
 
   const { overviews } = useRuntime()
@@ -160,7 +163,7 @@ export function ProjectThreadFilter({
         <Icon name={compact ? 'next' : 'down'} size={compact ? 11 : 13} color={colors.muted} />
       </Pressable>
       {open && (
-        <Sheet title="Projects" onClose={() => setOpen(false)}>
+        <Sheet title={uiText('Projects')} onClose={() => setOpen(false)}>
           <SearchField label="Search projects" value={query} onChangeText={setQuery} />
           <Pressable
             accessibilityRole="button"

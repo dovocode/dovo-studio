@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSourceReader } from '../source-reader'
 import { useLinkOrigin } from '../../ui/content/link-origin'
 import { openAppLink } from '../../ui/content/open-link'
@@ -22,6 +23,8 @@ export function RepositoryCard({
   repository: Repository
   taskId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { readEffect } = useSourceReader(repository.id)
@@ -87,7 +90,7 @@ export function RepositoryCard({
         />
         <Action
           secondary
-          label="Pull requests"
+          label={uiText('Pull requests')}
           disabled={!connected || busy}
           onPress={() =>
             act(() =>

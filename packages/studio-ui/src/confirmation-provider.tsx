@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import {
   ConfirmationContext,
@@ -89,6 +90,8 @@ function ConfirmationDialog({
   request: PendingConfirmation
   onResolve: (id: number, accepted: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const cancel = useRef<HTMLButtonElement>(null)
   return (
     <Dialog
@@ -124,7 +127,7 @@ function ConfirmationDialog({
         )}
         <DialogFooter>
           <Button ref={cancel} variant="outline" onClick={() => onResolve(id, false)}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
           <Button
             variant={options.destructive ? 'destructive' : 'default'}

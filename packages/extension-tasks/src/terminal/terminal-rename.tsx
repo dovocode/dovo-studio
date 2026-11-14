@@ -1,4 +1,5 @@
-import { useRef, useState, type ReactNode } from 'react'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { RuntimeProfile, TerminalInfo } from '@dovo/protocol'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import {
@@ -10,46 +11,76 @@ import {
   Input,
 } from '@dovo/studio-ui'
 
-export function TerminalRename({
-  owner,
-  session,
-  onError,
-  children,
-}: {
-  owner: { profile: RuntimeProfile; connected: boolean }
+type TerminalRenameProps = {
+  owner?: { profile: RuntimeProfile; connected: boolean }
   session: TerminalInfo
   onError: (message: string) => void
   children: (open: () => void) => ReactNode
-}) {
+}
+
+export function TerminalRename(props: TerminalRenameProps) {
   const store = useWorkspace()
+  return (
+    <TerminalRenameEditor
+      key={JSON.stringify([props.owner?.profile.connection ?? store.connection, props.session.id])}
+      {...props}
+    />
+  )
+}
+
+function TerminalRenameEditor({ owner, session, onError, children }: TerminalRenameProps) {
+  const uiText = useInterfaceText()
+
+  const store = useWorkspace()
+  const connected = owner?.connected ?? store.connected
   const [open, setOpen] = useState(false)
   const [title, setTitle] = useState('')
   const [pending, setPending] = useState(false)
   const pendingRef = useRef(false)
   const [error, setError] = useState('')
+  const mounted = useRef(true)
+  useEffect(() => {
+    mounted.current = true
+    return () => {
+      mounted.current = false
+    }
+  }, [])
   const save = async (next: string | null) => {
-    if (pendingRef.current || !owner.connected) return
+    if (pendingRef.current || !connected) return
     pendingRef.current = true
     setPending(true)
     setError('')
     onError('')
     try {
-      await store.readRuntime(
-        owner.profile,
-        '/api/terminals/update',
-        { id: session.id, title: next },
-        responses.terminal,
-        'POST',
-      )
-      await store.refreshRuntime(owner.profile).catch((cause: unknown) => {
-        onError(`Terminal renamed, but its status could not refresh: ${String(cause)}`)
+      const profile =
+        owner?.profile ??
+        store.runtimes.find((entry) => entry.profile.id === store.activeRuntimeId)?.profile
+      if (!profile) throw new Error('This computer is no longer saved.')
+      if (owner)
+        await store.readRuntime(
+          owner.profile,
+          '/api/terminals/update',
+          { id: session.id, title: next },
+          responses.terminal,
+          'POST',
+        )
+      else
+        await store.request(
+          '/api/terminals/update',
+          { id: session.id, title: next },
+          responses.terminal,
+        )
+      if (!mounted.current) return
+      await store.refreshRuntime(profile).catch((cause: unknown) => {
+        if (mounted.current)
+          onError(`Terminal renamed, but its status could not refresh: ${String(cause)}`)
       })
-      setOpen(false)
+      if (mounted.current) setOpen(false)
     } catch (cause: unknown) {
-      setError(cause instanceof Error ? cause.message : String(cause))
+      if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       pendingRef.current = false
-      setPending(false)
+      if (mounted.current) setPending(false)
     }
   }
   return (
@@ -89,7 +120,7 @@ export function TerminalRename({
               <Button
                 type="button"
                 variant="ghost"
-                disabled={pending || !owner.connected}
+                disabled={pending || !connected}
                 onClick={() => void save(null)}
               >
                 Use automatic title
@@ -100,10 +131,10 @@ export function TerminalRename({
                 disabled={pending}
                 onClick={() => setOpen(false)}
               >
-                Cancel
+                {uiText('Cancel')}
               </Button>
-              <Button type="submit" disabled={pending || !owner.connected || !title.trim()}>
-                Save
+              <Button type="submit" disabled={pending || !connected || !title.trim()}>
+                {uiText('Save')}
               </Button>
             </div>
           </form>

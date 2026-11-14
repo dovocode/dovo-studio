@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
@@ -24,6 +25,8 @@ export function ProjectInstructionsDialog({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [name, setName] = useState<Name>('AGENTS.md')
   const [drafts, setDrafts] = useState<Partial<Record<Name, Draft>>>({})
@@ -182,7 +185,7 @@ export function ProjectInstructionsDialog({
         )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" disabled={busy} onClick={close}>
-            Close
+            {uiText('Close')}
           </Button>
           <Button
             variant="outline"

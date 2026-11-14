@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { randomUUID } from '@dovo/protocol'
 import { useEffect, useRef, useState } from 'react'
 import { useConfirmDiscardChanges } from './unsaved-changes'
@@ -23,6 +24,8 @@ export function SavedPromptsDialog({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, setWorkspace } = useWorkspace()
   const repository = workspace.repositories.find((item) => item.id === repositoryId)
   const [rows, setRows] = useState<SavedPrompt[]>(() =>
@@ -201,9 +204,9 @@ export function SavedPromptsDialog({
         )}
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={close}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save}>{uiText('Save')}</Button>
         </div>
       </DialogContent>
     </Dialog>

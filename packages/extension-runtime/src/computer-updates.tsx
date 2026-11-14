@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import {
@@ -20,6 +21,8 @@ import {
 import { useWorkspace } from '@dovo/studio-core'
 
 export function ComputerUpdates() {
+  const uiText = useInterfaceText()
+
   const { runtimes, refreshRuntime } = useWorkspace()
   const targets = runtimeUpgradeTargets(runtimes)
   const current = useRef({ runtimes: targets, refreshRuntime })
@@ -251,7 +254,7 @@ export function ComputerUpdates() {
               </label>
               <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={() => setConfirmAll(false)}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
                 <Button
                   disabled={!all.length || !!state.busy.length}

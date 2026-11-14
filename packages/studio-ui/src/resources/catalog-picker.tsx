@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { resourceError } from './error'
 import {
@@ -52,6 +53,8 @@ export function CatalogPicker({
   onSkill: (skill: ManagedSkill) => void
   onSkills: (skills: ManagedSkill[]) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { request } = useWorkspace()
   const [query, setQuery] = useApplicationState('')
   const { mcpRegistrySource: source } = useAppPreferences()
@@ -425,7 +428,7 @@ export function CatalogPicker({
                 </SelectTrigger>
                 <SelectContent>
                   {[
-                    { id: 'search', name: 'Search' },
+                    { id: 'search', name: uiText('Search') },
                     { id: 'all-time', name: 'All time' },
                     { id: 'trending', name: 'Trending (24h)' },
                     { id: 'hot', name: 'Hot' },

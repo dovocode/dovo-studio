@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect } from 'effect'
 import {
   watchMessage,
@@ -36,6 +37,8 @@ export function MessageQueue({
   renderHeader?: (playback: ReactNode) => ReactNode
   visible?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const [selectedId, setSelectedId] = useState<string | null>(null)
 
@@ -559,7 +562,7 @@ export function MessageQueue({
                           change(paused ? 'resume-message' : 'pause-message', message.id),
                       },
                       {
-                        title: 'Edit',
+                        title: uiText('Edit'),
                         label: `Edit queued message ${index + 1}`,
                         icon: 'edit',
                         disabled: !canEdit(message),
@@ -587,7 +590,7 @@ export function MessageQueue({
                         onPress: () => change('steer', message.id),
                       },
                       {
-                        title: 'Remove',
+                        title: uiText('Remove'),
                         label: `Remove queued message ${index + 1}`,
                         icon: 'close',
                         disabled:

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { Image, Pressable, ScrollView, View } from 'react-native'
 import { shareAttachment } from './attachment-share'
@@ -58,6 +59,8 @@ export function AttachmentArchive({
   onBusy?: (busy: boolean) => void
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const {
     connected,
     readEffect,
@@ -229,7 +232,7 @@ export function AttachmentArchive({
                 onPress={() => setRetry((value) => value + 1)}
                 style={{ minHeight: 44, justifyContent: 'center' }}
               >
-                <Text style={{ color: colors.text }}>Retry</Text>
+                <Text style={{ color: colors.text }}>{uiText('Retry')}</Text>
               </Pressable>
             )}
           </View>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   validationMessages,
@@ -119,6 +120,8 @@ function ConnectionForm({
   onDone: () => void
   onCancel: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [provider, setProvider] = useApplicationState<ForgeProvider>(value?.provider ?? 'github')
   const [name, setName] = useApplicationState(value?.name ?? '')
@@ -513,7 +516,7 @@ function ConnectionForm({
         )}
         <div className="flex justify-end gap-2">
           <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
           <Button type="submit" aria-busy={busy}>
             {busy ? (
@@ -548,6 +551,8 @@ function ConnectionsContent({
   onChange?: () => void
   repositoryId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected, workspace } = useWorkspace()
   const { connections, loading, error, reload } = useForgeConnections()
   const [editing, setEditing] = useApplicationState<ForgeConnection | 'new' | null>(null)
@@ -691,7 +696,7 @@ function ConnectionsContent({
                     setFailure('')
                   }}
                 >
-                  Edit
+                  {uiText('Edit')}
                 </Button>
                 <Button
                   size="sm"
@@ -705,13 +710,13 @@ function ConnectionsContent({
                   }
                   onClick={() => setRemoving(connection.id)}
                 >
-                  Remove
+                  {uiText('Remove')}
                 </Button>
               </div>
               {removing === connection.id && (
                 <div className="flex w-full flex-wrap items-center justify-end gap-2">
                   <span className="mr-auto text-xs">
-                    Remove {connection.name} from this runtime?
+                    {uiText('Remove')} {connection.name} from this runtime?
                   </span>
                   <Button
                     size="sm"
@@ -719,7 +724,7 @@ function ConnectionsContent({
                     disabled={busy}
                     onClick={() => setRemoving(null)}
                   >
-                    Cancel
+                    {uiText('Cancel')}
                   </Button>
                   <Button
                     size="sm"
@@ -767,7 +772,7 @@ function ConnectionsContent({
       )}
       {error && (
         <Button variant="outline" size="sm" disabled={loading || !connected} onClick={reload}>
-          Retry
+          {uiText('Retry')}
         </Button>
       )}
     </section>
@@ -796,12 +801,14 @@ export function ForgeConnectionsButton({
   onChange?: () => void
   repositoryId?: string
 }) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useApplicationState(false)
   return (
     <>
       <Button type="button" size="sm" variant="ghost" onClick={() => setOpen(true)}>
         <Link2 className="size-4" />
-        Connections
+        {uiText('Connections')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85dvh] overflow-y-auto">

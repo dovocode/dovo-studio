@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAppPreferences } from '@dovo/studio-core'
 import { CreateGithub } from './create-github'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -37,6 +38,8 @@ function RepositoryDialogContent({
   initialSource?: 'dovo' | 'local' | 'github' | 'forge'
   onAdded?: (repository: import('@dovo/protocol').Repository) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { setWorkspace, connection, connected, request } = useWorkspace()
   const { pickDirectory } = useStudioHost()
   const [source, setSource] = useApplicationState<'dovo' | 'local' | 'github' | 'forge'>(
@@ -232,7 +235,7 @@ function RepositoryDialogContent({
                   Connected provider
                 </Button>
               </div>
-              <FormField label="Name">
+              <FormField label={uiText('Name')}>
                 <Input
                   required
                   value={name}
@@ -340,7 +343,7 @@ function RepositoryDialogContent({
               )}
               <DialogFooter>
                 <Button type="button" variant="outline" disabled={busy} onClick={onClose}>
-                  Cancel
+                  {uiText('Cancel')}
                 </Button>
                 <Button
                   type="submit"

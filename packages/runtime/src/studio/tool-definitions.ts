@@ -59,7 +59,7 @@ const definitions = [
     part: 'ui',
     schema: studioUICommandSchema,
     description:
-      'Select a returned local Studio session ID. snapshot gives text/CSS selectors; refresh after input. Real user UI; no JavaScript/remote control. Mobile: Device Hub. Screenshots: browser/device tools.',
+      'Use a returned local session ID. snapshot: text/CSS; refresh after input. Human UI, no JS/remote. theme-read: mode/palettes. theme-set: this device, only when asked; denied read-only. Mobile/screenshots: device/browser tools.',
   },
   {
     part: 'diagnostics',

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import type { Attachment } from '@dovo/protocol'
 import { Button } from '@dovo/studio-ui'
@@ -23,6 +24,8 @@ export function QuestionAttachments({
   onRemove: (id: string) => void
   onBusy: (busy: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const input = useRef<HTMLInputElement>(null)
   const attachments = useAttachments({ id: taskId }, undefined, {
     key: questionId,
@@ -70,7 +73,7 @@ export function QuestionAttachments({
             onClick={() => void attachments.remove(file.id)}
             aria-label={`Remove ${file.name}`}
           >
-            Remove
+            {uiText('Remove')}
           </Button>
         </div>
       ))}

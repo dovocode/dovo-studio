@@ -805,3 +805,21 @@ it('rebuilds the derived history index after an upgrade or drift', () => {
     db.close()
   }
 })
+
+it('reads only the latest 50 user messages for the composer without retaining a full thread', () => {
+  const db = openDatabase(':memory:')
+  try {
+    new WorkspaceStore(db).update(() => workspace)
+    const reader = new WorkspaceStore(db)
+    expect(reader.composerHistory('thread').messages.map((m) => m.id)).toEqual(
+      task.messages
+        .filter((m) => m.role === 'user')
+        .slice(-50)
+        .map((m) => m.id),
+    )
+    expect(reader.composerHistory('thread').turns).toEqual([])
+    expect(reader.retainedHistories().tasks).toEqual([])
+  } finally {
+    db.close()
+  }
+})

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button } from '@dovo/studio-ui'
 import { LoaderCircle } from 'lucide-react'
 export function PipelineSectionStatus({
@@ -15,6 +16,8 @@ export function PipelineSectionStatus({
   }
   connected: boolean
 }) {
+  const uiText = useInterfaceText()
+
   if (state.ready && !state.error && !state.detail?.stale) return null
   return (
     <div
@@ -46,7 +49,7 @@ export function PipelineSectionStatus({
           disabled={!connected || state.busy}
           onClick={state.refresh}
         >
-          Refresh {label.toLowerCase()}
+          {uiText('Refresh')} {label.toLowerCase()}
         </Button>
       )}
     </div>

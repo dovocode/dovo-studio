@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import { EmptyState } from '../ui/content/empty-state'
 import { useNavigation } from '../shell/navigation'
@@ -26,6 +27,8 @@ import { clientScopeKey } from '@dovo/client-runtime'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { DeleteProjectAction } from '../scm/connections/project-deletion'
 export default function RepositoriesScreen() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { overviews } = useRuntime()
@@ -34,7 +37,7 @@ export default function RepositoriesScreen() {
   return (
     <View style={styles.screen}>
       <ScreenHeader
-        title="Projects"
+        title={uiText('Projects')}
         onBack={() => backToCollection('/')}
         buttons={[
           {

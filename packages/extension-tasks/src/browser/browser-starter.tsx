@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { ComponentProps, ReactNode } from 'react'
 import { Globe2 } from 'lucide-react'
 import { Button, ComposerSurface, ComposerSubmit, ComposerWorkspaceBar } from '@dovo/studio-ui'
@@ -13,6 +14,8 @@ export function BrowserStarter({
   controls: ReactNode
   busy: boolean
 }) {
+  const uiText = useInterfaceText()
+
   return (
     <div
       className="startup-draft flex h-full min-h-0 w-full flex-col overflow-y-auto"
@@ -30,7 +33,7 @@ export function BrowserStarter({
             controls={
               <span className="inline-flex items-center gap-1.5 px-2 text-xs text-muted-foreground">
                 <Globe2 className="size-3.5" />
-                Browser
+                {uiText('Browser')}
               </span>
             }
             actions={

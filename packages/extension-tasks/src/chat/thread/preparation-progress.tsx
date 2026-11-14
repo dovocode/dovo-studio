@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
 import {
   Bot,
@@ -30,6 +31,8 @@ export function PreparationProgress({
   retrying?: boolean
   retryError?: string
 }) {
+  const uiText = useInterfaceText()
+
   const [now, setNow] = useState(() => Date.now())
   const { failed } = preparation
   useEffect(() => {
@@ -174,7 +177,7 @@ export function PreparationProgress({
                   ) : (
                     <RotateCcw className="size-3.5" />
                   )}
-                  Retry
+                  {uiText('Retry')}
                 </Button>
                 <span className="text-[0.6875rem] text-muted-foreground">
                   {retryError || 'Your message stays queued until the run starts.'}

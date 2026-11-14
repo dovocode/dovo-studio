@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { RuntimeSpeechSettings } from './runtime-speech'
 import { useEffect, useState } from 'react'
 import {
@@ -20,6 +21,8 @@ const downloadId = randomUUID()
 let downloadInFlight: Promise<void> | undefined
 
 export function SpeechSettings() {
+  const uiText = useInterfaceText()
+
   const bridge = desktopDictationBridge()
   const preferences = useAppPreferences()
   const [status, setStatus] = useState<DictationStatus | null>(null)
@@ -67,7 +70,7 @@ export function SpeechSettings() {
     <>
       <RuntimeSpeechSettings />
       <SettingsGroup
-        title="Speech"
+        title={uiText('Speech')}
         description="Dictate messages with live preview. Speech is processed on this computer, including when connected to a remote runtime."
       >
         <SettingRow

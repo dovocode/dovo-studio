@@ -24,6 +24,7 @@ function metadata(previous: ToolCallUpdate['_meta'], patch: ToolCallUpdate['_met
 export class AcpV2Updates {
   private readonly messages = new Map<string, string>()
   private emitted = ''
+  private lastMessageId: string | undefined
   readonly tools = new Map<string, ToolCallUpdate>()
   private readonly terminals = new Map<
     string,
@@ -43,6 +44,7 @@ export class AcpV2Updates {
     this.finish = finish
     this.messages.clear()
     this.emitted = ''
+    this.lastMessageId = undefined
     this.foregroundStarted = false
     this.active = true
   }
@@ -83,6 +85,7 @@ export class AcpV2Updates {
       active &&
       (SessionUpdate.isAgentMessage(update) || SessionUpdate.isAgentMessageChunk(update))
     ) {
+      const exists = this.messages.has(update.messageId)
       const previous = this.messages.get(update.messageId) ?? ''
       const text = SessionUpdate.isAgentMessageChunk(update)
         ? previous + (ContentBlock.isText(update.content) ? update.content.text : '')
@@ -93,11 +96,24 @@ export class AcpV2Updates {
               .map((item) => item.text)
               .join('')
       this.messages.set(update.messageId, text)
-      const output = [...this.messages.values()].join('')
-      if (output.startsWith(this.emitted)) this.run.onText(output.slice(this.emitted.length))
-      else if (this.run.onTextReplace) this.run.onTextReplace(output, this.emitted.length)
-      else throw new Error('ACP v2 message replacement requires text replacement support')
-      this.emitted = output
+      // Normal tail chunks do not rebuild or scan the whole transcript. Earlier-message
+      // patches still need the complete projection, in original insertion order.
+      const append =
+        !exists ||
+        (this.lastMessageId === update.messageId &&
+          (SessionUpdate.isAgentMessageChunk(update) || text.startsWith(previous)))
+      if (append) {
+        const delta = exists ? text.slice(previous.length) : text
+        if (delta) this.run.onText(delta)
+        this.emitted += delta
+      } else {
+        const output = [...this.messages.values()].join('')
+        if (output.startsWith(this.emitted)) this.run.onText(output.slice(this.emitted.length))
+        else if (this.run.onTextReplace) this.run.onTextReplace(output, this.emitted.length)
+        else throw new Error('ACP v2 message replacement requires text replacement support')
+        this.emitted = output
+      }
+      if (!exists) this.lastMessageId = update.messageId
     }
     if (
       active &&

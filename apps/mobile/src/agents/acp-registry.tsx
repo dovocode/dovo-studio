@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Effect, Result, Schema } from 'effect'
 import { useEffect, useState } from 'react'
 import { Alert, Linking, View } from 'react-native'
@@ -56,6 +57,8 @@ export function AcpRegistry({
   management?: boolean
   showRegistry?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { callEffect, connected } = useRuntime()
@@ -276,7 +279,7 @@ export function AcpRegistry({
                         />
                         <Action
                           secondary
-                          label="Remove"
+                          label={uiText('Remove')}
                           disabled={busy || !connected}
                           onPress={() =>
                             Alert.alert(

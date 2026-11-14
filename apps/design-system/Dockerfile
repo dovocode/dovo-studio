@@ -1,11 +1,11 @@
 FROM node:26-slim AS build
 WORKDIR /workspace
-RUN corepack enable && corepack prepare pnpm@12.3.4 --activate
+RUN npm install --global pnpm@12.18.0
 COPY . .
 RUN pnpm install --frozen-lockfile --ignore-scripts
 RUN pnpm --filter @dovo/design-system... -r build
 
-FROM nginxinc/nginx-unprivileged:1.29-alpine
+FROM nginxinc/nginx-unprivileged:1.31-alpine
 COPY apps/design-system/nginx.conf /etc/nginx/nginx.conf
 COPY --from=build /workspace/apps/design-system/storybook-static /usr/share/nginx/html
 EXPOSE 8080

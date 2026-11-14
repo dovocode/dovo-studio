@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { ArrowRightLeft, ChevronRight, MonitorUp } from 'lucide-react'
 import {
@@ -68,6 +69,8 @@ export function ContinueElsewhereDialog({
   onDone?: () => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, snapshot, request, connected } = useWorkspace()
   const [step, setStep] = useState<'choose' | 'harness'>('choose')
   const machineUnavailable = machineMoveBlocker(task, repository)
@@ -207,7 +210,7 @@ export function ContinueElsewhereDialog({
                 disabled={busy}
                 onClick={() => setStep('choose')}
               >
-                Back
+                {uiText('Back')}
               </Button>
               <Button disabled={blocked} onClick={() => void submit()}>
                 {busy ? 'Switching…' : `Continue with ${name}`}

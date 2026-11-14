@@ -28,7 +28,12 @@ export function UsagePool({
       {pools.map((pool) => (
         <View key={pool.key} style={[styles.card, { gap: 8 }]}>
           <Text style={styles.text}>
-            {pool.provider === 'codex' ? 'Codex' : 'Claude'} · {pool.window}
+            {pool.provider === 'codex'
+              ? 'Codex'
+              : pool.provider === 'opencode'
+                ? 'OpenCode'
+                : 'Claude'}{' '}
+            · {pool.window}
           </Text>
           <Text style={styles.muted}>
             {pool.available} of {pool.segments.length} accounts available

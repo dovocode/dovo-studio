@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { defaultGithubTrigger, githubEventChoices, automationScheduleChoices } from '@dovo/protocol'
 import {
@@ -25,6 +26,8 @@ export function NodeInspector({
   onChange: (data: AutomationData) => void
   onDelete: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const data = node.data
   const { snapshot } = useWorkspace()
   const bots = workspace.tasks.filter(
@@ -40,7 +43,7 @@ export function NodeInspector({
   return (
     <div className="min-h-0 flex-1 space-y-4 overflow-auto p-4 text-xs">
       <h2 className="font-medium">Configure {data.kind}</h2>
-      <FormField label="Name">
+      <FormField label={uiText('Name')}>
         <Input value={data.label} onChange={(event) => field({ label: event.target.value })} />
       </FormField>
       {data.kind === 'trigger' && (

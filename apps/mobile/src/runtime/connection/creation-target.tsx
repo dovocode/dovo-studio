@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useApplicationState } from '../state/application-state'
 import type { ReactNode } from 'react'
@@ -21,6 +22,8 @@ export function CreationTarget({
   onClose: () => void
   children: (runtimeId: string) => ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { overviews } = useRuntime()
@@ -56,7 +59,7 @@ export function CreationTarget({
             disabled={!entry.connected || !entry.snapshot}
             onPress={() => setTarget(entry.profile)}
           />
-          {!entry.connected && <Text style={styles.muted}>Offline</Text>}
+          {!entry.connected && <Text style={styles.muted}>{uiText('Offline')}</Text>}
         </View>
       ))}
     </Sheet>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import {
   FlatList,
@@ -31,6 +32,8 @@ const renderMessage: ListRenderItem<Message> = ({ item }) => <ReplicaMessage mes
 const messageKey = (message: Message) => message.id
 
 export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => void }) {
+  const uiText = useInterfaceText()
+
   const { read, connected } = useRuntime()
   const { styles } = useTheme()
   const [view, setView] = useState(task)
@@ -119,7 +122,7 @@ export function ReplicatedThread({ task, onBack }: { task: Task; onBack: () => v
       <ScreenHeader
         title={view.title}
         subtitle={owner?.ownerName}
-        leading={<Action label="Back" secondary onPress={onBack} />}
+        leading={<Action label={uiText('Back')} secondary onPress={onBack} />}
       />
       <View style={[styles.content, { paddingBottom: 8 }]}>
         <Text style={styles.muted}>

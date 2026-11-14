@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import {
   RuntimeRequestError,
@@ -26,6 +27,8 @@ export function StagingFilePreview({
   onNavigate: (path: string) => void
   onBack: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const [attempt, setAttempt] = useState(0)
   const [result, setResult] = useState<{
@@ -95,7 +98,7 @@ export function StagingFilePreview({
               if (previous) onNavigate(previous)
             }}
           >
-            Previous
+            {uiText('Previous')}
           </Button>
           <span aria-live="polite" aria-atomic="true" className="text-xs text-muted-foreground">
             {position >= 0 ? `${position + 1} of ${paths.length}` : 'File no longer listed'}
@@ -108,7 +111,7 @@ export function StagingFilePreview({
               if (next) onNavigate(next)
             }}
           >
-            Next
+            {uiText('Next')}
           </Button>
         </nav>
       </div>

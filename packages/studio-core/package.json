@@ -8,6 +8,7 @@
     "./accessibility": "./src/accessibility.ts",
     "./fonts": "./src/fonts.ts",
     "./themes": "./src/themes.ts",
+    "./preferences": "./src/preferences.ts",
     "./code-themes": "./src/code-themes.ts",
     "./theme-catalog": "./src/theme-catalog.ts",
     "./links": "./src/links/index.ts",
@@ -23,7 +24,8 @@
     "./next-prompt": "./src/use-next-prompt.ts",
     "./runtime-dictation": "./src/runtime-dictation.ts",
     "./pull-reads": "./src/scm/pull-reads.ts",
-    "./jira-reads": "./src/scm/jira-reads.ts"
+    "./jira-reads": "./src/scm/jira-reads.ts",
+    "./interface-language": "./src/interface-language.tsx"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
@@ -33,10 +35,10 @@
     "@dovo/design": "workspace:*",
     "@dovo/durable-connections": "workspace:*",
     "@dovo/protocol": "workspace:*",
-    "@effect/atom-react": "4.1.2",
+    "@effect/atom-react": "4.1.4",
     "@noble/hashes": "2.4.0",
-    "@pierre/highlights": "0.4.0",
-    "effect": "4.1.2",
+    "@pierre/highlights": "0.5.1",
+    "effect": "4.1.4",
     "fflate": "0.8.3",
     "jsonc-parser": "3.3.1",
     "react": "^19.3.1"

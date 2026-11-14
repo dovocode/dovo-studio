@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { terminalFileLinks, type TerminalFileLink } from './terminal-file-links'
 import { createRuntimeClient } from '@dovo/protocol'
 import { startReconnecting, useAppPreferences, fontStack, systemMonoFont } from '@dovo/studio-core'
@@ -32,6 +33,8 @@ export function TerminalSession({
   focusRequest?: number
   readOnly?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { connection, request, connected } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
     [error, setError] = useApplicationState('')
@@ -321,7 +324,7 @@ export function TerminalSession({
             disabled={!hasSelection}
             onSelect={() => void clipboard('copy')}
           >
-            Copy
+            {uiText('Copy')}
           </ContextMenu.Item>
           <ContextMenu.Item
             className={menuItem}

@@ -11,6 +11,7 @@ const allowed = new Set([
   '/api/linked-projects',
   '/api/agent/question',
   '/api/agent/help',
+  '/api/agent/conversation',
   '/api/agent/todos',
   '/api/agent/workflow',
   '/api/agent/secure-input',
@@ -45,6 +46,7 @@ const allowed = new Set([
   '/api/device-hosts/forward/stop',
   '/api/terminals/run',
   '/api/terminals/close',
+  '/api/terminals/update',
   '/api/terminals/ticket',
 ])
 const denied = () => {
@@ -72,6 +74,16 @@ export function authorizeRunRoute(
 ) {
   const grant = authorizeRunEndpoint(s, token, method, path)
   const input = record(value)
+  if (path === '/api/terminals/update') {
+    authorizeRunTerminal(s, token, typeof input.id === 'string' ? input.id : '')
+    // Naming does not grant access to pin, settle, snooze, or restore a terminal.
+    if (
+      !Object.hasOwn(input, 'title') ||
+      Object.keys(input).some((key) => key !== 'id' && key !== 'title')
+    )
+      denied()
+    return grant
+  }
   if (path === '/api/terminals/ticket' || path === '/api/terminals/close') {
     authorizeRunTerminal(s, token, typeof input.id === 'string' ? input.id : '')
     return grant

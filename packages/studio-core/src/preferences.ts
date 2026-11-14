@@ -1,3 +1,4 @@
+import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
   pullProjectVisibilitySchema,
@@ -30,6 +31,7 @@ import {
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  interfaceLanguage: interfaceLanguageSchema,
   preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
   ...serviceUrlsSchema.fields,
   sharedScopedSettings: sharedSettingsSchema,
@@ -204,6 +206,7 @@ export const defaultAppPreferences: AppPreferences = {
   dictationLanguage: 'auto',
   quitShortcut: 'immediate',
   theme: 'dark',
+  interfaceLanguage: 'en-US',
   themePalette: 'dovo',
   themeGlow: 0,
   themeGradients: false,

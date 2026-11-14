@@ -15,7 +15,7 @@ const mobile = root + 'apps/mobile/src/'
 const stubs = [
   {
     path: 'react-native',
-    contents: `export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Object.assign({},...[].concat(style??{}))}>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
+    contents: `export const TextInput=({value,onChangeText,accessibilityLabel})=><input aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)}/>;export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={Object.assign({},...[].concat(style??{}))}>{children}</div>;export const ScrollView=View;export const Image=({source,accessibilityLabel})=><img alt={accessibilityLabel} src={source.uri}/>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const SectionList=({sections,renderItem})=><div>{sections.flatMap(section=>section.data.map(item=><div key={item.node.path}>{renderItem({item})}</div>))}</div>;export const Alert={alert:(_title,_body,actions)=>window.confirmDiscard=()=>actions.find(action=>action.text==='Discard').onPress()};`,
   },
   {
     path: '../../runtime/connection/provider',
@@ -109,6 +109,7 @@ try {
   await mkdir(join(directory, 'src'))
   await writeFile(join(directory, 'src', 'hello.ts'), 'export const hello = 1\n')
   await writeFile(join(directory, 'empty.txt'), '')
+  await writeFile(join(directory, 'data.csv'), 'Name,Value\nFirst table cell,42\n')
   await writeFile(join(linked, 'linked.txt'), 'linked contents\n')
   await writeFile(
     join(directory, 'pixel.png'),
@@ -161,6 +162,26 @@ try {
   )
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('button', { name: 'empty.txt', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'data.csv', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit file', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Table preview', exact: true }).click()
+  await page
+    .getByText('First table cell', { exact: true })
+    .waitFor({ timeout: 8000 })
+    .catch(async (error) => {
+      console.error(errors, await page.locator('body').innerText())
+      throw error
+    })
+  await page.getByRole('button', { name: 'Text view', exact: true }).click()
+  await page.getByRole('button', { name: 'Edit file', exact: true }).click()
+  await page
+    .getByRole('textbox', { name: 'File contents', exact: true })
+    .fill('Name,Value\nEdited CSV,43\n')
+  await page.getByRole('button', { name: 'Save file', exact: true }).click()
+  await page.getByRole('button', { name: 'Table preview', exact: true }).waitFor()
+  assert.equal(await readFile(join(directory, 'data.csv'), 'utf8'), 'Name,Value\nEdited CSV,43\n')
+  await page.getByRole('button', { name: 'Browse files', exact: true }).click()
+
   await writeFile(join(directory, 'new-file.txt'), 'created after opening files\n')
   await rm(join(directory, 'empty.txt'))
   await page.getByRole('button', { name: 'Refresh files', exact: true }).click()

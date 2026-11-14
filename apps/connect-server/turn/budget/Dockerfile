@@ -1,4 +1,4 @@
-FROM python:3.13-alpine3.21
+FROM python:3.15-alpine3.24
 RUN apk add --no-cache nftables
 WORKDIR /app
 COPY guard.py .

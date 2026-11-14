@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useId, useRef, useState } from 'react'
 import {
   Hash,
@@ -212,6 +213,8 @@ function ApprovalRulesDialog({
   repositoryId: string
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { workspace, setWorkspace, snapshot, connected } = useWorkspace()
   const repository = workspace.repositories.find((item) => item.id === repositoryId)
   const rules = repository?.approvedCommands ?? []
@@ -255,7 +258,7 @@ function ApprovalRulesDialog({
           className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
           aria-hidden="true"
         >
-          <span className="w-36 shrink-0">Name</span>
+          <span className="w-36 shrink-0">{uiText('Name')}</span>
           <span className="flex-1">Command</span>
         </div>
         <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
@@ -284,7 +287,7 @@ function ApprovalRulesDialog({
           {!rules.length && <p className="text-xs text-muted-foreground">No saved commands.</p>}
         </div>
         <Button variant="outline" onClick={onClose}>
-          Close
+          {uiText('Close')}
         </Button>
       </DialogContent>
     </Dialog>
@@ -302,6 +305,8 @@ function ProjectActionsDialog({
   actions: ProjectAction[]
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { setWorkspace } = useWorkspace()
   const [rows, setRows] = useState<ProjectAction[]>(() =>
     actions.length ? actions : [{ id: randomUUID(), name: 'Run tests', command: '' }],
@@ -358,7 +363,7 @@ function ProjectActionsDialog({
           className="flex gap-2 pr-10 text-xs font-medium text-muted-foreground"
           aria-hidden="true"
         >
-          <span className="w-36 shrink-0">Name</span>
+          <span className="w-36 shrink-0">{uiText('Name')}</span>
           <span className="flex-1">Command</span>
         </div>
         <div className="-m-1 max-h-[50vh] space-y-2 overflow-y-auto p-1">
@@ -374,7 +379,7 @@ function ProjectActionsDialog({
                 }
                 aria-describedby={attempted && !row.name.trim() ? errorId : undefined}
                 aria-label="Action name"
-                placeholder="Name"
+                placeholder={uiText('Name')}
                 value={row.name}
                 maxLength={60}
                 onChange={(event) => change(row.id, { name: event.target.value })}
@@ -424,9 +429,9 @@ function ProjectActionsDialog({
         </Button>
         <div className="flex justify-end gap-2">
           <Button variant="outline" onClick={close}>
-            Cancel
+            {uiText('Cancel')}
           </Button>
-          <Button onClick={save}>Save</Button>
+          <Button onClick={save}>{uiText('Save')}</Button>
         </div>
       </DialogContent>
     </Dialog>

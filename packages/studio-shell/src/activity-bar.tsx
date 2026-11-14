@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   Settings,
   Bot,
@@ -94,6 +95,7 @@ export function ActivityBar({
   onDetachBrowser?: () => void
   indicators?: Readonly<Record<string, 'unread' | 'attention' | undefined>>
 }) {
+  const uiText = useInterfaceText()
   const sidebar = useNavigationSidebar()
   const [updateOpen, setUpdateOpen] = useState(false)
   useEffect(() => {
@@ -182,8 +184,12 @@ export function ActivityBar({
         .map((group) => (
           <div className="studio-navigation-group" key={group[0].id}>
             {group.map((view) => {
-              const button = item(view.id, view.title, icons[view.icon], activeId === view.id, () =>
-                onSelect(view.id),
+              const button = item(
+                view.id,
+                uiText(view.title),
+                icons[view.icon],
+                activeId === view.id,
+                () => onSelect(view.id),
               )
               return view.id === 'browser' && onDetachBrowser ? (
                 <ContextMenu.Root key={view.id}>

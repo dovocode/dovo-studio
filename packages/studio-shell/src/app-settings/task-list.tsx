@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { SnoozeSchedule } from './snooze-schedule'
 import {
   taskSortOptions,
@@ -75,6 +76,8 @@ function SnoozeDurations({ minutes }: { minutes: number[] }) {
 }
 
 export default function TaskListSettings() {
+  const uiText = useInterfaceText()
+
   const preferences = useAppPreferences()
   return (
     <SettingsPage
@@ -82,7 +85,10 @@ export default function TaskListSettings() {
       description="Organize the thread list and project picker, and choose when to ask for confirmation."
       storageInfo={<span>This device · saved automatically, except Snoozing (Save to apply)</span>}
     >
-      <SettingsGroup title="Projects" description="Arrange projects in the project picker.">
+      <SettingsGroup
+        title={uiText('Projects')}
+        description="Arrange projects in the project picker."
+      >
         <SettingRow
           label="Group matching projects"
           description="Combine matching repositories across computers."

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
@@ -46,6 +47,8 @@ type Row =
   | { kind: 'pages'; items: Extract<WorkspaceItem, { kind: 'browser' }>[] }
   | { kind: 'item'; item: WorkspaceItem }
 export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const browser = useBrowserWorkspace()
   const preferences = useMobilePreferences()
@@ -389,8 +392,8 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
               value={view.kind}
               items={[
                 { id: 'all', name: 'Everything' },
-                { id: 'thread', name: 'Threads' },
-                { id: 'bot', name: 'Bots' },
+                { id: 'thread', name: uiText('Threads') },
+                { id: 'bot', name: uiText('Bots') },
                 { id: 'browser', name: 'Pages' },
                 { id: 'terminal', name: 'Terminals' },
               ]}

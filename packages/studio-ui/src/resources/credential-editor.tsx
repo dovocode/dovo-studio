@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { CredentialField } from '@dovo/protocol'
 import { Button, Input } from '@dovo/studio-ui'
 export function CredentialEditor({
@@ -9,6 +10,8 @@ export function CredentialEditor({
   onChange: (fields: CredentialField[]) => void
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const change = (index: number, patch: Partial<CredentialField>) =>
     onChange(fields.map((field, i) => (i === index ? { ...field, ...patch } : field)))
   return (
@@ -53,7 +56,7 @@ export function CredentialEditor({
               disabled={disabled}
               onClick={() => onChange(fields.filter((_, i) => i !== index))}
             >
-              Remove
+              {uiText('Remove')}
             </Button>
           </div>
         </div>

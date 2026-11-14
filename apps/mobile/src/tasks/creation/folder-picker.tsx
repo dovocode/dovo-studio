@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { projectIcon, projectIconColor, projectIconInitials } from '@dovo/protocol'
 import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import type { ReactNode } from 'react'
@@ -57,6 +58,8 @@ export function FolderPicker({
   allowOffline?: boolean
   onMoving?: (moving: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { colors, styles } = useTheme()
   const runtime = useRuntime()
   const [open, setOpen] = useApplicationState(false)
@@ -501,7 +504,7 @@ export function FolderPicker({
                   <RuntimeIcon icon={source.snapshot?.runtimeIcon} size={18} />
                   <View style={{ flex: 1 }}>
                     <Text style={styles.text}>{runtimeComputerName(source)}</Text>
-                    {!source.connected && <Text style={styles.muted}>Offline</Text>}
+                    {!source.connected && <Text style={styles.muted}>{uiText('Offline')}</Text>}
                   </View>
                   <Icon name="down" size={14} />
                 </Pressable>

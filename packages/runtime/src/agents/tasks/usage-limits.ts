@@ -1,3 +1,4 @@
+import { readOpenCodeLimits } from '../providers/opencode/opencode.js'
 import {
   claudeEffectiveEnvironment,
   claudeSubscriptionEnvironment,
@@ -12,6 +13,7 @@ import { reportedUsageAccount } from './usage-account.js'
 
 /** Keep a control channel open without sending a message or consuming model tokens. */
 export async function readUsageLimits(agent: Agent) {
+  if (agent.provider === 'opencode') return readOpenCodeLimits(agent)
   if (agent.provider === 'codex')
     return codexAccount(agent, async (request) => {
       const account = reportedUsageAccount(

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { orderedThreadInfoSections, moveThreadInfoSection } from '@dovo/protocol'
 import { readAppPreferences, updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
 import { DropdownMenu, IconButton } from '@dovo/studio-ui'
@@ -5,6 +6,8 @@ import { ArrowUp, ArrowDown, Check, SlidersHorizontal } from 'lucide-react'
 import { useRef, useState } from 'react'
 
 export function ThreadInfoCustomization() {
+  const uiText = useInterfaceText()
+
   const { threadInfoSections: choices, threadInfoOrder } = useAppPreferences()
   const sections = orderedThreadInfoSections(threadInfoOrder)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -78,7 +81,7 @@ export function ThreadInfoCustomization() {
               }}
               className="flex h-7 items-center justify-center rounded-lg px-2 outline-none data-[highlighted]:bg-accent"
             >
-              Done
+              {uiText('Done')}
             </DropdownMenu.Item>
           </div>
           <div className="min-h-0 flex-1 overflow-y-auto px-4 py-2">

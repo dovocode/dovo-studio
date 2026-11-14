@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { WorkspaceControls } from '../chat/composer/composer-workspace'
 import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
@@ -38,6 +39,8 @@ export function StartupDraft({
     onStartBackground?: (task: Task) => void,
   ) => ReactNode
 }) {
+  const uiText = useInterfaceText()
+
   const store = useWorkspace()
   const [selection, setSelection] = useState<{
     runtimeId: string | null
@@ -61,7 +64,7 @@ export function StartupDraft({
   const initialTask = useMemo(
     () => ({
       ...createTask({
-        title: 'New thread',
+        title: uiText('New thread'),
         objective: '',
         agentId: '',
         ...resolveTaskDefaults(store.snapshot?.defaults, repository),

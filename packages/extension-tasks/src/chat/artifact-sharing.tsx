@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { useAccount, useAppPreferences, useStudioHost } from '@dovo/studio-core'
 import { artifactPublicationInput, type Artifact, type AccountStorage } from '@dovo/protocol'
@@ -26,6 +27,8 @@ function SignedInArtifactSharing({
   storage: AccountStorage
   openUrl: (url: string) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const account = useAccount(storage, openUrl, useAppPreferences())
   const [open, setOpen] = useState(false)
   if (!account.directory || account.deletionPending) return null
@@ -33,7 +36,7 @@ function SignedInArtifactSharing({
     <>
       <Button size="sm" variant="ghost" onClick={() => setOpen(true)} aria-label="Share artifact">
         <Share2 className="size-3.5" />
-        Share
+        {uiText('Share')}
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { suggestionComment } from './suggestion'
 import { useRef, type ReactNode } from 'react'
@@ -24,6 +25,8 @@ export function LineCommentForm({
   onDraft?: (draft: { body: string; suggesting: boolean; replacement: string }) => void
   disabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const [localDraft, setLocalDraft] = useApplicationState({
       body: '',
       suggesting: false,
@@ -116,7 +119,7 @@ export function LineCommentForm({
           {busy ? 'Saving…' : submitLabel}
         </Button>
         <Button type="button" size="sm" variant="ghost" disabled={busy} onClick={onCancel}>
-          Cancel
+          {uiText('Cancel')}
         </Button>
       </div>
     </form>

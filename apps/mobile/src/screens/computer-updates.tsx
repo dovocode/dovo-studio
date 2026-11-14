@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react'
 import { AppState, View } from 'react-native'
@@ -18,6 +19,8 @@ import { SettingsGroup, SettingsRow } from './settings-group'
 import { Sheet } from '../ui/layout/sheet'
 
 export function ComputerUpdates() {
+  const uiText = useInterfaceText()
+
   const { styles } = useTheme()
 
   const { overviews, refreshRuntime } = useRuntime()
@@ -227,7 +230,7 @@ export function ComputerUpdates() {
                       void manager.start(all, { restartDesktops: true, resumeInterrupted })
                     }}
                   />
-                  <Action secondary label="Cancel" onPress={() => setConfirmAll(false)} />
+                  <Action secondary label={uiText('Cancel')} onPress={() => setConfirmAll(false)} />
                 </View>
               </Sheet>
             )}

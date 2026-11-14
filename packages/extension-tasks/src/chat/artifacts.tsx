@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { memo, useContext, useEffect, useRef, useState } from 'react'
 import {
@@ -109,6 +110,8 @@ export function ArtifactBrowser({
   taskId: string
   initialId?: string
 } & ({ embedded: true; onClose?: () => void } | { embedded?: false; onClose: () => void })) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspace()
   const previewTheme = useArtifactPreviewTheme()
   const [items, setItems] = useState<ArtifactMetadata[]>()
@@ -483,7 +486,7 @@ export function ArtifactBrowser({
       )}
       {artifact?.files && (
         <div className="flex shrink-0 items-center gap-2 border-b bg-sidebar/60 px-4 py-2 text-xs dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
-          <span className="shrink-0 text-muted-foreground">Files</span>
+          <span className="shrink-0 text-muted-foreground">{uiText('Files')}</span>
           <select
             aria-label="Artifact file"
             className="min-w-0 flex-1 truncate rounded bg-background py-1"

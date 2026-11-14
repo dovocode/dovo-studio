@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PipelineSectionStatus } from './pipeline-section-status'
 import type { useIssueDiscussion } from './use-issue-discussion'
 import { CircleDot, ExternalLink } from 'lucide-react'
@@ -46,6 +47,8 @@ export function IssueDetail({
   onMore: () => void
   preview?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const { issue, comments, next, discussionNotice } = detail
   const taskLinks = (
     <WorkTaskLinks
@@ -167,7 +170,7 @@ export function IssueDetail({
         aria-label="Issue description"
         className="min-w-0 rounded-xl border bg-card p-5 text-sm leading-7"
       >
-        <h3 className="mb-3 font-medium">Description</h3>
+        <h3 className="mb-3 font-medium">{uiText('Description')}</h3>
         <MessageResponse baseURL={issue.url}>
           {(issue.preview ?? issue.body) || 'No description provided.'}
         </MessageResponse>

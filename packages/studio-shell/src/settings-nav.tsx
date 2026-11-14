@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useId, useRef, useState } from 'react'
 import {
   useSettingsTarget,
@@ -141,6 +142,8 @@ export function SettingsNav({
   activeId: string
   onSelect: (viewId: string) => boolean | void | Promise<boolean | void>
 }) {
+  const uiText = useInterfaceText()
+
   const input = useRef<HTMLInputElement>(null)
   const navigation = useRef<HTMLElement>(null)
   const links = useRef<HTMLDivElement>(null)
@@ -247,7 +250,7 @@ export function SettingsNav({
               needle.split(/\s+/).some((term) => label.toLowerCase().includes(term)) &&
               needle
                 .split(/\s+/)
-                .every((term) => `${label} ${view.title}`.toLowerCase().includes(term)),
+                .every((term) => `${label} ${uiText(view.title)}`.toLowerCase().includes(term)),
           )
         : [],
     ]),
@@ -255,7 +258,9 @@ export function SettingsNav({
   const matches = ordered.filter((view) => {
     if (!needle || fieldMatches.get(view.id)?.length) return true
     const category = headings.find(([section]) => section === sectionFor(view))?.[1] ?? ''
-    const words = `${view.title} ${view.keywords ?? ''} ${category}`.toLowerCase().split(/\s+/)
+    const words = `${uiText(view.title)} ${view.keywords ?? ''} ${category}`
+      .toLowerCase()
+      .split(/\s+/)
     return (
       needle.split(/\s+/).every((term) => words.some((word) => word.startsWith(term))) ||
       view.title.toLowerCase().includes(needle)
@@ -352,7 +357,7 @@ export function SettingsNav({
                     <SelectLabel className="text-xs text-muted-foreground">{label}</SelectLabel>
                     {items.map((view) => (
                       <SelectItem key={view.id} value={view.id}>
-                        {view.title}
+                        {uiText(view.title)}
                       </SelectItem>
                     ))}
                   </SelectGroup>
@@ -364,7 +369,7 @@ export function SettingsNav({
         </div>
         <div className="shrink-0 px-1 md:px-1.5">
           <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
-            Settings
+            {uiText('Settings')}
           </h1>
           {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
           <div className="relative text-[0.8125rem]">
@@ -456,7 +461,7 @@ export function SettingsNav({
                             type="button"
                             data-search-result
                             aria-current={active ? 'page' : undefined}
-                            aria-label={view.title}
+                            aria-label={uiText(view.title)}
                             onClick={() => select(view.id)}
                             className="flex min-h-8 min-w-0 flex-1 scroll-my-6 items-center gap-2 rounded-xl py-1 pl-2 text-left"
                           >
@@ -467,7 +472,7 @@ export function SettingsNav({
                               className={`shrink-0 ${active ? 'text-foreground' : 'text-muted-foreground/70'}`}
                             />
                             <span className="min-w-0 flex-1 break-words leading-snug">
-                              {view.title}
+                              {uiText(view.title)}
                             </span>
                           </button>
                           {Storage && label && (
@@ -478,7 +483,7 @@ export function SettingsNav({
                                   variant="ghost"
                                   size="sm"
                                   className="size-7 shrink-0 p-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-within:opacity-100 [@media(hover:none)]:opacity-100"
-                                  aria-label={`Settings scope for ${view.title}`}
+                                  aria-label={`Settings scope for ${uiText(view.title)}`}
                                   title={label}
                                 >
                                   <Storage size={13} aria-hidden="true" />
@@ -492,7 +497,7 @@ export function SettingsNav({
                                   className="studio-menu-surface z-50 w-72 max-w-[calc(100vw-24px)] space-y-2 rounded-2xl border bg-[var(--studio-floating-fill)] p-3 text-xs text-popover-foreground"
                                 >
                                   <p className="font-semibold">
-                                    {view.title} · {label}
+                                    {uiText(view.title)} · {label}
                                   </p>
                                   {view.settingsScope === 'inherited' && (
                                     <>

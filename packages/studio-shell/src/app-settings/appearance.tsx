@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botLayouts } from '@dovo/protocol'
 import {
   fontStack,
@@ -18,6 +19,8 @@ import { SettingsSelect } from './settings-select'
 import { CodeThemeSettings } from './code-theme'
 
 export default function AppearanceSettings() {
+  const uiText = useInterfaceText()
+
   const {
     botLayout,
     botsInThreads,
@@ -49,7 +52,7 @@ export default function AppearanceSettings() {
   }
   const selectedPalette = studioThemes[themePalette]
   return (
-    <SettingsPage local title="Appearance" description="How Dovo looks on this device.">
+    <SettingsPage local title={uiText('Appearance')} description="How Dovo looks on this device.">
       <SettingsGroup title="Layout">
         <SettingRow
           label="Bots in thread overview"
@@ -84,7 +87,7 @@ export default function AppearanceSettings() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup
-        title="Theme"
+        title={uiText('Theme')}
         description="Choose your scheme and palette, then fine-tune the highlights."
       >
         <SettingRow
@@ -204,7 +207,7 @@ export default function AppearanceSettings() {
         </SettingRow>
       </SettingsGroup>
       <SettingsGroup
-        title="Accessibility"
+        title={uiText('Accessibility')}
         description="Status icons and labels remain visible in every color mode."
       >
         <SettingRow
@@ -354,7 +357,7 @@ export default function AppearanceSettings() {
         </div>
       </SettingsGroup>
       <SettingsGroup
-        title="Terminal"
+        title={uiText('Terminal')}
         description="Changes apply to open terminals without restarting them."
       >
         <SettingRow

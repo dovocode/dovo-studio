@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Puzzle, Plus, Settings2, ExternalLink, Pin, PinOff } from 'lucide-react'
 import type { BrowserExtensionCommand, BrowserExtensionsResult } from '@dovo/protocol'
@@ -28,6 +29,8 @@ export function BrowserExtensions({
   pageUrl?: string
   onBrowseStore?: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { browserExtensions } = useStudioHost()
   const trigger = useRef<HTMLButtonElement>(null)
   const [menuOpen, setMenuOpen] = useState(false)
@@ -191,7 +194,9 @@ export function BrowserExtensions({
                     <Puzzle size={18} className="shrink-0 text-muted-foreground" />
                   )}
                   <span className="min-w-0 flex-1 truncate">{extension.name}</span>
-                  {!extension.enabled && <span className="text-xs text-muted-foreground">Off</span>}
+                  {!extension.enabled && (
+                    <span className="text-xs text-muted-foreground">{uiText('Off')}</span>
+                  )}
                 </DropdownMenu.Item>
                 <IconButton
                   type="button"
@@ -381,7 +386,9 @@ export function BrowserExtensions({
                 </div>
                 {removeId === extension.id && (
                   <div className="space-y-2 text-sm">
-                    <p>Remove {extension.name} from this profile?</p>
+                    <p>
+                      {uiText('Remove')} {extension.name} from this profile?
+                    </p>
                     <div className="flex gap-2">
                       <Button
                         size="sm"
@@ -400,7 +407,7 @@ export function BrowserExtensions({
                         disabled={busy}
                         onClick={() => setRemoveId('')}
                       >
-                        Cancel
+                        {uiText('Cancel')}
                       </Button>
                     </div>
                   </div>

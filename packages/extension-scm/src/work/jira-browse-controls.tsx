@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import type { JiraIssueFilters } from '@dovo/protocol'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
@@ -15,6 +16,8 @@ export function JiraBrowseControls({
   onFilters: (value: JiraIssueFilters) => void
   enabled: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const [closed, setClosed] = useState(false)
   const { boards, sprints } = useJiraBrowse(source, filters.board, closed, enabled)
   return (
@@ -106,7 +109,7 @@ export function JiraBrowseControls({
               disabled={!source?.connected || resource.busy}
               onClick={resource.retry}
             >
-              Retry {index ? 'sprints' : 'boards'}
+              {uiText('Retry')} {index ? 'sprints' : 'boards'}
             </Button>
           </div>
         ) : null,

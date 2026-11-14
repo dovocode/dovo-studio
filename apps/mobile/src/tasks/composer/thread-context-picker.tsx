@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useLayoutEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, TextInput, View } from 'react-native'
 import { File, Paths } from 'expo-file-system'
@@ -31,6 +32,8 @@ export function ThreadContextPicker({
   attachmentBusy?: boolean
   upload: (assets: AttachmentAsset[], signal: AbortSignal) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
+
   const { snapshot, profile, activeId, connected } = useRuntime()
   const { colors } = useTheme()
   const [localOpen, setLocalOpen] = useState(false)
@@ -162,7 +165,7 @@ export function ThreadContextPicker({
               ))}
           </ScrollView>
           <Pressable accessibilityRole="button" onPress={close} style={{ padding: 12 }}>
-            <Text style={{ color: colors.accent }}>Cancel</Text>
+            <Text style={{ color: colors.accent }}>{uiText('Cancel')}</Text>
           </Pressable>
         </View>
       </SafeModal>

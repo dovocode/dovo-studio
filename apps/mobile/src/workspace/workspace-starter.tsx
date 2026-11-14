@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
 import { DovoWebKitBrowserView } from '../../modules/dovo-webkit-browser'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
@@ -66,6 +67,8 @@ export function WorkspaceStarter({
   embedded?: boolean
   onActiveChange?: (active: boolean) => void
 }) {
+  const uiText = useInterfaceText()
+
   const runtime = useRuntime()
   const browser = useBrowserWorkspace()
   const preferences = useMobilePreferences()
@@ -151,7 +154,7 @@ export function WorkspaceStarter({
         ...resolveTaskDefaults(owner?.snapshot?.defaults, threadProject),
         ...(model?.key === modelKey ? model.fields : {}),
         id: draftId,
-        title: 'New thread',
+        title: uiText('New thread'),
         repositoryId: threadProject.id,
         agentId: model?.key === modelKey ? model.fields.agentId : '',
         status: 'draft',
@@ -747,8 +750,8 @@ export function WorkspaceStarter({
                 items={[
                   { id: 'auto', name: 'Auto', icon: 'magic' },
                   { id: 'thread', name: 'Thread', icon: 'chat' },
-                  { id: 'browser', name: 'Browser', icon: 'web' },
-                  { id: 'terminal', name: 'Terminal', icon: 'terminal' },
+                  { id: 'browser', name: uiText('Browser'), icon: 'web' },
+                  { id: 'terminal', name: uiText('Terminal'), icon: 'terminal' },
                 ]}
                 onChange={(value) => {
                   if (
@@ -763,7 +766,7 @@ export function WorkspaceStarter({
                 }}
               />
             ) : (
-              <Text style={[styles.muted, { paddingLeft: 10 }]}>Terminal</Text>
+              <Text style={[styles.muted, { paddingLeft: 10 }]}>{uiText('Terminal')}</Text>
             )}
             {mode === 'thread' && !threadId && draftTask && (
               <RuntimeScope runtimeId={runtimeId}>
@@ -859,7 +862,7 @@ export function WorkspaceStarter({
               disabled={busy || !connected}
               value={threadId}
               items={[
-                { id: '', name: 'New thread' },
+                { id: '', name: uiText('New thread') },
                 ...(owner?.snapshot?.workspace.tasks ?? [])
                   .filter((task) => !task.archivedAt && !task.example && !task.sideThread)
                   .map((task) => ({ id: task.id, name: task.title })),
@@ -988,7 +991,7 @@ export function WorkspaceStarter({
               </Text>
             </View>
           )}
-          <Action label="Done" onPress={() => setOptions(false)} />
+          <Action label={uiText('Done')} onPress={() => setOptions(false)} />
         </Sheet>
       )}
     </KeyboardAvoidingView>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { View } from 'react-native'
 import * as ImagePicker from 'expo-image-picker'
@@ -38,6 +39,8 @@ export function BotAvatarEditor({
   onSaved: (result: BotResult) => void
   onClose: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const { call, connected, snapshot, profile } = useRuntime()
   const key = detailDraftKey(profile?.connection ?? null, 'bot-avatar', task.id)
   const [draft, setDraft] = useState<Draft>(
@@ -88,7 +91,7 @@ export function BotAvatarEditor({
       retain({ ...draft, preview: undefined, request: undefined })
     })
   return (
-    <Sheet title="Avatar" onClose={onClose}>
+    <Sheet title={uiText('Avatar')} onClose={onClose}>
       <View style={{ gap: 12 }}>
         <BotAvatar name={task.title} avatar={draft.preview ?? task.bot?.avatar} size={96} />
         {!snapshot?.botAvatarsSupported && <Text>Update this runtime to set a Bot avatar.</Text>}

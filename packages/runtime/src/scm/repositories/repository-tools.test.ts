@@ -19,8 +19,13 @@ it('pushes to the configured upstream branch, even when its name differs', async
     const sha = await git.commit(f.directory, 'Update')
     const commands = vi.spyOn(git, 'command')
     await git.push(f.directory)
-    // Resolve the shared config lock as well as the branch/upstream, without listing remotes.
-    expect(commands.mock.calls.map(([, args]) => args)).toHaveLength(5)
+    // Resolve the shared config lock, branch, upstream and push settings without listing remotes.
+    expect(commands.mock.calls.map(([, args]) => args)).toHaveLength(6)
+    expect(commands.mock.calls.map(([, args]) => args)).toContainEqual([
+      'config',
+      '--null',
+      '--list',
+    ])
     expect(
       commands.mock.calls.filter(([, args]) => args[0] === 'rev-parse').map(([, args]) => args),
     ).toEqual([

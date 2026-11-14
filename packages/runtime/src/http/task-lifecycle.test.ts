@@ -289,3 +289,27 @@ it('settles and reopens an individual custom child branch without settling its p
     expect(store.task('other').archived).toBeUndefined()
   }
 })
+
+it('loads the latest 50 user messages for composer recall independently of transcript pages', async () => {
+  const { store, address } = await setup()
+  store.updateTaskHistory(task.id, (t) => ({
+    ...t,
+    messages: Array.from({ length: 65 }, (_, i) => [
+      { id: `u${i}`, role: 'user' as const, text: `Sent ${i}` },
+      { id: `a${i}`, role: 'assistant' as const, text: 'Long reply' },
+    ]).flat(),
+  }))
+  const read = (credential: string) =>
+    fetch(`${address}/api/tasks/composer-history`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id: task.id }),
+    })
+  expect((await read('invalid')).status).toBe(401)
+  const response = await read(token)
+  expect(response.status).toBe(200)
+  const page = decode(conversationPageSchema, await response.json())
+  expect(page.messages.map((m) => m.id)).toEqual(Array.from({ length: 50 }, (_, i) => `u${i + 15}`))
+  expect(page.turns).toEqual([])
+  expect(page.before).toBeUndefined()
+})

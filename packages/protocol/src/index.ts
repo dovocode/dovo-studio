@@ -405,3 +405,11 @@ export * from './automation/run-audit.js'
 
 export * from './tasks/bot-skills.js'
 export { botCallReplies } from './tasks/bot-call.js'
+
+export { responseReply } from './conversation/presentation/response-reply.js'
+
+export * from './scm/repositories/spreadsheets.js'
+
+export { pullDiscussionGroups } from './scm/pulls/pull-discussions.js'
+
+export * from './interface-language.js'

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useVerifiedRead } from '../connections/verified-read'
 import { integrationMutationError } from '../connections/mutation-error'
 import { useWorkDraftText, clearWorkDraft } from './work-drafts'
@@ -56,6 +57,8 @@ export function WorkForm({
   onClose: () => void
   onDone: (message: string, result?: ForgeWorkResult) => void
 }) {
+  const uiText = useInterfaceText()
+
   const refHelpId = useId()
   const inputsHelpId = useId()
   const {
@@ -461,7 +464,7 @@ export function WorkForm({
             ) : (
               <>
                 {kind !== 'comment' && (
-                  <FormField label="Title">
+                  <FormField label={uiText('Title')}>
                     <Input required value={title} onChange={(e) => setTitle(e.target.value)} />
                   </FormField>
                 )}
@@ -537,7 +540,7 @@ export function WorkForm({
             )}
             <div className="flex justify-end gap-2">
               <Button type="button" variant="ghost" onClick={onClose}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button
                 type="submit"

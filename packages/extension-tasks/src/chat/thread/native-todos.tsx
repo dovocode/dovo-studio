@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { CheckCircle2, Circle, ListChecks, LoaderCircle } from 'lucide-react'
 import { nativeTodoSummary, type Task } from '@dovo/protocol'
@@ -14,6 +15,8 @@ export function NativeTodos({
   onClear?: (items: NonNullable<Task['nativeTodos']>) => Promise<unknown>
   clearDisabled?: boolean
 }) {
+  const uiText = useInterfaceText()
+
   const [open, setOpen] = useState(false)
   const [clearing, setClearing] = useState(false)
   const [error, setError] = useState('')
@@ -151,7 +154,7 @@ export function NativeTodos({
                   className="rounded-md px-2 py-1 hover:bg-muted"
                   onClick={() => setConfirmation(undefined)}
                 >
-                  Cancel
+                  {uiText('Cancel')}
                 </button>
               )}
             </div>

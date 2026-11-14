@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { memo, useEffect, useRef, useState, type Dispatch, type SetStateAction } from 'react'
 import { Schema } from 'effect'
 import { ArrowUp, CornerDownLeft, MoreHorizontal, Plus, RotateCcw } from 'lucide-react'
@@ -80,6 +81,8 @@ const SideQuestionView = memo(function SideQuestionView({
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   onAddToComposer: (text: string) => void
 }) {
+  const uiText = useInterfaceText()
+
   const { request, connected } = useWorkspaceSelector(
     selectConversationConnection,
     sameWorkspaceFields,
@@ -473,7 +476,7 @@ const SideQuestionView = memo(function SideQuestionView({
             )}
             <DialogFooter>
               <Button type="button" variant="ghost" disabled={busy} onClick={() => setDialog(null)}>
-                Cancel
+                {uiText('Cancel')}
               </Button>
               <Button
                 type="submit"

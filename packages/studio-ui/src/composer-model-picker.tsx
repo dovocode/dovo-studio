@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from './disclosure'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
@@ -93,6 +94,8 @@ export function ComposerModelPicker({
   onChange: (next: TaskHarness) => Promise<boolean>
   onConfigure: () => void
 }) {
+  const uiText = useInterfaceText()
+
   const ModeIcon = modelSelection ? modelModeIcons[modelSelection] : undefined
   const { snapshot, request } = useWorkspace()
   const installations = snapshot?.acpInstallations ?? []
@@ -619,7 +622,7 @@ export function ComposerModelPicker({
                       setActive(0)
                     }}
                   >
-                    Models
+                    {uiText('Models')}
                   </Button>
                   <Button
                     type="button"

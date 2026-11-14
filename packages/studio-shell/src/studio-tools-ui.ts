@@ -1,3 +1,5 @@
+import { readAppPreferences, updateAppPreferences } from '@dovo/studio-core/preferences'
+import { studioThemes, studioThemeIds, type StudioThemeId } from '@dovo/studio-core/themes'
 import type { StudioUICommand } from '@dovo/protocol'
 
 /** DOM-only operations; no page scripts, runtime credentials or native APIs are exposed. */
@@ -36,6 +38,29 @@ export function executeStudioUI(document: Document, command: StudioUICommand) {
   const view = document.defaultView
   if (!view) throw new Error('Studio window is unavailable')
   if (command.action === 'list') throw new Error('List sessions through the runtime')
+  if (command.action === 'theme-read' || command.action === 'theme-set') {
+    if (command.action === 'theme-set') {
+      const palette = studioThemeIds.find((id) => id === command.palette)
+      if (command.palette !== undefined && !palette)
+        throw new Error('Unknown theme palette. Use theme-read to list palettes.')
+      if (command.mode === undefined && palette === undefined)
+        throw new Error('Choose a mode or palette.')
+      const changes: { theme?: 'dark' | 'light' | 'system'; themePalette?: StudioThemeId } = {}
+      if (command.mode !== undefined) changes.theme = command.mode
+      if (palette !== undefined) changes.themePalette = palette
+      if (!updateAppPreferences(changes))
+        throw new Error(
+          'Theme changed in this window but could not be saved. Open Settings to retry.',
+        )
+    }
+    const current = readAppPreferences()
+    return {
+      mode: current.theme,
+      palette: current.themePalette,
+      palettes: studioThemeIds.map((id) => ({ id, name: studioThemes[id].name })),
+      scope: 'This app device. Other computers and phones keep their own appearance.',
+    }
+  }
   if (command.action === 'snapshot') return studioUISnapshot(document)
   if (command.action === 'scroll') {
     const element = command.selector

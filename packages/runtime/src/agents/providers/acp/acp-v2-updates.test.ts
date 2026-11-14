@@ -4,6 +4,44 @@ import { AcpV2Updates } from './acp-v2-updates.js'
 import { providerFixture } from '../shared/provider-fixture.js'
 import { rm } from 'node:fs/promises'
 
+it('streams a long replay, then patches earlier messages without losing later chunks', async () => {
+  const f = await providerFixture('acp', '')
+  try {
+    const view = new AcpV2Updates(f.run, () => {})
+    const chunk = (id: string, text: string) =>
+      view.accept({
+        sessionId: 's',
+        update: {
+          sessionUpdate: 'agent_message_chunk',
+          messageId: id,
+          content: { type: 'text', text },
+        },
+      })
+    for (let i = 0; i < 500; i++) {
+      chunk(String(i), `${i}:`)
+      chunk(String(i), 'body;')
+    }
+    const expected = Array.from({ length: 500 }, (_, i) => `${i}:body;`).join('')
+    expect(f.output.join('')).toBe(expected)
+    view.accept({
+      sessionId: 's',
+      update: {
+        sessionUpdate: 'agent_message',
+        messageId: '0',
+        content: [{ type: 'text', text: 'replaced;' }],
+      },
+    })
+    chunk('499', 'tail')
+    chunk('500', 'new')
+    expect(f.output.join('')).toBe(expected.replace('0:body;', 'replaced;') + 'tailnew')
+    view.begin(f.run, () => {})
+    chunk('next', 'next turn')
+    expect(f.output.join('').endsWith('next turn')).toBe(true)
+  } finally {
+    await rm(f.cwd, { recursive: true, force: true })
+  }
+})
+
 it('applies interleaved message replacements, omitted fields and explicit clears', async () => {
   const f = await providerFixture('acp', '')
   try {

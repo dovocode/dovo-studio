@@ -28,7 +28,12 @@ export function UsagePool({
         {pools.map((pool) => (
           <div key={pool.key} className="rounded-lg border bg-card p-4 space-y-2">
             <h3 className="text-sm font-medium">
-              {pool.provider === 'codex' ? 'Codex' : 'Claude'} · {pool.window}
+              {pool.provider === 'codex'
+                ? 'Codex'
+                : pool.provider === 'opencode'
+                  ? 'OpenCode'
+                  : 'Claude'}{' '}
+              · {pool.window}
             </h3>
             <p className="text-xs text-muted-foreground">
               {pool.available} of {pool.segments.length} accounts available

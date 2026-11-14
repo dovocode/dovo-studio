@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { pullDiscussionGroups } from '@dovo/protocol'
 import { type ComponentRef, useEffect, useRef, type ReactNode } from 'react'
 import { pullFragment } from './pull-destination'
 import { Markdown } from '../../../ui/content/markdown'
@@ -47,7 +49,9 @@ export function PullComments({
   capabilities,
   fragment,
   onAnchor,
+  expanded = false,
 }: {
+  expanded?: boolean
   comments: PullComment[]
   onOpen: (url: string) => void
   fileBaseURL?: string
@@ -58,6 +62,37 @@ export function PullComments({
 }) {
   const { colors, styles } = useTheme()
 
+  if (!expanded && comments.length)
+    return (
+      <View style={{ gap: 12, minWidth: 0 }}>
+        {pullDiscussionGroups(comments).map((group) =>
+          group.resolved ? (
+            <ResolvedDiscussion
+              key={group.key}
+              comments={group.comments}
+              onOpen={onOpen}
+              fileBaseURL={fileBaseURL}
+              onAction={onAction}
+              capabilities={capabilities}
+              fragment={fragment}
+              onAnchor={onAnchor}
+            />
+          ) : (
+            <PullComments
+              key={group.key}
+              expanded
+              comments={group.comments}
+              onOpen={onOpen}
+              fileBaseURL={fileBaseURL}
+              onAction={onAction}
+              capabilities={capabilities}
+              fragment={fragment}
+              onAnchor={onAnchor}
+            />
+          ),
+        )}
+      </View>
+    )
   return (
     <View style={{ gap: 12, minWidth: 0 }}>
       {!comments.length && <Text style={styles.muted}>No discussion yet.</Text>}
@@ -129,6 +164,56 @@ export function PullComments({
           )}
         </CommentAnchor>
       ))}
+    </View>
+  )
+}
+
+function ResolvedDiscussion(props: Parameters<typeof PullComments>[0]) {
+  const { colors, styles } = useTheme()
+  const targeted =
+    !!props.fragment &&
+    props.comments.some((comment) => pullFragment(comment.url) === props.fragment)
+  const [open, setOpen] = useState(targeted)
+  useEffect(() => {
+    if (targeted) setOpen(true)
+  }, [props.fragment, targeted])
+  const authors = [...new Set(props.comments.map((comment) => comment.author))]
+  return (
+    <View style={[styles.card, { gap: 8 }]}>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel={`Resolved discussion by ${authors.join(', ')}`}
+        accessibilityState={{ expanded: open }}
+        onPress={() => setOpen((value) => !value)}
+        style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}
+      >
+        <View style={{ flexDirection: 'row' }}>
+          {authors.slice(0, 3).map((author) => (
+            <View
+              key={author}
+              style={{
+                width: 28,
+                height: 28,
+                borderRadius: 14,
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: colors.surface,
+                borderWidth: 1,
+                borderColor: colors.border,
+                marginRight: -4,
+              }}
+            >
+              <Text style={{ fontSize: 10 }}>{author.slice(0, 2).toUpperCase()}</Text>
+            </View>
+          ))}
+        </View>
+        <Text style={[styles.muted, { flex: 1 }]}>
+          Resolved · {props.comments[0]?.path ?? 'Discussion'} · {props.comments.length}{' '}
+          {props.comments.length === 1 ? 'comment' : 'comments'}
+        </Text>
+        <Icon name={open ? 'down' : 'next'} size={16} color={colors.muted} />
+      </Pressable>
+      {open && <PullComments {...props} expanded />}
     </View>
   )
 }

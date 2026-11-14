@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { Alert, View } from 'react-native'
 import { router } from 'expo-router'
@@ -32,6 +33,8 @@ export function TaskLifecycleSettings({
   scope: SettingsScope
   repository?: Repository
 }) {
+  const uiText = useInterfaceText()
+
   const { connected, call, snapshot, activeId } = useRuntime()
   const { styles } = useTheme()
   const [loaded, setLoaded] = useState<typeof scopedSettingsResultSchema.Type | null>(null)
@@ -189,8 +192,8 @@ export function TaskLifecycleSettings({
                           ? `Inherit (${archivePolicy})`
                           : `Inherit (${(inheritedBehavior[key] ?? legacyBehavior[key]) ? 'On' : 'Off'})`,
                     },
-                    { id: 'on', name: 'On' },
-                    { id: 'off', name: 'Off' },
+                    { id: 'on', name: uiText('On') },
+                    { id: 'off', name: uiText('Off') },
                   ]}
                   onChange={(value) => {
                     setSaved(false)
