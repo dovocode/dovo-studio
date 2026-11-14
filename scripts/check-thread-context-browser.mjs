@@ -26,7 +26,7 @@ try {
     const mocks = [
       {
         path: '@dovo/protocol',
-        contents: `export {threadContextSnapshot,conversationPageSchema} from '${root}packages/protocol/src/conversation/history.ts';export const notificationTestTaskId='dovo-notification-test';export const createRuntimeClient=connection=>({request:async(path,input,schema,{signal})=>{window.reads.push({owner:connection.address,before:input.before});if(window.hold)await new Promise(resolve=>window.release=resolve);if(signal.aborted)throw Error('aborted');if(window.fail)throw Error('History failed');return input.before?{messages:[{id:'old',role:'user',text:'Old message'}],turns:[],historyRevision:1}:{messages:[{id:'new',role:'assistant',text:'New message'}],turns:[],before:'old',historyRevision:1}}});`,
+        contents: `export {resolveInterfaceLanguage} from '${root}packages/protocol/src/interface-language.ts';export {threadContextSnapshot,conversationPageSchema} from '${root}packages/protocol/src/conversation/history.ts';export const notificationTestTaskId='dovo-notification-test';export const createRuntimeClient=connection=>({request:async(path,input,schema,{signal})=>{window.reads.push({owner:connection.address,before:input.before});if(window.hold)await new Promise(resolve=>window.release=resolve);if(signal.aborted)throw Error('aborted');if(window.fail)throw Error('History failed');return input.before?{messages:[{id:'old',role:'user',text:'Old message'}],turns:[],historyRevision:1}:{messages:[{id:'new',role:'assistant',text:'New message'}],turns:[],before:'old',historyRevision:1}}});`,
       },
       ...(platform === 'mobile'
         ? [
