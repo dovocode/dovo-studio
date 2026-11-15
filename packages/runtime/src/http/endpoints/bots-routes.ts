@@ -167,6 +167,7 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
               ...task,
               id,
               status: 'done',
+              createdAt: at,
               title: `${task.title} · ${at.slice(0, 16).replace('T', ' ')} UTC`,
               bot: undefined,
               botConversation: { botId: task.id, requestRevision: input.expectedRevision },

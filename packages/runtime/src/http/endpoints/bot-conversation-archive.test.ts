@@ -65,6 +65,7 @@ it('atomically archives the complete conversation under the same Bot and starts 
   const archive = s.store.get().tasks.find((task) => task.botConversation?.botId === id)!
   const saved = s.store.task(archive.id)
   expect(saved.archivedAt).toBeTruthy()
+  expect(saved.createdAt).toBe(saved.archivedAt)
   expect(saved.bot).toBeUndefined()
   expect(saved.botConversation?.requestRevision).toBe(input.expectedRevision)
   expect(saved.messages.map((message) => message.text)).toEqual(
