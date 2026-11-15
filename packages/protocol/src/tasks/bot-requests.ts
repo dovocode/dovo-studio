@@ -61,6 +61,12 @@ export const botContextResetRequestSchema = strictStruct({
   turnId: id,
   expectedRevision: uuidSchema,
 })
+/** Revision is the durable receipt: a retry must never archive the next conversation. */
+export const botConversationArchiveRequestSchema = strictStruct({
+  id,
+  expectedRevision: uuidSchema,
+  expectedLastMessageId: id,
+})
 export const botLifecycleSchema = strictStruct({
   id,
   action: Schema.Literals(['pause', 'resume']),

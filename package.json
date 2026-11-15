@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:bot-conversations:browser": "node scripts/check-bot-conversations-browser.mjs",
     "test:secure-input:browser": "node scripts/check-secure-input-browser.mjs",
     "test:harness-instructions:browser": "node scripts/check-harness-instructions-browser.mjs",
     "test:confirmations:browser": "node scripts/check-confirmations-browser.mjs && node scripts/check-task-confirmations-browser.mjs",

@@ -64,6 +64,7 @@ export function settledSummaryPage<T extends Task>(
   for (const task of tasks) {
     // A page must not turn a child into a root, or an unsent side chat into an orphan.
     const parentId =
+      task.botConversation?.botId ??
       task.botJob?.botId ??
       task.delegation?.parentTaskId ??
       task.spawnParent?.threadId ??

@@ -15,6 +15,7 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { taskHref } from '../../../shell/task-route'
+import { ChildThreadName } from '../../detail/child-thread-name'
 import { Action } from '../../../ui/controls/action'
 import { useAction } from '../../../ui/controls/use-action'
 import { Text } from '../../../ui/content/text'
@@ -143,7 +144,7 @@ export function AgentSideChats({
           <InterfaceText>{'Your agent side chats will appear here.'}</InterfaceText>
         </Text>
       )}
-      {children.map(({ task: child, runtimeId }) => {
+      {children.map(({ task: child, runtimeId, runtimeIdentity }) => {
         const mention = child.botMention
         const local = runtimeId === profile?.id
         const attention = local ? sideThreadAttention(snapshot, child.id) : undefined
@@ -173,6 +174,15 @@ export function AgentSideChats({
               disabled={!profile || action.busy}
               onPress={() => open(child.id, runtimeId ?? undefined)}
             />
+            <ChildThreadName
+              key={JSON.stringify([runtimeId, child.id])}
+              child={child}
+              runtimeId={runtimeId}
+              runtimeIdentity={runtimeIdentity}
+            />
+            {child.botConversation && (
+              <Text style={styles.muted}>{uiText('Saved Bot conversation')}</Text>
+            )}
             {mention && (
               <Action
                 secondary

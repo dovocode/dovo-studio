@@ -1537,6 +1537,7 @@ export class WorkspaceStore {
           record.sideChats !== undefined ||
           record.sideThread !== undefined ||
           record.botMention !== undefined ||
+          record.botConversation !== undefined ||
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined ||
           record.bot !== undefined ||

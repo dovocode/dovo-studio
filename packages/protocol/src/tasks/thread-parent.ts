@@ -12,6 +12,13 @@ export function taskParentReference(
     tasks: readonly TaskMetadata[]
   }[] = [],
 ) {
+  if (task.botConversation)
+    return {
+      runtimeId,
+      runtimeIdentity,
+      threadId: task.botConversation.botId,
+      title: tasks.find((parent) => parent.id === task.botConversation?.botId)?.title ?? 'Bot',
+    }
   if (task.botMention) {
     const link = task.botMention
     const source = sources.find((source) => source.runtimeIdentity === link.runtimeId)

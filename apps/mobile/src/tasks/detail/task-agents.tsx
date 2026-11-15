@@ -1,3 +1,4 @@
+import { ChildThreadName } from './child-thread-name'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskWorkflows } from './task-workflows'
 import {
@@ -277,7 +278,7 @@ export function TaskAgents({
                       fontWeight: '600',
                     }}
                   >
-                    {agent.name}
+                    {child?.title ?? agent.name}
                   </Text>
                   <Text
                     style={[
@@ -356,6 +357,14 @@ export function TaskAgents({
                     <Text selectable style={styles.muted}>
                       {agent.activity}
                     </Text>
+                  )}
+                  {child && (
+                    <ChildThreadName
+                      key={child.id}
+                      child={child}
+                      runtimeId={profile?.id ?? null}
+                      runtimeIdentity={snapshot?.runtimeId}
+                    />
                   )}
                   {childId && (
                     <Action

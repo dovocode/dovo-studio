@@ -2,7 +2,7 @@ import type { TaskMetadata } from './task-summary.js'
 
 type ChildMetadata = Pick<
   TaskMetadata,
-  'id' | 'createdAt' | 'archivedAt' | 'sideThread' | 'botJob' | 'botMention'
+  'id' | 'createdAt' | 'archivedAt' | 'sideThread' | 'botJob' | 'botMention' | 'botConversation'
 >
 
 /** Presentation only. A Bot association never transfers execution or grants access. */
@@ -27,7 +27,9 @@ export function threadChildren<T extends ChildMetadata>(
           !mentioned &&
           !(
             local &&
-            (task.sideThread?.parentTaskId === parent.id || task.botJob?.botId === parent.id)
+            (task.sideThread?.parentTaskId === parent.id ||
+              task.botJob?.botId === parent.id ||
+              task.botConversation?.botId === parent.id)
           )
         )
           return []

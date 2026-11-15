@@ -328,6 +328,7 @@ export function runtimeSnapshot(
       botResourcesSupported: true,
       botAvatarsSupported: true,
       botAvatarHarnessSelectionSupported: true,
+      botConversationArchiveSupported: true,
       botContextResetSupported: true,
       botMemoryReviewSupported: true,
       botMemoryVersionsSupported: true,

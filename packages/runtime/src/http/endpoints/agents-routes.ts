@@ -1659,7 +1659,16 @@ export function taskLifecycle(
         return yield* serviceResult({
           ok: true,
         })
-      const ids = taskFamilyIds(s.store.get().tasks, id)
+      const lifecycleIds = () => {
+        const tasks = s.store.get().tasks
+        const ids = taskFamilyIds(tasks, id)
+        if (action === 'delete' && s.store.taskSummary(id).bot)
+          for (const task of tasks)
+            if (task.botConversation?.botId === id)
+              for (const childId of taskFamilyIds(tasks, task.id)) ids.add(childId)
+        return ids
+      }
+      const ids = lifecycleIds()
       const deletingBot = action === 'delete' && !!s.store.taskSummary(id).bot
       const requireIdle = () => {
         for (const taskId of ids) {
@@ -1719,7 +1728,7 @@ export function taskLifecycle(
           )
           for (const result of cleanup) if (result.status === 'rejected') throw result.reason
         }
-        const latestIds = taskFamilyIds(s.store.get().tasks, id)
+        const latestIds = lifecycleIds()
         if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
           throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
         requireIdle()
@@ -1733,7 +1742,7 @@ export function taskLifecycle(
           ? worktrees.filter((entry) => entry.threadIds.some((threadId) => ids.has(threadId)))
           : []
         // Listing involves Git I/O; make sure the family is unchanged and idle before deletion.
-        const currentIds = taskFamilyIds(s.store.get().tasks, id)
+        const currentIds = lifecycleIds()
         if (currentIds.size !== ids.size || [...currentIds].some((taskId) => !ids.has(taskId)))
           throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
         requireIdle()

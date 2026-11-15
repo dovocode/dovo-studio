@@ -289,6 +289,7 @@ export const snapshotSchema = mutableStruct({
   botAvatarHarnessSelectionSupported: Schema.optional(Schema.Literal(true)),
   botMemoryReviewSupported: Schema.optional(Schema.Literal(true)),
   botMemoryVersionsSupported: Schema.optional(Schema.Literal(true)),
+  botConversationArchiveSupported: Schema.optional(Schema.Literal(true)),
   botContextResetSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.threadActions`, the `thread_prepare` agent tool and `/api/thread-actions/*`. */
   threadActionsSupported: Schema.optional(Schema.Literal(true)),

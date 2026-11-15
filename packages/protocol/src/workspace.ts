@@ -685,6 +685,10 @@ export const taskSchema = mutableStruct({
       sourceMessageId: Schema.String,
     }),
   ),
+  /** Saved coordinator conversation, owned by the same Bot on this computer. */
+  botConversation: Schema.optional(
+    mutableStruct({ botId: Schema.String, requestRevision: Schema.String }),
+  ),
   /** A read-only conversation projection. Never persisted in the execution workspace. */
   replica: Schema.optional(
     mutableStruct({

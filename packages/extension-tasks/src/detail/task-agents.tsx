@@ -1,3 +1,4 @@
+import { ChildThreadName } from './child-thread-name'
 import { TaskWorkflows } from './task-workflows'
 import {
   buildThreadTree,
@@ -256,8 +257,11 @@ export function TaskAgents({
                 />
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2">
-                    <span className="truncate text-xs font-medium" title={agent.name}>
-                      {agent.name}
+                    <span
+                      className="truncate text-xs font-medium"
+                      title={child?.title ?? agent.name}
+                    >
+                      {child?.title ?? agent.name}
                     </span>
                     <span className="ml-auto shrink-0 text-[0.625rem] tabular-nums text-muted-foreground">
                       {subagentElapsed(
@@ -295,6 +299,14 @@ export function TaskAgents({
                 {agent.prompt && <p className="whitespace-pre-wrap">{agent.prompt}</p>}
                 {agent.result && <p className="whitespace-pre-wrap">{agent.result}</p>}
                 {agent.activity && <p className="whitespace-pre-wrap">{agent.activity}</p>}
+                {child && (
+                  <ChildThreadName
+                    key={child.id}
+                    child={child}
+                    runtimeId={activeRuntimeId}
+                    runtimeIdentity={snapshot?.runtimeId}
+                  />
+                )}
                 {childId && (
                   <Button
                     size="sm"

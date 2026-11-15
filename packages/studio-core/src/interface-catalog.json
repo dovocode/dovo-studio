@@ -4275,7 +4275,16 @@
     "Return to {value0}": "Return to {value0}",
     "Inside Dovo": "Inside Dovo",
     "In-app notifications": "In-app notifications",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Show requests from other threads while Dovo is open. No system permission is needed."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Show requests from other threads while Dovo is open. No system permission is needed.",
+    "Archive and start new": "Archive and start new",
+    "Archive and start new?": "Archive and start new?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.",
+    "Saved Bot conversation": "Saved Bot conversation",
+    "Last saved state": "Last saved state",
+    "working": "working",
+    "need review": "need review",
+    "failed": "failed",
+    "offline": "offline"
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8553,7 +8562,16 @@
     "Return to {value0}": "Terug naar {value0}",
     "Inside Dovo": "In Dovo",
     "In-app notifications": "Meldingen in de app",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Toon verzoeken uit andere gesprekken terwijl Dovo open is. Hiervoor is geen systeemtoestemming nodig."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Toon verzoeken uit andere gesprekken terwijl Dovo open is. Hiervoor is geen systeemtoestemming nodig.",
+    "Archive and start new": "Archiveren en opnieuw beginnen",
+    "Archive and start new?": "Archiveren en opnieuw beginnen?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Sla dit gesprek op onder dezelfde Bot en begin een nieuw gesprek. Instellingen, geheugen, routines en je niet-verzonden concept blijven behouden.",
+    "Saved Bot conversation": "Opgeslagen Bot-gesprek",
+    "Last saved state": "Laatst opgeslagen status",
+    "working": "werken",
+    "need review": "klaar voor beoordeling",
+    "failed": "mislukt",
+    "offline": "offline"
   },
   "de": {
     "Settings": "Einstellungen",
@@ -12831,7 +12849,16 @@
     "Return to {value0}": "Zurück zu {value0}",
     "Inside Dovo": "In Dovo",
     "In-app notifications": "Benachrichtigungen in der App",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zeige Anfragen aus anderen Chats, während Dovo geöffnet ist. Dafür ist keine Systemberechtigung nötig."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zeige Anfragen aus anderen Chats, während Dovo geöffnet ist. Dafür ist keine Systemberechtigung nötig.",
+    "Archive and start new": "Archivieren und neu beginnen",
+    "Archive and start new?": "Archivieren und neu beginnen?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Speichere dieses Gespräch unter demselben Bot und beginne ein neues Gespräch. Einstellungen, Gedächtnis, Routinen und dein ungesendeter Entwurf bleiben erhalten.",
+    "Saved Bot conversation": "Gespeichertes Bot-Gespräch",
+    "Last saved state": "Zuletzt gespeicherter Stand",
+    "working": "arbeiten",
+    "need review": "bereit zur überprüfung",
+    "failed": "fehlgeschlagen",
+    "offline": "offline"
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17109,7 +17136,16 @@
     "Return to {value0}": "Επιστροφή στο {value0}",
     "Inside Dovo": "Μέσα στο Dovo",
     "In-app notifications": "Ειδοποιήσεις στην εφαρμογή",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Εμφάνιση αιτημάτων από άλλες συνομιλίες όσο το Dovo είναι ανοιχτό. Δεν απαιτείται άδεια συστήματος."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Εμφάνιση αιτημάτων από άλλες συνομιλίες όσο το Dovo είναι ανοιχτό. Δεν απαιτείται άδεια συστήματος.",
+    "Archive and start new": "Αρχειοθέτηση και νέα αρχή",
+    "Archive and start new?": "Αρχειοθέτηση και νέα αρχή;",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Αποθηκεύστε αυτή τη συνομιλία στο ίδιο Bot και ξεκινήστε μια νέα. Οι ρυθμίσεις, η μνήμη, οι ρουτίνες και το μη απεσταλμένο πρόχειρο διατηρούνται.",
+    "Saved Bot conversation": "Αποθηκευμένη συνομιλία Bot",
+    "Last saved state": "Τελευταία αποθηκευμένη κατάσταση",
+    "working": "εργασία",
+    "need review": "έτοιμο για αναθεώρηση",
+    "failed": "απέτυχε",
+    "offline": "εκτός σύνδεσης"
   },
   "it": {
     "Settings": "Impostazioni",
@@ -21387,7 +21423,16 @@
     "Return to {value0}": "Torna a {value0}",
     "Inside Dovo": "All’interno di Dovo",
     "In-app notifications": "Notifiche nell’app",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra le richieste di altre conversazioni mentre Dovo è aperto. Non serve alcuna autorizzazione di sistema."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra le richieste di altre conversazioni mentre Dovo è aperto. Non serve alcuna autorizzazione di sistema.",
+    "Archive and start new": "Archivia e ricomincia",
+    "Archive and start new?": "Archiviare e ricominciare?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Salva questa conversazione nello stesso Bot e avviane una nuova. Impostazioni, memoria, routine e bozza non inviata restano.",
+    "Saved Bot conversation": "Conversazione Bot salvata",
+    "Last saved state": "Ultimo stato salvato",
+    "working": "funzionante",
+    "need review": "pronto per la revisione",
+    "failed": "fallito",
+    "offline": "non in linea"
   },
   "es": {
     "Settings": "Ajustes",
@@ -25665,7 +25710,16 @@
     "Return to {value0}": "Volver a {value0}",
     "Inside Dovo": "Dentro de Dovo",
     "In-app notifications": "Notificaciones en la aplicación",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Muestra solicitudes de otras conversaciones mientras Dovo está abierto. No se necesita permiso del sistema."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Muestra solicitudes de otras conversaciones mientras Dovo está abierto. No se necesita permiso del sistema.",
+    "Archive and start new": "Archivar y empezar de nuevo",
+    "Archive and start new?": "¿Archivar y empezar de nuevo?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Guarda esta conversación en el mismo Bot e inicia una nueva. Se conservan los ajustes, la memoria, las rutinas y el borrador sin enviar.",
+    "Saved Bot conversation": "Conversación del Bot guardada",
+    "Last saved state": "Último estado guardado",
+    "working": "trabajando",
+    "need review": "listo para revisión",
+    "failed": "fallido",
+    "offline": "sin conexión"
   },
   "fr": {
     "Settings": "Paramètres",
@@ -29943,7 +29997,16 @@
     "Return to {value0}": "Revenir à {value0}",
     "Inside Dovo": "Dans Dovo",
     "In-app notifications": "Notifications dans l’application",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Affiche les demandes des autres conversations quand Dovo est ouvert. Aucune autorisation du système n’est nécessaire."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Affiche les demandes des autres conversations quand Dovo est ouvert. Aucune autorisation du système n’est nécessaire.",
+    "Archive and start new": "Archiver et recommencer",
+    "Archive and start new?": "Archiver et recommencer ?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Enregistrez cette conversation sous le même Bot et démarrez une nouvelle conversation. Les réglages, la mémoire, les routines et votre brouillon non envoyé sont conservés.",
+    "Saved Bot conversation": "Conversation du Bot enregistrée",
+    "Last saved state": "Dernier état enregistré",
+    "working": "travailler",
+    "need review": "prêt pour l'examen",
+    "failed": "échec",
+    "offline": "hors ligne"
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -34221,7 +34284,16 @@
     "Return to {value0}": "Wróć do {value0}",
     "Inside Dovo": "W Dovo",
     "In-app notifications": "Powiadomienia w aplikacji",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Pokazuj prośby z innych rozmów, gdy Dovo jest otwarte. Nie wymaga zgody systemu."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Pokazuj prośby z innych rozmów, gdy Dovo jest otwarte. Nie wymaga zgody systemu.",
+    "Archive and start new": "Archiwizuj i zacznij od nowa",
+    "Archive and start new?": "Zarchiwizować i zacząć od nowa?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Zapisz tę rozmowę pod tym samym Botem i rozpocznij nową. Ustawienia, pamięć, rutyny i niewysłany szkic zostaną zachowane.",
+    "Saved Bot conversation": "Zapisana rozmowa Bota",
+    "Last saved state": "Ostatni zapisany stan",
+    "working": "pracujący",
+    "need review": "gotowe do recenzji",
+    "failed": "nie udało się",
+    "offline": "offline"
   },
   "pt": {
     "Settings": "Definições",
@@ -38499,7 +38571,16 @@
     "Return to {value0}": "Voltar para {value0}",
     "Inside Dovo": "No Dovo",
     "In-app notifications": "Notificações no aplicativo",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra solicitações de outras conversas enquanto o Dovo está aberto. Não é necessária permissão do sistema."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra solicitações de outras conversas enquanto o Dovo está aberto. Não é necessária permissão do sistema.",
+    "Archive and start new": "Arquivar e começar de novo",
+    "Archive and start new?": "Arquivar e começar de novo?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Guarde esta conversa no mesmo Bot e inicie uma nova. As definições, a memória, as rotinas e o rascunho não enviado mantêm-se.",
+    "Saved Bot conversation": "Conversa do Bot guardada",
+    "Last saved state": "Último estado guardado",
+    "working": "trabalhando",
+    "need review": "pronto para revisão",
+    "failed": "falha",
+    "offline": "offline"
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -42777,7 +42858,16 @@
     "Return to {value0}": "{value0} sohbetine dön",
     "Inside Dovo": "Dovo içinde",
     "In-app notifications": "Uygulama içi bildirimler",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo açıkken diğer sohbetlerden gelen istekleri göster. Sistem izni gerekmez."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo açıkken diğer sohbetlerden gelen istekleri göster. Sistem izni gerekmez.",
+    "Archive and start new": "Arşivle ve yeniden başla",
+    "Archive and start new?": "Arşivlensin ve yeniden başlansın mı?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Bu konuşmayı aynı Bot altında kaydedin ve yeni bir konuşma başlatın. Ayarlar, bellek, rutinler ve gönderilmemiş taslağınız korunur.",
+    "Saved Bot conversation": "Kaydedilen Bot konuşması",
+    "Last saved state": "Son kaydedilen durum",
+    "working": "çalışma",
+    "need review": "incelemeye hazır",
+    "failed": "başarısız",
+    "offline": "çevrimdışı"
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -47055,7 +47145,16 @@
     "Return to {value0}": "العودة إلى {value0}",
     "Inside Dovo": "داخل Dovo",
     "In-app notifications": "إشعارات داخل التطبيق",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "اعرض الطلبات من المحادثات الأخرى أثناء فتح Dovo. لا يلزم إذن من النظام."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "اعرض الطلبات من المحادثات الأخرى أثناء فتح Dovo. لا يلزم إذن من النظام.",
+    "Archive and start new": "أرشفة وبدء محادثة جديدة",
+    "Archive and start new?": "أرشفة وبدء محادثة جديدة؟",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "احفظ هذه المحادثة ضمن نفس Bot وابدأ محادثة جديدة. تبقى الإعدادات والذاكرة والروتينات والمسودة غير المرسلة محفوظة.",
+    "Saved Bot conversation": "محادثة Bot محفوظة",
+    "Last saved state": "آخر حالة محفوظة",
+    "working": "العمل",
+    "need review": "جاهز للمراجعة",
+    "failed": "فشل",
+    "offline": "غير متصل"
   },
   "bg": {
     "Settings": "Настройки",
@@ -51333,7 +51432,16 @@
     "Return to {value0}": "Назад към {value0}",
     "Inside Dovo": "В Dovo",
     "In-app notifications": "Известия в приложението",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показвай заявки от други разговори, докато Dovo е отворено. Не е нужно системно разрешение."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показвай заявки от други разговори, докато Dovo е отворено. Не е нужно системно разрешение.",
+    "Archive and start new": "Архивирай и започни отначало",
+    "Archive and start new?": "Архивиране и ново начало?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Запазете този разговор под същия Bot и започнете нов. Настройките, паметта, рутините и неизпратената чернова се запазват.",
+    "Saved Bot conversation": "Запазен разговор с Bot",
+    "Last saved state": "Последно запазено състояние",
+    "working": "работещ",
+    "need review": "готов за преглед",
+    "failed": "неуспешно",
+    "offline": "офлайн"
   },
   "zh": {
     "Settings": "设置",
@@ -55611,7 +55719,16 @@
     "Return to {value0}": "返回 {value0}",
     "Inside Dovo": "Dovo 内",
     "In-app notifications": "应用内通知",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo 打开时显示其他对话中的请求。无需系统权限。"
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo 打开时显示其他对话中的请求。无需系统权限。",
+    "Archive and start new": "归档并开始新对话",
+    "Archive and start new?": "归档并开始新对话？",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "将此对话保存在同一个 Bot 下，然后开始新对话。设置、记忆、例行任务和未发送的草稿都会保留。",
+    "Saved Bot conversation": "已保存的 Bot 对话",
+    "Last saved state": "上次保存的状态",
+    "working": "工作",
+    "need review": "准备审查",
+    "failed": "失败",
+    "offline": "离线"
   },
   "hr": {
     "Settings": "Postavke",
@@ -59889,7 +60006,16 @@
     "Return to {value0}": "Povratak na {value0}",
     "Inside Dovo": "U aplikaciji Dovo",
     "In-app notifications": "Obavijesti u aplikaciji",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Prikaži zahtjeve iz drugih razgovora dok je Dovo otvoren. Nije potrebno dopuštenje sustava."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Prikaži zahtjeve iz drugih razgovora dok je Dovo otvoren. Nije potrebno dopuštenje sustava.",
+    "Archive and start new": "Arhiviraj i počni ispočetka",
+    "Archive and start new?": "Arhivirati i početi ispočetka?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Spremite ovaj razgovor pod istim Botom i započnite novi. Postavke, memorija, rutine i neposlani nacrt ostaju sačuvani.",
+    "Saved Bot conversation": "Spremljeni razgovor s Botom",
+    "Last saved state": "Posljednje spremljeno stanje",
+    "working": "radim",
+    "need review": "spremno za pregled",
+    "failed": "neuspješno",
+    "offline": "izvan mreže"
   },
   "cs": {
     "Settings": "Nastavení",
@@ -64167,7 +64293,16 @@
     "Return to {value0}": "Zpět na {value0}",
     "Inside Dovo": "V Dovo",
     "In-app notifications": "Oznámení v aplikaci",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovat požadavky z jiných konverzací, když je Dovo otevřené. Není potřeba oprávnění systému."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovat požadavky z jiných konverzací, když je Dovo otevřené. Není potřeba oprávnění systému.",
+    "Archive and start new": "Archivovat a začít znovu",
+    "Archive and start new?": "Archivovat a začít znovu?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Uložte tuto konverzaci pod stejným Botem a začněte novou. Nastavení, paměť, rutiny a neodeslaný koncept zůstanou zachovány.",
+    "Saved Bot conversation": "Uložená konverzace Bota",
+    "Last saved state": "Poslední uložený stav",
+    "working": "práce",
+    "need review": "připraveno ke kontrole",
+    "failed": "nepodařilo se",
+    "offline": "offline"
   },
   "da": {
     "Settings": "Indstillinger",
@@ -68445,7 +68580,16 @@
     "Return to {value0}": "Tilbage til {value0}",
     "Inside Dovo": "I Dovo",
     "In-app notifications": "Notifikationer i appen",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis anmodninger fra andre samtaler, mens Dovo er åben. Der kræves ingen systemtilladelse."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis anmodninger fra andre samtaler, mens Dovo er åben. Der kræves ingen systemtilladelse.",
+    "Archive and start new": "Arkivér og start forfra",
+    "Archive and start new?": "Arkivér og start forfra?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Gem denne samtale under samme Bot, og start en ny. Indstillinger, hukommelse, rutiner og din usendte kladde bevares.",
+    "Saved Bot conversation": "Gemt Bot-samtale",
+    "Last saved state": "Senest gemte tilstand",
+    "working": "arbejder",
+    "need review": "klar til gennemgang",
+    "failed": "mislykkedes",
+    "offline": "offline"
   },
   "et": {
     "Settings": "Seaded",
@@ -72723,7 +72867,16 @@
     "Return to {value0}": "Tagasi vestlusse {value0}",
     "Inside Dovo": "Dovos",
     "In-app notifications": "Rakendusesisesed teavitused",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näita teiste vestluste taotlusi, kui Dovo on avatud. Süsteemi luba pole vaja."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näita teiste vestluste taotlusi, kui Dovo on avatud. Süsteemi luba pole vaja.",
+    "Archive and start new": "Arhiveeri ja alusta uuesti",
+    "Archive and start new?": "Kas arhiveerida ja alustada uuesti?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Salvesta see vestlus sama Boti alla ja alusta uut vestlust. Seaded, mälu, rutiinid ja saatmata mustand säilivad.",
+    "Saved Bot conversation": "Salvestatud Boti vestlus",
+    "Last saved state": "Viimati salvestatud olek",
+    "working": "töötab",
+    "need review": "ülevaatuseks valmis",
+    "failed": "nurjunud",
+    "offline": "võrguühenduseta"
   },
   "fi": {
     "Settings": "Asetukset",
@@ -77001,7 +77154,16 @@
     "Return to {value0}": "Takaisin keskusteluun {value0}",
     "Inside Dovo": "Dovossa",
     "In-app notifications": "Sovelluksen sisäiset ilmoitukset",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näytä muiden keskustelujen pyynnöt, kun Dovo on auki. Järjestelmän lupaa ei tarvita."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näytä muiden keskustelujen pyynnöt, kun Dovo on auki. Järjestelmän lupaa ei tarvita.",
+    "Archive and start new": "Arkistoi ja aloita alusta",
+    "Archive and start new?": "Arkistoidaanko ja aloitetaanko alusta?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Tallenna tämä keskustelu saman Botin alle ja aloita uusi. Asetukset, muisti, rutiinit ja lähettämätön luonnos säilyvät.",
+    "Saved Bot conversation": "Tallennettu Bot-keskustelu",
+    "Last saved state": "Viimeksi tallennettu tila",
+    "working": "työskentelee",
+    "need review": "valmiit tarkistettaviksi",
+    "failed": "epäonnistui",
+    "offline": "offline"
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -81279,7 +81441,16 @@
     "Return to {value0}": "{value0} पर वापस जाएँ",
     "Inside Dovo": "Dovo के अंदर",
     "In-app notifications": "ऐप में सूचनाएँ",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo खुला होने पर अन्य बातचीत के अनुरोध दिखाएँ। सिस्टम की अनुमति की ज़रूरत नहीं है।"
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo खुला होने पर अन्य बातचीत के अनुरोध दिखाएँ। सिस्टम की अनुमति की ज़रूरत नहीं है।",
+    "Archive and start new": "संग्रहित करें और नया शुरू करें",
+    "Archive and start new?": "संग्रहित करके नया शुरू करें?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "इस बातचीत को उसी Bot के अंतर्गत सहेजें और नई बातचीत शुरू करें। सेटिंग, मेमोरी, रूटीन और आपका न भेजा गया ड्राफ़्ट बने रहेंगे।",
+    "Saved Bot conversation": "सहेजी गई Bot बातचीत",
+    "Last saved state": "आखिरी सहेजी गई स्थिति",
+    "working": "काम कर रहा है",
+    "need review": "समीक्षा के लिए तैयार",
+    "failed": "विफल",
+    "offline": "ऑफ़लाइन"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -85557,7 +85728,16 @@
     "Return to {value0}": "Vissza ide: {value0}",
     "Inside Dovo": "A Dovóban",
     "In-app notifications": "Alkalmazáson belüli értesítések",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Más beszélgetések kéréseinek megjelenítése, amikor a Dovo nyitva van. Nem kell rendszerengedély."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Más beszélgetések kéréseinek megjelenítése, amikor a Dovo nyitva van. Nem kell rendszerengedély.",
+    "Archive and start new": "Archiválás és új beszélgetés",
+    "Archive and start new?": "Archiválás és új beszélgetés?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Mentse ezt a beszélgetést ugyanahhoz a Bothoz, és kezdjen újat. A beállítások, a memória, a rutinok és az el nem küldött piszkozat megmaradnak.",
+    "Saved Bot conversation": "Mentett Bot-beszélgetés",
+    "Last saved state": "Utolsó mentett állapot",
+    "working": "dolgozik",
+    "need review": "ellenőrzésre kész",
+    "failed": "sikertelen",
+    "offline": "offline"
   },
   "ja": {
     "Settings": "設定",
@@ -89835,7 +90015,16 @@
     "Return to {value0}": "{value0} に戻る",
     "Inside Dovo": "Dovo 内",
     "In-app notifications": "アプリ内通知",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo を開いている間、他の会話からのリクエストを表示します。システムの許可は不要です。"
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo を開いている間、他の会話からのリクエストを表示します。システムの許可は不要です。",
+    "Archive and start new": "アーカイブして新しく始める",
+    "Archive and start new?": "アーカイブして新しく始めますか？",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "この会話を同じ Bot の下に保存し、新しい会話を始めます。設定、メモリ、ルーチン、未送信の下書きは保持されます。",
+    "Saved Bot conversation": "保存済みの Bot の会話",
+    "Last saved state": "最後に保存した状態",
+    "working": "作業中",
+    "need review": "レビュー準備完了",
+    "failed": "失敗",
+    "offline": "オフライン"
   },
   "ko": {
     "Settings": "설정",
@@ -94113,7 +94302,16 @@
     "Return to {value0}": "{value0}(으)로 돌아가기",
     "Inside Dovo": "Dovo 내",
     "In-app notifications": "앱 내 알림",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo가 열려 있을 때 다른 대화의 요청을 표시합니다. 시스템 권한이 필요하지 않습니다."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo가 열려 있을 때 다른 대화의 요청을 표시합니다. 시스템 권한이 필요하지 않습니다.",
+    "Archive and start new": "보관하고 새로 시작",
+    "Archive and start new?": "보관하고 새로 시작할까요?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "이 대화를 같은 Bot 아래에 저장하고 새 대화를 시작합니다. 설정, 메모리, 루틴, 보내지 않은 초안은 유지됩니다.",
+    "Saved Bot conversation": "저장된 Bot 대화",
+    "Last saved state": "마지막 저장 상태",
+    "working": "작업 중",
+    "need review": "검토 준비 완료",
+    "failed": "실패",
+    "offline": "오프라인"
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -98391,7 +98589,16 @@
     "Return to {value0}": "Tilbake til {value0}",
     "Inside Dovo": "I Dovo",
     "In-app notifications": "Varsler i appen",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis forespørsler fra andre samtaler mens Dovo er åpen. Ingen systemtillatelse er nødvendig."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis forespørsler fra andre samtaler mens Dovo er åpen. Ingen systemtillatelse er nødvendig.",
+    "Archive and start new": "Arkiver og start på nytt",
+    "Archive and start new?": "Arkivere og starte på nytt?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Lagre denne samtalen under samme Bot og start en ny. Innstillinger, minne, rutiner og det usendte utkastet beholdes.",
+    "Saved Bot conversation": "Lagret Bot-samtale",
+    "Last saved state": "Sist lagrede tilstand",
+    "working": "arbeider",
+    "need review": "klar for gjennomgang",
+    "failed": "mislyktes",
+    "offline": "frakoblet"
   },
   "ro": {
     "Settings": "Setări",
@@ -102669,7 +102876,16 @@
     "Return to {value0}": "Înapoi la {value0}",
     "Inside Dovo": "În Dovo",
     "In-app notifications": "Notificări în aplicație",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Afișează cereri din alte conversații când Dovo este deschis. Nu este necesară permisiunea sistemului."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Afișează cereri din alte conversații când Dovo este deschis. Nu este necesară permisiunea sistemului.",
+    "Archive and start new": "Arhivează și începe din nou",
+    "Archive and start new?": "Arhivezi și începi din nou?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Salvează această conversație sub același Bot și începe una nouă. Setările, memoria, rutinele și ciorna netrimisă se păstrează.",
+    "Saved Bot conversation": "Conversație Bot salvată",
+    "Last saved state": "Ultima stare salvată",
+    "working": "în lucru",
+    "need review": "gata pentru revizuire",
+    "failed": "eșuat",
+    "offline": "offline"
   },
   "ru": {
     "Settings": "Настройки",
@@ -106947,7 +107163,16 @@
     "Return to {value0}": "Вернуться к {value0}",
     "Inside Dovo": "В Dovo",
     "In-app notifications": "Уведомления в приложении",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показывать запросы из других разговоров, пока Dovo открыто. Разрешение системы не требуется."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показывать запросы из других разговоров, пока Dovo открыто. Разрешение системы не требуется.",
+    "Archive and start new": "Архивировать и начать заново",
+    "Archive and start new?": "Архивировать и начать заново?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Сохраните этот разговор у того же Bot и начните новый. Настройки, память, процедуры и неотправленный черновик сохранятся.",
+    "Saved Bot conversation": "Сохранённый разговор с Bot",
+    "Last saved state": "Последнее сохранённое состояние",
+    "working": "работает",
+    "need review": "готовы к проверке",
+    "failed": "ошибка",
+    "offline": "не в сети"
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -111225,7 +111450,16 @@
     "Return to {value0}": "Späť na {value0}",
     "Inside Dovo": "V Dovo",
     "In-app notifications": "Oznámenia v aplikácii",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovať požiadavky z iných konverzácií, keď je Dovo otvorené. Nie je potrebné systémové povolenie."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovať požiadavky z iných konverzácií, keď je Dovo otvorené. Nie je potrebné systémové povolenie.",
+    "Archive and start new": "Archivovať a začať znova",
+    "Archive and start new?": "Archivovať a začať znova?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Uložte túto konverzáciu pod rovnakým Botom a začnite novú. Nastavenia, pamäť, rutiny a neodoslaný koncept zostanú zachované.",
+    "Saved Bot conversation": "Uložená konverzácia Bota",
+    "Last saved state": "Posledný uložený stav",
+    "working": "pracuje",
+    "need review": "pripravené na kontrolu",
+    "failed": "zlyhalo",
+    "offline": "offline"
   },
   "sv": {
     "Settings": "Inställningar",
@@ -115503,7 +115737,16 @@
     "Return to {value0}": "Tillbaka till {value0}",
     "Inside Dovo": "I Dovo",
     "In-app notifications": "Aviseringar i appen",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Visa förfrågningar från andra samtal när Dovo är öppet. Inget systemtillstånd krävs."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Visa förfrågningar från andra samtal när Dovo är öppet. Inget systemtillstånd krävs.",
+    "Archive and start new": "Arkivera och börja om",
+    "Archive and start new?": "Arkivera och börja om?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Spara den här konversationen under samma Bot och börja en ny. Inställningar, minne, rutiner och ditt oskickade utkast finns kvar.",
+    "Saved Bot conversation": "Sparad Bot-konversation",
+    "Last saved state": "Senast sparade läge",
+    "working": "arbetar",
+    "need review": "klara för granskning",
+    "failed": "misslyckades",
+    "offline": "offline"
   },
   "uk": {
     "Settings": "Налаштування",
@@ -119781,7 +120024,16 @@
     "Return to {value0}": "Повернутися до {value0}",
     "Inside Dovo": "У Dovo",
     "In-app notifications": "Сповіщення в застосунку",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показувати запити з інших розмов, поки Dovo відкрито. Дозвіл системи не потрібен."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показувати запити з інших розмов, поки Dovo відкрито. Дозвіл системи не потрібен.",
+    "Archive and start new": "Архівувати й почати знову",
+    "Archive and start new?": "Архівувати й почати знову?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Збережіть цю розмову в того самого Bot і почніть нову. Налаштування, пам’ять, процедури та ненадіслана чернетка збережуться.",
+    "Saved Bot conversation": "Збережена розмова з Bot",
+    "Last saved state": "Останній збережений стан",
+    "working": "працює",
+    "need review": "готові до перевірки",
+    "failed": "не вдалося",
+    "offline": "не в мережі"
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -124059,6 +124311,15 @@
     "Return to {value0}": "Quay lại {value0}",
     "Inside Dovo": "Trong Dovo",
     "In-app notifications": "Thông báo trong ứng dụng",
-    "Show requests from other threads while Dovo is open. No system permission is needed.": "Hiển thị yêu cầu từ các cuộc trò chuyện khác khi Dovo đang mở. Không cần quyền của hệ thống."
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Hiển thị yêu cầu từ các cuộc trò chuyện khác khi Dovo đang mở. Không cần quyền của hệ thống.",
+    "Archive and start new": "Lưu trữ và bắt đầu lại",
+    "Archive and start new?": "Lưu trữ và bắt đầu lại?",
+    "Save this conversation under the same Bot and start a fresh conversation. Settings, memory, routines and your unsent draft stay.": "Lưu cuộc trò chuyện này trong cùng Bot và bắt đầu cuộc trò chuyện mới. Cài đặt, bộ nhớ, quy trình và bản nháp chưa gửi được giữ lại.",
+    "Saved Bot conversation": "Cuộc trò chuyện Bot đã lưu",
+    "Last saved state": "Trạng thái lưu gần nhất",
+    "working": "đang hoạt động",
+    "need review": "chờ xem xét",
+    "failed": "không thành công",
+    "offline": "ngoại tuyến"
   }
 }

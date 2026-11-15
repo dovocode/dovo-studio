@@ -181,6 +181,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   // Local delegation is authoritative when a remote monitor also refers to the same child.
   for (const entry of entries) {
     const parentTaskId =
+      entry.task.botConversation?.botId ??
       entry.task.botMention?.botId ??
       entry.task.botJob?.botId ??
       entry.task.sideThread?.parentTaskId ??
@@ -387,7 +388,13 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     contextKeys,
     roots: entries
       // Routine workers stay addressable in nodes and Bot history, never as overview roots.
-      .filter((entry) => !entry.task.botJob && !entry.task.botMention && !parents.has(entry.key))
+      .filter(
+        (entry) =>
+          !entry.task.botJob &&
+          !entry.task.botMention &&
+          !entry.task.botConversation &&
+          !parents.has(entry.key),
+      )
       .map((entry) =>
         !entry.needsInput &&
         threadDescendants(nodes.get(entry.key)?.children ?? []).some(

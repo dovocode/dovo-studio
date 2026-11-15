@@ -4,6 +4,7 @@ import type { IncomingMessage } from 'node:http'
 import { Effect } from 'effect'
 import {
   botCreateSchema,
+  botConversationArchiveRequestSchema,
   botAvatarGenerateSchema,
   botAvatarUploadSchema,
   botContextResetRequestSchema,
@@ -17,6 +18,7 @@ import {
   type Bot,
   type BotResources,
   type BotResult,
+  type Task,
 } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { RuntimeServices } from '../../runtime-services.js'
@@ -120,6 +122,134 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
         const input = decode(botAvatarGenerateSchema, value)
         s.botAvatars.cancel(input.id, input.requestId)
         return { ok: true }
+      }
+      if (path === '/api/bots/archive-conversation') {
+        const input = decode(botConversationArchiveRequestSchema, value)
+        return yield* runtimeOperation(() => {
+          s.store.transaction(() => {
+            const task = s.store.task(input.id)
+            const bot = task.bot
+            if (!bot || task.replica || task.archivedAt) throw new HttpError(404, 'Bot not found.')
+            if (
+              s.store
+                .get()
+                .tasks.some(
+                  (saved) =>
+                    saved.botConversation?.botId === input.id &&
+                    saved.botConversation.requestRevision === input.expectedRevision,
+                )
+            )
+              return
+            if (bot.revision !== input.expectedRevision) throw stale()
+            if (task.messages.at(-1)?.id !== input.expectedLastMessageId)
+              throw new HttpError(
+                409,
+                'This conversation changed. Review it before starting a new conversation.',
+              )
+            if (
+              taskIsWorking(task) ||
+              task.queue?.length ||
+              task.subagentInbox?.length ||
+              taskSubagents(task, s.store.get().tasks, true).length
+            ) {
+              throw new HttpError(
+                409,
+                'Finish or stop current work and clear the queue before starting a new conversation.',
+              )
+            }
+            s.tasks.requireIdle(task.id)
+            if (!task.messages.length)
+              throw new HttpError(409, 'This conversation is already empty.')
+            const id = randomUUID()
+            const at = new Date().toISOString()
+            const revision = randomUUID()
+            const archive: Task = {
+              ...task,
+              id,
+              status: 'done',
+              title: `${task.title} · ${at.slice(0, 16).replace('T', ' ')} UTC`,
+              bot: undefined,
+              botConversation: { botId: task.id, requestRevision: input.expectedRevision },
+              archivedAt: at,
+              pinned: false,
+              draft: '',
+              draftAttachments: undefined,
+              draftConsumption: undefined,
+              sessionId: undefined,
+              sessionAgentId: undefined,
+              scheduledMessages: undefined,
+              threadWatches: undefined,
+              watchCounts: undefined,
+              subagents: undefined,
+              workflows: undefined,
+              pendingHarness: undefined,
+              messages: task.messages.map((message) => ({
+                ...message,
+                ...(message.attachments?.length
+                  ? {
+                      attachments: s.attachments.copy(
+                        task.id,
+                        id,
+                        message.attachments.map((file) => file.id),
+                      ),
+                    }
+                  : {}),
+              })),
+            }
+            s.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, archive] }))
+            s.store.updateTaskHistory(task.id, (current) => ({
+              ...current,
+              status: 'draft',
+              messages: [],
+              turns: [],
+              files: [],
+              sessionId: undefined,
+              sessionAgentId: undefined,
+              consumedMessageIds: undefined,
+              contextUsage: undefined,
+              runAttempt: undefined,
+              activeRunId: undefined,
+              runPhase: undefined,
+              preparation: undefined,
+              queuePaused: undefined,
+              archived: undefined,
+              settledAt: undefined,
+              snoozedUntil: undefined,
+              pendingHarness: current.pendingHarness
+                ? { ...current.pendingHarness, botRevision: revision }
+                : undefined,
+              harnessHandoff: undefined,
+              compactions: undefined,
+              nativeTodos: undefined,
+              nativeGoal: undefined,
+              nativeGoalSupported: undefined,
+              threadActions: undefined,
+              sideChats: undefined,
+              error: undefined,
+              activity: undefined,
+              lastPromptAt: undefined,
+              lastViewedTurnId: undefined,
+              draftConsumption: undefined,
+              quotaContinuation: undefined,
+              restartRecovery: undefined,
+              failureVersion: undefined,
+              fileReviewVersion: undefined,
+              fileReviewVersions: undefined,
+              historyBefore: undefined,
+              historyTotals: undefined,
+              historyRevision: (current.historyRevision ?? 0) + 1,
+              bot: {
+                ...bot,
+                contextResets: undefined,
+                compaction: undefined,
+                revision,
+                updatedAt: at,
+              },
+            }))
+            s.activity.add('task', task.id, 'Bot conversation archived', { archiveId: id })
+          })
+          return result(s, input.id)
+        })
       }
       if (path === '/api/bots/reset-context') {
         const input = decode(botContextResetRequestSchema, value)

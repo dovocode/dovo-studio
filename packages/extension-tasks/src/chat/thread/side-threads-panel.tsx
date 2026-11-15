@@ -1,3 +1,5 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { ChildThreadName } from '../../detail/child-thread-name'
 import {
   prepareSideThread,
   finishSideThread,
@@ -449,6 +451,7 @@ export function SideThreadsPanel({
   readOnlyQuestions: ReactNode
   onClose?: () => void
 }) {
+  const uiText = useInterfaceText()
   const { workspace, connected, activeRuntimeId } = useWorkspace()
   const host = useStudioHost()
   const attention = useSideThreadAttention()
@@ -598,7 +601,7 @@ export function SideThreadsPanel({
                     <button
                       type="button"
                       className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline disabled:no-underline"
-                      disabled={!!child.archivedAt || (!local && !host.openThread)}
+                      disabled={!local && !host.openThread}
                       aria-current={(local && openId === child.id) || undefined}
                       onClick={open}
                       title={child.title}
@@ -614,6 +617,17 @@ export function SideThreadsPanel({
                           : statusLabels[child.status]}
                     </span>
                   </div>
+                  <ChildThreadName
+                    key={JSON.stringify([runtimeId, runtimeIdentity, child.id])}
+                    child={child}
+                    runtimeId={runtimeId}
+                    runtimeIdentity={runtimeIdentity}
+                  />
+                  {child.botConversation && (
+                    <p className="text-xs text-muted-foreground">
+                      {uiText('Saved Bot conversation')}
+                    </p>
+                  )}
                   {child.sideThread && <SideThreadProvenance link={child.sideThread} />}
                   {mention && (
                     <p className="text-xs text-muted-foreground">

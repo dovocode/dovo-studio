@@ -14,6 +14,7 @@ export const Button=({children,onClick,disabled,...props})=><button disabled={di
 export const Toggle=({label,checked,onChange})=><button role="switch" aria-label={label} aria-checked={checked} onClick={()=>onChange(!checked)}/>;
 export const Switch=({accessibilityLabel,value,onValueChange})=><Toggle label={accessibilityLabel} checked={value} onChange={onValueChange}/>;
 export const Input=props=><input {...props}/>;
+export const Field=({label,value,editable,onChangeText})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/></label>;
 export const ChoicePicker=({children,value,onValueChange,...props})=><select value={value} onChange={e=>onValueChange(e.target.value)} {...props}>{children}</select>;
 export const cn=(...values)=>values.filter(Boolean).join(' ');
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon.tsx';export const AgentAvatar=()=>null;export const ProjectIcon=()=>null;export const useModelLabel=()=>'';
@@ -574,25 +575,25 @@ try {
         ([id, run]) => id === 'nested' && run === 'nested-run',
       ),
     )
-    await page.getByText('Nested child', { exact: true }).click()
+    await page.getByText('Independent nested title', { exact: true }).click()
     await page.getByRole('button', { name: 'Stop child', exact: true }).click()
     await page.waitForFunction(() => window.requests.length === 2)
     assert.deepEqual(await page.evaluate(() => window.requests[1]), {
       path: '/api/tasks/cancel',
       input: { id: 'nested', runId: 'nested-run' },
     })
-    await page.getByText('Nested child', { exact: true }).click()
+    await page.getByText('Independent nested title', { exact: true }).click()
     const hideFinished = page.getByRole('switch', { name: 'Hide finished', exact: true })
     await hideFinished.waitFor()
     assert.equal(await hideFinished.getAttribute('aria-checked'), 'true')
-    assert.equal(await page.getByText('Ended child', { exact: true }).count(), 0)
-    assert.equal(await page.getByText('Live child', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
+    assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 0)
     await page.getByText(/2 hidden/).waitFor()
     await hideFinished.click()
-    await page.getByText('Ended child', { exact: true }).waitFor()
-    await page.getByText('Nested child', { exact: true }).waitFor()
+    await page.getByText('Independent ended title', { exact: true }).waitFor()
+    await page.getByText('Independent nested title', { exact: true }).waitFor()
     assert.equal(await page.getByText('Last seen working', { exact: true }).count(), 2)
-    await page.getByText('Ended child', { exact: true }).click()
+    await page.getByText('Independent ended title', { exact: true }).click()
     await page
       .getByRole('button', { name: 'Open child thread · codex', exact: true })
       .last()
@@ -705,7 +706,12 @@ try {
     await page.getByText('Failed worker', { exact: true }).waitFor()
     await page.getByText('Stopped worker', { exact: true }).waitFor()
     await hideFinished.click()
-    for (const name of ['Ended child', 'Live child', 'Stopped worker', 'Finished timestamp']) {
+    for (const name of [
+      'Independent ended title',
+      'Independent child title',
+      'Stopped worker',
+      'Finished timestamp',
+    ]) {
       await page.getByText(name, { exact: true }).waitFor({ state: 'detached' })
     }
     await page.getByText('Failed worker', { exact: true }).waitFor()
@@ -718,7 +724,7 @@ try {
       '/api/tasks/acknowledge-subagent-failure',
     )
     await page.getByText('Unknown worker', { exact: true }).waitFor()
-    await page.getByText('Nested child', { exact: true }).waitFor()
+    await page.getByText('Independent nested title', { exact: true }).waitFor()
     await page.getByText(/5 hidden/).waitFor()
     await page.evaluate(() => {
       window.store = { ...window.store, connected: false }
@@ -729,7 +735,7 @@ try {
       .first()
       .waitFor()
     await page.getByText('Unknown worker', { exact: true }).waitFor()
-    await page.getByText('Nested child', { exact: true }).waitFor()
+    await page.getByText('Independent nested title', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.publishTasks(
         window.workspace.tasks.map((task) => ({
@@ -755,11 +761,11 @@ try {
     await page.evaluate(() => window.renderAgents())
     assert.equal(await hideFinished.getAttribute('aria-checked'), 'true')
     await hideFinished.click()
-    await page.getByText('Ended child', { exact: true }).waitFor()
+    await page.getByText('Independent ended title', { exact: true }).waitFor()
     await page.evaluate(() => window.renderList(false))
     await page.getByText('Main thread', { exact: true }).waitFor()
     await page.evaluate(() => window.renderAgents())
-    await page.getByText('Ended child', { exact: true }).waitFor()
+    await page.getByText('Independent ended title', { exact: true }).waitFor()
     assert.equal(await hideFinished.getAttribute('aria-checked'), 'false')
     await page.evaluate(() => {
       window.publishTasks(

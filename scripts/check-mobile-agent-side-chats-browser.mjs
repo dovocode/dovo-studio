@@ -56,6 +56,8 @@ for (const path of [
   'ui/theme',
   'ui/content/text',
   'ui/controls/action',
+  'ui/controls/field',
+  'ui/controls/use-action',
   'ui/controls/choice',
   'ui/layout/sheet',
 ]) {
