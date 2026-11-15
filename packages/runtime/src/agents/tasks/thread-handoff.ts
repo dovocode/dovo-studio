@@ -4,6 +4,7 @@ import {
   decode,
   resolveTaskAgent,
   portableThreadSchema,
+  SCRATCH_PROJECT_ID,
   type PortableThread,
   type continueHarnessSchema,
 } from '@dovo/protocol'
@@ -44,7 +45,8 @@ export async function withThreadCheckpoint<T>(
         409,
         'Imported sessions and child threads must stay with their original execution. Use a new independent thread.',
       )
-    if (task.status === 'draft')
+    // A Bot can have a fresh conversation but retain the previous provider lock.
+    if (task.status === 'draft' && !task.bot)
       throw new HttpError(
         409,
         'Choose the harness or computer in the draft settings before starting this thread.',
@@ -54,7 +56,10 @@ export async function withThreadCheckpoint<T>(
     s.jobs.requireTaskIdle(id)
     if (s.terminals.list().some((terminal) => terminal.taskId === id && !terminal.exited))
       throw new HttpError(409, 'Close this thread’s terminals before continuing elsewhere.')
-    const cwd = await s.checkouts.fileDirectory(id)
+    const cwd =
+      task.bot && task.repositoryId === SCRATCH_PROJECT_ID
+        ? await s.scratch.directory(id)
+        : await s.checkouts.fileDirectory(id)
     return await s.tasks.withCheckoutMutation(cwd, async () => {
       s.tasks.requireIdle(id, reservation)
       requireHandoffInputIdle(s, id, queuedInput)
@@ -125,6 +130,8 @@ export async function continueHarness(
           sessionAgentId: undefined,
           contextUsage: undefined,
           subagents: undefined,
+          nativeGoal: undefined,
+          nativeGoalSupported: undefined,
           consumedMessageIds: undefined,
           runAttempt: undefined,
           activeRunId: undefined,

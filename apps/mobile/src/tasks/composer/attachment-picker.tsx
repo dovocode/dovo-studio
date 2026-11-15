@@ -1,3 +1,4 @@
+import { runClientEffect } from '@dovo/client-runtime'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useImageEditor } from './image-editor'
 import { Effect, Schema } from 'effect'
@@ -13,6 +14,7 @@ import { File, Paths } from 'expo-file-system'
 import { randomUUID } from 'expo-crypto'
 import {
   attachmentReadSchema,
+  attachmentPreparedSchema,
   attachmentCommitResultSchema,
   mutableStruct,
   MAX_ATTACHMENT_BYTES,
@@ -509,7 +511,7 @@ export function useAttachmentPicker(
       if (asset) void upload([asset])
     },
     discardFailedUpload: clearFailedUpload,
-    waitForUploads: async () => {
+    waitForUploads: async (files: Attachment[] = []) => {
       const operation = activeUpload.current
       if (operation?.scope === scopeKey && operation.pending) {
         const failure = await operation.done
@@ -519,6 +521,24 @@ export function useAttachmentPicker(
         throw new Error('The conversation changed before attachments finished.')
       if (failedUploads.current.size)
         throw new Error('Retry or remove failed attachments before sending.')
+      // Recoverable mobile uploads retain their bytes until acknowledged. Renew the
+      // temporary edit/answer references without replaying or changing their ownership.
+      if (files.length && connected && snapshot?.attachmentPreparationSupported === true) {
+        const result = await runClientEffect(
+          readRuntimeEffect(
+            profile!,
+            '/api/attachments/prepare',
+            { taskId, ids: files.map((file) => file.id) },
+            attachmentPreparedSchema,
+          ),
+        )
+        if (result.missing.length)
+          throw new Error(
+            'This attachment is unavailable. Recover it in connection status or choose the file again. Your draft is unchanged.',
+          )
+      }
+      if (!ownership.current.mounted || ownership.current.key !== scopeKey)
+        throw new Error('The conversation changed before attachments finished.')
     },
     edit,
     editor: imageEditor.editor,

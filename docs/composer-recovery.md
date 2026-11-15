@@ -26,10 +26,18 @@ in its thread. Select and copy the content to use it elsewhere. **Discard saved 
 that record. Recovery does not append text to a message draft or change its order. Child-thread
 answers remain available in the child thread.
 
-Attachment recovery stores metadata and IDs, not another copy of the file. Existing upload receipts
-and runtime retention rules still apply. Unreferenced queued uploads can expire after a day. A saved
-reference does not guarantee that its file is still available. Reattach a missing file before
-sending the answer. Recovery does not extend upload lifetimes.
+Saved attachment recovery records contain metadata and IDs, not another copy of the file. Existing
+upload receipts and retention of referenced files still apply. Unreferenced queued uploads can
+expire after a day. Before sending or editing a message, or answering with files, clients check
+availability on runtimes that advertise `attachmentPreparationSupported`. This check renews pending
+uploads for another day. It does not add files to the current draft.
+
+Desktop can restore missing bytes while the mounted composer still holds the source `File`. It uses
+the same upload ID and keeps the current draft unchanged. It releases those source files when the
+attachments leave the composer. A reload loses this in-memory source. Mobile keeps its existing
+upload-receipt recovery flow. If the file is unavailable, it asks the user to recover the upload in
+connection status or choose the file again. Neither client sends changed text from a pending
+preparation step. Both keep changed drafts and question answers available for review.
 
 If the rich editor chunk fails, the composer keeps the Markdown source input available. Startup
 preload errors are handled. **Retry rich editor** saves the draft and caret, then reloads the page.
@@ -153,3 +161,12 @@ not loaded those messages. It does not load the full thread, assistant messages 
 browsing session refreshes this snapshot. Editing, cancelling or switching computers cancels the
 request and prevents a late reply from replacing the draft. Connection failures keep the draft and
 show an error. Bot agent history lookup is separate and keeps its existing search behavior.
+
+Browse past the oldest loaded message to fetch the next 50 user messages. Older pages load only when
+needed. The history control does not show a total count. The API accepts the previous page's
+`before` cursor and does not query a total or load the full conversation. An older runtime that does
+not return a cursor supports only the first page.
+
+Send cancels pending older-page requests and keeps the recalled preview active until the native text
+snapshot completes. A failed send keeps the recalled text for retry. A real draft change during that
+read still blocks the send.

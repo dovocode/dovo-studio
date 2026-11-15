@@ -1,6 +1,7 @@
 import { decode } from '@dovo/protocol'
 import {
   modelDisplayName,
+  providerSchema,
   acpHarnessChoiceId,
   acpHarnessName,
   acpInstallationHarness,
@@ -60,20 +61,7 @@ export function taskHarnessChoices(
   const provider = lockedTaskProvider(task, agents)
   const installationId = lockedAcpInstallationId(task, agents)
   return [
-    ...(
-      [
-        'codex',
-        'claude',
-        'vibe',
-        'opencode',
-        'hermes',
-        'copilot',
-        'grok',
-        'muse',
-        'cursor',
-        'acp',
-      ] as const
-    ).map((provider) => ({
+    ...providerSchema.literals.map((provider) => ({
       id: `harness:${provider}`,
       name: harnessNames[provider],
       provider,

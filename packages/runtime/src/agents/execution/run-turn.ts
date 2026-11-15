@@ -1,3 +1,4 @@
+import { nativeGoalSchema } from '@dovo/protocol'
 import { explainProviderFailure } from './provider-failure.js'
 import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
 import { goalCommand, goalCommandText } from '@dovo/protocol'
@@ -484,8 +485,11 @@ export class TaskTurnRunner {
             'Send /goal as a separate message after pending messages finish.',
           )
         const goal = goalInputs.length ? goalCommand(goalInputs[0].text) : undefined
-        if (goal && !['claude', 'codex'].includes(agent.provider))
-          throw new HttpError(400, '/goal is supported for Claude and Codex threads.')
+        if (goal && !['claude', 'codex', 'opencode'].includes(agent.provider))
+          throw new HttpError(
+            400,
+            '/goal is supported for Claude, Codex and supported OpenCode threads.',
+          )
         if (goal && goalInputs[0].attachments?.length)
           throw new HttpError(400, 'Send attachments as a separate message before /goal.')
         if (goal && goal.action !== 'set' && !resumeId)
@@ -1466,6 +1470,8 @@ export class TaskTurnRunner {
                       ...t,
                       sessionId,
                       sessionAgentId: fingerprint,
+                      nativeGoal: undefined,
+                      nativeGoalSupported: undefined,
                     }))
                 },
                 onText: (text) => {
@@ -1550,6 +1556,33 @@ export class TaskTurnRunner {
                 },
                 onEvent: (name, payload) => {
                   if (!acceptsProviderEvents()) return
+                  if (name === 'dovo/opencode/capabilities') {
+                    const value = decodeResult(
+                      Schema.Struct({ sessionId: Schema.String, goals: Schema.Boolean }),
+                      payload,
+                    )
+                    if (
+                      value.success &&
+                      value.data.sessionId === this.store.taskSummary(id).sessionId
+                    )
+                      this.store.updateTask(id, (current) => ({
+                        ...current,
+                        nativeGoalSupported: value.data.goals,
+                      }))
+                    return
+                  }
+                  if (name === 'dovo/opencode/goal') {
+                    const value = decodeResult(Schema.NullOr(nativeGoalSchema), payload)
+                    if (
+                      value.success &&
+                      (!value.data || value.data.sessionId === this.store.taskSummary(id).sessionId)
+                    )
+                      this.store.updateTask(id, (current) => ({
+                        ...current,
+                        nativeGoal: value.data ?? undefined,
+                      }))
+                    return
+                  }
                   if (agent.provider === 'claude') {
                     const retry = claudeProviderRetry(payload)
                     if (retry) {

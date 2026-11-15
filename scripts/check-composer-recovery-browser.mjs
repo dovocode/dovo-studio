@@ -104,6 +104,7 @@ export {cn} from './packages/studio-ui/src/lib/utils';`
                     ? 'export const QuestionAttachments = () => null;'
                     : `
 import {useSyncExternalStore} from 'react';
+export {useSecretReferenceCheck} from './packages/studio-core/src/use-secret-reference-check';
 export {composerCaretRecoveryKey,composerRecoveryKey,createComposerRecovery} from './packages/studio-core/src/workspace/composer-recovery';
 export {questionRecovery,useQuestionRecovery} from './packages/studio-core/src/workspace/question-recovery';
 export {responses} from '@dovo/protocol';

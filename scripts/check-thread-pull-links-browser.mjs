@@ -9,9 +9,10 @@ const literalMessage =
 const environment = `export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 import {createContext,useContext} from 'react';
 export * from '@dovo/protocol';
+export {useTurnAnnouncements} from '${root}/packages/studio-core/src/use-turn-announcements.ts';
 export {createTask} from '${root}/packages/studio-core/src/workspace/actions.ts';
 export const updateTask=(w,id,change)=>({...w,tasks:w.tasks.map(task=>task.id===id?change(task):task)});export const Context=createContext(null);export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>useContext(Context);
-export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
+export {studioSyntaxTheme} from '${root}/packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',turnAnnouncements:'off',codeTheme:'app',importedCodeThemes:[]});export const useResolvedTheme=()=> 'dark';
 export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=useWorkspace;export const useAppendConversationTemplate=()=>()=>{};export const useConversationSelector=select=>{const value=useWorkspace();return select({task:value.workspace.tasks[0],actions:{threadScope:JSON.stringify([value.connection.address,value.connection.token,value.workspace.tasks[0].id])}})};
 export const useStudioHost=()=>({...useWorkspace().host,openExternalLink:async url=>{window.external.push(url)},openBrowserLink:async url=>{window.browsers.push(url)},openPullLink:url=>{window.opened.push(url);return true}});
 `
@@ -63,7 +64,7 @@ async function bundle(mobile) {
     '../theme': `export const styles={chatText:{}};export const colors={};export const useTheme=()=>({styles,colors,mode:'dark'});`,
     './mermaid-diagram': `export const MermaidDiagram=()=>null;`,
     './task-visualization': `export const TaskVisualization=()=>null;`,
-    'react-native': `export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Keyboard={dismiss:()=>{}};export const Linking={openURL:async url=>window.external.push(url)};export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
+    'react-native': `export const Pressable=({children,onPress,accessibilityLabel})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;export const View=({children})=><div>{children}</div>;export const Text=({children,onPress,onLongPress})=>onPress?<a href="#" onClick={e=>{e.preventDefault();onPress()}} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</a>:<span>{children}</span>;export const Keyboard={dismiss:()=>{}};export const Linking={openURL:async url=>window.external.push(url)};export const Platform={OS:'ios'};export const Alert={alert:(...args)=>window.alerts.push(args)};`,
     'react-native-enriched-markdown': `export const EnrichedMarkdownText=({markdown,onLinkPress,onLinkLongPress})=>{const url=markdown.match(/\\]\\(<([^>]+)>\\)/)?.[1]??markdown;return <a href={url} onClick={e=>{e.preventDefault();onLinkPress({url})}} onContextMenu={e=>{e.preventDefault();onLinkLongPress?.({url})}}>{markdown.includes('&#')?url:'Thread PR'}</a>};`,
   }
   const ui = `${root}/packages/studio-ui/src/components`

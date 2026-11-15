@@ -806,18 +806,30 @@ it('rebuilds the derived history index after an upgrade or drift', () => {
   }
 })
 
-it('reads only the latest 50 user messages for the composer without retaining a full thread', () => {
+it('pages composer user messages in batches of 50 without retaining a full thread', () => {
   const db = openDatabase(':memory:')
   try {
-    new WorkspaceStore(db).update(() => workspace)
+    new WorkspaceStore(db).update(() => ({ ...workspace, tasks: [task, second] }))
     const reader = new WorkspaceStore(db)
-    expect(reader.composerHistory('thread').messages.map((m) => m.id)).toEqual(
+    const first = reader.composerHistory('thread')!
+    expect(first.messages.map((m) => m.id)).toEqual(
       task.messages
         .filter((m) => m.role === 'user')
         .slice(-50)
         .map((m) => m.id),
     )
-    expect(reader.composerHistory('thread').turns).toEqual([])
+    expect(first.turns).toEqual([])
+    expect(first.before).toBe('m100')
+    const older = reader.composerHistory('thread', first.before)!
+    expect(older.messages.map((m) => m.id)).toEqual(
+      task.messages
+        .filter((m) => m.role === 'user')
+        .slice(0, 50)
+        .map((m) => m.id),
+    )
+    expect(older.before).toBeUndefined()
+    expect(reader.composerHistory('thread', 'missing')).toBeUndefined()
+    expect(reader.composerHistory('thread', 's0')).toBeUndefined()
     expect(reader.retainedHistories().tasks).toEqual([])
   } finally {
     db.close()

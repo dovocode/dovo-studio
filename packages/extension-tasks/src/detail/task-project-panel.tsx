@@ -7,7 +7,15 @@ import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
 import { NestedThreads } from '../list/nested-threads'
 import { collectTasks, taskSources, taskCollectionKey } from '../list/task-collection'
-import { useCallback, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { Schema } from 'effect'
 import {
   canChangeTaskCheckout,
@@ -19,6 +27,10 @@ import {
   type RepositoryOpenTarget,
   type ThreadInfoSectionId,
   orderedThreadInfoSections,
+  threadInfoSummarySections,
+  resolveTaskAgent,
+  resolveScopedAgents,
+  modelDisplayName,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
@@ -56,6 +68,7 @@ import {
   CheckCircle2,
   ArrowUp,
   Plus,
+  Bot,
 } from 'lucide-react'
 import { RepositoryActions } from '@dovo/extension-scm/repository-actions'
 import { gitPrimaryAction } from './git-primary-action'
@@ -182,6 +195,10 @@ export function TaskProjectPanel({
   const [openBusy, setOpenBusy] = useApplicationState(false)
   const { preferredRepositoryOpenTarget, threadInfoSections, threadInfoOrder } = useAppPreferences()
   const show = (id: ThreadInfoSectionId) => threadInfoSections[id] !== false
+  const contentId = useId()
+  const scope = JSON.stringify([activeRuntimeId, task.id])
+  const [detailsScope, setDetailsScope] = useState<string>()
+  const details = detailsScope === scope
   const openRepository = useRepositoryOpen()
   const openTarget = (target: RepositoryOpenTarget) => {
     if (openBusy || !repo) return
@@ -200,6 +217,17 @@ export function TaskProjectPanel({
   if (task.pullStatus && !displayedPulls.some((pull) => pull.url === task.pullStatus?.url))
     displayedPulls.unshift({ ...task.pullStatus, title: task.title })
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
+  const agent = resolveTaskAgent(
+    task,
+    resolveScopedAgents(snapshot?.defaults, task.bot ? undefined : repo, workspace.agents),
+  )
+  const agentLabel = task.modelSelection
+    ? { inherit: 'Inherit', auto: 'Tune', smart: 'Maestro' }[task.modelSelection]
+    : agent && (modelDisplayName(agent.model) || agent.name)
+  const summarySection = (id: ThreadInfoSectionId) =>
+    (threadInfoSummarySections.has(id) || id === 'lineage') &&
+    (id !== 'pulls' || displayedPulls.length > 0) &&
+    (id !== 'changes' || task.files.length > 0)
   const gitKey = JSON.stringify([
     activeRuntimeId,
     connection?.address,
@@ -448,7 +476,22 @@ export function TaskProjectPanel({
     sharing: !task.example && <ThreadSharing key={task.id} taskId={task.id} title={task.title} />,
     settings: (
       <>
-        <ThreadInfoSettingsSlot visible={show('settings')} />
+        {show('settings') && !details && (
+          <Button
+            variant="ghost"
+            className="studio-project-row"
+            aria-label="Agent & model"
+            onClick={() => setDetailsScope(scope)}
+          >
+            <Bot className="size-4 shrink-0 text-muted-foreground" />
+            <span className="shrink-0 text-muted-foreground">Agent & model</span>
+            <span className="min-w-0 flex-1 truncate text-right">
+              {agentLabel || 'Choose agent'}
+            </span>
+            <ChevronDown className="size-3 shrink-0 text-muted-foreground" />
+          </Button>
+        )}
+        <ThreadInfoSettingsSlot visible={show('settings') && details} />
       </>
     ),
     project: (
@@ -504,6 +547,7 @@ export function TaskProjectPanel({
               <p
                 className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
                 role="status"
+                hidden={!details && !gitError && connected && !gitState?.ahead && !gitState?.behind}
               >
                 {gitState && !gitError && connected && !gitState.dirty && (
                   <CheckCircle2 className="size-3 shrink-0 text-status-success" />
@@ -513,6 +557,7 @@ export function TaskProjectPanel({
               <p
                 className="studio-project-path mt-1 truncate text-[11px] text-muted-foreground"
                 title={task.existingWorktreePath || repo.path}
+                hidden={!details}
               >
                 {task.existingWorktreePath || repo.path}
               </p>
@@ -615,7 +660,7 @@ export function TaskProjectPanel({
         )}
       </>
     ),
-    usage: <ThreadInfoUsage task={task} />,
+    usage: <ThreadInfoUsage task={task} detailed={details} />,
     servers: onBrowser && <ThreadServers taskId={task.id} onOpen={onBrowser} />,
     pulls: (
       <>
@@ -625,7 +670,7 @@ export function TaskProjectPanel({
             className="studio-project-section border-t border-border/60"
           >
             {!!displayedPulls.length && (
-              <div className="mb-1 flex items-center justify-between gap-2">
+              <div hidden={!details} className="mb-1 flex items-center justify-between gap-2">
                 <h3 className="text-xs font-medium text-muted-foreground">
                   {uiText('Pull requests')}
                 </h3>
@@ -795,7 +840,7 @@ export function TaskProjectPanel({
       <>
         {show('lineage') && <TaskAgentLineage task={task} />}
         {show('lineage') && thread && childRows.length > 0 && (
-          <>
+          <div hidden={!details}>
             <NestedThreads
               threads={childRows}
               parent={thread}
@@ -804,7 +849,7 @@ export function TaskProjectPanel({
             <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
               Manage agents
             </Button>
-          </>
+          </div>
         )}
       </>
     ),
@@ -832,8 +877,8 @@ export function TaskProjectPanel({
   return (
     <section aria-label="Thread info" className="studio-project-panel flex min-h-0 flex-col">
       <BackgroundRefreshIssue label="Git status" error={gitError} retry={retryGit} />
-      <div className="studio-thread-info-content">
-        {snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
+      <div id={contentId} className="studio-thread-info-content" data-expanded={details}>
+        {details && snapshot?.releaseDistribution !== 'desktop' && serverUpdate.available && (
           <Button
             size="sm"
             variant="outline"
@@ -855,18 +900,36 @@ export function TaskProjectPanel({
               }
             >
               {ids.map((id) => (
-                <div key={id} data-thread-info-section={id}>
+                <div
+                  key={id}
+                  data-thread-info-section={id}
+                  hidden={!show(id) || (!details && !summarySection(id))}
+                >
                   {sections[id]}
                 </div>
               ))}
             </div>
           ) : (
-            <div key={ids[0]} data-thread-info-section={ids[0]}>
+            <div
+              key={ids[0]}
+              data-thread-info-section={ids[0]}
+              hidden={!show(ids[0]) || (!details && !summarySection(ids[0]))}
+            >
               {sections[ids[0]]}
             </div>
           ),
         )}
       </div>
+      <Button
+        variant="ghost"
+        className="studio-thread-info-disclosure mx-2 mb-1 justify-between text-xs text-muted-foreground"
+        aria-expanded={details}
+        aria-controls={contentId}
+        onClick={() => setDetailsScope(details ? undefined : scope)}
+      >
+        {details ? uiText('Hide details') : uiText('More details')}
+        <ChevronDown className={`size-3.5 ${details ? 'rotate-180' : ''}`} />
+      </Button>
       {gitOpen && repo && (
         <Dialog open onOpenChange={setGitOpen}>
           <DialogContent

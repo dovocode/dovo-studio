@@ -1,3 +1,4 @@
+import { SecretReferenceCheck as ReferenceCheck } from '@dovo/studio-ui'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import {
@@ -62,6 +63,7 @@ export function SecretEnvironmentEditor({
               {uiText('Remove')} {key}
             </Button>
           </div>
+          <ReferenceCheck reference={reference} disabled={disabled} />
           <Select
             value={reference.provider}
             disabled={disabled}

@@ -1,3 +1,4 @@
+import { nativeGoalSchema } from './conversation/workflow/native-goal.js'
 import { routinePolicySchema, routineMonitorSchema } from './automation/routine-policy.js'
 import { workflowSchema } from './conversation/workflow/workflows.js'
 import { taskIsWorking } from './tasks/task-working.js'
@@ -824,6 +825,8 @@ export const taskSchema = mutableStruct({
   ),
   // Runtime-owned: the shared agent checklist, from native events or the regular task tool.
   nativeTodos: Schema.optional(agentTodosSchema),
+  nativeGoal: Schema.optional(nativeGoalSchema),
+  nativeGoalSupported: Schema.optional(Schema.Boolean),
   // Runtime-owned: how full the agent's context window is, from its latest usage report.
   contextUsage: Schema.optional(
     mutableStruct({

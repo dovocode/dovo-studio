@@ -1,3 +1,4 @@
+import { SecretReferenceCheck } from './secret-reference-check'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   defaultSecretReference,
@@ -112,6 +113,7 @@ export function SecretReferenceFields({
           />
         </>
       )}
+      <SecretReferenceCheck reference={value} disabled={disabled} />
     </>
   )
 }

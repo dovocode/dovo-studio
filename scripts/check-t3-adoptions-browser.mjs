@@ -6,10 +6,10 @@ const ui = root + '/packages/studio-ui/src'
 const native = `export const View=({children})=><div>{children}</div>;export const ScrollView=View;`
 const state = `export {useState as useApplicationState} from 'react';`
 const mocks = {
-  '@dovo/studio-core': `const request=(...args)=>window.request(...args);export const useWorkspace=()=>({request,connected:true,activeRuntimeId:window.owner,connection:{address:'http://runtime.local',token:window.owner}});export {responses} from '@dovo/protocol';`,
+  '@dovo/studio-core': `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';const request=(...args)=>window.request(...args);export const useWorkspace=()=>({request,connected:true,activeRuntimeId:window.owner,connection:{address:'http://runtime.local',token:window.owner}});export {responses} from '@dovo/protocol';`,
   '@dovo/studio-core/state': state,
   '../../runtime/connection/provider': `const call=(...args)=>window.request(...args);export const useRuntime=()=>({call,read:call,connected:true,connection:{address:'http://runtime.local',token:window.owner}});`,
-  '@dovo/studio-ui': `export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/input.tsx';export * from '${ui}/components/ui/select.tsx';export * from '${ui}/components/ui/dialog.tsx';`,
+  '@dovo/studio-ui': `export {SecretReferenceCheck} from '${ui}/secret-reference-check';export * from '${ui}/components/ui/button.tsx';export * from '${ui}/components/ui/input.tsx';export * from '${ui}/components/ui/select.tsx';export * from '${ui}/components/ui/dialog.tsx';`,
   'react-native': native,
   '../ui/controls/field': `export const Field=({label,value,onChangeText,editable,placeholder})=><label>{label}<input aria-label={label} value={value} placeholder={placeholder} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;`,
   '../ui/controls/choice': `export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,
@@ -18,6 +18,7 @@ const mocks = {
   '../ui/theme': `export const useTheme=()=>({styles:{}});`,
   '../../ui/layout/sheet': `export const Sheet=({title,children,onClose})=><div role="dialog" aria-label={title}><button onClick={onClose}>Close</button>{children}</div>;`,
 }
+mocks['../runtime/connection/provider'] = mocks['../../runtime/connection/provider']
 for (const path of ['controls/action', 'content/text', 'theme'])
   mocks['../../ui/' + path] = mocks['../ui/' + path]
 const browser = await chromium.launch()

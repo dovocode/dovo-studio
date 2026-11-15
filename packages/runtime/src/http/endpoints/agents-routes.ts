@@ -1,3 +1,4 @@
+import { agentSecretReferenceSchema } from '@dovo/protocol'
 import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
 import { isSpreadsheet } from '@dovo/protocol'
 import { botPaused } from '@dovo/protocol'
@@ -167,6 +168,21 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         return yield* serviceResult(s.titles.suggestNextPrompt(id, turnId))
+      }
+      if (method === 'POST' && path === '/api/agents/secrets/check') {
+        const { reference } = decode(
+          mutableStruct({ reference: agentSecretReferenceSchema }),
+          yield* serviceResult(body(request)),
+        )
+        yield* serviceResult(
+          s.agents.secretReferences.check(reference, AbortSignal.timeout(45000)).catch(() => {
+            throw new HttpError(
+              400,
+              'Could not read this secret reference. Check its value and the secret manager login on this computer.',
+            )
+          }),
+        )
+        return { ok: true }
       }
       if (method === 'POST' && path === '/api/agents/secrets/refresh') {
         s.agents.secretReferences.refresh()

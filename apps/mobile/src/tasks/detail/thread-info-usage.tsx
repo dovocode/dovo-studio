@@ -4,14 +4,15 @@ import { contextMeter, type Task } from '@dovo/protocol'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
-export function ThreadInfoUsage({ task }: { task: Task }) {
+export function ThreadInfoUsage({ task, detailed = true }: { task: Task; detailed?: boolean }) {
   const uiText = useInterfaceText()
 
   const { colors, styles } = useTheme()
   const meter = contextMeter(task)
   const usage = task.contextUsage
+  if (!meter && !detailed) return null
   return (
-    <View accessibilityLabel={uiText('Context usage')} style={{ gap: 8 }}>
+    <View accessibilityLabel={uiText('Context usage')} style={{ gap: 5 }}>
       <View
         style={{
           flexDirection: 'row',
@@ -23,7 +24,14 @@ export function ThreadInfoUsage({ task }: { task: Task }) {
         <Text style={styles.muted}>
           <InterfaceText>{'Context'}</InterfaceText>
         </Text>
-        <Text style={styles.text}>
+        <Text
+          style={{
+            color: colors.text,
+            fontSize: 13,
+            fontWeight: '500',
+            fontVariant: ['tabular-nums'],
+          }}
+        >
           {meter
             ? `${meter.short}${meter.percent !== undefined ? uiText(' used') : uiText(' tokens')}`
             : uiText('Not reported')}
@@ -35,31 +43,33 @@ export function ThreadInfoUsage({ task }: { task: Task }) {
           accessibilityRole="progressbar"
           accessibilityLabel={meter.label}
           accessibilityValue={{ min: 0, max: 100, now: meter.percent }}
-          style={{ height: 4, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' }}
+          style={{ height: 3, backgroundColor: colors.border, borderRadius: 2, overflow: 'hidden' }}
         >
           <View
             style={{
-              height: 4,
+              height: 3,
               width: `${meter.percent}%`,
               backgroundColor:
                 meter.level === 'full'
                   ? colors.error
                   : meter.level === 'warn'
                     ? colors.warning
-                    : colors.muted,
+                    : colors.accent,
             }}
           />
         </View>
       )}
-      <Text style={styles.muted}>
-        {usage?.used !== undefined
-          ? uiText('{value0}{value1} tokens in this session{value2}', {
-              value0: usage.used.toLocaleString(),
-              value1: usage.limit ? ` of ${usage.limit.toLocaleString()}` : '',
-              value2: usage.limit ? '.' : ' · Window size not reported.',
-            })
-          : uiText('Available after the provider reports context usage.')}
-      </Text>
+      {detailed && (
+        <Text style={styles.muted}>
+          {usage?.used !== undefined
+            ? uiText('{value0}{value1} tokens in this session{value2}', {
+                value0: usage.used.toLocaleString(),
+                value1: usage.limit ? ` of ${usage.limit.toLocaleString()}` : '',
+                value2: usage.limit ? '.' : ' · Window size not reported.',
+              })
+            : uiText('Available after the provider reports context usage.')}
+        </Text>
+      )}
     </View>
   )
 }

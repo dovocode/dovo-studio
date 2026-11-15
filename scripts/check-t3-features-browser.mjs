@@ -16,10 +16,13 @@ const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export * from '@dovo/protocol';export const useWorkspace=()=>window.runtime;`,
+      '@dovo/studio-core': `export * from '@dovo/protocol';export {useSecretReferenceCheck} from '${root}packages/studio-core/src/use-secret-reference-check';export const useWorkspace=()=>window.runtime;`,
+      '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
       '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=effect=>Effect.runPromise(effect);`,
       'react-native': native,
+      '../ui/content/text': native,
+      '../ui/controls/action': native,
       '../../ui/content/text': native,
       '../../ui/controls/action': native,
       '../../ui/theme': native,

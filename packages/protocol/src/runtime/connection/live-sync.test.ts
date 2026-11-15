@@ -18,7 +18,7 @@ import { runtimeRequest } from '../../shared/client.js'
 import { runtimeTransportAddress } from './routes.js'
 import { Schema } from 'effect'
 const stopped: Array<() => void> = []
-const requestUrl = (input: Parameters<typeof fetch>[0]) =>
+const requestUrl = (input: RequestInfo | URL) =>
   new URL(input instanceof Request ? input.url : input instanceof URL ? input.href : input)
 afterEach(() => {
   for (const stop of stopped.splice(0)) stop()

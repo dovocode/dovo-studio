@@ -179,7 +179,19 @@ try {
     console.error(`${phase}: ${error.stack}`)
   })
   page.on('console', (message) => {
-    if (message.type() === 'error') errors.push(`${phase}: ${message.text()}`)
+    if (message.type() === 'error')
+      errors.push(`${phase}: ${message.text()} ${message.location().url}`)
+  })
+  // Thread info opens by default. Keep its public release check inside this transport fixture.
+  await page.route('https://api.github.com/repos/dovocode/dovo-studio/releases**', (route) => {
+    const release = {
+      tag_name: 'v0.0.9',
+      html_url: 'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.9',
+      draft: false,
+      prerelease: false,
+      body: '',
+    }
+    return route.fulfill({ json: route.request().url().endsWith('/latest') ? release : [release] })
   })
   await page.goto(terminalRuntimeAddress)
   await page.evaluate((address) => {

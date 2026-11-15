@@ -17,6 +17,15 @@ export const threadInfoSections = [
 
 export type ThreadInfoSectionId = (typeof threadInfoSections)[number]['id']
 
+/** Sections shown before expanding the full inspector. Saved visibility still applies. */
+export const threadInfoSummarySections: ReadonlySet<ThreadInfoSectionId> = new Set([
+  'settings',
+  'project',
+  'pulls',
+  'changes',
+  'usage',
+])
+
 /** Preserve saved order, append new sections, and tolerate removed/duplicate keys. */
 export function orderedThreadInfoSections(order: readonly string[] = []) {
   const remaining = new Map<string, (typeof threadInfoSections)[number]>(

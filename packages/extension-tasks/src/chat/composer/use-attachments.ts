@@ -6,6 +6,7 @@ import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef, useState } from 'react'
 import {
   attachmentUploadResultSchema,
+  attachmentPreparedSchema,
   attachmentReadSchema,
   attachmentMutationSchema,
   MAX_ATTACHMENT_BYTES,
@@ -47,10 +48,13 @@ export function useAttachments(
     pending: boolean
     done: Promise<string | undefined>
   } | null>(null)
+  const recoverableFiles = useRef(new Map<string, { file: File; owner: string }>())
   const failedUploads = useRef(new Map<string, File>())
   const [, setFailedVersion] = useState(0)
   useEffect(() => {
     failedUploads.current.clear()
+    for (const [id, source] of recoverableFiles.current)
+      if (source.owner !== scope) recoverableFiles.current.delete(id)
     setFailedVersion((value) => value + 1)
   }, [scope])
   const imageEditor = useImageEditor()
@@ -72,7 +76,7 @@ export function useAttachments(
   useEffect(() => {
     currentScope.current = scope
     return () => {
-      if (detached && currentScope.current === scope) currentScope.current = 'unmounted'
+      if (currentScope.current === scope) currentScope.current = 'unmounted'
     }
   }, [scope])
   const savedFiles = detached
@@ -108,11 +112,13 @@ export function useAttachments(
         !savedFiles.some((file) => file.id === item.attachment.id),
     )
     if (!removed.length) return
-    for (const item of removed)
+    for (const item of removed) {
+      recoverableFiles.current.delete(item.attachment.id)
       if (item.url) {
         URL.revokeObjectURL(item.url)
         urls.current.delete(item.url)
       }
+    }
     setUploads((current) =>
       current.filter((item) => !removed.some((old) => old.attachment.id === item.attachment.id)),
     )
@@ -305,6 +311,7 @@ export function useAttachments(
             await cancel()
             throw new Error('The question changed before the file was attached.')
           }
+          recoverableFiles.current.set(attachment.id, { file, owner: scope })
           editing?.uploaded(result.attachment, replaceId)
           setUploads((current) =>
             current.map((item) =>
@@ -364,6 +371,50 @@ export function useAttachments(
       lock.current = false
     }
   }
+  const prepare = async (selected: Attachment[] = files) => {
+    if (!selected.length || snapshot?.attachmentPreparationSupported !== true) return
+    const ids = selected.map((file) => file.id)
+    const result = await request(
+      '/api/attachments/prepare',
+      { taskId: task.id, ids },
+      attachmentPreparedSchema,
+    )
+    if (currentScope.current !== scope)
+      throw new Error('The conversation changed before attachments finished.')
+    for (const id of result.missing) {
+      if (currentScope.current !== scope)
+        throw new Error('The conversation changed before attachments finished.')
+      const source = recoverableFiles.current.get(id)
+      if (!source || source.owner !== scope)
+        throw new Error('This attachment expired. Choose the file again. Your draft is unchanged.')
+      const data = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader()
+        reader.onload = () =>
+          typeof reader.result === 'string'
+            ? resolve(reader.result.slice(reader.result.indexOf(',') + 1))
+            : reject(new Error('Could not read file'))
+        reader.onerror = () => reject(reader.error ?? new Error('Could not read file'))
+        reader.readAsDataURL(source.file)
+      })
+      if (currentScope.current !== scope)
+        throw new Error('The conversation changed before attachments finished.')
+      // Restore bytes only. Never attach to the live draft during recovery.
+      await request(
+        '/api/attachments/upload',
+        {
+          taskId: task.id,
+          queuedMessageId: editing?.messageId,
+          detached: true,
+          id,
+          name: source.file.name,
+          data,
+        },
+        attachmentUploadResultSchema,
+      )
+    }
+    if (currentScope.current !== scope)
+      throw new Error('The conversation changed before attachments finished.')
+  }
   const remove = async (id: string) => {
     if (detached) {
       if (lock.current) return
@@ -407,6 +458,7 @@ export function useAttachments(
     }
   }
   return {
+    prepare,
     submissionFiles: [
       ...new Map(
         [
@@ -432,6 +484,7 @@ export function useAttachments(
         throw new Error('The conversation changed before attachments finished.')
       if (failedUploads.current.size)
         throw new Error('Retry or remove failed attachments before sending.')
+      await prepare()
     },
     failedUploads: [...failedUploads.current.entries()].map(([id, file]) => ({
       id,

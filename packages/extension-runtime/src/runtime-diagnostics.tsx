@@ -1,3 +1,4 @@
+import { DatabaseSpace } from './database-space'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Disclosure } from '@dovo/studio-ui'
 import { useCallback, useEffect, useState } from 'react'
@@ -13,7 +14,7 @@ import { Button } from '@dovo/studio-ui'
 export function RuntimeDiagnosticsPanel() {
   const uiText = useInterfaceText()
 
-  const { request, connected, snapshot } = useWorkspace()
+  const { request, connected, snapshot, connection } = useWorkspace()
   const policy = snapshot?.managedPolicy
   const [status, setStatus] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState('')
@@ -54,6 +55,9 @@ export function RuntimeDiagnosticsPanel() {
   }
   return (
     <article className="space-y-3 rounded-md border p-4 text-xs">
+      {snapshot?.databaseSpaceRecoverySupported && (
+        <DatabaseSpace key={JSON.stringify(connection)} />
+      )}
       {policy && (
         <section
           aria-label="Managed runtime policy"

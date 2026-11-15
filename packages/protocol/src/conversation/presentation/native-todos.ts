@@ -59,7 +59,32 @@ export function nativeTodos(
   if (provider === 'opencode') {
     const properties = object(data.properties)
     if (!sessionId || properties.sessionID !== sessionId) return
-    return list(properties.todos, 'content')
+    const checked = decodeResult(
+      Schema.Array(
+        Schema.Struct({
+          content: Schema.String,
+          status: Schema.Literals([
+            'pending',
+            'in_progress',
+            'inProgress',
+            'in-progress',
+            'completed',
+            'cancelled',
+          ]),
+        }),
+      ),
+      properties.todos,
+    )
+    if (
+      !checked.success ||
+      checked.data.length > 100 ||
+      checked.data.some((item) => !item.content.trim())
+    )
+      return
+    return list(
+      checked.data.filter((item) => item.status !== 'cancelled'),
+      'content',
+    )
   }
   if (provider === 'acp' || provider === 'grok') {
     if (!sessionId || data.sessionId !== sessionId) return

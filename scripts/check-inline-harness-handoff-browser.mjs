@@ -18,9 +18,19 @@ export const ModelSettings=()=>null;
 `
 const browser = await chromium.launch()
 try {
-  for (const variant of ['thread', 'bot', 'turn', 'mobile', 'mobile-sheet', 'mobile-bot']) {
+  for (const variant of [
+    'thread',
+    'bot',
+    'turn',
+    'mobile',
+    'mobile-sheet',
+    'mobile-bot',
+    'bot-fresh',
+    'mobile-bot-fresh',
+  ]) {
     const isMobile = variant.startsWith('mobile')
-    const isBot = variant === 'bot' || variant === 'mobile-bot'
+    const isBot = variant.includes('bot')
+    const freshBot = variant.endsWith('bot-fresh')
     const entry = isMobile
       ? mobile + 'harness-settings.tsx'
       : desktop + (variant === 'turn' ? 'turn-model-controls.tsx' : 'composer-harness-controls.tsx')
@@ -81,7 +91,7 @@ try {
 import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';
 import {defaultTaskHarness} from '@dovo/protocol';import {${isMobile ? 'HarnessSettings' : variant === 'turn' ? 'TurnModelControls' : 'ComposerHarnessControls'} as Controls} from '${entry}';
 window.calls=[];window.flushes=0;window.fail=false;window.hold=false;window.settings=null;window.closes=0;window.deferDismissal=false;
-const original={...(${isBot}?{bot:{role:'Helper',responsibilities:'Keep context',state:'active',revision:'11111111-1111-4111-8111-111111111111',createdAt:'',updatedAt:''}}:{}),id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('codex'),providerLock:'codex',status:'review',checkoutLocked:true,createdAt:'',messages:[{id:'m',role:'user',text:'Saved context'}],files:[],draft:'Unsent draft'};
+const original={...(${isBot}?{bot:{role:'Helper',responsibilities:'Keep context',state:'active',revision:'11111111-1111-4111-8111-111111111111',createdAt:'',updatedAt:''}}:{}),id:'thread',title:'Thread',agentId:'',harness:defaultTaskHarness('${freshBot ? 'opencode' : 'codex'}'),providerLock:'${freshBot ? 'opencode' : 'codex'}',status:'${freshBot ? 'draft' : 'review'}',checkoutLocked:true,createdAt:'',messages:${freshBot ? '[]' : "[{id:'m',role:'user',text:'Saved context'}]"},files:[],draft:'Unsent draft'};
 function App(){const[pendingSupport,setPendingSupport]=useState(false);window.setPendingSupport=setPendingSupport;const[open,setOpen]=useState(true),[task,setTask]=useState(original),[connected,setConnected]=useState(true),[supported,setSupported]=useState(true),[scope,setScope]=useState('owner');window.task=task;window.setTask=patch=>setTask(t=>({...t,...patch}));window.setConnected=setConnected;window.setSupported=setSupported;window.setScope=setScope;window.reset=()=>{setPendingSupport(false);setOpen(true);window.settings=null;window.calls=[];setTask({...original});setScope('owner');setConnected(true);setSupported(true)};
 const request=async(path,input)=>{window.calls.push({path,input:structuredClone(input),scope});if(window.hold)await new Promise(resolve=>window.release=resolve);if(window.fail){window.fail=false;setTask(t=>({...t,status:'review'}));throw Error('Reply lost')}if(path.endsWith('/pending-harness')){setTask(t=>({...t,pendingHarness:input.harness?{id:input.requestId,harness:input.harness}:undefined}));return{ok:true}}setTask(t=>({...t,harness:input.harness,providerLock:input.harness.provider,status:'review'}));return{ok:true}};
 const workspace={tasks:[task],agents:[],repositories:[]};const snapshot={workspace,threadHandoffsSupported:supported,pendingBotHarnessSupported:pendingSupport,permissionPolicySupported:true,acpInstallations:[]};
@@ -130,7 +140,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       assert.equal(await page.getByText(/Harness switched\./).count(), 0)
     }
     assert.equal(await page.getByLabel('Draft').textContent(), 'Unsent draft')
-    assert.equal(await page.evaluate(() => window.task.messages[0].text), 'Saved context')
+    assert.deepEqual(
+      await page.evaluate(() => window.task.messages),
+      freshBot ? [] : [{ id: 'm', role: 'user', text: 'Saved context' }],
+    )
     assert.equal(await page.evaluate(() => window.calls[0].input.stop), false)
     if (isMobile) {
       assert.equal(
@@ -174,7 +187,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       window.reset()
       window.hold = true
     })
-    await page.getByLabel('Provider').filter({ hasText: 'codex' }).waitFor()
+    await page
+      .getByLabel('Provider')
+      .filter({ hasText: freshBot ? 'opencode' : 'codex' })
+      .waitFor()
     await choose.evaluate((button) => {
       button.click()
       button.click()
@@ -237,7 +253,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       )
       await choose.click()
       await page.waitForFunction(() => window.task.pendingHarness?.harness.provider === 'claude')
-      assert.equal(await page.getByLabel('Provider').textContent(), 'codex')
+      assert.equal(await page.getByLabel('Provider').textContent(), freshBot ? 'opencode' : 'codex')
       assert.equal(await page.evaluate(() => window.task.status), 'running')
       assert.equal(await page.evaluate(() => window.calls[0].path), '/api/tasks/pending-harness')
       assert.equal(await page.getByLabel('Draft').textContent(), 'Unsent draft')

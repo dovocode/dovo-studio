@@ -140,7 +140,9 @@ export async function checkScreenInteractions(page, origin) {
     const send = page.getByRole('button', { name: 'Send when online', exact: true })
     assert.equal(await send.isEnabled(), true, 'Offline composer must allow a local send attempt')
     await send.click()
-    await page.getByRole('alert').filter({ hasText: 'Runtime requests is disabled' }).waitFor()
+    const deliveryError = page.getByRole('alert')
+    await deliveryError.waitFor()
+    assert.match(await deliveryError.innerText(), /Runtime requests is disabled/)
     assert.equal(
       await input.inputValue(),
       'Compare the mobile sidebar and preserve this local draft.',

@@ -1183,13 +1183,26 @@ export class WorkspaceStore {
     return this.taskMessage(id, messageId)
   }
   /** Latest sent user messages for composer recall, independent of the visible history window. */
-  composerHistory(id: string) {
+  composerHistory(id: string, before?: string) {
     const summary = this.taskSummary(id)
     const seed = this.seed?.get(id)
+    let page: ReturnType<Conversations['recentUserMessages']>
+    if (seed) {
+      const end =
+        before === undefined
+          ? seed.messages.length
+          : seed.messages.findIndex((m) => m.id === before)
+      if (end < 0) return undefined
+      const recent = seed.messages
+        .slice(0, end)
+        .filter((m) => m.role === 'user' && m.text.trim())
+        .slice(-51)
+      const messages = recent.slice(-50)
+      page = { messages, ...(recent.length > 50 ? { before: messages[0]!.id } : {}) }
+    } else page = this.conversations.recentUserMessages(id, before)
+    if (!page) return undefined
     return {
-      messages: seed
-        ? seed.messages.filter((m) => m.role === 'user' && m.text.trim()).slice(-50)
-        : this.conversations.recentUserMessages(id),
+      ...page,
       turns: [],
       historyRevision: summary.historyRevision,
     }

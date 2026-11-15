@@ -59,14 +59,15 @@ it('only offers confirmed available providers and configurations, preserving pro
 it('offers all providers and custom agents before the first input', () => {
   expect(taskHarnessChoices(draft, agents).map((choice) => choice.id)).toEqual([
     'harness:codex',
+    'harness:opencode',
     'harness:claude',
     'harness:vibe',
-    'harness:opencode',
     'harness:hermes',
     'harness:copilot',
     'harness:grok',
     'harness:muse',
     'harness:cursor',
+    'harness:pi',
     'harness:acp',
     'agent:builder',
     'agent:reviewer',
@@ -437,4 +438,29 @@ it('native custom task edits carry and clear both advanced permission fields', (
       ?.sandboxMode,
   ).toBeUndefined()
   expect(preset.sandboxMode).toBe('read-only')
+})
+
+it('offers available Pi and named ACP configurations without changing their launch settings', () => {
+  const antigravity: Agent = {
+    ...defaultTaskHarness('acp'),
+    id: 'dovo:antigravity',
+    name: 'Antigravity',
+    endpoint: 'agy',
+    args: ['acp'],
+  }
+  const choices = taskHarnessChoices(
+    draft,
+    [...agents, antigravity],
+    [],
+    {},
+    new Set(['harness:pi', 'agent:dovo:antigravity']),
+  )
+  expect(choices.map((choice) => choice.id)).toEqual(['harness:pi', 'agent:dovo:antigravity'])
+  expect(selectedTaskHarness(draft, [antigravity], 'agent:dovo:antigravity')).toMatchObject({
+    endpoint: 'agy',
+    args: ['acp'],
+  })
+  expect(
+    taskHarnessChoices(sent, [antigravity], [], {}, new Set(['agent:dovo:antigravity'])),
+  ).toEqual([])
 })

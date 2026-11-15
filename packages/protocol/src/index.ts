@@ -416,3 +416,16 @@ export { pullDiscussionGroups } from './scm/pulls/pull-discussions.js'
 
 export * from './interface-language.js'
 export * from './scm/pull-code-review.js'
+
+export * from './conversation/workflow/native-goal.js'
+
+export {
+  turnAnnouncementsSchema,
+  TurnAnnouncementsTracker,
+  type TurnAnnouncements,
+} from './conversation/presentation/turn-announcements.js'
+
+export {
+  databaseSpaceSchema,
+  databaseSpaceRecoverySchema,
+} from './runtime/connection/diagnostics.js'

@@ -33,6 +33,7 @@ export * from '${root}/packages/studio-ui/src/components/ui/select.tsx';
 export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';
 export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';
 export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';
+export {SecretReferenceCheck} from '${root}/packages/studio-ui/src/secret-reference-check.tsx';
 export {AgentAvatar,agentIconChoices} from '${root}/packages/studio-ui/src/agent-avatar.tsx';
 export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';
 export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';
@@ -45,7 +46,9 @@ export {TaskDefaultSettings} from '${root}/packages/studio-ui/src/task-default-s
 export {TaskBehaviorSettings} from '${root}/packages/studio-ui/src/task-behavior-settings.tsx';
 export * from '${root}/packages/studio-ui/src/settings-layout.tsx';`
 const mocks = {
-  '@dovo/studio-core': core,
+  '@dovo/studio-core':
+    core +
+    `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check.ts';export {useTurnAnnouncements} from '${root}/packages/studio-core/src/use-turn-announcements.ts';`,
   './workspace/context': `export const useWorkspace=()=>window.runtime;`,
   './workspace/provider': `export const useWorkspace=()=>window.runtime;`,
   './workspace/runtime-sources': `export const useRuntimeSources=()=>window.sources;`,

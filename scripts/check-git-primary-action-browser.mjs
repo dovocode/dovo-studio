@@ -80,6 +80,8 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addStyleTag({ content: 'svg{width:16px;height:16px}.hidden{display:none}' })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  // Git summaries are in the expanded info view; primary actions stay in the compact view.
+  await page.getByRole('button', { name: 'More details', exact: true }).click()
   const action = page.getByRole('button', { name: 'Commit & push', exact: true })
   await page.getByText('Checking Git status…', { exact: true }).waitFor()
   assert.equal(await action.count(), 0)
@@ -131,6 +133,7 @@ try {
   assert.equal(await push.isDisabled(), false)
   // A different thread cannot inherit the previous thread's action state.
   await page.evaluate(() => window.switchTask())
+  await page.getByRole('button', { name: 'More details', exact: true }).click()
   await page.getByText('Checking Git status…', { exact: true }).waitFor()
   assert.equal(await action.count(), 0)
   assert.equal(await push.count(), 0)

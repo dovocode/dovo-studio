@@ -12,6 +12,10 @@ import {
   type Task,
   type ThreadInfoSectionId,
   orderedThreadInfoSections,
+  resolveScopedAgents,
+  resolveTaskAgent,
+  threadInfoSummarySections,
+  taskPullLinks,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
@@ -32,16 +36,23 @@ import { ThreadInfoCustomization } from './thread-info-customization'
 import { ThreadInfoUsage } from './thread-info-usage'
 import { HarnessSettings } from './harness-settings'
 import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
+import { taskHarnessLabel } from '../creation/harness-choices'
+import { ProjectIcon } from '../../scm/connections/project-icon'
 
 function ProjectRow({
   label,
   icon,
+  secondary = false,
+  detail,
+  expanded,
   disabled = false,
   onPress,
 }: {
   label: string
   icon?: IconName
   secondary?: boolean
+  detail?: string
+  expanded?: boolean
   disabled?: boolean
   onPress: () => void
 }) {
@@ -50,25 +61,47 @@ function ProjectRow({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={label}
+      accessibilityState={{ disabled, ...(expanded === undefined ? {} : { expanded }) }}
       disabled={disabled}
       onPress={onPress}
       style={({ pressed }) => ({
         minHeight: 44,
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
-        flexShrink: 1,
-        flexGrow: 1,
-        borderRadius: 8,
-        paddingVertical: 8,
+        gap: 10,
+        borderRadius: 10,
+        paddingVertical: 6,
+        paddingHorizontal: 4,
         backgroundColor: pressed ? colors.elevated : undefined,
         opacity: disabled ? 0.4 : 1,
       })}
     >
-      {icon && <Icon name={icon} size={20} color={colors.muted} />}
-      <Text numberOfLines={2} style={{ color: colors.text, fontSize: 16, flex: 1 }}>
-        {label}
-      </Text>
+      {icon && (
+        <View
+          style={{
+            width: 20,
+            height: 24,
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          <Icon name={icon} size={17} color={colors.muted} />
+        </View>
+      )}
+      <View style={{ flex: 1, minWidth: 0, gap: 3 }}>
+        <Text
+          numberOfLines={2}
+          style={{ color: colors.text, fontSize: 14, fontWeight: secondary ? '400' : '500' }}
+        >
+          {label}
+        </Text>
+        {!!detail && (
+          <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 12, lineHeight: 17 }}>
+            {detail}
+          </Text>
+        )}
+      </View>
+      <Icon name={expanded ? 'down' : 'next'} size={14} color={colors.muted} />
     </Pressable>
   )
 }
@@ -104,6 +137,23 @@ export function TaskProjectSheet({
   const { colors, styles } = useTheme()
   const { act, busy, error } = useAction()
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const agent = resolveTaskAgent(
+    task,
+    resolveScopedAgents(
+      snapshot?.defaults,
+      task.bot ? undefined : repository,
+      snapshot?.workspace.agents ?? [],
+    ),
+  )
+  const agentLabel = taskHarnessLabel(task, agent, snapshot?.acpInstallations ?? [])
+  const scope = JSON.stringify([profile?.id, task.id])
+  const [detailsScope, setDetailsScope] = useState<string>()
+  const details = detailsScope === scope
+  const [customizing, setCustomizing] = useState(false)
+  const summarySection = (id: ThreadInfoSectionId) =>
+    threadInfoSummarySections.has(id) &&
+    (id !== 'pulls' || taskPullLinks(task).length > 0 || !!task.pullStatus) &&
+    (id !== 'changes' || task.files.length > 0)
   const { threadInfoSections, threadInfoOrder } = useMobilePreferences()
   const show = (id: ThreadInfoSectionId) => threadInfoSections[id] !== false
   const [modelSettings, setModelSettings] = useState(false)
@@ -131,25 +181,63 @@ export function TaskProjectSheet({
       <>
         {show('settings') && (
           <>
-            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
-              <Icon name="device" color={colors.muted} />
-              <Text style={[styles.text, { flex: 1 }]}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 10,
+                paddingHorizontal: 4,
+                minHeight: 38,
+                display: details || !connected ? 'flex' : 'none',
+              }}
+            >
+              <View
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 9,
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  backgroundColor: colors.elevated,
+                }}
+              >
+                <Icon name="device" size={17} color={colors.muted} />
+              </View>
+              <Text style={{ color: colors.text, fontSize: 14, flex: 1 }}>
                 {runtimeComputerName({ profile, snapshot })}
               </Text>
+              <View
+                accessibilityLabel={connected ? uiText('Connected') : uiText('Offline')}
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 4,
+                  backgroundColor: connected ? colors.success : colors.muted,
+                }}
+              />
             </View>
             <ProjectRow
-              label={modelSettings ? uiText('Hide agent & model') : uiText('Agent & model')}
+              label={
+                modelSettings && details ? uiText('Hide agent & model') : uiText('Agent & model')
+              }
               icon="agents"
+              detail={agentLabel}
+              expanded={modelSettings && details}
               disabled={settingsBusy}
-              onPress={() => setModelSettings(!modelSettings)}
+              onPress={() => {
+                setModelSettings(!details || !modelSettings)
+                setDetailsScope(scope)
+              }}
             />
             {modelSettings && (
-              <HarnessSettings
-                task={task}
-                inline
-                onClose={() => setModelSettings(false)}
-                onBusyChange={setSettingsBusy}
-              />
+              <View style={{ display: details ? 'flex' : 'none' }}>
+                <HarnessSettings
+                  task={task}
+                  inline
+                  onClose={() => setModelSettings(false)}
+                  onBusyChange={setSettingsBusy}
+                />
+              </View>
             )}
           </>
         )}
@@ -159,8 +247,7 @@ export function TaskProjectSheet({
       <>
         {show('usage') && (
           <>
-            <View style={styles.separator} />
-            <ThreadInfoUsage task={task} />
+            <ThreadInfoUsage task={task} detailed={details} />
           </>
         )}
       </>
@@ -168,43 +255,66 @@ export function TaskProjectSheet({
     project: (
       <>
         {show('project') && (
-          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-            {repository?.kind === 'scratch'
-              ? uiText('No Project')
-              : (repository?.name ?? uiText('No Project'))}
-          </Text>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 10 }}>
+            <View
+              style={{
+                width: 24,
+                height: 24,
+                alignItems: 'center',
+                justifyContent: 'center',
+              }}
+            >
+              {repository ? (
+                <ProjectIcon repository={repository} size={24} />
+              ) : (
+                <Icon name="projects" size={20} color={colors.muted} />
+              )}
+            </View>
+            <Text style={{ color: colors.text, fontSize: 14, fontWeight: '600', flex: 1 }}>
+              {repository?.kind === 'scratch'
+                ? uiText('No Project')
+                : (repository?.name ?? uiText('No Project'))}
+            </Text>
+            {!details && (
+              <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
+                {runtimeComputerName({ profile, snapshot })}
+              </Text>
+            )}
+          </View>
         )}
         {show('project') && (
           <>
-            <View style={styles.separator} />
             <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
               <Icon name="changes" color={colors.muted} />
-              <Text numberOfLines={1} style={[styles.text, { flex: 1 }]}>
+              <Text numberOfLines={2} style={{ color: colors.text, fontSize: 13, flex: 1 }}>
                 {task.checkoutBranch || repository?.branch || uiText('Project checkout')}
               </Text>
             </View>
-            {branchActions.map((action) => (
-              <ProjectRow
-                key={action.label}
-                secondary
-                label={action.label}
-                icon={action.icon}
-                disabled={action.disabled}
-                onPress={() => dismissThen(action.onPress)}
-              />
-            ))}
+            <View style={{ display: details ? 'flex' : 'none' }}>
+              {branchActions.map((action) => (
+                <ProjectRow
+                  key={action.label}
+                  secondary
+                  label={action.label}
+                  icon={action.icon}
+                  disabled={action.disabled}
+                  onPress={() => dismissThen(action.onPress)}
+                />
+              ))}
+            </View>
           </>
         )}
         {show('project') && repository && (
-          <>
+          <View style={{ display: details ? 'flex' : 'none' }}>
             <ProjectRow
               secondary
               label={icons ? uiText('Hide project icon') : uiText('Project icon')}
               icon="projects"
+              expanded={icons}
               onPress={() => setIcons((value) => !value)}
             />
             {icons && <ProjectIconSettings repository={repository} />}
-          </>
+          </View>
         )}
       </>
     ),
@@ -257,6 +367,7 @@ export function TaskProjectSheet({
             secondary
             label={git ? uiText('Hide commit controls') : uiText('Commit & push')}
             icon="changes"
+            expanded={git}
             disabled={!repository}
             onPress={() => setGit((value) => !value)}
           />
@@ -330,27 +441,58 @@ export function TaskProjectSheet({
     ),
   } satisfies Record<Exclude<ThreadInfoSectionId, 'openIn'>, ReactNode>
   return (
-    <ProjectPanelFrame inline={inline} sheet={sheet} busy={busy || settingsBusy} onClose={onClose}>
-      <View
-        accessibilityLabel={uiText('Thread info sections')}
-        style={[styles.card, { borderRadius: 24, padding: 16, gap: 12 }]}
-      >
-        {inline && (
-          <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
-            <InterfaceText>{'Thread info'}</InterfaceText>
-          </Text>
-        )}
-        <ThreadInfoCustomization />
+    <ProjectPanelFrame
+      inline={inline}
+      sheet={sheet}
+      busy={busy || settingsBusy}
+      onClose={onClose}
+      headerAction={{
+        label: customizing
+          ? uiText('Done customizing thread info')
+          : uiText('Customize thread info'),
+        icon: customizing ? 'check' : 'tune',
+        onPress: () => setCustomizing(!customizing),
+      }}
+    >
+      <View accessibilityLabel={uiText('Thread info sections')} style={{ gap: 0 }}>
+        <ThreadInfoCustomization inline={inline} open={customizing} onOpenChange={setCustomizing}>
+          {inline && (
+            <Text style={{ color: colors.text, fontSize: 17, fontWeight: '600' }}>
+              <InterfaceText>{'Thread info'}</InterfaceText>
+            </Text>
+          )}
+        </ThreadInfoCustomization>
 
         {orderedThreadInfoSections(threadInfoOrder).map(
           ({ id, label }) =>
             show(id) &&
             id !== 'openIn' && (
-              <View key={id} accessibilityLabel={label} style={{ gap: 12 }}>
+              <View
+                key={id}
+                accessibilityLabel={label}
+                style={[
+                  {
+                    gap: 6,
+                    display: details || summarySection(id) ? 'flex' : 'none',
+                    paddingVertical: 4,
+                  },
+                ]}
+              >
+                {details && (id === 'settings' || id === 'scripts') && (
+                  <Text style={{ color: colors.muted, fontSize: 12, fontWeight: '500' }}>
+                    {uiText(label)}
+                  </Text>
+                )}
                 {sections[id]}
               </View>
             ),
         )}
+        <ProjectRow
+          label={details ? uiText('Hide details') : uiText('More details')}
+          expanded={details}
+          disabled={busy || settingsBusy}
+          onPress={() => setDetailsScope(details ? undefined : scope)}
+        />
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -454,12 +596,14 @@ function ProjectPanelFrame({
   sheet,
   busy,
   onClose,
+  headerAction,
   children,
 }: {
   inline: boolean
   sheet: RefObject<SheetHandle | null>
   busy: boolean
   onClose: () => void
+  headerAction: { label: string; icon: IconName; onPress: () => void }
   children: ReactNode
 }) {
   const uiText = useInterfaceText()
@@ -467,7 +611,13 @@ function ProjectPanelFrame({
   const { colors } = useTheme()
   if (!inline)
     return (
-      <Sheet ref={sheet} title={uiText('Thread info')} busy={busy} onClose={onClose}>
+      <Sheet
+        ref={sheet}
+        title={uiText('Thread info')}
+        busy={busy}
+        onClose={onClose}
+        headerAction={headerAction}
+      >
         {children}
       </Sheet>
     )

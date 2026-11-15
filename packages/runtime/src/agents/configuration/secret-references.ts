@@ -240,6 +240,11 @@ export class SecretReferences {
   value(reference: AgentSecretReference, signal?: AbortSignal) {
     return this.read(decode(agentSecretReferenceSchema, reference), signal)
   }
+  /** Check a fresh value on this host without returning it to the client. */
+  async check(reference: AgentSecretReference, signal?: AbortSignal): Promise<void> {
+    this.invalidate(reference)
+    await this.value(reference, signal)
+  }
   async resolve<T extends AgentDiscovery>(
     agent: T,
     signal?: AbortSignal,

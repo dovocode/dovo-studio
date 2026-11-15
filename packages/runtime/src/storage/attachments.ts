@@ -9,6 +9,7 @@ import { fileTypeFromBuffer } from 'file-type'
 import { Schema } from 'effect'
 import {
   attachmentSchema,
+  attachmentPrepareSchema,
   attachmentUploadResultSchema,
   attachmentUploadSchema,
   attachmentReplaceSchema,
@@ -100,6 +101,27 @@ export class Attachments {
       attachment: decode(attachmentSchema, JSON.parse(row.metadata)),
       data: row.data.toString('base64'),
     }
+  }
+  /** Check availability without returning file bytes. Renew pending edit/answer uploads. */
+  prepare(value: unknown) {
+    const { taskId, ids } = decode(attachmentPrepareSchema, value)
+    return this.store.transaction(() => {
+      this.store.taskSummary(taskId)
+      const missing: string[] = []
+      for (const id of ids) {
+        const row = this.db.prepare('SELECT task FROM attachments WHERE id=?').get(id)
+        if (!row) {
+          missing.push(id)
+          continue
+        }
+        if (decode(mutableStruct({ task: Schema.String }), row).task !== taskId)
+          throw new HttpError(400, 'Attachment belongs to another task')
+        this.db
+          .prepare('UPDATE queued_attachment_uploads SET created_at=? WHERE id=? AND task=?')
+          .run(Date.now(), id, taskId)
+      }
+      return { missing }
+    })
   }
   metadata(taskId: string, ids: string[]): Attachment[] {
     const query = this.db.prepare('SELECT task,metadata FROM attachments WHERE id=?')

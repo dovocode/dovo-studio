@@ -159,6 +159,13 @@ export function NativeAgentThread({
                 <summary className="cursor-pointer">
                   {entry.label || (entry.role === 'reasoning' ? 'Reasoning' : 'Tool')}
                 </summary>
+                {entry.image && (
+                  <img
+                    src={`data:${entry.image.mime};base64,${entry.image.data}`}
+                    alt="Generated image"
+                    className="mt-2 max-h-96 max-w-full object-contain"
+                  />
+                )}
                 <pre className="mt-2 max-h-96 overflow-auto whitespace-pre-wrap break-words font-mono text-xs">
                   {entry.text}
                 </pre>

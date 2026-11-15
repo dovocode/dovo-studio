@@ -92,18 +92,32 @@ export class Conversations {
     })
   }
   /** Composer recall reads only user messages and never materializes the conversation. */
-  recentUserMessages(taskId: string) {
+  recentUserMessages(taskId: string, before?: string) {
+    const cursor =
+      before === undefined
+        ? undefined
+        : decode(
+            ordinalSchema,
+            this.db
+              .prepare(
+                "SELECT ordinal FROM conversation_items WHERE task_id = ? AND kind = 'message' AND item_id = ?",
+              )
+              .get(taskId, before),
+          )?.ordinal
+    if (before !== undefined && cursor === undefined) return undefined
     const rows = this.db
       .prepare(`
       SELECT value FROM conversation_items
       WHERE task_id = ? AND kind = 'message' AND json_extract(value, '$.role') = 'user'
         AND trim(json_extract(value, '$.text')) != ''
-      ORDER BY ordinal DESC LIMIT 50
+        AND (? IS NULL OR ordinal < ?)
+      ORDER BY ordinal DESC LIMIT 51
     `)
-      .all(taskId)
-    return decode(valuesSchema, rows)
+      .all(taskId, cursor ?? null, cursor ?? null)
+    const messages = decode(valuesSchema, rows.slice(0, 50))
       .reverse()
       .map(({ value }) => decode(messageSchema, JSON.parse(value)))
+    return { messages, ...(rows.length > 50 ? { before: messages[0]!.id } : {}) }
   }
   constructor(private readonly db: Database.Database) {
     const hadSearch = !!db

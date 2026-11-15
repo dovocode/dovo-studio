@@ -37,6 +37,8 @@ export const useTheme=()=>({styles:{card:{padding:12,border:'1px solid #555',bor
 try {
   for (const mobile of [false, true]) {
     const mocks = {
+      '@dovo/studio-core': `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';export const useWorkspace=()=>({});`,
+      '../runtime/connection/provider': 'export const useRuntime=()=>({});',
       '@dovo/studio-core/state': "export {useState as useApplicationState} from 'react';",
       ...(mobile
         ? {}
@@ -46,6 +48,8 @@ try {
           }),
       expo: `export const requireOptionalNativeModule=()=>({configure:async()=>{},getDraft:async()=>window.notificationDraft??null,clearDraft:async()=>{window.clearedDraft=true;window.notificationDraft=null}});`,
       'react-native': native,
+      '../ui/content/text': native,
+      '../ui/controls/action': native,
       '../../ui/content/text': native,
       '../../../ui/content/text': native,
       '../../ui/controls/action': native,

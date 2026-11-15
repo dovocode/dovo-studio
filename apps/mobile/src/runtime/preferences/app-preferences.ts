@@ -1,3 +1,4 @@
+import { turnAnnouncementsSchema } from '@dovo/protocol'
 import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
@@ -28,6 +29,7 @@ import {
 
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  turnAnnouncements: turnAnnouncementsSchema,
   interfaceLanguage: interfaceLanguageSchema,
   ...serviceUrlsSchema.fields,
   motion: Schema.Literals(['system', 'reduce']),
@@ -97,6 +99,7 @@ const defaults: MobilePreferences = {
   artifactsOrigin: '',
   motion: 'system',
   theme: 'dark',
+  turnAnnouncements: 'off',
   interfaceLanguage: 'en-US',
   themePalette: 'dovo',
   colorVision: 'default',

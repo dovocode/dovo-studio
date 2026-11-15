@@ -165,3 +165,18 @@ export const runtimeDiagnosticsSchema = mutableStruct({
 })
 export type RuntimeDiagnostics = Schema.Schema.Type<typeof runtimeDiagnosticsSchema>
 export const runtimeBackupResponseSchema = backupEntry
+
+export const databaseSpaceSchema = mutableStruct({
+  persistent: Schema.Boolean,
+  fileBytes: Schema.Number,
+  walBytes: Schema.Number,
+  logicalBytes: Schema.Number,
+  reclaimableBytes: Schema.Number,
+  freeBytes: Schema.NullOr(Schema.Number),
+})
+export const databaseSpaceRecoverySchema = mutableStruct({
+  before: databaseSpaceSchema,
+  after: databaseSpaceSchema,
+  backup: backupEntry,
+  durationMs: Schema.Number,
+})

@@ -58,7 +58,7 @@ async function checkPendingRetest(page, scope) {
 const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
-    const shared = `export * from '@dovo/protocol';export {cliProfileOptions} from '${root}/packages/client-runtime/src/extensions/cli-profile-options.ts';export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';import {Effect} from 'effect';export {clientTaskScope} from '${root}/packages/client-runtime/src/index.ts';export const runClientEffect=Effect.runPromise;export const useWorkspace=()=>window.runtime;`
+    const shared = `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';export * from '@dovo/protocol';export {cliProfileOptions} from '${root}/packages/client-runtime/src/extensions/cli-profile-options.ts';export {clientScopeKey} from '${root}/packages/client-runtime/src/effects/request-scope.ts';import {Effect} from 'effect';export {clientTaskScope} from '${root}/packages/client-runtime/src/index.ts';export const runClientEffect=Effect.runPromise;export const useWorkspace=()=>window.runtime;`
     const native = `export const useRuntime=()=>window.runtime;export const RuntimeScope=({children})=><div>{children}</div>;`
     const mocks = {
       '../../screens/remote-desktop': 'export const MobileRemoteDesktop=()=>null;',
@@ -70,6 +70,7 @@ try {
       '../state/application-state': `export {useState as useApplicationState} from 'react';`,
       '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
       '../../runtime/connection/provider': native,
+      '../runtime/connection/provider': native,
       '../../screens/settings-controls': controls,
       '@dovo/studio-ui': `export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/button.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/input.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/textarea.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/dialog.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/ui/select.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/components/form-field.tsx';export * from '${new URL('../packages/', import.meta.url).pathname}studio-ui/src/choice-picker.tsx';export * from '${root}/packages/studio-ui/src/secret-reference-fields.tsx'`,
       'react-native': controls,

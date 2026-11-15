@@ -92,76 +92,81 @@ async function setup(
   return { f, source, current, review, payload }
 }
 
-it('prepares same-thread buttons through real read-only MCP, with no execution and paired-human consent', async () => {
-  const f = await setupBotRuntime()
-  await f.runtime.services.scratch.ensure()
-  const source = f.draft()
-  let finished = false
-  let failure: unknown
-  f.runtime.run.mockImplementation(async (input) => {
-    input.onSession(randomUUID())
-    const config = input.agent.resources?.mcpServers.find((entry) => entry.name === 'dovo_task')
-    if (!config) throw Error('Missing regular MCP')
-    const client = new Client({ name: 'response-test', version: '1' })
-    const transport = new StdioClientTransport({
-      command: config.command,
-      args: config.args,
-      env: config.envValues,
-      stderr: 'ignore',
+it.each([false, true])(
+  'prepares buttons through real read-only MCP without execution (encoded: %s)',
+  async (encoded) => {
+    const f = await setupBotRuntime()
+    await f.runtime.services.scratch.ensure()
+    const source = f.draft()
+    let finished = false
+    let failure: unknown
+    f.runtime.run.mockImplementation(async (input) => {
+      input.onSession(randomUUID())
+      const config = input.agent.resources?.mcpServers.find((entry) => entry.name === 'dovo_task')
+      if (!config) throw Error('Missing regular MCP')
+      const client = new Client({ name: 'response-test', version: '1' })
+      const transport = new StdioClientTransport({
+        command: config.command,
+        args: config.args,
+        env: config.envValues,
+        stderr: 'ignore',
+      })
+      try {
+        await client.connect(transport)
+        const result = CallToolResultSchema.parse(
+          await client.callTool({
+            name: 'response_prepare',
+            arguments: {
+              key: 'next',
+              title: 'Continue',
+              action: encoded
+                ? JSON.stringify({ kind: 'prompt', prompt: 'Continue here' })
+                : { kind: 'prompt', prompt: 'Continue here' },
+            },
+          }),
+        )
+        expect(result.isError).not.toBe(true)
+        expect(f.inputs).toHaveLength(1)
+        expect(f.runtime.services.store.get().tasks).toHaveLength(1)
+        const credential = decode(
+          mutableStruct({ token: Schema.String }),
+          JSON.parse(readFileSync(config.envValues?.DOVO_TASK_CREDENTIAL_FILE ?? '', 'utf8')),
+        )
+        const action = f.runtime.services.store.taskSummary(source.id).threadActions?.[0]
+        const denied = await f.request(
+          '/api/thread-actions/review',
+          { sourceTaskId: source.id, actionId: action?.id },
+          'POST',
+          undefined,
+          credential.token,
+        )
+        expect(denied.status).toBe(403)
+        finished = true
+      } catch (error) {
+        failure = error
+        throw error
+      } finally {
+        await client.close()
+        await transport.close()
+      }
+      input.onText('Prepared')
     })
-    try {
-      await client.connect(transport)
-      const result = CallToolResultSchema.parse(
-        await client.callTool({
-          name: 'response_prepare',
-          arguments: {
-            key: 'next',
-            title: 'Continue',
-            action: { kind: 'prompt', prompt: 'Continue here' },
-          },
-        }),
-      )
-      expect(result.isError).not.toBe(true)
-      expect(f.inputs).toHaveLength(1)
-      expect(f.runtime.services.store.get().tasks).toHaveLength(1)
-      const credential = decode(
-        mutableStruct({ token: Schema.String }),
-        JSON.parse(readFileSync(config.envValues?.DOVO_TASK_CREDENTIAL_FILE ?? '', 'utf8')),
-      )
-      const action = f.runtime.services.store.taskSummary(source.id).threadActions?.[0]
-      const denied = await f.request(
-        '/api/thread-actions/review',
-        { sourceTaskId: source.id, actionId: action?.id },
-        'POST',
-        undefined,
-        credential.token,
-      )
-      expect(denied.status).toBe(403)
-      finished = true
-    } catch (error) {
-      failure = error
-      throw error
-    } finally {
-      await client.close()
-      await transport.close()
-    }
-    input.onText('Prepared')
-  })
-  await f.request('/api/tasks/message', {
-    id: source.id,
-    createTask: source,
-    messageId: randomUUID(),
-    text: 'Prepare',
-    turnSettings: agentTurnSettings(
-      { ...defaultTaskHarness('codex'), permission: 'read-only' },
-      true,
-    ),
-  })
-  await waitForRuntime(() => {
-    if (failure) throw failure
-    expect(finished).toBe(true)
-  })
-})
+    await f.request('/api/tasks/message', {
+      id: source.id,
+      createTask: source,
+      messageId: randomUUID(),
+      text: 'Prepare',
+      turnSettings: agentTurnSettings(
+        { ...defaultTaskHarness('codex'), permission: 'read-only' },
+        true,
+      ),
+    })
+    await waitForRuntime(() => {
+      if (failure) throw failure
+      expect(finished).toBe(true)
+    })
+  },
+)
 
 it('sends an edited prompt once into the same thread without consuming a composer draft or paused queue', async () => {
   const t = await setup({ kind: 'prompt', prompt: 'Continue here' })

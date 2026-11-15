@@ -393,7 +393,7 @@ export class Tasks {
       )
     }
     this.requireIdle(id, reservation)
-    if (this.hasWorkingFamily(id))
+    if (this.hasWorkingFamily(id, true))
       throw new HttpError(409, 'Stop all child agents before continuing elsewhere.')
   }
   requireExecutionOwner(id: string) {
@@ -2071,9 +2071,15 @@ export class Tasks {
       (this.running.size ||
         this.store.get().tasks.some((task) => task.subagents?.some(nativeAgentWorking)))
     )
-      throw new HttpError(409, 'Finish or stop running tasks before changing network access.')
+      throw new HttpError(409, 'Finish or stop running tasks before this runtime action.')
     this.restartLease = { id: randomUUID(), expiresAt: Date.now() + 60000, resumeInterrupted }
     return { id: this.restartLease.id }
+  }
+  prepareMaintenance() {
+    const lease = this.prepareRestart()
+    // This lease belongs to a request with a finally block. Do not admit work during its backup.
+    if (this.restartLease) this.restartLease.expiresAt = Infinity
+    return lease
   }
   cancelRestart(id: string) {
     if (this.restartLease?.id === id) this.restartLease = undefined
@@ -3381,8 +3387,16 @@ export class Tasks {
     }
     return fibers
   }
-  hasWorkingFamily(id: string) {
-    const tasks = this.store.get().tasks
+  hasWorkingFamily(id: string, ignoreRootDraft = false) {
+    const tasks = ignoreRootDraft
+      ? this.store
+          .get()
+          .tasks.map((task) =>
+            task.id === id && task.status === 'draft'
+              ? { ...task, status: 'review' as const }
+              : task,
+          )
+      : this.store.get().tasks
     const ids = taskFamilyIds(tasks, id)
     return (
       taskFamilyWorking(tasks, id) ||
@@ -3774,7 +3788,7 @@ export class Tasks {
     if (!child) throw new HttpError(404, 'Native agent not found in this thread')
     const session = this.nativeSessions.get(task.id)
     let entries: NativeThreadEntry[] | undefined
-    if (child.kind === 'background') entries = []
+    if (child.kind === 'background' && child.provider !== 'opencode') entries = []
     else if (session && session.sessionId === child.sessionId && session.control.readThread)
       entries = await session.control.readThread(child.threadId ?? child.id)
     else {

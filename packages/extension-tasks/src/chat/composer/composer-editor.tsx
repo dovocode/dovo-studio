@@ -91,7 +91,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   onAlternativeSubmit?: () => void
   historyRevision?: number
   historyScope?: string
-  loadHistory?: (signal: AbortSignal) => Promise<ConversationPage>
+  loadHistory?: (signal: AbortSignal, before?: string) => Promise<ConversationPage>
   placeholder: string
   /**
    * The input element was replaced, as when switching modes. Focus cannot be tracked by
@@ -204,6 +204,7 @@ export const ComposerEditor = memo(function ComposerEditor({
     [input, onInputElement],
   )
   const history = useRef(createComposerHistory())
+  const historyBefore = useRef<string | undefined>(undefined)
   const historyCaret = useRef(false)
   const pending = useRef<AbortController | null>(null)
   const [historyStatus, setHistoryStatus] = useState<{ busy: boolean; error: string }>({
@@ -212,6 +213,7 @@ export const ComposerEditor = memo(function ComposerEditor({
   })
   useEffect(() => {
     history.current.reset()
+    historyBefore.current = undefined
     pending.current?.abort()
     pending.current = null
     setHistoryStatus({ busy: false, error: '' })
@@ -235,15 +237,16 @@ export const ComposerEditor = memo(function ComposerEditor({
       setDraft(text)
     }
   }
-  const loadRecent = async () => {
+  const loadHistoryPage = async () => {
     if (!loadHistory || pending.current) return
     const operation = new AbortController()
     pending.current = operation
     const generation = history.current.generation
     const draftRevision = controller.revision
+    const before = history.current.active ? historyBefore.current : undefined
     setHistoryStatus({ busy: true, error: '' })
     try {
-      const page = await loadHistory(operation.signal)
+      const page = await loadHistory(operation.signal, before)
       if (
         operation.signal.aborted ||
         history.current.generation !== generation ||
@@ -254,6 +257,10 @@ export const ComposerEditor = memo(function ComposerEditor({
         throw new Error(
           'Conversation changed. Reload the thread before recalling earlier messages.',
         )
+      if (before && page.before === before)
+        throw new Error('Could not load older messages. Try again.')
+      historyBefore.current = page.before
+      if (before) history.current.appendOlder(page.messages)
       const recalled = history.current.move('older', controller.text, page.messages)
       if (recalled !== undefined) applyRecall(recalled)
     } catch (error) {
@@ -362,9 +369,13 @@ export const ComposerEditor = memo(function ComposerEditor({
       return
     }
     if (older && !history.current.active && controller.text.trim()) return
-    if (older && !history.current.active && loadHistory) {
+    if (
+      older &&
+      loadHistory &&
+      (!history.current.active || (history.current.atOldest && historyBefore.current))
+    ) {
       event.preventDefault()
-      void loadRecent()
+      void loadHistoryPage()
       return
     }
     const recalled = history.current.move(older ? 'older' : 'newer', controller.text, recallable())

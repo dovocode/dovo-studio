@@ -5,6 +5,18 @@ import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 
 export function prepareMobileMarkdown(packageRoot, config) {
+  if (config.enableMath && process.platform === 'darwin')
+    execFileSync(
+      process.execPath,
+      [
+        join(packageRoot, 'vendor-ratex.mjs'),
+        '--manifest',
+        join(packageRoot, 'ratex-version.json'),
+        '--output',
+        join(packageRoot, 'ios/vendor'),
+      ],
+      { stdio: 'inherit' },
+    )
   if (!config.enableCodeHighlight || config.codeHighlightLanguages.length === 0) return
   const manifestPath = join(packageRoot, 'cpp/highlight/grammar-versions.json')
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))

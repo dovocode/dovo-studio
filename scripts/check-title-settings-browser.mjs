@@ -4,7 +4,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const core = `export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useSettingsDraft=()=>{};export {titleGenerationSettingsSchema,modelCatalogSchema,providerSchema} from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.workspace;`
+const core = `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';export const useSettingsDraft=()=>{};export {titleGenerationSettingsSchema,modelCatalogSchema,providerSchema} from '@dovo/protocol';export {providers} from '${root}/packages/studio-core/src/providers.ts';export const useWorkspace=()=>window.workspace;`
 const ui = `export {SecretReferenceFields} from '${root}/packages/studio-ui/src/secret-reference-fields.tsx';export {Disclosure} from '${root}/packages/studio-ui/src/disclosure.tsx';export {SettingsSaveBar} from '${root}/packages/studio-ui/src/settings-layout.tsx';export {Button} from '${root}/packages/studio-ui/src/components/ui/button.tsx';export {Input} from '${root}/packages/studio-ui/src/components/ui/input.tsx';export {Textarea} from '${root}/packages/studio-ui/src/components/ui/textarea.tsx';export {ChoicePicker} from '${root}/packages/studio-ui/src/choice-picker.tsx';export {FormField} from '${root}/packages/studio-ui/src/components/form-field.tsx';export {ModelSettings} from '${root}/packages/studio-ui/src/model-settings.tsx';`
 const built = await build({
   stdin: {
@@ -144,6 +144,8 @@ try {
     'Title settings: conflict feedback, cancelled reload retains edits, confirmed reload refreshes baseline, and subsequent save passed.',
   )
   const mobileMocks = {
+    '@dovo/studio-core': `export {useSecretReferenceCheck} from '${root}/packages/studio-core/src/use-secret-reference-check';`,
+    '../ui/controls/action': `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
     '../ui/content/text': `export const Text=({children,accessibilityRole})=><div role={accessibilityRole}>{children}</div>;`,
     'react-native': `export const View=({children})=><div>{children}</div>;export const ScrollView=View;export const Text=({children,accessibilityRole})=><div role={accessibilityRole}>{children}</div>;export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const Alert={alert:(_title,_message,buttons)=>{if(!window.cancelAlert)buttons.at(-1).onPress()}};`,
     '../ui/theme': `const styles={};export const useTheme=()=>({styles,colors:{background:'#fff',border:'#ddd'}});`,

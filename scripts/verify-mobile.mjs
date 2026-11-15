@@ -595,9 +595,9 @@ try {
     if (
       task.messages.filter(
         (message) => message.role === 'user' && message.text === 'Installed app smoke request',
-      ).length !== 1
+      ).length !== 2
     )
-      throw new Error('The installed app did not deliver the smoke message')
+      throw new Error('The installed app must deliver the typed message and one recalled copy')
     const first = runtime.services.store
       .get()
       .tasks.map((task) => runtime.services.store.task(task.id))
@@ -611,7 +611,7 @@ try {
   }
   console.log(
     releaseSmoke
-      ? 'Installed native app: pairing over HTTP, thread send, first send, saved draft, navigation and update settings verified.'
+      ? 'Installed native app: pairing over HTTP, thread send, recalled send, first send, saved draft, navigation and update settings verified.'
       : settingsOnly
         ? 'Native inline model settings guard Back, Close and edits during a pending save; visible failure retains values and retry persists exactly once.'
         : modesOnly

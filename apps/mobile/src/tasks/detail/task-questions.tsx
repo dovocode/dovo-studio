@@ -5,6 +5,7 @@ import { Effect } from 'effect'
 import { QuestionAttachments } from '../composer/question-attachments'
 import {
   questionAllowsAttachments,
+  attachmentPreparedSchema,
   type PendingQuestion,
   type QuestionAttachments as AnswerFiles,
 } from '@dovo/protocol'
@@ -105,7 +106,15 @@ function QuestionCard({
   pending: PendingQuestion
   notificationAccessible: boolean
 }) {
-  const { connected, profile, callEffect, finishAttachmentEffect, reviewAttachments } = useRuntime()
+  const {
+    connected,
+    profile,
+    snapshot,
+    callEffect,
+    readEffect,
+    finishAttachmentEffect,
+    reviewAttachments,
+  } = useRuntime()
   const { scope, store } = useQuestionRecovery()
   const saved = store
     .entries(scope)
@@ -183,6 +192,32 @@ function QuestionCard({
       onAnswer={(answers, outcomes, references) =>
         runClientEffect(
           mobileWorkflow(function* () {
+            if (
+              answers &&
+              !outcomes &&
+              count &&
+              snapshot?.attachmentPreparationSupported === true
+            ) {
+              const result = yield* readEffect(
+                '/api/attachments/prepare',
+                { taskId: pending.taskId, ids: Object.values(ids).flat() },
+                attachmentPreparedSchema,
+              )
+              if (result.missing.length)
+                throw new Error(
+                  'This attachment is unavailable. Recover it in connection status or choose the file again. Your answers are unchanged.',
+                )
+              const latest = store
+                .entries(scope)
+                .find(
+                  (entry) =>
+                    entry.request.id === pending.id && entry.request.taskId === pending.taskId,
+                )
+              if (latest !== saved)
+                throw new Error(
+                  'The answer changed while preparing attachments. Review it and try again.',
+                )
+            }
             yield* callEffect(
               '/api/tasks/answer',
               {

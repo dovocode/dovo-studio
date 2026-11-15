@@ -3,6 +3,7 @@ import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { TaskVisualization } from './task-visualization'
 import { markdownCodeStyle } from './markdown-code-style'
 import { CodeBlock } from './code-block'
+import { MathBlock } from './math-block'
 import { ServerImage } from './server-image'
 import { Text } from './text'
 import { useLinkOrigin } from './link-origin'
@@ -331,7 +332,11 @@ export const Markdown = memo(function Markdown({
             <MermaidDiagram chart={part.text} />
           </Suspense>
         ) : part.kind === 'code' ? (
-          <CodeBlock key={part.offset} content={part.text} language={part.language} />
+          part.language?.toLowerCase() === 'math' ? (
+            <MathBlock key={part.offset} content={part.text} />
+          ) : (
+            <CodeBlock key={part.offset} content={part.text} language={part.language} />
+          )
         ) : part.kind === 'image' ? (
           (() => {
             const imageURL = 'url' in part ? part.url : part.path

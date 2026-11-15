@@ -5,7 +5,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Effect, Schema } from 'effect'
 import { RuntimeMutations, type MutationOutbox, type MutationStorage } from './mutations.js'
 const connection = { address: 'http://netbird-host:4310', token: 'test-device' }
-const urlPath = (url: Parameters<typeof fetch>[0]) =>
+const urlPath = (url: RequestInfo | URL) =>
   typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
 const ok = Schema.Struct({ ok: Schema.Boolean })
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))

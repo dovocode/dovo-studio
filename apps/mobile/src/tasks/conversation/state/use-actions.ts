@@ -181,18 +181,23 @@ export function useConversationActions(task: Task) {
     text: storedDraft.text,
     revision: storedDraft.revision,
     messages: task.messages,
-    loadHistory: async (signal) => {
+    loadHistory: async (signal, before) => {
       if (!connected) throw new Error('Reconnect to recall earlier messages.')
       const page = await Effect.runPromise(
-        readEffect('/api/tasks/composer-history', { id: task.id }, conversationPageSchema),
+        readEffect(
+          '/api/tasks/composer-history',
+          { id: task.id, ...(before ? { before } : {}) },
+          conversationPageSchema,
+        ),
         { signal },
       )
-      return page.messages
+      return page
     },
+    // Keep a recalled draft stable while Send waits for its native snapshot.
+    // The composer controls already prevent starting history while busy.
     enabled:
       storedDraft.ready &&
       !editing &&
-      !busy &&
       !submitting &&
       !storedDraft.pendingFork &&
       !storedDraft.pendingRestore &&
@@ -531,6 +536,8 @@ export function useConversationActions(task: Task) {
         )
       const draftKey = storedDraft.key
       const editId = editSession.current
+      // A pending older page must not replace the selected text during the native read.
+      composerHistory.cancelLoad()
       const input =
         providedInput ??
         (yield* nativeEffect(() =>
@@ -542,6 +549,13 @@ export function useConversationActions(task: Task) {
         (mode === 'queue' || mode === 'stage') &&
         (snapshot?.messageSetupSupported === true || !connected)
       if (editing) {
+        yield* nativeEffect(() => attachmentPicker.waitForUploads(editing.files))
+        if (
+          currentDraftKey.current !== draftKey ||
+          currentEditing.current?.text !== editing.text ||
+          currentEditing.current?.session !== editing.session
+        )
+          throw new Error('The draft changed while preparing attachments. Review it and try again.')
         yield* callEffect(
           '/api/tasks/queue',
           {
@@ -620,6 +634,18 @@ export function useConversationActions(task: Task) {
         backgroundLocked.current = true
         setBackgroundSubmitting(true)
       }
+      yield* nativeEffect(() => attachmentPicker.waitForUploads(submissionFiles))
+      const preparedInput =
+        submissionFiles.length && composerInput.current
+          ? yield* nativeEffect(() => composerInput.current!.readText())
+          : latestDraftText.current
+      if (
+        currentDraftKey.current !== draftKey ||
+        editSession.current !== editId ||
+        preparedInput !== input
+      )
+        throw new Error('The draft changed while preparing attachments. Review it and try again.')
+      // Pending messages hide the input. Validate attachment preparation before clearing it.
       setPendingMessage({
         taskId: task.id,
         state: 'sending',
@@ -634,7 +660,6 @@ export function useConversationActions(task: Task) {
           ...(attempt.plan ? { plan: true } : {}),
         },
       })
-      yield* nativeEffect(() => attachmentPicker.waitForUploads())
       yield* storedDraft.stageEffect(attempt)
       if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(

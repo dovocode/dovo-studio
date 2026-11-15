@@ -148,10 +148,14 @@ export function Composer({
     runtimeRegistry,
     refreshRuntime,
   } = useWorkspaceSelector(selectComposerWorkspace, sameComposerWorkspace)
-  const loadComposerHistory = useCommittedCallback((signal: AbortSignal) => {
+  const loadComposerHistory = useCommittedCallback((signal: AbortSignal, before?: string) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
     return Effect.runPromise(
-      requestEffect('/api/tasks/composer-history', { id: task.id }, conversationPageSchema),
+      requestEffect(
+        '/api/tasks/composer-history',
+        { id: task.id, ...(before ? { before } : {}) },
+        conversationPageSchema,
+      ),
       { signal },
     )
   })
@@ -815,6 +819,10 @@ export function Composer({
     setSending(true)
     setError('')
     try {
+      const revision = editing.controller.revision
+      await attachments.prepare(editing.files)
+      if (!mounted.current || editing.controller.revision !== revision)
+        throw new Error('The draft changed while preparing attachments. Review it and try again.')
       await request(
         '/api/tasks/queue',
         {
@@ -950,6 +958,8 @@ export function Composer({
     onPending(pending)
     try {
       await attachments.waitForUploads()
+      if (!mounted.current || composerDraft.controller.revision !== submittedRevision)
+        throw new Error('The draft changed while preparing attachments. Review it and try again.')
       composerDraft.flush()
       await flush(task.id)
       if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {

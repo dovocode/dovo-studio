@@ -368,3 +368,34 @@ it('requires authentication for both read-only pickers and never registers selec
   expect(runtime.services.store.version()).toBe(revision)
   expect(runtime.services.store.get().repositories).toEqual([])
 })
+
+it('ranks exact, prefix, boundary, substring and subsequence folders before pagination', async () => {
+  const path = await directory()
+  const names = ['app', 'app-web', 'my-app', 'zapp', 'alpha-project', 'unrelated', '.app', '.git']
+  await Promise.all(names.map((name) => mkdir(join(path, name))))
+  const result = await listDirectories({ path, query: 'APP' })
+  expect(result.entries.map((entry) => entry.name)).toEqual([
+    'app',
+    'app-web',
+    'my-app',
+    'zapp',
+    'alpha-project',
+  ])
+  expect(result.total).toBe(5)
+  expect((await listDirectories({ path, query: 'app', hidden: true })).total).toBe(6)
+  expect((await listDirectories({ path, query: 'git', hidden: true })).total).toBe(0)
+  await Promise.all(Array.from({ length: 105 }, (_, i) => mkdir(join(path, `a-app-${i}`))))
+  const first = await listDirectories({ path, query: 'app' })
+  const second = await listDirectories({ path, query: 'app', offset: 100 })
+  expect(first.entries[0]?.name).toBe('app')
+  expect(first.total).toBe(110)
+  expect(second.entries.at(-1)?.name).toBe('alpha-project')
+  expect(new Set([...first.entries, ...second.entries].map((entry) => entry.path)).size).toBe(110)
+})
+it('matches canonically equivalent Unicode folder names without changing their paths', async () => {
+  const path = await directory()
+  await mkdir(join(path, 'café'))
+  expect((await listDirectories({ path, query: 'CAFE\u0301' })).entries).toEqual([
+    { name: 'café', path: join(path, 'café') },
+  ])
+})

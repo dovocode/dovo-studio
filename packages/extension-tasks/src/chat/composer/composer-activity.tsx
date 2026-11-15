@@ -1,3 +1,4 @@
+import { NativeGoal } from './native-goal'
 import { useEffect, useId, useRef, useState } from 'react'
 import { ChevronDown, ChevronUp, Pause, CircleAlert } from 'lucide-react'
 import { useWorkspace } from '@dovo/studio-core'
@@ -6,13 +7,7 @@ import { MessageQueue } from '../thread/message-queue'
 import { NativeTodos } from '../thread/native-todos'
 
 /** Keep progress and queued follow-ups above the input, with one visible panel. */
-export function ComposerActivity({
-  task,
-  pending,
-}: {
-  task: Task
-  pending?: readonly PendingMessage[]
-}) {
+function QueuedActivity({ task, pending }: { task: Task; pending?: readonly PendingMessage[] }) {
   const section = useRef<HTMLElement>(null)
   const [selected, setSelected] = useState('queue')
   const [collapsed, setCollapsed] = useState(false)
@@ -231,5 +226,14 @@ export function ComposerActivity({
         </div>
       )}
     </section>
+  )
+}
+
+export function ComposerActivity(props: { task: Task; pending?: readonly PendingMessage[] }) {
+  return (
+    <>
+      <NativeGoal key={`${props.task.id}:${props.task.sessionId}`} task={props.task} />
+      <QueuedActivity {...props} />
+    </>
   )
 }

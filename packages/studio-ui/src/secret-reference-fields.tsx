@@ -1,3 +1,4 @@
+import { SecretReferenceCheck } from './secret-reference-check'
 import {
   defaultSecretReference,
   secretReferenceProviders,
@@ -146,6 +147,7 @@ export function SecretReferenceFields({
           </FormField>
         </>
       )}
+      <SecretReferenceCheck reference={value} disabled={disabled} />
     </>
   )
 }

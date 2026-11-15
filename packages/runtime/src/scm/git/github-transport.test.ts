@@ -140,7 +140,7 @@ it('sends bearer requests, follows pagination into a slurped array and revalidat
   expect(JSON.parse(pages)).toEqual([[{ id: 1 }], [{ id: 2 }]])
   const first = fetcher.mock.calls[0]!
   expect(first[0]).toBeInstanceOf(URL)
-  expect((first[0] as URL).href).toBe('https://api.github.com/repos/a/b/pulls')
+  expect(first[0]).toHaveProperty('href', 'https://api.github.com/repos/a/b/pulls')
   expect(new Headers(first[1]?.headers).get('authorization')).toBe('Bearer secret-token')
   const user = parseGithubApiArgs(['api', '--hostname', 'github.com', 'user'])
   expect(JSON.parse(await transport.send(user, 'secret-token'))).toEqual({ login: 'me' })

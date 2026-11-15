@@ -14,6 +14,7 @@ export function QuestionAttachments({
   onAdd,
   onRemove,
   onBusy,
+  onPrepare,
 }: {
   taskId: string
   questionId: string
@@ -23,6 +24,7 @@ export function QuestionAttachments({
   onAdd: (file: Attachment) => boolean
   onRemove: (id: string) => void
   onBusy: (busy: boolean) => void
+  onPrepare?: (prepare: (() => Promise<void>) | undefined) => void
 }) {
   const uiText = useInterfaceText()
 
@@ -38,6 +40,10 @@ export function QuestionAttachments({
     onBusy(attachments.busy)
     return () => onBusy(false)
   }, [attachments.busy])
+  useEffect(() => {
+    onPrepare?.(() => attachments.prepare(files))
+    return () => onPrepare?.(undefined)
+  }, [attachments.prepare, files, onPrepare])
   return (
     <div
       className="space-y-1"

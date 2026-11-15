@@ -48,9 +48,7 @@ it('verifies alternate identity without credentials and keeps the logical connec
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       calls.push({ url: url.href, authorization: options?.headers })
       if (url.hostname === 'unreachable.local') throw new Error('Offline')
       if (url.pathname === '/health')
@@ -88,9 +86,7 @@ it('never sends a mutation to a different runtime and never replays an uncertain
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.pathname === '/health')
         return Response.json({ service: 'dovo-runtime', runtimeId: 'paired-runtime' })
       writes.push(url.origin)
@@ -128,9 +124,7 @@ it('rechecks preferred routes after expiry and isolates different pairing creden
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.hostname === 'preferred-restored.local' && !restored) throw new Error('Offline')
       return Response.json({ service: 'dovo-runtime', runtimeId: 'paired-runtime' })
     }),
@@ -161,9 +155,7 @@ it('probes stale interfaces concurrently and retains selection when snapshots ar
   )
   const stalled: Array<() => void> = []
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-    const url = new URL(
-      input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-    )
+    const url = new URL(input instanceof Request ? input.url : String(input))
     if (url.hostname !== 'vpn.local')
       return new Promise<Response>((_resolve, reject) =>
         stalled.push(() => reject(new Error('Probe deadline'))),
@@ -188,9 +180,7 @@ it('uses saved route metadata in a fresh client session without sending tokens t
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       expect(options?.headers).toBeUndefined()
       return Response.json({
         service: 'dovo-runtime',
@@ -214,9 +204,7 @@ it('returns a verified preferred route without waiting for stale lower-priority 
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.origin === connection.address)
         return Response.json({ service: 'dovo-runtime', runtimeId: connection.runtimeId })
       staleSignal = options?.signal
@@ -499,9 +487,7 @@ it('removes obsolete selections and verifies replacement routes before using cre
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       calls.push(url.href)
       if (url.pathname === '/health') {
         healthHeaders.push(options?.headers)
@@ -537,9 +523,7 @@ it('cancels superseded discovery and rejects changed runtime identity without se
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.pathname !== '/health') {
         writes.push(url.href)
         return Response.json({ ok: true })
@@ -578,9 +562,7 @@ it('invalidates a selected route when a later authenticated snapshot removes it'
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.origin === old.address) throw new Error('Offline')
       return Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })
     }),
@@ -608,9 +590,7 @@ it('does not replay an already dispatched mutation when route metadata changes',
   vi.stubGlobal(
     'fetch',
     vi.fn<typeof fetch>().mockImplementation(async (input) => {
-      const url = new URL(
-        input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-      )
+      const url = new URL(input instanceof Request ? input.url : String(input))
       if (url.pathname === '/health')
         return Response.json({ service: 'dovo-runtime', runtimeId: old.runtimeId })
       writes.push(url.origin)
@@ -631,9 +611,7 @@ it('keeps active selections when authenticated snapshots only reorder the same i
     { ...snapshot, runtimeAddresses: ['http://reordered-a.local', 'http://reordered-b.local'] },
   )
   const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input) => {
-    const url = new URL(
-      input instanceof Request ? input.url : input instanceof URL ? input.href : input,
-    )
+    const url = new URL(input instanceof Request ? input.url : String(input))
     if (url.origin === first.address) throw new Error('Offline')
     return Response.json({ service: 'dovo-runtime', runtimeId: first.runtimeId })
   })

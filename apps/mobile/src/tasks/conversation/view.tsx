@@ -1,3 +1,4 @@
+import { TurnAnnouncer } from './components/turn-announcer'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadActionCards } from './components/thread-actions'
 import { useMessageReveal, consumeMessageReveal } from './message-reveal'
@@ -571,6 +572,7 @@ export function Conversation({
   const history = useConversationSelector((value) => value.history)
   const task = useConversationSelector((value) => value.task)
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
+  const announcementSteps = useConversationSelector((value) => value.announcementSteps)
   const activityError = useConversationSelector((value) => value.activityError)
   const visible = useConversationSelector((value) => value.visible)
   const followRequest = useConversationSelector((value) => value.followRequest)
@@ -1187,6 +1189,13 @@ export function Conversation({
   )
   return (
     <>
+      <TurnAnnouncer
+        key={positionKey}
+        scope={positionKey}
+        task={task}
+        steps={announcementSteps}
+        active={visible && recentReady && connected}
+      />
       {conversation}
       {setup && <View style={{ paddingHorizontal: 12, paddingBottom: 4 }}>{setup}</View>}
     </>

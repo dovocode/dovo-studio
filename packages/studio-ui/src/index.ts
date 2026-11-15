@@ -110,3 +110,5 @@ export { StudioConfirmationProvider } from './confirmation-provider'
 export * from './secret-reference-fields'
 
 export { BotAvatar } from './bot-avatar'
+
+export { SecretReferenceCheck } from './secret-reference-check'

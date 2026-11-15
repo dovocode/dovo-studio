@@ -99,6 +99,7 @@ const stubs = [
 ]
 // These editors are opened from the screen but have independent interaction coverage.
 for (const [path, name] of [
+  ['../runtime/connection/database-space', 'DatabaseSpace'],
   ['../runtime/connection/runtime-icon-settings', 'RuntimeIconSettings'],
   ['../runtime/connection/service-url-settings', 'ServiceUrlSettings'],
   ['./device-host-settings', 'DeviceHostSettings'],

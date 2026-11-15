@@ -44,7 +44,8 @@ export function useHarnessHandoff({
   }, [identity])
   const available =
     supported &&
-    task.status !== 'draft' &&
+    // Starting a fresh Bot conversation retains its settings and may retain a provider lock.
+    (task.status !== 'draft' || !!task.bot) &&
     !task.archivedAt &&
     !task.archived &&
     !task.machineHandoff &&
