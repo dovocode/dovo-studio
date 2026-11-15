@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
@@ -1325,6 +1326,29 @@ it('isolates agent commands from the user shell and closes only terminals opened
     expect(s.terminals.get(id).process).toBe(terminalProcess)
     expect(input).toHaveBeenCalledTimes(1)
     expect(input).toHaveBeenCalledWith(id, 'printf tool-output\r')
+    expect(
+      (
+        await client.callTool({
+          name: 'terminal_input',
+          arguments: { id, data: 'printf submitted', submit: true },
+        })
+      ).isError,
+    ).not.toBe(true)
+    expect(input).toHaveBeenLastCalledWith(id, 'printf submitted\r')
+    expect(
+      (await client.callTool({ name: 'terminal_input', arguments: { id, data: 'raw\\r' } }))
+        .isError,
+    ).not.toBe(true)
+    expect(input).toHaveBeenLastCalledWith(id, 'raw\\r')
+    const beforeInput = input.mock.calls.length
+    for (const arguments_ of [
+      { id, data: 'bad', submit: 'true' },
+      { id: user.id, data: 'forbidden', submit: true },
+    ])
+      expect(
+        (await client.callTool({ name: 'terminal_input', arguments: arguments_ })).isError,
+      ).toBe(true)
+    expect(input).toHaveBeenCalledTimes(beforeInput)
     expect(input.mock.calls.every(([target]) => target === id)).toBe(true)
     const command = s.activity
       .list('', 'task-activity', 0, task.id)
@@ -1811,7 +1835,14 @@ it('offers linked_projects as a regular task tool and stages scoped General link
       stderr: 'ignore',
     })
     await client.connect(transport)
-    expect((await client.listTools()).tools.map((t) => t.name)).toContain('linked_projects')
+    const catalog = (await client.listTools()).tools
+    const linkTool = catalog.find((tool) => tool.name === 'linked_projects')
+    expect(linkTool?.inputSchema.properties?.action).toEqual({
+      type: 'string',
+      enum: ['list', 'projects', 'worktrees', 'add'],
+    })
+    expect(linkTool?.inputSchema.properties).toHaveProperty('checkout')
+    expect(linkTool?.inputSchema.properties).toHaveProperty('repositoryId')
     const projects = await client.callTool({
       name: 'linked_projects',
       arguments: { action: 'projects' },
@@ -1836,9 +1867,58 @@ it('offers linked_projects as a regular task tool and stages scoped General link
       branch: 'feature/general',
     }
     const add = { action: 'add', checkout }
+    if (!linkTool) throw new Error('Missing linked_projects schema')
+    const validate = new AjvJsonSchemaValidator().getValidator(linkTool.inputSchema)
+    for (const input of [
+      add,
+      { ...add, checkout: JSON.stringify(checkout) },
+      { action: 'projects' },
+      { action: 'worktrees', repositoryId: 'repo' },
+    ]) {
+      expect(validate(input).valid).toBe(true)
+    }
+    for (const input of [
+      {},
+      { action: 'add' },
+      { action: 'worktrees' },
+      { ...add, checkout: { ...checkout, access: 'admin' } },
+    ]) {
+      expect(validate(input).valid).toBe(false)
+    }
     expect((await client.callTool({ name: 'linked_projects', arguments: add })).isError).not.toBe(
       true,
     )
+    expect(
+      (
+        await client.callTool({
+          name: 'linked_projects',
+          arguments: { ...add, checkout: JSON.stringify(checkout) },
+        })
+      ).isError,
+    ).not.toBe(true)
+    expect(
+      (
+        await client.callTool({
+          name: 'linked_projects',
+          arguments: {
+            ...add,
+            checkout: JSON.stringify({ ...checkout, baseBranch: null, existingWorktreePath: null }),
+          },
+        })
+      ).isError,
+    ).not.toBe(true)
+    for (const value of [
+      '{broken',
+      'null',
+      JSON.stringify({ ...checkout, id: '../escape' }),
+      JSON.stringify({ ...checkout, access: 'admin' }),
+    ]) {
+      const result = await client.callTool({
+        name: 'linked_projects',
+        arguments: { ...add, checkout: value },
+      })
+      expect(result.isError).toBe(true)
+    }
     expect((await client.callTool({ name: 'linked_projects', arguments: add })).isError).not.toBe(
       true,
     )
@@ -1940,3 +2020,152 @@ it('offers linked_projects as a regular task tool and stages scoped General link
     await f.cleanup()
   }
 }, 30000)
+
+it('validates encoded Studio and plan metadata before HTTP dispatch', async () => {
+  const requests: unknown[] = []
+  const http = createServer(async (request, response) => {
+    const chunks: Buffer[] = []
+    for await (const chunk of request) chunks.push(Buffer.from(chunk))
+    requests.push(JSON.parse(Buffer.concat(chunks).toString()))
+    response.setHeader('content-type', 'application/json')
+    response.end(JSON.stringify({ ok: true }))
+  })
+  await new Promise<void>((resolve) => http.listen(0, '127.0.0.1', resolve))
+  const address = http.address()
+  if (!address || typeof address === 'string') throw new Error('No test address')
+  const config = taskToolsServer(
+    'task',
+    address.port,
+    'test-token',
+    '127.0.0.1',
+    false,
+    false,
+    'run',
+    false,
+    false,
+    [],
+    false,
+    undefined,
+    undefined,
+    { threads: true, automations: true, browsers: true, ui: true, diagnostics: true },
+  )
+  const client = new Client({ name: 'encoded-studio-test', version: '1' })
+  const transport = new StdioClientTransport({
+    command: process.execPath,
+    args: [
+      '--import',
+      createRequire(import.meta.url).resolve('tsx'),
+      fileURLToPath(new URL('./server.ts', import.meta.url)),
+    ],
+    env: config.envValues,
+    stderr: 'ignore',
+  })
+  try {
+    await client.connect(transport)
+    const commands = [
+      { name: 'studio_threads', part: 'threads', command: { action: 'read', id: 'thread-42' } },
+      {
+        name: 'studio_automations',
+        part: 'automations',
+        command: { action: 'run', id: 'workflow-42', requestId: 'run-42' },
+      },
+      { name: 'studio_browsers', part: 'browsers', command: { action: 'snapshot', id: 'tab-42' } },
+      { name: 'studio_diagnostics', part: 'diagnostics', command: { action: 'health' } },
+    ]
+    for (const { name, part, command } of commands) {
+      for (const value of [command, JSON.stringify(command)]) {
+        expect(
+          (await client.callTool({ name, arguments: { runtimeId: 'runtime-42', command: value } }))
+            .isError,
+        ).not.toBe(true)
+        expect(requests.at(-1)).toEqual({
+          taskId: 'task',
+          parentRunId: 'run',
+          part,
+          runtimeId: 'runtime-42',
+          command,
+        })
+      }
+      const before = requests.length
+      for (const value of [
+        { ...command, runtimeId: 'runtime-42' },
+        JSON.stringify({ ...command, runtimeId: 'runtime-42' }),
+        '{broken',
+        'null',
+      ]) {
+        expect((await client.callTool({ name, arguments: { command: value } })).isError).toBe(true)
+      }
+      expect(requests).toHaveLength(before)
+    }
+    const child = { key: 'review-api', name: 'Review API', prompt: 'Review input validation' }
+    for (const target of [
+      { provider: 'claude' },
+      { provider: 'opencode' },
+      { provider: 'acp', agentId: 'configured-agent' },
+      { agentId: 'configured-agent' },
+      { runtimeId: 'runtime-42' },
+      { repositoryId: 'repo-42' },
+    ]) {
+      expect(
+        (await client.callTool({ name: 'subagent_spawn', arguments: { ...child, ...target } }))
+          .isError,
+      ).not.toBe(true)
+      expect(requests.at(-1)).toEqual({ ...child, ...target, taskId: 'task', parentRunId: 'run' })
+    }
+    const beforeChild = requests.length
+    for (const target of [
+      {},
+      { checkoutId: 'linked-42' },
+      { provider: 'acp' },
+      { agentId: '' },
+      { provider: 'claude', permissions: 'read-only' },
+      { provider: 'claude', taskId: 'forged-parent', parentRunId: 'forged-attempt' },
+    ])
+      expect(
+        (await client.callTool({ name: 'subagent_spawn', arguments: { ...child, ...target } }))
+          .isError,
+      ).toBe(true)
+    expect(requests).toHaveLength(beforeChild)
+    for (const command of [
+      { action: 'list' },
+      { action: 'set', items: [{ id: 'old', text: 'Keep existing work', status: 'in-progress' }] },
+      { action: 'set', items: [] },
+    ]) {
+      expect((await client.callTool({ name: 'todos', arguments: command })).isError).not.toBe(true)
+      expect(requests.at(-1)).toEqual({ taskId: 'task', parentRunId: 'run', command })
+    }
+    const beforeChecklist = requests.length
+    for (const command of [
+      {},
+      { action: 'set' },
+      { action: 'list', items: [] },
+      { action: 'set', items: [{ text: 'Bad', status: 'done' }] },
+    ])
+      expect((await client.callTool({ name: 'todos', arguments: command })).isError).toBe(true)
+    expect(requests).toHaveLength(beforeChecklist)
+    const plan = {
+      action: 'create',
+      id: 'review',
+      name: 'Review',
+      phases: [{ id: 'read', title: 'Read' }],
+    }
+    for (const phases of [plan.phases, JSON.stringify(plan.phases)]) {
+      expect(
+        (await client.callTool({ name: 'workflow', arguments: { ...plan, phases } })).isError,
+      ).not.toBe(true)
+      expect(requests.at(-1)).toEqual({ taskId: 'task', parentRunId: 'run', command: plan })
+    }
+    const before = requests.length
+    for (const phases of ['null', '[]', '{}', '{broken', '[{}]'])
+      expect(
+        (await client.callTool({ name: 'workflow', arguments: { ...plan, phases } })).isError,
+      ).toBe(true)
+    expect(requests).toHaveLength(before)
+  } finally {
+    await client.close()
+    await transport.close()
+    await new Promise<void>((resolve, reject) =>
+      http.close((error) => (error ? reject(error) : resolve())),
+    )
+  }
+})

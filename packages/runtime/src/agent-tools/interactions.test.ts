@@ -196,9 +196,14 @@ it('allows read-only progress, validates tool inputs and restricts raw HTTP to t
     { text: 'Inspect', status: 'completed' },
     { text: 'Explain', status: 'in-progress' },
   ]
+  const before = s.store.task(task.id).nativeTodos
   expect(
     (await client.callTool({ name: 'todos', arguments: { action: 'set', items, taskId: 'other' } }))
       .isError,
+  ).toBe(true)
+  expect(s.store.task(task.id).nativeTodos).toEqual(before)
+  expect(
+    (await client.callTool({ name: 'todos', arguments: { action: 'set', items } })).isError,
   ).not.toBe(true)
   expect(s.store.task(task.id).nativeTodos).toEqual(items)
   const list = await client.callTool({ name: 'todos', arguments: { action: 'list' } })
@@ -344,68 +349,94 @@ it('keeps complete skills inline for restricted modes that may disable MCP', asy
   await execution.done
 })
 
-it('delivers secure MCP input through real stdin while keeping transport, model and SQLite free of the value', async () => {
-  const { s, task, client, post, owner, credential } = await setup()
-  const { mkdtemp, readFile, rm } = await import('node:fs/promises')
-  const { tmpdir } = await import('node:os')
-  const { join } = await import('node:path')
-  const { createHash } = await import('node:crypto')
-  const { sealSecureInput, secureInputResultSchema } = await import('@dovo/protocol')
-  const directory = await mkdtemp(join(tmpdir(), 'dovo-secure-test-'))
-  cleanups.push(() => rm(directory, { recursive: true, force: true }))
-  const proof = join(directory, 'hash')
-  const script = `let value='';process.stdin.setEncoding('utf8');process.stdin.on('data',text=>value+=text);process.stdin.on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(proof)},require('node:crypto').createHash('sha256').update(value).digest('hex'));process.stdout.write(value);process.stderr.write(value)})`
-  const command = {
-    action: 'request',
-    key: 'sign-in',
-    title: 'Private sign-in',
-    prompt: 'Enter the password',
-    destination: {
-      kind: 'command',
-      command: process.execPath,
-      args: ['-e', script],
-      appendNewline: false,
-    },
-  }
-  const open = () => client.callTool({ name: 'secure_input', arguments: command })
-  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('secure_input')
-  const opened = decode(secureInputResultSchema, JSON.parse(resultText(await open())))
-  expect(opened.status).toBe('pending')
-  expect(decode(secureInputResultSchema, JSON.parse(resultText(await open())))).toEqual(opened)
-  expect(s.secureInputs.list()).toHaveLength(1)
-  const secret = ' synthetic-PASSWORD/auth?code=confidential&state=private \n'
-  const envelope = sealSecureInput(s.secureInputs.list()[0], secret)
-  expect(JSON.stringify(envelope)).not.toContain(secret)
-  expect((await post('/api/secure-input/submit', envelope)).status).toBe(403)
-  expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
-  expect(await readFile(proof, 'utf8')).toBe(createHash('sha256').update(secret).digest('hex'))
-  const status = await client.callTool({
-    name: 'secure_input',
-    arguments: { action: 'status', id: opened.id },
-  })
-  expect(decode(secureInputResultSchema, JSON.parse(resultText(status))).status).toBe('completed')
-  expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
-  expect(s.db.serialize().includes(Buffer.from('synthetic-PASSWORD/auth'))).toBe(false)
-  expect(JSON.stringify(s.store.task(task.id))).not.toContain(secret)
-  const followup = [
-    ...s.store.task(task.id).messages,
-    ...(s.store.task(task.id).queue ?? []),
-  ].filter((message) => message.id === `answer:${opened.id}`)
-  expect(followup).toHaveLength(1)
-  expect(followup[0].text).toBe(
-    `Secure input ${opened.id}: completed. The private value was not shared with the agent.`,
-  )
-  expect(s.secureInputs.list()).toEqual([])
-  expect(
-    (
-      await post('/api/agent/secure-input', {
-        taskId: 'other',
-        parentRunId: credential.runId,
-        command,
+it.each([false, true])(
+  'delivers secure MCP input through real stdin without exposing the value (encoded destination: %s)',
+  async (encoded) => {
+    const { s, task, client, post, owner, credential } = await setup()
+    const { mkdtemp, readFile, rm } = await import('node:fs/promises')
+    const { tmpdir } = await import('node:os')
+    const { join } = await import('node:path')
+    const { createHash } = await import('node:crypto')
+    const { sealSecureInput, secureInputResultSchema } = await import('@dovo/protocol')
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-secure-test-'))
+    cleanups.push(() => rm(directory, { recursive: true, force: true }))
+    const proof = join(directory, 'hash')
+    const script = `let value='';process.stdin.setEncoding('utf8');process.stdin.on('data',text=>value+=text);process.stdin.on('end',()=>{require('node:fs').writeFileSync(${JSON.stringify(proof)},require('node:crypto').createHash('sha256').update(value).digest('hex'));process.stdout.write(value);process.stderr.write(value)})`
+    const command = {
+      action: 'request',
+      key: 'sign-in',
+      title: 'Private sign-in',
+      prompt: 'Enter the password',
+      destination: {
+        kind: 'command',
+        command: process.execPath,
+        args: ['-e', script],
+        appendNewline: false,
+      },
+    }
+    const open = () =>
+      client.callTool({
+        name: 'secure_input',
+        arguments: {
+          ...command,
+          destination: encoded ? JSON.stringify(command.destination) : command.destination,
+        },
       })
-    ).status,
-  ).toBe(403)
-})
+    expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('secure_input')
+    const prepared = JSON.parse(resultText(await open()))
+    expect(prepared).toMatchObject({
+      status: 'pending',
+      deliveryCompleted: false,
+      nextAction: 'wait_for_completion_message',
+    })
+    const opened = decode(secureInputResultSchema, prepared)
+    expect(opened.status).toBe('pending')
+    expect(decode(secureInputResultSchema, JSON.parse(resultText(await open())))).toEqual(opened)
+    expect(s.secureInputs.list()).toHaveLength(1)
+    expect(
+      (
+        await client.callTool({
+          name: 'secure_input',
+          arguments: { ...command, key: 'invalid', destination: '{"kind":"command"}' },
+        })
+      ).isError,
+    ).toBe(true)
+    expect(s.secureInputs.list()).toHaveLength(1)
+    const secret = ' synthetic-PASSWORD/auth?code=confidential&state=private \n'
+    const envelope = sealSecureInput(s.secureInputs.list()[0], secret)
+    expect(JSON.stringify(envelope)).not.toContain(secret)
+    expect((await post('/api/secure-input/submit', envelope)).status).toBe(403)
+    expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
+    expect(await readFile(proof, 'utf8')).toBe(createHash('sha256').update(secret).digest('hex'))
+    const status = await client.callTool({
+      name: 'secure_input',
+      arguments: { action: 'status', id: opened.id },
+    })
+    expect(decode(secureInputResultSchema, JSON.parse(resultText(status))).status).toBe('completed')
+    expect(JSON.parse(resultText(status))).toMatchObject({ deliveryCompleted: true })
+    expect((await post('/api/secure-input/submit', envelope, owner)).status).toBe(200)
+    expect(s.db.serialize().includes(Buffer.from('synthetic-PASSWORD/auth'))).toBe(false)
+    expect(JSON.stringify(s.store.task(task.id))).not.toContain(secret)
+    const followup = [
+      ...s.store.task(task.id).messages,
+      ...(s.store.task(task.id).queue ?? []),
+    ].filter((message) => message.id === `answer:${opened.id}`)
+    expect(followup).toHaveLength(1)
+    expect(followup[0].text).toBe(
+      `Secure input ${opened.id}: completed. The private value was not shared with the agent.`,
+    )
+    expect(s.secureInputs.list()).toEqual([])
+    expect(
+      (
+        await post('/api/agent/secure-input', {
+          taskId: 'other',
+          parentRunId: credential.runId,
+          command,
+        })
+      ).status,
+    ).toBe(403)
+  },
+)
 
 it('dismisses secure inputs from earlier turns on Stop without sending a follow-up', async () => {
   const { s, task, gate, execution } = await setup()

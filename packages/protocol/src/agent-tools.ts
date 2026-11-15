@@ -24,7 +24,10 @@ export {
   studioDiagnosticsCommandSchema,
   type StudioTools,
 } from './runtime/studio-tools.js'
-export { secureInputCommandSchema } from './conversation/workflow/secure-input.js'
+export {
+  secureInputCommandSchema,
+  secureInputResultSchema,
+} from './conversation/workflow/secure-input.js'
 export {
   threadPrepareCommandSchema,
   responsePrepareCommandSchema,

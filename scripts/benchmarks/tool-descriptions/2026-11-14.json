@@ -1,0 +1,1331 @@
+{
+  "date": "2026-11-14",
+  "method": "First MCP call, validated arguments, action and known IDs. Both full comparisons use the same corrected schemas. Scores include semantic selector checks. Mock actions only.",
+  "comparison": [
+    {
+      "model": "dovo/deepseek-v4.1-flash:dev:prio",
+      "variant": "original wording",
+      "catalogHash": "6c09578c29ca11941e588bce9d8af18b3013aeff8e2a037f71bf0a8494060ce2",
+      "cases": 16,
+      "correct": 16,
+      "reportedTokens": 710380,
+      "results": [
+        {
+          "id": "native",
+          "expected": "devices",
+          "actual": "devices",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 15535
+        },
+        {
+          "id": "signed-in-browser",
+          "expected": "studio_browsers",
+          "actual": "studio_browsers",
+          "input": {
+            "command": {
+              "action": "list"
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9269
+        },
+        {
+          "id": "isolated-browser",
+          "expected": "browser",
+          "actual": "browser",
+          "input": {
+            "action": "navigate",
+            "url": "https://example.test"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 22413
+        },
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9925
+        },
+        {
+          "id": "question",
+          "expected": "ask_question",
+          "actual": "ask_question",
+          "input": {
+            "key": "db-choice-sqlite-vs-postgres",
+            "title": "Choose the database before the change",
+            "questions": [
+              {
+                "id": "database",
+                "header": "Database",
+                "question": "Which database should I use for the database change?",
+                "options": [
+                  {
+                    "value": "sqlite",
+                    "label": "SQLite",
+                    "description": "Single file, no server. Simple to set up and deploy."
+                  },
+                  {
+                    "value": "postgres",
+                    "label": "PostgreSQL",
+                    "description": "Separate server. Strong concurrency and production features."
+                  }
+                ],
+                "custom": true,
+                "required": true,
+                "inputType": "text"
+              }
+            ]
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 25270
+        },
+        {
+          "id": "review-workflow",
+          "expected": "automation_list",
+          "actual": "automation_list",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 20234
+        },
+        {
+          "id": "review-thread",
+          "expected": "thread_prepare",
+          "actual": "thread_prepare",
+          "input": {
+            "key": "review-api-design-draft",
+            "title": "Review my API design",
+            "prompt": "Review my API design"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 11270
+        },
+        {
+          "id": "memory",
+          "expected": "memory_list",
+          "actual": "memory_list",
+          "input": {
+            "scope": "system",
+            "query": "release checklist"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 23881
+        },
+        {
+          "id": "help",
+          "expected": "dovo_help",
+          "actual": "dovo_help",
+          "input": {
+            "action": "search",
+            "query": "queued messages"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": false,
+          "calls": 2,
+          "durationMs": 13226
+        },
+        {
+          "id": "quoted-response",
+          "expected": "conversation_read",
+          "actual": "conversation_read",
+          "input": {
+            "messageId": "reply-42"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 8327
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": "secure_input",
+          "input": {
+            "action": "request",
+            "key": "password-entry-true-cmd",
+            "title": "Enter password",
+            "prompt": "Enter the password. The value goes encrypted to the paired runtime and is written to stdin of the local command /usr/bin/true. The model, chat and logs never see it.",
+            "destination": {
+              "kind": "command",
+              "command": "/usr/bin/true",
+              "args": [],
+              "appendNewline": false
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9534
+        },
+        {
+          "id": "checklist",
+          "expected": "todos",
+          "actual": "todos",
+          "input": {
+            "action": "list"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9575
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_prepare",
+          "input": {
+            "key": "review-workflow-42",
+            "title": "Review saved workflow workflow-42",
+            "automationId": "workflow-42",
+            "prompt": "Review the saved workflow \"workflow-42\" before it runs. Check the trigger, steps, permissions and linked checkouts. Edit any run-only context if needed, then tap Start to run it, or dismiss to cancel."
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9562
+        },
+        {
+          "id": "rename-terminal",
+          "expected": "terminal_rename",
+          "actual": "terminal_rename",
+          "input": {
+            "id": "terminal-42",
+            "title": "Build logs"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 8639
+        },
+        {
+          "id": "no-tool",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 10356
+        },
+        {
+          "id": "enough-context",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 4532
+        }
+      ]
+    },
+    {
+      "model": "dovo/deepseek-v4.1-flash:dev:prio",
+      "variant": "first revision",
+      "catalogHash": "af13945a9b27b4a7c5947e271f24273b5813dce7ff81bc906431974a9278ce54",
+      "cases": 16,
+      "correct": 16,
+      "reportedTokens": 677401,
+      "results": [
+        {
+          "id": "native",
+          "expected": "devices",
+          "actual": "devices",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 10180
+        },
+        {
+          "id": "signed-in-browser",
+          "expected": "studio_browsers",
+          "actual": "studio_browsers",
+          "input": {
+            "command": {
+              "action": "list"
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9484
+        },
+        {
+          "id": "isolated-browser",
+          "expected": "browser",
+          "actual": "browser",
+          "input": {
+            "action": "navigate",
+            "url": "https://example.test"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 25936
+        },
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 7303
+        },
+        {
+          "id": "question",
+          "expected": "ask_question",
+          "actual": "ask_question",
+          "input": {
+            "key": "database-choice",
+            "title": "Choose a database",
+            "questions": [
+              {
+                "id": "database",
+                "header": "Database",
+                "question": "Which database should the change use?",
+                "options": [
+                  {
+                    "value": "sqlite",
+                    "label": "SQLite",
+                    "description": "Single file, no server to run. Good for local use and small deployments."
+                  },
+                  {
+                    "value": "postgresql",
+                    "label": "PostgreSQL",
+                    "description": "Separate server process. Good for concurrent access, larger data and existing infrastructure."
+                  }
+                ],
+                "custom": true,
+                "required": true
+              }
+            ]
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 11673
+        },
+        {
+          "id": "review-workflow",
+          "expected": "automation_list",
+          "actual": "automation_list",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 21144
+        },
+        {
+          "id": "review-thread",
+          "expected": "thread_prepare",
+          "actual": "thread_prepare",
+          "input": {
+            "key": "review-api-design-thread",
+            "title": "Review API design",
+            "prompt": "Review my API design"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 19750
+        },
+        {
+          "id": "memory",
+          "expected": "memory_list",
+          "actual": "memory_list",
+          "input": {
+            "scope": "system",
+            "query": "release checklist"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 20066
+        },
+        {
+          "id": "help",
+          "expected": "dovo_help",
+          "actual": "dovo_help",
+          "input": {
+            "action": "search",
+            "query": "queued messages"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 9787
+        },
+        {
+          "id": "quoted-response",
+          "expected": "conversation_read",
+          "actual": "conversation_read",
+          "input": {
+            "messageId": "reply-42",
+            "offset": 0
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 22360
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": "secure_input",
+          "input": {
+            "action": "request",
+            "key": "secure-password-true-command",
+            "title": "Private password input",
+            "prompt": "Enter the password. It is sent over stdin to the reviewed local command /usr/bin/true. The value is never shown in chat, argv, environment variables or logs.",
+            "destination": {
+              "kind": "command",
+              "command": "/usr/bin/true",
+              "args": [],
+              "appendNewline": true
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 36061
+        },
+        {
+          "id": "checklist",
+          "expected": "todos",
+          "actual": "todos",
+          "input": {
+            "action": "list"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 20269
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_prepare",
+          "input": {
+            "key": "review-workflow-42",
+            "title": "Review saved workflow workflow-42",
+            "automationId": "workflow-42",
+            "prompt": "Review the steps and context for workflow-42. It does not run until you tap Start."
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 10176
+        },
+        {
+          "id": "rename-terminal",
+          "expected": "terminal_rename",
+          "actual": "terminal_rename",
+          "input": {
+            "id": "terminal-42",
+            "title": "Build logs"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 7664
+        },
+        {
+          "id": "no-tool",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 9341
+        },
+        {
+          "id": "enough-context",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 14957
+        }
+      ]
+    },
+    {
+      "model": "dovo/qwen3.8-27b:dev:prio",
+      "variant": "original wording",
+      "catalogHash": "6c09578c29ca11941e588bce9d8af18b3013aeff8e2a037f71bf0a8494060ce2",
+      "cases": 16,
+      "correct": 15,
+      "reportedTokens": 755709,
+      "results": [
+        {
+          "id": "native",
+          "expected": "devices",
+          "actual": "devices",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 18147
+        },
+        {
+          "id": "signed-in-browser",
+          "expected": "studio_browsers",
+          "actual": "studio_browsers",
+          "input": {
+            "command": {
+              "action": "list"
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 34358
+        },
+        {
+          "id": "isolated-browser",
+          "expected": "browser",
+          "actual": "browser",
+          "input": {
+            "action": "navigate",
+            "url": "https://example.test"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 38673
+        },
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 11939
+        },
+        {
+          "id": "question",
+          "expected": "ask_question",
+          "actual": "ask_question",
+          "input": {
+            "key": "database-choice",
+            "title": "Database choice",
+            "questions": [
+              {
+                "id": "database",
+                "header": "Database",
+                "question": "Which database should I use before I make the database change?",
+                "options": [
+                  {
+                    "value": "sqlite",
+                    "label": "SQLite",
+                    "description": "Embedded file database. No server, simple setup."
+                  },
+                  {
+                    "value": "postgresql",
+                    "label": "PostgreSQL",
+                    "description": "Client-server database. More features, requires a running server."
+                  }
+                ],
+                "required": true,
+                "inputType": "text"
+              }
+            ]
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 18422
+        },
+        {
+          "id": "review-workflow",
+          "expected": "automation_list",
+          "actual": "automation_list",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 58648
+        },
+        {
+          "id": "review-thread",
+          "expected": "thread_prepare",
+          "actual": "thread_prepare",
+          "input": {
+            "key": "prepare-api-design-review",
+            "title": "Review API design",
+            "prompt": "Review my API design"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 13601
+        },
+        {
+          "id": "memory",
+          "expected": "memory_list",
+          "actual": "memory_list",
+          "input": {
+            "scope": "system",
+            "query": "release checklist"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 28405
+        },
+        {
+          "id": "help",
+          "expected": "dovo_help",
+          "actual": "dovo_help",
+          "input": {
+            "action": "search",
+            "query": "queued messages"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 16158
+        },
+        {
+          "id": "quoted-response",
+          "expected": "conversation_read",
+          "actual": "conversation_read",
+          "input": {
+            "messageId": "reply-42"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 10888
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": null,
+          "input": null,
+          "selected": false,
+          "valid": false,
+          "correct": false,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 73692
+        },
+        {
+          "id": "checklist",
+          "expected": "todos",
+          "actual": "todos",
+          "input": {
+            "action": "list"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 16930
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_prepare",
+          "input": {
+            "automationId": "workflow-42",
+            "key": "review-workflow-42",
+            "title": "Review saved workflow workflow-42",
+            "prompt": "Review the saved workflow workflow-42. Do not start it. A paired human reviews the workflow and its run-only context, then decides to Start it."
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 17194
+        },
+        {
+          "id": "rename-terminal",
+          "expected": "terminal_rename",
+          "actual": "terminal_rename",
+          "input": {
+            "id": "terminal-42",
+            "title": "Build logs"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 24040
+        },
+        {
+          "id": "no-tool",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 11529
+        },
+        {
+          "id": "enough-context",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 4714
+        }
+      ]
+    },
+    {
+      "model": "dovo/qwen3.8-27b:dev:prio",
+      "variant": "first revision",
+      "catalogHash": "af13945a9b27b4a7c5947e271f24273b5813dce7ff81bc906431974a9278ce54",
+      "cases": 16,
+      "correct": 13,
+      "reportedTokens": 722443,
+      "results": [
+        {
+          "id": "native",
+          "expected": "devices",
+          "actual": "devices",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 21894
+        },
+        {
+          "id": "signed-in-browser",
+          "expected": "studio_browsers",
+          "actual": "studio_browsers",
+          "input": {
+            "command": {
+              "action": "list"
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 15181
+        },
+        {
+          "id": "isolated-browser",
+          "expected": "browser",
+          "actual": "browser",
+          "input": {
+            "action": "navigate",
+            "url": "https://example.test"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 15402
+        },
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456",
+            "runIds": ["123456"]
+          },
+          "selected": true,
+          "valid": true,
+          "correct": false,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 23815
+        },
+        {
+          "id": "question",
+          "expected": "ask_question",
+          "actual": "ask_question",
+          "input": {
+            "key": "db-engine-choice",
+            "title": "Database engine choice",
+            "questions": [
+              {
+                "id": "db-engine",
+                "header": "Database",
+                "question": "Which database should the change use?",
+                "options": [
+                  {
+                    "value": "sqlite",
+                    "label": "SQLite",
+                    "description": "Embedded single-file database, no server. Fits local tools and low-ops setups."
+                  },
+                  {
+                    "value": "postgresql",
+                    "label": "PostgreSQL",
+                    "description": "Client-server database. Fits concurrency, multi-process access and larger data."
+                  }
+                ],
+                "required": true
+              }
+            ]
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 18234
+        },
+        {
+          "id": "review-workflow",
+          "expected": "automation_list",
+          "actual": "automation_list",
+          "input": {},
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 22725
+        },
+        {
+          "id": "review-thread",
+          "expected": "thread_prepare",
+          "actual": "thread_prepare",
+          "input": {
+            "key": "api-design-review-thread",
+            "title": "API Design Review",
+            "prompt": "Review my API design"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 13057
+        },
+        {
+          "id": "memory",
+          "expected": "memory_list",
+          "actual": "memory_list",
+          "input": {
+            "scope": "system",
+            "query": "release checklist"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 28874
+        },
+        {
+          "id": "help",
+          "expected": "dovo_help",
+          "actual": "dovo_help",
+          "input": {
+            "action": "search",
+            "query": "queued messages"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 29778
+        },
+        {
+          "id": "quoted-response",
+          "expected": "conversation_read",
+          "actual": "conversation_read",
+          "input": {
+            "messageId": "reply-42"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 39620
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": null,
+          "input": null,
+          "selected": false,
+          "valid": false,
+          "correct": false,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 70768
+        },
+        {
+          "id": "checklist",
+          "expected": "todos",
+          "actual": "todos",
+          "input": {
+            "action": "list"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 54630
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_list",
+          "input": {},
+          "selected": false,
+          "valid": true,
+          "correct": false,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 18041
+        },
+        {
+          "id": "rename-terminal",
+          "expected": "terminal_rename",
+          "actual": "terminal_rename",
+          "input": {
+            "id": "terminal-42",
+            "title": "Build logs"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "durationMs": 11915
+        },
+        {
+          "id": "no-tool",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 8771
+        },
+        {
+          "id": "enough-context",
+          "expected": null,
+          "actual": null,
+          "input": null,
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 0,
+          "durationMs": 15985
+        }
+      ]
+    }
+  ],
+  "targeted": [
+    {
+      "variant": "Final wording and encoded destination support",
+      "model": "dovo/deepseek-v4.1-flash:dev:prio",
+      "catalog": "canonical-destination-catalog.json",
+      "catalogHash": "5ba9323ac2a87a096a9e1a17ff145738e8e0edd2d1905f4f75c60473c2d11844",
+      "requested": ["private-input", "known-workflow", "pipeline"],
+      "cases": 3,
+      "complete": true,
+      "correct": 3,
+      "selected": 3,
+      "valid": 3,
+      "singleAction": 3,
+      "reportedTokens": 136282,
+      "usageReports": 3,
+      "durationMs": 44631,
+      "results": [
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "assistantText": "Watching that run now. I registered a watch on `https://github.com/example/project/actions/runs/123456`, so I will get notified when it finishes. No polling needed. If it fails, I will look at the failure and report back.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_pipeline_watch",
+              "status": "completed",
+              "input": {
+                "action": "watch",
+                "url": "https://github.com/example/project/actions/runs/123456"
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 27210
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": "secure_input",
+          "input": {
+            "action": "request",
+            "key": "password-local-true",
+            "title": "Enter password",
+            "prompt": "Enter the password. It is sent privately to the reviewed local command /usr/bin/true on stdin. It does not appear in the chat, logs or model context.",
+            "destination": {
+              "kind": "command",
+              "command": "/usr/bin/true",
+              "args": [],
+              "appendNewline": true
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "action": "request",
+            "key": "password-local-true",
+            "title": "Enter password",
+            "prompt": "Enter the password. It is sent privately to the reviewed local command /usr/bin/true on stdin. It does not appear in the chat, logs or model context.",
+            "destination": {
+              "kind": "command",
+              "command": "/usr/bin/true",
+              "args": [],
+              "appendNewline": true
+            }
+          },
+          "assistantText": "The private input request is ready for review. Enter the password in the secure prompt. It goes to `/usr/bin/true` on stdin and stays out of the chat.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_secure_input",
+              "status": "completed",
+              "input": {
+                "action": "request",
+                "key": "password-local-true",
+                "title": "Enter password",
+                "prompt": "Enter the password. It is sent privately to the reviewed local command /usr/bin/true on stdin. It does not appear in the chat, logs or model context.",
+                "destination": {
+                  "kind": "command",
+                  "command": "/usr/bin/true",
+                  "args": [],
+                  "appendNewline": true
+                }
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 9821
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_prepare",
+          "input": {
+            "key": "workflow-42-review",
+            "title": "Review saved workflow: workflow-42",
+            "automationId": "workflow-42",
+            "prompt": "Review the steps and context of saved workflow workflow-42. This card runs nothing until a human taps Start."
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "key": "workflow-42-review",
+            "title": "Review saved workflow: workflow-42",
+            "automationId": "workflow-42",
+            "prompt": "Review the steps and context of saved workflow workflow-42. This card runs nothing until a human taps Start."
+          },
+          "assistantText": "The review card for `workflow-42` is prepared. It runs nothing until a human reviews the steps and taps Start.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_automation_prepare",
+              "status": "completed",
+              "input": {
+                "key": "workflow-42-review",
+                "title": "Review saved workflow: workflow-42",
+                "automationId": "workflow-42",
+                "prompt": "Review the steps and context of saved workflow workflow-42. This card runs nothing until a human taps Start."
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 7276
+        }
+      ]
+    },
+    {
+      "variant": "Final wording and encoded destination support",
+      "model": "dovo/qwen3.8-27b:dev:prio",
+      "catalog": "canonical-destination-catalog.json",
+      "catalogHash": "5ba9323ac2a87a096a9e1a17ff145738e8e0edd2d1905f4f75c60473c2d11844",
+      "requested": ["private-input", "known-workflow", "pipeline"],
+      "cases": 3,
+      "complete": true,
+      "correct": 3,
+      "selected": 3,
+      "valid": 3,
+      "singleAction": 3,
+      "reportedTokens": 136271,
+      "usageReports": 3,
+      "durationMs": 68616,
+      "results": [
+        {
+          "id": "pipeline",
+          "expected": "pipeline_watch",
+          "actual": "pipeline_watch",
+          "input": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "action": "watch",
+            "url": "https://github.com/example/project/actions/runs/123456"
+          },
+          "assistantText": "Watch set. The run is being tracked and I will notify you if it fails. Success stays silent, and no polling happens in between.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_pipeline_watch",
+              "status": "completed",
+              "input": {
+                "action": "watch",
+                "url": "https://github.com/example/project/actions/runs/123456"
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 20581
+        },
+        {
+          "id": "private-input",
+          "expected": "secure_input",
+          "actual": "secure_input",
+          "input": {
+            "action": "request",
+            "key": "pw-entry-usr-bin-true",
+            "title": "Enter password privately",
+            "prompt": "Enter the password. The value is sent only to the reviewed local command /usr/bin/true (stdin). It never reaches chat, logs, or the model.",
+            "destination": {
+              "kind": "command",
+              "command": "/usr/bin/true",
+              "args": [],
+              "appendNewline": true
+            }
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "action": "request",
+            "key": "pw-entry-usr-bin-true",
+            "title": "Enter password privately",
+            "prompt": "Enter the password. The value is sent only to the reviewed local command /usr/bin/true (stdin). It never reaches chat, logs, or the model.",
+            "destination": "{\"kind\": \"command\", \"command\": \"/usr/bin/true\", \"args\": [], \"appendNewline\": true}"
+          },
+          "assistantText": "Requested. A secure input card is waiting for you. Enter the password there. The value goes straight to `/usr/bin/true` on stdin and never touches the chat, logs, or the model.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_secure_input",
+              "status": "completed",
+              "input": {
+                "action": "request",
+                "key": "pw-entry-usr-bin-true",
+                "title": "Enter password privately",
+                "prompt": "Enter the password. The value is sent only to the reviewed local command /usr/bin/true (stdin). It never reaches chat, logs, or the model.",
+                "destination": "{\"kind\": \"command\", \"command\": \"/usr/bin/true\", \"args\": [], \"appendNewline\": true}"
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 35126
+        },
+        {
+          "id": "known-workflow",
+          "expected": "automation_prepare",
+          "actual": "automation_prepare",
+          "input": {
+            "automationId": "workflow-42",
+            "key": "review-workflow-42",
+            "prompt": "Review the steps and context of the saved workflow workflow-42. Nothing runs until you tap Start.",
+            "title": "Review workflow-42"
+          },
+          "selected": true,
+          "valid": true,
+          "correct": true,
+          "singleAction": true,
+          "calls": 1,
+          "transportInput": {
+            "automationId": "workflow-42",
+            "key": "review-workflow-42",
+            "prompt": "Review the steps and context of the saved workflow workflow-42. Nothing runs until you tap Start.",
+            "title": "Review workflow-42"
+          },
+          "assistantText": "The review card for workflow-42 is ready. It lists the saved workflow's steps and context for your review, and nothing runs until you tap Start.",
+          "toolAttempts": [
+            {
+              "name": "selection_bench_automation_prepare",
+              "status": "completed",
+              "input": {
+                "automationId": "workflow-42",
+                "key": "review-workflow-42",
+                "prompt": "Review the steps and context of the saved workflow workflow-42. Nothing runs until you tap Start.",
+                "title": "Review workflow-42"
+              }
+            }
+          ],
+          "nativeAttempts": [],
+          "durationMs": 12577
+        }
+      ]
+    }
+  ]
+}

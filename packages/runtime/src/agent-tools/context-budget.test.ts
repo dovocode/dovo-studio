@@ -2,6 +2,7 @@ import { expect, it } from 'vite-plus/test'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { taskToolsServer } from './config.js'
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js'
 
 // Measure the real advertised schemas, including generated unions and Studio tools.
 // Character counts are deterministic budgets, not tokenizer-specific token counts.
@@ -36,12 +37,136 @@ it.each([false, true])(
     try {
       await client.connect(transport)
       const { tools } = await client.listTools()
+      // Shared guidance omits repeated details. Keep their authoritative tool
+      // descriptions visible in both the base and full catalogs.
+      for (const [name, phrases] of [
+        ['workflow', ['No scripts/schedules or delegation permission', 'Read child results']],
+        ['subagent_cancel', ['Offline cancellation remains pending until confirmed']],
+        ['subagent_list', ['Use subagent_read/wait for answers']],
+        ...(full
+          ? [
+              ['pull_request_watch', ['use notifications, never poll']],
+              ['pipeline_watch', ['Discover IDs once; register replacements']],
+            ]
+          : []),
+      ] as const) {
+        const description = tools.find((tool) => tool.name === name)?.description
+        for (const phrase of phrases) expect(description).toContain(phrase)
+      }
+      // Exercise the schemas from the real stdio catalog. Strict Effect commands
+      // must expose fields, not Unknown, so agents can construct valid calls.
+      const schemas = new AjvJsonSchemaValidator()
+      const strictCalls: Record<string, object> = {
+        thread_prepare: { key: 'review', title: 'Review', prompt: 'Review the API' },
+        response_prepare: {
+          key: 'reply',
+          title: 'Continue',
+          action: { kind: 'prompt', prompt: 'Continue' },
+        },
+        automation_list: { limit: 50 },
+        automation_prepare: {
+          key: 'routine',
+          title: 'Review run',
+          automationId: 'routine-42',
+          prompt: 'Check status',
+        },
+        workflow: {
+          action: 'create',
+          id: 'plan',
+          name: 'Plan',
+          phases: [{ id: 'one', title: 'Read' }],
+        },
+      }
+      for (const [name, input] of Object.entries(strictCalls)) {
+        const tool = tools.find((tool) => tool.name === name)
+        expect(tool).toBeDefined()
+        if (!tool) throw new Error(`Missing tool: ${name}`)
+        const validator = schemas.getValidator(tool.inputSchema)
+        expect({ name, valid: validator(input).valid }).toEqual({ name, valid: true })
+        expect({ name, valid: validator({ ...input, unknownField: true }).valid }).toEqual({
+          name,
+          valid: false,
+        })
+        expect({ name, valid: validator({}).valid }).toEqual({
+          name,
+          valid: name === 'automation_list',
+        })
+      }
+      expect(
+        tools
+          .filter((tool) => tool.inputSchema.anyOf)
+          .every((tool) => Object.keys(tool.inputSchema.properties ?? {}).length > 0),
+      ).toBe(true)
+      const checklist = tools.find((tool) => tool.name === 'todos')
+      if (!checklist) throw new Error('Missing todos')
+      expect(checklist.inputSchema.properties?.action).toEqual({
+        type: 'string',
+        enum: ['list', 'set'],
+      })
+      expect(checklist.inputSchema.properties?.items).toBeDefined()
+      const checklistInput = schemas.getValidator(checklist.inputSchema)
+      for (const input of [{ action: 'list' }, { action: 'set', items: [] }])
+        expect(checklistInput(input).valid).toBe(true)
+      for (const input of [
+        {},
+        { action: 'set' },
+        { action: 'list', items: [] },
+        { action: 'set', items: [{ text: 'Bad', status: 'done' }] },
+      ])
+        expect(checklistInput(input).valid).toBe(false)
+      const child = tools.find((tool) => tool.name === 'subagent_spawn')
+      if (!child) throw new Error('Missing subagent_spawn')
+      const childInput = schemas.getValidator(child.inputSchema)
+      const base = { key: 'review', name: 'Review', prompt: 'Review input validation' }
+      expect(child.inputSchema.properties?.provider).toMatchObject({
+        description: expect.stringContaining('For OpenCode use'),
+      })
+      // The root enum defines providers. The local branch excludes generic ACP,
+      // which needs a configured agent or an explicit project/computer target.
+      for (const provider of [
+        'codex',
+        'claude',
+        'vibe',
+        'opencode',
+        'hermes',
+        'copilot',
+        'grok',
+        'muse',
+        'cursor',
+      ])
+        expect(childInput({ ...base, provider }).valid).toBe(true)
+      for (const target of [
+        { agentId: 'agent' },
+        { repositoryId: 'repo' },
+        { runtimeId: 'runtime' },
+      ]) {
+        expect(childInput({ ...base, ...target }).valid).toBe(true)
+        expect(childInput({ ...base, ...target, provider: 'acp' }).valid).toBe(true)
+        expect(childInput({ ...base, ...target, provider: 'unknown' }).valid).toBe(false)
+      }
+      for (const input of [
+        {},
+        { checkoutId: 'linked' },
+        { provider: 'acp' },
+        { provider: 'unknown' },
+      ])
+        expect(childInput({ ...base, ...input }).valid).toBe(false)
+      const responseSchema = tools.find((tool) => tool.name === 'response_prepare')
+      if (!responseSchema) throw new Error('Missing response_prepare')
+      expect(
+        schemas.getValidator(responseSchema.inputSchema)({
+          key: 'reply',
+          title: 'Continue',
+          action: { kind: 'prompt' },
+        }).valid,
+      ).toBe(false)
       const characters = JSON.stringify(tools).length
       const descriptionCharacters = tools.reduce(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
       expect(tools).toHaveLength(full ? 51 : 24)
+      expect(descriptionCharacters).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
       const renameCharacters = JSON.stringify(terminalRename).length + 1
@@ -80,6 +205,38 @@ it.each([false, true])(
       // schema separately so adding this tool cannot hide growth in unrelated tools.
       const secureInput = tools.find((tool) => tool.name === 'secure_input')
       expect(secureInput).toBeDefined()
+      if (!secureInput) throw new Error('Missing secure_input')
+      expect(secureInput.inputSchema.properties?.action).toEqual({
+        type: 'string',
+        enum: ['request', 'status', 'cancel'],
+      })
+      expect(secureInput.inputSchema.properties?.id).toEqual({ type: 'string' })
+      const privateArguments = schemas.getValidator(secureInput.inputSchema)
+      const request = {
+        action: 'request',
+        key: 'sign-in',
+        title: 'Sign in',
+        prompt: 'Enter privately',
+        destination: { kind: 'auth_callback', installationId: 'install-42' },
+      }
+      for (const input of [
+        request,
+        { ...request, destination: JSON.stringify(request.destination) },
+        { action: 'status', id: 'request-42' },
+        { action: 'cancel', id: 'request-42' },
+      ]) {
+        expect(privateArguments(input).valid).toBe(true)
+      }
+      for (const input of [
+        {},
+        { action: 'status' },
+        { action: 'cancel' },
+        { action: 'request', key: 'sign-in' },
+        { action: 'unknown', id: 'request-42' },
+        { ...request, destination: { kind: 'unknown' } },
+      ]) {
+        expect(privateArguments(input).valid).toBe(false)
+      }
       const secureCharacters = JSON.stringify(secureInput).length + 1
       expect(secureCharacters).toBeLessThanOrEqual(3000)
       // The new-thread action card is accounted for separately, like secure_input.
@@ -105,6 +262,19 @@ it.each([false, true])(
       expect(helpCharacters).toBeLessThanOrEqual(1600)
       const workflow = tools.find((tool) => tool.name === 'workflow')
       expect(workflow).toBeDefined()
+      expect(workflow?.inputSchema.properties?.action).toEqual({
+        type: 'string',
+        enum: ['list', 'read', 'create', 'attach'],
+      })
+      if (!workflow) throw new Error('Missing workflow')
+      const planInput = schemas.getValidator(workflow.inputSchema)
+      expect(
+        planInput({
+          ...strictCalls.workflow,
+          phases: JSON.stringify([{ id: 'one', title: 'Read' }]),
+        }).valid,
+      ).toBe(true)
+      expect(planInput({ action: 'list', phases: [] }).valid).toBe(false)
       const workflowCharacters = JSON.stringify(workflow).length + 1
       expect(workflowCharacters).toBeLessThanOrEqual(3000)
       const automationCharacters = automationTools.reduce(
