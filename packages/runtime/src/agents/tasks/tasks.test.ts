@@ -30,6 +30,44 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+
+it('keeps Grok tools running when active steering is not ready', async () => {
+  const s = await setup()
+  let owner: AgentRun | undefined
+  let release = () => {}
+  const finished = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      owner = run
+      await finished
+      run.onText('Done')
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Grok',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: 'Work',
+    harness: defaultTaskHarness('grok'),
+  })
+  const running = await s.tasks.start(task.id)
+  await waitForTask(() => expect(owner).toBeDefined())
+  if (!owner) throw new Error('Missing Grok run')
+  const run = owner
+  try {
+    await expect(s.tasks.steer(task.id, 'steer', 'New direction')).rejects.toThrow(
+      'not ready for steering',
+    )
+    expect(run.signal.aborted).toBe(false)
+    expect(s.store.taskSummary(task.id).queue ?? []).toHaveLength(0)
+  } finally {
+    release()
+    await running.done
+  }
+})
 it('rechecks overlapping runs after asynchronous checkout availability checks', async () => {
   const s = await setup()
   const cwd = s.store.get().repositories[0]!.path

@@ -51,17 +51,15 @@ export function drawCursor(
     const cell = frame.cells[cursor.y]?.[cursor.x]
     if (!blockFilled)
       ctx.fillRect(x, y, options.cellWidth * Math.max(1, cell?.width ?? 1), options.cellHeight)
-    if (cell?.text) {
-      ctx.save()
-      ctx.beginPath()
-      ctx.rect(x, y, options.cellWidth * Math.max(1, cell.width), options.cellHeight)
-      ctx.clip()
-      ctx.fillStyle = cell.background
-      ctx.font = `${cell.flags & 2 ? 'italic ' : ''}${cell.flags & 1 ? 'bold ' : ''}${options.fontSize}px ${options.fontFamily}`
-      ctx.textBaseline = 'alphabetic'
-      ctx.fillText(cell.text, x, y + options.baseline)
-      ctx.restore()
-    }
+    if (cell)
+      drawCell(
+        ctx,
+        { ...cell, foreground: cell.background, flags: cell.flags & ~128 },
+        x,
+        y,
+        options,
+        options.cellWidth * Math.max(1, cell.width),
+      )
   } else if (cursor.style === 'underline') {
     ctx.fillRect(
       x,

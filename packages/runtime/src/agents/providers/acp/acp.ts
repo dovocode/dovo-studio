@@ -1,4 +1,5 @@
 import { createAcpV2Adapter } from './acp-v2.js'
+import { grokSteering } from './grok-steering.js'
 import { acpV2Enabled } from './acp-v2-connection.js'
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
@@ -320,7 +321,7 @@ export function createAcpAdapter(): AgentAdapter {
             lifetime.abort()
             await connection.close()
             await tools.close()
-            if (sessionId) run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
+            if (sessionId) state.owner.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
             for (const [taskId, value] of idle)
               if (value.connection === connection) idle.delete(taskId)
           })
@@ -569,19 +570,29 @@ export function createAcpAdapter(): AgentAdapter {
         if (run.signal.aborted) throw new Error('Task cancelled')
         if (run.compact && !compactAvailable)
           throw new Error('This ACP agent does not advertise a compact command')
-        if (
-          run.attachments?.some(isImageAttachment) &&
-          !initialization.agentCapabilities?.promptCapabilities?.image
-        )
+        const supportsImages =
+          launch.authentication === 'grok' ||
+          !!initialization.agentCapabilities?.promptCapabilities?.image
+        if (run.attachments?.some(isImageAttachment) && !supportsImages)
           run.onActivity(
             'This ACP agent does not accept image input; images are available as attached files only.',
           )
         prompting = true
         state.prompting = true
+        if (launch.authentication === 'grok')
+          run.onSteer?.(
+            grokSteering(
+              run,
+              id,
+              () => prompting && !connection.signal.aborted,
+              (params) =>
+                acpControl(connection, rpc.request('_x.ai/interject', params), 'Grok interjection'),
+            ),
+          )
         const prompt: PromptRequest = {
           sessionId: id,
           prompt: [
-            ...(initialization.agentCapabilities?.promptCapabilities?.image
+            ...(supportsImages
               ? (run.attachments ?? []).filter(isImageAttachment).map((file) => ({
                   type: 'image' as const,
                   data: file.data,
@@ -624,6 +635,7 @@ export function createAcpAdapter(): AgentAdapter {
       } finally {
         prompting = false
         state.prompting = false
+        run.onSteer?.(undefined)
         if (sessionId) await tools.stopSession(sessionId)
         run.signal.removeEventListener('abort', abort)
         if (

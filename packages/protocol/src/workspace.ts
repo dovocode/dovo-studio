@@ -592,6 +592,10 @@ export const turnSchema = mutableStruct({
   agentId: Schema.String,
   provider: providerSchema,
   model: Schema.String,
+  /** Selection at admission. `model` remains the displayed model for older clients. */
+  requestedModel: Schema.optional(Schema.String),
+  /** Set only when the provider reports its model. */
+  executedModel: Schema.optional(Schema.String),
   reasoning: Schema.optional(Schema.String),
   startedAt: Schema.String,
   finishedAt: Schema.optional(Schema.String),

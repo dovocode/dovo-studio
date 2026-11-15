@@ -292,6 +292,33 @@ it('keeps ACP child traffic and controls connected after the parent returns and 
   }
 })
 
+it('reports a real idle process exit to the current owner after warm-session reuse', async () => {
+  const f = await fixture(false, false, false, [], true)
+  const adapter = createAcpAdapter()
+  const first = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const current = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  let child: Parameters<NonNullable<AgentRun['onOwnedProcess']>>[0] | undefined
+  const input = run(f.cwd, f.launch, {
+    taskId: 'rebound',
+    onSubagentEvent: first,
+    onOwnedProcess: (value) => {
+      child = value
+    },
+  })
+  try {
+    await adapter.run(input.run)
+    await adapter.run({ ...input.run, sessionId: 'session', onSubagentEvent: current })
+    if (!child) throw new Error('Missing provider process')
+    child.kill()
+    await vi.waitFor(() =>
+      expect(current).toHaveBeenCalledWith('dovo/session/closed', {}, 'session'),
+    )
+    expect(first).not.toHaveBeenCalledWith('dovo/session/closed', {}, 'session')
+  } finally {
+    await adapter.dispose?.()
+  }
+})
+
 it.each(['on-request', 'never'] as const)(
   'honors explicit %s in ACP native permission requests',
   async (approvalPolicy) => {

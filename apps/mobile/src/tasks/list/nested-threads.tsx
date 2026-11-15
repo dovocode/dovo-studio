@@ -4,6 +4,7 @@ import { memo, useState } from 'react'
 import { View } from 'react-native'
 import { Pressable } from './thread-pressable'
 import {
+  modelDisplayName,
   threadTreeSummary,
   threadChildRows,
   visibleThreadChildren,
@@ -87,6 +88,7 @@ export const NestedThreads = memo(function NestedThreads({
           {[
             child.computerName,
             child.projectName,
+            child.executedModel ? modelDisplayName(child.executedModel) : '',
             child.nativeAgentKey && child.activity
               ? child.activity
               : threadPhaseLabels[child.phase],

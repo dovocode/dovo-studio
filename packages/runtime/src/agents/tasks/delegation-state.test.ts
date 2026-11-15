@@ -1,5 +1,12 @@
 import { expect, it } from 'vite-plus/test'
-import { summarizeTask, type Agent, type Subagent, type TaskSummary } from '@dovo/protocol'
+import {
+  summarizeTask,
+  subagentMetadata,
+  projectSubagentList,
+  type Agent,
+  type Subagent,
+  type TaskSummary,
+} from '@dovo/protocol'
 import { projectDelegatedAgents } from './delegation-state'
 const agents: Agent[] = [
   {
@@ -75,4 +82,47 @@ it('labels an admitted draft child as queued instead of actively running', () =>
   const child = { ...task('child', 'parent'), status: 'draft' as const }
   const projected = projectDelegatedAgents([task('parent'), child], agents)
   expect(projected[0].subagents?.[0]).toMatchObject({ queued: true, activity: 'Queued' })
+})
+
+it('keeps the requested model and shows the executed model after preset changes', () => {
+  const child = task('child', 'parent')
+  child.history = {
+    ...child.history,
+    latestTurn: {
+      id: 'turn',
+      assistantId: 'answer',
+      agentId: 'agent',
+      provider: 'claude',
+      model: 'actual-model',
+      requestedModel: 'requested-model',
+      executedModel: 'actual-model',
+      reasoning: 'high',
+      startedAt: '2026-11-15T00:00:00Z',
+      status: 'completed',
+    },
+  }
+  const parent = projectDelegatedAgents(
+    [task('parent'), child],
+    [{ ...agents[0], model: 'changed-preset' }],
+  )[0]
+  const record = parent.subagents?.[0]
+  expect(record).toMatchObject({
+    model: 'requested-model',
+    executedModel: 'actual-model',
+    reasoning: 'high',
+  })
+  if (!record) throw new Error('Missing child')
+  const list = projectSubagentList([record])
+  expect(subagentMetadata(list[0])).toContain('actual-model')
+  expect(subagentMetadata(list[0])).not.toContain('requested-model')
+  const updated = projectSubagentList([{ ...record, executedModel: 'later-model' }], list)
+  expect(updated).not.toBe(list)
+  expect(subagentMetadata(updated[0])).toContain('later-model')
+})
+
+it('does not claim an executed model from a configured preset', () => {
+  const record = projectDelegatedAgents([task('parent'), task('child', 'parent')], agents)[0]
+    .subagents?.[0]
+  expect(record).toMatchObject({ model: 'default' })
+  expect(record?.executedModel).toBeUndefined()
 })

@@ -58,6 +58,8 @@ function targetResult(
     runtimeId: watch.runtimeId,
     threadId: watch.threadId,
     name: snapshot?.title ?? 'Child thread',
+    requestedModel: snapshot?.requestedModel,
+    executedModel: snapshot?.executedModel,
     status:
       snapshot?.status ??
       snapshot?.phase ??

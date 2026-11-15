@@ -39,7 +39,7 @@ const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),{...record('native','Native worker','working','native'),provider:'claude'}]};
-parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
+parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',requestedModel:'configured-remote-model',executedModel:'executed-remote-model',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
@@ -234,7 +234,9 @@ try {
         parent: { runtimeId: 'linux', threadId: 'parent', title: 'Main thread' },
       })
       assert.deepEqual(await page.evaluate(() => window.opened), [])
-      await page.getByText('Mac Studio · Running', { exact: true }).waitFor()
+      await page
+        .getByText('Mac Studio · executed-remote-model · Running', { exact: true })
+        .waitFor()
       assert.equal(
         await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
         0,
@@ -319,7 +321,9 @@ try {
       assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
       await disclosure.click()
       await page.getByText('· Offline', { exact: true }).waitFor()
-      await page.getByText('Mac Studio · Running', { exact: true }).waitFor()
+      await page
+        .getByText('Mac Studio · executed-remote-model · Running', { exact: true })
+        .waitFor()
       await page.getByText(/^Updated /).waitFor()
       await page.evaluate(() => {
         window.publishTasks(
@@ -558,6 +562,10 @@ try {
       })
       .waitFor()
     await page.evaluate(() => window.renderAgents())
+    await page
+      .getByRole('button', { name: 'Open child thread Configure Play testing', exact: true })
+      .getByText(/executed-remote-model/)
+      .waitFor()
     await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
     assert.equal(
       await page.evaluate(

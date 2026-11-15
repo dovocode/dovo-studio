@@ -4,7 +4,99 @@ import { Approvals } from '../agents/execution/approvals'
 import { Activity, redact } from './activity'
 import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
-import type { Task } from '@dovo/protocol'
+import { recentTools, type Task } from '@dovo/protocol'
+
+it('ends only pending provider tools from the selected session, including older pages and split Claude calls', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const add = (toolId: string, status: string, providerSessionId = 'lost', providerTool = true) =>
+      log.add('tool', 'parent', toolId, {
+        turnId: 'turn',
+        toolId,
+        status,
+        providerTool,
+        providerSessionId,
+      })
+    add('pending', 'running')
+    add('completed', 'running')
+    add('completed', 'completed')
+    add('stopped', 'cancelled')
+    add('new-session', 'running', 'new')
+    add('app-owned', 'running', 'lost', false)
+    log.add('tool', 'child', 'Independent', {
+      turnId: 'turn',
+      toolId: 'independent',
+      status: 'running',
+      providerTool: true,
+      providerSessionId: 'lost',
+    })
+    log.add('tool', 'parent', 'Split calls', {
+      turnId: 'turn',
+      toolId: 'a,b',
+      providerTool: true,
+      providerSessionId: 'lost',
+      status: 'running',
+      event: {
+        message: {
+          content: [
+            { type: 'tool_use', id: 'a', name: 'Read', input: { file_path: '/a' } },
+            { type: 'tool_use', id: 'b', name: 'Read', input: { file_path: '/b' } },
+          ],
+        },
+      },
+    })
+    for (let index = 0; index < 110; index++)
+      log.add('tool', 'parent', 'Later', {
+        turnId: 'other',
+        toolId: String(index),
+        status: 'completed',
+      })
+    log.finishProviderTools('parent', { sessionId: 'lost' }, 'interrupted')
+    log.finishProviderTools('parent', { sessionId: 'lost' }, 'failed')
+    const events = [0, 100].flatMap((offset) => log.list('', 'tool', offset, 'parent').events)
+    const status = Object.fromEntries(
+      recentTools(events).map((tool) => [JSON.parse(tool.payload).toolId, tool.status]),
+    )
+    expect(status).toMatchObject({
+      pending: 'interrupted',
+      a: 'interrupted',
+      b: 'interrupted',
+      completed: 'completed',
+      stopped: 'cancelled',
+      'new-session': 'running',
+      'app-owned': 'running',
+    })
+    expect(recentTools(log.list('', 'tool', 0, 'child').events)[0].status).toBe('running')
+  } finally {
+    db.close()
+  }
+})
+
+it('settles a failed attempt without changing tools from another turn', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    for (const turnId of ['failed', 'new'])
+      log.add('tool', 'task', 'Read', {
+        turnId,
+        toolId: 'read',
+        status: 'running',
+        providerTool: true,
+      })
+    log.finishProviderTools('task', { turnId: 'failed' }, 'failed')
+    expect(
+      recentTools(log.list('', 'tool', 0, 'task').events).map((tool) => [tool.turnId, tool.status]),
+    ).toEqual(
+      expect.arrayContaining([
+        ['failed', 'failed'],
+        ['new', 'running'],
+      ]),
+    )
+  } finally {
+    db.close()
+  }
+})
 it('notifies only affected activity owners and detaches stopped listeners', () => {
   const db = openDatabase(':memory:')
   try {

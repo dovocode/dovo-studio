@@ -25,6 +25,7 @@ const taskCollectionKey = (runtimeId: string | null, threadId: string) =>
   JSON.stringify([runtimeId, threadId])
 
 export type NestedThread = {
+  executedModel?: string
   key: string
   runtimeId: string | null
   runtimeIdentity?: string
@@ -290,6 +291,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
             runtimeIdentity: fact.runtimeId,
             threadId: fact.threadId,
             title: fact.title || 'Untitled thread',
+            executedModel: fact.executedModel,
             projectName: fact.projectName,
             repositoryId: fact.repositoryId,
             projectIdentity: fact.projectIdentity,
@@ -433,6 +435,7 @@ function watchedNode(
     runtimeIdentity: watch.snapshot?.runtimeId,
     threadId: watch.threadId,
     title: watch.snapshot?.title ?? 'Connected thread',
+    executedModel: own?.executedModel ?? watch.snapshot?.executedModel,
     computerName: watch.computerName,
     projectName: watch.snapshot?.projectName,
     repositoryId: watch.snapshot?.repositoryId,

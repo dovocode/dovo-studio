@@ -157,7 +157,7 @@ export class TaskTurnRunner {
     private commands: Commands,
     private questions: Questions,
     private attachments: Attachments,
-    private activity?: Pick<Activity, 'add'>,
+    private activity?: Pick<Activity, 'add' | 'finishProviderTools'>,
     private artifactsEnabled: () => boolean = () => false,
     skillCacheDirectory = join(tmpdir(), 'dovo-shared-skills'),
     private pullRequestWatchingEnabled: () => boolean = () => false,
@@ -685,6 +685,7 @@ export class TaskTurnRunner {
                 provider: agent.provider,
                 branch,
                 model: agent.model,
+                requestedModel: agent.model,
                 reasoning: agent.reasoning,
                 startedAt: new Date().toISOString(),
                 status: 'running',
@@ -865,7 +866,8 @@ export class TaskTurnRunner {
           })
           promptAccepted = true
         }
-        const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
+        const acceptsProviderEvents = () =>
+          providerOpen && nativeSessionOpen && !controller.signal.aborted
         let retryPending = false
         const recoverProviderRetry = () => {
           if (!retryPending) return
@@ -924,9 +926,9 @@ export class TaskTurnRunner {
             ...(total === undefined ? {} : { tokens: total }),
             ...(tokens.usage() ? { tokenUsage: tokens.usage() } : {}),
             ...(tokens.mixedModels()
-              ? { mixedModels: true, model: 'Multiple models' }
+              ? { mixedModels: true, model: 'Multiple models', executedModel: 'Multiple models' }
               : reportedModel
-                ? { model: reportedModel }
+                ? { model: reportedModel, executedModel: reportedModel }
                 : {}),
             ...(estimatedCostUsd === undefined
               ? {}
@@ -1339,6 +1341,12 @@ export class TaskTurnRunner {
                     ownerSessionId === nativeSessionId
                   ) {
                     nativeSessionOpen = false
+                    progress.flush()
+                    this.activity?.finishProviderTools(
+                      id,
+                      { sessionId: ownerSessionId },
+                      controller.signal.aborted ? 'cancelled' : 'interrupted',
+                    )
                     if (taskToolsToken) runCredentials(this.store).revoke(taskToolsToken)
                     if (toolBinding) {
                       if (this.toolBindings.get(id) === toolBinding) this.toolBindings.delete(id)
@@ -1677,6 +1685,7 @@ export class TaskTurnRunner {
                       {
                         turnId,
                         messageId,
+                        ...(tool ? { providerTool: true, providerSessionId: nativeSessionId } : {}),
                         ...tool,
                         textOffset: offset,
                         event: safeReasoningEvent(payload),
@@ -1942,6 +1951,8 @@ export class TaskTurnRunner {
                 !flushError &&
                 !(controller.signal.reason instanceof ToolLoopStop)
               const status = cancelled ? ('cancelled' as const) : ('failed' as const)
+              progress.flush()
+              this.activity?.finishProviderTools(id, { turnId }, status)
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 runPhase: 'finalizing',
