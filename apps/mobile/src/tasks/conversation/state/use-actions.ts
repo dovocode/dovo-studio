@@ -634,6 +634,18 @@ export function useConversationActions(task: Task) {
         backgroundLocked.current = true
         setBackgroundSubmitting(true)
       }
+      yield* nativeEffect(() => attachmentPicker.waitForUploads(submissionFiles))
+      const preparedInput =
+        submissionFiles.length && composerInput.current
+          ? yield* nativeEffect(() => composerInput.current!.readText())
+          : latestDraftText.current
+      if (
+        currentDraftKey.current !== draftKey ||
+        editSession.current !== editId ||
+        preparedInput !== input
+      )
+        throw new Error('The draft changed while preparing attachments. Review it and try again.')
+      // Pending messages hide the input. Validate attachment preparation before clearing it.
       setPendingMessage({
         taskId: task.id,
         state: 'sending',
@@ -648,17 +660,6 @@ export function useConversationActions(task: Task) {
           ...(attempt.plan ? { plan: true } : {}),
         },
       })
-      yield* nativeEffect(() => attachmentPicker.waitForUploads(submissionFiles))
-      const preparedInput =
-        submissionFiles.length && composerInput.current
-          ? yield* nativeEffect(() => composerInput.current!.readText())
-          : latestDraftText.current
-      if (
-        currentDraftKey.current !== draftKey ||
-        editSession.current !== editId ||
-        preparedInput !== input
-      )
-        throw new Error('The draft changed while preparing attachments. Review it and try again.')
       yield* storedDraft.stageEffect(attempt)
       if (firstMessage && !task.bot && task.autoProject && !snapshot?.messageSetupSupported) {
         yield* callEffect(

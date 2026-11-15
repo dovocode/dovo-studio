@@ -64,7 +64,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       path: '../../composer/attachment-picker',
       importer: actions,
       contents:
-        'export const useAttachmentPicker=(_id,editing)=>{window.uploadEdit=file=>editing?.uploaded(file);return {submissionFiles:[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},busy:false,pick(){},upload(){}}};',
+        'export const useAttachmentPicker=(_id,editing)=>{window.uploadEdit=file=>editing?.uploaded(file);return {submissionFiles:[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{if(window.holdPreparation)await new Promise(resolve=>window.releasePreparation=resolve)},busy:false,pick(){},upload(){}}};',
     },
     {
       path: '../../composer/use-composer-dictation',
@@ -375,6 +375,41 @@ try {
     await page.waitForFunction(() => !window.actions.busy)
     if (bot) assert.equal(await page.evaluate(() => window.task.title), 'Stable Bot name')
   }
+  // The native input reflects the visible draft, including pending-send suppression.
+  // Preparation must validate its text before publishing a pending message clears it.
+  await page.evaluate(() => {
+    window.setTask((task) => ({
+      ...task,
+      draftAttachments: [{ id: 'file', name: 'note.txt', mime: 'text/plain', size: 3 }],
+    }))
+    window.holdPreparation = true
+  })
+  await input.fill('Send with attachment')
+  const attachmentIndex = await page.evaluate(() => window.requests.length)
+  const prepareSend = () =>
+    page.evaluate(() => {
+      window.releasePreparation = null
+      window.actions.composerInput.current = { readText: async () => window.actions.draft.text }
+      void window.actions.run(() => window.actions.submit())
+    })
+  await prepareSend()
+  await page.waitForFunction(() => !!window.releasePreparation)
+  assert.equal(await input.inputValue(), 'Send with attachment')
+  await page.evaluate(() => window.releasePreparation())
+  await page.waitForFunction((index) => window.requests.length === index + 1, attachmentIndex)
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input.attachmentIds), ['file'])
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.text), 'Send with attachment')
+  await page.evaluate(() => window.finish())
+  await page.waitForFunction(() => !window.actions.busy)
+  await input.fill('Original attachment draft')
+  await prepareSend()
+  await page.waitForFunction(() => !!window.releasePreparation)
+  await input.fill('Newer attachment draft')
+  await page.evaluate(() => window.releasePreparation())
+  await page.waitForFunction(() => !window.actions.busy)
+  assert.match(await page.evaluate(() => window.actions.error), /draft changed while preparing/)
+  assert.equal(await page.evaluate(() => window.requests.length), attachmentIndex + 1)
+  assert.equal(await input.inputValue(), 'Newer attachment draft')
   assert.deepEqual(errors, [])
   console.log(
     'Mobile queue staging: capability gate, atomic queue-only payload, synchronous admission, retry identity, editable focused input, newer draft preservation, paused default and explicit Send passed.',
