@@ -43,6 +43,12 @@ import {
   taskPullLinks,
   nativeAgentWorking,
   type SubagentSpawn,
+  botMentionTargets,
+  botContextMessages,
+  applyTurnSettings,
+  applyBotResources,
+  mergeResources,
+  inheritedResourceProject,
 } from '@dovo/protocol'
 import type { Attachments } from '../../storage/attachments.js'
 import {
@@ -63,6 +69,7 @@ import { isDeepStrictEqual } from 'node:util'
 import type { Task, TaskMetadata, QuestionPrompt } from '@dovo/protocol'
 import { WorkspaceStore } from '../../storage/workspace.js'
 import { GitService } from '../../scm/git/git.js'
+import { listBranches } from '../../scm/git/branches.js'
 import { AgentRegistry } from '../configuration/registry.js'
 import { Approvals } from '../execution/approvals.js'
 import type { NativeAgentSession } from '../execution/types.js'
@@ -91,6 +98,15 @@ const sideThreadContextHash = (messages: Task['messages']) =>
       ),
     )
     .digest('hex')
+
+const mentionChildId = (
+  taskId: string,
+  messageId: string,
+  target: { runtimeId: string; botId: string },
+) =>
+  `mention-${createHash('sha256')
+    .update(JSON.stringify([taskId, messageId, target.runtimeId, target.botId]))
+    .digest('hex')}`
 
 const delegatedAnswer = (task: Task) => {
   const lastUser = task.messages.map((message) => message.role).lastIndexOf('user')
@@ -1534,6 +1550,125 @@ export class Tasks {
     }))
     return { ok: true }
   }
+  private async prepareMentionCopies(
+    id: string,
+    messageId: string,
+    text: string,
+    attachments: Task['messages'][number]['attachments'] = [],
+    turnSettings?: TurnSettings,
+    plan = false,
+    mentionRuntimeId?: string,
+  ) {
+    const targets = new Map<string, { runtimeId: string; botId: string }>()
+    if (
+      mentionRuntimeId &&
+      !this.queue.accepted(id, messageId, text, attachments, turnSettings, plan)
+    ) {
+      for (const target of botMentionTargets(text)) {
+        const runtimeId: string = target.runtimeId === 'local' ? mentionRuntimeId : target.runtimeId
+        if (runtimeId === mentionRuntimeId) {
+          const bot = this.store.get().tasks.find((task) => task.id === target.id)
+          if (!bot?.bot || bot.archivedAt) continue
+        }
+        targets.set(JSON.stringify([runtimeId, target.id]), { runtimeId, botId: target.id })
+      }
+    }
+    if (targets.size > 20) throw new HttpError(400, 'Mention at most 20 Bots in one message.')
+    const parent = targets.size ? this.store.taskSummary(id) : undefined
+    const repository =
+      parent && this.store.get().repositories.find((repo) => repo.id === parent.repositoryId)
+    const cwd =
+      parent && repository && !repository.kind ? await this.checkouts.directory(id) : undefined
+    const refs = cwd ? await listBranches({ git: this.git }, cwd) : undefined
+    const head =
+      cwd && refs
+        ? refs.revision.startsWith('unborn:')
+          ? await this.git.initialWorktreeCommit(cwd)
+          : refs.revision.slice(0, refs.revision.indexOf(':'))
+        : undefined
+    if (cwd && head)
+      for (const target of targets.values())
+        await this.git.command(cwd, [
+          'update-ref',
+          `refs/dovo/forks/${mentionChildId(id, messageId, target)}/head`,
+          head,
+        ])
+    return { targets: [...targets.values()], head, repositoryId: parent?.repositoryId }
+  }
+
+  private saveMentionCopies(
+    parent: Task,
+    input: Task['messages'][number],
+    targets: readonly { runtimeId: string; botId: string }[],
+    head?: string,
+    turnSettings?: TurnSettings,
+  ) {
+    const agent = resolveTaskAgent(parent, this.store.get().agents)
+    if (!agent) throw new HttpError(400, 'Select an agent before mentioning a Bot.')
+    for (const target of targets) {
+      const childId = mentionChildId(parent.id, input.id, target)
+      if (
+        this.store.wasTaskDeleted(childId) ||
+        this.store.get().tasks.some((task) => task.id === childId)
+      )
+        continue
+      const messages = [...botContextMessages(parent.messages, parent.bot), input]
+        .filter((message) => message.role === 'assistant' || !message.file)
+        .map((message) => ({
+          ...message,
+          ...(message.attachments?.length
+            ? {
+                attachments: this.attachments.copy(
+                  parent.id,
+                  childId,
+                  message.attachments.map((file) => file.id),
+                ),
+              }
+            : {}),
+        }))
+      const child: Task = {
+        id: childId,
+        title: parent.title,
+        repositoryId: parent.repositoryId,
+        agentId: parent.agentId,
+        agentName: parent.agentName,
+        agentIcon: parent.agentIcon,
+        harness: decode(taskHarnessSchema, {
+          ...applyTurnSettings(agent, turnSettings),
+          resources: applyBotResources(
+            mergeResources(
+              this.store.projectSettings(inheritedResourceProject(parent)).resources,
+              applyTurnSettings(agent, turnSettings).resources,
+            ),
+            parent.bot,
+          ),
+        }),
+        harnessCustomized: parent.harnessCustomized,
+        modelSelection: parent.modelSelection,
+        modelSelectionDifficulty: parent.modelSelectionDifficulty,
+        budget: parent.budget,
+        linkedCheckouts: parent.linkedCheckouts,
+        linkedPullRequests: taskPullLinks(parent).slice(0, 20),
+        execution: head ? 'worktree' : 'main',
+        setupCommand: parent.setupCommand,
+        submodules: parent.submodules,
+        forkedFrom: { taskId: parent.id, title: parent.title, head },
+        botMention: { ...target, sourceTaskId: parent.id, sourceMessageId: input.id },
+        status: 'review',
+        createdAt: input.createdAt ?? new Date().toISOString(),
+        messages,
+        consumedMessageIds: messages.map((message) => message.id),
+        files: [],
+        draft: '',
+        example: false,
+      }
+      this.store.update((workspace) => ({
+        ...workspace,
+        tasks: [...workspace.tasks, child],
+      }))
+    }
+  }
+
   /** Explicit sends can resume an idle queue; Send now runs only its own input with the queue paused. */
   sendEffect(
     id: string,
@@ -1550,6 +1685,7 @@ export class Tasks {
     sendNow = false,
     initialTitle?: { before: string; after: string },
     preparation: 'ready' | 'accepted' = 'ready',
+    mentionRuntimeId?: string,
   ) {
     return runtimeOperation(() => {
       this.requireExecutionOwner(id)
@@ -1563,48 +1699,83 @@ export class Tasks {
           : this.resolveModel(id, text),
       ),
       Effect.flatMap((attachments) =>
-        runtimeOperation(() => {
-          this.requireExecutionOwner(id)
-          if (this.deletionReservations.has(id))
-            throw new HttpError(409, 'This thread is being deleted.')
-          if (sendNow) {
-            if (this.queue.accepted(id, messageId, text, attachments, turnSettings, plan))
-              return false
-            if (this.running.has(id))
-              throw new HttpError(
-                409,
-                'The agent is running. Steer it or queue this message instead.',
-              )
-          }
-          this.queue.add(
-            id,
-            messageId,
-            text,
-            attachments,
-            undefined,
-            review,
-            resumePaused && !sendNow && !preserveQueuePause && !queueOnly && !this.running.has(id),
-            undefined,
-            {
-              turnSettings,
-              initialTitle,
-              queueOnly,
-              source,
-              reopenSettled: resumePaused,
-              unsnooze: true,
-              clearCompletedTodos: resumePaused && !review,
-              plan,
-            },
-          )
-          const task = this.store.taskSummary(id)
-          return (
-            !queueOnly &&
-            !botPaused(task) &&
-            task.queue?.some((message) => message.id === messageId) &&
-            !this.running.has(id) &&
-            (sendNow || (!task.queuePaused && (!preserveQueuePause || !task.queue[0]?.paused)))
-          )
+        Effect.tryPromise({
+          try: async () => {
+            return {
+              attachments,
+              ...(await this.prepareMentionCopies(
+                id,
+                messageId,
+                text,
+                attachments,
+                turnSettings,
+                plan,
+                mentionRuntimeId,
+              )),
+            }
+          },
+          catch: runtimeFailure,
         }),
+      ),
+      Effect.flatMap(({ attachments, targets, head, repositoryId }) =>
+        runtimeOperation(() =>
+          this.store.transaction(() => {
+            this.requireExecutionOwner(id)
+            if (this.deletionReservations.has(id))
+              throw new HttpError(409, 'This thread is being deleted.')
+            if (sendNow) {
+              if (this.queue.accepted(id, messageId, text, attachments, turnSettings, plan))
+                return false
+              if (this.running.has(id))
+                throw new HttpError(
+                  409,
+                  'The agent is running. Steer it or queue this message instead.',
+                )
+            }
+            const parent = targets.length ? this.store.task(id) : undefined
+            if (parent && parent.repositoryId !== repositoryId)
+              throw new HttpError(409, 'The source project changed. Send the message again.')
+            const added = this.queue.add(
+              id,
+              messageId,
+              text,
+              attachments,
+              undefined,
+              review,
+              resumePaused &&
+                !sendNow &&
+                !preserveQueuePause &&
+                !queueOnly &&
+                !this.running.has(id),
+              undefined,
+              {
+                turnSettings,
+                initialTitle,
+                queueOnly,
+                source,
+                reopenSettled: resumePaused,
+                unsnooze: true,
+                clearCompletedTodos: resumePaused && !review,
+                plan,
+              },
+            )
+            if (added && parent) {
+              const input = this.store
+                .taskSummary(id)
+                .queue?.find((message) => message.id === messageId)
+              if (!input) throw new HttpError(409, 'The sent message is no longer available.')
+              this.saveMentionCopies(parent, input, targets, head, turnSettings)
+            }
+            const task = this.store.taskSummary(id)
+            return (
+              !queueOnly &&
+              !botPaused(task) &&
+              task.queue?.some((message) => message.id === messageId) &&
+              !this.running.has(id) &&
+              (sendNow || (!task.queuePaused && (!preserveQueuePause || !task.queue[0]?.paused)))
+            )
+          }),
+        ),
       ),
       Effect.flatMap((start) =>
         start
@@ -1667,8 +1838,27 @@ export class Tasks {
     text: string,
     attachmentIds: string[] = [],
     expectedRunId?: string,
+    mentionRuntimeId?: string,
   ) {
-    return this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId)
+    if (!mentionRuntimeId || !botMentionTargets(text).length)
+      return this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId)
+    return Effect.tryPromise({
+      try: () =>
+        this.prepareMentionCopies(
+          id,
+          messageId,
+          text,
+          this.attachments.metadata(id, attachmentIds),
+          undefined,
+          false,
+          mentionRuntimeId,
+        ),
+      catch: runtimeFailure,
+    }).pipe(
+      Effect.flatMap((copies) =>
+        this.applySteeringEffect(id, messageId, text, attachmentIds, expectedRunId, false, copies),
+      ),
+    )
   }
   steerQueuedEffect(id: string, messageId: string, expectedRunId: string) {
     return runtimeOperation(() => {
@@ -1706,8 +1896,13 @@ export class Tasks {
     attachmentIds: string[] = [],
     expectedRunId?: string,
     fromQueue = false,
+    copies?: {
+      targets: readonly { runtimeId: string; botId: string }[]
+      head?: string
+      repositoryId?: string
+    },
   ) {
-    return runtimeOperation(() => {
+    const prepare = () => {
       if (
         !fromQueue &&
         this.queue.accepted(id, messageId, text, this.attachments.metadata(id, attachmentIds))
@@ -1744,6 +1939,9 @@ export class Tasks {
       }
       const nativeSteer = finalizing ? undefined : run.steer
       const paused = this.store.taskSummary(id).queuePaused ?? false
+      const parent = copies?.targets.length ? this.store.task(id) : undefined
+      if (parent && parent.repositoryId !== copies?.repositoryId)
+        throw new HttpError(409, 'The source project changed. Send the message again.')
       if (
         !fromQueue &&
         !this.queue.add(
@@ -1759,6 +1957,11 @@ export class Tasks {
         )
       )
         return null
+      if (parent && copies) {
+        const input = this.store.taskSummary(id).queue?.find((message) => message.id === messageId)
+        if (!input) throw new HttpError(409, 'The sent message is no longer available.')
+        this.saveMentionCopies(parent, input, copies.targets, copies.head)
+      }
       const token = Symbol()
       this.steering.set(id, token)
       this.store.updateTask(id, (task) => ({
@@ -1773,7 +1976,8 @@ export class Tasks {
         ],
       }))
       return { run, nativeSteer, paused, token, finalizing }
-    }).pipe(
+    }
+    return runtimeOperation(() => this.store.transaction(prepare)).pipe(
       Effect.flatMap((prepared) => {
         if (!prepared) return Effect.succeed({ ok: true })
         const { run, nativeSteer, paused, token, finalizing } = prepared

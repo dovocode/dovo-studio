@@ -134,7 +134,7 @@ const built = await build({
       const other=thread('other','Other thread',{createdAt:'2026-10-31T08:00:00Z'});
       function App(){
         const [route,setRoute]=useState({entity:'parent',key:0});const [mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);window.setRoute=setRoute;const setEntity=entity=>setRoute(current=>({...current,entity,pullTarget:undefined}));
-        const [workspace,setWorkspace]=useState({tasks:[parent,child,other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
+        const [runtimes,setRuntimes]=useState([]);window.setRuntimes=setRuntimes;const [workspace,setWorkspace]=useState({tasks:[parent,child,other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
         window.setTask=(id,update)=>setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===id?update(task):task)}));
         const [requests,setRequests]=useState({questions:[],approvals:[]});window.setRequests=setRequests;
@@ -147,7 +147,7 @@ const built = await build({
           if(path==='/api/tasks/side-thread/bring-back'){const source=window.saved.find(task=>task.id===input.id);const turn=source.turns.at(-1);const receiptId=source.id+':'+turn.id;const text='[Side thread: '+source.title+' ('+source.id+'), completed turn '+turn.id+']\\n'+source.messages.at(-1).text;const target=source.sideThread.parentTaskId;if(!window.serverDrafts.has(receiptId)){if(input.expectedDraft!==window.saved.find(task=>task.id===target).draft)throw Error('The parent draft changed');window.serverDrafts.set(receiptId,text)}if(window.loseHandoff){window.loseHandoff=false;setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));throw Error('Connection lost')}if(window.markBroughtBack)setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));return {id:target,receiptId,text}};
           return {ok:true};
         };
-        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',switchRuntime:async()=>{},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView key={mount} entityId={route.entity} pullTarget={route.pullTarget} navigationKey={route.key}/></WorkspaceValueProvider>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',switchRuntime:async()=>{},runtimes,runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView key={mount} entityId={route.entity} pullTarget={route.pullTarget} navigationKey={route.key}/></WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -561,6 +561,86 @@ try {
   )
   // Started side chats offer no discard; normal deletion remains their way out.
   assert.equal(await childRow.getByRole('button', { name: /^Discard/ }).count(), 0)
+  // Existing routine workers and saved mentions are children, with no side-chat handoff actions.
+  await page.evaluate(() => {
+    window.setTask('parent', (task) => ({ ...task, bot: { role: 'Coordinator' } }))
+    const base = window.saved.find((task) => task.id === 'other')
+    window.setWorkspace((workspace) => ({
+      ...workspace,
+      automations: [],
+      tasks: [
+        ...workspace.tasks,
+        {
+          ...base,
+          id: 'routine-worker',
+          title: 'Routine worker',
+          botJob: { botId: 'parent', runId: 'routine-run' },
+        },
+        {
+          ...base,
+          id: 'mention-copy',
+          title: 'Saved mention',
+          botMention: {
+            runtimeId: 'runtime-mac',
+            botId: 'parent',
+            sourceTaskId: 'other',
+            sourceMessageId: 'mention',
+          },
+        },
+      ],
+    }))
+    window.host.openThread = (reference) => window.navigations.push(reference)
+    window.setRuntimes([
+      {
+        profile: {
+          id: 'linux',
+          name: 'Linux',
+          connection: { address: 'http://linux.lan', token: 'token' },
+        },
+        connected: true,
+        snapshot: {
+          runtimeId: 'runtime-linux',
+          questions: [],
+          approvals: [],
+          defaults: {},
+          workspace: {
+            version: 1,
+            repositories: [],
+            agents: [],
+            automations: [],
+            tasks: [
+              {
+                ...base,
+                id: 'remote-copy',
+                title: 'Remote saved mention',
+                botMention: {
+                  runtimeId: 'runtime-mac',
+                  botId: 'parent',
+                  sourceTaskId: 'remote-source',
+                  sourceMessageId: 'mention',
+                },
+              },
+            ],
+          },
+        },
+      },
+    ])
+  })
+  for (const title of ['Routine worker', 'Saved mention', 'Remote saved mention']) {
+    const row = panel
+      .locator('li')
+      .filter({ has: page.getByRole('button', { name: title, exact: true }) })
+    await row.getByRole('button', { name: title, exact: true }).waitFor()
+    assert.equal(await row.getByRole('button', { name: /^Bring back/ }).count(), 0)
+    assert.equal(await row.getByRole('button', { name: /^Discard/ }).count(), 0)
+  }
+  await panel.getByRole('button', { name: 'Remote saved mention', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+    runtimeId: 'linux',
+    runtimeIdentity: 'runtime-linux',
+    threadId: 'remote-copy',
+    title: 'Remote saved mention',
+  })
   assert.deepEqual(errors, [])
   console.log(
     'Desktop agent side chats: real TasksView lists and embeds full child threads beside the parent, keeps legacy questions reachable, notes committed-only provenance compactly, ignores inherited history, creates unsent drafts, gates Bring back and appends its exact handoff once through the parent composer, keeping unsaved edits across a lost response, retry and repeated receipt, returns from a standalone side chat, blocks nested side chats, opens a PR handoff task with the PR beside its full chat, replaces only untouched repeated PR context, restores a side chat only with its parent across selection and remount, surfaces and focuses side chat and delegated approvals and questions, explains unavailable Bring back and confirms its result, and discards never-started drafts only on request.',

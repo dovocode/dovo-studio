@@ -2,10 +2,12 @@ import type { Task } from '../../workspace.js'
 import { compareBotActivity } from '../../tasks/bot-activity.js'
 import { studioReference } from '../../runtime/studio-reference.js'
 import { insertPrompt } from './resource-mentions.js'
+import { messageReferences } from './composer-references.js'
+import { parseStudioReference } from '../../runtime/studio-reference.js'
 
 export type BotMention = { reference: string; name: string; detail: string; avatar?: string }
 
-/** Public Bot identity only. A mention does not read private context or dispatch work. */
+/** Public Bot identity only. Sending a mention saves a child copy without dispatching work. */
 export function botMentionSuggestions(
   sources: readonly { runtimeId: string; name: string; tasks: readonly Task[] }[],
   query: string,
@@ -45,4 +47,14 @@ export function insertBotMention(
   bot: Pick<BotMention, 'name' | 'reference'>,
 ) {
   return insertPrompt(text, start, caret, `@${bot.name} (\`${bot.reference}\`) `)
+}
+
+/** Only explicit saved mentions in sent prose, never bare IDs, code or historical messages. */
+export function botMentionTargets(text: string) {
+  return messageReferences(text, { skills: [], mcpServers: [] }).flatMap((reference) => {
+    if (reference.kind !== 'bot') return []
+    const match = /\(`(studio:[^`\s]+)`\)$/.exec(text.slice(reference.start, reference.end))
+    const target = match && parseStudioReference(match[1])
+    return target?.kind === 'thread' ? [target] : []
+  })
 }

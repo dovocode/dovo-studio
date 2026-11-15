@@ -12,6 +12,25 @@ export function taskParentReference(
     tasks: readonly TaskMetadata[]
   }[] = [],
 ) {
+  if (task.botMention) {
+    const link = task.botMention
+    const source = sources.find((source) => source.runtimeIdentity === link.runtimeId)
+    const local = runtimeIdentity === link.runtimeId
+    return {
+      runtimeId: local ? runtimeId : (source?.runtimeId ?? link.runtimeId),
+      runtimeIdentity: link.runtimeId,
+      threadId: link.botId,
+      title:
+        (local ? tasks : source?.tasks)?.find((parent) => parent.id === link.botId)?.title ?? 'Bot',
+    }
+  }
+  if (task.botJob)
+    return {
+      runtimeId,
+      runtimeIdentity,
+      threadId: task.botJob.botId,
+      title: tasks.find((parent) => parent.id === task.botJob?.botId)?.title ?? 'Bot',
+    }
   if (task.sideThread)
     return {
       runtimeId,

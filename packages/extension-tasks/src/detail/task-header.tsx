@@ -1,5 +1,5 @@
 import { BotCall } from '../bots/bot-call'
-import { sideThreadsOf } from './side-threads'
+import { useThreadChildren } from './use-thread-children'
 import { sideThreadAttentionTarget } from '@dovo/protocol'
 import { SideThreadAttentionBadge, useSideThreadAttention } from '../chat/thread/side-threads-panel'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -98,6 +98,7 @@ export function TaskHeader({
   hasDiff: boolean
 }) {
   const { workspace, snapshot, connected, connection, runtimes, activeRuntimeId } = useWorkspace()
+  const childThreads = useThreadChildren(task.id)
   const host = useStudioHost()
   const threadInfo = useThreadInfoContext()
   const parent =
@@ -199,7 +200,7 @@ export function TaskHeader({
       'side-chats',
       task.bot ? 'Side threads' : 'Side chats',
       MessagesSquare,
-      (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length,
+      (task.sideChats?.length ?? 0) + childThreads.length,
     ],
   ] as const
   const titleMenu = (

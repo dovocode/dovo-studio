@@ -8,7 +8,7 @@ import {
 import { useWorkspace } from '@dovo/studio-core'
 import { startLiveRefresh } from './live-refresh'
 import { taskPullLinks } from './task-pull-links'
-import { sideThreadsOf } from './side-threads'
+import { useThreadChildren } from './use-thread-children'
 import { useSideThreadAttention } from '../chat/thread/side-threads-panel'
 import {
   Bot,
@@ -55,6 +55,7 @@ export function TaskTools({
   artifactsEnabled?: boolean
 }) {
   const { workspace, snapshot, activeRuntimeId, request, connected } = useWorkspace()
+  const childThreads = useThreadChildren(task.id)
   const agentCount = useMemo(
     () => taskSubagents(task, workspace.tasks).length,
     [task, workspace.tasks],
@@ -72,8 +73,7 @@ export function TaskTools({
     [task, workspace.tasks, activeRuntimeId, snapshot?.runtimeId, agentCount],
   )
   const linkedPullCount = taskPullLinks(task).length
-  const sideChatCount =
-    (task.sideChats?.length ?? 0) + sideThreadsOf(workspace.tasks, task.id).length
+  const sideChatCount = (task.sideChats?.length ?? 0) + childThreads.length
   const sideAttention = sideThreadAttentionTarget(useSideThreadAttention(), task.id)?.kind
   const artifactKey = JSON.stringify([activeRuntimeId, task.id])
   const [artifacts, setArtifacts] = useState<{ key: string; present: boolean }>()

@@ -1,5 +1,10 @@
 import { Schema } from 'effect'
-import { mutableStruct, bringBackSideThreadResultSchema, type Task } from '@dovo/protocol'
+import {
+  mutableStruct,
+  bringBackSideThreadResultSchema,
+  threadChildren,
+  type Task,
+} from '@dovo/protocol'
 
 /** The runtime's link from a full-agent side chat to the thread it was started from. */
 export type SideThreadLink = NonNullable<Task['sideThread']>
@@ -60,14 +65,13 @@ export function sideThreadOf(task: Pick<Task, 'id' | 'sideThread'>): SideThreadL
 
 /** Newest first; archived side threads stay with their parent but after open ones. */
 export function sideThreadsOf<
-  T extends Pick<Task, 'id' | 'createdAt' | 'archivedAt' | 'sideThread'>,
->(tasks: readonly T[], parentId: string): T[] {
-  return tasks
-    .filter((task) => sideThreadOf(task)?.parentTaskId === parentId)
-    .sort(
-      (a, b) =>
-        Number(!!a.archivedAt) - Number(!!b.archivedAt) || b.createdAt.localeCompare(a.createdAt),
-    )
+  T extends Pick<Task, 'id' | 'createdAt' | 'archivedAt' | 'sideThread' | 'botJob' | 'botMention'>,
+>(tasks: readonly T[], parentId: string, runtimeIdentity?: string): T[] {
+  return threadChildren([{ runtimeId: null, runtimeIdentity, tasks }], {
+    id: parentId,
+    runtimeId: null,
+    runtimeIdentity,
+  }).map(({ task }) => task)
 }
 
 /**

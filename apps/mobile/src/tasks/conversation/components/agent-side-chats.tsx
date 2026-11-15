@@ -10,6 +10,7 @@ import {
   sideThreadAttention,
   sideThreadAttentionTarget,
   responses,
+  threadChildren,
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -39,7 +40,7 @@ export function AgentSideChats({
 }) {
   const uiText = useInterfaceText()
 
-  const { snapshot, profile, connected, call, legacyDraftRuntimeId } = useRuntime()
+  const { snapshot, profile, overviews, connected, call, legacyDraftRuntimeId } = useRuntime()
   const current = useOperationGuard(
     JSON.stringify([profile?.id, profile?.connection.address, snapshot?.runtimeId, task.id]),
   )
@@ -49,16 +50,40 @@ export function AgentSideChats({
   const childId = useRef(randomUUID())
   const repository = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
   const canCreate = !!repository && (!repository.kind || repository.kind === 'scratch')
-  const children =
-    snapshot?.workspace.tasks.filter((child) => child.sideThread?.parentTaskId === task.id) ?? []
-  const open = (id: string) => {
-    if (!profile || !current()) return
+  const children = threadChildren(
+    [
+      {
+        runtimeId: profile?.id ?? null,
+        runtimeIdentity: snapshot?.runtimeId,
+        tasks: snapshot?.workspace.tasks ?? [],
+      },
+      ...(overviews ?? []).flatMap((source) =>
+        source.profile.id !== profile?.id && source.snapshot
+          ? [
+              {
+                runtimeId: source.profile.id,
+                runtimeIdentity: source.snapshot.runtimeId,
+                tasks: source.snapshot.workspace.tasks,
+              },
+            ]
+          : [],
+      ),
+    ],
+    { id: task.id, runtimeId: profile?.id ?? null, runtimeIdentity: snapshot?.runtimeId },
+  )
+  const open = (id: string, runtimeId = profile?.id) => {
+    if (!runtimeId || !current()) return
     sheet.current?.dismiss(() => {
-      if (current()) router.push(taskHref(profile.id, id))
+      if (current()) router.push(taskHref(runtimeId, id))
     })
   }
   return (
-    <Sheet ref={sheet} title={uiText('Side chats')} onClose={onClose} busy={action.busy}>
+    <Sheet
+      ref={sheet}
+      title={uiText(task.bot ? 'Side threads' : 'Side chats')}
+      onClose={onClose}
+      busy={action.busy}
+    >
       {!children.length && (
         <Text style={styles.muted}>
           <InterfaceText>
@@ -118,8 +143,10 @@ export function AgentSideChats({
           <InterfaceText>{'Your agent side chats will appear here.'}</InterfaceText>
         </Text>
       )}
-      {children.map((child) => {
-        const attention = sideThreadAttention(snapshot, child.id)
+      {children.map(({ task: child, runtimeId }) => {
+        const mention = child.botMention
+        const local = runtimeId === profile?.id
+        const attention = local ? sideThreadAttention(snapshot, child.id) : undefined
         const label =
           attention === 'approval'
             ? 'Needs approval'
@@ -131,19 +158,28 @@ export function AgentSideChats({
                   ? 'Settled'
                   : child.status
         const unused =
+          local &&
+          !!child.sideThread &&
           child.status === 'draft' &&
           !child.turns?.length &&
           !child.activeRunId &&
           !child.queue?.length &&
           !attention
         return (
-          <View key={child.id} style={{ gap: 2 }}>
+          <View key={JSON.stringify([runtimeId, child.id])} style={{ gap: 2 }}>
             <Action
               secondary
               label={`${child.title} · ${label}`}
               disabled={!profile || action.busy}
-              onPress={() => open(child.id)}
+              onPress={() => open(child.id, runtimeId ?? undefined)}
             />
+            {mention && (
+              <Action
+                secondary
+                label={uiText('Open source thread')}
+                onPress={() => open(mention.sourceTaskId, runtimeId ?? undefined)}
+              />
+            )}
             {unused && !child.archivedAt && (
               <Action
                 destructive

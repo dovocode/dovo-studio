@@ -22,6 +22,24 @@ const task = (id: string): Task => ({
   messages: [],
   files: [],
 })
+it('retains routine workers and mention copies beyond the settled summary page', () => {
+  const worker = { ...task('0'), botJob: { botId: 'bot', runId: 'run' } }
+  const copy = {
+    ...task('1'),
+    botMention: {
+      runtimeId: 'remote',
+      botId: 'bot',
+      sourceTaskId: 'source',
+      sourceMessageId: 'input',
+    },
+  }
+  const page = settledSummaryPage(
+    [worker, copy, ...Array.from({ length: 10 }, (_, i) => task(String(i + 2)))],
+    1,
+  )
+  expect(page.tasks.map((task) => task.id)).toContain(worker.id)
+  expect(page.tasks.map((task) => task.id)).toContain(copy.id)
+})
 it('bounds settled rows in deterministic prompt/id order while preserving selected, live and protected rows', () => {
   const tasks = Array.from({ length: 20 }, (_, i) => task(String(i)))
   tasks[0] = { ...task('0'), status: 'running' }

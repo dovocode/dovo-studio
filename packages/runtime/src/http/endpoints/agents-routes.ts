@@ -763,6 +763,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
             input.text,
             input.attachmentIds,
             input.runId,
+            s.runtimeId,
           )
         }
         if (input.createTask)
@@ -794,6 +795,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           input.sendNow,
           input.initialTitle,
           'accepted',
+          s.runtimeId,
         )
         if (firstSubmission && input.initialTitle) {
           const expectedTitle = input.initialTitle.after

@@ -2,7 +2,10 @@ import type { Task } from '../workspace.js'
 import { taskFamilyIds } from './delegation.js'
 
 type AttentionSnapshot = {
-  workspace: { tasks: readonly Pick<Task, 'id' | 'delegation' | 'sideThread'>[] }
+  runtimeId?: string
+  workspace: {
+    tasks: readonly Pick<Task, 'id' | 'delegation' | 'sideThread' | 'botJob' | 'botMention'>[]
+  }
   approvals: readonly { taskId: string }[]
   questions: readonly { taskId: string; routing?: 'parent' | 'human' }[]
 }
@@ -33,7 +36,16 @@ export function sideThreadAttentionTarget(
   if (!snapshot) return
   let input: { id: string; kind: SideThreadAttention } | undefined
   for (const task of snapshot.workspace.tasks) {
-    if (task.sideThread?.parentTaskId !== parentId) continue
+    if (
+      task.sideThread?.parentTaskId !== parentId &&
+      task.botJob?.botId !== parentId &&
+      !(
+        task.botMention?.botId === parentId &&
+        !!snapshot.runtimeId &&
+        task.botMention.runtimeId === snapshot.runtimeId
+      )
+    )
+      continue
     const kind = sideThreadAttention(snapshot, task.id)
     if (kind === 'approval') return { id: task.id, kind }
     if (kind === 'input' && !input) input = { id: task.id, kind }

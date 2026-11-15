@@ -1,7 +1,7 @@
 import { expect, it } from 'vite-plus/test'
 import { taskSchema } from '../../workspace.js'
 import { decode } from '../../shared/schema.js'
-import { botMentionSuggestions, insertBotMention } from './bot-mentions.js'
+import { botMentionSuggestions, botMentionTargets, insertBotMention } from './bot-mentions.js'
 
 it('keeps same-named Bots on different computers distinct and inserts only a reference', () => {
   const bot = decode(taskSchema, {
@@ -43,4 +43,20 @@ it('keeps same-named Bots on different computers distinct and inserts only a ref
   expect(insertBotMention('Ask @re please', 4, 7, items[0]).text).toBe(
     `Ask @Release helper (\`${items[0].reference}\`)  please`,
   )
+})
+
+it('extracts only explicit mentions in sent prose', () => {
+  const mention = '@Dory (`studio:host-a:thread:dory`)'
+  expect(botMentionTargets(`Ask ${mention} please`)).toEqual([
+    { runtimeId: 'host-a', kind: 'thread', id: 'dory' },
+  ])
+  for (const text of [
+    'studio:host-a:thread:dory',
+    '@Dory',
+    '```\n' + mention + '\n```',
+    '# ' + mention,
+    '[' + mention + '](https://example.com)',
+    '@Browser (`studio:host-a:browser:dory`)',
+  ])
+    expect(botMentionTargets(text)).toEqual([])
 })

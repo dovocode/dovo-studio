@@ -1536,6 +1536,7 @@ export class WorkspaceStore {
           record.contextUsage !== undefined ||
           record.sideChats !== undefined ||
           record.sideThread !== undefined ||
+          record.botMention !== undefined ||
           record.forkedFrom !== undefined ||
           record.consumedMessageIds !== undefined ||
           record.bot !== undefined ||

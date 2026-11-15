@@ -1130,5 +1130,46 @@ it('hides isolated scheduled Bot workers and their descendants from overview roo
     )
     expect(tree.nodes.has(key('desktop', 'job'))).toBe(true)
     expect(tree.nodes.get(key('desktop', 'job'))?.children[0].threadId).toBe('child')
+    expect(
+      threadDescendants(tree.nodes.get(key('desktop', 'bot'))?.children ?? []).map(
+        (child) => child.threadId,
+      ),
+    ).toEqual(withBot ? ['job', 'child'] : [])
   }
+})
+
+it('keeps mention copies under the Bot on its computer and preserves their source routing', () => {
+  const owner = source('owner-profile', [task('bot')])
+  owner.snapshot = decode(snapshotSchema, {
+    runtimeId: 'owner-identity',
+    revision: 1,
+    owner: false,
+    workspace: owner.workspace,
+    approvals: [],
+    questions: [],
+    terminals: [],
+    runs: [],
+    devices: [],
+    pendingDevices: [],
+  })
+  const copy = task('copy', {
+    botMention: {
+      botId: 'bot',
+      runtimeId: 'owner-identity',
+      sourceTaskId: 'source',
+      sourceMessageId: 'message',
+    },
+  })
+  const sender = source('sender', [task('source'), task('bot'), copy])
+  const tree = buildThreadTree(collectTasks([owner, sender]))
+  expect(tree.roots.map((entry) => entry.key).sort()).toEqual(
+    [key('owner-profile', 'bot'), key('sender', 'bot'), key('sender', 'source')].sort(),
+  )
+  expect(tree.nodes.get(key('sender', 'bot'))!.children).toEqual([])
+  expect(tree.nodes.get(key('owner-profile', 'bot'))!.children).toMatchObject([
+    { threadId: 'copy', runtimeId: 'sender' },
+  ])
+  expect(buildThreadTree(collectTasks([sender])).roots.map((entry) => entry.task.id)).not.toContain(
+    'copy',
+  )
 })

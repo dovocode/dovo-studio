@@ -19,7 +19,14 @@ import {
   sideThreadAttentionTarget,
   type SideThreadAttention,
 } from '@dovo/protocol'
-import { formatDateTime, responses, useWorkspace, type Task } from '@dovo/studio-core'
+import {
+  formatDateTime,
+  responses,
+  useWorkspace,
+  useStudioHost,
+  type Task,
+} from '@dovo/studio-core'
+import { useThreadChildren } from '../../detail/use-thread-children'
 import { Button, IconButton, cn } from '@dovo/studio-ui'
 import {
   bringBackIssue,
@@ -27,7 +34,6 @@ import {
   sideThreadHandoffResponse,
   sideThreadResponse,
   type SideThreadHandoff,
-  sideThreadsOf,
   sideThreadProvenance,
   unusedSideDraft,
   type SideThreadLink,
@@ -443,9 +449,10 @@ export function SideThreadsPanel({
   readOnlyQuestions: ReactNode
   onClose?: () => void
 }) {
-  const { workspace, connected } = useWorkspace()
+  const { workspace, connected, activeRuntimeId } = useWorkspace()
+  const host = useStudioHost()
   const attention = useSideThreadAttention()
-  const children = sideThreadsOf(workspace.tasks, task.id)
+  const children = useThreadChildren(task.id)
   const { create, busy, error } = useCreateSideThread(task.id)
   const questionCount = task.sideChats?.length ?? 0
   const [view, setView] = useState<'threads' | 'read-only'>('threads')
@@ -566,23 +573,34 @@ export function SideThreadsPanel({
             </div>
           )}
           <ul className="space-y-2">
-            {children.map((child) => {
-              const kind = sideThreadAttention(attention, child.id)
+            {children.map(({ task: child, runtimeId, runtimeIdentity }) => {
+              const mention = child.botMention
+              const local = runtimeId === activeRuntimeId
+              const open = () =>
+                local
+                  ? onOpen(child.id)
+                  : host.openThread?.({
+                      runtimeId,
+                      runtimeIdentity,
+                      threadId: child.id,
+                      title: child.title,
+                    })
+              const kind = local ? sideThreadAttention(attention, child.id) : undefined
               return (
                 <li
-                  key={child.id}
+                  key={JSON.stringify([runtimeId, child.id])}
                   className={cn(
                     'space-y-2 rounded-lg border p-2.5',
-                    openId === child.id && 'border-primary/50 bg-muted/40',
+                    local && openId === child.id && 'border-primary/50 bg-muted/40',
                   )}
                 >
                   <div className="flex min-w-0 items-center gap-2">
                     <button
                       type="button"
                       className="min-w-0 flex-1 truncate text-left text-sm font-medium hover:underline disabled:no-underline"
-                      disabled={!!child.archivedAt}
-                      aria-current={openId === child.id || undefined}
-                      onClick={() => onOpen(child.id)}
+                      disabled={!!child.archivedAt || (!local && !host.openThread)}
+                      aria-current={(local && openId === child.id) || undefined}
+                      onClick={open}
                       title={child.title}
                     >
                       {child.title}
@@ -597,10 +615,35 @@ export function SideThreadsPanel({
                     </span>
                   </div>
                   {child.sideThread && <SideThreadProvenance link={child.sideThread} />}
+                  {mention && (
+                    <p className="text-xs text-muted-foreground">
+                      Saved from {child.forkedFrom?.title ?? 'a thread'} when the Bot was mentioned.
+                      The message runs in the source thread.
+                    </p>
+                  )}
                   <div className="flex flex-wrap items-center gap-1">
                     <span className="mr-auto text-[0.6875rem] text-muted-foreground">
                       {formatDateTime(child.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
                     </span>
+                    {mention && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-6 px-2 text-[0.6875rem]"
+                        onClick={() =>
+                          local
+                            ? onOpenThread(mention.sourceTaskId)
+                            : host.openThread?.({
+                                runtimeId,
+                                runtimeIdentity,
+                                threadId: mention.sourceTaskId,
+                                title: child.forkedFrom?.title ?? 'Source thread',
+                              })
+                        }
+                      >
+                        Open source thread
+                      </Button>
+                    )}
                     {kind && (
                       <Button
                         size="sm"
@@ -612,30 +655,36 @@ export function SideThreadsPanel({
                         {attentionActions[kind]}
                       </Button>
                     )}
-                    <IconButton
-                      label="Show beside this thread"
-                      className="size-6"
-                      disabled={!!child.archivedAt}
-                      aria-pressed={openId === child.id}
-                      onClick={() => onOpen(child.id)}
-                    >
-                      <PanelRight className="size-3.5" />
-                    </IconButton>
+                    {local && (
+                      <IconButton
+                        label="Show beside this thread"
+                        className="size-6"
+                        disabled={!!child.archivedAt}
+                        aria-pressed={openId === child.id}
+                        onClick={() => onOpen(child.id)}
+                      >
+                        <PanelRight className="size-3.5" />
+                      </IconButton>
+                    )}
                     <IconButton
                       label="Open side chat as a thread"
                       className="size-6"
-                      onClick={() => onOpenThread(child.id)}
+                      onClick={() => (local ? onOpenThread(child.id) : open())}
                     >
                       <ExternalLink className="size-3.5" />
                     </IconButton>
-                    <DiscardSideDraft child={child} onDiscarded={onDiscarded} />
-                    {!unusedSideDraft(child) && (
-                      <BringBackButton
-                        child={child}
-                        parent={task}
-                        onDone={(handoff) => onBroughtBack(handoff, child)}
-                      />
+                    {local && child.sideThread && (
+                      <DiscardSideDraft child={child} onDiscarded={onDiscarded} />
                     )}
+                    {local &&
+                      child.sideThread?.parentTaskId === task.id &&
+                      !unusedSideDraft(child) && (
+                        <BringBackButton
+                          child={child}
+                          parent={task}
+                          onDone={(handoff) => onBroughtBack(handoff, child)}
+                        />
+                      )}
                   </div>
                 </li>
               )

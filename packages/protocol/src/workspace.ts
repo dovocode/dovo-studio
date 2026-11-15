@@ -676,6 +676,15 @@ export const linkedPullRequestSchema = mutableStruct({
 export const taskSchema = mutableStruct({
   /** An isolated automation worker owned by a Bot, never the coordinator itself. */
   botJob: Schema.optional(mutableStruct({ botId: Schema.String, runId: Schema.String })),
+  /** Navigation and submission receipt only. The copy stays on the sending computer. */
+  botMention: Schema.optional(
+    mutableStruct({
+      runtimeId: Schema.String,
+      botId: Schema.String,
+      sourceTaskId: Schema.String,
+      sourceMessageId: Schema.String,
+    }),
+  ),
   /** A read-only conversation projection. Never persisted in the execution workspace. */
   replica: Schema.optional(
     mutableStruct({
