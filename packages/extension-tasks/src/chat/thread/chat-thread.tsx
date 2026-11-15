@@ -370,7 +370,7 @@ export function ChatThread({
   return (
     <TurnWindowContext value={turnWindow}>
       <TurnAnnouncer
-        key={linkScope}
+        key={`announcer:${linkScope}`}
         scope={linkScope}
         task={task}
         steps={activity.tools}
