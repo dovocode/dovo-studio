@@ -2,7 +2,7 @@ import type { ReviewGuide, ReviewGuideAnchor } from '@dovo/protocol'
 
 type Lines = { lines: Map<number, string>; changed: Set<number> }
 /** Read only evidenced patch lines, using the separately supplied path (never Git's escaped header). */
-function patchLines(patch: string) {
+export function patchLines(patch: string) {
   const before: Lines = { lines: new Map(), changed: new Set() }
   const after: Lines = { lines: new Map(), changed: new Set() }
   let oldLine = 0,
@@ -10,9 +10,11 @@ function patchLines(patch: string) {
     oldRemaining = 0,
     newRemaining = 0,
     inHunk = false
+  let complete = true
   for (const line of patch.split('\n')) {
     const hunk = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/.exec(line)
     if (hunk) {
+      if (inHunk && (oldRemaining || newRemaining)) complete = false
       oldLine = Number(hunk[1])
       oldRemaining = Number(hunk[2] ?? 1)
       newLine = Number(hunk[3])
@@ -23,10 +25,12 @@ function patchLines(patch: string) {
     if (!inHunk || line.startsWith('\\')) continue
     const kind = line[0]
     if (kind !== ' ' && kind !== '-' && kind !== '+') {
+      if (oldRemaining || newRemaining) complete = false
       inHunk = false
       continue
     }
     if ((kind !== '+' && oldRemaining === 0) || (kind !== '-' && newRemaining === 0)) {
+      if (oldRemaining || newRemaining) complete = false
       inHunk = false
       continue
     }
@@ -44,7 +48,7 @@ function patchLines(patch: string) {
       newRemaining--
     }
   }
-  return { before, after }
+  return { before, after, complete: complete && oldRemaining === 0 && newRemaining === 0 }
 }
 
 /** Model anchors are proposals. Only contiguous, changed lines actually sent to the model become excerpts. */

@@ -20,6 +20,7 @@ import { ModelSelection } from './agents/tasks/model-selection.js'
 import { runCredentials, type RunCredentials } from './auth/run-credentials.js'
 import { permissionPolicyReadOnly } from '@dovo/protocol'
 import { resolveTaskAgent } from '@dovo/protocol'
+import { PullCodeReviews } from './scm/reviews/pull-code-reviews.js'
 import { TaskReviews } from './scm/reviews/task-reviews.js'
 import { ReviewMarks } from './scm/reviews/progress.js'
 import {
@@ -312,6 +313,7 @@ export function createServices(
     (taskId, runId, id, status) => tasks.reportSecureInput(taskId, runId, id, status),
   )
   tasks.setSecureInputs(secureInputs)
+  const pullCodeReviews = new PullCodeReviews(db, { store, pulls, titles, activity, git })
   const taskReviews = new TaskReviews(db, { store, tasks, git, checkouts, activity })
   tasks.setMcpApps(mcpApps)
   tasks.setServerEnvironment((id) => threadServers.environment(id, 'agent'))
@@ -563,6 +565,7 @@ export function createServices(
     runCredentials: runCredentials(store),
     secureInputs,
     fileReviews,
+    pullCodeReviews,
     taskReviews,
     reviewMarks,
     pipelineWatch,
@@ -692,6 +695,7 @@ export interface Services {
   activity: Activity
   taskReviews: TaskReviews
   fileReviews: FileReviews
+  pullCodeReviews: PullCodeReviews
   reviewMarks: ReviewMarks
   pullCache: PullCache
   pulls: ForgePullRequests

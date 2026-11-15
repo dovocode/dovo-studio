@@ -1,7 +1,14 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
 import { composerReferences, composerReferenceIcon, type ComposerReference } from '@dovo/protocol'
-import { Keyboard, useWindowDimensions, type TextInputProps, type ViewProps } from 'react-native'
+import {
+  Keyboard,
+  Text,
+  View,
+  useWindowDimensions,
+  type TextInputProps,
+  type ViewProps,
+} from 'react-native'
 import { useMemo, useState, useRef, useImperativeHandle, type ComponentType, type Ref } from 'react'
 import { useTheme } from '../../ui/theme'
 import { harnessIconImages, composerIconImages } from '../../agents/harness-icon-images'
@@ -74,28 +81,53 @@ export function NativeReferenceMessage({
     () => ({ text, revision: text, eventCount: 0, references: references.map(withIcon), links }),
     [text, references, links],
   )
-  if (!Input) return null
+  // The native leaf has no Yoga text measure function. A transparent text projection gives
+  // shrink-sized message bubbles a real width before native layout and height measurement.
+  // The native control still owns visible text, links, selection and copy.
+  const projection = useMemo(() => {
+    let offset = 0
+    const parts: string[] = []
+    for (const reference of references) {
+      parts.push(text.slice(offset, reference.start), `  ${reference.label}   `)
+      offset = reference.end
+    }
+    parts.push(text.slice(offset))
+    return parts.join('')
+  }, [text, references])
+  if (!Input) return <Text selectable>{text}</Text>
   return (
-    <Input
-      content={content}
-      displayOnly
-      messageFontSize={17 * scale}
-      messageLineHeight={25 * scale}
-      editable={false}
-      placeholder=""
-      focusKey=""
-      textColor={colors.text}
-      mutedColor={colors.muted}
-      chipColor={colors.surface}
-      linkColor={colors.accent}
-      onLink={({ nativeEvent }) => onLink(nativeEvent.url)}
-      onTextChange={() => {}}
-      onSourceSelection={() => {}}
-      onSize={({ nativeEvent }) => setHeight(nativeEvent.height)}
-      style={{ height }}
-    />
+    <View style={{ maxWidth: '100%', minHeight: height }}>
+      <Text
+        accessible={false}
+        allowFontScaling={false}
+        accessibilityElementsHidden
+        importantForAccessibility="no-hide-descendants"
+        style={{ opacity: 0, fontSize: 17 * scale, lineHeight: 25 * scale }}
+      >
+        {projection}
+      </Text>
+      <Input
+        content={content}
+        displayOnly
+        messageFontSize={17 * scale}
+        messageLineHeight={25 * scale}
+        editable={false}
+        placeholder=""
+        focusKey=""
+        textColor={colors.text}
+        mutedColor={colors.muted}
+        chipColor={colors.surface}
+        linkColor={colors.accent}
+        onLink={({ nativeEvent }) => onLink(nativeEvent.url)}
+        onTextChange={() => {}}
+        onSourceSelection={() => {}}
+        onSize={({ nativeEvent }) => setHeight(nativeEvent.height)}
+        style={{ position: 'absolute', top: 0, left: 0, width: '100%', height }}
+      />
+    </View>
   )
 }
+
 export function dismissComposerKeyboard() {
   if (nativeModule)
     void nativeModule

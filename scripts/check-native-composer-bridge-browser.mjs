@@ -8,7 +8,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   expo: `export const requireOptionalNativeModule=()=>window.moduleAvailable?{supportsReferenceMessages:window.messageSupport,supportsDraftSnapshot:window.snapshotSupport,blur:async()=>{window.blurs++}}:null;
 import {useImperativeHandle} from 'react';export const requireNativeView=()=>props=>{useImperativeHandle(props.ref,()=>({readText:()=>window.readNative?window.readNative():Promise.resolve(window.snapshot)}));window.nativeProps=props;window.nativeRenders++;return <div data-testid="native-input"/>};`,
-  'react-native': `export const Keyboard={dismiss:()=>window.dismissals++};export const useWindowDimensions=()=>({fontScale:1.5});`,
+  'react-native': `export const View=({style,children})=><div style={{display:'flex',flexDirection:'column',...style}}>{children}</div>;export const Text=({style,children})=><span data-layout-projection aria-hidden style={style}>{children}</span>;export const Keyboard={dismiss:()=>window.dismissals++};export const useWindowDimensions=()=>({fontScale:1.5});`,
   '../../runtime/preferences/app-preferences': `export const useCarMode=()=>false;export const carZoom=1.4;`,
   '../../ui/theme': `export const useTheme=()=>({colors:{text:'#fff',muted:'#aaa',surface:'#222'}});`,
 }
@@ -24,7 +24,7 @@ const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}
 function App(){const input=useRef();window.read=()=>input.current.readText();const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:agent%3Adovo%3Acodex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
 const [message,setMessage]=useState(false);window.showMessage=()=>setMessage(true);
 window.external=text=>flushSync(()=>{setRevision('next');setValue(text)});
-if(message){const text='🚀 @src/file.ts https://github.com/team/repo/pull/42';const start=text.indexOf('https:');return <NativeReferenceMessage text={text} references={messageReferences(text,resources)} links={[{start,end:text.length,url:text.slice(start)}]} onLink={url=>window.link=url}/>}
+if(message){const text='🚀 @src/file.ts https://github.com/team/repo/pull/42';const start=text.indexOf('https:');return <div style={{width:320,display:'flex',alignItems:'flex-end'}}><div data-message-bubble style={{maxWidth:'88%',display:'flex',padding:13,border:'1px solid'}}><NativeReferenceMessage text={text} references={messageReferences(text,resources)} links={[{start,end:text.length,url:text.slice(start)}]} onLink={url=>window.link=url}/></div></div>}
 return <NativeComposerInput inputRef={input} value={value} revision={revision} resources={resources} expanded={false} focusKey="focus-1" editable placeholder="Message" onChangeText={setValue} onSelectionChange={value=>window.selection=value}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
@@ -182,6 +182,11 @@ try {
       assert.equal(bot.iconTemplate, true)
       await page.evaluate(() => window.showMessage())
       await page.waitForFunction(() => window.nativeProps.displayOnly === true)
+      const bubble = await page.locator('[data-message-bubble]').boundingBox()
+      const projection = await page.locator('[data-layout-projection]').boundingBox()
+      assert.ok(bubble.width > 30 && bubble.width <= 310)
+      assert.ok(projection.width > 0)
+      assert.equal(await page.evaluate(() => window.nativeProps.style.width), '100%')
       assert.equal(await page.evaluate(() => window.nativeProps.editable), false)
       assert.equal(await page.evaluate(() => window.nativeProps.messageFontSize), 25.5)
       assert.equal(await page.evaluate(() => window.nativeProps.messageLineHeight), 37.5)

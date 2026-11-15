@@ -6,6 +6,11 @@ import {
   reviewReadSchema,
   reviewSetSchema,
   reviewGuideSetSchema,
+  pullCodeReviewReadSchema,
+  pullCodeReviewStartSchema,
+  pullCodeReviewSaveSchema,
+  pullCodeReviewStopSchema,
+  pullCodeReviewPublishSchema,
   taskReviewReadSchema,
   taskReviewStartSchema,
   taskReviewFindingSchema,
@@ -22,15 +27,49 @@ export function reviewRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       if (
-        path.startsWith('/api/review/task/') &&
+        (path.startsWith('/api/review/task/') || path.startsWith('/api/review/pull/')) &&
         path !== '/api/review/task/stop' &&
+        path !== '/api/review/pull/stop' &&
+        path !== '/api/review/pull/read' &&
         !s.preferences.get().enableCodeReviews
       )
         throw new HttpError(403, 'Enable experimental code reviews in computer settings first.')
       const input = yield* serviceResult(
-        body(request, path === '/api/review/organize' ? 2_500_000 : 16_000),
+        body(
+          request,
+          path === '/api/review/organize'
+            ? 2_500_000
+            : path.startsWith('/api/review/pull/')
+              ? 300_000
+              : 16_000,
+        ),
       )
       if (request.method !== 'POST') throw new HttpError(405, 'Use POST for file review actions')
+      if (path === '/api/review/pull/read')
+        return yield* serviceResult(
+          s.pullCodeReviews.read(decode(pullCodeReviewReadSchema, input).target),
+        )
+      if (path === '/api/review/pull/start')
+        return yield* serviceResult(
+          s.pullCodeReviews.start(decode(pullCodeReviewStartSchema, input)),
+        )
+      if (path === '/api/review/pull/save') {
+        const { target, reviewId, version, draft } = decode(pullCodeReviewSaveSchema, input)
+        return yield* serviceResult(s.pullCodeReviews.save(target, reviewId, version, draft))
+      }
+      if (path === '/api/review/pull/stop') {
+        const { target, reviewId } = decode(pullCodeReviewStopSchema, input)
+        return yield* serviceResult(s.pullCodeReviews.stop(target, reviewId))
+      }
+      if (path === '/api/review/pull/publish') {
+        const { target, reviewId, version, requestId, body } = decode(
+          pullCodeReviewPublishSchema,
+          input,
+        )
+        return yield* serviceResult(
+          s.pullCodeReviews.publish(target, reviewId, version, requestId, body),
+        )
+      }
       if (path === '/api/review/task/read')
         return yield* serviceResult(s.taskReviews.read(decode(taskReviewReadSchema, input).taskId))
       if (path === '/api/review/task/start') {

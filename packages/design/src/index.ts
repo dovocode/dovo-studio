@@ -8,3 +8,4 @@ export {
   tokenStyles,
 } from './tokens.js'
 export { hostedStyles } from './hosted.js'
+export { prReviewIllustration } from './pr-review-illustration.js'

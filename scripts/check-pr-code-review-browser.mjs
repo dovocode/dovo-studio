@@ -1,0 +1,341 @@
+import assert from 'node:assert/strict'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
+import { fileURLToPath } from 'node:url'
+import { bundleBrowser, chromium } from './browser/harness.mjs'
+
+const root = fileURLToPath(new URL('../', import.meta.url))
+const screenshots = root + 'output/pr-review-checks'
+await mkdir(screenshots, { recursive: true })
+const fixture = `
+const head='a'.repeat(40),base='b'.repeat(40);
+const taskTimer=window.setTimeout.bind(window);window.setTimeout=(callback,delay,...args)=>taskTimer(callback,delay===20000?100:delay,...args);
+const selection={harness:{provider:'claude',endpoint:''},agentId:'',model:'Review model',reasoning:''};
+const finding={id:'bug',path:'src/drafts.ts',line:2,side:'after',severity:'high',title:'Restore clears a valid draft',trigger:'Reconnect while the saved draft is unavailable.',impact:'The current draft is lost.',suggestion:'Keep the current draft until restore succeeds.',anchored:true,evidence:'  clearDraft();',confidence:9,verification:'Clearing before restore loses the current draft.'};
+const patch='@@ -1,3 +1,3 @@\\n export async function restore() {\\n-  await saveDraft();\\n+  clearDraft();\\n }\\n';
+let report={reviews:[],...(window.firstUse?{}:{selection})};window.requests=[];
+window.changeSavedDecision=()=>{const r=report.reviews[0];r.draft.event='request-changes';r.version++;r.sequence++};
+window.progressReview=()=>{const r=report.reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
+window.finishProgress=()=>{const r=report.reviews[0];r.status='completed';r.analysis.phase='completed';delete r.analysis.activeBatch;r.analysis.completedBatches=2;r.sequence++};
+window.transport=async(path,input)=>{
+ window.requests.push({path,input:structuredClone(input)});
+ if(path.endsWith('/start'))report.reviews.unshift({id:input.requestId,requestId:input.requestId,revision:'evidence',version:0,sequence:0,url:'https://github.com/acme/studio/pull/184',destination:'destination',readerIdentity:'reader',account:'dominic',baseSha:base,headSha:head,selection,createdAt:new Date().toISOString(),finishedAt:new Date().toISOString(),status:'completed',summary:'One bug needs a closer look.',analysis:{batches:2,completedBatches:2,phase:'completed',rejectedFindings:3,contextFiles:[{path:'src/store.ts',ref:head,text:'export const snapshotOnly = true;'}]},notVerified:['No tests ran. Only supplied patches were available.'],coverage:[{path:'src/drafts.ts',state:'supplied',patch},{path:'assets/logo.png',state:'excluded'}],missingFiles:0,findings:[finding],draft:{body:'',selected:[],dismissed:[],event:'comment'}});
+ if(path.endsWith('/save')){if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);if(r.version!==input.version)throw new Error('This draft changed on another client.');r.draft=structuredClone(input.draft);r.version++;r.sequence++}
+ if(path.endsWith('/publish')){if(window.failPublish){window.failPublish=false;throw new Error('Publish response unavailable. Check the report before retrying.')}if(window.delayPublish)await new Promise(resolve=>window.releasePublish=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);r.publication={requestId:input.requestId,body:input.body,event:r.draft.event,status:'published',url:r.url+'#review-1'};r.sequence++}
+ return structuredClone(report);
+};
+const detail={destination:'destination',pull:{number:184,title:'Preserve drafts after reconnect',headSha:head,baseSha:base,url:'https://github.com/acme/studio/pull/184'},files:[]};
+`
+const mobileRoot = root + 'apps/mobile/src/scm/pulls/detail'
+const mobileMocks = [
+  {
+    path: '../../../tasks/preview/diff-view',
+    importer: mobileRoot,
+    contents: `export const DiffView=({patch})=><pre>{patch}</pre>;`,
+  },
+  {
+    path: 'react-native',
+    contents: `const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s;export const View=({style,children})=><div style={flat(style)}>{children}</div>;export const Text=({style,children})=><span style={flat(style)}>{children}</span>;export const Linking={openURL:async url=>{window.openedURL=url}};export const Image=({source,style})=><img alt="" src={source.uri} style={style}/>;export const ScrollView=({children})=><div style={{overflow:'auto'}}>{children}</div>;`,
+  },
+  {
+    path: '../../../runtime/connection/provider',
+    importer: mobileRoot,
+    contents: `const call=(path,input)=>window.transport(path,input);export const useRuntime=()=>({call,connected:true,profile:{id:'mobile'},snapshot:{runtimeId:'runtime',workspace:{agents:[]}}});`,
+  },
+  {
+    path: '../../../agents/model-settings',
+    importer: mobileRoot,
+    contents: `export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option></select></label>;`,
+  },
+  {
+    path: '../../../tasks/creation/harness-choices',
+    importer: mobileRoot,
+    contents: `export const harnessNames={claude:'Claude'};`,
+  },
+  {
+    path: '../../../ui/controls/action',
+    importer: mobileRoot,
+    contents: `export const Action=({label,onPress,disabled,secondary})=><button className={secondary?'mobile-secondary':'mobile-action'} disabled={disabled} onClick={onPress}>{label}</button>;`,
+  },
+  {
+    path: '../../../ui/controls/choice',
+    importer: mobileRoot,
+    contents: `export const Choice=({label,value,items,onChange,disabled})=><label className="mobile-choice">{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;`,
+  },
+  {
+    path: '../../../ui/controls/field',
+    importer: mobileRoot,
+    contents: `export const Field=({label,value,onChangeText,editable,maxLength})=><label>{label}<textarea aria-label={label} value={value} disabled={editable===false} maxLength={maxLength} onChange={e=>onChangeText(e.target.value)}/></label>;`,
+  },
+  {
+    path: '../../../ui/content/text',
+    importer: mobileRoot,
+    contents: `export const Text=({style,children,selectable})=><p style={{margin:0,...(Array.isArray(style)?Object.assign({},...style):style)}}>{children}</p>;`,
+  },
+  {
+    path: '../../../ui/layout/sheet',
+    importer: mobileRoot,
+    contents: `export const Sheet=({title,children,onClose,footer})=><section role="dialog" aria-label={title} className="mobile-sheet"><header><h2>{title}</h2><button onClick={onClose}>Close</button></header><div className="mobile-sheet-body">{children}</div>{footer&&<footer>{footer}</footer>}</section>;`,
+  },
+  {
+    path: '../../../ui/theme',
+    importer: mobileRoot,
+    contents: `export const useTheme=()=>({colors:{border:'#303438',text:'#e9edee',muted:'#9ba5aa',error:'#f08080'},styles:{card:{border:'1px solid #303438',borderRadius:10,padding:14,background:'#191d20'},text:{color:'#e9edee',fontSize:14,lineHeight:'22px'},muted:{color:'#9ba5aa',fontSize:13,lineHeight:'21px'},error:{color:'#f08080'}}});`,
+  },
+]
+const desktopMocks = [
+  {
+    path: '@dovo/studio-core',
+    contents: `const request=(path,input)=>window.transport(path,input);export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useWorkspace=()=>({request,connected:true,activeRuntimeId:'runtime',workspace:{agents:[]},snapshot:{defaults:{}}});`,
+  },
+  {
+    path: './patch',
+    importer: root + 'packages/extension-scm/src/pulls/detail',
+    contents: `export const PullPatch=({file})=><pre className="m-0 p-4 font-mono text-xs leading-7">{file.patch.split('\\n').map((line,i)=><div key={i} style={{background:line.startsWith('+')?'#16352b':line.startsWith('-')?'#3c2228':'transparent',color:line.startsWith('+')?'#a2e5c3':line.startsWith('-')?'#eba7af':'#b8c3ca'}}><span style={{display:'inline-block',width:30,opacity:0.5}}>{i}</span>{line}</div>)}</pre>;`,
+  },
+  {
+    path: '@dovo/studio-ui',
+    contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker';export {Textarea} from '${root}packages/studio-ui/src/components/ui/textarea';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option></select></label>;`,
+  },
+]
+const browser = await chromium.launch()
+try {
+  for (const mobile of [false, true])
+    for (const firstUse of [false, true]) {
+      const component = mobile ? 'MobilePullCodeReview' : 'PullCodeReviewPanel'
+      const path = mobile
+        ? 'apps/mobile/src/scm/pulls/detail/code-review.tsx'
+        : 'packages/extension-scm/src/pulls/detail/code-review.tsx'
+      const built = await bundleBrowser(
+        {
+          stdin: {
+            resolveDir: root,
+            loader: 'tsx',
+            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+          },
+          bundle: true,
+          write: false,
+          format: 'iife',
+          jsx: 'automatic',
+          platform: 'browser',
+          alias: {
+            react: root + 'packages/studio-ui/node_modules/react',
+            '@dovo/protocol': root + 'packages/protocol/src/index.ts',
+          },
+          nodePaths: [root + 'packages/studio-ui/node_modules', root + 'node_modules'],
+        },
+        mobile ? mobileMocks : desktopMocks,
+      )
+      const page = await browser.newPage({
+        viewport: mobile ? { width: 390, height: 844 } : { width: 1360, height: 1000 },
+      })
+      const errors = []
+      page.on('pageerror', (error) => {
+        errors.push(error.message)
+        console.error(error.stack)
+      })
+      page.setDefaultTimeout(10000)
+      await page.setContent('<body class="studio dark"><main id="app"></main></body>')
+      for (const name of (await readdir(root + 'apps/desktop/dist/assets')).filter((name) =>
+        name.endsWith('.css'),
+      ))
+        await page.addStyleTag({
+          content: await readFile(root + 'apps/desktop/dist/assets/' + name, 'utf8'),
+        })
+      await page.addStyleTag({
+        content: `body{display:block;margin:0;padding:24px;background:#101416;color:#e9edee;font-family:system-ui}#app{width:100%;max-width:1280px;margin:auto}body:before{content:'Dovo Studio / Pull requests / #184  ·  Test fixture';display:block;color:#849198;font-size:12px;margin-bottom:16px}.mobile-sheet{position:absolute;inset:0;overflow:auto;background:#111619;padding:18px;display:flex;flex-direction:column;gap:16px}.mobile-sheet-body{overflow:auto;min-height:0;flex:1;display:flex;flex-direction:column;gap:14px}.mobile-sheet footer{flex-shrink:0;border-top:1px solid #303438;padding-top:12px}.mobile-sheet header{display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #303438;padding-bottom:12px}.mobile-sheet h2{font-size:16px}.mobile-action,.mobile-secondary{min-height:44px;padding:10px 14px;border-radius:8px;background:#87dcb1;color:#10231a;font-size:13px}.mobile-secondary{background:#20282c;color:#d7e3e0;border:1px solid #35413f}.mobile-choice{display:flex;flex-direction:column;gap:6px;font-size:12px}select,textarea{max-width:100%;background:#20272b;color:#e6eded;border:1px solid #34413f;padding:8px;border-radius:6px}textarea{width:100%;min-height:130px}button:disabled{opacity:.45}`,
+      })
+      await page.evaluate((value) => (window.firstUse = value), firstUse)
+      await page.addScriptTag({ content: built.outputFiles[0].text })
+      await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
+
+      if (!firstUse)
+        await page.screenshot({
+          path: screenshots + (mobile ? '/mobile-empty.png' : '/desktop-empty.png'),
+          fullPage: true,
+        })
+      if (firstUse) {
+        if (mobile)
+          await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+        if (mobile)
+          await page
+            .getByRole('combobox', { name: 'Reviewer provider', exact: true })
+            .selectOption('claude')
+        else {
+          await page.getByRole('button', { name: 'Reviewer provider', exact: true }).click()
+          await page.getByRole('option', { name: 'claude', exact: true }).click()
+        }
+        await page.getByRole('combobox', { name: 'Reviewer model', exact: true }).waitFor()
+        const start = page.getByRole('button', {
+          name: mobile ? 'Start review' : 'Review with agent',
+          exact: true,
+        })
+        assert.equal(await start.isDisabled(), true)
+        await page
+          .getByRole('combobox', { name: 'Reviewer model', exact: true })
+          .selectOption('Review model')
+        await start.click()
+      } else await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+      await page.getByRole('button', { name: 'Add to draft', exact: true }).waitFor()
+      if (mobile) {
+        await page
+          .getByRole('button', { name: 'Show evidence and finding check', exact: true })
+          .click()
+        await page
+          .getByText('Clearing before restore loses the current draft.', { exact: true })
+          .waitFor()
+        await page
+          .getByRole('combobox', { name: 'Snapshot context', exact: true })
+          .selectOption('a'.repeat(40) + 'src/store.ts')
+        await page.getByText('export const snapshotOnly = true;', { exact: true }).waitFor()
+        await page.getByRole('button', { name: 'Back to findings', exact: true }).click()
+      } else {
+        await page.getByText('Evidence and finding check', { exact: true }).click()
+        await page
+          .getByText('Clearing before restore loses the current draft.', { exact: true })
+          .waitFor()
+        await page
+          .getByText('2 of 2 batches completed · 1 snapshot files · 3 findings filtered', {
+            exact: true,
+          })
+          .click()
+        await page.getByText('src/store.ts · aaaaaaa', { exact: true }).click()
+        await page.getByText('export const snapshotOnly = true;', { exact: true }).waitFor()
+      }
+      await page.getByText('Model confidence: 9/10.', { exact: false }).waitFor()
+      if (!firstUse) {
+        await page.evaluate(() => window.progressReview())
+        await page.getByText('Batch 2 of 2', { exact: false }).waitFor()
+        assert.equal(
+          await page.getByRole('button', { name: 'Add to draft', exact: true }).isDisabled(),
+          true,
+        )
+        await page.evaluate(() => window.finishProgress())
+      }
+      assert.equal(
+        await page.evaluate(
+          () => window.requests.filter((r) => r.path.endsWith('/publish')).length,
+        ),
+        0,
+      )
+      await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+      const editor = page.getByRole('textbox', {
+        name: mobile ? 'Your review draft' : 'Review draft',
+        exact: true,
+      })
+      assert.ok((await editor.inputValue()).includes('Restore clears a valid draft'))
+      await page.getByRole('button', { name: 'Remove from draft', exact: true }).click()
+      assert.equal(await editor.inputValue(), '')
+      await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+      await editor.fill('Edited finding text')
+      await page.getByRole('button', { name: 'Remove from draft', exact: true }).click()
+      assert.equal(await editor.inputValue(), 'Edited finding text')
+      await page.getByRole('button', { name: 'Add to draft', exact: true }).click()
+      await editor.fill(
+        'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184',
+      )
+      await page.waitForFunction(() =>
+        window.requests.some(
+          (r) => r.path.endsWith('/save') && r.input.draft.body.startsWith('Please check'),
+        ),
+      )
+      await page
+        .getByRole('button', { name: 'Preview review', exact: true })
+        .waitFor({ state: 'visible' })
+      if (!firstUse)
+        await page.screenshot({
+          path: screenshots + (mobile ? '/mobile-findings.png' : '/desktop-findings.png'),
+          fullPage: true,
+        })
+      await page.getByRole('button', { name: 'Review again', exact: true }).click()
+      await page
+        .getByRole('button', { name: 'Copy draft from the earlier pass', exact: true })
+        .click()
+      assert.equal(
+        await editor.inputValue(),
+        'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184',
+      )
+      await page.waitForFunction(() =>
+        window.requests.some(
+          (r) =>
+            r.path.endsWith('/save') &&
+            r.input.reviewId !==
+              window.requests.find((r) => r.path.endsWith('/start')).input.requestId,
+        ),
+      )
+      await page.evaluate(() => (window.delaySave = true))
+      await editor.fill(
+        'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184 Latest edit.',
+      )
+      await page.getByRole('button', { name: 'Preview review', exact: true }).click()
+      await page.getByRole('button', { name: 'Saving draft…', exact: true }).waitFor()
+      await page.waitForFunction(() => typeof window.releaseSave === 'function')
+      await page.evaluate(() => {
+        window.delaySave = false
+        window.releaseSave()
+      })
+      await page.getByRole('button', { name: 'Publish review', exact: true }).waitFor()
+      assert.ok(await page.getByText('Mentions and references:', { exact: false }).count())
+      assert.ok(await page.getByText('dominic', { exact: false }).count())
+      if (!firstUse)
+        await page.screenshot({
+          path: screenshots + (mobile ? '/mobile-preview.png' : '/desktop-preview.png'),
+          fullPage: true,
+        })
+      assert.equal(
+        await page.evaluate(
+          () => window.requests.filter((r) => r.path.endsWith('/publish')).length,
+        ),
+        0,
+      )
+      await page.evaluate(() => window.changeSavedDecision())
+      await page.getByRole('dialog').getByText('The draft changed.', { exact: false }).waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Publish review', exact: true }).isDisabled(),
+        true,
+      )
+      assert.ok((await page.getByRole('dialog').innerText()).includes('Comment'))
+      await page.getByRole('button', { name: 'Back to draft', exact: true }).click()
+      await page.getByRole('button', { name: 'Preview review', exact: true }).click()
+      await page.getByRole('button', { name: 'Publish review', exact: true }).waitFor()
+      assert.ok((await page.getByRole('dialog').innerText()).includes('Request changes'))
+      await page.evaluate(() => (window.failPublish = true))
+      await page.getByRole('button', { name: 'Publish review', exact: true }).click()
+      await page
+        .getByRole('dialog')
+        .getByText('Publish response unavailable.', { exact: false })
+        .waitFor()
+      assert.equal(
+        await page.getByRole('button', { name: 'Publish review', exact: true }).isVisible(),
+        true,
+      )
+      await page.evaluate(() => (window.delayPublish = true))
+      await page.getByRole('button', { name: 'Publish review', exact: true }).click()
+      const publishing = page.getByRole('button', { name: 'Publishing…', exact: true })
+      await publishing.waitFor()
+      assert.equal(await publishing.isDisabled(), true)
+      await page.evaluate(() => window.releasePublish())
+      await page.getByText('Review published.', { exact: false }).waitFor()
+      await page.waitForFunction(
+        () => window.requests.filter((r) => r.path.endsWith('/publish')).length === 2,
+      )
+      const sent = await page.evaluate(
+        () => window.requests.filter((r) => r.path.endsWith('/publish')).at(-1).input,
+      )
+      assert.ok(sent.body.startsWith('Please check restore'))
+      assert.ok(sent.body.includes('<!-- dovo-review:'))
+      assert.ok(sent.body.includes('Latest edit.'))
+      await page.evaluate(() => window.push())
+      await page.getByText('This PR has new changes.', { exact: false }).waitFor()
+      assert.equal(
+        await editor.inputValue(),
+        'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184 Latest edit.',
+      )
+      assert.deepEqual(errors, [])
+      await page.close()
+    }
+  console.log(
+    'PR review desktop and mobile: evidence and finding checks, snapshot context navigation, active batch progress, first-use model setup, saved reviewer start, finding add/remove with edited-text preservation, copied drafts across passes, save on preview, exact preview, failed publish retention, in-flight guard, explicit publish, stale report and draft retention passed. Screenshots: output/pr-review-checks. Native controls, model and forge are mocked.',
+  )
+} finally {
+  await browser.close()
+}

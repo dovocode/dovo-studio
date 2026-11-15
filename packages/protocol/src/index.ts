@@ -415,3 +415,4 @@ export * from './scm/repositories/spreadsheets.js'
 export { pullDiscussionGroups } from './scm/pulls/pull-discussions.js'
 
 export * from './interface-language.js'
+export * from './scm/pull-code-review.js'

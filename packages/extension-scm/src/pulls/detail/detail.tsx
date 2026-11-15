@@ -45,6 +45,7 @@ import {
   ListChecks,
   MessageSquare,
   RefreshCw,
+  ShieldCheck,
 } from 'lucide-react'
 import { PullComments } from './comments'
 import { PullChanges } from './changes'
@@ -52,11 +53,12 @@ import { PullStatus, Signal } from './status'
 import { StartPullTask } from '../list/start-task'
 import { ReviewBadge } from './review-badge'
 import { PullActions, PullCommentComposer } from '../list/actions'
+import { PullCodeReviewPanel } from './code-review'
 import { PullAskAgent } from './ask-agent'
 import { PullPipelineRunsContent, usePullPipelineRuns } from './pipeline-runs'
 import { pipelineSignal } from '@dovo/protocol'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
-type PullTab = 'overview' | 'changes' | 'checks'
+type PullTab = 'overview' | 'changes' | 'checks' | 'review'
 const tabCache = createPullStateCache<PullTab>(50)
 const scrollCache = createPullStateCache<Record<PullTab, number>>(50)
 type PullDetailProps = {
@@ -67,8 +69,8 @@ type PullDetailProps = {
   onBack: () => void
   onChanged: () => void
   onSelect?: (number: number) => void
-  onTabChange?: (tab: PullTab) => void
-  initialTab?: PullTab
+  onTabChange?: (tab: Exclude<PullTab, 'review'>) => void
+  initialTab?: Exclude<PullTab, 'review'>
   initialFragment?: string
   /**
    * The thread showing this PR. Agent feedback goes to it only when it explicitly links this PR;
@@ -115,7 +117,7 @@ function PullDetailContent({
 }: PullDetailProps) {
   const uiText = useInterfaceText()
 
-  const { connected, workspace } = useWorkspace()
+  const { connected, workspace, snapshot, activeRuntimeId } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
   const changed = () => {
     invalidate()
@@ -219,13 +221,22 @@ function PullDetailContent({
 
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(
-    scrollCache.read(stateKey) ?? { overview: 0, changes: 0, checks: 0 },
+    scrollCache.read(stateKey) ?? { overview: 0, changes: 0, checks: 0, review: 0 },
   )
   useLayoutEffect(() => {
     if (content.current) content.current.scrollTop = scrollPositions.current[tab]
   }, [tab, !!detail])
   const [changesOpened, setChangesOpened] = useApplicationState(tab === 'changes')
   const [checksOpened, setChecksOpened] = useApplicationState(tab === 'checks')
+  const [reviewOpened, setReviewOpened] = useApplicationState(tab === 'review')
+  const [reviewStatus, setReviewStatus] = useApplicationState<{
+    running: boolean
+    findings: number
+    stale: boolean
+  }>({ running: false, findings: 0, stale: false })
+  useEffect(() => {
+    if (tab === 'review' && !snapshot?.codeReviewsEnabled) setTab('overview')
+  }, [tab, snapshot?.codeReviewsEnabled])
   const [objectiveBaseline, setObjectiveBaseline] = useApplicationState<
     { headSha: string; expectedDestination?: string } | undefined
   >(undefined)
@@ -242,10 +253,11 @@ function PullDetailContent({
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
+    if (value === 'review') setReviewOpened(true)
     if (content.current) scrollPositions.current[tab] = content.current.scrollTop
     scrollCache.write(stateKey, { ...scrollPositions.current })
     setTab(value)
-    if (value !== tab) onTabChange?.(value)
+    if (value !== tab && value !== 'review') onTabChange?.(value)
     if (value === 'changes') setChangesOpened(true)
     if (value === 'checks') setChecksOpened(true)
   }
@@ -504,75 +516,83 @@ function PullDetailContent({
                       icon: FileDiff,
                     },
                     {
+                      id: 'review',
+                      label: reviewStatus.running ? 'Reviewing…' : 'Agent review',
+                      count: reviewStatus.findings || undefined,
+                      icon: ShieldCheck,
+                    },
+                    {
                       id: 'checks',
                       label: 'Checks',
                       count: sections.checks.ready ? detail.checks.length : undefined,
                       icon: ListChecks,
                     },
                   ] as const
-                ).map((item) => (
-                  <button
-                    key={item.id}
-                    type="button"
-                    role="tab"
-                    id={`pr-tab-${item.id}`}
-                    aria-label={
-                      item.id === 'overview' || item.count === undefined
-                        ? item.label
-                        : `${item.label} (${item.count})`
-                    }
-                    aria-controls={`pr-panel-${item.id}`}
-                    title={item.id === 'checks' ? checkFailure : undefined}
-                    aria-description={
-                      item.id === 'checks'
-                        ? [
-                            ciSummary?.label,
-                            checkSummary.label,
-                            pipelineRuns.runs.length ? pipelineSummary.label : '',
-                          ]
-                            .filter(Boolean)
-                            .join('. ') || undefined
-                        : undefined
-                    }
-                    aria-selected={tab === item.id}
-                    tabIndex={tab === item.id ? 0 : -1}
-                    onKeyDown={(event) => {
-                      if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                      event.preventDefault()
-                      const tabs = [
-                        ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                          '[role="tab"]',
-                        ) ?? []),
-                      ]
-                      const index = tabs.indexOf(event.currentTarget)
-                      const next =
-                        event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? tabs.length - 1
-                            : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
-                              tabs.length
-                      tabs[next]?.click()
-                      tabs[next]?.focus()
-                    }}
-                    onClick={() => selectTab(item.id)}
-                    className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
-                  >
-                    <item.icon aria-hidden className="size-3.5" />
-                    {item.label}
-                    {item.count !== undefined && (
-                      <span
-                        aria-hidden
-                        className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
-                      >
-                        {item.count}
-                      </span>
-                    )}
-                    {item.id === 'checks' && checkFailure && (
-                      <CircleAlert aria-hidden className="size-3.5 text-status-error" />
-                    )}
-                  </button>
-                ))}
+                )
+                  .filter((item) => item.id !== 'review' || snapshot?.codeReviewsEnabled)
+                  .map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      role="tab"
+                      id={`pr-tab-${item.id}`}
+                      aria-label={
+                        item.id === 'overview' || item.count === undefined
+                          ? item.label
+                          : `${item.label} (${item.count})`
+                      }
+                      aria-controls={`pr-panel-${item.id}`}
+                      title={item.id === 'checks' ? checkFailure : undefined}
+                      aria-description={
+                        item.id === 'checks'
+                          ? [
+                              ciSummary?.label,
+                              checkSummary.label,
+                              pipelineRuns.runs.length ? pipelineSummary.label : '',
+                            ]
+                              .filter(Boolean)
+                              .join('. ') || undefined
+                          : undefined
+                      }
+                      aria-selected={tab === item.id}
+                      tabIndex={tab === item.id ? 0 : -1}
+                      onKeyDown={(event) => {
+                        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
+                        event.preventDefault()
+                        const tabs = [
+                          ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
+                            '[role="tab"]',
+                          ) ?? []),
+                        ]
+                        const index = tabs.indexOf(event.currentTarget)
+                        const next =
+                          event.key === 'Home'
+                            ? 0
+                            : event.key === 'End'
+                              ? tabs.length - 1
+                              : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
+                                tabs.length
+                        tabs[next]?.click()
+                        tabs[next]?.focus()
+                      }}
+                      onClick={() => selectTab(item.id)}
+                      className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                    >
+                      <item.icon aria-hidden className="size-3.5" />
+                      {item.label}
+                      {item.count !== undefined && (
+                        <span
+                          aria-hidden
+                          className="rounded bg-muted px-1.5 text-[0.625rem] tabular-nums text-muted-foreground"
+                        >
+                          {item.count}
+                        </span>
+                      )}
+                      {item.id === 'checks' && checkFailure && (
+                        <CircleAlert aria-hidden className="size-3.5 text-status-error" />
+                      )}
+                    </button>
+                  ))}
               </div>
             </div>
           </>
@@ -697,6 +717,28 @@ function PullDetailContent({
                 {warning}
               </p>
             ))}
+            {snapshot?.codeReviewsEnabled && reviewOpened && (
+              <section
+                role="tabpanel"
+                id="pr-panel-review"
+                aria-labelledby="pr-tab-review"
+                hidden={tab !== 'review'}
+              >
+                <PullCodeReviewPanel
+                  key={JSON.stringify([
+                    activeRuntimeId,
+                    repositoryId,
+                    detail.destination ?? detail.pull.destination,
+                    detail.pull.connectionId,
+                  ])}
+                  repositoryId={repositoryId}
+                  detail={detail}
+                  onAsk={(selection) => setAsking({ selection })}
+                  onStatus={setReviewStatus}
+                  onRefresh={changed}
+                />
+              </section>
+            )}
             <section
               role="tabpanel"
               id="pr-panel-overview"
@@ -704,6 +746,27 @@ function PullDetailContent({
               className="space-y-5"
               hidden={tab !== 'overview'}
             >
+              {snapshot?.codeReviewsEnabled && (
+                <button
+                  type="button"
+                  onClick={() => selectTab('review')}
+                  className="flex w-full items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-left text-sm hover:bg-muted/40"
+                >
+                  <span className="flex items-center gap-2 font-medium">
+                    <ShieldCheck className="size-4 text-emerald-500" />
+                    Agent review
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {reviewStatus.running
+                      ? 'Reviewing…'
+                      : reviewStatus.stale
+                        ? 'New changes to review'
+                        : reviewStatus.findings
+                          ? `${reviewStatus.findings} findings`
+                          : 'Review with agent →'}
+                  </span>
+                </button>
+              )}
               {detail.stack && stackControls}
               <div className="grid items-start gap-5 @4xl/pr-detail:grid-cols-[minmax(0,1fr)_220px]">
                 <div className="min-w-0 space-y-6">
@@ -940,7 +1003,7 @@ function PullDetailContent({
               )}
             </section>
           </div>
-          {asking && repository && (
+          {asking && (
             <PullAskAgent
               repositoryId={repositoryId}
               detail={detail}

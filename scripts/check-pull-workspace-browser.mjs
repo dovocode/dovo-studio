@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { build } from 'esbuild'
-import { readFile, readdir } from 'node:fs/promises'
+import { mkdir, readFile, readdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
@@ -11,8 +11,8 @@ const controls =
     .join('') +
   `export {Disclosure} from '${uiDir}/disclosure.tsx';export {IconButton} from '${uiDir}/components/icon-button.tsx';export {ProjectIcon} from '${uiDir}/project-icon.tsx';export * from '${uiDir}/sidebar-header.tsx';export const OrganizeReview=()=>null;export {ChangeSummary} from '${uiDir}/review/change-summary.tsx';export {ChangeTypeFilters} from '${uiDir}/review/change-types.tsx';export {FileReviewControls,ReviewFiles} from '${uiDir}/review/file-review.tsx';export {ChoicePicker} from '${uiDir}/choice-picker.tsx';export {PageHeader} from '${uiDir}/page-header.tsx';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export const FormField=({label,children})=><label>{label}{children}</label>;export const MessageResponse=({children})=><div>{children}</div>;`
 const mocks = {
-  '@dovo/studio-ui': controls,
-  '@dovo/studio-core': `export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const updateAppPreferences=()=>{};export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({pullProjectVisibility:{},hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
+  '@dovo/studio-ui': controls + 'export const ModelSettings=()=>null;',
+  '@dovo/studio-core': `export {providers} from '${root}/packages/studio-core/src/providers.ts';export {startPolling} from '${root}/packages/client-runtime/src/effects/polling.ts';export const updateAppPreferences=()=>{};export const WorkspaceRuntimeScope=({children})=>children;export * from '@dovo/protocol';export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});export {useFileReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';export const useAppPreferences=()=>({pullProjectVisibility:{},hideWhitespaceChanges:false});export const whitespaceOnlyPatch=()=>false;export const readAppPreferences=()=>({diffLayout:'unified',mergeMethod:'auto',importedCodeThemes:[],theme:'dark',themePalette:'dovo',codeTheme:'app'});export const formatDateTime=value=>value;export const repositorySourceKey=(r,p)=>r+':'+p;`,
   '../workspace/context': `export const useWorkspace=()=>window.store;export const useStudioHost=()=>({appInfo:{channel:'nightly'},navigate:target=>{(window.prNavigations??=[]).push(target);window.onNavigate?.(target)}});`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   './intent-prefetch': `export const usePullIntentPrefetch=()=>({intent:()=>{},prefetch:null});`,
@@ -37,6 +37,7 @@ window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connec
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
 window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',runtimes:[],workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
+  if (path.startsWith('/api/review/pull/')) { window.writes.push({path,input}); return {reviews:[]}; }
   if (path === '/api/scm/pulls/action' && input.action === 'review' && window.partialReview) {
     window.writes.push({path,input});window.partialReview=false;
     return {status:'updated',pendingReviewDecision:input.event,message:'Your review comment was posted, but Bitbucket did not confirm the review decision.'};
@@ -1139,6 +1140,37 @@ try {
     'true',
   )
   await detail.getByText('Resolve this review thread', { exact: true }).waitFor()
+  // Exercise the real parent tab. A child-only check cannot catch a missing lazy-mount transition.
+  await page.evaluate(() => {
+    window.store.snapshot = { codeReviewsEnabled: true }
+    window.store.workspace.agents = []
+    window.detail.destination = 'destination'
+    window.showDestination('overview', 'native-agent-review')
+  })
+  const agentTab = page.getByRole('tab', { name: 'Agent review', exact: true })
+  await agentTab.click()
+  const agentPanel = page.getByRole('tabpanel', { name: 'Agent review', exact: true })
+  await agentPanel.getByRole('button', { name: 'Reviewer provider', exact: true }).waitFor()
+  await agentPanel.getByText('Choose a reviewer model to start.', { exact: true }).waitFor()
+  await page.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await agentTab.click()
+  await agentPanel.getByRole('button', { name: 'Reviewer provider', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/review/pull/start').length,
+    ),
+    0,
+  )
+  await mkdir(root + '/output/pr-review-checks', { recursive: true })
+  await screenshot({ path: root + '/output/pr-review-checks/desktop-pr-workspace.png' })
+  await page.evaluate(() => {
+    window.store.snapshot.codeReviewsEnabled = false
+    window.showDestination('overview', 'native-agent-review')
+  })
+  await agentTab.waitFor({ state: 'detached' })
+  await page.waitForFunction(
+    () => document.querySelector('#pr-tab-overview')?.getAttribute('aria-selected') === 'true',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'PR workspace: full-width and compact lists, visible controls, row actions, multi-selection, filters, overview activity, persistent title, checks, tab keyboard navigation, draft and review preservation, review submission, Markdown comments, offline state, narrow layouts, embedded previews and visible merge/auto-merge footers at 1440×960, 1100×960 and 1440×720 passed.',

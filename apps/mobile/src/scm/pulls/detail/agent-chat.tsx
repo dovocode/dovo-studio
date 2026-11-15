@@ -31,6 +31,7 @@ export function PullAgentChat({
   detail: initialDetail,
   latestDetail = initialDetail,
   path: initialPath,
+  question: initialQuestion,
   sourceIdentity,
   onClose,
 }: {
@@ -38,6 +39,7 @@ export function PullAgentChat({
   detail: PullDetail
   latestDetail?: PullDetail
   path?: string
+  question?: string
   sourceIdentity?: string
   onClose: () => void
 }) {
@@ -68,7 +70,7 @@ export function PullAgentChat({
   const sheet = useRef<SheetHandle>(null)
   const attempt = useRef<{ id: string; key: string } | undefined>(undefined)
   const [parentId, setParentId] = useState('')
-  const [question, setQuestion] = useState('')
+  const [question, setQuestion] = useState(initialQuestion ?? '')
   const [line, setLine] = useState('')
   const [end, setEnd] = useState('')
   const [side, setSide] = useState<'additions' | 'deletions'>('additions')
