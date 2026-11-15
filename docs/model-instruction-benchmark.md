@@ -32,7 +32,11 @@ Changes:
 
 The full-feature instruction count excludes user instructions, Bot text, live browser endpoints,
 working-directory metadata and tool schemas. Character counts are not model token counts. The final
-full-feature block has 8,225 characters. The original has 9,233. The reduction is 10.9%.
+full-feature block had 8,225 characters. The original had 9,233. The reduction was 10.9%.
+
+After the benchmark, CI guidance gained an explicit rule to discover run IDs once and register
+each replacement run. The reported scores apply to the saved benchmark wording. The integration
+checks also use the current monitoring and feature-gating phrases.
 
 ## Evaluation
 

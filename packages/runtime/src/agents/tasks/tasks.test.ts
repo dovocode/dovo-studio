@@ -131,9 +131,9 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     DOVO_TASK_ARTIFACTS_ENABLED: '0',
     DOVO_TASK_MEMORY_SCOPES: '[]',
   })
-  expect(runs[0]?.agent.instructions).not.toContain('PR babysitting is enabled')
-  expect(runs[0]?.agent.instructions).not.toContain('Experimental PR watching')
-  expect(runs[0]?.agent.instructions).not.toContain('Memory is available')
+  expect(runs[0]?.agent.instructions).not.toContain('PR follow-up is enabled')
+  expect(runs[0]?.agent.instructions).not.toContain('PR monitoring:')
+  expect(runs[0]?.agent.instructions).not.toContain('Memory scopes:')
   s.memory.configure({ scope: 'system', enabled: true })
   s.memory.configure({ scope: 'project', repositoryId: 'repo', enabled: true })
   s.memory.write({
@@ -157,20 +157,16 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     DOVO_TASK_ARTIFACTS_ENABLED: '1',
     DOVO_TASK_MEMORY_SCOPES: '["system","project"]',
   })
-  expect(runs[1]?.agent.instructions).toContain('instead of running your own polling loops')
-  expect(runs[1]?.agent.instructions).toContain('Prefer normal replies and repository files')
-  expect(runs[1]?.agent.instructions).toContain('dovo_task pipeline_watch')
-  expect(runs[1]?.agent.instructions).toContain('Proactively watch relevant CI and release runs')
-  expect(runs[1]?.agent.instructions).toContain(
-    'Register replacement runs after a new push or rerun',
-  )
-  expect(runs[1]?.agent.instructions).toContain(
-    'If registration fails, report that monitoring is not active',
-  )
+  expect(runs[1]?.agent.instructions).toContain('Do not poll with sleeps or CLI checks')
+  expect(runs[1]?.agent.instructions).toContain('Prefer replies/repository files')
+  expect(runs[1]?.agent.instructions).toContain('pipeline_watch')
+  expect(runs[1]?.agent.instructions).toContain('register relevant runs with pipeline_watch')
+  expect(runs[1]?.agent.instructions).toContain('Register each replacement run')
+  expect(runs[1]?.agent.instructions).toContain('If registration fails, say monitoring is inactive')
   expect(runs[1]?.agent.instructions).not.toContain(
     'register merely because you triggered a pipeline',
   )
-  expect(runs[1]?.agent.instructions).toContain('Memory is available')
+  expect(runs[1]?.agent.instructions).toContain('Memory scopes:')
   expect(runs[1]?.agent.instructions).not.toContain('Notes must be explicitly read')
   await (
     await s.tasks.start(task.id)
@@ -181,9 +177,9 @@ it('refreshes harness sessions when optional MCP features change and favors repl
     await s.tasks.start(task.id)
   ).done
   expect(runs[3]?.sessionId).toBeUndefined()
-  expect(runs[3]?.agent.instructions).toContain('PR babysitting is enabled')
+  expect(runs[3]?.agent.instructions).toContain('PR follow-up is enabled')
   expect(runs[3]?.agent.instructions).toContain('Keep merge approval manual')
-  expect(runs[3]?.agent.instructions).toContain('Do not force-push or rebase as a fallback')
+  expect(runs[3]?.agent.instructions).toContain('Never force-push/rebase as a fallback')
 
   s.preferences.save({ enablePullRequestWatching: false, enableLinkedProjectsTool: false })
   await (
@@ -192,16 +188,16 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   expect(runs[4]?.sessionId).toBeUndefined()
   expect(tools(4)?.envValues?.DOVO_TASK_PR_WATCHING_ENABLED).toBe('0')
   expect(tools(4)?.envValues?.DOVO_TASK_LINKED_PROJECTS_ENABLED).toBe('0')
-  expect(runs[4]?.agent.instructions).not.toContain('regular dovo_task linked_projects tool')
-  expect(runs[4]?.agent.instructions).not.toContain('Experimental PR watching')
-  expect(runs[4]?.agent.instructions).not.toContain('PR babysitting is enabled')
+  expect(runs[4]?.agent.instructions).not.toContain('Project links:')
+  expect(runs[4]?.agent.instructions).not.toContain('PR monitoring:')
+  expect(runs[4]?.agent.instructions).not.toContain('PR follow-up is enabled')
   s.preferences.save({ enablePipelineWatching: false })
   await (
     await s.tasks.start(task.id)
   ).done
   expect(runs[5]?.sessionId).toBeUndefined()
   expect(tools(5)?.envValues?.DOVO_TASK_PIPELINE_WATCHING_ENABLED).toBe('0')
-  expect(runs[5]?.agent.instructions).not.toContain('Experimental pipeline watching')
+  expect(runs[5]?.agent.instructions).not.toContain('CI/release monitoring:')
   s.memory.configure({ scope: 'system', enabled: false })
   s.memory.configure({ scope: 'project', repositoryId: 'repo', enabled: false })
   await (
@@ -209,14 +205,14 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   ).done
   expect(runs[6]?.sessionId).toBeUndefined()
   expect(tools(6)?.envValues?.DOVO_TASK_MEMORY_SCOPES).toBe('[]')
-  expect(runs[6]?.agent.instructions).not.toContain('Memory is available')
+  expect(runs[6]?.agent.instructions).not.toContain('Memory scopes:')
   s.preferences.save({ enableLinkedProjectsTool: true })
   await (
     await s.tasks.start(task.id)
   ).done
   expect(runs[7]?.sessionId).toBeUndefined()
   expect(tools(7)?.envValues?.DOVO_TASK_LINKED_PROJECTS_ENABLED).toBe('1')
-  expect(runs[7]?.agent.instructions).toContain('regular dovo_task linked_projects tool')
+  expect(runs[7]?.agent.instructions).toContain('Project links:')
   await (
     await s.tasks.start(task.id)
   ).done
@@ -227,7 +223,7 @@ it('refreshes harness sessions when optional MCP features change and favors repl
   ).done
   expect(runs[9]?.sessionId).toBeUndefined()
   expect(tools(9)?.envValues?.DOVO_TASK_LINKED_PROJECTS_ENABLED).toBe('0')
-  expect(runs[9]?.agent.instructions).not.toContain('regular dovo_task linked_projects tool')
+  expect(runs[9]?.agent.instructions).not.toContain('Project links:')
 })
 it('publishes the first provider text immediately and batches subsequent tokens', async () => {
   const s = await setup()
