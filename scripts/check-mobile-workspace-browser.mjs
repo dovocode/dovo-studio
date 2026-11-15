@@ -7,6 +7,9 @@ const workspace = root + 'apps/mobile/src/workspace/'
 const mobile = root + 'apps/mobile/src/'
 const terminal = mobile + 'terminal/'
 const stubs = [
+  // Real Bot strip and creation controls are covered by check-mobile-task-list-rendering-browser.mjs.
+  { path: '../bots/bot-strip', importer: workspace, contents: 'export const BotStrip=()=>null;' },
+  { path: '../bots/bot-create', importer: workspace, contents: 'export const CreateBot=()=>null;' },
   {
     path: '../../modules/dovo-webkit-browser',
     importer: workspace,

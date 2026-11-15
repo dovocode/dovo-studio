@@ -22,6 +22,9 @@ export const Sheet=({title,children,onClose})=><section role="dialog" aria-label
 export const useTheme=()=>({styles:{},colors:window.previewModes?{text:'#f0f0f4',muted:'#a1a1aa',accent:'#91c5eb',selection:'#25313d'}:{}});
 `
 const stubs = [
+  // Real Bot strip and creation controls are covered by check-mobile-task-list-rendering-browser.mjs.
+  { path: '../bots/bot-strip', importer: workspace, contents: 'export const BotStrip=()=>null;' },
+  { path: '../bots/bot-create', importer: workspace, contents: 'export const CreateBot=()=>null;' },
   { path: 'react-native', contents: controls },
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'expo-crypto', contents: 'let id=0;export const randomUUID=()=>`page-${++id}`;' },
