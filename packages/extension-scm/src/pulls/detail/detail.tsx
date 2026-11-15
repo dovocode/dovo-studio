@@ -754,16 +754,16 @@ function PullDetailContent({
                 >
                   <span className="flex items-center gap-2 font-medium">
                     <ShieldCheck className="size-4 text-emerald-500" />
-                    Agent review
+                    {uiText('Agent review')}
                   </span>
                   <span className="text-xs text-muted-foreground">
                     {reviewStatus.running
-                      ? 'Reviewing…'
+                      ? uiText('Reviewing…')
                       : reviewStatus.stale
-                        ? 'New changes to review'
+                        ? uiText('New changes to review')
                         : reviewStatus.findings
-                          ? `${reviewStatus.findings} findings`
-                          : 'Review with agent →'}
+                          ? uiText('{value0} findings', { value0: reviewStatus.findings })
+                          : uiText('Review with agent →')}
                   </span>
                 </button>
               )}

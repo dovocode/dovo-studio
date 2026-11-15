@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useState } from 'react'
 import { Image, Linking, View } from 'react-native'
 import { prReviewIllustration, usePullCodeReview } from '@dovo/studio-core/pull-code-review'
@@ -39,6 +40,7 @@ export function MobilePullCodeReview({
   onAsk: (finding: PullCodeReview['findings'][number]) => void
   onRefresh?: () => void
 }) {
+  const uiText = useInterfaceText()
   const { snapshot, profile, call, connected } = useRuntime()
   const { colors, styles } = useTheme()
   const transport = useCallback(
@@ -112,16 +114,20 @@ export function MobilePullCodeReview({
             />
           )}
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={[styles.text, { fontWeight: '600' }]}>Agent review</Text>
+            <Text style={[styles.text, { fontWeight: '600' }]}>{uiText('Agent review')}</Text>
             <Text style={[styles.muted, { fontSize: 12 }]}>
               {current
-                ? `${current.status} · ${current.findings.length} findings${stale ? ' · older revision' : ''}`
-                : 'A second look before you review.'}
+                ? uiText('{value0} · {value1} findings{value2}', {
+                    value0: current.status,
+                    value1: current.findings.length,
+                    value2: stale ? uiText(' · older revision') : '',
+                  })
+                : uiText('A second look before you review.')}
             </Text>
           </View>
         </View>
         <Action
-          label={current ? 'Open agent review' : 'Review with agent'}
+          label={current ? uiText('Open agent review') : uiText('Review with agent')}
           onPress={() => {
             setOpen(true)
             if (!current && agent?.model && !blocked) start()
@@ -136,7 +142,7 @@ export function MobilePullCodeReview({
               <View style={{ gap: 8 }}>
                 <Action
                   wide
-                  label={review.publishing ? 'Publishing…' : 'Publish review'}
+                  label={review.publishing ? uiText('Publishing…') : uiText('Publish review')}
                   disabled={
                     !connected ||
                     stale ||
@@ -161,7 +167,7 @@ export function MobilePullCodeReview({
                 />
                 <Action
                   secondary
-                  label="Back to draft"
+                  label={uiText('Back to draft')}
                   disabled={review.publishing}
                   onPress={() => setPreview(undefined)}
                 />
@@ -169,7 +175,7 @@ export function MobilePullCodeReview({
             ) : selectedPatch || contextFile ? (
               <Action
                 secondary
-                label="Back to findings"
+                label={uiText('Back to findings')}
                 onPress={() => {
                   setPatch(undefined)
                   setContextPath(undefined)
@@ -178,12 +184,14 @@ export function MobilePullCodeReview({
             ) : current?.status === 'completed' && !current.publication && draft ? (
               <View style={{ gap: 8 }}>
                 <Text style={styles.muted}>
-                  {draft.selected.length} findings in draft ·{' '}
-                  {review.dirty ? 'Unsaved changes' : 'Saved on computer'}
+                  {uiText('{value0} findings in draft · {value1}', {
+                    value0: draft.selected.length,
+                    value1: review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer'),
+                  })}
                 </Text>
                 <Action
                   wide
-                  label={review.busy ? 'Saving draft…' : 'Preview review'}
+                  label={review.busy ? uiText('Saving draft…') : uiText('Preview review')}
                   disabled={!connected || stale || review.busy || !draft.body.trim()}
                   onPress={() => {
                     void review.preparePreview().then((body) => {
@@ -196,8 +204,8 @@ export function MobilePullCodeReview({
           }
           title={
             preview !== undefined
-              ? 'Publish your review'
-              : (contextFile?.path ?? selectedPatch?.path ?? 'Agent review')
+              ? uiText('Publish your review')
+              : (contextFile?.path ?? selectedPatch?.path ?? uiText('Agent review'))
           }
           onClose={() => {
             setOpen(false)
@@ -213,7 +221,7 @@ export function MobilePullCodeReview({
               </Text>
               <Action
                 secondary
-                label="Refresh report"
+                label={uiText('Refresh report')}
                 onPress={() => {
                   onRefresh?.()
                   void review.refresh()
@@ -222,7 +230,7 @@ export function MobilePullCodeReview({
               {review.dirty && (
                 <Action
                   secondary
-                  label="Retry saving draft"
+                  label={uiText('Retry saving draft')}
                   onPress={() => {
                     void review.save()
                   }}
@@ -232,7 +240,7 @@ export function MobilePullCodeReview({
           )}
           {!target.expectedDestination && (
             <Text accessibilityRole="alert" style={styles.error}>
-              Refresh this PR to verify its account before starting a review.
+              {uiText('Refresh this PR to verify its account before starting a review.')}
             </Text>
           )}
           {linkError && (
@@ -248,17 +256,21 @@ export function MobilePullCodeReview({
           {review.draftConflict && (
             <View style={{ gap: 8 }}>
               <Text style={styles.muted}>
-                Another client saved a newer draft. Your edits are kept.
+                {uiText('Another client saved a newer draft. Your edits are kept.')}
               </Text>
               <Text selectable style={styles.text}>
                 {current?.draft.body}
               </Text>
               <Action
                 secondary
-                label="Save my draft over this version"
+                label={uiText('Save my draft over this version')}
                 onPress={review.replaceSavedDraft}
               />
-              <Action secondary label="Use the saved draft" onPress={review.reloadDraft} />
+              <Action
+                secondary
+                label={uiText('Use the saved draft')}
+                onPress={review.reloadDraft}
+              />
             </View>
           )}
           {preview !== undefined && current ? (
@@ -266,39 +278,48 @@ export function MobilePullCodeReview({
               <Text style={styles.text}>{preview.account}</Text>
               {(current.id !== preview.id || current.version !== preview.version) && (
                 <Text accessibilityRole="alert" style={styles.error}>
-                  The draft changed. Return to the draft and preview it again.
+                  {uiText('The draft changed. Return to the draft and preview it again.')}
                 </Text>
               )}
               <Text style={[styles.muted, { fontSize: 12 }]}>
                 {preview.url} · {preview.headSha.slice(0, 7)} ·{' '}
-                {preview.draft.event === 'request-changes' ? 'Request changes' : 'Comment'}
+                {preview.draft.event === 'request-changes'
+                  ? uiText('Request changes')
+                  : uiText('Comment')}
               </Text>
               <Text style={styles.muted}>
-                This is the exact Markdown that will be posted under your account.
+                {uiText('This is the exact Markdown that will be posted under your account.')}
               </Text>
               <Text style={styles.muted}>
-                The final HTML comment lets Dovo find this review if the connection drops.
+                {uiText(
+                  'The final HTML comment lets Dovo find this review if the connection drops.',
+                )}
               </Text>
               <Text selectable style={[styles.text, { fontSize: 13, lineHeight: 20 }]}>
                 {pullCodeReviewBody(preview)}
               </Text>
               {pullReviewReferences(pullCodeReviewBody(preview)).length > 0 && (
                 <Text style={styles.muted}>
-                  Mentions and references:{' '}
-                  {pullReviewReferences(pullCodeReviewBody(preview)).join(', ')}
+                  {uiText('Mentions and references: {value0}', {
+                    value0: pullReviewReferences(pullCodeReviewBody(preview)).join(', '),
+                  })}
                 </Text>
               )}
             </View>
           ) : contextFile ? (
             <View style={{ gap: 12 }}>
-              <Text style={styles.muted}>Snapshot at {contextFile.ref.slice(0, 7)}</Text>
+              <Text style={styles.muted}>
+                {uiText('Snapshot at {value0}', { value0: contextFile.ref.slice(0, 7) })}
+              </Text>
               <Text selectable style={styles.text}>
                 {contextFile.text}
               </Text>
             </View>
           ) : selectedPatch ? (
             <View style={{ gap: 12 }}>
-              <Text style={styles.muted}>Captured patch at {current?.headSha.slice(0, 7)}</Text>
+              <Text style={styles.muted}>
+                {uiText('Captured patch at {value0}', { value0: current?.headSha.slice(0, 7) })}
+              </Text>
               {selectedPatch.patch ? (
                 <View style={{ height: 420 }}>
                   <DiffView
@@ -307,31 +328,34 @@ export function MobilePullCodeReview({
                   />
                 </View>
               ) : (
-                <Text style={styles.muted}>This patch was not supplied.</Text>
+                <Text style={styles.muted}>{uiText('This patch was not supplied.')}</Text>
               )}
             </View>
           ) : (
             <View style={{ gap: 14 }}>
               <Text style={styles.muted}>
-                Review PR patches and available Git snapshots, then check proposed findings. No
-                tests run.
+                {uiText(
+                  'Review PR patches and available Git snapshots, then check proposed findings. No tests run.',
+                )}
               </Text>
               <Action
                 secondary
                 label={
                   agent
-                    ? `Reviewer · ${agent.model || harnessNames[agent.provider]}`
-                    : 'Choose reviewer'
+                    ? uiText('Reviewer · {value0}', {
+                        value0: agent.model || harnessNames[agent.provider],
+                      })
+                    : uiText('Choose reviewer')
                 }
                 onPress={() => setSettings(!settings)}
               />
               {(settings || !agent?.model) && (
                 <View style={{ gap: 10 }}>
                   <Choice
-                    label="Reviewer provider"
+                    label={uiText('Reviewer provider')}
                     value={agent?.id.startsWith('saved:') ? agent.id : (agent?.provider ?? '')}
                     items={[
-                      { id: '', name: 'Choose a provider' },
+                      { id: '', name: uiText('Choose a provider') },
                       ...providerSchema.literals
                         .filter((provider) => supportsUtilities(provider) && provider !== 'acp')
                         .map((provider) => ({ id: provider, name: harnessNames[provider] })),
@@ -363,17 +387,25 @@ export function MobilePullCodeReview({
                   )}
                 </View>
               )}
-              {!agent?.model && <Text style={styles.muted}>Choose a reviewer model to start.</Text>}
+              {!agent?.model && (
+                <Text style={styles.muted}>{uiText('Choose a reviewer model to start.')}</Text>
+              )}
               <Action
                 secondary={!!current && !stale}
-                label={stale ? 'Review latest revision' : current ? 'Review again' : 'Start review'}
+                label={
+                  stale
+                    ? uiText('Review latest revision')
+                    : current
+                      ? uiText('Review again')
+                      : uiText('Start review')
+                }
                 disabled={!!blocked || !agent?.model}
                 onPress={() => start()}
               />
               {current && (
                 <>
                   <Choice
-                    label="Review history"
+                    label={uiText('Review history')}
                     value={current.id}
                     items={
                       review.report?.reviews.map((pass) => ({
@@ -389,32 +421,38 @@ export function MobilePullCodeReview({
                   </Text>
                   {stale && (
                     <Text accessibilityRole="alert" style={styles.muted}>
-                      This PR has new changes. Your report and draft are kept. Review the latest
-                      revision before publishing.
+                      {uiText(
+                        'This PR has new changes. Your report and draft are kept. Review the latest revision before publishing.',
+                      )}
                     </Text>
                   )}
                   <Text style={styles.text}>
-                    {current.summary || current.error || `Review ${current.status}.`}
+                    {current.summary ||
+                      current.error ||
+                      uiText('Review {value0}.', { value0: current.status })}
                   </Text>
                   {current.status === 'running' && (
                     <View style={{ gap: 8 }}>
                       {current.analysis && (
                         <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                          {current.analysis.phase === 'checking'
-                            ? 'Checking findings'
-                            : 'Reviewing evidence'}{' '}
-                          · Batch{' '}
-                          {current.analysis.activeBatch ??
-                            Math.min(
-                              current.analysis.completedBatches + 1,
-                              current.analysis.batches,
-                            )}{' '}
-                          of {current.analysis.batches}
+                          {uiText('{value0} · Batch {value1} of {value2}', {
+                            value0:
+                              current.analysis.phase === 'checking'
+                                ? uiText('Checking findings')
+                                : uiText('Reviewing evidence'),
+                            value1:
+                              current.analysis.activeBatch ??
+                              Math.min(
+                                current.analysis.completedBatches + 1,
+                                current.analysis.batches,
+                              ),
+                            value2: current.analysis.batches,
+                          })}
                         </Text>
                       )}
                       <Action
                         secondary
-                        label="Cancel review"
+                        label={uiText('Cancel review')}
                         onPress={() => {
                           void review.command('stop', { reviewId: current.id })
                         }}
@@ -422,24 +460,28 @@ export function MobilePullCodeReview({
                     </View>
                   )}
                   <Text style={[styles.muted, { fontSize: 12 }]}>
-                    {supplied} of {current.coverage.length + current.missingFiles} file patches
-                    supplied in this pass.
+                    {uiText('{value0} of {value1} file patches supplied in this pass.', {
+                      value0: supplied,
+                      value1: current.coverage.length + current.missingFiles,
+                    })}
                   </Text>
                   <Choice
-                    label="File coverage and captured patches"
+                    label={uiText('File coverage and captured patches')}
                     value={patch ?? ''}
                     items={[
-                      { id: '', name: 'Inspect coverage' },
+                      { id: '', name: uiText('Inspect coverage') },
                       ...current.coverage.map((file) => ({
                         id: file.path,
-                        name: `${file.path} · ${pullReviewCoverageLabels[file.state]}`,
+                        name: `${file.path} · ${uiText(pullReviewCoverageLabels[file.state])}`,
                       })),
                     ]}
                     onChange={(path) => setPatch(path || undefined)}
                   />
                   {current.missingFiles > 0 && (
                     <Text style={styles.muted}>
-                      {current.missingFiles} files were not returned by the forge.
+                      {uiText('{value0} files were not returned by the forge.', {
+                        value0: current.missingFiles,
+                      })}
                     </Text>
                   )}
                   {!stale &&
@@ -449,7 +491,7 @@ export function MobilePullCodeReview({
                     ) && (
                       <Action
                         secondary
-                        label="Review remaining files"
+                        label={uiText('Review remaining files')}
                         disabled={!!blocked || !agent?.model}
                         onPress={() => start(true)}
                       />
@@ -477,7 +519,7 @@ export function MobilePullCodeReview({
                         <Text style={[styles.text, { fontWeight: '600' }]}>{finding.title}</Text>
                         <Action
                           secondary
-                          label={`${finding.path}${finding.anchored ? `:${finding.line} · ${finding.side}` : ' · location not verified'}`}
+                          label={`${finding.path}${finding.anchored ? `:${finding.line} · ${finding.side}` : uiText(' · location not verified')}`}
                           onPress={() => setPatch(finding.path)}
                         />
                         <Text style={styles.text}>{finding.trigger}</Text>
@@ -489,8 +531,8 @@ export function MobilePullCodeReview({
                               secondary
                               label={
                                 evidence === finding.id
-                                  ? 'Hide evidence'
-                                  : 'Show evidence and finding check'
+                                  ? uiText('Hide evidence')
+                                  : uiText('Show evidence and finding check')
                               }
                               onPress={() =>
                                 setEvidence(evidence === finding.id ? undefined : finding.id)
@@ -503,8 +545,10 @@ export function MobilePullCodeReview({
                                 </Text>
                                 <Text style={styles.muted}>{finding.verification}</Text>
                                 <Text style={styles.muted}>
-                                  Model confidence: {finding.confidence}/10. This is not proof of
-                                  correctness.
+                                  {uiText(
+                                    'Model confidence: {value0}/10. This is not proof of correctness.',
+                                    { value0: finding.confidence },
+                                  )}
                                 </Text>
                               </View>
                             )}
@@ -513,13 +557,15 @@ export function MobilePullCodeReview({
                         <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
                           <Action
                             variant="outline"
-                            label={added ? 'Remove from draft' : 'Add to draft'}
+                            label={added ? uiText('Remove from draft') : uiText('Add to draft')}
                             disabled={!editable || (!!dismissed && !added)}
                             onPress={() => review.add(finding)}
                           />
                           <Action
                             secondary
-                            label={dismissed ? 'Restore finding' : 'Dismiss finding'}
+                            label={
+                              dismissed ? uiText('Restore finding') : uiText('Dismiss finding')
+                            }
                             disabled={!editable}
                             onPress={() => {
                               if (!dismissed && added) review.add(finding)
@@ -533,7 +579,7 @@ export function MobilePullCodeReview({
                         </View>
                         <Action
                           secondary
-                          label="Check in repository"
+                          label={uiText('Check in repository')}
                           disabled={stale}
                           onPress={() => {
                             setOpen(false)
@@ -545,7 +591,9 @@ export function MobilePullCodeReview({
                   })}
                   {current.status === 'completed' && !current.findings.length && (
                     <Text style={styles.muted}>
-                      No supported bug findings in this pass. Inspect coverage before deciding.
+                      {uiText(
+                        'No supported bug findings in this pass. Inspect coverage before deciding.',
+                      )}
                     </Text>
                   )}
                   {current.notVerified.map((limit, index) => (
@@ -556,16 +604,22 @@ export function MobilePullCodeReview({
                   {current.analysis && (
                     <View style={{ gap: 8 }}>
                       <Text style={styles.muted}>
-                        {current.analysis.completedBatches} of {current.analysis.batches} batches
-                        completed · {current.analysis.contextFiles.length} snapshot files ·{' '}
-                        {current.analysis.rejectedFindings} findings filtered
+                        {uiText(
+                          '{value0} of {value1} batches completed · {value2} snapshot files · {value3} findings filtered',
+                          {
+                            value0: current.analysis.completedBatches,
+                            value1: current.analysis.batches,
+                            value2: current.analysis.contextFiles.length,
+                            value3: current.analysis.rejectedFindings,
+                          },
+                        )}
                       </Text>
                       {!!current.analysis.contextFiles.length && (
                         <Choice
-                          label="Snapshot context"
+                          label={uiText('Snapshot context')}
                           value={contextPath ?? ''}
                           items={[
-                            { id: '', name: 'Inspect captured context' },
+                            { id: '', name: uiText('Inspect captured context') },
                             ...current.analysis.contextFiles.map((file) => ({
                               id: file.ref + file.path,
                               name: `${file.path} · ${file.ref.slice(0, 7)}`,
@@ -586,7 +640,7 @@ export function MobilePullCodeReview({
                       }}
                     >
                       <Field
-                        label="Your review draft"
+                        label={uiText('Your review draft')}
                         multiline
                         maxLength={50000}
                         value={draft.body}
@@ -606,7 +660,7 @@ export function MobilePullCodeReview({
                             <Action
                               key={pass.id}
                               secondary
-                              label="Copy draft from the earlier pass"
+                              label={uiText('Copy draft from the earlier pass')}
                               onPress={() => review.copyDraft(pass)}
                             />
                           ))}
@@ -614,15 +668,15 @@ export function MobilePullCodeReview({
                         accessibilityLiveRegion="polite"
                         style={[styles.muted, { fontSize: 12 }]}
                       >
-                        {review.dirty ? 'Unsaved changes' : 'Saved on computer'}
+                        {review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer')}
                       </Text>
                       <Choice
-                        label="Review decision"
+                        label={uiText('Review decision')}
                         value={draft.event}
                         disabled={!editable}
                         items={[
-                          { id: 'comment', name: 'Comment' },
-                          { id: 'request-changes', name: 'Request changes' },
+                          { id: 'comment', name: uiText('Comment') },
+                          { id: 'request-changes', name: uiText('Request changes') },
                         ].filter(
                           (item) =>
                             !detail.capabilities ||
@@ -638,9 +692,13 @@ export function MobilePullCodeReview({
                           <Text style={styles.muted}>
                             {current.publication.status === 'published'
                               ? current.publication.pendingReviewDecision
-                                ? 'Review text posted. The review decision is not confirmed.'
-                                : 'Review published.'
-                              : 'Publication outcome unknown. No second review will be posted.'}
+                                ? uiText(
+                                    'Review text posted. The review decision is not confirmed.',
+                                  )
+                                : uiText('Review published.')
+                              : uiText(
+                                  'Publication outcome unknown. No second review will be posted.',
+                                )}
                           </Text>
                           {current.publication.notice && (
                             <Text style={styles.muted}>{current.publication.notice}</Text>
@@ -651,7 +709,7 @@ export function MobilePullCodeReview({
                           {current.publication.url && (
                             <Action
                               secondary
-                              label="Open review"
+                              label={uiText('Open review')}
                               onPress={() => {
                                 void Linking.openURL(current.publication!.url!).catch(
                                   (error: unknown) => setLinkError(String(error)),
@@ -662,7 +720,7 @@ export function MobilePullCodeReview({
                           {current.publication.status !== 'published' && (
                             <Action
                               secondary
-                              label="Check publication"
+                              label={uiText('Check publication')}
                               onPress={() => {
                                 void review.command('publish', {
                                   reviewId: current.id,

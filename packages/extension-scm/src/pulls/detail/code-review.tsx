@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullPatch } from './patch'
 import { useCallback, useEffect, useState } from 'react'
 import { Check, ChevronDown, FileSearch, LoaderCircle, ShieldCheck } from 'lucide-react'
@@ -46,6 +47,7 @@ export function PullCodeReviewPanel({
   onStatus?: (status: { running: boolean; findings: number; stale: boolean }) => void
   onRefresh?: () => void
 }) {
+  const uiText = useInterfaceText()
   const { workspace, request, connected, activeRuntimeId, snapshot } = useWorkspace()
   const transport = useCallback(
     (path: string, input: unknown) => request(path, input, pullCodeReviewReportSchema),
@@ -112,16 +114,16 @@ export function PullCodeReviewPanel({
   }
   return (
     <section
-      aria-label="Agent PR review"
+      aria-label={uiText('Agent PR review')}
       className="@container/review overflow-hidden rounded-xl border bg-card text-sm"
     >
       <div className="flex items-center justify-between gap-3 border-b px-4 py-3">
         <div className="flex items-center gap-2 font-medium">
           <ShieldCheck className="size-4 text-emerald-500" />
-          Agent review
+          {uiText('Agent review')}
         </div>
         <Button variant="ghost" size="sm" onClick={() => setSettings(!settings)}>
-          {agent?.model || 'Choose reviewer'}
+          {agent?.model || uiText('Choose reviewer')}
           <ChevronDown className="size-3" />
         </Button>
       </div>
@@ -133,19 +135,22 @@ export function PullCodeReviewPanel({
             className="hidden w-40 shrink-0 rounded-lg sm:block"
           />
           <div className="space-y-2">
-            <h3 className="font-medium">A second look before you review</h3>
+            <h3 className="font-medium">{uiText('A second look before you review')}</h3>
             <p className="max-w-md text-xs leading-5 text-white/65">
-              Find concrete bugs in this PR. Read the findings, check the evidence, and choose what
-              to share.
+              {uiText(
+                'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
+              )}
             </p>
           </div>
         </div>
       )}
       {(settings || !agent?.model) && (
         <div className="space-y-3 border-b p-4">
-          <label className="block text-xs text-muted-foreground">Reviewer provider</label>
+          <label className="block text-xs text-muted-foreground">
+            {uiText('Reviewer provider')}
+          </label>
           <ChoicePicker
-            aria-label="Reviewer provider"
+            aria-label={uiText('Reviewer provider')}
             value={agent?.id.startsWith('saved:') ? agent.id : (agent?.provider ?? '')}
             onValueChange={(value) => {
               const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
@@ -162,7 +167,7 @@ export function PullCodeReviewPanel({
             }}
           >
             <option value="" disabled>
-              Choose a provider
+              {uiText('Choose a provider')}
             </option>
             {providerSchema.literals
               .filter((provider) => supportsUtilities(provider) && provider !== 'acp')
@@ -190,24 +195,27 @@ export function PullCodeReviewPanel({
             />
           )}
           <p className="text-xs text-muted-foreground">
-            Reviews PR patches and available Git snapshots, then checks proposed findings. No tests
-            run. Your reviewer choice is saved on this computer.
+            {uiText(
+              'Reviews PR patches and available Git snapshots, then checks proposed findings. No tests run. Your reviewer choice is saved on this computer.',
+            )}
           </p>
         </div>
       )}
       {!current && (
         <div className="space-y-2 border-b p-4">
           {!agent?.model && (
-            <p className="text-xs text-muted-foreground">Choose a reviewer model to start.</p>
+            <p className="text-xs text-muted-foreground">
+              {uiText('Choose a reviewer model to start.')}
+            </p>
           )}
           <Button size="sm" disabled={!!blocked || !agent?.model} onClick={() => start()}>
-            Review with agent
+            {uiText('Review with agent')}
           </Button>
         </div>
       )}
       {!target.expectedDestination && (
         <p role="alert" className="p-4 text-xs text-destructive">
-          Refresh this PR to verify its account before starting a review.
+          {uiText('Refresh this PR to verify its account before starting a review.')}
         </p>
       )}
       {review.error && (
@@ -221,27 +229,27 @@ export function PullCodeReviewPanel({
               void review.refresh()
             }}
           >
-            Refresh report
+            {uiText('Refresh report')}
           </Button>
           {review.dirty && (
             <Button variant="outline" size="sm" onClick={() => void review.save()}>
-              Retry saving draft
+              {uiText('Retry saving draft')}
             </Button>
           )}
         </div>
       )}
       {review.draftConflict && (
         <div role="alert" className="space-y-2 border-b p-4 text-xs">
-          <p>A saved draft from another client is newer. Your edits are kept.</p>
+          <p>{uiText('A saved draft from another client is newer. Your edits are kept.')}</p>
           <details>
-            <summary>Compare the saved draft</summary>
+            <summary>{uiText('Compare the saved draft')}</summary>
             <pre className="whitespace-pre-wrap">{current?.draft.body}</pre>
           </details>
           <Button size="sm" variant="outline" onClick={review.replaceSavedDraft}>
-            Save my draft over this version
+            {uiText('Save my draft over this version')}
           </Button>
           <Button size="sm" variant="ghost" onClick={review.reloadDraft}>
-            Use the saved draft
+            {uiText('Use the saved draft')}
           </Button>
         </div>
       )}
@@ -256,7 +264,7 @@ export function PullCodeReviewPanel({
             <div className="flex items-center gap-2 border-b p-3">
               <FileSearch className="size-4 shrink-0 text-muted-foreground" />
               <ChoicePicker
-                aria-label="Captured review file"
+                aria-label={uiText('Captured review file')}
                 value={selectedPatch?.path ?? ''}
                 onValueChange={setPatch}
               >
@@ -270,7 +278,10 @@ export function PullCodeReviewPanel({
               </ChoicePicker>
             </div>
             <p className="border-b px-4 py-2 text-[11px] text-muted-foreground">
-              Captured evidence · {current.headSha.slice(0, 7)} · {selectedPatch?.path}
+              {uiText('Captured evidence · {value0} · {value1}', {
+                value0: current.headSha.slice(0, 7),
+                value1: selectedPatch?.path,
+              })}
             </p>
             <div className="max-h-[75vh] overflow-auto">
               {selectedPatch?.patch ? (
@@ -289,7 +300,7 @@ export function PullCodeReviewPanel({
                 />
               ) : (
                 <p className="p-5 text-xs text-muted-foreground">
-                  No patch available in this pass.
+                  {uiText('No patch available in this pass.')}
                 </p>
               )}
             </div>
@@ -297,7 +308,7 @@ export function PullCodeReviewPanel({
           <div className="min-w-0 space-y-4 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <ChoicePicker
-                aria-label="Review history"
+                aria-label={uiText('Review history')}
                 value={current.id}
                 onValueChange={review.select}
               >
@@ -314,7 +325,7 @@ export function PullCodeReviewPanel({
                 disabled={!!blocked || !agent?.model}
                 onClick={() => start()}
               >
-                {stale ? 'Review latest revision' : 'Review again'}
+                {stale ? uiText('Review latest revision') : uiText('Review again')}
               </Button>
             </div>
             <p className="text-xs text-muted-foreground">
@@ -326,25 +337,25 @@ export function PullCodeReviewPanel({
                 role="status"
                 className="rounded-lg border border-amber-500/30 bg-amber-500/5 p-3 text-xs"
               >
-                This PR has new changes. This report and its draft are kept. Review the latest
-                revision before publishing.
+                {uiText(
+                  'This PR has new changes. This report and its draft are kept. Review the latest revision before publishing.',
+                )}
               </p>
             )}
             {current.status === 'running' ? (
               <div role="status" className="flex items-center gap-2 py-4 text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
                 {current.analysis?.phase === 'checking'
-                  ? 'Checking proposed findings…'
-                  : 'Reviewing captured evidence…'}
+                  ? uiText('Checking proposed findings…')
+                  : uiText('Reviewing captured evidence…')}
                 {current.analysis && (
                   <span>
-                    Batch{' '}
-                    {current.analysis.activeBatch ??
-                      Math.min(
-                        current.analysis.completedBatches + 1,
-                        current.analysis.batches,
-                      )}{' '}
-                    of {current.analysis.batches}
+                    {uiText('Batch {value0} of {value1}', {
+                      value0:
+                        current.analysis.activeBatch ??
+                        Math.min(current.analysis.completedBatches + 1, current.analysis.batches),
+                      value1: current.analysis.batches,
+                    })}
                   </span>
                 )}
                 <Button
@@ -352,37 +363,46 @@ export function PullCodeReviewPanel({
                   size="sm"
                   onClick={() => void review.command('stop', { reviewId: current.id })}
                 >
-                  Cancel review
+                  {uiText('Cancel review')}
                 </Button>
               </div>
             ) : (
               <p className="leading-6">
                 {current.summary ||
                   current.error ||
-                  `Review ${current.status}. Start another pass when ready.`}
+                  uiText('Review {value0}. Start another pass when ready.', {
+                    value0: current.status,
+                  })}
               </p>
             )}
             <details className="rounded-lg border p-3 text-xs">
               <summary className="cursor-pointer">
-                {supplied} of {current.coverage.length + current.missingFiles} file patches supplied
-                in this pass
+                {uiText('{value0} of {value1} file patches supplied in this pass', {
+                  value0: supplied,
+                  value1: current.coverage.length + current.missingFiles,
+                })}
               </summary>
               <p className="my-2 text-muted-foreground">
-                Supplying a patch does not prove the model checked every line. Separate passes can
-                miss issues across files.
+                {uiText(
+                  'Supplying a patch does not prove the model checked every line. Separate passes can miss issues across files.',
+                )}
               </p>
               <ul className="space-y-1">
                 {current.coverage.map((file) => (
                   <li key={file.path} className="flex justify-between gap-3">
                     <span className="break-all">{file.path}</span>
                     <span className="shrink-0 text-muted-foreground">
-                      {pullReviewCoverageLabels[file.state]}
+                      {uiText(pullReviewCoverageLabels[file.state])}
                     </span>
                   </li>
                 ))}
               </ul>
               {current.missingFiles > 0 && (
-                <p>{current.missingFiles} files were not returned by the forge.</p>
+                <p>
+                  {uiText('{value0} files were not returned by the forge.', {
+                    value0: current.missingFiles,
+                  })}
+                </p>
               )}
             </details>
             {!stale &&
@@ -396,7 +416,7 @@ export function PullCodeReviewPanel({
                   disabled={!!blocked || !agent?.model}
                   onClick={() => start(true)}
                 >
-                  Review remaining files
+                  {uiText('Review remaining files')}
                 </Button>
               )}
             <div className="space-y-3">
@@ -424,7 +444,7 @@ export function PullCodeReviewPanel({
                       {finding.path}
                       {finding.anchored
                         ? `:${finding.line} · ${finding.side}`
-                        : ' · location not verified'}
+                        : uiText(' · location not verified')}
                     </button>
                     <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.trigger}</p>
                     <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.impact}</p>
@@ -433,14 +453,18 @@ export function PullCodeReviewPanel({
                     </p>
                     {finding.evidence && (
                       <details className="mt-3 text-xs text-muted-foreground">
-                        <summary className="cursor-pointer">Evidence and finding check</summary>
+                        <summary className="cursor-pointer">
+                          {uiText('Evidence and finding check')}
+                        </summary>
                         <pre className="mt-2 overflow-auto whitespace-pre-wrap rounded border p-2">
                           {finding.evidence}
                         </pre>
                         <p className="mt-2">{finding.verification}</p>
                         <p>
-                          Model confidence: {finding.confidence}/10. This is not proof of
-                          correctness.
+                          {uiText(
+                            'Model confidence: {value0}/10. This is not proof of correctness.',
+                            { value0: finding.confidence },
+                          )}
                         </p>
                       </details>
                     )}
@@ -454,10 +478,10 @@ export function PullCodeReviewPanel({
                         {added ? (
                           <>
                             <Check className="size-3" />
-                            Remove from draft
+                            {uiText('Remove from draft')}
                           </>
                         ) : (
-                          'Add to draft'
+                          uiText('Add to draft')
                         )}
                       </Button>
                       <Button
@@ -473,7 +497,7 @@ export function PullCodeReviewPanel({
                           })
                         }}
                       >
-                        {dismissed ? 'Restore' : 'Dismiss'}
+                        {dismissed ? uiText('Restore') : uiText('Dismiss')}
                       </Button>
                       <Button
                         variant="ghost"
@@ -486,7 +510,7 @@ export function PullCodeReviewPanel({
                           })
                         }
                       >
-                        Check in repository
+                        {uiText('Check in repository')}
                       </Button>
                     </div>
                   </article>
@@ -496,11 +520,13 @@ export function PullCodeReviewPanel({
             {current.status === 'completed' && !current.findings.length && (
               <div className="flex gap-2 rounded-lg bg-muted/40 p-4 text-xs">
                 <FileSearch className="size-4 shrink-0" />
-                No supported bug findings in this pass. Inspect the coverage limits before deciding.
+                {uiText(
+                  'No supported bug findings in this pass. Inspect the coverage limits before deciding.',
+                )}
               </div>
             )}
             <details className="text-xs text-muted-foreground">
-              <summary className="cursor-pointer">Review limits</summary>
+              <summary className="cursor-pointer">{uiText('Review limits')}</summary>
               <ul className="mt-2 list-inside list-disc space-y-1">
                 {current.notVerified.map((text, index) => (
                   <li key={index}>{text}</li>
@@ -510,13 +536,20 @@ export function PullCodeReviewPanel({
             {current.analysis && (
               <details className="text-xs text-muted-foreground">
                 <summary className="cursor-pointer">
-                  {current.analysis.completedBatches} of {current.analysis.batches} batches
-                  completed · {current.analysis.contextFiles.length} snapshot files ·{' '}
-                  {current.analysis.rejectedFindings} findings filtered
+                  {uiText(
+                    '{value0} of {value1} batches completed · {value2} snapshot files · {value3} findings filtered',
+                    {
+                      value0: current.analysis.completedBatches,
+                      value1: current.analysis.batches,
+                      value2: current.analysis.contextFiles.length,
+                      value3: current.analysis.rejectedFindings,
+                    },
+                  )}
                 </summary>
                 <p className="my-2">
-                  Snapshot files were supplied as code evidence. Repository settings and
-                  instructions were not loaded.
+                  {uiText(
+                    'Snapshot files were supplied as code evidence. Repository settings and instructions were not loaded.',
+                  )}
                 </p>
                 {current.analysis.contextFiles.map((file) => (
                   <details key={file.ref + file.path} className="my-2 rounded border p-2">
@@ -533,18 +566,18 @@ export function PullCodeReviewPanel({
             {draft && current.status === 'completed' && (
               <div className="space-y-3 border-t pt-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium">Your review draft</h4>
+                  <h4 className="font-medium">{uiText('Your review draft')}</h4>
                   <span role="status" className="text-xs text-muted-foreground">
-                    {review.dirty ? 'Unsaved changes' : 'Saved on computer'}
+                    {review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer')}
                   </span>
                 </div>
                 <Textarea
-                  aria-label="Review draft"
+                  aria-label={uiText('Review draft')}
                   value={draft.body}
                   onChange={(event) => review.edit({ body: event.target.value })}
                   disabled={!editable}
                   className="min-h-36 text-xs"
-                  placeholder="Add findings above, or write your review."
+                  placeholder={uiText('Add findings above, or write your review.')}
                   maxLength={50000}
                 />
                 {!draft.body.trim() &&
@@ -563,11 +596,11 @@ export function PullCodeReviewPanel({
                         variant="outline"
                         onClick={() => review.copyDraft(pass)}
                       >
-                        Copy draft from the earlier pass
+                        {uiText('Copy draft from the earlier pass')}
                       </Button>
                     ))}
                 <ChoicePicker
-                  aria-label="Review decision"
+                  aria-label={uiText('Review decision')}
                   value={draft.event}
                   disabled={!editable}
                   onValueChange={(event) => {
@@ -581,7 +614,7 @@ export function PullCodeReviewPanel({
                       !detail.capabilities.reviewDecisions.includes('comment')
                     }
                   >
-                    Comment
+                    {uiText('Comment')}
                   </option>
                   <option
                     value="request-changes"
@@ -590,7 +623,7 @@ export function PullCodeReviewPanel({
                       !detail.capabilities.reviewDecisions.includes('request-changes')
                     }
                   >
-                    Request changes
+                    {uiText('Request changes')}
                   </option>
                 </ChoicePicker>
                 <div className="flex flex-wrap gap-2">
@@ -608,7 +641,7 @@ export function PullCodeReviewPanel({
                       if (body !== undefined) setPreview(body)
                     }}
                   >
-                    {review.busy ? 'Saving draft…' : 'Preview review'}
+                    {review.busy ? uiText('Saving draft…') : uiText('Preview review')}
                   </Button>
                 </div>
                 {current.publication && (
@@ -616,22 +649,24 @@ export function PullCodeReviewPanel({
                     {current.publication.status === 'published' ? (
                       <p>
                         {current.publication.pendingReviewDecision
-                          ? 'Review text posted. The review decision is not confirmed.'
-                          : 'Review published.'}{' '}
+                          ? uiText('Review text posted. The review decision is not confirmed.')
+                          : uiText('Review published.')}{' '}
                         <a
                           className="underline"
                           href={current.publication.url}
                           target="_blank"
                           rel="noreferrer"
                         >
-                          Open review
+                          {uiText('Open review')}
                         </a>
                       </p>
                     ) : (
                       <>
                         <p>
-                          The publication outcome is unknown. Check before posting again.{' '}
-                          {current.publication.error}
+                          {uiText(
+                            'The publication outcome is unknown. Check before posting again. {value0}',
+                            { value0: current.publication.error },
+                          )}
                         </p>
                         <Button
                           variant="outline"
@@ -645,7 +680,7 @@ export function PullCodeReviewPanel({
                             })
                           }
                         >
-                          Check publication
+                          {uiText('Check publication')}
                         </Button>
                       </>
                     )}
@@ -665,21 +700,23 @@ export function PullCodeReviewPanel({
           }}
         >
           <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
-            <DialogTitle>Publish your review</DialogTitle>
+            <DialogTitle>{uiText('Publish your review')}</DialogTitle>
             {(current.id !== preview.id || current.version !== preview.version) && (
               <p role="alert" className="text-xs text-destructive">
-                The draft changed. Return to the draft and preview it again.
+                {uiText('The draft changed. Return to the draft and preview it again.')}
               </p>
             )}
             <DialogDescription>
               {preview.account} · {preview.url} · {preview.headSha.slice(0, 7)} ·{' '}
-              {preview.draft.event === 'request-changes' ? 'Request changes' : 'Comment'}
+              {preview.draft.event === 'request-changes'
+                ? uiText('Request changes')
+                : uiText('Comment')}
             </DialogDescription>
             <p className="text-xs text-muted-foreground">
-              This is the exact Markdown that will be posted under your account.
+              {uiText('This is the exact Markdown that will be posted under your account.')}
             </p>
             <p className="text-xs text-muted-foreground">
-              The final HTML comment lets Dovo find this review if the connection drops.
+              {uiText('The final HTML comment lets Dovo find this review if the connection drops.')}
             </p>
             {review.error && (
               <p role="alert" className="text-xs text-destructive">
@@ -691,8 +728,9 @@ export function PullCodeReviewPanel({
             </pre>
             {pullReviewReferences(pullCodeReviewBody(preview)).length > 0 && (
               <p className="break-all text-xs text-amber-600">
-                Mentions and references:{' '}
-                {pullReviewReferences(pullCodeReviewBody(preview)).join(', ')}
+                {uiText('Mentions and references: {value0}', {
+                  value0: pullReviewReferences(pullCodeReviewBody(preview)).join(', '),
+                })}
               </p>
             )}
             <Button
@@ -700,7 +738,7 @@ export function PullCodeReviewPanel({
               disabled={review.publishing}
               onClick={() => setPreview(undefined)}
             >
-              Back to draft
+              {uiText('Back to draft')}
             </Button>
             <Button
               disabled={
@@ -722,7 +760,7 @@ export function PullCodeReviewPanel({
                 if (result) setPreview(undefined)
               }}
             >
-              {review.publishing ? 'Publishing…' : 'Publish review'}
+              {review.publishing ? uiText('Publishing…') : uiText('Publish review')}
             </Button>
           </DialogContent>
         </Dialog>
