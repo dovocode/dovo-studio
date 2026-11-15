@@ -572,7 +572,7 @@ it('defaults both cleanup timers off and persists each timer independently on th
   })
 })
 
-it.each(['showContextUsage', 'minimalComposer'] as const)(
+it.each(['showContextUsage', 'minimalComposer', 'inAppNotifications'] as const)(
   'defaults %s on and saves opting out on this phone',
   async (key) => {
     storage.getItem = async () => null

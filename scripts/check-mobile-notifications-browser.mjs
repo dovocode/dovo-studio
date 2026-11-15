@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
@@ -11,13 +12,13 @@ const mocks = {
   'expo-router': `export const router={push:target=>window.routes.push(target)};export const useRootNavigationState=()=>({key:'root'});`,
   '@react-native-async-storage/async-storage': `const saved=new Map([['dovo.push-notifications.enabled','true']]);export default {getItem:async key=>saved.get(key)??null,setItem:async(key,value)=>{saved.set(key,value)}};`,
   '../runtime/connection/account-provider': `import {createContext,useContext} from 'react';export const AccountContext=createContext(null);export const useMobileAccount=()=>useContext(AccountContext);`,
-  'expo-notifications': `export const setNotificationCategoryAsync=async()=>{};export const setNotificationHandler=()=>{};export const getLastNotificationResponse=()=>null;export const clearLastNotificationResponse=()=>{};export const addNotificationResponseReceivedListener=fn=>{window.notification=fn;return{remove(){}}};export const getPermissionsAsync=async()=>({granted:window.permitted});export const requestPermissionsAsync=getPermissionsAsync;export const getDevicePushTokenAsync=async()=>({data:'native-token'});export const addPushTokenListener=fn=>{window.rotate=token=>fn({data:token});return{remove(){}}};`,
+  'expo-notifications': `export const setNotificationCategoryAsync=async()=>{};export const setNotificationHandler=handler=>{window.notificationHandler=handler};export const getLastNotificationResponse=()=>null;export const clearLastNotificationResponse=()=>{};export const addNotificationResponseReceivedListener=fn=>{window.notification=fn;return{remove(){}}};export const getPermissionsAsync=async()=>({granted:window.permitted});export const requestPermissionsAsync=getPermissionsAsync;export const getDevicePushTokenAsync=async()=>({data:'native-token'});export const addPushTokenListener=fn=>{window.rotate=token=>fn({data:token});return{remove(){}}};`,
   '../runtime/connection/provider': `import {createContext,useContext} from 'react';export const Context=createContext(null);export const useRuntime=()=>useContext(Context);`,
   '../runtime/state/application-state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const[value,set]=useState(initial);const ref=useRef(value);return[value,next=>{ref.current=next;set(next)},ref]};`,
 }
 const result = await build({
   stdin: {
-    contents: `import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';import{AccountContext}from'../runtime/connection/account-provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;window.grants=[];window.allowed=[];function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.serverToggle=state.setServerEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const[signedIn,setSignedIn]=useState(false);window.signin=setSignedIn;const[other,setOther]=useState(false);window.other=setOther;const[connected,setConnected]=useState(true);window.connected=setConnected;const account={directory:signedIn?{user:{id:'person'}}:null,client:{origin:'https://connect.dovo.studio',subscribePush:async registration=>{window.grants.push(registration);return{token:'g'.repeat(43)}},retainPush:async ids=>{window.allowed.push(ids)}}};const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile,...(other?[{...profile,id:'other'}]:[])],overviews:[{profile,connected},...(other?[{profile:{...profile,id:'other'},connected:true}]:[])],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><AccountContext.Provider value={account}><PushNotificationProvider><Controls/></PushNotificationProvider></AccountContext.Provider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {registerInAppNotification} from './src/notifications/in-app-delivery';window.registerBanner=registerInAppNotification;import {useState} from 'react';import{createRoot}from'react-dom/client';import{PushNotificationProvider,usePushNotifications}from'./src/notifications/provider.tsx';import{Context}from'../runtime/connection/provider';import{AccountContext}from'../runtime/connection/account-provider';window.requests=[];window.finishes=[];window.routes=[];window.permitted=true;window.grants=[];window.allowed=[];function Controls(){const state=usePushNotifications();window.toggle=state.setEnabled;window.serverToggle=state.setServerEnabled;window.state=state;return null};function App(){const[credential,setCredential]=useState('first');window.credential=setCredential;const[signedIn,setSignedIn]=useState(false);window.signin=setSignedIn;const[other,setOther]=useState(false);window.other=setOther;const[connected,setConnected]=useState(true);window.connected=setConnected;const account={directory:signedIn?{user:{id:'person'}}:null,client:{origin:'https://connect.dovo.studio',subscribePush:async registration=>{window.grants.push(registration);return{token:'g'.repeat(43)}},retainPush:async ids=>{window.allowed.push(ids)}}};const profile={id:'host',name:'Host',connection:{address:'http://host',token:credential}};const runtime={ready:true,profiles:[profile,...(other?[{...profile,id:'other'}]:[])],overviews:[{profile,connected},...(other?[{profile:{...profile,id:'other'},connected:true}]:[])],readRuntime:async(profile,path,input)=>new Promise(resolve=>{window.requests.push({credential:profile.connection.token,path,input});window.finishes.push(resolve)})};return<Context.Provider value={runtime}><AccountContext.Provider value={account}><PushNotificationProvider><Controls/></PushNotificationProvider></AccountContext.Provider></Context.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: fileURLToPath(new URL('../apps/mobile/', import.meta.url)),
     loader: 'tsx',
   },
@@ -70,6 +71,37 @@ try {
       index,
     )
   await requests(1)
+  const delivery = await page.evaluate(async () => {
+    const notification = {
+      request: {
+        content: {
+          data: {
+            kind: 'input',
+            runtimeId: 'host',
+            taskId: 'thread',
+            inputId: 'review',
+            inputType: 'approval',
+          },
+        },
+      },
+    }
+    const handler = window.notificationHandler
+    const fallback = await handler.handleNotification(notification)
+    let deliveries = 0
+    const remove = window.registerBanner(() => {
+      deliveries++
+      return true
+    })
+    const inApp = await handler.handleNotification(notification)
+    remove()
+    const afterCleanup = await handler.handleNotification(notification)
+    return { fallback, inApp, afterCleanup, deliveries }
+  })
+  assert.equal(delivery.fallback.shouldShowBanner, true)
+  assert.equal(delivery.inApp.shouldShowBanner, false)
+  assert.equal(delivery.inApp.shouldPlaySound, false)
+  assert.equal(delivery.afterCleanup.shouldShowBanner, true)
+  assert.equal(delivery.deliveries, 1)
   if ((await page.evaluate(() => window.requests[0].input.questionActions)) !== 1)
     throw new Error('Native answer support was not advertised')
   if ((await page.evaluate(() => window.answerConfigs.at(-1).host.address)) !== 'http://host')

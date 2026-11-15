@@ -4271,7 +4271,11 @@
     "Pinned": "Pinned",
     "Waiting": "Waiting",
     "Access paired computers": "Access paired computers",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.",
+    "Return to {value0}": "Return to {value0}",
+    "Inside Dovo": "Inside Dovo",
+    "In-app notifications": "In-app notifications",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Show requests from other threads while Dovo is open. No system permission is needed."
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8545,7 +8549,11 @@
     "Pinned": "Vastgemaakt",
     "Waiting": "Wachten",
     "Access paired computers": "Toegang tot gekoppelde computers",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gebruik opgeslagen verbindingen van gekoppelde Studio-clients. Uitschakelen trekt externe machtigingen in. UI-bediening blijft lokaal."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gebruik opgeslagen verbindingen van gekoppelde Studio-clients. Uitschakelen trekt externe machtigingen in. UI-bediening blijft lokaal.",
+    "Return to {value0}": "Terug naar {value0}",
+    "Inside Dovo": "In Dovo",
+    "In-app notifications": "Meldingen in de app",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Toon verzoeken uit andere gesprekken terwijl Dovo open is. Hiervoor is geen systeemtoestemming nodig."
   },
   "de": {
     "Settings": "Einstellungen",
@@ -12819,7 +12827,11 @@
     "Pinned": "Angeheftet",
     "Waiting": "Wartend",
     "Access paired computers": "Auf gekoppelte Computer zugreifen",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gespeicherte Verbindungen gekoppelter Studio-Clients verwenden. Beim Ausschalten werden Fernzugriffsrechte entzogen. Die UI-Steuerung bleibt lokal."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Gespeicherte Verbindungen gekoppelter Studio-Clients verwenden. Beim Ausschalten werden Fernzugriffsrechte entzogen. Die UI-Steuerung bleibt lokal.",
+    "Return to {value0}": "Zurück zu {value0}",
+    "Inside Dovo": "In Dovo",
+    "In-app notifications": "Benachrichtigungen in der App",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zeige Anfragen aus anderen Chats, während Dovo geöffnet ist. Dafür ist keine Systemberechtigung nötig."
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17093,7 +17105,11 @@
     "Pinned": "Καρφιτσωμένο",
     "Waiting": "Σε αναμονή",
     "Access paired computers": "Πρόσβαση σε συνδεδεμένους υπολογιστές",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Χρησιμοποιήστε αποθηκευμένες συνδέσεις από συνδεδεμένους πελάτες Studio. Η απενεργοποίηση ανακαλεί τις απομακρυσμένες άδειες. Ο έλεγχος του UI παραμένει τοπικός."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Χρησιμοποιήστε αποθηκευμένες συνδέσεις από συνδεδεμένους πελάτες Studio. Η απενεργοποίηση ανακαλεί τις απομακρυσμένες άδειες. Ο έλεγχος του UI παραμένει τοπικός.",
+    "Return to {value0}": "Επιστροφή στο {value0}",
+    "Inside Dovo": "Μέσα στο Dovo",
+    "In-app notifications": "Ειδοποιήσεις στην εφαρμογή",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Εμφάνιση αιτημάτων από άλλες συνομιλίες όσο το Dovo είναι ανοιχτό. Δεν απαιτείται άδεια συστήματος."
   },
   "it": {
     "Settings": "Impostazioni",
@@ -21367,7 +21383,11 @@
     "Pinned": "Fissato",
     "Waiting": "In attesa",
     "Access paired computers": "Accedi ai computer associati",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa le connessioni salvate dai client Studio associati. Disattivando questa opzione si revocano le autorizzazioni remote. Il controllo dell'interfaccia resta locale."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa le connessioni salvate dai client Studio associati. Disattivando questa opzione si revocano le autorizzazioni remote. Il controllo dell'interfaccia resta locale.",
+    "Return to {value0}": "Torna a {value0}",
+    "Inside Dovo": "All’interno di Dovo",
+    "In-app notifications": "Notifiche nell’app",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra le richieste di altre conversazioni mentre Dovo è aperto. Non serve alcuna autorizzazione di sistema."
   },
   "es": {
     "Settings": "Ajustes",
@@ -25641,7 +25661,11 @@
     "Pinned": "Fijado",
     "Waiting": "En espera",
     "Access paired computers": "Acceder a equipos vinculados",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa las conexiones guardadas de los clientes Studio vinculados. Al desactivar esta opción se revocan los permisos remotos. El control de la interfaz sigue siendo local."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Usa las conexiones guardadas de los clientes Studio vinculados. Al desactivar esta opción se revocan los permisos remotos. El control de la interfaz sigue siendo local.",
+    "Return to {value0}": "Volver a {value0}",
+    "Inside Dovo": "Dentro de Dovo",
+    "In-app notifications": "Notificaciones en la aplicación",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Muestra solicitudes de otras conversaciones mientras Dovo está abierto. No se necesita permiso del sistema."
   },
   "fr": {
     "Settings": "Paramètres",
@@ -29915,7 +29939,11 @@
     "Pinned": "Épinglé",
     "Waiting": "En attente",
     "Access paired computers": "Accéder aux ordinateurs associés",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Utilisez les connexions enregistrées des clients Studio associés. La désactivation révoque les autorisations distantes. Le contrôle de l'interface reste local."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Utilisez les connexions enregistrées des clients Studio associés. La désactivation révoque les autorisations distantes. Le contrôle de l'interface reste local.",
+    "Return to {value0}": "Revenir à {value0}",
+    "Inside Dovo": "Dans Dovo",
+    "In-app notifications": "Notifications dans l’application",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Affiche les demandes des autres conversations quand Dovo est ouvert. Aucune autorisation du système n’est nécessaire."
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -34189,7 +34217,11 @@
     "Pinned": "Przypięte",
     "Waiting": "Oczekuje",
     "Access paired computers": "Dostęp do sparowanych komputerów",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Używaj zapisanych połączeń ze sparowanych klientów Studio. Wyłączenie cofa uprawnienia zdalne. Sterowanie interfejsem pozostaje lokalne."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Używaj zapisanych połączeń ze sparowanych klientów Studio. Wyłączenie cofa uprawnienia zdalne. Sterowanie interfejsem pozostaje lokalne.",
+    "Return to {value0}": "Wróć do {value0}",
+    "Inside Dovo": "W Dovo",
+    "In-app notifications": "Powiadomienia w aplikacji",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Pokazuj prośby z innych rozmów, gdy Dovo jest otwarte. Nie wymaga zgody systemu."
   },
   "pt": {
     "Settings": "Definições",
@@ -38463,7 +38495,11 @@
     "Pinned": "Fixado",
     "Waiting": "Aguardando",
     "Access paired computers": "Aceder a computadores emparelhados",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use ligações guardadas de clientes Studio emparelhados. Desativar esta opção revoga as permissões remotas. O controlo da interface permanece local."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Use ligações guardadas de clientes Studio emparelhados. Desativar esta opção revoga as permissões remotas. O controlo da interface permanece local.",
+    "Return to {value0}": "Voltar para {value0}",
+    "Inside Dovo": "No Dovo",
+    "In-app notifications": "Notificações no aplicativo",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Mostra solicitações de outras conversas enquanto o Dovo está aberto. Não é necessária permissão do sistema."
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -42737,7 +42773,11 @@
     "Pinned": "Sabitlendi",
     "Waiting": "Bekliyor",
     "Access paired computers": "Eşleştirilmiş bilgisayarlara erişim",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Eşleştirilmiş Studio istemcilerinin kayıtlı bağlantılarını kullanın. Bu seçeneği kapatmak uzak erişim izinlerini iptal eder. Arayüz denetimi yerel kalır."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Eşleştirilmiş Studio istemcilerinin kayıtlı bağlantılarını kullanın. Bu seçeneği kapatmak uzak erişim izinlerini iptal eder. Arayüz denetimi yerel kalır.",
+    "Return to {value0}": "{value0} sohbetine dön",
+    "Inside Dovo": "Dovo içinde",
+    "In-app notifications": "Uygulama içi bildirimler",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo açıkken diğer sohbetlerden gelen istekleri göster. Sistem izni gerekmez."
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -47011,7 +47051,11 @@
     "Pinned": "مثبّت",
     "Waiting": "قيد الانتظار",
     "Access paired computers": "الوصول إلى أجهزة الكمبيوتر المقترنة",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "استخدم الاتصالات المحفوظة من عملاء Studio المقترنين. يؤدي إيقاف هذا الخيار إلى إلغاء أذونات الوصول عن بُعد. يظل التحكم في الواجهة محليًا."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "استخدم الاتصالات المحفوظة من عملاء Studio المقترنين. يؤدي إيقاف هذا الخيار إلى إلغاء أذونات الوصول عن بُعد. يظل التحكم في الواجهة محليًا.",
+    "Return to {value0}": "العودة إلى {value0}",
+    "Inside Dovo": "داخل Dovo",
+    "In-app notifications": "إشعارات داخل التطبيق",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "اعرض الطلبات من المحادثات الأخرى أثناء فتح Dovo. لا يلزم إذن من النظام."
   },
   "bg": {
     "Settings": "Настройки",
@@ -51285,7 +51329,11 @@
     "Pinned": "Закачено",
     "Waiting": "Изчаква",
     "Access paired computers": "Достъп до сдвоени компютри",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Използвайте запазените връзки от сдвоени клиенти на Studio. Изключването отнема отдалечените разрешения. Управлението на интерфейса остава локално."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Използвайте запазените връзки от сдвоени клиенти на Studio. Изключването отнема отдалечените разрешения. Управлението на интерфейса остава локално.",
+    "Return to {value0}": "Назад към {value0}",
+    "Inside Dovo": "В Dovo",
+    "In-app notifications": "Известия в приложението",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показвай заявки от други разговори, докато Dovo е отворено. Не е нужно системно разрешение."
   },
   "zh": {
     "Settings": "设置",
@@ -55559,7 +55607,11 @@
     "Pinned": "已固定",
     "Waiting": "等待中",
     "Access paired computers": "访问已配对的电脑",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "使用已配对 Studio 客户端保存的连接。关闭后将撤销远程授权。界面控制仍限于本机。"
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "使用已配对 Studio 客户端保存的连接。关闭后将撤销远程授权。界面控制仍限于本机。",
+    "Return to {value0}": "返回 {value0}",
+    "Inside Dovo": "Dovo 内",
+    "In-app notifications": "应用内通知",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo 打开时显示其他对话中的请求。无需系统权限。"
   },
   "hr": {
     "Settings": "Postavke",
@@ -59833,7 +59885,11 @@
     "Pinned": "Prikvačeno",
     "Waiting": "Na čekanju",
     "Access paired computers": "Pristup uparenim računalima",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Koristite spremljene veze uparenih klijenata Studio. Isključivanje opoziva udaljena dopuštenja. Upravljanje sučeljem ostaje lokalno."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Koristite spremljene veze uparenih klijenata Studio. Isključivanje opoziva udaljena dopuštenja. Upravljanje sučeljem ostaje lokalno.",
+    "Return to {value0}": "Povratak na {value0}",
+    "Inside Dovo": "U aplikaciji Dovo",
+    "In-app notifications": "Obavijesti u aplikaciji",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Prikaži zahtjeve iz drugih razgovora dok je Dovo otvoren. Nije potrebno dopuštenje sustava."
   },
   "cs": {
     "Settings": "Nastavení",
@@ -64107,7 +64163,11 @@
     "Pinned": "Připnuto",
     "Waiting": "Čeká",
     "Access paired computers": "Přístup ke spárovaným počítačům",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použijte uložená připojení ze spárovaných klientů Studio. Vypnutí odebere vzdálená oprávnění. Ovládání rozhraní zůstane místní."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použijte uložená připojení ze spárovaných klientů Studio. Vypnutí odebere vzdálená oprávnění. Ovládání rozhraní zůstane místní.",
+    "Return to {value0}": "Zpět na {value0}",
+    "Inside Dovo": "V Dovo",
+    "In-app notifications": "Oznámení v aplikaci",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovat požadavky z jiných konverzací, když je Dovo otevřené. Není potřeba oprávnění systému."
   },
   "da": {
     "Settings": "Indstillinger",
@@ -68381,7 +68441,11 @@
     "Pinned": "Fastgjort",
     "Waiting": "Venter",
     "Access paired computers": "Adgang til parrede computere",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Brug gemte forbindelser fra parrede Studio-klienter. Deaktivering tilbagekalder fjerntilladelser. Styring af brugerfladen forbliver lokal."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Brug gemte forbindelser fra parrede Studio-klienter. Deaktivering tilbagekalder fjerntilladelser. Styring af brugerfladen forbliver lokal.",
+    "Return to {value0}": "Tilbage til {value0}",
+    "Inside Dovo": "I Dovo",
+    "In-app notifications": "Notifikationer i appen",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis anmodninger fra andre samtaler, mens Dovo er åben. Der kræves ingen systemtilladelse."
   },
   "et": {
     "Settings": "Seaded",
@@ -72655,7 +72719,11 @@
     "Pinned": "Kinnitatud",
     "Waiting": "Ootel",
     "Access paired computers": "Juurdepääs seotud arvutitele",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Kasuta seotud Studio klientide salvestatud ühendusi. Väljalülitamine tühistab kaugjuurdepääsu õigused. Kasutajaliidese juhtimine jääb kohalikuks."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Kasuta seotud Studio klientide salvestatud ühendusi. Väljalülitamine tühistab kaugjuurdepääsu õigused. Kasutajaliidese juhtimine jääb kohalikuks.",
+    "Return to {value0}": "Tagasi vestlusse {value0}",
+    "Inside Dovo": "Dovos",
+    "In-app notifications": "Rakendusesisesed teavitused",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näita teiste vestluste taotlusi, kui Dovo on avatud. Süsteemi luba pole vaja."
   },
   "fi": {
     "Settings": "Asetukset",
@@ -76929,7 +76997,11 @@
     "Pinned": "Kiinnitetty",
     "Waiting": "Odottaa",
     "Access paired computers": "Käytä pariliitettyjä tietokoneita",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Käytä pariliitettyjen Studio-asiakkaiden tallennettuja yhteyksiä. Poiskytkentä peruu etäkäyttöoikeudet. Käyttöliittymän hallinta pysyy paikallisena."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Käytä pariliitettyjen Studio-asiakkaiden tallennettuja yhteyksiä. Poiskytkentä peruu etäkäyttöoikeudet. Käyttöliittymän hallinta pysyy paikallisena.",
+    "Return to {value0}": "Takaisin keskusteluun {value0}",
+    "Inside Dovo": "Dovossa",
+    "In-app notifications": "Sovelluksen sisäiset ilmoitukset",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Näytä muiden keskustelujen pyynnöt, kun Dovo on auki. Järjestelmän lupaa ei tarvita."
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -81203,7 +81275,11 @@
     "Pinned": "पिन किया गया",
     "Waiting": "प्रतीक्षा में",
     "Access paired computers": "पेयर किए गए कंप्यूटरों तक पहुँच",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "पेयर किए गए Studio क्लाइंट के सहेजे गए कनेक्शन इस्तेमाल करें। इसे बंद करने से दूरस्थ अनुमतियाँ रद्द होती हैं। इंटरफ़ेस का नियंत्रण स्थानीय रहता है।"
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "पेयर किए गए Studio क्लाइंट के सहेजे गए कनेक्शन इस्तेमाल करें। इसे बंद करने से दूरस्थ अनुमतियाँ रद्द होती हैं। इंटरफ़ेस का नियंत्रण स्थानीय रहता है।",
+    "Return to {value0}": "{value0} पर वापस जाएँ",
+    "Inside Dovo": "Dovo के अंदर",
+    "In-app notifications": "ऐप में सूचनाएँ",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo खुला होने पर अन्य बातचीत के अनुरोध दिखाएँ। सिस्टम की अनुमति की ज़रूरत नहीं है।"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -85477,7 +85553,11 @@
     "Pinned": "Rögzítve",
     "Waiting": "Várakozik",
     "Access paired computers": "Párosított számítógépek elérése",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Használja a párosított Studio-kliensek mentett kapcsolatait. A kikapcsolás visszavonja a távoli engedélyeket. A felület vezérlése helyi marad."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Használja a párosított Studio-kliensek mentett kapcsolatait. A kikapcsolás visszavonja a távoli engedélyeket. A felület vezérlése helyi marad.",
+    "Return to {value0}": "Vissza ide: {value0}",
+    "Inside Dovo": "A Dovóban",
+    "In-app notifications": "Alkalmazáson belüli értesítések",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Más beszélgetések kéréseinek megjelenítése, amikor a Dovo nyitva van. Nem kell rendszerengedély."
   },
   "ja": {
     "Settings": "設定",
@@ -89751,7 +89831,11 @@
     "Pinned": "ピン留め済み",
     "Waiting": "待機中",
     "Access paired computers": "ペア設定済みのコンピューターにアクセス",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "ペア設定済みの Studio クライアントに保存された接続を使用します。オフにするとリモートの許可が取り消されます。UI の操作はローカルのままです。"
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "ペア設定済みの Studio クライアントに保存された接続を使用します。オフにするとリモートの許可が取り消されます。UI の操作はローカルのままです。",
+    "Return to {value0}": "{value0} に戻る",
+    "Inside Dovo": "Dovo 内",
+    "In-app notifications": "アプリ内通知",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo を開いている間、他の会話からのリクエストを表示します。システムの許可は不要です。"
   },
   "ko": {
     "Settings": "설정",
@@ -94025,7 +94109,11 @@
     "Pinned": "고정됨",
     "Waiting": "대기 중",
     "Access paired computers": "페어링된 컴퓨터에 접근",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "페어링된 Studio 클라이언트의 저장된 연결을 사용합니다. 이 옵션을 끄면 원격 권한이 취소됩니다. UI 제어는 로컬로 유지됩니다."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "페어링된 Studio 클라이언트의 저장된 연결을 사용합니다. 이 옵션을 끄면 원격 권한이 취소됩니다. UI 제어는 로컬로 유지됩니다.",
+    "Return to {value0}": "{value0}(으)로 돌아가기",
+    "Inside Dovo": "Dovo 내",
+    "In-app notifications": "앱 내 알림",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Dovo가 열려 있을 때 다른 대화의 요청을 표시합니다. 시스템 권한이 필요하지 않습니다."
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -98299,7 +98387,11 @@
     "Pinned": "Festet",
     "Waiting": "Venter",
     "Access paired computers": "Tilgang til sammenkoblede datamaskiner",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Bruk lagrede tilkoblinger fra sammenkoblede Studio-klienter. Deaktivering opphever eksterne tillatelser. Styring av grensesnittet forblir lokal."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Bruk lagrede tilkoblinger fra sammenkoblede Studio-klienter. Deaktivering opphever eksterne tillatelser. Styring av grensesnittet forblir lokal.",
+    "Return to {value0}": "Tilbake til {value0}",
+    "Inside Dovo": "I Dovo",
+    "In-app notifications": "Varsler i appen",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Vis forespørsler fra andre samtaler mens Dovo er åpen. Ingen systemtillatelse er nødvendig."
   },
   "ro": {
     "Settings": "Setări",
@@ -102573,7 +102665,11 @@
     "Pinned": "Fixat",
     "Waiting": "În așteptare",
     "Access paired computers": "Acces la computere asociate",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Folosiți conexiunile salvate de clienții Studio asociați. Dezactivarea revocă permisiunile la distanță. Controlul interfeței rămâne local."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Folosiți conexiunile salvate de clienții Studio asociați. Dezactivarea revocă permisiunile la distanță. Controlul interfeței rămâne local.",
+    "Return to {value0}": "Înapoi la {value0}",
+    "Inside Dovo": "În Dovo",
+    "In-app notifications": "Notificări în aplicație",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Afișează cereri din alte conversații când Dovo este deschis. Nu este necesară permisiunea sistemului."
   },
   "ru": {
     "Settings": "Настройки",
@@ -106847,7 +106943,11 @@
     "Pinned": "Закреплено",
     "Waiting": "Ожидание",
     "Access paired computers": "Доступ к сопряжённым компьютерам",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Используйте сохранённые подключения сопряжённых клиентов Studio. Отключение отзывает разрешения удалённого доступа. Управление интерфейсом остаётся локальным."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Используйте сохранённые подключения сопряжённых клиентов Studio. Отключение отзывает разрешения удалённого доступа. Управление интерфейсом остаётся локальным.",
+    "Return to {value0}": "Вернуться к {value0}",
+    "Inside Dovo": "В Dovo",
+    "In-app notifications": "Уведомления в приложении",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показывать запросы из других разговоров, пока Dovo открыто. Разрешение системы не требуется."
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -111121,7 +111221,11 @@
     "Pinned": "Pripnuté",
     "Waiting": "Čaká",
     "Access paired computers": "Prístup k spárovaným počítačom",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použite uložené pripojenia spárovaných klientov Studio. Vypnutie zruší vzdialené oprávnenia. Ovládanie rozhrania zostane miestne."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Použite uložené pripojenia spárovaných klientov Studio. Vypnutie zruší vzdialené oprávnenia. Ovládanie rozhrania zostane miestne.",
+    "Return to {value0}": "Späť na {value0}",
+    "Inside Dovo": "V Dovo",
+    "In-app notifications": "Oznámenia v aplikácii",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Zobrazovať požiadavky z iných konverzácií, keď je Dovo otvorené. Nie je potrebné systémové povolenie."
   },
   "sv": {
     "Settings": "Inställningar",
@@ -115395,7 +115499,11 @@
     "Pinned": "Fäst",
     "Waiting": "Väntar",
     "Access paired computers": "Åtkomst till parkopplade datorer",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Använd sparade anslutningar från parkopplade Studio-klienter. Avstängning återkallar fjärrbehörigheter. Gränssnittsstyrning förblir lokal."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Använd sparade anslutningar från parkopplade Studio-klienter. Avstängning återkallar fjärrbehörigheter. Gränssnittsstyrning förblir lokal.",
+    "Return to {value0}": "Tillbaka till {value0}",
+    "Inside Dovo": "I Dovo",
+    "In-app notifications": "Aviseringar i appen",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Visa förfrågningar från andra samtal när Dovo är öppet. Inget systemtillstånd krävs."
   },
   "uk": {
     "Settings": "Налаштування",
@@ -119669,7 +119777,11 @@
     "Pinned": "Закріплено",
     "Waiting": "Очікування",
     "Access paired computers": "Доступ до сполучених комп'ютерів",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Використовуйте збережені підключення сполучених клієнтів Studio. Вимкнення скасовує дозволи віддаленого доступу. Керування інтерфейсом залишається локальним."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Використовуйте збережені підключення сполучених клієнтів Studio. Вимкнення скасовує дозволи віддаленого доступу. Керування інтерфейсом залишається локальним.",
+    "Return to {value0}": "Повернутися до {value0}",
+    "Inside Dovo": "У Dovo",
+    "In-app notifications": "Сповіщення в застосунку",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Показувати запити з інших розмов, поки Dovo відкрито. Дозвіл системи не потрібен."
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -123943,6 +124055,10 @@
     "Pinned": "Đã ghim",
     "Waiting": "Đang chờ",
     "Access paired computers": "Truy cập máy tính đã ghép nối",
-    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Dùng kết nối đã lưu từ các ứng dụng Studio đã ghép nối. Tắt tùy chọn này sẽ thu hồi quyền truy cập từ xa. Điều khiển giao diện vẫn chỉ ở máy cục bộ."
+    "Use saved connections from paired Studio clients. Turning this off revokes remote grants. UI control stays local.": "Dùng kết nối đã lưu từ các ứng dụng Studio đã ghép nối. Tắt tùy chọn này sẽ thu hồi quyền truy cập từ xa. Điều khiển giao diện vẫn chỉ ở máy cục bộ.",
+    "Return to {value0}": "Quay lại {value0}",
+    "Inside Dovo": "Trong Dovo",
+    "In-app notifications": "Thông báo trong ứng dụng",
+    "Show requests from other threads while Dovo is open. No system permission is needed.": "Hiển thị yêu cầu từ các cuộc trò chuyện khác khi Dovo đang mở. Không cần quyền của hệ thống."
   }
 }

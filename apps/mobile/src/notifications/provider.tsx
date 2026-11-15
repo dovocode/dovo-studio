@@ -16,6 +16,7 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { configureNotificationAnswers } from './answers'
 import { createNotificationResponseConsumer } from './response-consumer'
 import { shouldAlertForNotification } from './visibility'
+import { deliverInAppNotification } from './in-app-delivery'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
 const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
@@ -100,18 +101,18 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
       ])
       if (disposed) return
       Notifications.setNotificationHandler({
-        handleNotification: async (notification) => ({
-          shouldPlaySound: shouldAlertForNotification(
-            notification.request.content.data,
-            AppState.currentState === 'active',
-          ),
-          shouldSetBadge: false,
-          shouldShowBanner: shouldAlertForNotification(
-            notification.request.content.data,
-            AppState.currentState === 'active',
-          ),
-          shouldShowList: true,
-        }),
+        handleNotification: async (notification) => {
+          const data = notification.request.content.data
+          const active = AppState.currentState === 'active'
+          const delivered = deliverInAppNotification(data, active)
+          const alert = !delivered && shouldAlertForNotification(data, active)
+          return {
+            shouldPlaySound: alert,
+            shouldSetBadge: false,
+            shouldShowBanner: alert,
+            shouldShowList: true,
+          }
+        },
       })
       subscriptions.push({ remove: () => Notifications.setNotificationHandler(null) })
       const consumer = createNotificationResponseConsumer({

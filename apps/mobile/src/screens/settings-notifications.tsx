@@ -14,11 +14,16 @@ import { ScreenHeader } from '../ui/layout/screen-header'
 import { Text } from '../ui/content/text'
 import { SettingsPage, useSettingsTheme } from './settings-theme'
 import { SettingsGroup, SettingsSwitchRow } from './settings-group'
+import {
+  useMobilePreferences,
+  updateMobilePreferences,
+} from '../runtime/preferences/app-preferences'
 
 export default function NotificationsSettingsScreen() {
   const uiText = useInterfaceText()
 
   const { styles } = useSettingsTheme()
+  const { inAppNotifications } = useMobilePreferences()
   const notifications = usePushNotifications()
   const activity = useLiveActivities()
   const { overviews, readRuntime } = useRuntime()
@@ -33,6 +38,19 @@ export default function NotificationsSettingsScreen() {
             {'This device only · choose which paired computers can send alerts to this phone'}
           </InterfaceText>
         </Text>
+        <SettingsGroup
+          title={uiText('Inside Dovo')}
+          footer={uiText(
+            'Show requests from other threads while Dovo is open. No system permission is needed.',
+          )}
+        >
+          <SettingsSwitchRow
+            first
+            label={uiText('In-app notifications')}
+            value={inAppNotifications}
+            onValueChange={(value) => updateMobilePreferences({ inAppNotifications: value })}
+          />
+        </SettingsGroup>
         <SettingsGroup
           title={uiText('Push notifications')}
           footer={uiText(

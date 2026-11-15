@@ -4,6 +4,7 @@ import { getLocales } from 'expo-localization'
 import { MobileAccountProvider } from './runtime/connection/account-provider'
 import { SettingsTargetProvider } from './runtime/preferences/settings-target'
 import { PushNotificationProvider } from './notifications/provider'
+import { InAppInputNotifications } from './notifications/in-app-input'
 import { TaskQuickActions } from './shell/task-quick-actions'
 import { useTheme } from './ui/theme'
 import { MobileAppearance } from './ui/appearance'
@@ -76,6 +77,7 @@ function ThemedApp() {
                             <BrowserWorkspaceProvider>
                               <WorkspaceViewProvider>
                                 <Workbench />
+                                <InAppInputNotifications />
                               </WorkspaceViewProvider>
                             </BrowserWorkspaceProvider>
                           </NativeBrowserProvider>
