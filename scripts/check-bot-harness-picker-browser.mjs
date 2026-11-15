@@ -128,8 +128,8 @@ return <Controls key={task.id} task={task} onClose={()=>window.closes++}/>};crea
         'Favorites',
         'Saved agents',
         'Codex',
-        'Claude',
         'OpenCode',
+        'Claude',
       ])
       await page.getByRole('button', { name: 'codex model', exact: true }).waitFor()
     }

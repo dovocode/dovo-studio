@@ -69,7 +69,7 @@ export function DatabaseSpace() {
       {space && (
         <>
           <Text>
-            {uiText('Database')}: {mb(space.fileBytes)} · WAL: {mb(space.walBytes)}
+            {uiText('Database')}: {mb(space.fileBytes)} · {uiText('WAL')}: {mb(space.walBytes)}
           </Text>
           <Text>
             {uiText('Reclaimable pages')}: {mb(space.reclaimableBytes)} · {uiText('Disk free')}:{' '}

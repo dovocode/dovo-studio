@@ -93,6 +93,21 @@ const claude = (
   current: Parameters<typeof nativeTodos>[3] = [],
 ) => nativeTodos('claude/checklist', { tool_name, tool_input, tool_response }, 'claude', current)
 
+it.each(['in_progress', 'inProgress', 'in-progress'])(
+  'keeps OpenCode progress with the supported %s status',
+  (status) => {
+    expect(
+      nativeTodos(
+        'todo.updated',
+        { properties: { sessionID: 'root', todos: [{ content: 'Build', status }] } },
+        'opencode',
+        [],
+        'root',
+      ),
+    ).toEqual([{ text: 'Build', status: 'in-progress' }])
+  },
+)
+
 it('maps OpenCode todo snapshots only for the current session, including clearing and cancellation', () => {
   const properties = {
     sessionID: 'root',

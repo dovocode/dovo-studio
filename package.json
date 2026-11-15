@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:image-gallery:browser": "node scripts/check-image-gallery-browser.mjs",
     "test:bot-harness:browser": "node scripts/check-bot-harness-picker-browser.mjs && node scripts/check-harness-row-browser.mjs",
     "test:bot-conversations:browser": "node scripts/check-bot-conversations-browser.mjs",
     "test:t3-eight-controls:browser": "node scripts/check-t3-eight-controls-browser.mjs",

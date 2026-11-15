@@ -63,7 +63,14 @@ export function nativeTodos(
       Schema.Array(
         Schema.Struct({
           content: Schema.String,
-          status: Schema.Literals(['pending', 'in_progress', 'completed', 'cancelled']),
+          status: Schema.Literals([
+            'pending',
+            'in_progress',
+            'inProgress',
+            'in-progress',
+            'completed',
+            'cancelled',
+          ]),
         }),
       ),
       properties.todos,

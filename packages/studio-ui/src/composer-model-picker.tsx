@@ -173,9 +173,14 @@ export function ComposerModelPicker({
       (!lockedProvider || p === lockedProvider) &&
       (p !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === ''),
   )
-  const namedAcpAgents = agents.filter((agent) => agent.provider === 'acp' && availability.available.has(`agent:${agent.id}`) &&
-    (!lockedProvider || lockedProvider === 'acp') &&
-    (lockedInstallationId === undefined || (agent.acpInstallationId ?? '') === lockedInstallationId))
+  const namedAcpAgents = agents.filter(
+    (agent) =>
+      agent.provider === 'acp' &&
+      availability.available.has(`agent:${agent.id}`) &&
+      (!lockedProvider || lockedProvider === 'acp') &&
+      (lockedInstallationId === undefined ||
+        (agent.acpInstallationId ?? '') === lockedInstallationId),
+  )
   const availableInstallations = installations.filter(
     (installation) =>
       availability.available.has(acpHarnessChoiceId(installation.id)) &&
@@ -501,13 +506,24 @@ export function ComposerModelPicker({
                     </Button>
                   ))}
                   {namedAcpAgents.map((agent) => (
-                    <Button key={`agent:${agent.id}`} type="button" variant="ghost"
+                    <Button
+                      key={`agent:${agent.id}`}
+                      type="button"
+                      variant="ghost"
                       aria-label={`${agent.name} harness`}
                       aria-pressed={selectedAgent?.id === agent.id}
                       disabled={disabled || choosing}
                       title={agent.name}
                       className="h-7 gap-1.5 px-2 text-xs"
-                      onClick={() => void choose({ id: agent.id, name: agent.name, provider: agent.provider, agent, hidden: false })}
+                      onClick={() =>
+                        void choose({
+                          id: agent.id,
+                          name: agent.name,
+                          provider: agent.provider,
+                          agent,
+                          hidden: false,
+                        })
+                      }
                     >
                       <HarnessIcon provider={agent.provider} className="size-4" />
                       {agent.name}

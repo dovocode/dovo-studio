@@ -376,9 +376,7 @@ export const opencodeV2Adapter: AgentAdapter = {
           )
             await jobs.refresh()
           if (event.type === 'form.replied' || event.type === 'form.cancelled') {
-            interactions
-              .get(`form:${event.data.sessionID}:${event.data.id}`)
-              ?.controller.abort()
+            interactions.get(`form:${event.data.sessionID}:${event.data.id}`)?.controller.abort()
             continue
           }
           if (

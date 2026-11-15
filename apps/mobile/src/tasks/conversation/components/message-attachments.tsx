@@ -244,7 +244,10 @@ export function MessageAttachments({
         />
       )}
       <SafeModal visible={!!preview} animationType="slide" onRequestClose={() => setPreview(null)}>
-        {preview && isImageAttachment(preview.attachment) && preview.attachment.mime !== 'image/gif' && NativeImageGallery ? (
+        {preview &&
+        isImageAttachment(preview.attachment) &&
+        preview.attachment.mime !== 'image/gif' &&
+        NativeImageGallery ? (
           <NativeImageGallery
             taskId={taskId}
             files={files.filter((file) => file.mime !== 'image/gif')}

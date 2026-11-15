@@ -70,10 +70,14 @@ export async function* opencodeEvents(
                 {},
                 { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
               ),
-              Promise.all([...sessions].map((id) => api.session.form.list(
-                { sessionID: id },
-                { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
-              ))),
+              Promise.all(
+                [...sessions].map((id) =>
+                  api.session.form.list(
+                    { sessionID: id },
+                    { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
+                  ),
+                ),
+              ),
             ])
             for (const request of permissions.data)
               if (sessions.has(request.sessionID))

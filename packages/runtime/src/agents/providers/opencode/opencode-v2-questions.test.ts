@@ -151,9 +151,16 @@ it.each(['answer', 'dismiss', 'stop', 'reconnect'] as const)(
     const parent = new Promise<void>((resolve) => {
       parentEnded = resolve
     })
-    const form = { id: 'child-form', sessionID: 'child', title: 'Worker question', fields: [{ key: 'choice', type: 'string' }] }
+    const form = {
+      id: 'child-form',
+      sessionID: 'child',
+      title: 'Worker question',
+      fields: [{ key: 'choice', type: 'string' }],
+    }
     let recovered!: () => void
-    const recovery = new Promise<void>(resolve => { recovered = resolve })
+    const recovery = new Promise<void>((resolve) => {
+      recovered = resolve
+    })
     const calls: Array<{ path: string; body: unknown; message: string | null }> = []
     const controller = new AbortController()
     const questions = new Questions({ add: () => undefined })
@@ -189,13 +196,20 @@ it.each(['answer', 'dismiss', 'stop', 'reconnect'] as const)(
           emit('session.execution.started', { sessionID: 'session' })
           emit('session.created', { id: 'child', parentID: 'session', title: 'Worker' })
           emit('session.execution.started', { sessionID: 'child' })
-          if (action !== 'reconnect') { emit('form.created', { form }); emit('form.created', { form }) }
+          if (action !== 'reconnect') {
+            emit('form.created', { form })
+            emit('form.created', { form })
+          }
           emit('session.execution.succeeded', { sessionID: 'session' })
           if (action === 'reconnect') stream?.end()
           return
         }
-        if (path === '/api/permission/request') return response.end(JSON.stringify({data: []}))
-        if (path === '/api/session/child/form') { response.end(JSON.stringify({data: [form]})); recovered(); return }
+        if (path === '/api/permission/request') return response.end(JSON.stringify({ data: [] }))
+        if (path === '/api/session/child/form') {
+          response.end(JSON.stringify({ data: [form] }))
+          recovered()
+          return
+        }
         if (path.includes('/form/child-form')) {
           response.writeHead(204).end()
           working = false
@@ -213,7 +227,9 @@ it.each(['answer', 'dismiss', 'stop', 'reconnect'] as const)(
     if (!address || typeof address === 'string') throw new Error('Missing test address')
     let asked = 0
     let questionReady!: () => void
-    const ready = new Promise<void>(resolve => { questionReady = resolve })
+    const ready = new Promise<void>((resolve) => {
+      questionReady = resolve
+    })
     const running = opencodeV2Adapter.run({
       agent: {
         id: 'agent',
@@ -249,31 +265,49 @@ it.each(['answer', 'dismiss', 'stop', 'reconnect'] as const)(
     try {
       await parent
       if (action === 'reconnect') await recovery
-      await Promise.race([ready, running.then(() => { throw new Error('Run ended before the child question') })])
+      await Promise.race([
+        ready,
+        running.then(() => {
+          throw new Error('Run ended before the child question')
+        }),
+      ])
       expect(asked).toBe(1)
       expect(questions.list()).toHaveLength(1)
       const question = questions.list()[0]!
+      let runError: unknown
       if (action === 'stop') {
         controller.abort()
-        await expect(running).rejects.toThrow(/cancelled|aborted/i)
-        expect(calls.filter((call) => call.path.includes('/form/child-form'))).toEqual([])
+        await running.catch((error: unknown) => {
+          runError = error
+        })
       } else {
-        questions.respond(question.id, action === 'answer' || action === 'reconnect' ? { choice: ['Proceed'] } : null)
+        questions.respond(
+          question.id,
+          action === 'answer' || action === 'reconnect' ? { choice: ['Proceed'] } : null,
+        )
         await running
-        expect(calls.filter((call) => call.path.includes('/form/child-form'))).toEqual([
-          action === 'answer' || action === 'reconnect'
-            ? {
-                path: '/api/session/child/form/child-form/reply',
-                body: { answer: { choice: 'Proceed' } },
-                message: null,
-              }
-            : {
-                path: '/api/session/child/form/child-form',
-                body: undefined,
-                message: 'The user dismissed this question. Continue without an answer.',
-              },
-        ])
       }
+      const stoppedError = expect.objectContaining({
+        message: expect.stringMatching(/cancelled|aborted/i),
+      })
+      expect(runError).toEqual(action === 'stop' ? stoppedError : undefined)
+      expect(calls.filter((call) => call.path.includes('/form/child-form'))).toEqual(
+        action === 'stop'
+          ? []
+          : [
+              action === 'answer' || action === 'reconnect'
+                ? {
+                    path: '/api/session/child/form/child-form/reply',
+                    body: { answer: { choice: 'Proceed' } },
+                    message: null,
+                  }
+                : {
+                    path: '/api/session/child/form/child-form',
+                    body: undefined,
+                    message: 'The user dismissed this question. Continue without an answer.',
+                  },
+            ],
+      )
       expect(questions.list()).toEqual([])
     } finally {
       controller.abort()

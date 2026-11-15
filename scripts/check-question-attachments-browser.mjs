@@ -162,7 +162,10 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
     })
     // Expiration recovery restores source bytes in place on desktop. Mobile keeps its
     // durable upload path and reports a missing file without discarding the answer.
-    await page.evaluate(() => { window.expired = [window.uploads[0].id]; window.fail = true })
+    await page.evaluate(() => {
+      window.expired = [window.uploads[0].id]
+      window.fail = true
+    })
     await page.getByRole('button', { name: 'Send answers', exact: true }).click()
     if (mobile) {
       await page.getByRole('alert').filter({ hasText: 'unavailable' }).waitFor()
@@ -176,9 +179,19 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
       assert.equal(uploads[2].data, uploads[0].data)
       assert.equal(uploads[2].detached, true)
     }
-    assert.equal(await page.getByRole('button', { name: 'Remove answer.txt', exact: true }).count(), 2)
-    assert.equal(await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue(), 'Untouched message')
-    await page.evaluate(() => { window.expired = []; window.answers = []; window.fail = false })
+    assert.equal(
+      await page.getByRole('button', { name: 'Remove answer.txt', exact: true }).count(),
+      2,
+    )
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue(),
+      'Untouched message',
+    )
+    await page.evaluate(() => {
+      window.expired = []
+      window.answers = []
+      window.fail = false
+    })
     await page.evaluate(() => window.remount())
     await page.waitForFunction(
       () =>

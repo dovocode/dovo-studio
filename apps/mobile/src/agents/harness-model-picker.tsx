@@ -84,7 +84,8 @@ function ComputerModelPicker({
   useEffect(() => setSavedPreferences(undefined), [snapshotPreferences])
   const preferences = savedPreferences ?? snapshot?.defaults?.modelPreferences ?? {}
   const providers = choices.filter(
-    (choice) => !choice.id.startsWith('agent:') || choice.provider === 'acp' || choice.id === selection,
+    (choice) =>
+      !choice.id.startsWith('agent:') || choice.provider === 'acp' || choice.id === selection,
   )
   const savedAgents = choices.filter((choice) => choice.id.startsWith('agent:'))
   const search = query.trim().toLowerCase()
@@ -155,7 +156,10 @@ function ComputerModelPicker({
       style={{ gap: 12 }}
     >
       <View style={{ gap: 8 }}>
-        <View accessibilityLabel={uiText('Harnesses')} style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}>
+        <View
+          accessibilityLabel={uiText('Harnesses')}
+          style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6 }}
+        >
           {providers.map((choice) => (
             <Pressable
               key={choice.id}
@@ -168,10 +172,21 @@ function ComputerModelPicker({
                 setQuery('')
                 setCustom(false)
               }}
-              style={{ minHeight: 44, maxWidth: '100%', flexDirection: 'row', alignItems: 'center', gap: 6, paddingHorizontal: 12, borderRadius: 12, backgroundColor: filter === choice.id ? colors.selection : colors.surface }}
+              style={{
+                minHeight: 44,
+                maxWidth: '100%',
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 6,
+                paddingHorizontal: 12,
+                borderRadius: 12,
+                backgroundColor: filter === choice.id ? colors.selection : colors.surface,
+              }}
             >
               <HarnessIcon provider={choice.provider} size={18} />
-              <Text numberOfLines={1} style={{ flexShrink: 1, color: colors.text }}>{choice.name}</Text>
+              <Text numberOfLines={1} style={{ flexShrink: 1, color: colors.text }}>
+                {choice.name}
+              </Text>
             </Pressable>
           ))}
         </View>

@@ -133,7 +133,9 @@ try {
     if (failUpload) {
       await page.evaluate(() => window.failUpload(new Error('Upload connection lost')))
       await page.waitForFunction(() => window.pending?.state === 'failed')
-      await page.waitForFunction(() => document.querySelector('textarea').value === 'Send after this upload')
+      await page.waitForFunction(
+        () => document.querySelector('textarea').value === 'Send after this upload',
+      )
       assert.equal(await input.inputValue(), 'Send after this upload')
       assert.equal(
         await page.evaluate(() =>
@@ -1351,26 +1353,45 @@ try {
   await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
   await page.evaluate(() => {
     localStorage.clear()
-    window.setTask(task => ({ ...task, status: 'draft', activeRunId: undefined, messages: [], queue: [], draft: '', draftAttachments: [], draftTurnSettings: undefined }))
+    window.setTask((task) => ({
+      ...task,
+      status: 'draft',
+      activeRunId: undefined,
+      messages: [],
+      queue: [],
+      draft: '',
+      draftAttachments: [],
+      draftTurnSettings: undefined,
+    }))
     window.pending = null
     window.requests = []
   })
   await remount()
   // A snapshot from another client can change the draft while upload preparation waits.
   await page.evaluate(() => {
-    window.attachmentState = { canSubmitWhileUploading: true, waitForUploads: () => new Promise(resolve => window.finishUpload = resolve) }
-    window.setTask(task => ({ ...task, draft: '' }))
+    window.attachmentState = {
+      canSubmitWhileUploading: true,
+      waitForUploads: () => new Promise((resolve) => (window.finishUpload = resolve)),
+    }
+    window.setTask((task) => ({ ...task, draft: '' }))
   })
   await input.fill('Before upload preparation')
   await page.waitForFunction(() => window.current.draft === 'Before upload preparation')
   await page.locator('button[type=submit]').click()
   await page.waitForFunction(() => typeof window.finishUpload === 'function')
-  await page.evaluate(() => window.setTask(task => ({ ...task, draft: 'New draft from another client' })))
+  await page.evaluate(() =>
+    window.setTask((task) => ({ ...task, draft: 'New draft from another client' })),
+  )
   await page.waitForFunction(() => window.current.draft === 'New draft from another client')
   await page.evaluate(() => window.finishUpload())
   await page.waitForFunction(() => window.pending?.state === 'failed')
   assert.equal(await input.inputValue(), 'New draft from another client')
-  assert.equal(await page.evaluate(() => window.requests.some(request => request.path === '/api/tasks/message')), false)
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some((request) => request.path === '/api/tasks/message'),
+    ),
+    false,
+  )
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, draft agent side chats with stable retry ids, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
