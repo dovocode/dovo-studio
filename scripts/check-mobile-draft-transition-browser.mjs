@@ -8,6 +8,9 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 // Exercise the real route, startup controller, creation runtime and TaskDetail. Native
 // controls/conversation content are boundaries; their mount counts expose page replacement.
 const mocks = {
+  // Bot controls have their own real-component suite. Keep their native archive sheet
+  // outside this route/composer continuity fixture.
+  '../../bots/bot-work-summary': 'export const BotWorkSummary=()=>null;',
   // Bot settings has its own real-component suite. Normal chat startup does not open it.
   '../../bots/bot-settings': 'export const BotSettings=()=>null;',
   // Voice calls have their own web/mobile suite. Keep native audio out of this startup fixture.
