@@ -1,4 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { BotStrip } from '../bots/bot-strip'
+import { CreateBot } from '../bots/bot-create'
 import { useDeferredValue, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
@@ -65,6 +67,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   const [refreshing, setRefreshing] = useState(false)
   const [error, setError] = useState('')
   const [starterActive, setStarterActive] = useState(false)
+  const [creatingBot, setCreatingBot] = useState(false)
   const previousTree = useRef<ReturnType<typeof mobileThreadTree>['nodes']>(new Map())
   useForegroundInterval(() => setNow(Date.now()), focused ? 15000 : null)
   const waitingForThreads = runtime.overviews.some(
@@ -110,6 +113,21 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
     [runtime.overviews, browser.state.tabs, unified, now, tree.contextKeys],
   )
   const threadRoots = useMemo(() => new Map(tree.roots.map((row) => [row.key, row])), [tree])
+  const showBotStrip = unified && ['all', 'thread', 'bot'].includes(view.kind)
+  const bots = useMemo(
+    () =>
+      [...threadRows.values()].filter(
+        ({ row }) =>
+          row.task.bot &&
+          !row.task.archivedAt &&
+          !row.task.delegation &&
+          !row.task.replica &&
+          (view.computer === 'all' || row.runtimeId === view.computer) &&
+          `${row.task.title} ${row.task.bot.role} ${row.runtimeName}`.toLowerCase().includes(query),
+      ),
+    [threadRows, view.computer, query],
+  )
+  const botKeys = useMemo(() => new Set(bots.map(({ row }) => row.key)), [bots])
   const items = useMemo(
     () =>
       allItems
@@ -130,6 +148,12 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         })
         .filter(
           (item) =>
+            !(
+              showBotStrip &&
+              preferences.botsInThreads !== false &&
+              item.kind === 'thread' &&
+              botKeys.has(runtimeResourceKey(item.runtimeId, item.task.id))
+            ) &&
             (view.kind === 'all' ||
               item.kind === view.kind ||
               (view.kind === 'bot' && item.kind === 'thread' && !!item.task.bot)) &&
@@ -149,7 +173,17 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
                   `${child.title} ${child.computerName}`.toLowerCase().includes(query),
                 ))),
         ),
-    [allItems, view.kind, view.computer, query, threadRoots, tree],
+    [
+      allItems,
+      view.kind,
+      view.computer,
+      query,
+      threadRoots,
+      tree,
+      showBotStrip,
+      preferences.botsInThreads,
+      botKeys,
+    ],
   )
   const commands: TaskListRowActions = {
     open: (key) => {
@@ -303,6 +337,23 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
           }}
           keyboardShouldPersistTaps="handled"
           refreshing={refreshing}
+          ListHeaderComponent={
+            showBotStrip ? (
+              <BotStrip
+                entries={bots}
+                onOpen={(id, runtimeId) => {
+                  listScroll.retainPosition()
+                  navigate('tasks', id, runtimeId)
+                }}
+                onCreate={() => setCreatingBot(true)}
+                createDisabled={
+                  !runtime.overviews.some(
+                    (owner) => owner.connected && owner.snapshot?.botsSupported,
+                  )
+                }
+              />
+            ) : undefined
+          }
           onRefresh={() => {
             setRefreshing(true)
             setError('')
@@ -314,24 +365,30 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
               .finally(() => setRefreshing(false))
           }}
           ListEmptyComponent={
-            <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
-              <Icon name={waitingForThreads ? 'tasks' : 'search'} size={28} color={colors.muted} />
-              <Text style={styles.title}>
-                {waitingForThreads ? uiText('Loading threads…') : uiText('No matching items')}
-              </Text>
-              <Text style={styles.muted}>
-                {waitingForThreads
-                  ? uiText('Connecting to your computers.')
-                  : uiText('Try another title, project or computer.')}
-              </Text>
-              {!waitingForThreads && (
-                <Action
-                  secondary
-                  label={uiText('Clear filters')}
-                  onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
+            showBotStrip && preferences.botsInThreads !== false && bots.length ? undefined : (
+              <View style={{ padding: 24, alignItems: 'center', gap: 12 }}>
+                <Icon
+                  name={waitingForThreads ? 'tasks' : 'search'}
+                  size={28}
+                  color={colors.muted}
                 />
-              )}
-            </View>
+                <Text style={styles.title}>
+                  {waitingForThreads ? uiText('Loading threads…') : uiText('No matching items')}
+                </Text>
+                <Text style={styles.muted}>
+                  {waitingForThreads
+                    ? uiText('Connecting to your computers.')
+                    : uiText('Try another title, project or computer.')}
+                </Text>
+                {!waitingForThreads && (
+                  <Action
+                    secondary
+                    label={uiText('Clear filters')}
+                    onPress={() => setView({ search: '', kind: 'all', computer: 'all' })}
+                  />
+                )}
+              </View>
+            )
           }
           renderItem={({ item: row }) =>
             row.kind === 'section' ? (
@@ -430,6 +487,15 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         </Sheet>
       )}
       {actions && <ResourceActions item={actions} onClose={() => setActions(null)} />}
+      {creatingBot && (
+        <CreateBot
+          onClose={() => setCreatingBot(false)}
+          onCreated={(id, runtimeId) => {
+            setCreatingBot(false)
+            navigate('tasks', id, runtimeId)
+          }}
+        />
+      )}
     </View>
   )
 }

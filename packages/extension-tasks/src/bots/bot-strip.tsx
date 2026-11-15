@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useAppPreferences } from '@dovo/studio-core'
 import { useState } from 'react'
-import { Pin, Plus } from 'lucide-react'
+import { CircleAlert, Pin, Plus } from 'lucide-react'
 import { compareBotActivity, hasUnreadTaskActivity } from '@dovo/protocol'
 import { BotAvatar, ContextMenu } from '@dovo/studio-ui'
 import type { TaskEntry } from '../list/task-collection'
@@ -37,17 +37,32 @@ export function BotStrip({
           .sort((a, b) => compareBotActivity(a.task, b.task) || a.key.localeCompare(b.key))
           .map((entry) => {
             const unread = hasUnreadTaskActivity(entry.task)
+            const attention = entry.needsInput
+              ? 'Needs input'
+              : entry.task.status === 'failed'
+                ? 'Failed'
+                : undefined
+            const attentionColor = entry.needsInput ? 'text-status-warning' : 'text-status-error'
             return (
               <ContextMenu.Root key={entry.key}>
                 <ContextMenu.Trigger asChild>
                   <button
                     type="button"
-                    aria-label={`Open Bot ${entry.task.title} on ${entry.source.name}${unread ? ', new messages' : ''}${entry.source.online ? '' : ', offline'}`}
-                    title={`${entry.task.title} · ${entry.source.name}`}
+                    aria-label={`${uiText('Open Bot {value0} on {value1}{value2}{value3}{value4}', {
+                      value0: entry.task.title,
+                      value1: entry.source.name,
+                      value2: unread ? ', new messages' : '',
+                      value3: '',
+                      value4: entry.source.online ? '' : ', offline',
+                    })}${attention ? ` · ${uiText(attention)}` : ''}`}
+                    title={`${entry.task.title} · ${entry.source.name}${attention ? ` · ${uiText(attention)}` : ''}`}
                     onClick={() => onOpen(entry)}
-                    className={tileClass}
+                    data-bot-attention={attention}
+                    className={`${tileClass} ${attention ? (entry.needsInput ? 'bg-status-warning/10' : 'bg-status-error/10') : ''}`}
                   >
-                    <span className="relative rounded-full ring-1 ring-border/60 ring-offset-2 ring-offset-background">
+                    <span
+                      className={`relative rounded-full ring-offset-2 ring-offset-background ${attention ? (entry.needsInput ? 'ring-2 ring-status-warning' : 'ring-2 ring-status-error') : 'ring-1 ring-border/60'}`}
+                    >
                       {entry.task.pinned && (
                         <span
                           aria-label="Pinned Bot"
@@ -61,17 +76,35 @@ export function BotStrip({
                         name={entry.task.title}
                         className={`rounded-full border-0 ${rows ? 'size-9 [&>svg]:size-5' : ''}`}
                       />
+                      {attention && (
+                        <span
+                          aria-hidden="true"
+                          className={`absolute -right-1.5 -top-1.5 z-10 rounded-full border-2 border-background bg-background ${attentionColor}`}
+                        >
+                          <CircleAlert size={15} />
+                        </span>
+                      )}
                       {unread && (
                         <span
                           aria-hidden="true"
-                          className="absolute -right-1 -top-1 size-3 rounded-full border-2 border-background bg-primary"
+                          data-bot-unread="true"
+                          className={`absolute -right-1 ${attention ? '-bottom-1' : '-top-1'} size-3 rounded-full border-2 border-background bg-primary`}
                         />
                       )}
                     </span>
-                    <span
-                      className={`min-w-0 flex-1 truncate ${rows ? 'text-left' : 'w-full text-center'} leading-4 ${unread ? 'font-semibold text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}
-                    >
-                      {entry.task.title}
+                    <span className={`min-w-0 ${rows ? 'flex-1 text-left' : 'w-full text-center'}`}>
+                      <span
+                        className={`block truncate leading-4 ${attention || unread ? 'font-semibold text-foreground' : 'text-muted-foreground group-hover:text-foreground'}`}
+                      >
+                        {entry.task.title}
+                      </span>
+                      {attention && (
+                        <span
+                          className={`mt-0.5 block text-[11px] font-medium leading-4 ${attentionColor}`}
+                        >
+                          {uiText(attention)}
+                        </span>
+                      )}
                     </span>
                   </button>
                 </ContextMenu.Trigger>

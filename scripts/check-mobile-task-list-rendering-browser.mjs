@@ -47,7 +47,7 @@ const preferenceModule = `export * from '${mobile}runtime/preferences/app-prefer
 const stubs = [
   {
     path: '../bots/bot-create',
-    importer: mobile + 'screens/',
+    importer: mobile,
     contents:
       'export const CreateBot=({onClose,onCreated})=><section role="dialog" aria-label="Create Bot"><button onClick={onClose}>Cancel Bot creation</button><button onClick={()=>onCreated("created-bot","r")}>Complete Bot creation</button></section>;',
   },
@@ -256,7 +256,7 @@ import {TaskPanesContext} from './apps/mobile/src/shell/task-panes';
 import {runtimeProfile,runtimeSnapshotPath} from '@dovo/protocol';
 import {studioThemes} from './packages/studio-core/src/themes.ts';
 import {InterfaceLanguageProvider} from './packages/studio-core/src/interface-language.tsx';
-import {accessibleThemeColors} from './packages/studio-core/src/accessibility.ts';
+import {accessibleThemeColors,statusColors} from './packages/studio-core/src/accessibility.ts';window.botStatusColors={light:statusColors('light'),dark:statusColors('dark')};
 window.titlePalettes=Object.entries(studioThemes).flatMap(([name,theme])=>['light','dark'].map(mode=>({name:name+'/'+mode,...accessibleThemeColors(theme[mode],mode,false)})));
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {RuntimeProvider,RuntimeContext,useRuntime} from './apps/mobile/src/runtime/connection/provider.tsx';
@@ -2037,12 +2037,138 @@ try {
   await newBot.waitFor()
   assert.equal(await newBot.isEnabled(), true)
   assert.equal(await newBot.evaluate((node) => node.parentElement.lastElementChild === node), true)
+  await page.evaluate(() => {
+    const owner = structuredClone(window.startupSources.owner)
+    owner.connected = true
+    owner.snapshot.botsSupported = true
+    const bot = {
+      ...owner.snapshot.workspace.tasks[0],
+      id: 'lasting-bot',
+      title: 'Lasting release Bot',
+      status: 'running',
+      archived: false,
+      archivedAt: undefined,
+      bot: { role: 'Helper', state: 'active' },
+      turns: [{ id: 'bot-unread-turn', status: 'running', startedAt: new Date().toISOString() }],
+    }
+    const worker = {
+      ...bot,
+      id: 'routine-worker',
+      title: 'Routine worker',
+      bot: undefined,
+      botJob: { botId: bot.id, runId: 'routine' },
+    }
+    owner.snapshot.workspace.tasks = [bot, worker]
+    owner.snapshot.approvals = [
+      { id: 'worker-approval', taskId: worker.id, title: 'Review', detail: '', createdAt: '' },
+    ]
+    window.botAttentionSource = owner
+    window.setListSources([owner])
+  })
   for (const layout of ['grid-2', 'grid-3', 'grid-4', 'rows', 'horizontal']) {
     await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
     await page.getByTestId(`Bot layout ${layout}`).waitFor()
     assert.equal(await botTile.isVisible(), true)
+    await botTile.getByText('Needs input', { exact: true }).waitFor()
+    assert.ok((await botTile.getAttribute('aria-label')).includes('Needs input'))
+    assert.equal(await botTile.locator('[data-testid^="Unread Bot "]').count(), 1)
     assert.equal(await newBot.isEnabled(), true)
+    for (const mode of ['light', 'dark']) {
+      await page.evaluate((mode) => {
+        const palette = window.titlePalettes.find((palette) => palette.name === 'dovo/' + mode)
+        window.rowLayout = true
+        window.rowTheme = {
+          styles: {},
+          colors: {
+            text: palette.foreground,
+            muted: palette['muted-foreground'],
+            surface: palette.card,
+            background: palette.background,
+            border: palette.border,
+            accent: palette.primary,
+            ...window.botStatusColors[mode],
+          },
+        }
+        document.body.style.background = palette.background
+        window.setListSources([{ ...window.botAttentionSource }])
+      }, mode)
+      const label = botTile.getByText('Needs input', { exact: true })
+      const colors = await label.evaluate((node) => ({
+        foreground: getComputedStyle(node).color,
+        background: getComputedStyle(node.closest('button')).backgroundColor,
+      }))
+      const bright = luminance(colors.foreground),
+        background = luminance(colors.background)
+      assert.ok(
+        (Math.max(bright, background) + 0.05) / (Math.min(bright, background) + 0.05) >= 4.5,
+        JSON.stringify({ layout, mode, colors }),
+      )
+      if (process.env.DOVO_BOT_ATTENTION_SCREENSHOT)
+        await page.getByTestId(`Bot layout ${layout}`).screenshot({
+          path: `${process.env.DOVO_BOT_ATTENTION_SCREENSHOT}-${layout}-${mode}.png`,
+        })
+    }
   }
+  await page.evaluate(() => {
+    const owner = structuredClone(window.botAttentionSource)
+    owner.snapshot.approvals = []
+    owner.snapshot.workspace.tasks[0].status = 'failed'
+    owner.snapshot.workspace.tasks[0].turns = []
+    window.setListSources([owner])
+  })
+  await botTile.getByText('Failed', { exact: true }).waitFor()
+  assert.equal(await botTile.getByText('Needs input', { exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.setListSources([structuredClone(window.botAttentionSource)])
+    window.showOverview()
+  })
+  for (const layout of ['horizontal', 'rows', 'grid-2', 'grid-3', 'grid-4']) {
+    await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
+    await page.getByTestId(`Bot layout ${layout}`).waitFor()
+    await botTile.getByText('Needs input', { exact: true }).waitFor()
+    assert.ok((await botTile.getAttribute('aria-label')).includes('Needs input'))
+    assert.equal(await botTile.locator('[data-testid^="Unread Bot "]').count(), 1)
+    assert.equal(await page.getByTestId('Workspace thread Lasting release Bot').count(), 0)
+  }
+  await newBot.click()
+  await page.getByRole('dialog', { name: 'Create Bot' }).waitFor()
+  await page.getByRole('button', { name: 'Cancel Bot creation' }).click()
+  await page.evaluate(() => {
+    window.setListPreferences({ botsInThreads: false })
+  })
+  await botTile.waitFor({ state: 'detached' })
+  await page.getByTestId('Workspace thread Lasting release Bot').waitFor()
+  await page.evaluate(() => window.setListPreferences({ botsInThreads: true }))
+  await botTile.getByText('Needs input', { exact: true }).waitFor()
+  await page.getByLabel('Search workspace', { exact: true }).fill('Routine worker')
+  await page.getByTestId('Workspace thread Lasting release Bot').waitFor()
+  await botTile.waitFor({ state: 'detached' })
+  await page.getByLabel('Search workspace', { exact: true }).fill('')
+  await botTile.getByText('Needs input', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    const owner = structuredClone(window.botAttentionSource)
+    owner.snapshot.approvals = []
+    owner.snapshot.workspace.tasks[0].status = 'failed'
+    owner.snapshot.workspace.tasks[0].turns = []
+    window.setListSources([owner])
+  })
+  await botTile.getByText('Failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    const owner = structuredClone(window.botAttentionSource)
+    owner.snapshot.approvals = []
+    owner.snapshot.workspace.tasks[0].status = 'done'
+    owner.snapshot.workspace.tasks[0].turns = []
+    window.setListSources([owner])
+  })
+  await botTile.getByText('Failed', { exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await botTile.getByText('Needs input', { exact: true }).count(), 0)
+  await botTile.click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), [
+    'tasks',
+    'lasting-bot',
+    await page.evaluate(() => window.botAttentionSource.profile.id),
+  ])
+  await page.evaluate(() => window.showThreads())
   await page.evaluate(() => {
     window.rowLayout = true
     window.setListPreferences({ botLayout: 'grid-4' })
@@ -2118,6 +2244,7 @@ try {
     window.showOverview()
   })
   const botRow = page.getByTestId('Workspace thread Lasting release Bot')
+  await page.evaluate(() => window.setListPreferences({ botsInThreads: false }))
   await botRow.waitFor()
   assert.equal(await botRow.count(), 1)
   assert.equal(await botRow.locator('[data-icon="bot"]').count(), 1)

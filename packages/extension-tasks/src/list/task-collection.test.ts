@@ -1,4 +1,4 @@
-import { decode } from '@dovo/protocol'
+import { aggregateRuntimeTasks, decode } from '@dovo/protocol'
 import { expect, it } from 'vite-plus/test'
 import {
   createTask,
@@ -292,5 +292,63 @@ it('leaves never-started side chat drafts to their parent unless someone needs t
   // Deleting the parent must leave an unsent child reachable in the main list.
   expect(mainTaskEntries(entries([], [draft])).map((entry) => entry.task.id)).toEqual([
     'draft-side',
+  ])
+})
+
+it('shows worker secure input on its Bot in both clients and ignores parent-routed questions', () => {
+  const bot = { ...task, id: 'bot' }
+  const worker = { ...task, id: 'worker', botJob: { botId: bot.id, runId: 'routine' } }
+  const pending = decode(snapshotSchema, {
+    ...snapshot,
+    workspace: { ...snapshot.workspace, tasks: [bot, worker] },
+    secureInputs: [
+      {
+        id: 'secret',
+        taskId: worker.id,
+        title: 'Sign in',
+        prompt: 'Enter in the secure form',
+        destination: { kind: 'command', command: 'fixture', args: [], appendNewline: false },
+        directory: '',
+        publicKey: 'a'.repeat(64),
+        expiresAt: '',
+        status: 'pending',
+      },
+    ],
+    questions: [
+      {
+        id: 'agent-question',
+        taskId: worker.id,
+        createdAt: '',
+        routing: 'parent',
+        prompt: {
+          title: 'Ask the parent agent',
+          questions: [{ id: 'choice', header: '', question: 'Continue?' }],
+        },
+      },
+    ],
+  })
+  const project = (current: typeof pending) => {
+    const overview = { ...mac, snapshot: current }
+    const desktop = collectTasks(
+      taskSources({
+        workspace: current.workspace,
+        snapshot: current,
+        activeRuntimeId: mac.profile.id,
+        connected: true,
+        runtimes: [overview],
+      }),
+    )
+    return [
+      desktop.map((row) => row.needsInput),
+      aggregateRuntimeTasks([overview], Date.now(), true).map((row) => row.needsInput),
+    ]
+  }
+  expect(project(pending)).toEqual([
+    [true, true],
+    [true, true],
+  ])
+  expect(project({ ...pending, secureInputs: [] })).toEqual([
+    [false, false],
+    [false, false],
   ])
 })

@@ -262,7 +262,8 @@ export function taskFamilyInputIds(tasks: readonly TaskMetadata[], inputIds: Ite
     while (current && !input.has(current)) {
       input.add(current)
       const owner = owners.get(current)
-      current = owner?.delegation?.parentTaskId ?? owner?.sideThread?.parentTaskId
+      current =
+        owner?.delegation?.parentTaskId ?? owner?.sideThread?.parentTaskId ?? owner?.botJob?.botId
     }
   }
   return input

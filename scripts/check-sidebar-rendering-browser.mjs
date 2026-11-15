@@ -57,13 +57,14 @@ function App(){
   const [mounted,setMounted]=useState(true);
   const [selectedId,setSelectedId]=useState('');
   const [revision,setRevision]=useState(1);
+  const [inputs,setInputs]=useState({});window.setBotInputs=value=>flushSync(()=>setInputs(value));
   const [project,setProject]=useState('');window.setProject=setProject;
   const [remoteTasks,setRemoteTasks]=useState([]);window.setRemoteTasks=setRemoteTasks;
   window.publish=next=>flushSync(()=>{setTasks(next);setRevision(value=>value+1)});
   window.setMounted=value=>flushSync(()=>setMounted(value));
   window.tasks=tasks;
   const workspace={version:1,runtimeAddress:'',repositories,agents,automations,tasks};
-  const snapshot={...baseSnapshot,revision,workspace};
+  const snapshot={...baseSnapshot,revision,workspace,...inputs};
   const source={runtimeId:'local',address:'http://local',connection:actions.connection,name:'Local',workspace,snapshot,online:true};
   return <WorkspaceValueProvider value={{...actions,workspace,snapshot,connected:true,runtimes:[]}}>
     <BroadProbe/><SelectedProbe/>
@@ -1249,10 +1250,38 @@ try {
       'New Bot',
     ],
   )
+  await page.evaluate(() => {
+    const bot = window.tasks.find((task) => task.id === 'Recent Bot')
+    window.publish(
+      window.tasks.map((task) =>
+        task === bot
+          ? {
+              ...task,
+              status: 'running',
+              turns: [
+                { id: 'unread-bot-turn', status: 'running', startedAt: new Date().toISOString() },
+              ],
+            }
+          : task.id === 'Earlier Bot'
+            ? { ...task, status: 'failed' }
+            : task,
+      ),
+    )
+    window.setBotInputs({
+      approvals: [
+        { id: 'bot-approval', taskId: bot.id, title: 'Review', detail: '', createdAt: '' },
+      ],
+    })
+  })
+  const inputBot = bots.getByRole('button', { name: /^Open Bot Recent Bot on .*Needs input$/ })
+  const failedBot = bots.getByRole('button', { name: /^Open Bot Earlier Bot on .*Failed$/ })
   for (const layout of ['horizontal', 'grid-2', 'grid-3', 'grid-4', 'rows']) {
     await page.evaluate((botLayout) => window.setListPreferences({ botLayout }), layout)
     await bots.locator(`[data-bot-layout="${layout}"]`).waitFor()
     assert.equal(await bots.getByRole('button').count(), 4)
+    await inputBot.getByText('Needs input', { exact: true }).waitFor()
+    await failedBot.getByText('Failed', { exact: true }).waitFor()
+    assert.equal(await inputBot.locator('[data-bot-unread]').count(), 1)
     if (process.env.DOVO_BOT_ROW_SCREENSHOT) {
       for (const dark of [true, false]) {
         await page.evaluate((dark) => {
@@ -1266,6 +1295,9 @@ try {
       }
     }
   }
+  await page.evaluate(() => window.setBotInputs({}))
+  await inputBot.waitFor({ state: 'detached' })
+  assert.equal(await bots.getByText('Needs input', { exact: true }).count(), 0)
   await page.evaluate(() => window.setListPreferences({ botLayout: 'horizontal' }))
   await page.getByRole('button', { name: /^Open Bot Recent Bot on / }).click()
   assert.equal(await page.evaluate(() => window.selected.task.id), 'Recent Bot')

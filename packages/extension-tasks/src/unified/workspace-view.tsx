@@ -618,9 +618,11 @@ function WorkspaceContent() {
       taskOwners.current.set(owner.profile.id, taskOwner)
       const input = taskFamilyInputIds(
         snapshot.workspace.tasks,
-        [...(snapshot.questions ?? []), ...(snapshot.approvals ?? [])].map(
-          (request) => request.taskId,
-        ),
+        [
+          ...(snapshot.questions ?? []).filter((question) => question.routing !== 'parent'),
+          ...(snapshot.approvals ?? []),
+          ...(snapshot.secureInputs ?? []),
+        ].map((request) => request.taskId),
       )
       const shellCounts = new Map<string, number>()
       for (const session of snapshot.terminals)

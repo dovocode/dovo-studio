@@ -2937,6 +2937,82 @@ try {
     { viewId: 'bots', entityId: 'new-bot' },
   ])
 
+  await page.evaluate(() => {
+    window.delayBotOwnerCommit = false
+    const owner = window.computers[0]
+    const bot = {
+      ...owner.snapshot.workspace.tasks[0],
+      id: 'attention-bot',
+      title: 'Attention Bot',
+      archived: false,
+      archivedAt: undefined,
+      delegation: undefined,
+      replica: undefined,
+      bot: { role: 'Helper', state: 'active' },
+      status: 'running',
+      turns: [{ id: 'unread-bot-turn', status: 'running', startedAt: new Date().toISOString() }],
+    }
+    owner.snapshot.workspace.tasks.push(bot, {
+      ...bot,
+      id: 'attention-worker',
+      title: 'Attention worker',
+      bot: undefined,
+      botJob: { botId: bot.id, runId: 'routine' },
+    })
+    owner.snapshot.approvals = [
+      {
+        id: 'worker-input',
+        taskId: 'attention-worker',
+        title: 'Review',
+        detail: '',
+        createdAt: '',
+      },
+    ]
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot },
+    }))
+    window.refresh()
+  })
+  const attentionBot = botRow.getByRole('button', { name: /^Open Bot Attention Bot on / })
+  for (const botLayout of ['horizontal', 'rows', 'grid-2', 'grid-3', 'grid-4']) {
+    await page.evaluate((botLayout) => {
+      window.composerPreferences = { ...window.composerPreferences, botLayout }
+      window.refresh()
+    }, botLayout)
+    await botRow.locator(`[data-bot-layout="${botLayout}"]`).waitFor()
+    await attentionBot.getByText('Needs input', { exact: true }).waitFor()
+    assert.ok((await attentionBot.getAttribute('aria-label')).includes('Needs input'))
+    assert.equal(await attentionBot.locator('[data-bot-unread]').count(), 1)
+  }
+  await page.evaluate(() => {
+    const owner = window.computers[0]
+    owner.snapshot.approvals = []
+    const bot = owner.snapshot.workspace.tasks.find((task) => task.id === 'attention-bot')
+    bot.status = 'failed'
+    bot.turns = []
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot },
+    }))
+    window.refresh()
+  })
+  await attentionBot.getByText('Failed', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.computers[0].snapshot.workspace.tasks.find(
+      (task) => task.id === 'attention-bot',
+    ).status = 'done'
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot },
+    }))
+    window.refresh()
+  })
+  await attentionBot.getByText('Failed', { exact: true }).waitFor({ state: 'detached' })
+  assert.equal(await attentionBot.getByText('Needs input', { exact: true }).count(), 0)
+  await attentionBot.click()
+  await page.locator('[data-thread="attention-bot"][data-owner="local"]').waitFor()
+
   assert.deepEqual(errors, [])
   console.log(
     'Unified workspace: sidebar navigation without horizontal tabs, pinned browser grid, retained drafts, lifecycle, remote ownership, HTTP, routing and terminal launcher passed.',

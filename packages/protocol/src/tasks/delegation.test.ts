@@ -160,6 +160,17 @@ it('surfaces nested child input on ancestors without crossing independent famili
   )
 })
 
+it('rolls routine-worker and nested worker input up to its Bot without crossing Bots or adding lifecycle ownership', () => {
+  const bot = task('bot')
+  const other = task('other-bot')
+  const worker: Task = { ...task('routine-worker'), botJob: { botId: bot.id, runId: 'run' } }
+  const child = task('nested-worker', worker.id)
+  const tasks = [bot, other, worker, child]
+  expect(taskFamilyInputIds(tasks, [child.id])).toEqual(new Set([child.id, worker.id, bot.id]))
+  expect(taskFamilyInputIds(tasks, [])).toEqual(new Set())
+  expect(taskFamilyIds(tasks, bot.id)).toEqual(new Set([bot.id]))
+})
+
 it('rolls side-thread input up to the parent without adding lifecycle ownership', () => {
   const parent = task('parent')
   const side: Task = {

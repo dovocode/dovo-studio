@@ -127,17 +127,23 @@ function BotTile({
   const { colors, styles } = useTheme()
   const lifecycle = useTaskLifecycle(row.task, row.runtimeId)
   const unread = hasUnreadTaskActivity(row.task)
+  const attention = row.needsInput
+    ? 'Needs input'
+    : row.task.status === 'failed'
+      ? 'Failed'
+      : undefined
+  const attentionColor = row.needsInput ? colors.warning : colors.error
   return (
     <View style={{ width, paddingHorizontal: 2 }}>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel={uiText('Open Bot {value0} on {value1}{value2}{value3}{value4}', {
+        accessibilityLabel={`${uiText('Open Bot {value0} on {value1}{value2}{value3}{value4}', {
           value0: row.task.title,
           value1: row.runtimeName,
           value2: unread ? ', new messages' : '',
           value3: row.task.pinned ? ', pinned' : '',
           value4: row.online ? '' : ', offline',
-        })}
+        })}${attention ? ` · ${uiText(attention)}` : ''}`}
         accessibilityHint={uiText('Touch and hold to pin or unpin this Bot.')}
         onPress={() => onOpen(row.task.id, row.runtimeId)}
         onLongPress={() =>
@@ -159,14 +165,14 @@ function BotTile({
           paddingVertical: 6,
           borderRadius: 12,
           alignItems: 'center',
-          backgroundColor: pressed ? colors.surface : undefined,
+          backgroundColor: pressed || attention ? colors.surface : undefined,
         })}
       >
         <View
           style={{
             borderRadius: rows ? 21 : 31,
-            borderWidth: 1,
-            borderColor: colors.border,
+            borderWidth: attention ? 2 : 1,
+            borderColor: attention ? attentionColor : colors.border,
             padding: 2,
           }}
         >
@@ -176,12 +182,27 @@ function BotTile({
             round
             size={rows ? 36 : 56}
           />
+          {attention && (
+            <View
+              style={{
+                position: 'absolute',
+                top: -4,
+                right: -4,
+                borderRadius: 10,
+                padding: 1,
+                backgroundColor: colors.background,
+              }}
+            >
+              <Icon name="error" size={17} color={attentionColor} />
+            </View>
+          )}
           {unread && (
             <View
               testID={`Unread Bot ${row.key}`}
               style={{
                 position: 'absolute',
-                top: -2,
+                top: attention ? undefined : -2,
+                bottom: attention ? -2 : undefined,
                 right: -2,
                 width: 13,
                 height: 13,
@@ -207,24 +228,44 @@ function BotTile({
             </View>
           )}
         </View>
-        <Text
-          numberOfLines={1}
-          style={[
-            styles.text,
-            {
-              fontSize: 12,
-              lineHeight: 16,
-              flex: rows ? 1 : undefined,
-              minWidth: 0,
-              width: rows ? undefined : '100%',
-              textAlign: rows ? 'left' : 'center',
-              color: unread ? colors.text : colors.muted,
-              fontWeight: unread ? '600' : '400',
-            },
-          ]}
+        <View
+          style={{
+            flex: rows ? 1 : undefined,
+            minWidth: 0,
+            width: rows ? undefined : '100%',
+            gap: 2,
+          }}
         >
-          {row.task.title}
-        </Text>
+          <Text
+            numberOfLines={1}
+            style={[
+              styles.text,
+              {
+                fontSize: 12,
+                lineHeight: 16,
+                textAlign: rows ? 'left' : 'center',
+                color: attention || unread ? colors.text : colors.muted,
+                fontWeight: attention || unread ? '600' : '400',
+              },
+            ]}
+          >
+            {row.task.title}
+          </Text>
+          {attention && (
+            <Text
+              testID={`Bot attention ${row.key}`}
+              style={{
+                fontSize: 11,
+                lineHeight: 16,
+                fontWeight: '600',
+                color: attentionColor,
+                textAlign: rows ? 'left' : 'center',
+              }}
+            >
+              {uiText(attention)}
+            </Text>
+          )}
+        </View>
       </Pressable>
       {!!lifecycle.error && <Text accessibilityRole="alert">{lifecycle.error}</Text>}
     </View>

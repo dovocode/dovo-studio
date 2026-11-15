@@ -103,9 +103,11 @@ export function collectTasks(sources: readonly TaskSource[]): TaskEntry[] {
   return sources.flatMap((source) => {
     const input = taskFamilyInputIds(
       source.workspace.tasks,
-      [...(source.snapshot?.questions ?? []), ...(source.snapshot?.approvals ?? [])].map(
-        (request) => request.taskId,
-      ),
+      [
+        ...(source.snapshot?.questions ?? []).filter((question) => question.routing !== 'parent'),
+        ...(source.snapshot?.approvals ?? []),
+        ...(source.snapshot?.secureInputs ?? []),
+      ].map((request) => request.taskId),
     )
     return source.workspace.tasks
       .filter((task) => !task.example)

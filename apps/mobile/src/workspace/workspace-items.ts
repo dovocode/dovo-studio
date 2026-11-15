@@ -9,6 +9,7 @@ import {
   STUDIO_TERMINAL_SCOPE,
   taskIsWorking,
   terminalStatus,
+  taskFamilyInputIds,
   type RuntimeOverview,
   type Task,
   type TerminalInfo,
@@ -63,6 +64,13 @@ export function workspaceItems(
   for (const owner of overviews) {
     const workspace = owner.snapshot?.workspace
     const computer = runtimeComputerName(owner)
+    const input = taskFamilyInputIds(workspace?.tasks ?? [], [
+      ...(owner.snapshot?.approvals ?? []).map((entry) => entry.taskId),
+      ...(owner.snapshot?.questions ?? [])
+        .filter((entry) => entry.routing !== 'parent')
+        .map((entry) => entry.taskId),
+      ...(owner.snapshot?.secureInputs ?? []).map((entry) => entry.taskId),
+    ])
     for (const task of workspace?.tasks ?? []) {
       if (
         (task.archivedAt && !threadContext.has(runtimeResourceKey(owner.profile.id, task.id))) ||
@@ -71,9 +79,7 @@ export function workspaceItems(
       )
         continue
       const repository = workspace?.repositories.find((entry) => entry.id === task.repositoryId)
-      const needsInput =
-        !!owner.snapshot?.approvals.some((entry) => entry.taskId === task.id) ||
-        !!owner.snapshot?.questions.some((entry) => entry.taskId === task.id)
+      const needsInput = input.has(task.id)
       const section: WorkspaceSection = task.archived
         ? 'settled'
         : isSnoozed(task, now)

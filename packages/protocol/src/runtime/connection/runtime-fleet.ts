@@ -387,9 +387,11 @@ export function aggregateRuntimeTasks(
     const reachability = runtimeReachability(entry)
     const needsInput = taskFamilyInputIds(
       snapshot.workspace.tasks,
-      [...snapshot.approvals, ...snapshot.questions, ...(snapshot.secureInputs ?? [])].map(
-        (item) => item.taskId,
-      ),
+      [
+        ...snapshot.approvals,
+        ...snapshot.questions.filter((question) => question.routing !== 'parent'),
+        ...(snapshot.secureInputs ?? []),
+      ].map((item) => item.taskId),
     )
     const projects = new Map(
       snapshot.workspace.repositories.map((repository) => [

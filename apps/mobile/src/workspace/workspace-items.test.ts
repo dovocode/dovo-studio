@@ -71,6 +71,53 @@ const page: BrowserTab = {
   visitedAt: now,
 }
 
+it('shows worker secure input on its Bot and clears it without exposing parent-routed questions', () => {
+  const owner = computer()
+  owner.snapshot = decode(snapshotSchema, {
+    ...owner.snapshot,
+    workspace: {
+      ...owner.snapshot!.workspace,
+      tasks: [task, { ...task, id: 'worker', botJob: { botId: task.id, runId: 'routine' } }],
+    },
+    secureInputs: [
+      {
+        id: 'secret',
+        taskId: 'worker',
+        title: 'Sign in',
+        prompt: 'Use the secure form',
+        destination: { kind: 'command', command: 'fixture', args: [], appendNewline: false },
+        directory: '',
+        publicKey: 'a'.repeat(64),
+        expiresAt: '',
+        status: 'pending',
+      },
+    ],
+    questions: [
+      {
+        id: 'agent-question',
+        taskId: 'worker',
+        createdAt: '',
+        routing: 'parent',
+        prompt: {
+          title: 'Ask the parent agent',
+          questions: [{ id: 'choice', header: '', question: 'Continue?' }],
+        },
+      },
+    ],
+  })
+  const thread = () =>
+    workspaceItems([owner], [], now).find(
+      (item) => item.kind === 'thread' && item.task.id === task.id,
+    )
+  expect(thread()).toMatchObject({
+    needsInput: true,
+    status: 'Needs input',
+    section: 'needs-input',
+  })
+  owner.snapshot.secureInputs = []
+  expect(thread()).toMatchObject({ needsInput: false, status: 'Working', section: 'working' })
+})
+
 it('mixes resources while separating thread PTYs and namespacing identities by type and computer', () => {
   const items = workspaceItems([computer(), computer('linux')], [page], now)
   expect(items.map((item) => item.kind)).toEqual([
