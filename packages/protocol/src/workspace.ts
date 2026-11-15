@@ -1,3 +1,4 @@
+import { nativeGoalSchema } from './conversation/workflow/native-goal.js'
 import { routinePolicySchema, routineMonitorSchema } from './automation/routine-policy.js'
 import { workflowSchema } from './conversation/workflow/workflows.js'
 import { taskIsWorking } from './tasks/task-working.js'
@@ -592,6 +593,10 @@ export const turnSchema = mutableStruct({
   agentId: Schema.String,
   provider: providerSchema,
   model: Schema.String,
+  /** Selection at admission. `model` remains the displayed model for older clients. */
+  requestedModel: Schema.optional(Schema.String),
+  /** Set only when the provider reports its model. */
+  executedModel: Schema.optional(Schema.String),
   reasoning: Schema.optional(Schema.String),
   startedAt: Schema.String,
   finishedAt: Schema.optional(Schema.String),
@@ -820,6 +825,8 @@ export const taskSchema = mutableStruct({
   ),
   // Runtime-owned: the shared agent checklist, from native events or the regular task tool.
   nativeTodos: Schema.optional(agentTodosSchema),
+  nativeGoal: Schema.optional(nativeGoalSchema),
+  nativeGoalSupported: Schema.optional(Schema.Boolean),
   // Runtime-owned: how full the agent's context window is, from its latest usage report.
   contextUsage: Schema.optional(
     mutableStruct({

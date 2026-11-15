@@ -1,3 +1,4 @@
+import { nativeGoalSchema } from '@dovo/protocol'
 import { explainProviderFailure } from './provider-failure.js'
 import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
 import { goalCommand, goalCommandText } from '@dovo/protocol'
@@ -157,7 +158,7 @@ export class TaskTurnRunner {
     private commands: Commands,
     private questions: Questions,
     private attachments: Attachments,
-    private activity?: Pick<Activity, 'add'>,
+    private activity?: Pick<Activity, 'add' | 'finishProviderTools'>,
     private artifactsEnabled: () => boolean = () => false,
     skillCacheDirectory = join(tmpdir(), 'dovo-shared-skills'),
     private pullRequestWatchingEnabled: () => boolean = () => false,
@@ -484,8 +485,11 @@ export class TaskTurnRunner {
             'Send /goal as a separate message after pending messages finish.',
           )
         const goal = goalInputs.length ? goalCommand(goalInputs[0].text) : undefined
-        if (goal && !['claude', 'codex'].includes(agent.provider))
-          throw new HttpError(400, '/goal is supported for Claude and Codex threads.')
+        if (goal && !['claude', 'codex', 'opencode'].includes(agent.provider))
+          throw new HttpError(
+            400,
+            '/goal is supported for Claude, Codex and supported OpenCode threads.',
+          )
         if (goal && goalInputs[0].attachments?.length)
           throw new HttpError(400, 'Send attachments as a separate message before /goal.')
         if (goal && goal.action !== 'set' && !resumeId)
@@ -685,6 +689,7 @@ export class TaskTurnRunner {
                 provider: agent.provider,
                 branch,
                 model: agent.model,
+                requestedModel: agent.model,
                 reasoning: agent.reasoning,
                 startedAt: new Date().toISOString(),
                 status: 'running',
@@ -865,7 +870,8 @@ export class TaskTurnRunner {
           })
           promptAccepted = true
         }
-        const acceptsProviderEvents = () => providerOpen && !controller.signal.aborted
+        const acceptsProviderEvents = () =>
+          providerOpen && nativeSessionOpen && !controller.signal.aborted
         let retryPending = false
         const recoverProviderRetry = () => {
           if (!retryPending) return
@@ -924,9 +930,9 @@ export class TaskTurnRunner {
             ...(total === undefined ? {} : { tokens: total }),
             ...(tokens.usage() ? { tokenUsage: tokens.usage() } : {}),
             ...(tokens.mixedModels()
-              ? { mixedModels: true, model: 'Multiple models' }
+              ? { mixedModels: true, model: 'Multiple models', executedModel: 'Multiple models' }
               : reportedModel
-                ? { model: reportedModel }
+                ? { model: reportedModel, executedModel: reportedModel }
                 : {}),
             ...(estimatedCostUsd === undefined
               ? {}
@@ -1339,6 +1345,12 @@ export class TaskTurnRunner {
                     ownerSessionId === nativeSessionId
                   ) {
                     nativeSessionOpen = false
+                    progress.flush()
+                    this.activity?.finishProviderTools(
+                      id,
+                      { sessionId: ownerSessionId },
+                      controller.signal.aborted ? 'cancelled' : 'interrupted',
+                    )
                     if (taskToolsToken) runCredentials(this.store).revoke(taskToolsToken)
                     if (toolBinding) {
                       if (this.toolBindings.get(id) === toolBinding) this.toolBindings.delete(id)
@@ -1458,6 +1470,8 @@ export class TaskTurnRunner {
                       ...t,
                       sessionId,
                       sessionAgentId: fingerprint,
+                      nativeGoal: undefined,
+                      nativeGoalSupported: undefined,
                     }))
                 },
                 onText: (text) => {
@@ -1542,6 +1556,33 @@ export class TaskTurnRunner {
                 },
                 onEvent: (name, payload) => {
                   if (!acceptsProviderEvents()) return
+                  if (name === 'dovo/opencode/capabilities') {
+                    const value = decodeResult(
+                      Schema.Struct({ sessionId: Schema.String, goals: Schema.Boolean }),
+                      payload,
+                    )
+                    if (
+                      value.success &&
+                      value.data.sessionId === this.store.taskSummary(id).sessionId
+                    )
+                      this.store.updateTask(id, (current) => ({
+                        ...current,
+                        nativeGoalSupported: value.data.goals,
+                      }))
+                    return
+                  }
+                  if (name === 'dovo/opencode/goal') {
+                    const value = decodeResult(Schema.NullOr(nativeGoalSchema), payload)
+                    if (
+                      value.success &&
+                      (!value.data || value.data.sessionId === this.store.taskSummary(id).sessionId)
+                    )
+                      this.store.updateTask(id, (current) => ({
+                        ...current,
+                        nativeGoal: value.data ?? undefined,
+                      }))
+                    return
+                  }
                   if (agent.provider === 'claude') {
                     const retry = claudeProviderRetry(payload)
                     if (retry) {
@@ -1677,6 +1718,7 @@ export class TaskTurnRunner {
                       {
                         turnId,
                         messageId,
+                        ...(tool ? { providerTool: true, providerSessionId: nativeSessionId } : {}),
                         ...tool,
                         textOffset: offset,
                         event: safeReasoningEvent(payload),
@@ -1942,6 +1984,8 @@ export class TaskTurnRunner {
                 !flushError &&
                 !(controller.signal.reason instanceof ToolLoopStop)
               const status = cancelled ? ('cancelled' as const) : ('failed' as const)
+              progress.flush()
+              this.activity?.finishProviderTools(id, { turnId }, status)
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 runPhase: 'finalizing',

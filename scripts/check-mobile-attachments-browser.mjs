@@ -42,7 +42,8 @@ function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=u
     {
       path: '../../composer/chat-image-edit-context',
       importer: component,
-      contents: 'export const EditChatImage=()=>null;',
+      contents:
+        "import {createContext} from 'react';export const ChatImageEditContext=createContext(null);export const EditChatImage=()=>null;",
     },
     {
       path: 'expo-router',

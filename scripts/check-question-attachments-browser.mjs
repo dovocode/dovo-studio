@@ -17,9 +17,9 @@ const browser = await chromium.launch()
 try {
   for (const mobile of [false, true]) {
     const mocks = {
-      '@dovo/studio-core': `export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';export {useQuestionRecovery} from '${root}packages/studio-core/src/workspace/question-recovery.ts';export {responses,attachmentUploadResultSchema,attachmentReadSchema,attachmentMutationSchema,MAX_ATTACHMENT_BYTES,MAX_ATTACHMENTS} from '@dovo/protocol';`,
+      '@dovo/studio-core': `export {useWorkspace} from '${root}packages/studio-core/src/workspace/context.ts';export {useQuestionRecovery} from '${root}packages/studio-core/src/workspace/question-recovery.ts';export const useSecretReferenceCheck=()=>({});export {responses,attachmentPreparedSchema,attachmentUploadResultSchema,attachmentReadSchema,attachmentMutationSchema,MAX_ATTACHMENT_BYTES,MAX_ATTACHMENTS} from '@dovo/protocol';`,
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-      '@dovo/studio-ui': `export {QuestionForm} from '${root}packages/studio-ui/src/question-form.tsx';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';`,
+      '@dovo/studio-ui': `export const SecretReferenceFields=()=>null;export {QuestionForm} from '${root}packages/studio-ui/src/question-form.tsx';export {Button} from '${root}packages/studio-ui/src/components/ui/button.tsx';`,
       '@dovo/client-runtime': `import {Effect} from 'effect';export const runClientEffect=effect=>Effect.runPromise(effect);`,
       '../composer/image-editor': `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
       './image-editor': `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
@@ -52,11 +52,11 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';impor
 import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
 import {TaskQuestions} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/chat/thread'}/task-questions.tsx';
 const prompt=decode(questionPromptSchema,{title:'Answer with references',questions:[{id:'design',header:'Design',question:'Attach design'},{id:'notes',header:'Notes',question:'Attach notes',required:false},{id:'secret',header:'Secret',question:'Private',secret:true,required:false},{id:'number',header:'Number',question:'Count',inputType:'number',required:false}]});
-window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];window.fail=false;window.hold=false;
+window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];window.fail=false;window.hold=false;window.expired=[];window.preparations=[];
 const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
-window.request=async(path,input)=>{if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
+window.request=async(path,input)=>{if(path==='/api/attachments/prepare'){window.preparations.push(input);return {missing:input.ids.filter(id=>window.expired.includes(id))}}if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);window.expired=window.expired.filter(id=>id!==input.id);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
 const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{attachmentPreparationSupported:true,revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,readEffect:read,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -160,6 +160,25 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
           value.includes('answer.txt') && value.includes('design') && value.includes('notes'),
       )
     })
+    // Expiration recovery restores source bytes in place on desktop. Mobile keeps its
+    // durable upload path and reports a missing file without discarding the answer.
+    await page.evaluate(() => { window.expired = [window.uploads[0].id]; window.fail = true })
+    await page.getByRole('button', { name: 'Send answers', exact: true }).click()
+    if (mobile) {
+      await page.getByRole('alert').filter({ hasText: 'unavailable' }).waitFor()
+      assert.equal(await page.evaluate(() => window.answers.length), 0)
+      assert.equal(await page.evaluate(() => window.uploads.length), 2)
+    } else {
+      await page.getByRole('alert').filter({ hasText: 'Answer admission failed' }).waitFor()
+      const uploads = await page.evaluate(() => window.uploads)
+      assert.equal(uploads.length, 3)
+      assert.equal(uploads[2].id, uploads[0].id)
+      assert.equal(uploads[2].data, uploads[0].data)
+      assert.equal(uploads[2].detached, true)
+    }
+    assert.equal(await page.getByRole('button', { name: 'Remove answer.txt', exact: true }).count(), 2)
+    assert.equal(await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue(), 'Untouched message')
+    await page.evaluate(() => { window.expired = []; window.answers = []; window.fail = false })
     await page.evaluate(() => window.remount())
     await page.waitForFunction(
       () =>

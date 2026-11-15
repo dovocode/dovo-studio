@@ -1,3 +1,4 @@
+import { TurnAnnouncer } from './turn-announcer'
 import { ThreadActionCard } from './thread-action-card'
 import { botScope } from '../../bots/bot-scope'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
@@ -368,6 +369,13 @@ export function ChatThread({
   if (emptyDraft && emptyState) return emptyState
   return (
     <TurnWindowContext value={turnWindow}>
+      <TurnAnnouncer
+        key={linkScope}
+        scope={linkScope}
+        task={task}
+        steps={activity.tools}
+        active={active && connected}
+      />
       {searchOpen && (
         <div className="flex shrink-0 items-center justify-end gap-1 border-b px-3 py-1">
           <input

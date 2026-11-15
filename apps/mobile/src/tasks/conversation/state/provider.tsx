@@ -49,6 +49,7 @@ type Conversation = {
   stop: () => void
   openCheckpoint: (turnId: string, path?: string, checkoutId?: string) => void
   openTerminal: (terminalId: string) => void
+  announcementSteps: ReturnType<typeof taskToolEvents>
   legacyEvents: ToolEvents
   activityError: string
   collapsedTurns: Record<string, boolean>
@@ -334,6 +335,7 @@ export function ConversationProvider({
     actions,
     openCheckpoint: showCheckpoint,
     openTerminal: showTerminal,
+    announcementSteps: taskToolEvents(task, activity.events),
     legacyEvents,
     activityError: activity.error,
     collapsedTurns,

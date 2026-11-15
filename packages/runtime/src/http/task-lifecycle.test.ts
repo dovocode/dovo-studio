@@ -299,11 +299,11 @@ it('loads the latest 50 user messages for composer recall independently of trans
       { id: `a${i}`, role: 'assistant' as const, text: 'Long reply' },
     ]).flat(),
   }))
-  const read = (credential: string) =>
+  const read = (credential: string, before?: string) =>
     fetch(`${address}/api/tasks/composer-history`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${credential}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: task.id }),
+      body: JSON.stringify({ id: task.id, ...(before ? { before } : {}) }),
     })
   expect((await read('invalid')).status).toBe(401)
   const response = await read(token)
@@ -311,5 +311,9 @@ it('loads the latest 50 user messages for composer recall independently of trans
   const page = decode(conversationPageSchema, await response.json())
   expect(page.messages.map((m) => m.id)).toEqual(Array.from({ length: 50 }, (_, i) => `u${i + 15}`))
   expect(page.turns).toEqual([])
-  expect(page.before).toBeUndefined()
+  expect(page.before).toBe('u15')
+  const older = decode(conversationPageSchema, await (await read(token, page.before)).json())
+  expect(older.messages.map((m) => m.id)).toEqual(Array.from({ length: 15 }, (_, i) => `u${i}`))
+  expect(older.before).toBeUndefined()
+  expect((await read(token, 'missing')).status).toBe(409)
 })

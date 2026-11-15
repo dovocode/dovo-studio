@@ -2645,7 +2645,7 @@ select:focus-visible,
   border-color: var(--primary);
 }
 
-/* Project controls follow the flat, grouped card used in the thread design. */
+/* Thread info keeps each saved section in order, with related actions grouped. */
 .studio-thread-info-scroll {
   scrollbar-width: thin;
   scrollbar-gutter: auto;
@@ -2654,15 +2654,16 @@ select:focus-visible,
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: 0;
-  padding: 2px 12px;
+  padding: 4px 12px;
 }
 .studio-thread-info-content > [data-thread-info-section] {
   grid-column: 1 / -1;
   min-width: 0;
   overflow: hidden;
   border-radius: 0;
-  border-bottom: 1px solid var(--border);
+  border: 0;
   background: transparent;
+  padding: 6px 0;
 }
 .studio-thread-info-content
   > :is([data-thread-info-section='openIn'], [data-thread-info-section='scripts']) {
@@ -2673,9 +2674,20 @@ select:focus-visible,
 .studio-thread-info-content > [data-thread-info-section]:empty {
   display: none;
 }
+.studio-thread-info-content > [data-thread-info-section='sharing'] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.studio-thread-info-content h3 {
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: normal;
+  text-transform: none;
+}
 .studio-thread-info-content .studio-project-section,
 .studio-thread-info-content .task-info-settings {
-  padding: 6px 0;
+  padding: 0;
   border: 0;
 }
 .studio-thread-info-content .studio-project-checkout {
@@ -2685,7 +2697,7 @@ select:focus-visible,
 }
 .studio-thread-info-content .studio-project-row {
   min-height: 28px;
-  padding: 3px 6px;
+  padding: 3px 4px;
   gap: 8px;
   min-width: 0;
   width: 100%;
@@ -2715,7 +2727,7 @@ select:focus-visible,
 }
 .studio-thread-info-content [data-thread-info-section='scripts'] .studio-project-section,
 .studio-thread-info-content [data-thread-info-section='openIn'] .studio-project-section {
-  padding: 4px 0;
+  padding: 0;
 }
 .studio-thread-info-scroll::-webkit-scrollbar {
   width: 4px;
@@ -3131,21 +3143,29 @@ a.studio-project-row:hover {
   min-width: 0;
   overflow: hidden;
   border-radius: 0;
-  border-bottom: 1px solid var(--border);
+  border: 0;
   background: transparent;
+  padding: 0;
+}
+.studio-thread-info-content
+  > :is(.studio-thread-info-links, .studio-thread-info-actions):not(
+    :has(> [data-thread-info-section]:not([hidden]):not(:empty))
+  ) {
+  display: none;
 }
 .studio-thread-info-links > [data-thread-info-section]:empty {
   display: none;
 }
 .studio-thread-info-links
-  > :is([data-thread-info-section='git'], [data-thread-info-section='projects']):not(:empty) {
+  > [data-thread-info-section]:not([hidden]):not(:empty)
+  ~ [data-thread-info-section]:not([hidden]):not(:empty) {
   border-top: 1px solid var(--border);
 }
 .studio-thread-info-links .studio-project-section {
   padding: 6px 0;
 }
 .studio-thread-info-actions {
-  padding-block: 4px;
+  padding-block: 2px;
 }
 .studio-thread-info-actions .studio-project-section {
   padding: 2px 0;
@@ -3636,9 +3656,6 @@ a.studio-project-row:hover {
   .studio-sidebar-list {
     padding-inline: 6px;
   }
-}
-.studio-thread-info-links {
-  border-bottom: 0;
 }
 
 /* Collection pages share compact quick views and one secondary-filter disclosure. */

@@ -32,6 +32,7 @@ export const subagentSchema = mutableStruct({
   activity: Schema.optional(Schema.String),
   prompt: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
+  executedModel: Schema.optional(Schema.String),
   reasoning: Schema.optional(Schema.String),
   tokens: Schema.optional(
     Schema.Number.pipe(Schema.check(Schema.isFinite())).pipe(
@@ -58,6 +59,7 @@ export type SubagentListItem = Pick<
   | 'name'
   | 'provider'
   | 'model'
+  | 'executedModel'
   | 'reasoning'
   | 'tokens'
   | 'activity'
@@ -71,6 +73,7 @@ const listFields = [
   'name',
   'provider',
   'model',
+  'executedModel',
   'reasoning',
   'tokens',
   'activity',
@@ -96,6 +99,7 @@ export function projectSubagentList(
       name,
       provider,
       model,
+      executedModel,
       reasoning,
       tokens,
       activity,
@@ -108,6 +112,7 @@ export function projectSubagentList(
       name,
       provider,
       model,
+      executedModel,
       reasoning,
       tokens,
       activity,
@@ -143,9 +148,12 @@ export function subagentElapsed(agent: Subagent, now: number) {
       ? `${Math.floor(seconds / 60)}m`
       : `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m`
 }
-export function subagentMetadata(agent: Pick<Subagent, 'model' | 'reasoning' | 'tokens'>) {
+export function subagentMetadata(
+  agent: Pick<Subagent, 'model' | 'executedModel' | 'reasoning' | 'tokens'>,
+) {
+  const model = agent.executedModel || agent.model
   return [
-    agent.model ? modelDisplayName(agent.model) : undefined,
+    model ? modelDisplayName(model) : undefined,
     agent.reasoning,
     agent.tokens === undefined
       ? undefined

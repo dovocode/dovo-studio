@@ -1,3 +1,4 @@
+import { readOpencodeJob } from './opencode-job-preview.js'
 import { readOpenCodeServerLimits } from './opencode-limits.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { opencodeNative } from './opencode-native.js'
@@ -98,6 +99,10 @@ const remoteAdapter: AgentAdapter = {
     run = checkedPolicyRun(run, 'opencode')
     run.signal.throwIfAborted()
     if (await isOpencodeV2(run.agent.endpoint, run.agent.env)) return opencodeV2Adapter.run(run)
+    if (run.goal)
+      throw new Error(
+        'Native goals require OpenCode 2.2.5 or later. Update OpenCode on this computer.',
+      )
     const lease = client(run.agent.endpoint, run.cwd, run.agent.env, true)
     const api = lease.value
     const registered: string[] = []
@@ -627,8 +632,12 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     }
   }
   return {
-    readNativeThread: (agent, id, _sessionId, cwd) =>
-      withServer(agent, (resolved) => readOpencodeThread(resolved, id, cwd)),
+    readNativeThread: (agent, id, sessionId, cwd) =>
+      withServer(agent, (resolved) =>
+        id.startsWith('job:') && sessionId
+          ? readOpencodeJob(resolved, id, sessionId, cwd)
+          : readOpencodeThread(resolved, id, cwd),
+      ),
     models: (agent) => withServer(agent, (resolved) => remoteAdapter.models!(resolved)),
     probe: async (agent) => {
       try {

@@ -1,3 +1,4 @@
+import { turnAnnouncementsSchema } from '@dovo/protocol'
 import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
@@ -31,6 +32,7 @@ import {
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  turnAnnouncements: turnAnnouncementsSchema,
   interfaceLanguage: interfaceLanguageSchema,
   preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
   ...serviceUrlsSchema.fields,
@@ -171,7 +173,7 @@ export const defaultAppPreferences: AppPreferences = {
   globalAgentPresets: [],
   retiredGlobalAgentPresets: [],
   projectGrouping: true,
-  projectPanelOpen: false,
+  projectPanelOpen: true,
   workingSection: false,
   collapsedThreadSections: ['working', 'waiting', 'snoozed', 'settled'],
   threadSectionOrder: [...defaultThreadSectionOrder],
@@ -206,6 +208,7 @@ export const defaultAppPreferences: AppPreferences = {
   dictationLanguage: 'auto',
   quitShortcut: 'immediate',
   theme: 'dark',
+  turnAnnouncements: 'off',
   interfaceLanguage: 'en-US',
   themePalette: 'dovo',
   themeGlow: 0,

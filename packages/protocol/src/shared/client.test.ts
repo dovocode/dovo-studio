@@ -950,7 +950,7 @@ it.each([
   ).resolves.toEqual({ revision: 2 })
   expect(transport).toHaveBeenCalledTimes(2)
   for (const [url, init] of transport.mock.calls) {
-    expect(url instanceof Request ? url.url : url instanceof URL ? url.href : url).toBe(
+    expect(url instanceof Request ? url.url : String(url)).toBe(
       connection.address + path + '?refresh=true',
     )
     expect(init?.body).toBe(JSON.stringify(input))

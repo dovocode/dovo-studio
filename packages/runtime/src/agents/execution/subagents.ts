@@ -299,6 +299,26 @@ export function updateSubagents(
     }
   }
   if (provider === 'opencode') {
+    if (method === 'dovo/opencode/job' && rootThreadId && text(event.id)) {
+      put(String(event.id), {
+        name: text(event.name) ?? String(event.id),
+        kind: 'background',
+        background: true,
+        status:
+          event.status === 'running'
+            ? 'working'
+            : event.status === 'completed'
+              ? 'completed'
+              : event.status === 'cancelled'
+                ? 'stopped'
+                : 'failed',
+        canStopIndividual: event.canStopIndividual === true,
+        result: text(event.result)?.slice(-64000),
+        model: text(event.model),
+      })
+      return next
+    }
+
     const properties = object(event.properties)
     const data = object(event.data)
     const info = Object.keys(data).length ? data : object(properties.info)

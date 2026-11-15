@@ -1,3 +1,4 @@
+import { NativeGoal } from './native-goal'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
@@ -12,7 +13,7 @@ import { NativeTodos } from '../conversation/components/native-todos'
 import { MessageQueue } from './message-queue'
 import { pendingQueue } from './pending-send'
 
-export function ComposerActivity({ task, attached = false }: { task: Task; attached?: boolean }) {
+function QueuedActivity({ task, attached = false }: { task: Task; attached?: boolean }) {
   const uiText = useInterfaceText()
 
   const { colors, styles } = useTheme()
@@ -271,5 +272,14 @@ export function ComposerActivity({ task, attached = false }: { task: Task; attac
         )}
       </Surface>
     </View>
+  )
+}
+
+export function ComposerActivity(props: { task: Task; attached?: boolean }) {
+  return (
+    <>
+      <NativeGoal key={`${props.task.id}:${props.task.sessionId}`} task={props.task} />
+      <QueuedActivity {...props} />
+    </>
   )
 }

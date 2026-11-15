@@ -13,7 +13,7 @@ const mocks = {
   '@dovo/studio-core': `export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
-  './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',...window.attachmentState,upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
+  './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},prepare:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',...window.attachmentState,upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
   './composer-editor': `import {useState,useSyncExternalStore} from 'react';export const ComposerEditor=({controller,submitBusy,submittedText,disabled,taskId,input})=>{const[mount]=useState(()=>++window.editorMounts);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea ref={input} data-task-id={taskId} data-editor-mount={mount} aria-label="Message" value={submitBusy&&text.trim()===submittedText?'':text} readOnly={submitBusy} disabled={disabled} onChange={event=>controller.update(event.target.value)}/>};`,
 }
 for (const [path, name] of [
@@ -133,6 +133,7 @@ try {
     if (failUpload) {
       await page.evaluate(() => window.failUpload(new Error('Upload connection lost')))
       await page.waitForFunction(() => window.pending?.state === 'failed')
+      await page.waitForFunction(() => document.querySelector('textarea').value === 'Send after this upload')
       assert.equal(await input.inputValue(), 'Send after this upload')
       assert.equal(
         await page.evaluate(() =>
@@ -1347,6 +1348,29 @@ try {
   await page.locator('li[aria-label^="Queued message 1 of"]').hover()
   await page.getByRole('button', { name: 'Edit queued message 1', exact: true }).click()
   assert.equal(await input.inputValue(), 'Verify the queue and checklist layout')
+  await page.getByRole('button', { name: 'Cancel edit', exact: true }).click()
+  await page.evaluate(() => {
+    localStorage.clear()
+    window.setTask(task => ({ ...task, status: 'draft', activeRunId: undefined, messages: [], queue: [], draft: '', draftAttachments: [], draftTurnSettings: undefined }))
+    window.pending = null
+    window.requests = []
+  })
+  await remount()
+  // A snapshot from another client can change the draft while upload preparation waits.
+  await page.evaluate(() => {
+    window.attachmentState = { canSubmitWhileUploading: true, waitForUploads: () => new Promise(resolve => window.finishUpload = resolve) }
+    window.setTask(task => ({ ...task, draft: '' }))
+  })
+  await input.fill('Before upload preparation')
+  await page.waitForFunction(() => window.current.draft === 'Before upload preparation')
+  await page.locator('button[type=submit]').click()
+  await page.waitForFunction(() => typeof window.finishUpload === 'function')
+  await page.evaluate(() => window.setTask(task => ({ ...task, draft: 'New draft from another client' })))
+  await page.waitForFunction(() => window.current.draft === 'New draft from another client')
+  await page.evaluate(() => window.finishUpload())
+  await page.waitForFunction(() => window.pending?.state === 'failed')
+  assert.equal(await input.inputValue(), 'New draft from another client')
+  assert.equal(await page.evaluate(() => window.requests.some(request => request.path === '/api/tasks/message')), false)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, draft agent side chats with stable retry ids, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',

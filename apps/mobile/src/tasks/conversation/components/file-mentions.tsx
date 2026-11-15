@@ -172,7 +172,12 @@ export function FileMentions({
       ? [{ kind: 'command' as const, value: 'sidechat', detail: 'Start an agent side chat' }]
       : []),
     ...(mention.trigger === '/'
-      ? commandSuggestions(mention.query, provider)
+      ? commandSuggestions(
+          mention.query,
+          provider,
+          snapshot?.workspace.tasks.find((task) => task.id === taskId)?.nativeGoalSupported ===
+            true,
+        )
           .filter((item) => item.id === 'goal' || onCommand)
           .map((command) => ({
             kind: 'command' as const,

@@ -1,5 +1,10 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
+import {
+  turnAnnouncementsSchema,
+  interfaceLanguages,
+  decode,
+  interfaceLanguageSchema,
+} from '@dovo/protocol'
 import { useEffect, useState } from 'react'
 import { taskLauncherShortcuts } from '@dovo/protocol'
 import {
@@ -53,6 +58,28 @@ export default function GeneralSettings() {
             options={interfaceLanguages.map((item) => [item.id, item.name])}
             onChange={(value) =>
               updateAppPreferences({ interfaceLanguage: decode(interfaceLanguageSchema, value) })
+            }
+          />
+        </SettingRow>
+      </SettingsGroup>
+      <SettingsGroup title={uiText('Accessibility')}>
+        <SettingRow
+          label={uiText('Screen reader turn updates')}
+          description={uiText(
+            'Announce new work in the open thread. Messages and steps include conversation content.',
+          )}
+        >
+          <SettingsSelect
+            label={uiText('Screen reader turn updates')}
+            value={preferences.turnAnnouncements}
+            options={[
+              ['off', uiText('Off')],
+              ['status', uiText('Status')],
+              ['messages', uiText('Status and messages')],
+              ['steps', uiText('Status, messages and steps')],
+            ]}
+            onChange={(value) =>
+              updateAppPreferences({ turnAnnouncements: decode(turnAnnouncementsSchema, value) })
             }
           />
         </SettingRow>

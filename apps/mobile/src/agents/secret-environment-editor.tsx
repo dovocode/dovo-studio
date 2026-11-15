@@ -1,3 +1,4 @@
+import { SecretReferenceCheck as ReferenceCheck } from './secret-reference-check'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
@@ -50,6 +51,7 @@ export function SecretEnvironmentEditor({
       {Object.entries(value).map(([key, reference]) => (
         <View key={key} style={[styles.card, { gap: 8 }]}>
           <Text>{key}</Text>
+          <ReferenceCheck reference={reference} disabled={disabled} />
           <Choice
             label={uiText('Secret provider for {value0}', { value0: key })}
             value={reference.provider}

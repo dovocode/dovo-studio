@@ -273,3 +273,7 @@ export * from './use-next-prompt'
 export * from './runtime-dictation'
 export * from './workspace/composer-recovery'
 export * from './workspace/question-recovery'
+
+export { useTurnAnnouncements } from './use-turn-announcements'
+
+export { useSecretReferenceCheck } from './use-secret-reference-check'

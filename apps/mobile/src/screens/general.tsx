@@ -1,3 +1,4 @@
+import { turnAnnouncementsSchema } from '@dovo/protocol'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
@@ -144,8 +145,29 @@ export default function GeneralScreen() {
   const uiText = useInterfaceText()
 
   const preferences = useMobilePreferences()
+  const { styles } = useTheme()
   return (
     <LocalSettingsPage title={uiText('General')}>
+      <SettingsGroup title={uiText('Accessibility')}>
+        <Choice
+          label={uiText('Screen reader turn updates')}
+          value={preferences.turnAnnouncements}
+          items={[
+            { id: 'off', name: uiText('Off') },
+            { id: 'status', name: uiText('Status') },
+            { id: 'messages', name: uiText('Status and messages') },
+            { id: 'steps', name: uiText('Status, messages and steps') },
+          ]}
+          onChange={(value) =>
+            updateMobilePreferences({ turnAnnouncements: decode(turnAnnouncementsSchema, value) })
+          }
+        />
+        <Text style={styles.muted}>
+          {uiText(
+            'Announce new work in the open thread. Messages and steps include conversation content.',
+          )}
+        </Text>
+      </SettingsGroup>
       <SettingsGroup
         title={uiText('Interface language')}
         footer={uiText(

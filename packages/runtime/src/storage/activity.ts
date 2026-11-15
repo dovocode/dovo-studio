@@ -1,4 +1,10 @@
-import { mutableStruct, mutableArray, redactCredentialText } from '@dovo/protocol'
+import {
+  mutableStruct,
+  mutableArray,
+  redactCredentialText,
+  recentTools,
+  toolPresentation,
+} from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import { randomUUID } from 'node:crypto'
@@ -132,6 +138,50 @@ export class Activity {
       Schema.UndefinedOr(record),
       this.db.prepare('SELECT * FROM activity WHERE scope=? AND id=?').get(scope, id),
     )?.payload
+  }
+  /** Read current records, including tools outside the first activity page. App-owned work is excluded. */
+  finishProviderTools(
+    scope: string,
+    owner: { sessionId?: string; turnId?: string },
+    status: 'interrupted' | 'cancelled' | 'failed',
+  ) {
+    if (!owner.sessionId && !owner.turnId) return
+    const rows = decode(
+      mutableArray(record),
+      this.db
+        .prepare(
+          "SELECT * FROM activity WHERE scope=? AND kind='tool' AND json_valid(payload) AND json_extract(payload,'$.providerTool')=1 AND ((? IS NOT NULL AND json_extract(payload,'$.providerSessionId')=?) OR (? IS NOT NULL AND json_extract(payload,'$.turnId')=?)) ORDER BY time,id",
+        )
+        .all(
+          scope,
+          owner.sessionId ?? null,
+          owner.sessionId ?? null,
+          owner.turnId ?? null,
+          owner.turnId ?? null,
+        ),
+    )
+    for (const tool of recentTools(rows)) {
+      if (!['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(tool.status))
+        continue
+      const payload = decode(Schema.Record(Schema.String, Schema.Unknown), JSON.parse(tool.payload))
+      this.add(
+        'tool',
+        scope,
+        tool.summary,
+        {
+          turnId: tool.turnId,
+          toolId: payload.toolId,
+          messageId: tool.messageId,
+          textOffset: tool.textOffset,
+          providerTool: true,
+          providerSessionId: payload.providerSessionId,
+          presentation: toolPresentation(tool.payload, tool.summary, tool.inputPayload),
+          status,
+          error: 'Provider stopped before this tool completed.',
+        },
+        `provider-ended:${scope}:${tool.turnId}:${String(payload.toolId)}`,
+      )
+    }
   }
   /** Audits status changes, and messages wherever the update wrote history. */
   workspace({ before, after, histories }: WorkspaceChange) {

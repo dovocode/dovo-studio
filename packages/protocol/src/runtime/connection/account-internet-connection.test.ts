@@ -12,8 +12,7 @@ import {
 import { runtimeRequest } from '../../shared/client.js'
 import { createRuntimeClient } from '../../shared/runtime-client.js'
 import type { RuntimeConnection } from './runtime.js'
-const requestUrl = (url: Parameters<typeof fetch>[0]) =>
-  new URL(url instanceof Request ? url.url : url)
+const requestUrl = (url: RequestInfo | URL) => new URL(url instanceof Request ? url.url : url)
 const peer = { origin: 'https://connect.test', secret: '8'.repeat(64) }
 const internet = {
   address: peerAddress(peer),

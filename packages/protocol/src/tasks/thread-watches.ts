@@ -25,6 +25,8 @@ export const threadNativeAgentSchema = mutableStruct({
 })
 export type ThreadNativeAgent = typeof threadNativeAgentSchema.Type
 const threadPresentationFields = {
+  requestedModel: Schema.optional(maxValue(Schema.String, 500)),
+  executedModel: Schema.optional(maxValue(Schema.String, 500)),
   repositoryId: Schema.optional(id),
   projectIdentity: Schema.optional(maxValue(Schema.String, 2000)),
   projectKind: Schema.optional(Schema.Literals(['scratch', 'project'])),

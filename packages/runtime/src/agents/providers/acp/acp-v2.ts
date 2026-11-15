@@ -1,4 +1,5 @@
 import { configureAcpV2 } from './acp-v2-config.js'
+import { grokSteering } from './grok-steering.js'
 import {
   SessionUpdate,
   RequestPermissionSubject,
@@ -243,7 +244,14 @@ export function createAcpV2Adapter() {
           state.compact =
             session.availableCommands?.some((command) => command.name === 'compact') ??
             state.compact
-          warm = { connection, session, sessionId, key, state, image: !!capabilities.prompt?.image }
+          warm = {
+            connection,
+            session,
+            sessionId,
+            key,
+            state,
+            image: launch.authentication === 'grok' || !!capabilities.prompt?.image,
+          }
           const id = sessionId
           await waitForIdle()
           await configureAcpV2(
@@ -287,6 +295,19 @@ export function createAcpV2Adapter() {
         else state.updates = new AcpV2Updates(run, finish)
         state.fail = (message) => finish('error', message)
         state.prompting = true
+        if (launch.authentication === 'grok')
+          run.onSteer?.(
+            grokSteering(
+              run,
+              warm.sessionId,
+              () => state.run === run && state.prompting && !connection.signal.aborted,
+              (params) =>
+                connection.control(
+                  connection.rpc.request('_x.ai/interject', params),
+                  'Grok interjection',
+                ),
+            ),
+          )
         // The response only acknowledges insertion. Only a subsequent foreground idle state ends work.
         await Promise.race([
           connection.rpc.request('session/prompt', {
@@ -326,6 +347,7 @@ export function createAcpV2Adapter() {
         return true
       } finally {
         state.prompting = false
+        run.onSteer?.(undefined)
         state.fail = undefined
         clearTimeout(abortTimer)
         run.signal.removeEventListener('abort', abort)

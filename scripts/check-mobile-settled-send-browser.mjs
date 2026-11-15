@@ -10,9 +10,10 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
+import {NativeComposerInput} from './apps/mobile/src/tasks/composer/native-composer-input.native';
 window.requests=[];window.historyRequests=[];window.fail=true;window.finish=null;
-window.request=(path,input,_schema,_method,options)=>path==='/api/tasks/composer-history'?Effect.sync(()=>{window.historyRequests.push(input);return {messages:[{id:'previous',role:'user',text:'Earlier request'}],hasMore:false}}):window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
-function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <><textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/><button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
+window.request=(path,input,_schema,_method,options)=>path==='/api/tasks/composer-history'?Effect.tryPromise({try:async()=>{window.historyRequests.push(input);if(window.historyPage)return window.historyPage(input);return {messages:[{id:'previous',role:'user',text:'Earlier request'}],hasMore:false}},catch:error=>error}):window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <>{window.nativeComposer?<NativeComposerInput inputRef={actions.composerInput} value={actions.draft.text} revision={actions.draft.revision} resources={{skills:[],mcpServers:[]}} expanded={false} editable={!actions.busy} onChangeText={text=>actions.draft.update(text,'keyboard')} onSelectionChange={()=>{}}/>:<textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/>}<button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
       loader: 'tsx',
@@ -32,7 +33,22 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   [
     {
       path: 'react-native',
-      contents: 'export const Alert={alert(){}};export const Keyboard={dismiss(){}};',
+      contents:
+        'export const Alert={alert(){}};export const Keyboard={dismiss(){}};export const useWindowDimensions=()=>({fontScale:1});',
+    },
+    {
+      path: 'expo',
+      contents: `import {useImperativeHandle,useRef} from 'react';export const requireOptionalNativeModule=()=>({supportsDraftSnapshot:true});export const requireNativeView=()=>props=>{const latest=useRef(props);latest.current=props;useImperativeHandle(props.ref,()=>({readText:()=>{const snapshot={text:latest.current.content.text,eventCount:window.nativeEventCount??0,revision:latest.current.content.revision};return window.holdNativeRead?new Promise(resolve=>window.finishNativeRead=()=>resolve(snapshot)):Promise.resolve(snapshot)}}),[]);window.nativeProps=props;return <textarea aria-label="Message" value={props.content.text} disabled={!props.editable} onChange={event=>props.onTextChange({nativeEvent:{text:event.target.value,eventCount:window.nativeEventCount=(window.nativeEventCount??0)+1}})}/>};`,
+    },
+    {
+      path: '../../ui/theme',
+      importer: root + 'apps/mobile/src/tasks/composer/native-composer-input.native.tsx',
+      contents: 'export const useTheme=()=>({colors:{text:"#fff",muted:"#aaa",surface:"#222"}});',
+    },
+    {
+      path: '../../runtime/preferences/app-preferences',
+      importer: root + 'apps/mobile/src/tasks/composer/native-composer-input.native.tsx',
+      contents: 'export const useCarMode=()=>false;export const carZoom=1.4;',
     },
     {
       path: 'expo-crypto',
@@ -57,7 +73,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: '../../draft/use-draft',
       importer: actions,
-      contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[text,setText]=useState('');const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:window.draftScope??'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision:text,update:setText,appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
+      contents: `import {useState,useRef} from 'react';import {Effect} from 'effect';export const useDraft=()=>{const[{text,revision},setDraft]=useState({text:'',revision:0});const update=(value,source)=>setDraft(previous=>({text:typeof value==='function'?value(previous.text):value,revision:source==='keyboard'?previous.revision:previous.revision+1}));const setText=value=>update(value);const[pendingRestore,setPendingRestore]=useState();const restore=useRef();return {key:window.draftScope??'computer:settled',text,ready:true,pendingRestore,stageRestoreEffect:value=>Effect.sync(()=>{restore.current=value;setPendingRestore(value)}),confirmRestoreEffect:()=>Effect.sync(()=>{setText(text=>[text,restore.current?.text].filter(Boolean).join('\\n\\n'));setPendingRestore(undefined)}),discardRestoreEffect:()=>Effect.void,revision,update,appendEffect:value=>Effect.sync(()=>setText(text=>[text,value].filter(Boolean).join('\\n\\n'))),stageEffect:()=>Effect.void,confirmEffect:(_attempt,clear)=>Effect.sync(()=>{if(clear)setText('')})}};`,
     },
     {
       path: '../../composer/attachment-picker',
@@ -443,9 +459,150 @@ try {
   await page.getByRole('status').filter({ hasText: 'thread changed before sending' }).waitFor()
   assert.equal(await page.evaluate(() => window.requests.length), beforeReadFailure + 1)
   assert.equal(await input.inputValue(), 'Do not send after switching')
+  // Exercise the real native adapter and its asynchronous draft-identity fence.
+  const nativePage = await browser.newPage()
+  nativePage.on('pageerror', (error) => errors.push(error.message))
+  await nativePage.setContent('<div id="app"></div>')
+  await nativePage.evaluate(() => (window.nativeComposer = true))
+  await nativePage.addScriptTag({ content: built.outputFiles[0].text })
+  const nativeInput = nativePage.getByRole('textbox', { name: 'Message' })
+  const nativeSend = nativePage.getByRole('button', { name: 'Send', exact: true })
+  await nativeInput.fill('Keep my draft when history is cancelled')
+  await nativePage.evaluate(() => window.actions.composerHistory.begin())
+  await nativePage.waitForFunction(() => window.actions.composerHistory.active)
+  await nativePage.evaluate(() => window.actions.composerHistory.cancel())
+  assert.equal(await nativeInput.inputValue(), 'Keep my draft when history is cancelled')
+  await nativePage.evaluate(() => {
+    window.actions.composerHistory.begin()
+    window.holdNativeRead = true
+  })
+  await nativePage.waitForFunction(() => window.actions.composerHistory.active)
+  await nativeSend.click()
+  await nativePage.waitForFunction(
+    () => window.actions.busy && typeof window.finishNativeRead === 'function',
+  )
+  assert.equal(
+    await nativeInput.inputValue(),
+    'Earlier request',
+    'Acquiring the send lock must keep the recalled native draft until its snapshot is read',
+  )
+  await nativePage.evaluate(() => window.finishNativeRead())
+  await nativePage.waitForFunction(() => window.finish !== null || !!window.actions.error)
+  assert.equal(await nativePage.evaluate(() => window.actions.error), '')
+  assert.equal(
+    await nativePage.evaluate(() => window.requests.at(-1).input.text),
+    'Earlier request',
+  )
+  const nativeMessageId = await nativePage.evaluate(() => window.requests.at(-1).input.messageId)
+  await nativePage.evaluate(() => window.finish())
+  await nativePage.waitForFunction(() => !window.actions.busy)
+  assert.equal(await nativeInput.inputValue(), 'Earlier request', 'Failed sends keep recalled text')
+  await nativePage.evaluate(() => {
+    window.finish = null
+    window.holdNativeRead = false
+    window.fail = false
+  })
+  await nativeSend.click()
+  await nativePage.waitForFunction(() => window.finish !== null)
+  assert.equal(
+    await nativePage.evaluate(() => window.requests.at(-1).input.messageId),
+    nativeMessageId,
+    'Retry the same message after a failed recalled send',
+  )
+  await nativePage.evaluate(() => window.finish())
+  await nativePage.waitForFunction(() => !window.actions.busy)
+  assert.equal(await nativeInput.inputValue(), '')
+  await nativePage.evaluate(() => {
+    window.finish = null
+    window.actions.composerHistory.begin()
+  })
+  await nativePage.waitForFunction(() => window.actions.composerHistory.active)
+  await nativeInput.fill('Edited recalled request')
+  assert.equal(await nativePage.evaluate(() => window.actions.composerHistory.active), false)
+  await nativeSend.click()
+  await nativePage.waitForFunction(() => window.finish !== null)
+  assert.equal(
+    await nativePage.evaluate(() => window.requests.at(-1).input.text),
+    'Edited recalled request',
+  )
+  await nativePage.evaluate(() => window.finish())
+  await nativePage.waitForFunction(() => !window.actions.busy)
+  assert.equal(await nativeInput.inputValue(), '')
+  // Late older pages must not replace the text selected for sending.
+  await nativePage.evaluate(() => {
+    window.historyPage = async ({ before }) =>
+      before
+        ? new Promise(
+            (resolve) =>
+              (window.finishOlder = () =>
+                resolve({
+                  messages: [{ role: 'user', text: 'Late older message' }],
+                  turns: [],
+                  historyRevision: 0,
+                })),
+          )
+        : {
+            messages: Array.from({ length: 50 }, (_, i) => ({ role: 'user', text: 'Paged ' + i })),
+            turns: [],
+            before: 'older',
+            historyRevision: 0,
+          }
+    window.actions.composerHistory.begin()
+  })
+  await nativePage.waitForFunction(() => window.actions.composerHistory.active)
+  for (let i = 0; i < 49; i++)
+    await nativePage.evaluate(() => window.actions.composerHistory.older())
+  assert.equal(await nativeInput.inputValue(), 'Paged 0')
+  await nativePage.evaluate(() => window.actions.composerHistory.older())
+  await nativePage.waitForFunction(
+    () => window.actions.composerHistory.loading && !!window.finishOlder,
+  )
+  await nativePage.evaluate(() => {
+    window.holdNativeRead = true
+    window.finishNativeRead = null
+    window.finish = null
+  })
+  await nativeSend.click()
+  await nativePage.waitForFunction(() => window.actions.busy && !!window.finishNativeRead)
+  await nativePage.evaluate(() => window.finishOlder())
+  await nativePage.evaluate(
+    () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+  )
+  assert.equal(
+    await nativeInput.inputValue(),
+    'Paged 0',
+    'Send cancels pending older-page navigation',
+  )
+  await nativePage.evaluate(() => window.finishNativeRead())
+  await nativePage.waitForFunction(() => window.finish !== null || !!window.actions.error)
+  assert.equal(await nativePage.evaluate(() => window.actions.error), '')
+  assert.equal(await nativePage.evaluate(() => window.requests.at(-1).input.text), 'Paged 0')
+  await nativePage.evaluate(() => window.finish())
+  await nativePage.waitForFunction(() => !window.actions.busy)
+  assert.equal(await nativeInput.inputValue(), '')
+  // A real draft replacement must still reject the native snapshot.
+  await nativeInput.fill('Before a real draft change')
+  const beforeNativeChange = await nativePage.evaluate(() => window.requests.length)
+  await nativePage.evaluate(() => {
+    window.holdNativeRead = true
+    window.finishNativeRead = null
+  })
+  await nativeSend.click()
+  await nativePage.waitForFunction(() => typeof window.finishNativeRead === 'function')
+  await nativePage.evaluate(() => window.actions.draft.update('Keep the replacement draft'))
+  await nativePage.waitForFunction(
+    () => window.nativeProps.content.text === 'Keep the replacement draft',
+  )
+  await nativePage.evaluate(() => window.finishNativeRead())
+  await nativePage
+    .getByRole('status')
+    .filter({ hasText: 'message changed before sending' })
+    .waitFor()
+  assert.equal(await nativePage.evaluate(() => window.requests.length), beforeNativeChange)
+  assert.equal(await nativeInput.inputValue(), 'Keep the replacement draft')
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile settled-thread submission: drafting, rejected send, stable retries, attachment-only input and archived-thread guard passed.',
+    'Mobile settled-thread submission: drafting, recalled native sends, edited recall, stable retries, native revision guards, attachment-only input and archived-thread guard passed.',
   )
 } finally {
   await browser.close()

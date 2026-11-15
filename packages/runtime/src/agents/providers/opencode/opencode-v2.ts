@@ -1,3 +1,9 @@
+import { opencodeJobs } from './opencode-jobs.js'
+import { opencodeEvents } from './opencode-events.js'
+import { opencodeGoal } from './opencode-goal.js'
+import { gte, valid } from 'semver'
+import { decodeResult, mutableStruct, nativeTodos } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { opencodeNative } from './opencode-native.js'
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
@@ -193,13 +199,26 @@ export const opencodeV2Adapter: AgentAdapter = {
           { sessionID, key: 'dovo-agent', value: run.agent.instructions },
           { signal: run.signal },
         )
+      let supportsGoals = false
+      const goal = opencodeGoal(run, api, sessionID)
       const streamController = new AbortController()
       let interruption: Promise<void> | undefined
       const abort = () => {
         streamController.abort()
         interruption = (async () => {
-          await api.session.interrupt({ sessionID }, { signal: AbortSignal.timeout(5000) })
-          await api.session.wait({ sessionID }, { signal: AbortSignal.timeout(5000) })
+          try {
+            if (supportsGoals && goal.active) {
+              await api.session.command(
+                { sessionID, name: 'goal', text: 'pause' },
+                { signal: AbortSignal.timeout(5000) },
+              )
+              await goal.read(AbortSignal.timeout(5000))
+              if (goal.active) throw new Error('OpenCode goal pause was not confirmed')
+            }
+          } finally {
+            await api.session.interrupt({ sessionID }, { signal: AbortSignal.timeout(5000) })
+            await api.session.wait({ sessionID }, { signal: AbortSignal.timeout(5000) })
+          }
         })()
         // The cleanup below owns the rejection, including failures before it is awaited.
         void interruption.catch(() => undefined)
@@ -209,12 +228,48 @@ export const opencodeV2Adapter: AgentAdapter = {
       const names = new Map<string, string>()
       const inputs = new Map<string, Record<string, unknown>>()
       const reasoning = new Map<string, string>()
+      const text = new Map<string, { received: string; ended: boolean }>()
+      const replied = new Set<string>()
       let resolveDone!: () => void
       let rejectDone!: (reason: Error) => void
       const done = new Promise<void>((resolve, reject) => {
         resolveDone = resolve
         rejectDone = reject
       })
+      const interactions = new Map<string, { session: string; controller: AbortController }>()
+      let rejectInteraction!: (cause: Error) => void
+      const interactionFailure = new Promise<never>((_resolve, reject) => {
+        rejectInteraction = reject
+      })
+      void interactionFailure.catch(() => undefined)
+      const cancelInteractions = (session?: string) => {
+        for (const pending of interactions.values())
+          if (!session || pending.session === session) pending.controller.abort()
+      }
+      const interact = (
+        key: string,
+        session: string,
+        operation: (signal: AbortSignal) => Promise<void>,
+      ) => {
+        if (replied.has(key) || interactions.has(key)) return
+        const controller = new AbortController()
+        const signal = AbortSignal.any([streamController.signal, controller.signal, run.signal])
+        interactions.set(key, { session, controller })
+        void Promise.resolve()
+          .then(() => operation(signal))
+          .then(() => {
+            replied.add(key)
+          })
+          .catch((cause: unknown) => {
+            if (signal.aborted) return
+            const error = cause instanceof Error ? cause : new Error(String(cause))
+            rejectDone(error)
+            rejectInteraction(error)
+          })
+          .finally(() => {
+            interactions.delete(key)
+          })
+      }
       let resolveConnected!: () => void
       const connected = new Promise<void>((resolve) => {
         resolveConnected = resolve
@@ -223,6 +278,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       const cancelDone = () => rejectDone(new Error('Task cancelled'))
       run.signal.addEventListener('abort', cancelDone, { once: true })
       if (run.signal.aborted) cancelDone()
+      const jobs = opencodeJobs(run, api, sessionID, (id) => native.owns(id))
       const native = opencodeNative(
         run,
         sessionID,
@@ -231,12 +287,15 @@ export const opencodeV2Adapter: AgentAdapter = {
         },
         async () =>
           new Set(Object.keys(await api.session.active({ signal: AbortSignal.timeout(5000) }))),
+        jobs,
       )
       let succeeded = false
       let parentFinished = false
       let accepted = false
       let awaitingStart = !run.compact
       let submitted = false
+      let executionFinished = false
+      let recoveringText = false
       const emitTool = (id: string, status: 'running' | 'completed' | 'error', output?: string) => {
         run.onEvent?.('message.part.updated', {
           properties: {
@@ -256,10 +315,46 @@ export const opencodeV2Adapter: AgentAdapter = {
           },
         })
       }
+      const recoverTodos = async () => {
+        const history = await api.message.list(
+          { sessionID, type: 'assistant', order: 'desc', limit: 100 },
+          { signal: AbortSignal.any([run.signal, AbortSignal.timeout(5000)]) },
+        )
+        for (const message of history.data) {
+          if (message.type !== 'assistant') continue
+          for (const part of [...message.content].reverse()) {
+            if (
+              part.type !== 'tool' ||
+              part.name !== 'todowrite' ||
+              part.state.status !== 'completed'
+            )
+              continue
+            const todoEvent = { properties: { sessionID, todos: part.state.metadata?.todos } }
+            if (nativeTodos('todo.updated', todoEvent, 'opencode', [], sessionID)) {
+              run.onEvent?.('todo.updated', todoEvent)
+              return
+            }
+          }
+        }
+      }
       const consume = (async () => {
-        for await (const event of api.event.subscribe({ signal: streamController.signal })) {
+        for await (const event of opencodeEvents(
+          api,
+          sessionID,
+          streamController.signal,
+          () => ({ submitted, parentFinished, children: native.activeSessions() }),
+          (text) => run.onActivity(text),
+        )) {
           native.update(event.type, event)
           if (event.type === 'server.connected') {
+            if (submitted) {
+              recoveringText = true
+              await jobs.refresh()
+              if (supportsGoals) {
+                await goal.read()
+                await recoverTodos()
+              }
+            }
             resolveConnected()
             continue
           }
@@ -273,7 +368,52 @@ export const opencodeV2Adapter: AgentAdapter = {
                 : undefined
           const child = typeof eventSession === 'string' && native.owns(eventSession)
           if ((!child && eventSession !== sessionID) || !submitted) continue
+          if (
+            child &&
+            (event.type === 'session.shell.started' ||
+              event.type === 'session.shell.ended' ||
+              event.type === 'session.inbox.enqueued')
+          )
+            await jobs.refresh()
+          if (event.type === 'form.replied' || event.type === 'form.cancelled') {
+            interactions
+              .get(`form:${event.data.sessionID}:${event.data.id}`)
+              ?.controller.abort()
+            continue
+          }
+          if (
+            child &&
+            [
+              'session.execution.succeeded',
+              'session.execution.failed',
+              'session.execution.interrupted',
+              'session.idle',
+            ].includes(event.type)
+          )
+            cancelInteractions(eventSession)
           if (child && event.type !== 'permission.asked' && event.type !== 'form.created') continue
+          if (
+            event.type === 'rpc.opencode.goal.changed' &&
+            eventSession === sessionID &&
+            supportsGoals
+          ) {
+            const changed = decodeResult(mutableStruct({ goal: Schema.Unknown }), data)
+            if (changed.success) {
+              try {
+                goal.publish(changed.data.goal)
+              } catch {
+                await goal.read()
+              }
+              if (executionFinished && !goal.active) resolveDone()
+            }
+            continue
+          }
+          if (
+            event.type === 'session.shell.started' ||
+            event.type === 'session.shell.ended' ||
+            event.type === 'session.inbox.enqueued'
+          )
+            await jobs.refresh()
           if (parentFinished && !child) continue
           // Session-only terminal events can belong to a retired execution. Admission
           // starts at the new execution's start, never at the HTTP acknowledgement.
@@ -295,12 +435,34 @@ export const opencodeV2Adapter: AgentAdapter = {
           }
           run.onEvent?.(event.type, event)
           switch (event.type) {
-            case 'session.text.delta':
+            case 'session.execution.started':
+              executionFinished = false
+              break
+            case 'session.text.delta': {
+              if (recoveringText) break
+              const id = `${event.data.assistantMessageID}:${event.data.ordinal}`
+              const previous = text.get(id)
+              if (previous?.ended) break
+              text.set(id, {
+                received: (previous?.received ?? '') + event.data.delta,
+                ended: false,
+              })
               run.onText(event.data.delta)
               break
-            case 'session.text.ended':
+            }
+            case 'session.text.ended': {
+              const id = `${event.data.assistantMessageID}:${event.data.ordinal}`
+              const previous = text.get(id)?.received ?? ''
+              // Durable end events restore deltas lost in a transport outage.
+              if (typeof event.data.text === 'string') {
+                if (!event.data.text.startsWith(previous))
+                  throw new Error('OpenCode recovered text differs. Review the saved session.')
+                run.onText(event.data.text.slice(previous.length))
+                text.set(id, { received: event.data.text, ended: true })
+              }
               run.onTextBoundary?.()
               break
+            }
             case 'session.reasoning.delta': {
               const id = `${event.data.assistantMessageID}:${event.data.ordinal}`
               const value = (reasoning.get(id) ?? '') + event.data.delta
@@ -334,7 +496,13 @@ export const opencodeV2Adapter: AgentAdapter = {
               inputs.set(event.data.id, event.data.input)
               emitTool(event.data.id, 'running')
               break
-            case 'session.tool.success':
+            case 'session.tool.success': {
+              if (names.get(event.data.id) === 'todowrite') {
+                const todoEvent = { properties: { sessionID, todos: event.data.metadata?.todos } }
+                if (nativeTodos('todo.updated', todoEvent, 'opencode', [], sessionID))
+                  run.onEvent?.('todo.updated', todoEvent)
+              }
+              await jobs.refresh()
               emitTool(
                 event.data.id,
                 'completed',
@@ -343,11 +511,15 @@ export const opencodeV2Adapter: AgentAdapter = {
                   .join('\n'),
               )
               break
+            }
             case 'session.tool.failed':
               emitTool(event.data.id, 'error', event.data.error.message)
               break
             case 'session.execution.succeeded':
-              if (!run.compact) resolveDone()
+              cancelInteractions(sessionID)
+              executionFinished = true
+              if (supportsGoals) await goal.read()
+              if (!run.compact && !goal.active) resolveDone()
               break
             case 'session.execution.failed':
               if (!run.compact) rejectDone(new Error(event.data.error.message))
@@ -362,75 +534,108 @@ export const opencodeV2Adapter: AgentAdapter = {
               if (run.compact) rejectDone(new Error(event.data.error.message))
               break
             case 'permission.asked': {
-              const allow =
-                run.tools !== 'none' &&
-                run.agent.permission !== 'read-only' &&
-                (run.agent.approvalPolicy === 'never' ||
-                  (await run.approve(
-                    event.data.message || event.data.action,
-                    event.data.resources.join('\n'),
-                    ['webfetch', 'websearch', 'web_fetch', 'web_search'].includes(event.data.action)
-                      ? 'web'
-                      : undefined,
-                  )) !== 'deny')
-              if (!streamController.signal.aborted)
-                await api.permission.reply(
-                  { sessionID, requestID: event.data.id, decision: allow ? 'once' : 'reject' },
-                  { signal: run.signal },
+              const request = event.data
+              const key = `permission:${request.sessionID}:${request.id}`
+              interact(key, request.sessionID, async (signal) => {
+                const kind = ['webfetch', 'websearch', 'web_fetch', 'web_search'].includes(
+                  request.action,
                 )
+                  ? 'web'
+                  : undefined
+                const decision = async () =>
+                  child && run.nativeAgentInteractions
+                    ? run.nativeAgentInteractions.approve(
+                        request.message || request.action,
+                        request.resources.join('\n'),
+                        signal,
+                        kind,
+                      )
+                    : run.approve(
+                        request.message || request.action,
+                        request.resources.join('\n'),
+                        kind,
+                      )
+                const allow =
+                  run.tools !== 'none' &&
+                  run.agent.permission !== 'read-only' &&
+                  (run.agent.approvalPolicy === 'never' || (await decision()) !== 'deny')
+                if (signal.aborted) return
+                await api.permission.reply(
+                  {
+                    sessionID: request.sessionID,
+                    requestID: request.id,
+                    decision: allow ? 'once' : 'reject',
+                  },
+                  { signal },
+                )
+              })
               break
             }
             case 'form.created': {
               const form = event.data.form
-              const answers = await run.ask(
-                decode(questionPromptSchema, {
-                  title: form.title,
-                  questions: form.fields.map((field) => ({
-                    id: field.key,
-                    header: field.title || field.key,
-                    question: field.description || field.title || field.key,
-                    options: 'options' in field ? field.options : [],
-                    multiple: field.type === 'multiselect',
-                    custom:
-                      !('options' in field && field.options?.length) ||
-                      ('custom' in field && field.custom === true),
-                    inputType:
-                      field.type === 'number' || field.type === 'integer' ? 'number' : 'text',
-                    secret: 'hidden' in field && field.hidden === true,
-                    required: !('required' in field) || field.required !== false,
-                  })),
-                }),
-                streamController.signal,
-              )
-              if (streamController.signal.aborted) break
-              if (answers)
-                await api.session.form.reply(
-                  {
-                    sessionID,
-                    formID: form.id,
-                    answer: Object.fromEntries(
-                      form.fields.flatMap((field) => {
-                        const values = answers[field.key]
-                        if (!values) return []
-                        const value =
-                          field.type === 'multiselect'
-                            ? values
-                            : field.type === 'boolean'
-                              ? values[0] === 'true'
-                              : field.type === 'number' || field.type === 'integer'
-                                ? Number(values[0])
-                                : (values[0] ?? '')
-                        return [[field.key, value]]
-                      }),
-                    ),
-                  },
-                  { signal: run.signal },
+              const key = `form:${form.sessionID}:${form.id}`
+              interact(key, form.sessionID, async (signal) => {
+                const ask =
+                  child && run.nativeAgentInteractions ? run.nativeAgentInteractions.ask : run.ask
+                const answers = await ask(
+                  decode(questionPromptSchema, {
+                    title: form.title,
+                    questions: form.fields.map((field) => ({
+                      id: field.key,
+                      header: field.title || field.key,
+                      question: field.description || field.title || field.key,
+                      options: 'options' in field ? field.options : [],
+                      multiple: field.type === 'multiselect',
+                      custom:
+                        !('options' in field && field.options?.length) ||
+                        ('custom' in field && field.custom === true),
+                      inputType:
+                        field.type === 'number' || field.type === 'integer' ? 'number' : 'text',
+                      secret: 'hidden' in field && field.hidden === true,
+                      required: !('required' in field) || field.required !== false,
+                    })),
+                  }),
+                  signal,
                 )
-              else
-                await api.session.form.cancel(
-                  { sessionID, formID: form.id },
-                  { signal: run.signal },
-                )
+                if (signal.aborted) return
+                if (answers)
+                  await api.session.form.reply(
+                    {
+                      sessionID: form.sessionID,
+                      formID: form.id,
+                      answer: Object.fromEntries(
+                        form.fields.flatMap((field) => {
+                          const values = answers[field.key]
+                          if (!values) return []
+                          const value =
+                            field.type === 'multiselect'
+                              ? values
+                              : field.type === 'boolean'
+                                ? values[0] === 'true'
+                                : field.type === 'number' || field.type === 'integer'
+                                  ? Number(values[0])
+                                  : (values[0] ?? '')
+                          return [[field.key, value]]
+                        }),
+                      ),
+                    },
+                    { signal },
+                  )
+                else
+                  await api.session.form.cancel(
+                    {
+                      sessionID: form.sessionID,
+                      formID: form.id,
+                      ...(child
+                        ? {
+                            message:
+                              'The user dismissed this question. Continue without an answer.',
+                          }
+                        : {}),
+                    },
+                    { signal },
+                  )
+              })
               break
             }
           }
@@ -443,7 +648,28 @@ export const opencodeV2Adapter: AgentAdapter = {
       )
       try {
         await Promise.race([connected, done])
+        const info = await api.server.info({
+          signal: AbortSignal.any([run.signal, AbortSignal.timeout(5000)]),
+        })
+        supportsGoals = !!valid(info.version) && gte(info.version, '2.2.5')
+        run.onEvent?.('dovo/opencode/capabilities', { sessionId: sessionID, goals: supportsGoals })
+        await jobs.initialize(!!valid(info.version) && gte(info.version, '2.2.6'))
+        if (run.sessionId && !run.compact && supportsGoals) {
+          await recoverTodos()
+          if (supportsGoals) await goal.read()
+        }
         submitted = true
+        if (run.goal) {
+          const controlOnly = await goal.control()
+          if (!controlOnly) await done
+          parentFinished = true
+          await Promise.race([
+            Promise.all([native.drain(consume), jobs.drain(consume)]),
+            interactionFailure,
+          ])
+          succeeded = true
+          return
+        }
         const task = run.compact
           ? api.session.compact({ sessionID }, { signal: run.signal })
           : api.session.prompt(
@@ -461,12 +687,17 @@ export const opencodeV2Adapter: AgentAdapter = {
         run.onPromptAccepted?.()
         await done
         parentFinished = true
-        await native.drain(consume)
+        await Promise.race([
+          Promise.all([native.drain(consume), jobs.drain(consume)]),
+          interactionFailure,
+        ])
         succeeded = true
       } finally {
+        if (!succeeded && !interruption) abort()
         try {
           await native.close(!succeeded)
         } finally {
+          cancelInteractions()
           streamController.abort()
         }
         run.signal.removeEventListener('abort', abort)

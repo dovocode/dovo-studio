@@ -1,9 +1,10 @@
+import { NativeImageGallery } from './native-image-gallery'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
-import { EditChatImage } from '../../composer/chat-image-edit-context'
+import { EditChatImage, ChatImageEditContext } from '../../composer/chat-image-edit-context'
 import { nativeEffect, mobileWorkflow } from '../../../runtime/state/native-effect'
-import { useEffect, useRef } from 'react'
+import { useContext, useEffect, useRef } from 'react'
 import { runClientEffect, clientTaskScope } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
@@ -44,6 +45,7 @@ export function MessageAttachments({
   onBusy?: (busy: boolean) => void
   draftAttachmentDisabled?: boolean
 }) {
+  const chatImageEdit = useContext(ChatImageEditContext)
   const uiText = useInterfaceText()
 
   const { styles, colors } = useTheme()
@@ -242,108 +244,133 @@ export function MessageAttachments({
         />
       )}
       <SafeModal visible={!!preview} animationType="slide" onRequestClose={() => setPreview(null)}>
-        <View style={styles.screen}>
-          <View
-            style={{
-              flexDirection: 'row',
-              alignItems: 'center',
-              gap: 12,
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-            }}
-          >
-            <Text
-              numberOfLines={1}
-              ellipsizeMode="middle"
-              style={{ flex: 1, minWidth: 0, fontSize: 15, fontWeight: '600', color: colors.text }}
+        {preview && isImageAttachment(preview.attachment) && preview.attachment.mime !== 'image/gif' && NativeImageGallery ? (
+          <NativeImageGallery
+            taskId={taskId}
+            files={files.filter((file) => file.mime !== 'image/gif')}
+            initial={preview}
+            onClose={() => setPreview(null)}
+            onEdit={
+              removable
+                ? edit
+                : chatImageEdit && !chatImageEdit.busy && !chatImageEdit.disabled && connected
+                  ? (id) => {
+                      const file = files.find((file) => file.id === id)
+                      if (file) void chatImageEdit.edit({ taskId, attachmentId: id }, file.name)
+                    }
+                  : undefined
+            }
+          />
+        ) : (
+          <View style={styles.screen}>
+            <View
+              style={{
+                flexDirection: 'row',
+                alignItems: 'center',
+                gap: 12,
+                paddingHorizontal: 16,
+                paddingVertical: 8,
+              }}
             >
-              {preview?.attachment.name}
-            </Text>
-            <View style={{ flexDirection: 'row', gap: 8, flexShrink: 0 }}>
-              {preview && !removable && isImageAttachment(preview.attachment) && (
-                <EditChatImage
-                  source={{ taskId, attachmentId: preview.attachment.id }}
-                  glass
-                  label={preview.attachment.name}
-                  onEdit={() => setPreview(null)}
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="middle"
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  fontSize: 15,
+                  fontWeight: '600',
+                  color: colors.text,
+                }}
+              >
+                {preview?.attachment.name}
+              </Text>
+              <View style={{ flexDirection: 'row', gap: 8, flexShrink: 0 }}>
+                {preview && !removable && isImageAttachment(preview.attachment) && (
+                  <EditChatImage
+                    source={{ taskId, attachmentId: preview.attachment.id }}
+                    glass
+                    label={preview.attachment.name}
+                    onEdit={() => setPreview(null)}
+                  />
+                )}
+                <IconButton
+                  label={uiText('Share file')}
+                  icon="share"
+                  variant="glass"
+                  disabled={busy}
+                  onPress={() =>
+                    void act(() => {
+                      return runClientEffect(
+                        mobileWorkflow(function* () {
+                          if (!preview) return
+                          yield* nativeEffect(() =>
+                            shareAttachment(
+                              preview.attachment.name,
+                              preview.attachment.mime,
+                              preview.data,
+                            ),
+                          )
+                        }),
+                      )
+                    })
+                  }
                 />
-              )}
-              <IconButton
-                label={uiText('Share file')}
-                icon="share"
-                variant="glass"
-                disabled={busy}
-                onPress={() =>
-                  void act(() => {
-                    return runClientEffect(
-                      mobileWorkflow(function* () {
-                        if (!preview) return
-                        yield* nativeEffect(() =>
-                          shareAttachment(
-                            preview.attachment.name,
-                            preview.attachment.mime,
-                            preview.data,
-                          ),
-                        )
-                      }),
-                    )
-                  })
-                }
-              />
-              <IconButton
-                label={uiText('Close preview')}
-                icon="close"
-                variant="glass"
-                onPress={() => setPreview(null)}
-              />
+                <IconButton
+                  label={uiText('Close preview')}
+                  icon="close"
+                  variant="glass"
+                  onPress={() => setPreview(null)}
+                />
+              </View>
+            </View>
+            {!!error && (
+              <Text accessibilityRole="alert" style={[styles.error, { paddingHorizontal: 16 }]}>
+                {error}
+              </Text>
+            )}
+            <View
+              style={{ flex: 1, minHeight: 0 }}
+              onLayout={({ nativeEvent: { layout } }) =>
+                setPreviewSize({ width: layout.width, height: layout.height })
+              }
+            >
+              {preview &&
+                (isImageAttachment(preview.attachment) ? (
+                  <ScrollView
+                    key={preview.attachment.id}
+                    accessibilityLabel={uiText('Image preview')}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
+                    maximumZoomScale={4}
+                    minimumZoomScale={1}
+                    centerContent
+                    showsHorizontalScrollIndicator={false}
+                    showsVerticalScrollIndicator={false}
+                  >
+                    <Image
+                      source={{ uri: `data:${preview.attachment.mime};base64,${preview.data}` }}
+                      accessibilityLabel={preview.attachment.name}
+                      style={{ width: previewSize.width, height: previewSize.height }}
+                      resizeMode="contain"
+                    />
+                  </ScrollView>
+                ) : /^(audio|video)\//.test(preview.attachment.mime) ? (
+                  <AttachmentMedia key={preview.attachment.id} {...preview} />
+                ) : (
+                  <ScrollView
+                    accessibilityLabel={uiText('File preview')}
+                    style={{ flex: 1 }}
+                    contentContainerStyle={styles.content}
+                  >
+                    <Text selectable style={styles.text}>
+                      {textPreview(preview.data)}
+                    </Text>
+                  </ScrollView>
+                ))}
             </View>
           </View>
-          {!!error && (
-            <Text accessibilityRole="alert" style={[styles.error, { paddingHorizontal: 16 }]}>
-              {error}
-            </Text>
-          )}
-          <View
-            style={{ flex: 1, minHeight: 0 }}
-            onLayout={({ nativeEvent: { layout } }) =>
-              setPreviewSize({ width: layout.width, height: layout.height })
-            }
-          >
-            {preview &&
-              (isImageAttachment(preview.attachment) ? (
-                <ScrollView
-                  key={preview.attachment.id}
-                  accessibilityLabel={uiText('Image preview')}
-                  style={{ flex: 1 }}
-                  contentContainerStyle={{ flexGrow: 1, justifyContent: 'center' }}
-                  maximumZoomScale={4}
-                  minimumZoomScale={1}
-                  centerContent
-                  showsHorizontalScrollIndicator={false}
-                  showsVerticalScrollIndicator={false}
-                >
-                  <Image
-                    source={{ uri: `data:${preview.attachment.mime};base64,${preview.data}` }}
-                    accessibilityLabel={preview.attachment.name}
-                    style={{ width: previewSize.width, height: previewSize.height }}
-                    resizeMode="contain"
-                  />
-                </ScrollView>
-              ) : /^(audio|video)\//.test(preview.attachment.mime) ? (
-                <AttachmentMedia key={preview.attachment.id} {...preview} />
-              ) : (
-                <ScrollView
-                  accessibilityLabel={uiText('File preview')}
-                  style={{ flex: 1 }}
-                  contentContainerStyle={styles.content}
-                >
-                  <Text selectable style={styles.text}>
-                    {textPreview(preview.data)}
-                  </Text>
-                </ScrollView>
-              ))}
-          </View>
-        </View>
+        )}
       </SafeModal>
     </View>
   )

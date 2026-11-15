@@ -160,3 +160,158 @@ The mobile browser checks use native control adapters. They do not establish phy
 appearance. The screenshot issues already have source fixes for themed Text and the compact
 single-row browser without its top header. The browser checks verify those paths. The current
 changes have not been installed on a physical iPhone.
+
+## Eight additions, 14 November 2026
+
+All eight items are implemented locally. This section records the final behavior and its limits. The
+source review checked T3 through
+[`8871c265a2be763bbbc3052b8cb75c5ac2009528`](https://github.com/pingdotgg/t3code/commit/8871c265a2be763bbbc3052b8cb75c5ac2009528).
+Existing composer history changes and the local Bot creation design remain intact.
+
+### 1. Native OpenCode background jobs
+
+OpenCode 2.2.6 and later expose shell and image jobs in the existing background activity view.
+Launching a tool completes its launch item. The separate job stays active until its actual outcome.
+Dovo keeps shell output to the latest 64,000 characters and includes the exit result. Completed
+raster images have bounded WebP previews. Preview reads verify session ancestry again and accept no
+file path from the client. Input images have an 8 MB and 32 million pixel limit. Previews have a 1
+MB limit. Larger files keep a text result and their output path.
+
+Individual Stop cancels shell jobs and confirms the job inventory. Image jobs use whole-session Stop
+because OpenCode has no individual image cancellation operation. Dovo retains MCP bindings until
+native children and jobs finish. Failed shutdown confirmation remains an error.
+
+The event reader makes at most three reconnect attempts after a transport loss. It refreshes jobs,
+goals and checklists, then reads missed durable session events. Completed text restores missed
+deltas without repeating the visible prefix. It does not resubmit prompts or commands. An outage
+before the execution identity arrives remains uncertain and requires review. Authentication and
+malformed-response errors do not trigger transport retries. Saved jobs can also be read after the
+active adapter ends, with fresh ownership checks.
+
+Sources:
+[shell jobs](https://github.com/pingdotgg/t3code/commit/ed52af3a478652c55aeaaf5a64bbf6584dd6a0b4),
+[image jobs](https://github.com/pingdotgg/t3code/commit/3a8c250cb0c8056f2f563091fd412fe5db809fa1).
+
+### 2. Check vault references before use
+
+Desktop and mobile reference fields have Check reference when the connected runtime supports it. The
+human-only request resolves the reference on that computer after clearing its cached value. It
+returns only success or a generic failure. Changing the reference or computer discards the old
+result, including an A to B to A edit during a request. Older runtimes keep their current controls.
+
+A successful check proves that the reference resolves. It does not prove that a provider accepts the
+credential. The HTTP check covers real environment-variable resolution and cache invalidation. An
+external vault sign-in was not used in this verification.
+
+Source:
+[reference checks](https://github.com/pingdotgg/t3code/commit/ee9e36c8b20e739f107bdbacea82d12f912d97b1).
+
+### 3. Database space recovery
+
+Runtime diagnostics on desktop and computer settings on mobile show database bytes, WAL bytes,
+reclaimable free pages and disk space. Recovery requires explicit human confirmation. Agents cannot
+call the endpoint. Dovo rejects active agent/native work, holds task admission during maintenance,
+checks free space and creates a verified backup first.
+
+SQLite VACUUM runs on the owning connection. It does not replace an open database or require a
+runtime restart. A transaction preserves the original on failure. A WAL checkpoint follows it.
+Backup or compaction failures release task admission and remain visible. Requests pause during the
+synchronous compaction. Large databases can pause longer. Finish active work before using it.
+
+A local sample reclaimed 4,198,400 bytes from a 4,886,528-byte logical database. Compaction took
+about 4 ms. This small sample does not predict another database's pause. No speed or battery
+improvement is claimed. The disk/SQLite integration check verifies backup integrity, retained
+history, pairings, active native-work rejection and admission recovery after a failed backup.
+
+Source:
+[space recovery](https://github.com/pingdotgg/t3code/commit/8969e1d8d0433be9e598d122431c54c69e0aa83c).
+
+### 4. Drop folders to add projects
+
+Drop operating-system folders on the desktop project area. Dovo adds or opens them with the existing
+canonical-path and duplicate checks. It ignores dropped files. Local paths always go to the local
+computer, even with a paired computer selected. Changing computers during the request prevents late
+navigation. The web client retains Add project because it cannot read absolute paths.
+
+Browser checks cover folder/file selection, multiple folders, local ownership and late navigation. A
+real Finder or Explorer drop remains unverified.
+
+Source:
+[folder drops](https://github.com/pingdotgg/t3code/commit/f419698aeaf78fb0c3299b4599f118d2d66ef694).
+
+### 5. Screen reader turn updates
+
+General settings on desktop and mobile offer Off, Status, Status and messages, and Status, messages
+and steps. The setting belongs to the device and defaults to Off. The open thread announces new
+status, completed message chunks and completed step summaries. Streaming deltas and old history stay
+silent. Navigation, deactivation and mode changes clear the bounded, spaced queue. Mobile
+backgrounding clears it too. Status text can be translated; assistant text keeps its original
+language.
+
+Protocol and browser checks cover completed chunks, deduplication, old pages, navigation and queued
+speech cancellation. Native VoiceOver and TalkBack speech remains unverified.
+
+Source:
+[turn announcements](https://github.com/pingdotgg/t3code/commit/40c3682543fdcb9f8b7d4106ed2ab970c25b7dc5).
+
+### 6. Native OpenCode goals
+
+OpenCode 2.2.5 and later use the existing /goal command flow. Dovo shares goal objective, status,
+rounds and reason with both clients. It offers suggestions after checking the connected server.
+Pause, resume, clear and refresh use the native goal command/RPC. Stop pauses an active goal before
+confirming session interruption. Continuation executions keep the parent turn open. Clearing a goal
+while an execution still runs does not complete that execution.
+
+Session changes clear old capability and goal state. Revision checks discard stale RPC reads. Older
+servers reject unsupported goal commands without sending them. HTTP tests cover continuation, early
+clear, goal controls and Stop. Live model-driven goal continuation remains unverified.
+
+Source:
+[OpenCode goals](https://github.com/pingdotgg/t3code/commit/0e2841d5a778552343109274d2e658f545fec824).
+
+### 7. OpenCode v2 checklist updates
+
+Successful parent-session todowrite metadata updates the existing shared checklist. Completed,
+pending and in-progress states map consistently. Cancelled entries disappear and an empty list
+clears the checklist. Invalid snapshots, failed writes and child writes do not replace it.
+
+On supported servers Dovo reads the latest valid completed checklist write from at most 100 saved
+assistant messages on resume/reconnect. The HTTP test covers saved empty lists and parent/child
+scope.
+
+Source:
+[native checklist mapping](https://github.com/pingdotgg/t3code/commit/71a1c49b75a209284ea24617e6a4b0cc339390e7).
+
+### 8. Rendered math on mobile
+
+Completed math fences use the native equation renderer. Unfinished fences remain code. Show equation
+source preserves copyable LaTeX; parse failures also show it. The renderer handles horizontal
+overflow. Both colors follow the app theme. Ordinary Markdown keeps inline math disabled, so
+currency text does not become an equation.
+
+Release native builds pass for iOS Simulator arm64 and Android arm64. An isolated fixture verifies
+actual equations, long content, theme colors and invalid-source fallback. The fixture is a test
+entry, never the release entry. The iOS asset preparation passes explicit installed-package paths to
+the RaTeX vendor script. Physical iPhone rendering remains unverified.
+
+Source:
+[mobile math fences](https://github.com/pingdotgg/t3code/commit/d0807b705f36a79dc194fb2281d064d8103f3745).
+
+### Verification commands
+
+Use the project Node version and pnpm. Build before running checks that consume package output.
+
+```sh
+pnpm exec playwright install chromium
+pnpm build
+pnpm typecheck
+pnpm exec vp test --maxWorkers=2 packages/runtime/src/agents/providers/opencode packages/runtime/src/agent-tools packages/runtime/src/http/database-space.test.ts packages/protocol/src/conversation/presentation/turn-announcements.test.ts
+pnpm test:t3-eight-controls:browser
+pnpm test:general-settings:browser
+pnpm test:mobile-composer:browser
+node --test scripts/prepare-mobile-markdown.test.mjs scripts/ci/browser-shards.test.mjs
+```
+
+HTTP tests use the real SDK, local servers and SQLite. They do not establish live model adherence or
+external-vault access. Native math uses separate test devices and does not replace the user's phone
+app. The older mobile CI checklist remains separate from this local implementation.

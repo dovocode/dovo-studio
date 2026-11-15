@@ -60,6 +60,20 @@ appId: com.dovo.studio
 - tapOn:
     id: Send
 - runFlow: fixture-response.yaml
+# Recalled text must survive the send lock and the asynchronous native snapshot.
+- tapOn:
+    id: Add to draft
+- tapOn: Message history
+- extendedWaitUntil:
+    visible:
+      id: Composer history browser
+    timeout: 10000
+- assertVisible:
+    id: Message
+    text: Installed app smoke request
+- tapOn:
+    id: Send
+- runFlow: fixture-response.yaml
 - tapOn:
     id: Message
 - inputText: Draft survives navigation

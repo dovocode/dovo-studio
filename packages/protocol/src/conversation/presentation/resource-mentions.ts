@@ -121,12 +121,15 @@ export const composerCommands: readonly ComposerCommand[] = [
   { id: 'new-session', name: 'new-session', description: 'Start the agent fresh next message' },
   { id: 'undo', name: 'undo', description: 'Undo the last turn’s file changes' },
 ]
-export function commandSuggestions(query: string, provider?: string) {
+export function commandSuggestions(query: string, provider?: string, nativeGoals = false) {
   const needle = query.toLowerCase()
   return composerCommands.filter(
     (command) =>
       command.name.startsWith(needle) &&
-      (command.id !== 'goal' || provider === 'claude' || provider === 'codex'),
+      (command.id !== 'goal' ||
+        provider === 'claude' ||
+        provider === 'codex' ||
+        (provider === 'opencode' && nativeGoals)),
   )
 }
 

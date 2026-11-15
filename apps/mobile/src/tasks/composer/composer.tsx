@@ -251,6 +251,13 @@ export function Composer({
     checkoutAction.busy ||
     asideCreating ||
     linkedProjectsAction.busy
+  const modelSettingsDisabled =
+    busy ||
+    (!!editing && !nextTurnControls) ||
+    (task.status === 'running' &&
+      !nextTurnControls &&
+      !(task.bot && snapshot?.pendingBotHarnessSupported)) ||
+    !!task.archivedAt
   const [focused, setFocused] = useApplicationState(false),
     [settings, setSettings] = useApplicationState(false),
     [checkout, setCheckout] = useApplicationState(false)
@@ -1200,7 +1207,9 @@ export function Composer({
                     ? uiText('Loading message history…')
                     : composerHistory.error}
                 </Text>
-                <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
+                {!composerHistory.active && (
+                  <Action secondary label={uiText('Cancel')} onPress={composerHistory.cancel} />
+                )}
               </View>
             )}
             {composerHistory.active && (
@@ -1222,13 +1231,10 @@ export function Composer({
                     'Swipe right for older messages and left for newer messages. Typing or sending uses this text. Cancel restores your draft.',
                   )}
                   accessibilityValue={{
-                    min: 0,
-                    max: composerHistory.count,
-                    now: (composerHistory.index ?? -1) + 1,
                     text:
                       composerHistory.index === -1
-                        ? 'Current draft'
-                        : `Message ${(composerHistory.index ?? 0) + 1} of ${composerHistory.count}, newest first`,
+                        ? uiText('Current draft')
+                        : uiText('Message history'),
                   }}
                   accessibilityActions={[{ name: 'increment' }, { name: 'decrement' }]}
                   onAccessibilityAction={({ nativeEvent }) => {
@@ -1240,10 +1246,7 @@ export function Composer({
                   <Text style={[styles.muted, { fontSize: 12 }]}>
                     {composerHistory.index === -1
                       ? uiText('Current draft')
-                      : uiText('History · {value0} of {value1}', {
-                          value0: (composerHistory.index ?? 0) + 1,
-                          value1: composerHistory.count,
-                        })}
+                      : uiText('Message history')}
                   </Text>
                   <Text style={[styles.muted, { fontSize: 11 }]}>
                     <InterfaceText>{'← Newer · Older →'}</InterfaceText>
@@ -1464,16 +1467,9 @@ export function Composer({
                         text: `${nextTurnControls ? 'Next turn: ' : ''}${modelLabel}, ${reasoningLabel} ${automaticModel ? 'difficulty' : 'reasoning'}${fastMode ? ', Fast mode' : ''}`,
                       }}
                       accessibilityState={{
-                        disabled:
-                          busy ||
-                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                          !!task.archivedAt,
+                        disabled: modelSettingsDisabled,
                       }}
-                      disabled={
-                        busy ||
-                        ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                        !!task.archivedAt
-                      }
+                      disabled={modelSettingsDisabled}
                       onPress={() => {
                         if (dictation.active) dictation.stop()
                         dismissComposerKeyboard()
@@ -1487,13 +1483,7 @@ export function Composer({
                         flexDirection: 'row',
                         alignItems: 'center',
                         gap: 3,
-                        opacity:
-                          pressed ||
-                          busy ||
-                          ((!!editing || task.status === 'running') && !nextTurnControls) ||
-                          task.archivedAt
-                            ? 0.5
-                            : 1,
+                        opacity: pressed || modelSettingsDisabled ? 0.5 : 1,
                       })}
                     >
                       {automaticModel ? (

@@ -268,6 +268,32 @@ it('draws a block cursor across the full width of a wide cell', () => {
   expect(fills[0]).toEqual([0, 0, 8, 4])
 })
 
+it.each(['', '你'])('redraws decorations over a block cursor on %j', (text) => {
+  const context = new OffscreenCanvas(1, 1).getContext('2d')
+  if (!context) throw new Error('missing context')
+  const fill = vi.spyOn(context, 'fillRect')
+  const value = frame([{ ...cell(text, 2), flags: 4 | 8 }])
+  value.cursor = { x: 0, y: 0, visible: true, style: 'block' }
+  drawCursor(context, value, options)
+  expect(fill.mock.calls).toEqual([
+    [0, 0, 8, 4],
+    [0, 2, 8, 1],
+    [0, 2, 8, 1],
+  ])
+  expect(context.fillStyle).toBe('#000')
+})
+
+it('keeps hidden text and its decorations hidden under the cursor', () => {
+  const context = new OffscreenCanvas(1, 1).getContext('2d')
+  if (!context) throw new Error('missing context')
+  const text = vi.spyOn(context, 'fillText')
+  const value = frame([{ ...cell('secret'), flags: 32 | 4 | 8 }])
+  value.cursor = { x: 0, y: 0, visible: true, style: 'block' }
+  drawCursor(context, value, options)
+  expect(fills).toEqual([[0, 0, 4, 4]])
+  expect(text).not.toHaveBeenCalled()
+})
+
 it('suspends Canvas2D during loss and requests one redraw when restored', () => {
   vi.useFakeTimers()
   const canvas = new OffscreenCanvas(16, 8)

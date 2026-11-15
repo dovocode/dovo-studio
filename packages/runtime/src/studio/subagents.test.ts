@@ -36,6 +36,8 @@ const childSchema = Schema.Struct({
   threadId: Schema.String,
   running: Schema.Boolean,
   result: Schema.optional(Schema.String),
+  requestedModel: Schema.optional(Schema.String),
+  executedModel: Schema.optional(Schema.String),
   offline: Schema.Boolean,
   stopRequested: Schema.optional(Schema.Boolean),
 })
@@ -230,6 +232,10 @@ it('delivers a remote final answer once and retains completed results when offli
   const source = await setup(),
     target = await setup()
   const pairing = await pair(source, target)
+  target.setChild(async (run) => {
+    run.onEvent?.('model/rerouted', { toModel: 'executed-remote-model' })
+    run.onText('Child completed its focused task')
+  })
   const created = await source.post('spawn', { ...request, runtimeId: pairing.peer.id })
   const child = decode(childSchema, await created.json())
   await waitForRuntime(() => {
@@ -241,15 +247,23 @@ it('delivers a remote final answer once and retains completed results when offli
   const queued = source.s.store.taskSummary(source.parent.id).subagentInbox ?? []
   expect(queued).toHaveLength(1)
   expect(queued[0].text).toContain('Child completed its focused task')
+  expect(queued[0].text).toContain('Executed model: executed-remote-model')
   expect(queued[0].subagentResultId).toBe(child.id)
   await source.s.threadWatch.tick()
   expect(source.s.store.taskSummary(source.parent.id).subagentInbox).toHaveLength(1)
   const result = await source.post('read', { id: child.id })
-  expect(decode(childSchema, await result.json()).result).toBe('Child completed its focused task')
+  expect(decode(childSchema, await result.json())).toMatchObject({
+    result: 'Child completed its focused task',
+    executedModel: 'executed-remote-model',
+  })
   expect(source.s.store.taskSummary(source.parent.id).queue ?? []).toHaveLength(0)
   await pairing.register(false)
   const offline = await source.post('read', { id: child.id })
-  expect(decode(childSchema, await offline.json())).toMatchObject({ offline: true, running: false })
+  expect(decode(childSchema, await offline.json())).toMatchObject({
+    offline: true,
+    running: false,
+    executedModel: 'executed-remote-model',
+  })
 })
 
 it('keeps a child spawned under a replaced profile ID readable with its original ID and receipt', async () => {

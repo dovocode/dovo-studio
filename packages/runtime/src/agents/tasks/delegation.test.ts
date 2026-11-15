@@ -7,6 +7,7 @@ import type { AgentAdapter, AgentRun } from '../execution/types'
 import { writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { OwnedProcessShutdownError } from '../execution/stop-owned-child'
+import { threadSnapshot } from '../../studio/thread-snapshot'
 vi.setConfig(runtimeIntegration)
 function barrier() {
   let resolve!: () => void
@@ -88,6 +89,86 @@ async function setup() {
   runtime.services.store.update(() => f.workspace)
   return runtime.services
 }
+
+it('persists requested and executed worker models through results and nested snapshots', async () => {
+  const s = await setup()
+  const release = barrier()
+  let childId = ''
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      if (run.agent.provider === 'codex') {
+        childId = s.tasks.subagentSpawn({
+          taskId: taskId(run),
+          key: 'model-report',
+          name: 'Child',
+          prompt: 'Work',
+          provider: 'claude',
+          model: 'requested-worker-model',
+        }).id
+        await release.promise
+        run.onText('Parent done')
+        return
+      }
+      run.onSession('worker-session')
+      run.onEvent?.('assistant', {
+        type: 'assistant',
+        message: {
+          id: 'reply',
+          model: 'reported-worker-model',
+          content: [],
+          usage: { input_tokens: 10, output_tokens: 1 },
+        },
+      })
+      run.onEvent?.('result', {
+        type: 'result',
+        usage: { input_tokens: 10, output_tokens: 1 },
+        modelUsage: { 'reported-worker-model': { inputTokens: 10 } },
+      })
+      run.onText('Worker answer')
+    },
+  })
+  const parent = s.tasks.create({
+    title: 'Parent',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: 'Work',
+  })
+  const running = await s.tasks.start(parent.id)
+  try {
+    await waitForRuntime(() => expect(s.store.taskSummary(parent.id).subagentInbox).toHaveLength(1))
+    s.store.updateTask(parent.id, (task) => ({ ...task, queuePaused: true }))
+    expect(s.store.task(childId).turns?.at(-1)).toMatchObject({
+      requestedModel: 'requested-worker-model',
+      executedModel: 'reported-worker-model',
+      model: 'reported-worker-model',
+    })
+    const result = s.tasks.subagentResult(parent.id, childId, false)
+    expect(result).toMatchObject({
+      requestedModel: 'requested-worker-model',
+      executedModel: 'reported-worker-model',
+    })
+    expect(result.subagent).toMatchObject({
+      model: 'requested-worker-model',
+      executedModel: 'reported-worker-model',
+    })
+    expect(s.store.taskSummary(parent.id).subagentInbox?.[0]?.text).toContain(
+      'Executed model: reported-worker-model',
+    )
+    expect(threadSnapshot(s, childId)).toMatchObject({
+      requestedModel: 'requested-worker-model',
+      executedModel: 'reported-worker-model',
+    })
+    expect(
+      threadSnapshot(s, parent.id).entries?.find((entry) => entry.threadId === childId)
+        ?.executedModel,
+    ).toBe('reported-worker-model')
+  } finally {
+    release.resolve()
+    await running.done
+  }
+})
+
 it.each(['failed', 'cancelled'] as const)(
   'cancels an orphan %s child and its descendants without losing their histories',
   async (status) => {

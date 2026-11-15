@@ -87,10 +87,12 @@ export function ThreadInfoPanel({ children, title }: { children: ReactNode; titl
         maxHeight,
         maxWidth: 'calc(100% - 32px)',
       }}
-      className="studio-thread-info-panel studio-menu-surface absolute z-30 flex w-96 min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border outline-none"
+      className="studio-thread-info-panel studio-menu-surface absolute z-30 flex w-88 min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border outline-none"
     >
       <header className="studio-thread-tools-header flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
-        <h2 className="min-w-0 truncate text-sm font-semibold">Thread info</h2>
+        <h2 className="min-w-0 truncate text-sm font-semibold" title={title}>
+          Thread info
+        </h2>
         <div className="flex shrink-0 items-center gap-1">
           <ThreadInfoCustomization />
           <IconButton

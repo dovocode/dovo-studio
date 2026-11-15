@@ -100,7 +100,7 @@
     "babel-preset-expo": "^58.0.25"
   },
   "enriched-markdown": {
-    "enableMath": false,
+    "enableMath": true,
     "enableCodeHighlight": true,
     "codeHighlightLanguages": [
       "javascript",

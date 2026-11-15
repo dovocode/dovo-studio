@@ -136,7 +136,7 @@ try {
           cell('B', { background: '#008800' }),
           cell('U', { flags: 4 }),
           cell('S', { flags: 8 }),
-          cell('😀', { width: 2 }),
+          cell('😀', { width: 2, flags: 4 | 8 }),
           cell('', { width: 0 }),
           cell('C'),
           cell(' '),
@@ -205,6 +205,8 @@ try {
         strike: sample(61, 14),
         cursorLeft: sample(81, 1),
         cursorRight: sample(119, 1),
+        cursorUnderline: sample(119, 25),
+        cursorStrike: sample(119, 14),
         white,
         colored,
       }
@@ -361,6 +363,12 @@ try {
     assert.deepEqual(pixels.underline, [255, 255, 255, 255], `${result.preferred} underline`)
     assert.deepEqual(pixels.strike, [255, 255, 255, 255], `${result.preferred} strike`)
     assert.deepEqual(pixels.cursorLeft, [255, 0, 255, 255], `${result.preferred} cursor left`)
+    assert.deepEqual(
+      pixels.cursorUnderline,
+      [18, 52, 86, 255],
+      `${result.preferred} cursor underline`,
+    )
+    assert.deepEqual(pixels.cursorStrike, [18, 52, 86, 255], `${result.preferred} cursor strike`)
     assert.deepEqual(
       pixels.cursorRight,
       [255, 0, 255, 255],

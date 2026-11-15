@@ -60,6 +60,11 @@ export const attachmentIdsSchema = refine(
   (ids) => new Set(ids).size === ids.length,
   'Duplicate attachment',
 )
+export const attachmentPrepareSchema = mutableStruct({
+  taskId: minValue(Schema.String, 1),
+  ids: attachmentIdsSchema,
+})
+export const attachmentPreparedSchema = mutableStruct({ missing: attachmentIdsSchema })
 export type Attachment = Schema.Schema.Type<typeof attachmentSchema>
 export function isImageAttachment(file: Attachment) {
   return ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.mime)

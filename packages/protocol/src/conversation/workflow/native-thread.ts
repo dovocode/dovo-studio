@@ -14,6 +14,9 @@ export const nativeThreadEntrySchema = mutableStruct({
   role: Schema.Literals(['user', 'assistant', 'tool', 'reasoning']),
   text: Schema.String,
   label: Schema.optional(Schema.String),
+  image: Schema.optional(
+    mutableStruct({ mime: Schema.Literal('image/webp'), data: maxValue(Schema.String, 1400000) }),
+  ),
 })
 export type NativeThreadEntry = Schema.Schema.Type<typeof nativeThreadEntrySchema>
 export const nativeThreadPageSchema = mutableStruct({

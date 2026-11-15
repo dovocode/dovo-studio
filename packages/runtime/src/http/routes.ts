@@ -1,3 +1,4 @@
+import { databaseSpace } from '../storage/database-space.js'
 import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
 import { proposeBotSkill } from '../agent-tools/bot-skills.js'
@@ -381,6 +382,8 @@ export function route(
           secureInputTool(s, yield* serviceResult(body(request, 300 * 1024)), run.runId),
         )
       }
+      if (agentDeviceAccess && path === '/api/agents/secrets/check')
+        throw new HttpError(403, 'Secret reference checks require a paired human client.')
       if (agentDeviceAccess && path.startsWith('/api/agents/instructions/'))
         throw new HttpError(403, 'Harness instruction files require a paired human client.')
       if (
@@ -389,6 +392,28 @@ export function route(
         path.startsWith('/api/device-host/')
       )
         return yield* serviceResult(deviceHostRoute(request, path, s, token, device.id))
+      if (
+        method === 'POST' &&
+        ['/api/runtime/storage', '/api/runtime/storage/recover'].includes(path)
+      ) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Database maintenance requires a paired human client.')
+        if (path === '/api/runtime/storage') return yield* serviceResult(databaseSpace(s.db))
+        decode(
+          mutableStruct({ confirm: Schema.Literal(true) }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        return yield* serviceResult(
+          (async () => {
+            const lease = s.tasks.prepareMaintenance()
+            try {
+              return await s.databaseSpace.recover()
+            } finally {
+              s.tasks.cancelRestart(lease.id)
+            }
+          })(),
+        )
+      }
       if (method === 'POST' && ['/api/runtime/diagnostics', '/api/runtime/backup'].includes(path)) {
         if (!device.owner)
           throw new HttpError(403, 'Only the runtime host can manage diagnostics and backups')
@@ -1228,6 +1253,8 @@ export function route(
             decode(attachmentArchiveReadRequestSchema, yield* serviceResult(body(request, 8192))),
           ),
         )
+      if (method === 'POST' && path === '/api/attachments/prepare')
+        return s.attachments.prepare(yield* serviceResult(body(request, 8192)))
       if (method === 'POST' && path === '/api/attachments/replace')
         return yield* serviceResult(s.attachments.replace(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/attachments/upload')
@@ -1436,10 +1463,13 @@ export function route(
         if (agentDeviceAccess)
           throw new HttpError(403, 'Composer history requires a paired human client')
         const input = decode(
-          mutableStruct({ id: idSchema }),
+          mutableStruct({ id: idSchema, before: Schema.optional(idSchema) }),
           yield* serviceResult(body(request, 4096)),
         )
-        return s.store.composerHistory(input.id)
+        const page = s.store.composerHistory(input.id, input.before)
+        if (!page)
+          throw new HttpError(409, 'Reload this conversation before loading older messages')
+        return page
       }
       if (method === 'POST' && path === '/api/tasks/history') {
         const input = decode(

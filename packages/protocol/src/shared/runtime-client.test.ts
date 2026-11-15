@@ -23,9 +23,7 @@ it('binds authenticated Promise and Effect requests without repeating addresses'
   ).toEqual({ ok: true })
   expect(fetcher).toHaveBeenCalledTimes(2)
   const [url, options] = fetcher.mock.calls[0]!
-  expect(url instanceof Request ? url.url : url instanceof URL ? url.href : url).toBe(
-    'http://100.64.0.2:4000/api/health',
-  )
+  expect(url instanceof Request ? url.url : String(url)).toBe('http://100.64.0.2:4000/api/health')
   expect(new Headers(options?.headers).get('authorization')).toBe('Bearer private-device-token')
 })
 it.each([

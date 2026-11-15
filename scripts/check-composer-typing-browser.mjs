@@ -22,7 +22,7 @@ function Composer() {
   const [submitBusy,setSubmitBusy]=useState(false);window.setSubmitBusy=setSubmitBusy;
   const [composingNextDraft,setComposingNextDraft]=useState(false);window.setComposingNextDraft=setComposingNextDraft;
   const [paged,setPaged]=useState(false);window.setPagedHistory=setPaged;useEffect(()=>{window.pagedHistoryCommitted=paged},[paged]);
-  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={paged ? async(signal)=>window.loadHistory(signal) : undefined} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
+  return <form onSubmit={event=>{event.preventDefault();if(!submitBusy)window.defaults++}}><ComposerEditor onCommand={()=>{window.commands=(window.commands??0)+1}} onAlternativeSubmit={()=>window.alternatives++} controller={controller} taskId="test" historyScope={paged?"paged":"recent"} historyBefore={paged?"recent":undefined} loadHistory={paged ? async(signal,before)=>window.loadHistory(signal,before) : undefined} messages={[{role:"user",text:"First message"},{role:"assistant",text:"Reply"},{role:"user",text:"Second message"}]} input={input} resources={{skills:[],mcpServers:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={submitBusy && !composingNextDraft} submittedText={submitBusy?'Queued first':null} placeholder="Message" />
     <button type="submit" disabled={!hasText||submitBusy}>Send</button>{Array.from({length:500},(_,i)=><span key={i}>Control {i}</span>)}</form>;
 }
 createRoot(document.getElementById('app')).render(<Composer/>);
@@ -240,6 +240,57 @@ try {
   }
   if ((await page.evaluate(() => window.historyCalls.length)) !== 2)
     throw new Error('A new history session did not refresh user messages')
+  await input.fill('')
+  await page.evaluate(() => {
+    window.historyCalls = []
+    window.loadHistory = async (_signal, before) => {
+      window.historyCalls.push(before ?? 'latest')
+      if (window.holdHistory) await new Promise((resolve) => (window.releaseHistory = resolve))
+      const end = before ? Number(before) : 120
+      const start = Math.max(0, end - 50)
+      return {
+        turns: [],
+        historyRevision: 0,
+        before: start ? String(start) : undefined,
+        messages: Array.from({ length: end - start }, (_, i) => ({
+          role: 'user',
+          text: 'Remote ' + (start + i),
+        })),
+      }
+    }
+  })
+  for (let i = 0; i < 50; i++) {
+    await input.press('ArrowUp')
+    await page.waitForFunction(
+      (expected) => window.controller.text === expected,
+      'Remote ' + (119 - i),
+    )
+  }
+  if ((await page.evaluate(() => window.historyCalls.length)) !== 1)
+    throw new Error('Older history loaded before reaching the first 50 messages')
+  await page.evaluate(() => (window.holdHistory = true))
+  await input.press('ArrowUp')
+  await page.getByRole('status').filter({ hasText: 'Loading earlier messages' }).waitFor()
+  await input.press('ArrowUp')
+  if ((await input.inputValue()) !== 'Remote 70')
+    throw new Error('Pending history shifted the selection')
+  await page.evaluate(() => {
+    window.holdHistory = false
+    window.releaseHistory()
+  })
+  await page.waitForFunction(() => window.controller.text === 'Remote 69')
+  await input.press('ArrowDown')
+  await page.waitForFunction(() => window.controller.text === 'Remote 70')
+  for (let i = 69; i >= 0; i--) {
+    await input.press('ArrowUp')
+    await page.waitForFunction((expected) => window.controller.text === expected, 'Remote ' + i)
+  }
+  await input.press('ArrowUp')
+  if (
+    JSON.stringify(await page.evaluate(() => window.historyCalls)) !==
+    JSON.stringify(['latest', '70', '20'])
+  )
+    throw new Error('History did not load bounded pages at the oldest boundary')
   await page.evaluate(() => window.setPagedHistory(false))
   await page.waitForFunction(() => window.pagedHistoryCommitted === false)
   await input.fill('')

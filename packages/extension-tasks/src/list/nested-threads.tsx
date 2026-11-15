@@ -5,6 +5,7 @@ import { cn } from '@dovo/studio-ui'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import { threadDescendants, type NestedThread } from './thread-tree'
 import {
+  modelDisplayName,
   threadTreeSummary,
   threadChildRows,
   visibleThreadChildren,
@@ -119,6 +120,7 @@ function NestedThreadsView({
           <span className="truncate">
             {child.computerName}
             {child.projectName ? ` · ${child.projectName}` : ''} ·{' '}
+            {child.executedModel ? `${modelDisplayName(child.executedModel)} · ` : ''}
             {child.nativeAgentKey && child.activity ? child.activity : phases[child.phase]}
             {child.nativeAgentKey ? ' · Read only' : ''}
           </span>

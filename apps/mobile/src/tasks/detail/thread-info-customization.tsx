@@ -1,5 +1,5 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useState } from 'react'
+import { type ReactNode } from 'react'
 import { View } from 'react-native'
 import { orderedThreadInfoSections, moveThreadInfoSection } from '@dovo/protocol'
 import {
@@ -13,22 +13,37 @@ import { Switch } from '../../ui/controls/switch'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 
-export function ThreadInfoCustomization() {
+export function ThreadInfoCustomization({
+  children,
+  inline,
+  open,
+  onOpenChange,
+}: {
+  children: ReactNode
+  inline: boolean
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const uiText = useInterfaceText()
 
-  const [open, setOpen] = useState(false)
   const { threadInfoSections: choices, threadInfoOrder, ready } = useMobilePreferences()
   const { styles } = useTheme()
   const sections = orderedThreadInfoSections(threadInfoOrder).filter(
     (section) => !('desktopOnly' in section && section.desktopOnly),
   )
+  if (!inline && !open) return null
   return (
     <View style={{ gap: 8 }}>
-      <Action
-        secondary
-        label={open ? uiText('Done customizing thread info') : uiText('Customize thread info')}
-        onPress={() => setOpen(!open)}
-      />
+      {inline && (
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12, paddingBottom: 4 }}>
+          <View style={{ flex: 1, minWidth: 0, gap: 3 }}>{children}</View>
+          <IconButton
+            icon={open ? 'check' : 'tune'}
+            label={open ? uiText('Done customizing thread info') : uiText('Customize thread info')}
+            onPress={() => onOpenChange(!open)}
+          />
+        </View>
+      )}
       {open && (
         <>
           <Text style={styles.muted}>

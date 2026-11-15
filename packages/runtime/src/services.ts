@@ -1,3 +1,4 @@
+import { DatabaseSpaceRecovery } from './storage/database-space.js'
 import { applyBotBackup } from './agents/tasks/bot-backup.js'
 import { applyPendingHarness } from './agents/tasks/pending-harness.js'
 import { BotMemoryReview } from './memory/bot-review.js'
@@ -549,6 +550,7 @@ export function createServices(
     pendingChanges.set(id, work)
     return work
   }
+  const backups = new RuntimeBackups(db.name)
   const services: Services = {
     dictation: new RuntimeDictation(db.name === ':memory:' ? tmpdir() : dirname(resolve(db.name))),
     policy,
@@ -567,7 +569,8 @@ export function createServices(
     reviewMarks,
     pipelineWatch,
     pullRequestWatch,
-    backups: new RuntimeBackups(db.name),
+    backups,
+    databaseSpace: new DatabaseSpaceRecovery(db, backups),
     mutations,
     instanceId: randomUUID(),
     runtimeId,
@@ -662,6 +665,7 @@ export interface Services {
   runCredentials: RunCredentials
   memory: Memory
   backups: RuntimeBackups
+  databaseSpace: DatabaseSpaceRecovery
   pipelineWatch: PipelineWatch
   pullRequestWatch: PullRequestWatch
   artifacts: Artifacts

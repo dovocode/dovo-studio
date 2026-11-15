@@ -75,6 +75,8 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
         : undefined)
     return {
       title: item.title.slice(0, 1000),
+      requestedModel: item.history.latestTurn?.requestedModel?.slice(0, 500),
+      executedModel: item.history.latestTurn?.executedModel?.slice(0, 500),
       repositoryId: item.repositoryId || undefined,
       projectIdentity: repository?.gitIdentity?.slice(0, 2000),
       projectKind: repository?.kind === 'scratch' ? 'scratch' : 'project',
@@ -138,6 +140,8 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
             threadId: watch.threadId,
             title: snapshot.title,
             projectName: snapshot.projectName,
+            requestedModel: snapshot.requestedModel,
+            executedModel: snapshot.executedModel,
             repositoryId: snapshot.repositoryId,
             projectIdentity: snapshot.projectIdentity,
             projectKind: snapshot.projectKind,
@@ -270,6 +274,8 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
       .slice(0, 100),
     runtimeId: s.runtimeId,
     title: task.title.slice(0, 1000),
+    requestedModel: task.history.latestTurn?.requestedModel?.slice(0, 500),
+    executedModel: task.history.latestTurn?.executedModel?.slice(0, 500),
     repositoryId: task.repositoryId || undefined,
     projectIdentity: repository?.gitIdentity?.slice(0, 2000),
     projectKind: repository?.kind === 'scratch' ? 'scratch' : 'project',

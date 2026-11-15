@@ -25,6 +25,7 @@ it('does not interpret quoted commands or other slash commands', () => {
 it('offers goals only on supported providers', () => {
   for (const provider of ['claude', 'codex'])
     expect(commandSuggestions('go', provider).map((item) => item.id)).toEqual(['goal'])
+  expect(commandSuggestions('go', 'opencode', true).map((item) => item.id)).toEqual(['goal'])
   for (const provider of [undefined, 'acp', 'opencode'])
     expect(commandSuggestions('go', provider)).toEqual([])
 })

@@ -1295,3 +1295,74 @@ it('returns the current draft guard when retrying a successful upload with a los
   store.updateTask(task.id, (task) => ({ ...task, draftAttachments: [] }))
   await expect(attachments.upload(input)).rejects.toThrow('left the draft')
 })
+
+it('prepares pending edit and answer uploads without reading bytes or changing the draft', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const { store, db, attachments } = runtime.services
+  store.update(() => f.workspace)
+  const task = runtime.services.tasks.create({
+    title: 'Prepare uploads',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const other = runtime.services.tasks.create({
+    title: 'Other thread',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  store.updateTask(task.id, (current) => ({ ...current, draft: 'Keep this changed draft' }))
+  const file = await attachments.upload({
+    taskId: task.id,
+    id: randomUUID(),
+    name: 'answer.png',
+    data: png,
+    detached: true,
+  })
+  db.prepare('UPDATE queued_attachment_uploads SET created_at=0 WHERE id=?').run(file.attachment.id)
+  const missing = randomUUID()
+  const response = await fetch(`http://127.0.0.1:${runtime.port}/api/attachments/prepare`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: task.id, ids: [file.attachment.id, missing] }),
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toEqual({ missing: [missing] })
+  await attachments.prune()
+  expect(attachments.read(task.id, file.attachment.id).data).toBe(png)
+  expect(store.task(task.id).draft).toBe('Keep this changed draft')
+  expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+  // Cross-thread IDs cannot renew another thread's upload, even in a mixed batch.
+  const foreign = await attachments.upload({
+    taskId: other.id,
+    id: randomUUID(),
+    name: 'other.png',
+    data: png,
+    detached: true,
+  })
+  db.prepare('UPDATE queued_attachment_uploads SET created_at=0 WHERE id=?').run(file.attachment.id)
+  expect(() => attachments.prepare({ taskId: other.id, ids: [file.attachment.id] })).toThrow(
+    'another task',
+  )
+  expect(() =>
+    attachments.prepare({ taskId: task.id, ids: [file.attachment.id, foreign.attachment.id] }),
+  ).toThrow('another task')
+  await attachments.prune()
+  expect(attachments.prepare({ taskId: task.id, ids: [file.attachment.id] })).toEqual({
+    missing: [file.attachment.id],
+  })
+  const restored = await attachments.upload({
+    taskId: task.id,
+    id: file.attachment.id,
+    name: 'answer.png',
+    data: png,
+    detached: true,
+  })
+  expect(restored.attachment).toEqual(file.attachment)
+  expect(store.task(task.id).draft).toBe('Keep this changed draft')
+  expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+})

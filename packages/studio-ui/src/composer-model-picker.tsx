@@ -1,5 +1,4 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { Disclosure } from './disclosure'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useId, useRef, type ReactNode } from 'react'
 import {
@@ -174,12 +173,9 @@ export function ComposerModelPicker({
       (!lockedProvider || p === lockedProvider) &&
       (p !== 'acp' || lockedInstallationId === undefined || lockedInstallationId === ''),
   )
-  const signInProviders = providerSchema.literals.filter(
-    (p) =>
-      (p === 'claude' || p === 'codex') &&
-      !availability.available.has(`harness:${p}`) &&
-      (!lockedProvider || p === lockedProvider),
-  )
+  const namedAcpAgents = agents.filter((agent) => agent.provider === 'acp' && availability.available.has(`agent:${agent.id}`) &&
+    (!lockedProvider || lockedProvider === 'acp') &&
+    (lockedInstallationId === undefined || (agent.acpInstallationId ?? '') === lockedInstallationId))
   const availableInstallations = installations.filter(
     (installation) =>
       availability.available.has(acpHarnessChoiceId(installation.id)) &&
@@ -504,26 +500,19 @@ export function ComposerModelPicker({
                       <span className="truncate">{providers[p].short}</span>
                     </Button>
                   ))}
-                  {!availability.loading &&
-                    !availability.error &&
-                    signInProviders.map((p) => (
-                      <Button
-                        key={p}
-                        type="button"
-                        variant="ghost"
-                        disabled
-                        aria-label={`${providers[p].short} requires sign-in`}
-                        title={`Install and authenticate ${providers[p].short} on this computer, then refresh providers`}
-                        className="h-7 gap-1.5 px-2 text-xs"
-                      >
-                        <HarnessIcon provider={p} className="size-4 shrink-0" />
-                        <span className="truncate">
-                          {providers[p].short}
-                          <span className="block text-[0.625rem]">Sign in</span>
-                        </span>
-                      </Button>
-                    ))}
-
+                  {namedAcpAgents.map((agent) => (
+                    <Button key={`agent:${agent.id}`} type="button" variant="ghost"
+                      aria-label={`${agent.name} harness`}
+                      aria-pressed={selectedAgent?.id === agent.id}
+                      disabled={disabled || choosing}
+                      title={agent.name}
+                      className="h-7 gap-1.5 px-2 text-xs"
+                      onClick={() => void choose({ id: agent.id, name: agent.name, provider: agent.provider, agent, hidden: false })}
+                    >
+                      <HarnessIcon provider={agent.provider} className="size-4" />
+                      {agent.name}
+                    </Button>
+                  ))}
                   {availableInstallations.map((installation) => (
                     <Button
                       key={installation.id}
@@ -884,21 +873,6 @@ export function ComposerModelPicker({
                     </Button>
                   )}
                 </div>
-                {!availability.loading && !availability.error && signInProviders.length > 0 && (
-                  <Disclosure title="Provider setup" className="px-2 pt-1">
-                    <p>
-                      Install and sign in on this computer with{' '}
-                      {signInProviders.map((p, index) => (
-                        <span key={p}>
-                          {index > 0 && ' or '}
-                          <code>{p === 'claude' ? 'claude auth login' : 'codex login'}</code>
-                        </span>
-                      ))}
-                      , then refresh providers. For WSL, install and sign in inside the selected
-                      Linux distribution.
-                    </p>
-                  </Disclosure>
-                )}
                 {lockedProvider && (
                   <p className="sr-only">
                     This conversation uses {providers[lockedProvider].short}. Choose models or

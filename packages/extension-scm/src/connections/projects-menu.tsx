@@ -1,3 +1,4 @@
+import { ProjectFolderDrop } from './project-folder-drop'
 import { runtimeComputerName } from '@dovo/protocol'
 import { pinnedFirst, projectMachineGroups, projectOrganization } from '@dovo/protocol'
 import { ProjectOrganizationSettings, TaskDefaultSettings } from '@dovo/studio-ui'
@@ -296,7 +297,7 @@ export function ProjectsMenu({
     )
   }
   return (
-    <>
+    <ProjectFolderDrop onAdded={onChange}>
       <Popover.Root
         open={menuOpen}
         onOpenChange={(open) => {
@@ -468,7 +469,7 @@ export function ProjectsMenu({
           )}
         </DialogContent>
       </Dialog>
-    </>
+    </ProjectFolderDrop>
   )
 }
 

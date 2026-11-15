@@ -1,5 +1,5 @@
 import { useQuestionRecovery } from '@dovo/studio-core'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { QuestionAttachments } from './question-attachments'
 import {
   questionAllowsAttachments,
@@ -69,6 +69,7 @@ function QuestionCard({ pending }: { pending: PendingQuestion }) {
           )?.files ?? {},
       ),
     )
+  const preparations = useRef(new Map<string, () => Promise<void>>())
   const [uploading, setUploading] = useState<Record<string, boolean>>({})
   const ids = Object.fromEntries(
     Object.entries(files).map(([id, files]) => [id, files.map((file) => file.id)]),
@@ -95,6 +96,10 @@ function QuestionCard({ pending }: { pending: PendingQuestion }) {
       renderAttachments={(q, disabled) =>
         pending.attachments && questionAllowsAttachments(q) ? (
           <QuestionAttachments
+            onPrepare={(prepare) => {
+              if (prepare) preparations.current.set(q.id, prepare)
+              else preparations.current.delete(q.id)
+            }}
             taskId={pending.taskId}
             questionId={`${pending.id}:${q.id}`}
             files={Object.hasOwn(files, q.id) ? files[q.id] : []}
@@ -124,6 +129,18 @@ function QuestionCard({ pending }: { pending: PendingQuestion }) {
         ) : null
       }
       onAnswer={async (answers, outcomes, references) => {
+        if (answers && !outcomes) {
+          await Promise.all([...preparations.current.values()].map((prepare) => prepare()))
+          const latest = store
+            .entries(scope)
+            .find(
+              (entry) => entry.request.id === pending.id && entry.request.taskId === pending.taskId,
+            )
+          if (latest !== saved)
+            throw new Error(
+              'The answer changed while preparing attachments. Review it and try again.',
+            )
+        }
         await request(
           '/api/tasks/answer',
           {

@@ -10,6 +10,11 @@ export function opencodeNative(
   sessionId: string,
   stop: (id: string) => Promise<void>,
   active: () => Promise<ReadonlySet<string>>,
+  jobs?: {
+    owns: (id: string) => boolean
+    stop: (id?: string) => Promise<void>
+    read: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
+  },
 ) {
   let agents: Subagent[] = []
   const children = () => agents.filter(nativeAgentWorking)
@@ -40,13 +45,19 @@ export function opencodeNative(
         .map((agent) => stop(agent.id)),
     )
     await refresh(true)
+    if (!id || jobs?.owns(id)) await jobs?.stop(id)
   }
   run.onNativeSession?.(
-    { stop: cancel, readThread: (id) => readOpencodeThread(run.agent, id, run.cwd) },
+    {
+      stop: cancel,
+      readThread: async (id) =>
+        jobs?.owns(id) ? jobs.read(id) : readOpencodeThread(run.agent, id, run.cwd),
+    },
     sessionId,
   )
   return {
     update,
+    activeSessions: () => children().map((agent) => agent.id),
     owns: (id: string) => agents.some((agent) => agent.id === id),
     async drain(stream: Promise<unknown>) {
       run.onNativeTurnEnd?.()
@@ -57,6 +68,7 @@ export function opencodeNative(
         if (!children().length) break
         await Promise.race([
           stream.then(() => {
+            run.signal.throwIfAborted()
             throw new Error('OpenCode child event stream closed')
           }),
           new Promise<void>((resolve) => setTimeout(resolve, 250)),

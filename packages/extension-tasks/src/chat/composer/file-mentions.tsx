@@ -105,6 +105,10 @@ export function useFileMentions({
     selectConversationConnection,
     sameWorkspaceFields,
   )
+  const nativeGoals = useWorkspaceSelector(
+    (state) =>
+      state.workspace.tasks.find((task) => task.id === taskId)?.nativeGoalSupported === true,
+  )
   const modelMentionsSupported = useWorkspaceSelector(
     (state) => state.snapshot?.modelMentionsSupported === true,
   )
@@ -177,7 +181,7 @@ export function useFileMentions({
   const commandItems: Suggestion[] =
     mention?.trigger === '/'
       ? [
-          ...commandSuggestions(mention.query, provider).filter(
+          ...commandSuggestions(mention.query, provider, nativeGoals).filter(
             (item) => item.id === 'goal' || onCommand,
           ),
           ...(onSideChat && 'sidechat'.startsWith(mention.query.toLowerCase())

@@ -1,3 +1,4 @@
+import { DatabaseSpace } from '../runtime/connection/database-space'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AccountPanel } from '../runtime/connection/account-panel'
@@ -473,6 +474,9 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               ? uiText('Internet · WebRTC · end-to-end encrypted')
               : profile.connection.address}
           </Text>
+          {snapshot?.databaseSpaceRecoverySupported && (
+            <DatabaseSpace key={JSON.stringify(profile.connection)} />
+          )}
           <ConnectSettings key={profile.id} onBusyChange={setPairingBusy} />
           <RelaySettings key={`relay-${profile.id}`} onBusyChange={setPairingBusy} />
           {profile.connection.peer && (

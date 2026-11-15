@@ -54,13 +54,17 @@ export function projectDelegatedAgents(tasks: TaskSummary[], agents: Agent[]) {
         id: child.id,
         source: 'dovo',
         taskId: child.id,
-        provider: agent?.provider ?? 'unknown',
+        provider: child.history.latestTurn?.provider ?? agent?.provider ?? 'unknown',
         name: child.title,
         status,
         prompt: child.history.firstUserText,
         queued: child.status === 'draft' && !child.activeRunId ? true : undefined,
-        model: agent?.model,
-        reasoning: agent?.reasoning,
+        model:
+          child.history.latestTurn?.requestedModel ??
+          child.history.latestTurn?.model ??
+          agent?.model,
+        executedModel: child.history.latestTurn?.executedModel,
+        reasoning: child.history.latestTurn?.reasoning ?? agent?.reasoning,
         activity:
           child.error ??
           child.activity ??
