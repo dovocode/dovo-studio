@@ -1,3 +1,5 @@
+import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { cp, mkdir } from 'node:fs/promises'
 await mkdir(new URL('../packages/runtime/dist/mcp-apps/', import.meta.url), { recursive: true })
 await cp(
@@ -43,3 +45,11 @@ await writeFile(
   new URL('index.json', helpDirectory),
   JSON.stringify({ version: process.env.DOVO_VERSION || rootPackage.version, revision, documents }),
 )
+
+// Ship the pinned model, WASM runtime and license for offline local vision.
+const { prepareMirage, mirageAssets } = await import('./packaging/mirage.mjs')
+const mirageBundle = await prepareMirage(fileURLToPath(new URL('../', import.meta.url)))
+const mirageDestination = new URL('../packages/runtime/dist/vision/assets/', import.meta.url)
+await mkdir(mirageDestination, { recursive: true })
+for (const name of [...mirageAssets.map((asset) => asset.name), 'NOTICE', 'manifest.json'])
+  await cp(join(mirageBundle, name), new URL(name, mirageDestination))

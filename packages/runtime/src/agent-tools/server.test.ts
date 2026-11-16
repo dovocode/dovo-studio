@@ -693,6 +693,8 @@ it('keeps read-only providers from sending task terminal or device input', async
   try {
     await client.connect(transport)
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
+      'code',
+      'vision',
       'conversation_read',
       'dovo_help',
       'ask_question',

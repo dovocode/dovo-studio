@@ -11,6 +11,8 @@ const allowed = new Set([
   '/api/linked-projects',
   '/api/agent/question',
   '/api/agent/a2ui',
+  '/api/agent/code-tools',
+  '/api/agent/vision',
   '/api/agent/help',
   '/api/agent/conversation',
   '/api/agent/todos',

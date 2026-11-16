@@ -4,9 +4,9 @@ import type Database from 'better-sqlite3'
 import {
   decode,
   mcpAppSchema,
+  isA2uiApp,
   permissionPolicyReadOnly,
   resolveTaskAgent,
-  type McpApp,
 } from '@dovo/protocol'
 import {
   a2uiApplyValues,
@@ -28,8 +28,6 @@ import type { Approvals } from '../agents/execution/approvals.js'
 import { HttpError } from '../errors.js'
 import { object } from './resources.js'
 
-export const isA2uiApp = (app: Pick<McpApp, 'server' | 'tool'>) =>
-  app.server === 'dovo_task' && app.tool === 'a2ui'
 const result = (state: A2uiState) => ({
   content: [
     { type: 'text' as const, text: state.submitted ? 'A2UI response recorded.' : 'A2UI is ready.' },

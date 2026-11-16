@@ -19,6 +19,8 @@ export const mcpAppSchema = mutableStruct({
   connected: Schema.Boolean,
 })
 export type McpApp = Schema.Schema.Type<typeof mcpAppSchema>
+export const isA2uiApp = (app: Pick<McpApp, 'server' | 'tool'>) =>
+  app.server === 'dovo_task' && app.tool === 'a2ui'
 export const mcpAppResponseSchema = mutableStruct({ app: mcpAppSchema })
 export const mcpAppRpcResponseSchema = mutableStruct({ result: Schema.Unknown })
 export const mcpAppRpcSchema = mutableStruct({

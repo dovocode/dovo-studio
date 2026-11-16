@@ -55,6 +55,14 @@ it.each([false, true])(
       }
       // Exercise the schemas from the real stdio catalog. Strict Effect commands
       // must expose fields, not Unknown, so agents can construct valid calls.
+      const vision = tools.find((tool) => tool.name === 'vision')
+      expect(vision).toBeDefined()
+      const visionCharacters = JSON.stringify(vision).length + 1
+      expect(visionCharacters).toBeLessThanOrEqual(6000)
+      const code = tools.find((tool) => tool.name === 'code')
+      expect(code).toBeDefined()
+      const codeCharacters = JSON.stringify(code).length + 1
+      expect(codeCharacters).toBeLessThanOrEqual(1200)
       const schemas = new AjvJsonSchemaValidator()
       const strictCalls: Record<string, object> = {
         thread_prepare: { key: 'review', title: 'Review', prompt: 'Review the API' },
@@ -170,10 +178,13 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 52 : 25)
-      expect(descriptionCharacters - (a2ui?.description?.length ?? 0)).toBeLessThanOrEqual(
-        full ? 11000 : 6000,
-      )
+      expect(tools).toHaveLength(full ? 54 : 27)
+      expect(
+        descriptionCharacters -
+          (a2ui?.description?.length ?? 0) -
+          (code?.description?.length ?? 0) -
+          (vision?.description?.length ?? 0),
+      ).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
       const renameCharacters = JSON.stringify(terminalRename).length + 1
@@ -290,6 +301,8 @@ it.each([false, true])(
       )
       expect(
         characters -
+          visionCharacters -
+          codeCharacters -
           a2uiCharacters -
           renameCharacters -
           secureCharacters -
@@ -302,6 +315,8 @@ it.each([false, true])(
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
+          (vision?.description?.length ?? 0) -
+          (code?.description?.length ?? 0) -
           (a2ui?.description?.length ?? 0) -
           (terminalRename?.description?.length ?? 0) -
           (secureInput?.description?.length ?? 0) -

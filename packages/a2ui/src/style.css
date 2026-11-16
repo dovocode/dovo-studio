@@ -25,9 +25,14 @@
 * {
   box-sizing: border-box;
 }
+html,
+body,
+#root {
+  height: auto;
+}
 body {
   margin: 0;
-  background: var(--background);
+  background: transparent;
   color: var(--foreground);
   font:
     14px/1.5 system-ui,
@@ -266,7 +271,6 @@ a2ui-react-barchart {
   margin: 0;
   padding: 14px;
   overflow: auto;
-  max-height: 360px;
   font:
     12px/1.65 ui-monospace,
     monospace;

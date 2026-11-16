@@ -56,6 +56,11 @@ input for secrets. A2UI drafts and responses are stored as ordinary thread data.
 
 ## Drafts and responses
 
+Workspaces expand to their full content height inside the conversation. The conversation owns
+vertical scrolling. Tables can still scroll horizontally. Expanding details or changing tabs updates
+the inline height. The renderer uses a transparent background and follows the client's light or dark
+theme. Theme changes preserve the open workspace, local navigation and input.
+
 Tabs, disclosure, table sorting and table filtering run locally. They do not invoke tools or start a
 model turn. They remain usable after submission and in view-only cards. Their view state resets when
 the card is reopened or its renderer model is replaced. Table row selections and input values use

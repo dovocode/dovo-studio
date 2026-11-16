@@ -5,6 +5,7 @@ import {
   mcpAppDownloads,
   mcpAppResponseSchema,
   mcpAppRpcResponseSchema,
+  isA2uiApp,
   type McpAppReference,
   type McpApp,
 } from '@dovo/protocol'
@@ -31,6 +32,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   const { request, connected, activeRuntimeId, connection, workspace } = useWorkspace()
   const { openLink } = useStudioHost()
   const [app, setApp] = useState<McpApp>()
+  const inline = !!app && isA2uiApp(app)
   const operationScope = JSON.stringify([
     activeRuntimeId,
     clientScopeKey(connection),
@@ -66,6 +68,8 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
   useEffect(() => {
     setApp(undefined)
     setError('')
+    setHeight(320)
+    setFull(false)
     ready.current = false
     advertisedTools.current = []
     nonce.current = randomUUID()
@@ -170,7 +174,7 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
         typeof value.height === 'number' &&
         Number.isFinite(value.height)
       )
-        setHeight(Math.max(120, Math.min(700, value.height)))
+        setHeight(Math.max(160, inline ? Math.ceil(value.height) : Math.min(700, value.height)))
       if (value.type === 'display') setFull(value.mode === 'fullscreen')
       if (value.type === 'error' && typeof value.message === 'string') setError(value.message)
       if (
@@ -301,13 +305,16 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     reference.title,
     confirm,
     operationScope,
+    inline,
   ])
   return (
     <div
       className={
         full
           ? 'fixed inset-4 z-50 rounded-lg border bg-background p-3 shadow-xl'
-          : 'min-w-0 rounded-lg border bg-background p-2'
+          : inline
+            ? 'min-w-0'
+            : 'min-w-0 rounded-lg border bg-background p-2'
       }
     >
       <div className="mb-2 flex items-center justify-between gap-2 text-xs">
@@ -315,9 +322,11 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           {reference.title}
           {!connected || app?.connected === false ? ' · disconnected' : ''}
         </span>
-        <button type="button" onClick={() => setFull(!full)}>
-          {full ? 'Close expanded view' : 'Expand'}
-        </button>
+        {!inline && (
+          <button type="button" onClick={() => setFull(!full)}>
+            {full ? 'Close expanded view' : 'Expand'}
+          </button>
+        )}
       </div>
       {notice ? (
         <p role="status" className="text-xs text-muted-foreground">
@@ -334,8 +343,9 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
           srcDoc={html}
           sandbox="allow-scripts"
           title={reference.title}
-          className="w-full border-0"
-          style={{ height: full ? 'calc(100% - 32px)' : height }}
+          className="block w-full border-0 bg-transparent"
+          scrolling={inline && !full ? 'no' : 'auto'}
+          style={{ height: full ? 'calc(100% - 32px)' : height, colorScheme: theme }}
           onLoad={() => {
             ready.current = true
             send()

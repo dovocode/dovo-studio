@@ -1,3 +1,6 @@
+import { visionToolDefinition } from '../vision/schema.js'
+import { AsyncLocalStorage } from 'node:async_hooks'
+import { codeToolDefinition, executeCodeTool } from './code-dispatch.js'
 import { secureInputCommand } from './secure-input-command.js'
 import { secureInputToolResult } from './secure-input-result.js'
 import { linkedProjectCommand } from './linked-project-command.js'
@@ -124,6 +127,8 @@ const number = (value: unknown, name: string) => {
     throw new Error(`${name} must be a coordinate from 0 to 3840`)
   return value
 }
+const codeMode = new AsyncLocalStorage<boolean>()
+const callSignal = new AsyncLocalStorage<AbortSignal>()
 async function post(path: string, input: unknown): Promise<unknown> {
   const current = credentialFile
     ? decode(
@@ -133,6 +138,7 @@ async function post(path: string, input: unknown): Promise<unknown> {
     : { token: credential, runId: parentRunId }
   if (input && typeof input === 'object' && 'parentRunId' in input)
     input = { ...input, parentRunId: current.runId }
+  const activeSignal = callSignal.getStore()
   const timeout = runtimeRequestTimeout(path, input)
   const response = await fetch(new URL(path, base), {
     method: 'POST',
@@ -140,11 +146,13 @@ async function post(path: string, input: unknown): Promise<unknown> {
       Authorization: `Bearer ${current.token}`,
       'Content-Type': 'application/json',
       'X-Dovo-Agent-Access': '1',
+      ...(codeMode.getStore() ? { 'X-Dovo-Code-Mode': '1' } : {}),
     },
     body: JSON.stringify(input),
-    signal: AbortSignal.timeout(
-      path.startsWith('/api/previews/') ? Math.max(210_000, timeout) : timeout,
-    ),
+    signal: AbortSignal.any([
+      ...(activeSignal ? [activeSignal] : []),
+      AbortSignal.timeout(path.startsWith('/api/previews/') ? Math.max(210_000, timeout) : timeout),
+    ]),
   })
   const result: unknown = await response.json()
   if (!response.ok) {
@@ -154,10 +162,22 @@ async function post(path: string, input: unknown): Promise<unknown> {
   return result
 }
 async function socket(path: string, payloads: unknown[], firstMessage = false): Promise<string> {
+  const signal = callSignal.getStore()
+  signal?.throwIfAborted()
   const url = new URL(path, base)
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:'
   return new Promise((resolve, reject) => {
     const client = new WebSocket(url)
+    const abort = () => {
+      client.terminate()
+      reject(new Error('Tool call cancelled'))
+    }
+    signal?.addEventListener('abort', abort, { once: true })
+    client.once('close', () => {
+      signal?.removeEventListener('abort', abort)
+      clearTimeout(timeout)
+      reject(new Error('Dovo tool connection closed'))
+    })
     const timeout = setTimeout(() => {
       client.terminate()
       reject(new Error('Dovo tool connection timed out'))
@@ -1111,6 +1131,21 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
       return text(result)
     }
     switch (name) {
+      case 'vision':
+        return text(await post('/api/agent/vision', { taskId: task, parentRunId, command: input }))
+      case 'code':
+        return await codeMode.run(true, () =>
+          executeCodeTool({
+            code: string(input.code, 'code'),
+            signal: callSignal.getStore() ?? new AbortController().signal,
+            tools: enabledTools,
+            dovo: (name, input, signal) => callSignal.run(signal, () => callTool(name, input)),
+            remote: (command, signal) =>
+              callSignal.run(signal, () =>
+                post('/api/agent/code-tools', { taskId: task, parentRunId, command }),
+              ),
+          }),
+        )
       case 'secure_input':
         writable()
         if (terminalsDisabled) throw new Error('Secure input requires unrestricted command access')
@@ -1524,6 +1559,7 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             ...(input.title !== undefined ? { title: string(input.title, 'title') } : {}),
             ...(typeof input.checkoutId === 'string' ? { checkoutId: input.checkoutId } : {}),
             newTerminal: true,
+            ...(codeMode.getStore() ? { codeMode: true } : {}),
           }),
         )
         terminals.add(terminal.id)
@@ -1578,7 +1614,7 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
   }
 }
 const strictInputs = new Set(['subagent_spawn', 'pipeline_watch', 'pull_request_watch'])
-const enabledTools = tools
+const enabledTools = [codeToolDefinition, visionToolDefinition, ...tools]
   .filter(
     (tool) =>
       (process.env.DOVO_TASK_SKILLS_ENABLED === '1' || tool.name !== 'skill_read') &&
@@ -1600,7 +1636,7 @@ for (const tool of enabledTools) {
   server.registerTool(
     tool.name,
     { description: tool.description, inputSchema: fromJSONSchema(inputSchema) },
-    (input) => callTool(tool.name, input),
+    (input, extra) => callSignal.run(extra.signal, () => callTool(tool.name, input)),
   )
 }
 // Preserve root unions (e.g. todos/list vs todos/set), which the SDK's default

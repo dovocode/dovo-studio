@@ -644,6 +644,17 @@ export class TaskTurnRunner {
         const linkedSnapshots = captureChanges
           ? yield* runtimeOperation(() => linkedBefore(this.git, turnId, linked))
           : []
+        if (taskToolsToken)
+          runCredentials(this.store).codeDirectories(taskToolsToken, {
+            cwd,
+            linked: linked.map((item) => ({
+              id: item.id,
+              repositoryId: item.repositoryId,
+              path: item.directory,
+              access: item.access,
+            })),
+            mcp: this.mcpApps?.codeBindings(id) ?? [],
+          })
         const before = captureGit
           ? yield* runtimeOperation(() =>
               this.git.measureCheckout(cwd, 'initial-checkpoint', () =>

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 z.config({ jitless: true })
 import { AppBridge, PostMessageTransport } from '@modelcontextprotocol/ext-apps/app-bridge'
+import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps'
 import {
   CallToolResultSchema,
   ReadResourceResultSchema,
@@ -20,6 +21,8 @@ let frame: HTMLIFrameElement | undefined
 let proxyURL: string | undefined
 let nonce = ''
 let loading = 0
+let loadedApp: Pick<McpApp, 'id' | 'taskId'> | undefined
+let hostContext: McpUiHostContext | undefined
 const pending = new Map<
   string,
   {
@@ -109,15 +112,30 @@ async function cleanup() {
   if (proxyURL) URL.revokeObjectURL(proxyURL)
   proxyURL = undefined
   rootElement.replaceChildren()
+  loadedApp = undefined
+  hostContext = undefined
 }
 async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mobile: boolean) {
+  document.documentElement.style.colorScheme = theme
+  // Theme changes update the existing guest. Recreating it would lose local input and view state.
+  if (
+    bridge &&
+    hostContext &&
+    nonce === nextNonce &&
+    loadedApp?.id === app.id &&
+    loadedApp.taskId === app.taskId
+  ) {
+    hostContext = { ...hostContext, theme }
+    if (frame) frame.style.colorScheme = theme
+    bridge.setHostContext(hostContext)
+    return
+  }
   const ticket = ++loading
   await cleanup()
   if (ticket !== loading) return
   nonce = nextNonce
   if (app.format !== 'apps')
     throw new Error('Legacy MCP UI is no longer supported. Update this server to MCP Apps.')
-  document.documentElement.style.colorScheme = theme
   const resource = record(app.resource)
   const meta = record(resource._meta)
   const ui = record(meta.ui)
@@ -136,6 +154,14 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
     .replace("script-src 'unsafe-inline'", "script-src 'unsafe-inline' 'unsafe-eval'")
     .replace(/frame-src [^;]*;/, `frame-src about: data: blob: ${policy.frameDomains.join(' ')};`)
   document.head.append(hostPolicy)
+  hostContext = {
+    theme,
+    platform: mobile ? 'mobile' : 'desktop',
+    displayMode: 'inline',
+    availableDisplayModes: ['inline', 'fullscreen'],
+    locale: navigator.language,
+  }
+  loadedApp = app
   bridge = new AppBridge(
     null,
     { name: 'Dovo Studio', version: '1.0.0' },
@@ -150,13 +176,7 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
       sandbox: { csp: policy, permissions: {} },
     },
     {
-      hostContext: {
-        theme,
-        platform: mobile ? 'mobile' : 'desktop',
-        displayMode: 'inline',
-        availableDisplayModes: ['inline', 'fullscreen'],
-        locale: navigator.language,
-      },
+      hostContext,
     },
   )
   const current = bridge
@@ -230,7 +250,10 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   current.onrequestdisplaymode = async ({ mode }) => {
     const displayMode = mode === 'fullscreen' ? 'fullscreen' : 'inline'
     post({ type: 'display', mode: displayMode })
-    current.setHostContext({ theme, displayMode })
+    if (bridge === current && hostContext) {
+      hostContext = { ...hostContext, displayMode }
+      current.setHostContext(hostContext)
+    }
     return { mode: displayMode }
   }
   current.onsizechange = ({ height }) => {
@@ -261,6 +284,7 @@ async function load(app: McpApp, nextNonce: string, theme: 'dark' | 'light', mob
   frame = document.createElement('iframe')
   frame.setAttribute('sandbox', 'allow-scripts')
   frame.style.cssText = 'border:0;width:100%;height:100%;min-height:160px;display:block'
+  frame.style.colorScheme = theme
   rootElement.append(frame)
   await current.connect(new PostMessageTransport(frame.contentWindow!, frame.contentWindow!))
   frame.src = proxyURL

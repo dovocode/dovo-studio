@@ -6,6 +6,7 @@ import {
   responses,
   mcpAppResponseSchema,
   mcpAppRpcResponseSchema,
+  isA2uiApp,
   type McpAppReference,
   type McpApp,
 } from '@dovo/protocol'
@@ -34,12 +35,13 @@ export const McpAppView = memo(function McpAppView({
 }) {
   const uiText = useInterfaceText()
 
-  const { colors, styles } = useTheme()
+  const { colors, styles, mode } = useTheme()
 
   const openLink = useOpenAppLink(reference.taskId)
   const { call, read, connected, activeId, connection } = useRuntime()
   const view = useRef<WebView>(null)
   const [app, setApp] = useState<McpApp>()
+  const inline = !!app && isA2uiApp(app)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [height, setHeight] = useState(320)
@@ -51,6 +53,8 @@ export const McpAppView = memo(function McpAppView({
   useEffect(() => {
     setApp(undefined)
     setError('')
+    setHeight(320)
+    setFull(false)
     ready.current = false
     advertisedTools.current = []
     nonce.current = Crypto.randomUUID()
@@ -119,10 +123,10 @@ export const McpAppView = memo(function McpAppView({
   const load = () => {
     if (ready.current && app)
       view.current?.injectJavaScript(
-        `window.dovoMcpLoad(${JSON.stringify(app)},${JSON.stringify(nonce.current)},"dark");true;`,
+        `window.dovoMcpLoad(${JSON.stringify(app)},${JSON.stringify(nonce.current)},${JSON.stringify(mode)});true;`,
       )
   }
-  useEffect(load, [app?.id])
+  useEffect(load, [app?.id, mode])
   useEffect(() => {
     if (reference.revision) view.current?.injectJavaScript('window.dovoMcpNotify();true;')
   }, [reference.revision])
@@ -145,6 +149,7 @@ export const McpAppView = memo(function McpAppView({
         javaScriptCanOpenWindowsAutomatically={false}
         sharedCookiesEnabled={false}
         thirdPartyCookiesEnabled={false}
+        scrollEnabled={!inline || full}
         onShouldStartLoadWithRequest={(request) =>
           request.url === 'about:blank' ||
           (!request.isTopFrame && /^(https?:|blob:|data:|about:)/.test(request.url))
@@ -188,7 +193,7 @@ export const McpAppView = memo(function McpAppView({
             typeof value.height === 'number' &&
             Number.isFinite(value.height)
           )
-            setHeight(Math.max(120, Math.min(700, value.height)))
+            setHeight(Math.max(160, inline ? Math.ceil(value.height) : Math.min(700, value.height)))
           if (value.type === 'display') setFull(value.mode === 'fullscreen')
           if (value.type === 'error' && typeof value.message === 'string') setError(value.message)
           if (
@@ -305,14 +310,20 @@ export const McpAppView = memo(function McpAppView({
     )
   return (
     <View
-      style={{ borderWidth: 1, borderColor: colors.border, borderRadius: 10, padding: 8, gap: 8 }}
+      style={{
+        borderWidth: inline ? 0 : 1,
+        borderColor: colors.border,
+        borderRadius: 10,
+        padding: inline ? 0 : 8,
+        gap: 8,
+      }}
     >
       <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Text style={[styles.text, { flex: 1 }]}>
           {reference.title}
           {!connected || app?.connected === false ? uiText(' · disconnected') : ''}
         </Text>
-        <Action label={uiText('Expand')} secondary onPress={() => setFull(true)} />
+        {!inline && <Action label={uiText('Expand')} secondary onPress={() => setFull(true)} />}
       </View>
       {notice ? (
         <Text accessibilityLiveRegion="polite" style={styles.muted}>

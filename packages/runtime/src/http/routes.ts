@@ -1,3 +1,5 @@
+import { checkCodeAccess } from '../agent-tools/code-access.js'
+import { visionTool } from '../vision/tool.js'
 import { databaseSpace } from '../storage/database-space.js'
 import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
@@ -23,6 +25,7 @@ import { studioForwardPolicySchema } from '@dovo/protocol'
 import { studioSessions } from '../studio/ui-sessions.js'
 import { studioUIPollSchema } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
+import { codeToolCommand } from '../agent-tools/code-tools.js'
 import {
   authorizeRunEndpoint,
   authorizeRunRoute,
@@ -204,11 +207,14 @@ export function route(
                 request,
                 ['/api/artifacts/create', '/api/artifacts/update'].includes(path)
                   ? ARTIFACT_MAX_BYTES * 6 + 128 * 1024
-                  : undefined,
+                  : ['/api/agent/code-tools', '/api/agent/vision'].includes(path)
+                    ? 9 * 1024 * 1024
+                    : undefined,
               ),
             ),
           )
         : undefined
+      if (run && request.headers['x-dovo-code-mode'] === '1') checkCodeAccess(s.store, run)
       if (method === 'GET' && path === '/health')
         return yield* serviceResult({
           ok: true,
@@ -463,6 +469,33 @@ export function route(
           yield* serviceResult(body(request, 256 * 1024)),
         )
         return yield* serviceResult(s.mcpApps.a2uiCommand(run.taskId, run.runId, input.command))
+      }
+      if (method === 'POST' && ['/api/agent/code-tools', '/api/agent/vision'].includes(path)) {
+        if (!run) throw new HttpError(403, 'Code tools require an active agent run')
+        const input = decode(
+          Schema.Struct({ taskId: Schema.String, command: Schema.Unknown }),
+          yield* serviceResult(body(request, 9 * 1024 * 1024)),
+        )
+        return yield* runtimeOperation(async () => {
+          const controller = new AbortController()
+          const abort = () => controller.abort()
+          request.once('aborted', abort)
+          request.socket.once('close', abort)
+          try {
+            return await (path === '/api/agent/vision' ? visionTool : codeToolCommand)(
+              s,
+              run,
+              input.command,
+              AbortSignal.any([run.signal, controller.signal]),
+              () => {
+                authorizeRunRoute(s, token, method, path, { ...input, parentRunId: run.runId })
+              },
+            )
+          } finally {
+            request.off('aborted', abort)
+            request.socket.off('close', abort)
+          }
+        })
       }
       if (method === 'POST' && path === '/api/agent/thread-prepare') {
         if (!run) throw new HttpError(403, 'Thread actions require an active agent run')

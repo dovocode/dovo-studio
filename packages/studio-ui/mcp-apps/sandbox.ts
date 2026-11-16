@@ -3,6 +3,15 @@ import { csp, protectHtml } from './security'
 let guest: HTMLIFrameElement | undefined
 window.addEventListener('message', (event) => {
   if (event.source === parent) {
+    const theme =
+      event.data?.result?.hostContext?.theme ??
+      (event.data?.method === 'ui/notifications/host-context-changed'
+        ? event.data.params?.theme
+        : undefined)
+    if (theme === 'dark' || theme === 'light') {
+      document.documentElement.style.colorScheme = theme
+      if (guest) guest.style.colorScheme = theme
+    }
     if (event.data?.method === 'ui/notifications/sandbox-resource-ready') {
       if (guest) return
       const params = event.data.params
@@ -15,7 +24,7 @@ window.addEventListener('message', (event) => {
       )
       guest.style.cssText = 'width:100%;height:100%;border:0;display:block'
       guest.srcdoc = protectHtml(params.html, csp(params.csp))
-      document.body.append(guest)
+      document.getElementById('root')!.replaceChildren(guest)
     } else guest?.contentWindow?.postMessage(event.data, '*')
   } else if (guest && event.source === guest.contentWindow) {
     // Guests cannot manufacture proxy readiness or replace the HTML/CSP envelope.

@@ -1,5 +1,6 @@
 import { AppToolViews, appViewTools } from './views.js'
-import { A2uiApps, isA2uiApp } from './a2ui.js'
+import { A2uiApps } from './a2ui.js'
+import { isA2uiApp } from '@dovo/protocol'
 import { startPolling } from '@dovo/client-runtime'
 import { runtimeOperation } from '../errors.js'
 import { processEnvironment } from '../process.js'
@@ -22,6 +23,7 @@ import {
   ErrorCode,
   CallToolResultSchema,
   CallToolRequestSchema,
+  ListToolsResultSchema,
   GetPromptRequestSchema,
   ToolListChangedNotificationSchema,
   ResourceListChangedNotificationSchema,
@@ -35,6 +37,8 @@ import {
   mcpAppSchema,
   resolveTaskAgent,
   permissionPolicyReadOnly,
+  effectivePermissionPolicy,
+  samePermissionPolicy,
   mergeResources,
   applyBotResources,
   inheritedResourceProject,
@@ -49,6 +53,7 @@ import { mcpHeaders, mcpServerEnvironment } from '../agents/configuration/mcp-se
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { Activity } from '../storage/activity.js'
 import type { Approvals } from '../agents/execution/approvals.js'
+import type { RunPolicy } from '../auth/run-credentials.js'
 import { HttpError } from '../errors.js'
 import {
   object,
@@ -433,6 +438,94 @@ export class McpApps {
         ? AbortSignal.any([scope.signal, this.controller.signal])
         : this.controller.signal,
     )
+  }
+  codeBindings(taskId: string) {
+    return [
+      ...new Map(
+        [...this.scopes.values()]
+          .filter((scope) => scope.taskId === taskId && !scope.signal?.aborted)
+          .map((scope) => [
+            scope.server.name,
+            { name: scope.server.name, fingerprint: fingerprint(scope.server) },
+          ]),
+      ).values(),
+    ]
+  }
+  async codeTools(
+    grant: RunPolicy,
+    server: string,
+    call: { name: string; arguments?: Record<string, unknown> } | undefined,
+    signal: AbortSignal,
+    authorize: () => void,
+  ) {
+    const captured = grant.codeDirectories
+    const binding = captured?.mcp?.find((binding) => binding.name === server)
+    if (!captured || !binding) throw new HttpError(403, 'MCP server is outside this run snapshot')
+    const check = () => {
+      authorize()
+      signal.throwIfAborted()
+      const agent = resolveTaskAgent(this.store.taskSummary(grant.taskId), this.store.get().agents)
+      if (!agent || !samePermissionPolicy(grant.permissions, agent))
+        throw new HttpError(403, 'Agent access changed. Start a new turn.')
+      const current = this.current(grant.taskId, server)
+      if (fingerprint(current.server) !== binding.fingerprint)
+        throw new HttpError(409, 'MCP configuration changed. Start a new turn.')
+      return {
+        ...current,
+        cwd: captured.cwd,
+        permission: grant.permissions.permission,
+        approvalPolicy: grant.permissions.approvalPolicy,
+        sandboxMode: grant.permissions.sandboxMode,
+      }
+    }
+    const scope = check()
+    const session = await this.lease(scope)
+    try {
+      const listed = ListToolsResultSchema.parse(
+        await this.performRpc(session, scope, 'tools/list', {}, false, signal, check),
+      )
+      const policy = effectivePermissionPolicy(grant.permissions)
+      const available = listed.tools.filter(
+        (tool) =>
+          (!grant.readOnly && !policy.readOnly) ||
+          (tool.annotations?.readOnlyHint === true && tool.annotations?.destructiveHint !== true),
+      )
+      if (!call)
+        return {
+          tools: available.map((tool) => ({ ...tool, source: 'mcp', server, origin: 'mcp' })),
+        }
+      const tool = available.find((tool) => tool.name === call.name)
+      if (!tool) throw new HttpError(403, 'Tool is not available in this code scope')
+      if (!new AjvJsonSchemaValidator().getValidator(tool.inputSchema)(call.arguments ?? {}).valid)
+        throw new HttpError(400, 'Arguments do not match the MCP tool input schema')
+      if (
+        policy.approvalPolicy !== 'never' &&
+        (tool.annotations?.readOnlyHint !== true || tool.annotations?.destructiveHint === true)
+      ) {
+        if (
+          (await this.approvals.request(
+            grant.taskId,
+            `Code mode MCP · ${server}/${tool.name}`,
+            JSON.stringify(call.arguments ?? {}),
+            signal,
+          )) === 'deny'
+        )
+          throw new HttpError(403, 'MCP tool call declined')
+      }
+      const checkTool = () => {
+        check()
+        const current = [
+          ...session.tools.filter((tool) => visibleTo(tool, 'model')),
+          ...appViewTools,
+          ...this.views.list(scope),
+        ].find((current) => current.name === tool.name)
+        if (JSON.stringify(current) !== JSON.stringify(tool))
+          throw new HttpError(409, 'MCP tool changed during approval. Discover it again.')
+      }
+      return await this.performRpc(session, scope, 'tools/call', call, false, signal, checkTool)
+    } finally {
+      this.release(session)
+    }
   }
   private async rpc(
     scope: Scope,

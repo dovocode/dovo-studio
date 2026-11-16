@@ -1,3 +1,5 @@
+import { checkCodeAccess } from '../../agent-tools/code-access.js'
+import { effectivePermissionPolicy } from '@dovo/protocol'
 import { isAbsolute, relative } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
@@ -218,12 +220,13 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
       if (method === 'POST' && path === '/api/terminals/run') {
         // Chat code blocks reuse an open terminal. Agent tools request a fresh one so a
         // foreground program in the user's terminal never receives a shell command as input.
-        const { taskId, command, newTerminal, checkoutId, title } = decode(
+        const { taskId, command, newTerminal, checkoutId, title, codeMode } = decode(
           mutableStruct({
             taskId: idSchema,
             checkoutId: Schema.optional(idSchema),
             command: maxValue(minValue(Schema.String.pipe(Schema.decodeTo(Schema.Trim)), 1), 20000),
             newTerminal: Schema.optional(Schema.Boolean),
+            codeMode: Schema.optional(Schema.Boolean),
             title: Schema.optional(terminalTitleSchema),
           }),
           yield* serviceResult(body(request)),
@@ -234,10 +237,51 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         )
         if (!repo || task.example) throw new HttpError(400, 'Select a real task with a repository')
         const checkout = terminalCheckout(s.store, taskId, checkoutId)
+        const grant = codeMode ? s.runCredentials.authenticate(token) : undefined
         const authorize = () => {
           authenticateRuntimeOperation(s, token)
+          if (grant) {
+            if (request.socket.destroyed) throw new HttpError(409, 'Code mode call cancelled')
+            const captured = checkCodeAccess(s.store, grant)
+            if (
+              checkoutId &&
+              !captured.linked.some(
+                (link) =>
+                  link.id === checkoutId &&
+                  link.access === 'edit' &&
+                  link.repositoryId === checkout.repositoryId,
+              )
+            )
+              throw new HttpError(403, 'Linked checkout is outside this run snapshot')
+          }
           if (!isDeepStrictEqual(checkout, terminalCheckout(s.store, taskId, checkoutId)))
             throw new HttpError(409, 'The working directory changed. Reopen the terminal.')
+        }
+        if (grant) {
+          authorize()
+          if (effectivePermissionPolicy(grant.permissions).approvalPolicy !== 'never') {
+            const decision = yield* runtimeOperation(async () => {
+              const controller = new AbortController()
+              const abort = () => controller.abort()
+              request.socket.once('close', abort)
+              try {
+                const signal = AbortSignal.any([grant.signal, controller.signal])
+                signal.throwIfAborted()
+                const result = await s.approvals.request(
+                  taskId,
+                  'Code mode terminal command',
+                  JSON.stringify({ command, checkoutId }),
+                  signal,
+                )
+                signal.throwIfAborted()
+                return result
+              } finally {
+                request.socket.off('close', abort)
+              }
+            })
+            if (decision === 'deny') throw new HttpError(403, 'Terminal command declined')
+          }
+          authorize()
         }
         if (checkoutId) {
           const link = (yield* runtimeOperation(() => s.checkouts.linked.resolve(taskId))).find(
@@ -262,6 +306,14 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           open ??
           (yield* runtimeOperation(async () => {
             const cwd = await s.checkouts.selectedDirectory(taskId, checkoutId)
+            if (grant) {
+              const captured = checkCodeAccess(s.store, grant)
+              const expected = checkoutId
+                ? captured.linked.find((link) => link.id === checkoutId)?.path
+                : captured.cwd
+              if (cwd !== expected)
+                throw new HttpError(409, 'Code mode working directory changed. Start a new turn.')
+            }
             authorize()
             return s.terminals.create(taskId, cwd, checkoutId)
           }))

@@ -5,6 +5,8 @@ import { HttpError } from '../errors.js'
 
 export const helpDocuments = [
   'a2ui',
+  'code-mode',
+  'local-vision',
   'bots',
   'bot-learning-and-routines',
   'bot-voice-calls',

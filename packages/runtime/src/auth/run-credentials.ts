@@ -10,6 +10,11 @@ import { hashSecret, newSecret } from './devices.js'
 
 export type RunSkill = { name: string; description: string; content: string; sourcePath?: string }
 export interface RunPolicy {
+  codeDirectories?: {
+    cwd: string
+    linked: Array<{ id: string; repositoryId: string; path: string; access: 'read-only' | 'edit' }>
+    mcp?: Array<{ name: string; fingerprint: string }>
+  }
   skills?: RunSkill[]
   permissions: PermissionPolicy
   taskId: string
@@ -95,6 +100,9 @@ export class RunCredentials {
       rmSync(temporary, { force: true })
     }
     return file
+  }
+  codeDirectories(token: string, scope: NonNullable<RunPolicy['codeDirectories']>) {
+    this.authenticate(token).codeDirectories = structuredClone(scope)
   }
   authenticate(token: string) {
     const grant = this.grants.get(hashSecret(token))

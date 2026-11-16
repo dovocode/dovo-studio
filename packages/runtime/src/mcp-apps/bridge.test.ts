@@ -190,6 +190,7 @@ async function setup(
     task,
     f,
     server,
+    upstream,
     proxy,
     token: proxy.envValues?.DOVO_MCP_BRIDGE_TOKEN ?? '',
     calls: () => calls,
@@ -1128,4 +1129,178 @@ it('evicts distinct idle sessions for concurrent connects at capacity and protec
       .map((session) => session.taskId)
       .sort(),
   ).toEqual([s.task.id, third.task.id].sort())
+})
+
+it('routes code-mode MCP calls through the pinned catalog and explicit approval', async () => {
+  const s = await setup()
+  const services = s.runtime.services,
+    bridge = services.mcpApps
+  const grant = {
+    taskId: s.task.id,
+    runId: 'code',
+    permissions: {
+      provider: 'codex' as const,
+      permission: 'ask' as const,
+      sandboxMode: 'danger-full-access' as const,
+    },
+    readOnly: false,
+    artifacts: false,
+    pipelineWatching: false,
+    pullRequestWatching: false,
+    deviceHub: false,
+    memoryScopes: [],
+    codeDirectories: { cwd: s.f.directory, linked: [], mcp: bridge.codeBindings(s.task.id) },
+  }
+  services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, sandboxMode: 'danger-full-access' })),
+  }))
+  const signal = new AbortController().signal
+  const catalog = await bridge.codeTools(grant, 'fixture', undefined, signal, () => {})
+  expect(catalog).toMatchObject({
+    tools: expect.arrayContaining([
+      expect.objectContaining({ name: 'chart', source: 'mcp', server: 'fixture' }),
+    ]),
+  })
+  const pending = bridge.codeTools(
+    grant,
+    'fixture',
+    { name: 'chart', arguments: {} },
+    signal,
+    () => {},
+  )
+  await vi.waitFor(() => expect(services.approvals.list()).toHaveLength(1))
+  expect(s.calls()).toBe(0)
+  services.approvals.respond(services.approvals.list()[0].id, true)
+  expect(await pending).toMatchObject({ structuredContent: { count: 1 } })
+  const denied = bridge.codeTools(grant, 'fixture', { name: 'chart' }, signal, () => {})
+  await vi.waitFor(() => expect(services.approvals.list()).toHaveLength(1))
+  services.approvals.respond(services.approvals.list()[0].id, false)
+  await expect(denied).rejects.toThrow('declined')
+  expect(s.calls()).toBe(1)
+  await expect(
+    bridge.codeTools(grant, 'fixture', { name: 'refresh' }, signal, () => {}),
+  ).rejects.toThrow('not available')
+  await expect(bridge.codeTools(grant, 'unlisted', undefined, signal, () => {})).rejects.toThrow(
+    'snapshot',
+  )
+})
+
+it('rejects changed MCP bindings and live access changes in code mode', async () => {
+  const s = await setup()
+  const services = s.runtime.services,
+    bridge = services.mcpApps
+  const grant = {
+    taskId: s.task.id,
+    runId: 'code',
+    permissions: { provider: 'codex' as const, permission: 'ask' as const },
+    readOnly: false,
+    artifacts: false,
+    pipelineWatching: false,
+    pullRequestWatching: false,
+    deviceHub: false,
+    memoryScopes: [],
+    codeDirectories: { cwd: s.f.directory, linked: [], mcp: bridge.codeBindings(s.task.id) },
+  }
+  services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
+  }))
+  await expect(
+    bridge.codeTools(grant, 'fixture', undefined, new AbortController().signal, () => {}),
+  ).rejects.toThrow('access changed')
+  services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      permission: 'ask',
+      resources: {
+        ...agent.resources!,
+        mcpServers: [{ ...s.server, url: s.server.url + '/changed' }],
+      },
+    })),
+  }))
+  await expect(
+    bridge.codeTools(grant, 'fixture', undefined, new AbortController().signal, () => {}),
+  ).rejects.toThrow('configuration changed')
+  expect(s.calls()).toBe(0)
+})
+
+it('omits non-read-only MCP tools from a read-only code catalog', async () => {
+  const s = await setup()
+  const services = s.runtime.services,
+    bridge = services.mcpApps
+  services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
+  }))
+  const grant = {
+    taskId: s.task.id,
+    runId: 'code',
+    permissions: { provider: 'codex' as const, permission: 'read-only' as const },
+    readOnly: true,
+    artifacts: false,
+    pipelineWatching: false,
+    pullRequestWatching: false,
+    deviceHub: false,
+    memoryScopes: [],
+    codeDirectories: { cwd: s.f.directory, linked: [], mcp: bridge.codeBindings(s.task.id) },
+  }
+  const catalog = await bridge.codeTools(
+    grant,
+    'fixture',
+    undefined,
+    new AbortController().signal,
+    () => {},
+  )
+  expect(ListToolsResultSchema.parse(catalog).tools.map((tool) => tool.name)).not.toContain('chart')
+  await expect(
+    bridge.codeTools(grant, 'fixture', { name: 'chart' }, new AbortController().signal, () => {}),
+  ).rejects.toThrow('not available')
+  expect(s.calls()).toBe(0)
+})
+
+it('rejects an MCP schema change while code-mode approval is pending', async () => {
+  const s = await setup()
+  const services = s.runtime.services,
+    bridge = services.mcpApps
+  services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({ ...agent, sandboxMode: 'danger-full-access' })),
+  }))
+  const grant = {
+    taskId: s.task.id,
+    runId: 'code',
+    permissions: {
+      provider: 'codex' as const,
+      permission: 'ask' as const,
+      sandboxMode: 'danger-full-access' as const,
+    },
+    readOnly: false,
+    artifacts: false,
+    pipelineWatching: false,
+    pullRequestWatching: false,
+    deviceHub: false,
+    memoryScopes: [],
+    codeDirectories: { cwd: s.f.directory, linked: [], mcp: bridge.codeBindings(s.task.id) },
+  }
+  const pending = bridge.codeTools(
+    grant,
+    'fixture',
+    { name: 'chart', arguments: {} },
+    new AbortController().signal,
+    () => {},
+  )
+  const outcome = pending.catch((error: unknown) => error)
+  await vi.waitFor(() => expect(services.approvals.list()).toHaveLength(1))
+  s.upstream.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: [{ name: 'chart', inputSchema: { type: 'object', required: ['newField'] } }],
+  }))
+  await s.notify()
+  await vi.waitFor(() =>
+    expect(upstreamSessions(bridge).some((session) => session.toolsDirty)).toBe(true),
+  )
+  services.approvals.respond(services.approvals.list()[0].id, true)
+  expect(await outcome).toMatchObject({ message: expect.stringContaining('tool changed') })
+  expect(s.calls()).toBe(0)
 })
