@@ -40,6 +40,7 @@ export const NestedThreads = memo(function NestedThreads({
     ...thread,
     children: threadChildRows({ ...thread, nativeAgents: undefined }),
     nativeAgents: undefined,
+    linkedThreads: undefined,
   }
   const { colors, styles } = useTheme()
   const { profiles, overviews } = useRuntime()

@@ -701,7 +701,12 @@ function TaskListRowView({
       {open && thread && !task.archivedAt && (
         <NestedThreads
           hideSummary
-          thread={{ ...thread, children: childRows, nativeAgents: undefined }}
+          thread={{
+            ...thread,
+            children: childRows,
+            nativeAgents: undefined,
+            linkedThreads: undefined,
+          }}
           acknowledgedFailures={task.acknowledgedSubagentFailures}
           disabled={disabled || selectionActive}
           searching={searching}
