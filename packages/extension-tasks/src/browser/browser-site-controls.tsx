@@ -134,6 +134,7 @@ export function BrowserSiteControls({
             {controls
               .filter(
                 ({ permission }) =>
+                  permission === 'notifications' ||
                   permission === 'automatic-pip' ||
                   (state?.origin === page?.origin && state?.requested?.includes(permission)),
               )

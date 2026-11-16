@@ -41,6 +41,11 @@ export const attachmentReadSchema = mutableStruct({
     data: Schema.String,
   },
 })
+export const attachmentOcrRequestSchema = mutableStruct({
+  taskId: minValue(Schema.String, 1),
+  id: uuidSchema,
+})
+export const attachmentOcrResultSchema = mutableStruct({ text: Schema.String })
 export const attachmentUploadSchema = mutableStruct({
   taskId: minValue(Schema.String, 1),
   queuedMessageId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),

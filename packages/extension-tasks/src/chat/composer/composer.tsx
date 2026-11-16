@@ -1767,6 +1767,9 @@ export function Composer({
             previews={attachments.previews}
             remove={attachments.remove}
             edit={attachments.edit}
+            attachText={(text, name) =>
+              attachments.upload([new File([text], name, { type: 'text/plain' })])
+            }
             disabled={
               (!!editing && !snapshot?.fullTurnSettingsSupported) ||
               sending ||

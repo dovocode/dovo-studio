@@ -21,13 +21,14 @@ const wav=new Uint8Array(8044), wavView=new DataView(wav.buffer);for(const [offs
 window.archiveEntries=[{path:'reports/deep/results.txt',size:15,directory:false},{path:'reports/other.txt',size:12,directory:false},{path:'image.png',size:32,directory:false},{path:'empty/',size:0,directory:true}];window.uploads=[];
 
 window.files=[image,doc,zip];window.mediaFiles=[audio,video];window.request=async(path,input)=>{window.calls.push({path,input});
+if(path==='/api/attachments/ocr'){if(window.failOcr)throw Error('Local vision is busy');return {text:window.ocrText??'Release notes'}};
 if(path==='/api/attachments/archive/list'){if(window.archiveFail)throw Error('Expanded ZIP exceeds preview limits');return {entries:window.archiveEntries}};
 if(path==='/api/attachments/archive/read'){if(window.holdEntry){window.holdEntry=false;await new Promise(resolve=>window.releaseEntry=resolve)}if(window.entryFail)throw Error('Entry unavailable');const image=input.path==='image.png';return {path:input.path,name:input.path.split('/').at(-1),mime:image?'image/png':'text/plain',size:15,data:image?window.png.split(',')[1]:btoa(input.path==='reports/other.txt'?'Other result':'Selected result')}};
 if(path==='/api/attachments/draft-guard')return {guard:'guard'};
 if(path==='/api/attachments/commit-upload'){window.committed=(window.committed||[]).concat(input);const upload=window.uploads.find(item=>item.id===input.id);return {attachment:{id:input.id,name:upload.name,mime:'text/plain',size:15},revision:1,nextGuard:'next-guard'}};
 if(path==='/api/attachments/recoverable-upload'){window.uploads.push(input);if(window.holdUpload){window.holdUpload=false;await new Promise(resolve=>window.releaseUpload=resolve)}if(window.preflightFail){window.preflightFail=false;throw Error('Upload not dispatched')}if(window.uploadFail){window.uploadFail=false;throw Error('Upload response lost')}return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:15},revision:1}};
 if(window.fail)throw Error('Attachment unavailable');if(path==='/api/tasks/images/read'){if(window.thumbnailFail)throw Error('Thumbnail unavailable');return {uri:window.png}};if(window.holdRead){await new Promise(resolve=>window.releaseRead=resolve)}return {attachment:[...window.files,...window.mediaFiles].find(file=>file.id===input.id),data:input.id==='photo'?window.png.split(',')[1]:input.id==='audio'?btoa(String.fromCharCode(...wav)):btoa('Release notes')}};
-function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=useState(0);window.refresh=()=>setRevision(value=>value+1);window.setFiles=setFiles;return <main data-revision={revision} style={{padding:12}}><MessageAttachments taskId="task" files={files} removable edit={async id=>{window.edited.push(id)}} remove={id=>setFiles(files=>files.filter(file=>file.id!==id))} disabled={window.disabled}/><textarea aria-label="Message" defaultValue="Keep my draft"/></main>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=useState(0);window.refresh=()=>setRevision(value=>value+1);window.setFiles=setFiles;return <main data-revision={revision} style={{padding:12}}><MessageAttachments taskId="task" files={files} removable edit={async id=>{window.edited.push(id)}} attachText={async(text,name)=>{window.ocrAttached={text,name}}} remove={id=>setFiles(files=>files.filter(file=>file.id!==id))} disabled={window.disabled}/><textarea aria-label="Message" defaultValue="Keep my draft"/></main>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -57,6 +58,8 @@ function App(){const [files,setFiles]=useState([image]),[revision,setRevision]=u
       path: 'react-native',
       contents: `import {useEffect,useRef} from 'react';
 export const AppState={currentState:'active',addEventListener:(_event,callback)=>{window.appListeners=(window.appListeners||0)+1;window.appStateChanged=callback;return {remove(){window.appListeners--}}}};
+export const ActivityIndicator=({accessibilityLabel})=><span role="status" aria-label={accessibilityLabel}/>;
+export const TextInput=({accessibilityLabel,value,onChangeText,style})=><textarea aria-label={accessibilityLabel} value={value} onChange={event=>onChangeText(event.target.value)} style={style}/>;
 const css=s=>{const value=Array.isArray(s)?Object.assign({},...s):s;return {...value,...(value?.paddingHorizontal!==undefined?{paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal}:{}),...(value?.paddingVertical!==undefined?{paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical}:{})}};
 export const View=({children,style,accessibilityLabel,onLayout})=>{const ref=useRef(null),callback=useRef(onLayout);callback.current=onLayout;useEffect(()=>{if(!callback.current)return;const observer=new ResizeObserver(([entry])=>callback.current?.({nativeEvent:{layout:entry.contentRect}}));observer.observe(ref.current);return()=>observer.disconnect()},[]);return <div ref={ref} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',minHeight:0,boxSizing:'border-box',borderStyle:'solid',borderWidth:0,...css(style)}}>{children}</div>};
 export const Pressable=({children,onPress,disabled,style,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress} style={{display:'flex',border:0,font:'inherit',background:'transparent',boxSizing:'border-box',...css(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
@@ -97,6 +100,11 @@ export const Image=({source,accessibilityLabel,style})=><img src={source?.uri} a
       path: '../../../ui/controls/icon-button',
       importer: component,
       contents: `export const IconButton=({label,icon,onPress,disabled,variant})=><button aria-label={label} data-icon={icon} data-variant={variant} disabled={disabled} onClick={onPress} style={{width:44,height:44,flexShrink:0,borderRadius:22}}/>;`,
+    },
+    {
+      path: '../../../ui/controls/action',
+      importer: component,
+      contents: `export const Action=({label,onPress,disabled})=><button aria-label={label} disabled={disabled} onClick={onPress}>{label}</button>;`,
     },
     {
       path: '../../../ui/layout/safe-modal',
@@ -150,6 +158,20 @@ try {
   const edit = rows.getByRole('button', { name: /^Edit / })
   const remove = rows.getByRole('button', { name: /^Remove / }).first()
   await preview.waitFor()
+  await rows.getByRole('button', { name: /^Extract text from / }).click()
+  const extracted = page.getByRole('textbox', { name: 'Extracted text' })
+  await extracted.waitFor()
+  assert.equal(await extracted.inputValue(), 'Release notes')
+  await extracted.fill('Checked release notes')
+  await page.getByRole('button', { name: 'Attach text file' }).click()
+  assert.deepEqual(await page.evaluate(() => window.ocrAttached), {
+    text: 'Checked release notes',
+    name: 'Schermafbeelding 2026-10-24 om 09.01 — a very long filename-ocr.txt',
+  })
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message', exact: true }).inputValue(),
+    'Keep my draft',
+  )
   for (const width of [320, 390, 768, 1024]) {
     await page.setViewportSize({ width, height: 844 })
     const row = await preview.evaluate((node) => {

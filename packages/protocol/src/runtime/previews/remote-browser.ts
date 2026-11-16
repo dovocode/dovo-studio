@@ -2,7 +2,7 @@ import { browserProfileIdSchema } from './browser-profiles.js'
 import { mutableArray, mutableStruct, uuidSchema } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
-import { previewDeviceSchema } from './previews.js'
+import { previewDeviceSchema, browserNavigationHistorySchema } from './previews.js'
 export const remoteBrowserViewportSchema = mutableStruct({
   width: maxValue(
     minValue(
@@ -47,6 +47,14 @@ const point = {
   y: maxValue(minValue(Schema.Number.pipe(Schema.check(Schema.isFinite())), 0), 1920),
 }
 export const remoteBrowserInputSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('navigate-history'),
+    id: Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+    url: maxValue(minValue(Schema.String, 1), 8192),
+  }),
   mutableStruct({
     type: Schema.Literal('navigate'),
     url: maxValue(minValue(Schema.String, 1), 4096),
@@ -271,6 +279,7 @@ export const remoteBrowserMessageSchema = Schema.Union([
     title: Schema.String,
     favicon: Schema.optional(Schema.NullOr(maxValue(Schema.String, 100000))),
     back: Schema.Boolean,
+    navigationHistory: Schema.optional(browserNavigationHistorySchema),
     forward: Schema.Boolean,
     loading: Schema.Boolean,
     editable: Schema.Boolean,

@@ -1131,6 +1131,7 @@ export function Composer({
             remove={editing ? actions.removeEditAttachment : undefined}
             removable
             edit={attachmentPicker.edit}
+            attachText={attachmentPicker.attachText}
             disabled={
               (!!editing && !snapshot?.fullTurnSettingsSupported) ||
               busy ||

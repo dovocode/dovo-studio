@@ -14,6 +14,7 @@ import {
   inspectBrowserElement,
   browserElementSnapshotSchema,
   browserElementSchema,
+  browserNavigationHistorySchema,
   browserFaviconUpdateSchema,
   type BrowserElementPoint,
   STUDIO_BROWSER_SCOPE,
@@ -995,10 +996,11 @@ export class RemoteBrowsers {
     }
     session.statePending = true
     try {
-      const history: {
-        currentIndex: number
-        entries: unknown[]
-      } = await session.cdp.send('Page.getNavigationHistory')
+      const history = decode(
+        browserNavigationHistorySchema,
+        await session.cdp.send('Page.getNavigationHistory'),
+      )
+      const historyStart = Math.max(0, history.currentIndex - 50)
       const info = await session.page.evaluate(() => ({
         title: document.title,
         editable:
@@ -1024,6 +1026,10 @@ export class RemoteBrowsers {
         favicon: session.favicon,
         editable: info.editable,
         back: history.currentIndex > 0,
+        navigationHistory: {
+          currentIndex: history.currentIndex - historyStart,
+          entries: history.entries.slice(historyStart, history.currentIndex + 51),
+        },
         forward: history.currentIndex < history.entries.length - 1,
         loading: session.loading,
         touch: true,
@@ -1503,6 +1509,16 @@ export class RemoteBrowsers {
         } finally {
           this.scheduleState(session)
         }
+      } else if (input.type === 'navigate-history') {
+        const history = decode(
+          browserNavigationHistorySchema,
+          await session.cdp.send('Page.getNavigationHistory'),
+        )
+        if (!history.entries.some((entry) => entry.id === input.id && entry.url === input.url))
+          throw new Error('Browser history changed. Open the history menu again.')
+        await session.uploads.close()
+        await session.cdp.send('Page.navigateToHistoryEntry', { entryId: input.id })
+        this.scheduleState(session)
       } else if (input.type === 'resize') {
         const size = page.viewportSize()
         if (size?.width === input.width && size.height === input.height) return

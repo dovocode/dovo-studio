@@ -2535,6 +2535,30 @@ export function registerBrowser(
       return { url: '', back: false, forward: false, tabStates: tabStates(window.id) }
     }
     const navigation = entry.view.webContents.navigationHistory
+    if (command.action === 'navigation-history') {
+      const entries = navigation.getAllEntries()
+      const active = navigation.getActiveIndex()
+      const start = Math.max(0, active - 50)
+      return {
+        url: entry.view.webContents.getURL(),
+        back: navigation.canGoBack(),
+        forward: navigation.canGoForward(),
+        navigationHistory: {
+          currentIndex: active - start,
+          entries: entries.slice(start, active + 51).map((item, index) => ({
+            id: start + index,
+            url: item.url,
+            title: item.title,
+          })),
+        },
+      }
+    }
+    if (command.action === 'navigate-history') {
+      if (navigation.getEntryAtIndex(command.id)?.url !== command.url)
+        throw new Error('Browser history changed. Open the history menu again.')
+      navigation.goToIndex(command.id)
+      return
+    }
     if (
       [
         'site-permissions',

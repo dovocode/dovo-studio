@@ -4355,11 +4355,26 @@ try {
   await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
   const permissionList = controlsPage.getByLabel('Website permissions', { exact: true })
   await controlsPage.getByRole('combobox', { name: 'Automatic PiP permission' }).waitFor()
+  await controlsPage.getByRole('combobox', { name: 'Notifications permission' }).waitFor()
   assert.equal(
     await permissionList.getByRole('combobox').count(),
-    1,
-    'A site without requests shows only Automatic PiP, including with default-allowed permissions',
+    2,
+    'A site without requests shows Notifications and Automatic PiP',
   )
+  await permissionList.locator('[aria-busy="false"]').waitFor()
+  await controlsPage
+    .getByRole('combobox', { name: 'Notifications permission' })
+    .selectOption('block')
+  await controlsPage.waitForFunction(() =>
+    window.calls.some(
+      (command) =>
+        command.action === 'set-site-permission' &&
+        command.origin === 'https://example.test' &&
+        command.permission === 'notifications' &&
+        command.setting === 'block',
+    ),
+  )
+  await controlsPage.getByRole('combobox', { name: 'Notifications permission' }).selectOption('ask')
   await permissionList.locator('[aria-busy="false"]').waitFor()
   await permissionList.getByRole('heading').click()
   await controlsPage.mouse.move(1150, 700)

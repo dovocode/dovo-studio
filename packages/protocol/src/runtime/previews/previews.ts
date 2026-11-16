@@ -435,6 +435,7 @@ export const browserCommandSchema = Schema.Union([
       'close',
       'back',
       'forward',
+      'navigation-history',
       'reload',
       'hard-reload',
       'devtools',
@@ -455,6 +456,15 @@ export const browserCommandSchema = Schema.Union([
         Schema.check(Schema.isBetween({ minimum: 0, maximum: 100 })),
       ),
     ),
+  }),
+  mutableStruct({
+    action: Schema.Literal('navigate-history'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+    id: Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isGreaterThanOrEqualTo(0)),
+    ),
+    url: maxValue(minValue(Schema.String, 1), 8192),
   }),
   mutableStruct({
     action: Schema.Literal('set-audio-muted'),
@@ -548,6 +558,17 @@ export type BrowserCapture = {
   /** Stop was asked but the page kept its tracks; only closing the capturing page ends it. */
   unresponsive?: boolean
 }
+export const browserNavigationHistorySchema = mutableStruct({
+  currentIndex: Schema.Number.pipe(Schema.check(Schema.isInt())),
+  entries: mutableArray(
+    mutableStruct({
+      id: Schema.Number.pipe(Schema.check(Schema.isInt())),
+      url: Schema.String,
+      title: Schema.String,
+    }),
+  ),
+})
+export type BrowserNavigationHistory = Schema.Schema.Type<typeof browserNavigationHistorySchema>
 export type BrowserCommand = Schema.Schema.Type<typeof browserCommandSchema>
 export type BrowserDownloadItem = {
   id: number
@@ -606,6 +627,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       find?: BrowserFindResult
       documentRevision?: number
       sitePermissions?: BrowserSitePermissions
+      navigationHistory?: BrowserNavigationHistory
       focusedWindowId?: number
       windows?: { id: number; title: string; main?: boolean }[]
       movedTabs?: { key: string; tab: BrowserWorkspaceTab }[]

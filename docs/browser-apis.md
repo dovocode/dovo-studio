@@ -23,7 +23,20 @@ visibility/occlusion changes that emit no window event.
 plain HTTP, cross-origin frames, initial hidden loads, hidden reloads/frame creation, overlays and
 window hiding/restoring while background throttling is disabled. It also runs the PiP checks below.
 
+## Navigation history
+
+Hold Back or Forward to show pages in that direction. Right-click the button or press `Alt+Down`
+while it has focus to open the same menu. Select a page to jump to it. A normal click still moves
+one page. The menu uses the current tab's native or remote history and shows up to 50 pages in each
+direction. Studio rejects a selection if the history entry changed before the jump.
+
+Run `pnpm test:history-ocr:browser` to check the menus and real Chromium history on the Studio
+runtime.
+
 ## Website notifications
+
+The website permissions popup always shows Notifications, even before the site requests access. Use
+its setting to choose Ask every time, Allow or Block for that origin and browser profile.
 
 Live shared-browser pages use the native `Notification` constructor and notification events. Website
 approval is saved by origin and browser profile. Studio separates `requestPermission()` from

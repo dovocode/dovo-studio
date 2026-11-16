@@ -85,7 +85,14 @@ const mocks = vi.hoisted(() => {
     loadURL: vi.fn<(url?: string, options?: unknown) => Promise<void>>(async () => {}),
     enableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
     disableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
-    navigationHistory: { canGoBack: () => false, canGoForward: () => false },
+    navigationHistory: {
+      canGoBack: () => false,
+      canGoForward: () => false,
+      getAllEntries: vi.fn<() => Electron.NavigationEntry[]>(() => []),
+      getActiveIndex: vi.fn<() => number>(() => 0),
+      getEntryAtIndex: vi.fn<(index: number) => Electron.NavigationEntry>(),
+      goToIndex: vi.fn<(index: number) => void>(),
+    },
     getURL: () => 'https://example.com/',
     getTitle: () => 'Example',
     insertCSS: vi.fn<(...args: unknown[]) => Promise<string>>().mockResolvedValue('drag-guard'),
@@ -3161,6 +3168,44 @@ it('refuses unavailable destinations without releasing an active call', async ()
     call(event, { action: 'move-tab', key: 'moving', tab, targetWindowId: 999 }),
   ).rejects.toThrow('unavailable')
   expect(mocks.contents.close).not.toHaveBeenCalled()
+})
+
+it('reads tab history and rejects a stale history selection', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const entries = [
+    { url: 'http://lan.test/first', title: 'First' },
+    { url: 'https://example.com/', title: 'Current' },
+    { url: 'https://example.com/next', title: 'Next' },
+  ]
+  mocks.contents.navigationHistory.getAllEntries.mockReturnValue(entries)
+  mocks.contents.navigationHistory.getActiveIndex.mockReturnValue(1)
+  expect(await call(event, { action: 'navigation-history', key: workspaceShow.key })).toMatchObject(
+    {
+      navigationHistory: {
+        currentIndex: 1,
+        entries: entries.map((entry, id) => ({ ...entry, id })),
+      },
+    },
+  )
+  mocks.contents.navigationHistory.getEntryAtIndex.mockReturnValue(entries[0]!)
+  await call(event, {
+    action: 'navigate-history',
+    key: workspaceShow.key,
+    id: 0,
+    url: entries[0]!.url,
+  })
+  expect(mocks.contents.navigationHistory.goToIndex).toHaveBeenCalledWith(0)
+  mocks.contents.navigationHistory.goToIndex.mockClear()
+  await expect(
+    call(event, {
+      action: 'navigate-history',
+      key: workspaceShow.key,
+      id: 0,
+      url: 'https://stale.test/',
+    }),
+  ).rejects.toThrow('history changed')
+  expect(mocks.contents.navigationHistory.goToIndex).not.toHaveBeenCalled()
 })
 
 it('rejects stale website origins and thread-preview permission controls', async () => {

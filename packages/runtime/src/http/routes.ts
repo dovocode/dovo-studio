@@ -1,5 +1,7 @@
 import { checkCodeAccess } from '../agent-tools/code-access.js'
 import { visionTool } from '../vision/tool.js'
+import { attachmentOcr } from '../vision/attachment-ocr.js'
+import { attachmentOcrRequestSchema } from '@dovo/protocol'
 import { databaseSpace } from '../storage/database-space.js'
 import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
@@ -1294,6 +1296,21 @@ export function route(
             decode(attachmentArchiveReadRequestSchema, yield* serviceResult(body(request, 8192))),
           ),
         )
+      if (method === 'POST' && path === '/api/attachments/ocr') {
+        const input = decode(attachmentOcrRequestSchema, yield* serviceResult(body(request, 8192)))
+        return yield* runtimeOperation(async () => {
+          const controller = new AbortController()
+          const abort = () => controller.abort()
+          request.once('aborted', abort)
+          request.socket.once('close', abort)
+          try {
+            return await attachmentOcr(s, input, controller.signal)
+          } finally {
+            request.off('aborted', abort)
+            request.socket.off('close', abort)
+          }
+        })
+      }
       if (method === 'POST' && path === '/api/attachments/prepare')
         return s.attachments.prepare(yield* serviceResult(body(request, 8192)))
       if (method === 'POST' && path === '/api/attachments/replace')

@@ -15,6 +15,7 @@ const independentReads = new Set([
   '/api/tasks/history',
   '/api/tasks/waiting',
   '/api/attachments/read',
+  '/api/attachments/ocr',
 ])
 
 export function requestNeedsWorkspaceSync(path: string, method = 'POST') {

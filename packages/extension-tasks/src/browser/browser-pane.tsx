@@ -17,6 +17,8 @@ import { BrowserTabRow } from './browser-tab-row'
 import { Globe2 } from 'lucide-react'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
 import { BrowserSiteControls } from './browser-site-controls'
+import { BrowserHistoryButton } from './browser-history-button'
+import type { BrowserNavigationHistory } from '@dovo/protocol'
 import { BrowserExtensions } from './browser-extensions'
 import { BrowserLibrary } from './browser-library'
 import {
@@ -77,7 +79,6 @@ import {
   Home,
   ChevronDown,
   ArrowLeft,
-  ArrowRight,
   RotateCw,
   Maximize2,
   Minimize2,
@@ -414,7 +415,14 @@ function BrowserContent({
   const [input, setInput] = useApplicationState(initialUrl)
   const [addressDrafts, setAddressDrafts] = useApplicationState<Record<string, string>>({})
   const [url, setUrl] = useApplicationState(initialUrl)
-  const [history, setHistory] = useApplicationState({
+  const [history, setHistory] = useApplicationState<{
+    url: string
+    title: string
+    cdp: string | undefined
+    back: boolean
+    forward: boolean
+    navigationHistory?: BrowserNavigationHistory
+  }>({
     url: '',
     title: '',
     cdp: undefined as string | undefined,
@@ -2994,21 +3002,34 @@ function BrowserContent({
         }}
       >
         {(['back', 'forward'] as const).map((action) => (
-          <IconButton
-            key={action}
-            label={action === 'back' ? 'Back' : 'Forward'}
-            type="button"
-            className="size-8 shrink-0"
+          <BrowserHistoryButton
+            key={`${browserKey}:${mode}:${action}`}
+            direction={action}
             disabled={
               busy || !history[action] || (mode === 'remote' ? !remoteOnline : !browser || !url)
             }
-            onClick={() => {
+            navigate={() => {
               if (mode === 'remote') remote.current?.input({ type: action })
               else if (browser) void act(() => browser({ action, key: browserKey }))
             }}
-          >
-            {action === 'back' ? <ArrowLeft size={15} /> : <ArrowRight size={15} />}
-          </IconButton>
+            loadHistory={async () =>
+              mode === 'remote'
+                ? navigationState.history.navigationHistory
+                : (await browser?.({ action: 'navigation-history', key: browserKey }))
+                    ?.navigationHistory
+            }
+            jump={async (entry) => {
+              if (mode === 'remote')
+                remote.current?.input({ type: 'navigate-history', id: entry.id, url: entry.url })
+              else
+                await browser?.({
+                  action: 'navigate-history',
+                  key: browserKey,
+                  id: entry.id,
+                  url: entry.url,
+                })
+            }}
+          />
         ))}
         <IconButton
           label={mode === 'remote' && !remoteOnline ? 'Reconnect' : 'Reload'}

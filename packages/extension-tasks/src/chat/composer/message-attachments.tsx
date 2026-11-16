@@ -1,4 +1,5 @@
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
+import { ImageOcr } from './image-ocr'
 import { taskImageReadSchema } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { EditChatImage } from './chat-image-edit-context'
@@ -28,9 +29,11 @@ export function MessageAttachments({
   disabled,
   previews,
   compact = false,
+  attachText,
 }: {
   taskId: string
   compact?: boolean
+  attachText?: (text: string, name: string) => Promise<void>
   files?: Attachment[]
   remove?: (id: string) => Promise<void>
   edit?: (id: string) => Promise<void>
@@ -189,6 +192,14 @@ export function MessageAttachments({
                 )}
               </span>
             </button>
+            {isImageAttachment(file) && (
+              <ImageOcr
+                taskId={taskId}
+                file={file}
+                disabled={disabled || busy}
+                attachText={attachText}
+              />
+            )}
             {edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
               <Button
                 type="button"

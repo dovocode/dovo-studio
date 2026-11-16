@@ -548,6 +548,16 @@ export function useAttachmentPicker(
     pasteImage,
     select,
     upload,
+    attachText: async (text: string, name: string) => {
+      const id = randomUUID()
+      const file = new File(Paths.cache, `ocr-${id}.txt`)
+      try {
+        await file.write(text)
+        await upload([{ id, uri: file.uri, name, mimeType: 'text/plain', prepared: true }])
+      } finally {
+        if (!failedUploads.current.has(id) && file.exists) file.delete()
+      }
+    },
     uploadContext,
   }
 }

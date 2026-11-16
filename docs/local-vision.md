@@ -7,6 +7,26 @@ Inference runs on the Studio computer. Mobile clients use their paired computer.
 run inside the phone app. Images do not go to a Cactus service. The direct WASM integration has no
 Python dependency or Python usage telemetry.
 
+## Extract text from an attachment
+
+Attach an image, then select **Extract text** beside its name. Studio shows the image and the
+extracted text. Edit the text in the preview if needed. Select **Attach text file** to add a
+separate `-ocr.txt` attachment to the current draft or queued message. The image stays unchanged.
+Closing the preview adds no file. OCR runs only when selected and needs no active agent run.
+
+Desktop and mobile use the same local model. Mobile sends the request to its paired Studio computer.
+The normal attachment count limit still applies. Check the result before sending it.
+
+Verify the endpoint and controls with:
+
+```sh
+pnpm --filter @dovo/runtime... -r build
+pnpm exec playwright install chromium
+pnpm exec vp test packages/runtime/src/http/attachment-ocr.test.ts
+pnpm test:history-ocr:browser
+node scripts/check-mobile-attachments-browser.mjs
+```
+
 ## Operations
 
 | Action     | Result                                                                 |

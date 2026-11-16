@@ -1,4 +1,5 @@
 import { NativeImageGallery } from './native-image-gallery'
+import { ImageOcr } from './image-ocr'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AttachmentArchive } from './attachment-archive'
 import { SafeModal } from '../../../ui/layout/safe-modal'
@@ -35,8 +36,10 @@ export function MessageAttachments({
   disabled,
   onBusy,
   draftAttachmentDisabled,
+  attachText,
 }: {
   taskId: string
+  attachText?: (text: string, name: string) => Promise<void>
   files?: Attachment[]
   removable?: boolean
   edit?: (id: string) => Promise<void>
@@ -187,6 +190,14 @@ export function MessageAttachments({
                 </Text>
               </View>
             </Pressable>
+            {isImageAttachment(file) && (
+              <ImageOcr
+                taskId={taskId}
+                file={file}
+                disabled={disabled || busy}
+                attachText={attachText}
+              />
+            )}
             {removable && edit && ['image/png', 'image/jpeg', 'image/webp'].includes(file.mime) && (
               <AttachmentAction
                 icon="edit"
