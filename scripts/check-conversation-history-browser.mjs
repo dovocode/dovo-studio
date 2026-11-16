@@ -578,6 +578,8 @@ return <div>{h.task.messages.map(message=><div data-pending-message={message.id}
                 'task-pipeline-progress': 'TaskPipelineProgress',
                 // Machine handoff controls have a separate desktop/mobile suite.
                 'machine-handoff-notice': 'MachineHandoffNotice',
+                // Spend controls do not affect pending messages or history paging.
+                'spend-pause-notice': 'SpendPauseNotice',
               }
               const name = names[args.path.split('/').at(-1)]
               if (!name) throw new Error(`Missing production fixture module ${args.path}`)
