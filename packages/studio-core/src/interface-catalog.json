@@ -4472,7 +4472,14 @@
     "Open review for PR #{value0}": "Open review for PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch supplied: {value0}/{value1} · {value2} findings",
     "Open this repository as a project on this computer first.": "Open this repository as a project on this computer first.",
-    "Excluded file": "Excluded file"
+    "Excluded file": "Excluded file",
+    "Attach text file": "Attach text file",
+    "Extract text from {value0}": "Extract text from {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Extracted on your Studio computer. Check the text before using it.",
+    "Extracted text": "Extracted text",
+    "Extracting text": "Extracting text",
+    "No text found.": "No text found.",
+    "Text from {value0}": "Text from {value0}"
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8947,7 +8954,14 @@
     "Open review for PR #{value0}": "Review van PR #{value0} openen",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch aangeleverd: {value0}/{value1} · {value2} bevindingen",
     "Open this repository as a project on this computer first.": "Open deze repository eerst als project op deze computer.",
-    "Excluded file": "Uitgesloten bestand"
+    "Excluded file": "Uitgesloten bestand",
+    "Attach text file": "Tekstbestand bijvoegen",
+    "Extract text from {value0}": "Tekst uit {value0} halen",
+    "Extracted on your Studio computer. Check the text before using it.": "Geëxtraheerd op je Studio-computer. Controleer de tekst voordat je deze gebruikt.",
+    "Extracted text": "Geëxtraheerde tekst",
+    "Extracting text": "Tekst wordt geëxtraheerd",
+    "No text found.": "Geen tekst gevonden.",
+    "Text from {value0}": "Tekst uit {value0}"
   },
   "de": {
     "Settings": "Einstellungen",
@@ -13422,7 +13436,14 @@
     "Open review for PR #{value0}": "Review für PR #{value0} öffnen",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch bereitgestellt: {value0}/{value1} · {value2} Befunde",
     "Open this repository as a project on this computer first.": "Öffne dieses Repository zuerst als Projekt auf diesem Computer.",
-    "Excluded file": "Ausgeschlossene Datei"
+    "Excluded file": "Ausgeschlossene Datei",
+    "Attach text file": "Textdatei anhängen",
+    "Extract text from {value0}": "Text aus {value0} extrahieren",
+    "Extracted on your Studio computer. Check the text before using it.": "Auf deinem Studio-Computer extrahiert. Prüfe den Text vor der Verwendung.",
+    "Extracted text": "Extrahierter Text",
+    "Extracting text": "Text wird extrahiert",
+    "No text found.": "Kein Text gefunden.",
+    "Text from {value0}": "Text aus {value0}"
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17897,7 +17918,14 @@
     "Open review for PR #{value0}": "Άνοιγμα ελέγχου για PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Παρέχεται patch: {value0}/{value1} · {value2} ευρήματα",
     "Open this repository as a project on this computer first.": "Ανοίξτε πρώτα αυτό το αποθετήριο ως έργο σε αυτόν τον υπολογιστή.",
-    "Excluded file": "Εξαιρούμενο αρχείο"
+    "Excluded file": "Εξαιρούμενο αρχείο",
+    "Attach text file": "Επισύναψη αρχείου κειμένου",
+    "Extract text from {value0}": "Εξαγωγή κειμένου από {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Η εξαγωγή έγινε στον υπολογιστή σου με το Studio. Έλεγξε το κείμενο πριν το χρησιμοποιήσεις.",
+    "Extracted text": "Εξαγόμενο κείμενο",
+    "Extracting text": "Εξαγωγή κειμένου",
+    "No text found.": "Δεν βρέθηκε κείμενο.",
+    "Text from {value0}": "Κείμενο από {value0}"
   },
   "it": {
     "Settings": "Impostazioni",
@@ -22372,7 +22400,14 @@
     "Open review for PR #{value0}": "Apri revisione del PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fornita: {value0}/{value1} · {value2} risultati",
     "Open this repository as a project on this computer first.": "Apri prima questo repository come progetto su questo computer.",
-    "Excluded file": "File escluso"
+    "Excluded file": "File escluso",
+    "Attach text file": "Allega file di testo",
+    "Extract text from {value0}": "Estrai testo da {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Testo estratto sul tuo computer Studio. Controlla il testo prima di usarlo.",
+    "Extracted text": "Testo estratto",
+    "Extracting text": "Estrazione del testo",
+    "No text found.": "Nessun testo trovato.",
+    "Text from {value0}": "Testo da {value0}"
   },
   "es": {
     "Settings": "Ajustes",
@@ -26847,7 +26882,14 @@
     "Open review for PR #{value0}": "Abrir revisión del PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Parche proporcionado: {value0}/{value1} · {value2} hallazgos",
     "Open this repository as a project on this computer first.": "Primero abre este repositorio como proyecto en este equipo.",
-    "Excluded file": "Archivo excluido"
+    "Excluded file": "Archivo excluido",
+    "Attach text file": "Adjuntar archivo de texto",
+    "Extract text from {value0}": "Extraer texto de {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Extraído en tu equipo Studio. Revisa el texto antes de usarlo.",
+    "Extracted text": "Texto extraído",
+    "Extracting text": "Extrayendo texto",
+    "No text found.": "No se encontró texto.",
+    "Text from {value0}": "Texto de {value0}"
   },
   "fr": {
     "Settings": "Paramètres",
@@ -31322,7 +31364,14 @@
     "Open review for PR #{value0}": "Ouvrir la revue de la PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fourni : {value0}/{value1} · {value2} résultats",
     "Open this repository as a project on this computer first.": "Ouvrez d’abord ce dépôt comme projet sur cet ordinateur.",
-    "Excluded file": "Fichier exclu"
+    "Excluded file": "Fichier exclu",
+    "Attach text file": "Joindre un fichier texte",
+    "Extract text from {value0}": "Extraire le texte de {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Texte extrait sur votre ordinateur Studio. Vérifiez le texte avant de l’utiliser.",
+    "Extracted text": "Texte extrait",
+    "Extracting text": "Extraction du texte",
+    "No text found.": "Aucun texte trouvé.",
+    "Text from {value0}": "Texte de {value0}"
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -35797,7 +35846,14 @@
     "Open review for PR #{value0}": "Otwórz przegląd PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Dostarczona łatka: {value0}/{value1} · {value2} wyników",
     "Open this repository as a project on this computer first.": "Najpierw otwórz to repozytorium jako projekt na tym komputerze.",
-    "Excluded file": "Wykluczony plik"
+    "Excluded file": "Wykluczony plik",
+    "Attach text file": "Dołącz plik tekstowy",
+    "Extract text from {value0}": "Wyodrębnij tekst z {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Tekst wyodrębniono na Twoim komputerze Studio. Sprawdź go przed użyciem.",
+    "Extracted text": "Wyodrębniony tekst",
+    "Extracting text": "Wyodrębnianie tekstu",
+    "No text found.": "Nie znaleziono tekstu.",
+    "Text from {value0}": "Tekst z {value0}"
   },
   "pt": {
     "Settings": "Definições",
@@ -40272,7 +40328,14 @@
     "Open review for PR #{value0}": "Abrir revisão do PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fornecido: {value0}/{value1} · {value2} resultados",
     "Open this repository as a project on this computer first.": "Primeiro abra este repositório como projeto neste computador.",
-    "Excluded file": "Ficheiro excluído"
+    "Excluded file": "Ficheiro excluído",
+    "Attach text file": "Anexar ficheiro de texto",
+    "Extract text from {value0}": "Extrair texto de {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Texto extraído no seu computador Studio. Verifique o texto antes de o usar.",
+    "Extracted text": "Texto extraído",
+    "Extracting text": "A extrair texto",
+    "No text found.": "Nenhum texto encontrado.",
+    "Text from {value0}": "Texto de {value0}"
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -44747,7 +44810,14 @@
     "Open review for PR #{value0}": "PR #{value0} incelemesini aç",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Yama sağlandı: {value0}/{value1} · {value2} bulgu",
     "Open this repository as a project on this computer first.": "Önce bu depoyu bu bilgisayarda proje olarak açın.",
-    "Excluded file": "Hariç tutulan dosya"
+    "Excluded file": "Hariç tutulan dosya",
+    "Attach text file": "Metin dosyası ekle",
+    "Extract text from {value0}": "{value0} dosyasından metin çıkar",
+    "Extracted on your Studio computer. Check the text before using it.": "Studio bilgisayarınızda çıkarıldı. Kullanmadan önce metni kontrol edin.",
+    "Extracted text": "Çıkarılan metin",
+    "Extracting text": "Metin çıkarılıyor",
+    "No text found.": "Metin bulunamadı.",
+    "Text from {value0}": "{value0} dosyasından metin"
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -49222,7 +49292,14 @@
     "Open review for PR #{value0}": "فتح مراجعة طلب الدمج #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "التصحيح المتاح: {value0}/{value1} · {value2} نتائج",
     "Open this repository as a project on this computer first.": "افتح هذا المستودع أولاً كمشروع على هذا الكمبيوتر.",
-    "Excluded file": "ملف مستبعد"
+    "Excluded file": "ملف مستبعد",
+    "Attach text file": "إرفاق ملف نصي",
+    "Extract text from {value0}": "استخراج النص من {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "تم استخراج النص على جهاز Studio الخاص بك. تحقق من النص قبل استخدامه.",
+    "Extracted text": "النص المستخرج",
+    "Extracting text": "جارٍ استخراج النص",
+    "No text found.": "لم يتم العثور على نص.",
+    "Text from {value0}": "النص من {value0}"
   },
   "bg": {
     "Settings": "Настройки",
@@ -53697,7 +53774,14 @@
     "Open review for PR #{value0}": "Отваряне на прегледа за PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Предоставена кръпка: {value0}/{value1} · {value2} констатации",
     "Open this repository as a project on this computer first.": "Първо отворете това хранилище като проект на този компютър.",
-    "Excluded file": "Изключен файл"
+    "Excluded file": "Изключен файл",
+    "Attach text file": "Прикачване на текстов файл",
+    "Extract text from {value0}": "Извличане на текст от {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Текстът е извлечен на твоя компютър със Studio. Провери текста, преди да го използваш.",
+    "Extracted text": "Извлечен текст",
+    "Extracting text": "Извличане на текст",
+    "No text found.": "Не е намерен текст.",
+    "Text from {value0}": "Текст от {value0}"
   },
   "zh": {
     "Settings": "设置",
@@ -58172,7 +58256,14 @@
     "Open review for PR #{value0}": "打开 PR #{value0} 的审查",
     "Patch supplied: {value0}/{value1} · {value2} findings": "已提供补丁：{value0}/{value1} · {value2} 个问题",
     "Open this repository as a project on this computer first.": "请先在此计算机上将此仓库作为项目打开。",
-    "Excluded file": "已排除的文件"
+    "Excluded file": "已排除的文件",
+    "Attach text file": "附加文本文件",
+    "Extract text from {value0}": "从 {value0} 提取文本",
+    "Extracted on your Studio computer. Check the text before using it.": "已在你的 Studio 电脑上提取。使用前请检查文本。",
+    "Extracted text": "提取的文本",
+    "Extracting text": "正在提取文本",
+    "No text found.": "未找到文本。",
+    "Text from {value0}": "来自 {value0} 的文本"
   },
   "hr": {
     "Settings": "Postavke",
@@ -62647,7 +62738,14 @@
     "Open review for PR #{value0}": "Otvori pregled PR-a #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Dostavljena zakrpa: {value0}/{value1} · {value2} nalaza",
     "Open this repository as a project on this computer first.": "Najprije otvorite ovaj repozitorij kao projekt na ovom računalu.",
-    "Excluded file": "Izuzeta datoteka"
+    "Excluded file": "Izuzeta datoteka",
+    "Attach text file": "Priloži tekstnu datoteku",
+    "Extract text from {value0}": "Izdvoji tekst iz {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Tekst je izdvojen na tvojem računalu sa Studiom. Provjeri tekst prije upotrebe.",
+    "Extracted text": "Izdvojeni tekst",
+    "Extracting text": "Izdvajanje teksta",
+    "No text found.": "Tekst nije pronađen.",
+    "Text from {value0}": "Tekst iz {value0}"
   },
   "cs": {
     "Settings": "Nastavení",
@@ -67122,7 +67220,14 @@
     "Open review for PR #{value0}": "Otevřít kontrolu PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Dodaná záplata: {value0}/{value1} · {value2} zjištění",
     "Open this repository as a project on this computer first.": "Nejprve otevřete tento repozitář jako projekt na tomto počítači.",
-    "Excluded file": "Vyloučený soubor"
+    "Excluded file": "Vyloučený soubor",
+    "Attach text file": "Přiložit textový soubor",
+    "Extract text from {value0}": "Získat text z {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Text byl získán na vašem počítači se Studiem. Před použitím text zkontrolujte.",
+    "Extracted text": "Získaný text",
+    "Extracting text": "Získávání textu",
+    "No text found.": "Nebyl nalezen žádný text.",
+    "Text from {value0}": "Text z {value0}"
   },
   "da": {
     "Settings": "Indstillinger",
@@ -71597,7 +71702,14 @@
     "Open review for PR #{value0}": "Åbn gennemgang af PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch leveret: {value0}/{value1} · {value2} fund",
     "Open this repository as a project on this computer first.": "Åbn først dette repository som et projekt på denne computer.",
-    "Excluded file": "Udeladt fil"
+    "Excluded file": "Udeladt fil",
+    "Attach text file": "Vedhæft tekstfil",
+    "Extract text from {value0}": "Udtræk tekst fra {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Udtrukket på din Studio-computer. Kontrollér teksten, før du bruger den.",
+    "Extracted text": "Udtrukket tekst",
+    "Extracting text": "Udtrækker tekst",
+    "No text found.": "Ingen tekst fundet.",
+    "Text from {value0}": "Tekst fra {value0}"
   },
   "et": {
     "Settings": "Seaded",
@@ -76072,7 +76184,14 @@
     "Open review for PR #{value0}": "Ava PR #{value0} ülevaatus",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Paik esitatud: {value0}/{value1} · {value2} leidu",
     "Open this repository as a project on this computer first.": "Ava see hoidla kõigepealt selle arvuti projektina.",
-    "Excluded file": "Välistatud fail"
+    "Excluded file": "Välistatud fail",
+    "Attach text file": "Lisa tekstifail",
+    "Extract text from {value0}": "Eralda tekst failist {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Tekst eraldati sinu Studio arvutis. Kontrolli teksti enne kasutamist.",
+    "Extracted text": "Eraldatud tekst",
+    "Extracting text": "Teksti eraldamine",
+    "No text found.": "Teksti ei leitud.",
+    "Text from {value0}": "Tekst failist {value0}"
   },
   "fi": {
     "Settings": "Asetukset",
@@ -80547,7 +80666,14 @@
     "Open review for PR #{value0}": "Avaa PR:n #{value0} tarkastus",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Korjaus toimitettu: {value0}/{value1} · {value2} havaintoa",
     "Open this repository as a project on this computer first.": "Avaa tämä tietovarasto ensin projektina tällä tietokoneella.",
-    "Excluded file": "Ohitettu tiedosto"
+    "Excluded file": "Ohitettu tiedosto",
+    "Attach text file": "Liitä tekstitiedosto",
+    "Extract text from {value0}": "Poimi teksti tiedostosta {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Teksti poimittiin Studio-tietokoneellasi. Tarkista teksti ennen käyttöä.",
+    "Extracted text": "Poimittu teksti",
+    "Extracting text": "Poimitaan tekstiä",
+    "No text found.": "Tekstiä ei löytynyt.",
+    "Text from {value0}": "Teksti tiedostosta {value0}"
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -85022,7 +85148,14 @@
     "Open review for PR #{value0}": "PR #{value0} की समीक्षा खोलें",
     "Patch supplied: {value0}/{value1} · {value2} findings": "दिया गया पैच: {value0}/{value1} · {value2} निष्कर्ष",
     "Open this repository as a project on this computer first.": "पहले इस रिपॉज़िटरी को इस कंप्यूटर पर प्रोजेक्ट के रूप में खोलें।",
-    "Excluded file": "छोड़ी गई फ़ाइल"
+    "Excluded file": "छोड़ी गई फ़ाइल",
+    "Attach text file": "टेक्स्ट फ़ाइल संलग्न करें",
+    "Extract text from {value0}": "{value0} से टेक्स्ट निकालें",
+    "Extracted on your Studio computer. Check the text before using it.": "टेक्स्ट आपके Studio कंप्यूटर पर निकाला गया है। उपयोग करने से पहले टेक्स्ट जाँचें।",
+    "Extracted text": "निकाला गया टेक्स्ट",
+    "Extracting text": "टेक्स्ट निकाला जा रहा है",
+    "No text found.": "कोई टेक्स्ट नहीं मिला।",
+    "Text from {value0}": "{value0} से टेक्स्ट"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -89497,7 +89630,14 @@
     "Open review for PR #{value0}": "PR #{value0} ellenőrzésének megnyitása",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Átadott javítás: {value0}/{value1} · {value2} találat",
     "Open this repository as a project on this computer first.": "Először nyissa meg ezt a tárolót projektként ezen a számítógépen.",
-    "Excluded file": "Kizárt fájl"
+    "Excluded file": "Kizárt fájl",
+    "Attach text file": "Szövegfájl csatolása",
+    "Extract text from {value0}": "Szöveg kinyerése innen: {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "A szöveg kinyerése a Studio számítógépeden történt. Használat előtt ellenőrizd a szöveget.",
+    "Extracted text": "Kinyert szöveg",
+    "Extracting text": "Szöveg kinyerése",
+    "No text found.": "Nem található szöveg.",
+    "Text from {value0}": "Szöveg innen: {value0}"
   },
   "ja": {
     "Settings": "設定",
@@ -93972,7 +94112,14 @@
     "Open review for PR #{value0}": "PR #{value0} のレビューを開く",
     "Patch supplied: {value0}/{value1} · {value2} findings": "提供済みパッチ: {value0}/{value1} · {value2} 件の指摘",
     "Open this repository as a project on this computer first.": "まず、このコンピューターでこのリポジトリをプロジェクトとして開いてください。",
-    "Excluded file": "除外されたファイル"
+    "Excluded file": "除外されたファイル",
+    "Attach text file": "テキストファイルを添付",
+    "Extract text from {value0}": "{value0} からテキストを抽出",
+    "Extracted on your Studio computer. Check the text before using it.": "Studio コンピューターで抽出しました。使用する前にテキストを確認してください。",
+    "Extracted text": "抽出したテキスト",
+    "Extracting text": "テキストを抽出中",
+    "No text found.": "テキストが見つかりませんでした。",
+    "Text from {value0}": "{value0} のテキスト"
   },
   "ko": {
     "Settings": "설정",
@@ -98447,7 +98594,14 @@
     "Open review for PR #{value0}": "PR #{value0} 검토 열기",
     "Patch supplied: {value0}/{value1} · {value2} findings": "제공된 패치: {value0}/{value1} · 발견 사항 {value2}개",
     "Open this repository as a project on this computer first.": "먼저 이 컴퓨터에서 이 저장소를 프로젝트로 여세요.",
-    "Excluded file": "제외된 파일"
+    "Excluded file": "제외된 파일",
+    "Attach text file": "텍스트 파일 첨부",
+    "Extract text from {value0}": "{value0}에서 텍스트 추출",
+    "Extracted on your Studio computer. Check the text before using it.": "Studio 컴퓨터에서 추출했습니다. 사용하기 전에 텍스트를 확인하세요.",
+    "Extracted text": "추출된 텍스트",
+    "Extracting text": "텍스트 추출 중",
+    "No text found.": "텍스트를 찾을 수 없습니다.",
+    "Text from {value0}": "{value0}의 텍스트"
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -102922,7 +103076,14 @@
     "Open review for PR #{value0}": "Åpne gjennomgang av PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch levert: {value0}/{value1} · {value2} funn",
     "Open this repository as a project on this computer first.": "Åpne først dette repoet som et prosjekt på denne datamaskinen.",
-    "Excluded file": "Utelatt fil"
+    "Excluded file": "Utelatt fil",
+    "Attach text file": "Legg ved tekstfil",
+    "Extract text from {value0}": "Trekk ut tekst fra {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Teksten er hentet ut på Studio-datamaskinen din. Kontroller teksten før du bruker den.",
+    "Extracted text": "Uthentet tekst",
+    "Extracting text": "Henter ut tekst",
+    "No text found.": "Fant ingen tekst.",
+    "Text from {value0}": "Tekst fra {value0}"
   },
   "ro": {
     "Settings": "Setări",
@@ -107397,7 +107558,14 @@
     "Open review for PR #{value0}": "Deschide revizuirea PR-ului #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch furnizat: {value0}/{value1} · {value2} constatări",
     "Open this repository as a project on this computer first.": "Deschide mai întâi acest depozit ca proiect pe acest computer.",
-    "Excluded file": "Fișier exclus"
+    "Excluded file": "Fișier exclus",
+    "Attach text file": "Atașează fișier text",
+    "Extract text from {value0}": "Extrage text din {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Textul a fost extras pe computerul tău Studio. Verifică textul înainte de a-l folosi.",
+    "Extracted text": "Text extras",
+    "Extracting text": "Se extrage textul",
+    "No text found.": "Nu s-a găsit text.",
+    "Text from {value0}": "Text din {value0}"
   },
   "ru": {
     "Settings": "Настройки",
@@ -111872,7 +112040,14 @@
     "Open review for PR #{value0}": "Открыть проверку PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Патч передан: {value0}/{value1} · {value2} замечаний",
     "Open this repository as a project on this computer first.": "Сначала откройте этот репозиторий как проект на этом компьютере.",
-    "Excluded file": "Исключённый файл"
+    "Excluded file": "Исключённый файл",
+    "Attach text file": "Прикрепить текстовый файл",
+    "Extract text from {value0}": "Извлечь текст из {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Текст извлечён на вашем компьютере Studio. Проверьте текст перед использованием.",
+    "Extracted text": "Извлечённый текст",
+    "Extracting text": "Извлечение текста",
+    "No text found.": "Текст не найден.",
+    "Text from {value0}": "Текст из {value0}"
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -116347,7 +116522,14 @@
     "Open review for PR #{value0}": "Otvoriť kontrolu PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Poskytnutá záplata: {value0}/{value1} · {value2} zistení",
     "Open this repository as a project on this computer first.": "Najprv otvorte tento repozitár ako projekt na tomto počítači.",
-    "Excluded file": "Vylúčený súbor"
+    "Excluded file": "Vylúčený súbor",
+    "Attach text file": "Priložiť textový súbor",
+    "Extract text from {value0}": "Získať text z {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Text bol získaný na vašom počítači so Studiom. Pred použitím text skontrolujte.",
+    "Extracted text": "Získaný text",
+    "Extracting text": "Získavanie textu",
+    "No text found.": "Nenašiel sa žiadny text.",
+    "Text from {value0}": "Text z {value0}"
   },
   "sv": {
     "Settings": "Inställningar",
@@ -120822,7 +121004,14 @@
     "Open review for PR #{value0}": "Öppna granskning av PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Patch tillhandahållen: {value0}/{value1} · {value2} fynd",
     "Open this repository as a project on this computer first.": "Öppna först detta repo som ett projekt på den här datorn.",
-    "Excluded file": "Utesluten fil"
+    "Excluded file": "Utesluten fil",
+    "Attach text file": "Bifoga textfil",
+    "Extract text from {value0}": "Extrahera text från {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Texten har extraherats på din Studio-dator. Kontrollera texten innan du använder den.",
+    "Extracted text": "Extraherad text",
+    "Extracting text": "Extraherar text",
+    "No text found.": "Ingen text hittades.",
+    "Text from {value0}": "Text från {value0}"
   },
   "uk": {
     "Settings": "Налаштування",
@@ -125297,7 +125486,14 @@
     "Open review for PR #{value0}": "Відкрити перевірку PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Патч надано: {value0}/{value1} · {value2} зауважень",
     "Open this repository as a project on this computer first.": "Спочатку відкрийте цей репозиторій як проєкт на цьому комп’ютері.",
-    "Excluded file": "Виключений файл"
+    "Excluded file": "Виключений файл",
+    "Attach text file": "Прикріпити текстовий файл",
+    "Extract text from {value0}": "Витягти текст із {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Текст витягнуто на вашому комп’ютері Studio. Перевірте текст перед використанням.",
+    "Extracted text": "Витягнутий текст",
+    "Extracting text": "Витягування тексту",
+    "No text found.": "Текст не знайдено.",
+    "Text from {value0}": "Текст із {value0}"
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -129772,6 +129968,13 @@
     "Open review for PR #{value0}": "Mở đánh giá PR #{value0}",
     "Patch supplied: {value0}/{value1} · {value2} findings": "Bản vá đã cung cấp: {value0}/{value1} · {value2} phát hiện",
     "Open this repository as a project on this computer first.": "Trước tiên, hãy mở kho lưu trữ này dưới dạng dự án trên máy tính này.",
-    "Excluded file": "Tệp bị loại trừ"
+    "Excluded file": "Tệp bị loại trừ",
+    "Attach text file": "Đính kèm tệp văn bản",
+    "Extract text from {value0}": "Trích xuất văn bản từ {value0}",
+    "Extracted on your Studio computer. Check the text before using it.": "Văn bản được trích xuất trên máy tính Studio của bạn. Kiểm tra văn bản trước khi sử dụng.",
+    "Extracted text": "Văn bản đã trích xuất",
+    "Extracting text": "Đang trích xuất văn bản",
+    "No text found.": "Không tìm thấy văn bản.",
+    "Text from {value0}": "Văn bản từ {value0}"
   }
 }
