@@ -48,8 +48,7 @@ export function pullReviewEvidence(
       )
     )
       state = 'lockfile'
-    else if (file.attributes?.binary || file.attributes?.generated || file.attributes?.vendored)
-      state = 'excluded'
+    else if (file.attributes?.binary) state = 'excluded'
     else if (!file.patch) state = 'unavailable'
     else if (!parsed?.complete || (!parsed.before.changed.size && !parsed.after.changed.size))
       state = 'partial'

@@ -19,12 +19,13 @@ and report storage. HTTP runtimes, pairing codes and device tokens work as befor
 3. Open **Evidence and finding check** to see the exact code quote, challenge reason and model
    confidence. Open snapshot context to inspect the surrounding code supplied to the model.
 4. Check file coverage. Each batch holds whole patches within a 180,000-character serialized patch
-   budget. Generated, vendored and binary files are excluded when the forge or local attributes
-   identify them. Incomplete, missing, oversized and failed patches have separate coverage states.
-   **Review remaining files** retries failed batches and omissions from older reports. Dependency
-   lock files, such as `pnpm-lock.yaml`, are excluded. A patch that cannot fit one batch is marked
-   too large. Successful files from completed passes stay covered. Each pass has its own report.
-   Separate batches and passes can miss bugs that involve files they do not analyze together.
+   budget. Generated and vendored text files are included. Binary files are excluded when the forge
+   or local attributes identify them. Incomplete, missing, oversized and failed patches have
+   separate coverage states. **Review remaining files** retries failed batches and omissions from
+   older reports. Dependency lock files, such as `pnpm-lock.yaml`, are excluded. A patch that cannot
+   fit one batch is marked too large. Successful files from completed passes stay covered. Each pass
+   has its own report. Separate batches and passes can miss bugs that involve files they do not
+   analyze together.
 5. Select **Add to draft** for findings you want to share. Nothing is selected by default. Select
    **Remove from draft** to undo it. Dovo removes unchanged generated text. It keeps your edited
    text and shows a notice. Dismissing an added finding follows the same rule. Edit the draft and
@@ -111,10 +112,10 @@ publication preview names the destination account.
 | Deep                  | All eligible files | Read-only | 32 files, 96,000 serialized characters |
 
 All depths review every available, eligible patch and challenge supported findings in fresh model
-calls. Files do not wait for another pass because of a batch-count limit. Dependency lock files,
-generated files, vendored files and binary files are skipped. Patches larger than a single batch,
-incomplete patches and missing patches have explicit coverage states. Coverage records evidence
-supplied to the model. It does not prove that the model checked every line.
+calls. Files do not wait for another pass because of a batch-count limit. Generated and vendored
+text files are included. Dependency lock files and binary files are skipped. Patches larger than a
+single batch, incomplete patches and missing patches have explicit coverage states. Coverage records
+evidence supplied to the model. It does not prove that the model checked every line.
 
 Deep keeps the stored `thorough` value so existing reports and older clients remain compatible. The
 computer remembers depth. Earlier reports without a depth use Standard. Quick rejects project checks
