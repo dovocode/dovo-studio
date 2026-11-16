@@ -34,7 +34,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     {
       path: 'react-native',
       contents:
-        'export const Alert={alert(){}};export const Keyboard={dismiss(){}};export const useWindowDimensions=()=>({fontScale:1});',
+        'export const Alert={alert(){}};export const Keyboard={dismiss(){}};export const useWindowDimensions=()=>({fontScale:1});export const Text=({children})=><span>{children}</span>;export const View=({children})=><div>{children}</div>;',
     },
     {
       path: 'expo',
