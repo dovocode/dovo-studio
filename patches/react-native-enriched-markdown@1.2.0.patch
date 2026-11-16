@@ -87,6 +87,18 @@ index c3a97f6..1c0cd1b 100644
        const TSQueryCapture &capture = match.captures[captureIndex];
        uint32_t nameLength = 0;
        const char *name = ts_query_capture_name_for_id(query, capture.index, &nameLength);
+diff --git a/cpp/highlight/grammar-versions.json b/cpp/highlight/grammar-versions.json
+--- a/cpp/highlight/grammar-versions.json
++++ b/cpp/highlight/grammar-versions.json
+@@ -4,7 +4,7 @@
+     "$comment": "tree-sitter runtime C amalgamation. Fetched at install/prepack from the pinned GitHub release tarball (lib/src + lib/include) into the gitignored vendor/tree-sitter/; WASM is compiled out by leaving TREE_SITTER_FEATURE_WASM undefined (never strip wasm_store.c, it provides the no-op stubs parser.c/language.c call). To re-pin: bump ref, run `node vendor/vendor-grammars.mjs --force`, and paste the sha256 it prints on mismatch. tarball is optional; when absent it is derived from ref.",
+     "package": "tree-sitter",
+     "ref": "v0.26.3",
+-    "tarball": "https://github.com/tree-sitter/tree-sitter/archive/refs/tags/v0.26.3.tar.gz",
++    "tarball": "https://codeload.github.com/tree-sitter/tree-sitter/tar.gz/refs/tags/v0.26.3",
+     "sha256": "7f4a7cf0a2cd217444063fe2a4d800bc9d21ed609badc2ac20c0841d67166550",
+     "abi": { "version": 15, "minCompatible": 13 }
+   },
 diff --git a/ios/utils/ENRMAsyncRenderCoordinator.m b/ios/utils/ENRMAsyncRenderCoordinator.m
 index a5d7245..8e56f7a 100644
 --- a/ios/utils/ENRMAsyncRenderCoordinator.m
