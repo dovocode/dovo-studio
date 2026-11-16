@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import example from '../../../examples/a2ui/issue-picker.json'
+import workbench from '../../../examples/a2ui/change-review-workbench.json'
 import {
   a2uiApplyValues,
   a2uiCatalog,
@@ -7,6 +8,7 @@ import {
   a2uiInputValues,
   a2uiMessages,
   a2uiProcessor,
+  a2uiValidateInputs,
 } from './a2ui'
 
 it('processes real A2UI v1.0 messages, applies typed input and restores a compact snapshot', () => {
@@ -89,4 +91,141 @@ it.each([
   },
 ])('rejects unsupported protocols, functions, catalogs, components and cycles', (message) => {
   expect(() => a2uiProcessor([message])).toThrow(/A2UI/)
+})
+
+function workbenchComponents(id: string, properties: Record<string, unknown>) {
+  const surface = workbench.messages[0].createSurface
+  return [
+    {
+      version: '1.0',
+      createSurface: {
+        ...surface,
+        components: surface.components.map((component) =>
+          component.id === id ? { ...component, ...properties } : component,
+        ),
+      },
+    },
+  ]
+}
+
+it('restores a complete workbench with typed table selections, numbers and resolved event context', () => {
+  const processor = a2uiProcessor(workbench.messages)
+  try {
+    expect(() => a2uiValidateInputs(processor)).toThrow('Changed files')
+    const values = {
+      review: {
+        '/selected': ['runtime', 'protocol'],
+        '/parallel': 4,
+        '/lint': false,
+        '/instructions': 'Inspect reconnect behavior',
+      },
+    }
+    a2uiApplyValues(processor, values, true)
+    const before = a2uiMessages(processor)
+    a2uiValidateInputs(processor)
+    expect(a2uiMessages(processor)).toEqual(before)
+    expect(a2uiEvent(processor, 'review', 'send').context).toEqual({
+      files: ['runtime', 'protocol'],
+      parallel: 4,
+      lint: false,
+      instructions: 'Inspect reconnect behavior',
+    })
+    const restored = a2uiProcessor(before)
+    try {
+      expect(a2uiInputValues(restored)).toEqual(values)
+    } finally {
+      restored.dispose()
+    }
+  } finally {
+    processor.dispose()
+  }
+})
+
+it.each([
+  [{ '/selected': ['forged'] }, 'valid A2UI table row'],
+  [{ '/selected': ['runtime', 'runtime'] }, 'valid A2UI table row'],
+  [{ '/selected': 'runtime' }, 'Expected array'],
+  [{ '/parallel': 0 }, 'allowed range'],
+  [{ '/parallel': 9 }, 'allowed range'],
+  [{ '/parallel': 1.5 }, 'step'],
+  [{ '/parallel': '4' }, 'Expected number'],
+  [{ '/parallel': Number.POSITIVE_INFINITY }, 'finite'],
+])('rejects forged table selections and invalid numeric values: %j', (values, message) => {
+  const processor = a2uiProcessor(workbench.messages)
+  try {
+    expect(() => a2uiApplyValues(processor, { review: values })).toThrow(message)
+  } finally {
+    processor.dispose()
+  }
+})
+
+it('allows an unfinished numeric draft but validates it before submission', () => {
+  const processor = a2uiProcessor(workbench.messages)
+  try {
+    a2uiApplyValues(processor, { review: { '/selected': ['runtime'], '/parallel': null } })
+    expect(() => a2uiValidateInputs(processor, false)).not.toThrow()
+    expect(() => a2uiValidateInputs(processor)).toThrow('Parallel checks')
+  } finally {
+    processor.dispose()
+  }
+})
+
+it('accepts decimal steps without rounding errors and enforces single-row selection', () => {
+  const processor = a2uiProcessor([
+    ...workbenchComponents('parallel', { min: 0, max: 3, step: 0.1 }),
+    { version: '1.0', updateDataModel: { surfaceId: 'review', path: '/parallel', value: 0.3 } },
+    {
+      version: '1.0',
+      updateComponents: {
+        surfaceId: 'review',
+        components: [
+          {
+            ...workbench.messages[0].createSurface.components.find(
+              (component) => component.id === 'changes',
+            ),
+            multiple: false,
+          },
+        ],
+      },
+    },
+  ])
+  try {
+    a2uiApplyValues(processor, { review: { '/selected': ['runtime'], '/parallel': 0.7 } }, true)
+    expect(() =>
+      a2uiApplyValues(processor, { review: { '/selected': ['runtime', 'protocol'] } }),
+    ).toThrow('at most 1')
+  } finally {
+    processor.dispose()
+  }
+})
+
+it.each([
+  ['parallel', { min: 10, max: 1 }],
+  ['parallel', { step: Number.MIN_VALUE }],
+  ['progress', { value: -1 }],
+  ['progress', { value: 4 }],
+  ['status', { text: { '@path': '/parallel' } }],
+  [
+    'changes',
+    {
+      rows: [
+        { id: 'same', cells: {} },
+        { id: 'same', cells: {} },
+      ],
+    },
+  ],
+  ['changes', { rows: [{ id: 'one', cells: { undeclared: 'value' } }] }],
+  ['tabs', { tabs: [{ title: 'Recursive', child: 'tabs' }] }],
+  [
+    'tabs',
+    {
+      tabs: [
+        { title: 'First', child: 'changes' },
+        { title: 'Duplicate', child: 'changes' },
+      ],
+    },
+  ],
+  ['details', { child: 'missing-child' }],
+])('rejects invalid workbench definitions for %s', (id, properties) => {
+  expect(() => a2uiProcessor(workbenchComponents(id, properties))).toThrow(/A2UI|Expected string/)
 })

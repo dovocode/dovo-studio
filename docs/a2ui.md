@@ -1,8 +1,11 @@
 # A2UI cards
 
 Studio includes a fixed A2UI renderer in its MCP Apps host. Agents describe a card with JSON data.
-They do not supply HTML or JavaScript. Cards appear in the thread on desktop, web and mobile. Mobile
-uses the existing MCP App WebView. This is not a React Native renderer.
+They do not supply executable HTML or JavaScript. Cards appear in the thread on desktop, web and
+mobile. Mobile uses the existing MCP App WebView. This is not a React Native renderer.
+
+For the wider design, protocol comparison and remaining platform work, see
+[Agent-driven interfaces in Studio](agent-driven-interfaces.md).
 
 No extra MCP server, account or login is required. Pair the client with the runtime as usual. HTTP
 remains supported for LAN and VPN connections. HTTPS is optional.
@@ -15,7 +18,9 @@ with `{"action":"catalog"}`. The result contains the current catalog and usage r
 `expectedRevision: 0` to create a card. An exact retry returns the same card and revision.
 
 See [the issue selection example](../examples/a2ui/issue-picker.json) for a complete tool argument.
-The example has a choice list, text input, checkbox and submit button.
+The example has a choice list, text input, checkbox and submit button. The
+[change review workbench](../examples/a2ui/change-review-workbench.json) adds an overview,
+searchable file comparison, configuration and a single approved response. Its data is illustrative.
 
 Call `{"action":"read","key":"issue-picker"}` before updating that card. Supply its revision as
 `expectedRevision`. Updates apply to its current snapshot. They can change components or data,
@@ -31,19 +36,36 @@ contain `version: "1.0"` and exactly one supported operation:
 - `updateDataModel`
 - `deleteSurface`
 
-The catalog includes `Text`, `Column`, `Row`, `List`, `Card`, `Divider`, `TextField`, `CheckBox`,
-`ChoicePicker` and `Button`. Child lists are static arrays of component IDs. Editable values use
-absolute JSON Pointer bindings, such as `{"@path":"/instructions"}`. Choice values are arrays of
-option IDs, including single-choice inputs. Button actions use `event.name` and optional
-`event.context`. Context values can be literals or data bindings.
+The catalog includes these twenty components:
+
+- Layout: `Column`, `Row`, `List`, `Card`, `Divider`, `Tabs` and `Disclosure`.
+- Information: `Text`, `Badge`, `Callout`, `Metric`, `Progress`, `CodeBlock` and `BarChart`.
+- Input: `TextField`, `NumberField`, `CheckBox`, `ChoicePicker` and `DataTable`.
+- Response: `Button`.
+
+Child lists are static arrays of component IDs. Editable values use absolute JSON Pointer bindings,
+such as `{"@path":"/instructions"}`. Choice values are arrays of option IDs, including single-choice
+inputs. Button actions use `event.name` and optional `event.context`. Context values can be literals
+or data bindings.
 
 The renderer supports A2UI v1.0 with the Dovo catalog. It does not claim support for every A2UI
 catalog or optional feature. It rejects functions, arbitrary components, dynamic list templates,
-HTML and URLs. Use HTML artifacts for custom documents and applications. Use native question tools
-for simple questions. Use secure input for secrets. A2UI drafts and responses are stored as ordinary
-thread data.
+HTML and fetched URLs. `CodeBlock` displays literal code without executing it. Use HTML artifacts
+for custom documents and applications. Use native question tools for simple questions. Use secure
+input for secrets. A2UI drafts and responses are stored as ordinary thread data.
 
 ## Drafts and responses
+
+Tabs, disclosure, table sorting and table filtering run locally. They do not invoke tools or start a
+model turn. They remain usable after submission and in view-only cards. Their view state resets when
+the card is reopened or its renderer model is replaced. Table row selections and input values use
+saved draft bindings.
+
+`DataTable.value` is an array of declared row IDs. Set `multiple: false` for a single selection.
+Filtering preserves selected rows outside the visible result. `NumberField.value` is a finite number
+or `null` for an empty draft. Minimum, maximum and step constraints apply on the runtime. Invalid
+numeric edits stay visible locally until corrected. Required values are checked before an approval
+request.
 
 Studio saves input on the runtime while the user edits it. Reopening a card restores the last
 confirmed draft. Unsaved edits during a connection failure stay visible in the open view. Refresh
@@ -57,6 +79,10 @@ another device changed the draft.
 Draft writes use a version check. If another device changes the draft, Studio keeps the local input
 visible and reports a conflict. Load the current card to replace that local input. Compatible agent
 updates preserve the saved draft. An update that cannot preserve edited fields fails.
+
+Open cards receive publication notifications through the existing MCP Apps host. They load agent
+updates without a polling loop. If local edits are unsaved or awaiting acknowledgement, Studio keeps
+them visible and offers the existing explicit load-and-replace choice.
 
 A button requests human approval to send the resolved event and input values to the thread. The
 runtime validates required fields, choice values, component identity and the current revision. It
@@ -80,6 +106,9 @@ Each card supports at most four surfaces and 200 components. A child list suppor
 entries. Input strings support at most 4,000 characters. A publication accepts at most 32 messages.
 UI state is limited to 256 KiB. The runtime stores compact snapshots instead of a growing message
 log. The generated renderer is bundled with the runtime. It loads no external assets or packages.
+
+A table supports 100 rows and 12 columns. Tabs support eight child panels. A bar chart supports 40
+items. These limits stay within the existing state and component budgets.
 
 The upstream core and React renderer are pinned to `0.15.0`. Their protocol version is `1.0`. The
 renderer package uses Zod 3. The MCP Apps SDK uses the host's Zod 4 context through

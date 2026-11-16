@@ -1,0 +1,260 @@
+{
+  "action": "publish",
+  "key": "change-review-workbench",
+  "title": "Change review plan",
+  "expectedRevision": 0,
+  "messages": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "review",
+        "catalogId": "https://dovo.dev/a2ui/catalog/v1",
+        "components": [
+          {
+            "id": "root",
+            "component": "Column",
+            "children": ["heading", "status", "notice", "metrics", "tabs", "send"]
+          },
+          {
+            "id": "heading",
+            "component": "Text",
+            "variant": "heading",
+            "text": "Change review plan"
+          },
+          {
+            "id": "status",
+            "component": "Badge",
+            "tone": "info",
+            "text": {
+              "@path": "/status"
+            }
+          },
+          {
+            "id": "notice",
+            "component": "Callout",
+            "tone": "info",
+            "title": "Explore first, then send the plan",
+            "text": "Example data. No checks have run. Filtering, sorting and opening details do not start an agent or execute commands."
+          },
+          {
+            "id": "metrics",
+            "component": "Row",
+            "children": ["filesMetric", "checksMetric", "scopeMetric"]
+          },
+          {
+            "id": "filesMetric",
+            "component": "Metric",
+            "label": "Changed files",
+            "value": "3",
+            "detail": "Example change set"
+          },
+          {
+            "id": "checksMetric",
+            "component": "Metric",
+            "label": "Proposed checks",
+            "value": "2",
+            "detail": "Tests and lint",
+            "tone": "info"
+          },
+          {
+            "id": "scopeMetric",
+            "component": "Metric",
+            "label": "Execution",
+            "value": "Manual",
+            "detail": "Send a plan to the thread first",
+            "tone": "warning"
+          },
+          {
+            "id": "tabs",
+            "component": "Tabs",
+            "label": "Review workspace",
+            "tabs": [
+              {
+                "title": "Overview",
+                "child": "overview"
+              },
+              {
+                "title": "Changes",
+                "child": "changes"
+              },
+              {
+                "title": "Configure",
+                "child": "configure"
+              }
+            ]
+          },
+          {
+            "id": "overview",
+            "component": "Column",
+            "children": ["progress", "chart", "details"]
+          },
+          {
+            "id": "progress",
+            "component": "Progress",
+            "label": "Example files inspected",
+            "value": {
+              "@path": "/inspected"
+            },
+            "max": 3
+          },
+          {
+            "id": "chart",
+            "component": "BarChart",
+            "label": "Example changed lines",
+            "items": [
+              {
+                "label": "Runtime",
+                "value": 42
+              },
+              {
+                "label": "Protocol",
+                "value": 18
+              },
+              {
+                "label": "Browser checks",
+                "value": 27
+              }
+            ],
+            "suffix": " lines"
+          },
+          {
+            "id": "details",
+            "component": "Disclosure",
+            "title": "Proposed verification commands",
+            "child": "commands"
+          },
+          {
+            "id": "commands",
+            "component": "CodeBlock",
+            "language": "shell",
+            "code": "pnpm exec vp test packages/runtime/src/scm/reviews\npnpm exec vp check packages/runtime/src/scm/reviews"
+          },
+          {
+            "id": "changes",
+            "component": "DataTable",
+            "label": "Changed files",
+            "searchable": true,
+            "multiple": true,
+            "required": true,
+            "value": {
+              "@path": "/selected"
+            },
+            "columns": [
+              {
+                "key": "file",
+                "label": "File"
+              },
+              {
+                "key": "area",
+                "label": "Area"
+              },
+              {
+                "key": "lines",
+                "label": "Lines"
+              },
+              {
+                "key": "risk",
+                "label": "Risk"
+              }
+            ],
+            "rows": [
+              {
+                "id": "runtime",
+                "cells": {
+                  "file": "packages/runtime/reviews.ts",
+                  "area": "Runtime",
+                  "lines": 42,
+                  "risk": "High"
+                }
+              },
+              {
+                "id": "protocol",
+                "cells": {
+                  "file": "packages/protocol/review.ts",
+                  "area": "Protocol",
+                  "lines": 18,
+                  "risk": "Medium"
+                }
+              },
+              {
+                "id": "browser",
+                "cells": {
+                  "file": "scripts/check-review.mjs",
+                  "area": "Browser checks",
+                  "lines": 27,
+                  "risk": "Low"
+                }
+              }
+            ]
+          },
+          {
+            "id": "configure",
+            "component": "Column",
+            "children": ["parallel", "lint", "instructions"]
+          },
+          {
+            "id": "parallel",
+            "component": "NumberField",
+            "label": "Parallel checks",
+            "value": {
+              "@path": "/parallel"
+            },
+            "min": 1,
+            "max": 8,
+            "step": 1,
+            "required": true
+          },
+          {
+            "id": "lint",
+            "component": "CheckBox",
+            "label": "Include lint",
+            "value": {
+              "@path": "/lint"
+            }
+          },
+          {
+            "id": "instructions",
+            "component": "TextField",
+            "label": "Review instructions",
+            "value": {
+              "@path": "/instructions"
+            },
+            "multiline": true
+          },
+          {
+            "id": "send",
+            "component": "Button",
+            "label": "Send review plan",
+            "action": {
+              "event": {
+                "name": "reviewPlan",
+                "context": {
+                  "files": {
+                    "@path": "/selected"
+                  },
+                  "parallel": {
+                    "@path": "/parallel"
+                  },
+                  "lint": {
+                    "@path": "/lint"
+                  },
+                  "instructions": {
+                    "@path": "/instructions"
+                  }
+                }
+              }
+            }
+          }
+        ],
+        "dataModel": {
+          "status": "Ready to configure",
+          "inspected": 1,
+          "selected": [],
+          "parallel": 2,
+          "lint": true,
+          "instructions": ""
+        }
+      }
+    }
+  ]
+}

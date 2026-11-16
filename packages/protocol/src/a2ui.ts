@@ -21,6 +21,15 @@ const boolean = z.union([z.boolean(), binding]).describe('REF:#/$defs/DynamicBoo
 const strings = z
   .union([z.array(z.string().max(200)).max(100), binding])
   .describe('REF:#/$defs/DynamicStringList')
+const number = z
+  .union([z.number().finite(), z.null(), binding])
+  .describe('REF:#/$defs/DynamicNumber')
+const tone = z.enum(['neutral', 'info', 'success', 'warning', 'danger'])
+const cell = z.union([z.string().max(4000), z.number().finite(), z.boolean(), z.null()])
+const tableRows = z
+  .array(z.object({ id, cells: z.record(cell) }).strict())
+  .max(100)
+  .refine((rows) => new Set(rows.map((row) => row.id)).size === rows.length, 'Use unique row IDs')
 const child = CommonSchemas.ComponentId.min(1).max(120)
 const children = CommonSchemas.ChildList.refine(
   (value) => Array.isArray(value) && value.length <= 100,
@@ -95,7 +104,103 @@ export const a2uiApis = {
       .strict(),
   },
   Button: { name: 'Button', schema: z.object({ label: string, action }).strict() },
+  Badge: { name: 'Badge', schema: z.object({ text: string, tone: tone.optional() }).strict() },
+  Callout: {
+    name: 'Callout',
+    schema: z.object({ title: string, text: string, tone: tone.optional() }).strict(),
+  },
+  Metric: {
+    name: 'Metric',
+    schema: z
+      .object({ label: string, value: string, detail: string.optional(), tone: tone.optional() })
+      .strict(),
+  },
+  Progress: {
+    name: 'Progress',
+    schema: z
+      .object({ label: string, value: number, max: z.number().finite().positive() })
+      .strict(),
+  },
+  CodeBlock: {
+    name: 'CodeBlock',
+    schema: z.object({ code: string, language: z.string().max(40).optional() }).strict(),
+  },
+  Tabs: {
+    name: 'Tabs',
+    schema: z
+      .object({
+        label: string,
+        tabs: z
+          .array(z.object({ title: z.string().min(1).max(120), child }).strict())
+          .min(1)
+          .max(8)
+          .refine(
+            (tabs) => new Set(tabs.map((tab) => tab.child)).size === tabs.length,
+            'A2UI tabs must use unique child IDs',
+          ),
+      })
+      .strict(),
+  },
+  Disclosure: {
+    name: 'Disclosure',
+    schema: z.object({ title: string, child, open: z.boolean().optional() }).strict(),
+  },
+  NumberField: {
+    name: 'NumberField',
+    schema: z
+      .object({
+        label: string,
+        value: number,
+        min: z.number().finite().optional(),
+        max: z.number().finite().optional(),
+        step: z.number().finite().positive().optional(),
+        required: z.boolean().optional(),
+      })
+      .strict(),
+  },
+  DataTable: {
+    name: 'DataTable',
+    schema: z
+      .object({
+        label: string,
+        columns: z
+          .array(z.object({ key: id, label: z.string().min(1).max(120) }).strict())
+          .min(1)
+          .max(12)
+          .refine(
+            (columns) => new Set(columns.map((column) => column.key)).size === columns.length,
+            'Use unique column keys',
+          ),
+        rows: tableRows,
+        value: strings,
+        multiple: z.boolean().optional(),
+        required: z.boolean().optional(),
+        searchable: z.boolean().optional(),
+      })
+      .strict(),
+  },
+  BarChart: {
+    name: 'BarChart',
+    schema: z
+      .object({
+        label: string,
+        items: z
+          .array(
+            z
+              .object({
+                label: z.string().min(1).max(120),
+                value: z.number().finite().nonnegative(),
+              })
+              .strict(),
+          )
+          .min(1)
+          .max(40),
+        suffix: z.string().max(40).optional(),
+      })
+      .strict(),
+  },
 }
+const inputTypes = new Set(['TextField', 'CheckBox', 'ChoicePicker', 'NumberField', 'DataTable'])
 export const a2uiCatalog = new Catalog(A2UI_CATALOG_ID, '1.0', Object.values(a2uiApis))
 const message = z.record(z.unknown())
 export const a2uiValuesSchema = z.record(z.record(value))
@@ -191,8 +296,23 @@ export function a2uiProcessor(
         const api = a2uiCatalog.components.get(component.type)
         if (!api) throw new Error('Unknown A2UI component')
         api.schema.parse(component.properties)
-        if (['TextField', 'CheckBox', 'ChoicePicker'].includes(component.type))
-          binding.parse(component.properties.value)
+        if (inputTypes.has(component.type)) binding.parse(component.properties.value)
+        if (component.type === 'NumberField') {
+          const props = a2uiApis.NumberField.schema.parse(component.properties)
+          if (props.min !== undefined && props.max !== undefined && props.min > props.max)
+            throw new Error('A2UI number minimum exceeds its maximum')
+        }
+        if (component.type === 'DataTable') {
+          const props = a2uiApis.DataTable.schema.parse(component.properties)
+          if (
+            props.rows.some((row) =>
+              Object.keys(row.cells).some(
+                (key) => !props.columns.some((column) => column.key === key),
+              ),
+            )
+          )
+            throw new Error('A2UI table cells must use declared columns')
+        }
       }
     }
     if (count > 200) throw new Error('A2UI supports at most 200 components per card')
@@ -232,11 +352,7 @@ export function a2uiApplyValues(processor: MessageProcessor, input: unknown, com
       pointer.parse(path)
       const fields = [...surface.componentsModel.componentsMap.values()].filter((component) => {
         const bound = binding.safeParse(component.properties.value)
-        return (
-          ['TextField', 'CheckBox', 'ChoicePicker'].includes(component.type) &&
-          bound.success &&
-          bound.data['@path'] === path
-        )
+        return inputTypes.has(component.type) && bound.success && bound.data['@path'] === path
       })
       if (!fields.length) throw new Error('Unknown A2UI input binding')
       for (const field of fields) {
@@ -254,36 +370,91 @@ export function a2uiApplyValues(processor: MessageProcessor, input: unknown, com
           )
             throw new Error('Choose a valid A2UI option')
         }
+        if (field.type === 'NumberField') validateNumber(field.properties, entry)
+        if (field.type === 'DataTable') {
+          const props = a2uiApis.DataTable.schema.parse(field.properties)
+          const selected = z
+            .array(z.string())
+            .max(props.multiple === false ? 1 : 100)
+            .parse(entry)
+          if (
+            new Set(selected).size !== selected.length ||
+            selected.some((id) => !props.rows.some((row) => row.id === id))
+          )
+            throw new Error('Choose a valid A2UI table row')
+        }
       }
       surface.dataModel.set(path, entry, true)
     }
   }
-  if (complete) {
-    for (const surface of processor.model.surfacesMap.values()) {
-      for (const field of surface.componentsModel.componentsMap.values()) {
-        if (!['TextField', 'ChoicePicker'].includes(field.type) || !field.properties.required)
-          continue
-        const bound = binding.safeParse(field.properties.value)
-        const current: unknown = bound.success
-          ? surface.dataModel.get<unknown>(bound.data['@path'])
-          : field.properties.value
-        if (
-          (typeof current === 'string' && !current.trim()) ||
-          (Array.isArray(current) && !current.length) ||
-          current === undefined ||
-          current === null
-        )
-          throw new Error('Complete the required A2UI fields')
+  if (complete) a2uiValidateInputs(processor)
+  // Validate resolved properties too. Input bindings can share paths with display components.
+  for (const surface of processor.model.surfacesMap.values()) {
+    for (const component of surface.componentsModel.componentsMap.values()) {
+      const resolve = (input: unknown): unknown => {
+        const bound = binding.safeParse(input)
+        if (bound.success) return surface.dataModel.get<unknown>(bound.data['@path'])
+        if (Array.isArray(input)) return input.map(resolve)
+        if (input && typeof input === 'object')
+          return Object.fromEntries(
+            Object.entries(input).map(([key, item]) => [key, resolve(item)]),
+          )
+        return input
+      }
+      a2uiCatalog.components.get(component.type)?.schema.parse(resolve(component.properties))
+      if (component.type === 'Progress') {
+        const props = a2uiApis.Progress.schema.parse(resolve(component.properties))
+        if (typeof props.value !== 'number' || props.value < 0 || props.value > props.max)
+          throw new Error('A2UI progress must be between zero and its maximum')
       }
     }
   }
-  // Bindings can share paths. A valid input must not turn another component's text into an object.
+}
+
+function validateNumber(properties: Record<string, unknown>, input: unknown) {
+  const props = a2uiApis.NumberField.schema.parse(properties)
+  if (input === null) return
+  const current = z.number().finite().parse(input)
+  if (
+    (props.min !== undefined && current < props.min) ||
+    (props.max !== undefined && current > props.max)
+  )
+    throw new Error(
+      `A2UI number is outside its allowed range (${props.min ?? 'unbounded'} to ${props.max ?? 'unbounded'})`,
+    )
+  if (props.step !== undefined) {
+    const steps = (current - (props.min ?? 0)) / props.step
+    if (
+      !Number.isFinite(steps) ||
+      Math.abs(steps - Math.round(steps)) > Number.EPSILON * Math.max(1, Math.abs(steps)) * 8
+    )
+      throw new Error('A2UI number does not match its step')
+  }
+}
+
+/** Validate before requesting approval. This reads the current model without writing draft values. */
+export function a2uiValidateInputs(processor: MessageProcessor, complete = true) {
   for (const surface of processor.model.surfacesMap.values()) {
-    for (const component of surface.componentsModel.componentsMap.values()) {
-      for (const key of component.type === 'Text' ? ['text'] : ['label']) {
-        const bound = binding.safeParse(component.properties[key])
-        if (bound.success)
-          z.string().max(4000).optional().parse(surface.dataModel.get<unknown>(bound.data['@path']))
+    for (const field of surface.componentsModel.componentsMap.values()) {
+      if (!inputTypes.has(field.type)) continue
+      const bound = binding.parse(field.properties.value)
+      const current: unknown = surface.dataModel.get<unknown>(bound['@path'])
+      if (field.type === 'NumberField') validateNumber(field.properties, current ?? null)
+      if (
+        complete &&
+        field.properties.required &&
+        (current === undefined ||
+          current === null ||
+          (typeof current === 'string' && !current.trim()) ||
+          (Array.isArray(current) && !current.length))
+      ) {
+        const label = binding.safeParse(field.properties.label)
+        const name = label.success
+          ? surface.dataModel.get<unknown>(label.data['@path'])
+          : field.properties.label
+        throw new Error(
+          `Complete the required A2UI fields: ${typeof name === 'string' ? name : field.type}`,
+        )
       }
     }
   }
@@ -294,12 +465,18 @@ export function a2uiInputValues(processor: MessageProcessor): A2uiValues {
   for (const surface of processor.model.surfacesMap.values()) {
     const entries: A2uiValues[string] = {}
     for (const field of surface.componentsModel.componentsMap.values()) {
-      if (!['TextField', 'CheckBox', 'ChoicePicker'].includes(field.type)) continue
+      if (!inputTypes.has(field.type)) continue
       const bound = binding.safeParse(field.properties.value)
       if (bound.success)
         entries[bound.data['@path']] = value.parse(
           surface.dataModel.get<unknown>(bound.data['@path']) ??
-            (field.type === 'CheckBox' ? false : field.type === 'ChoicePicker' ? [] : ''),
+            (field.type === 'CheckBox'
+              ? false
+              : ['ChoicePicker', 'DataTable'].includes(field.type)
+                ? []
+                : field.type === 'NumberField'
+                  ? null
+                  : ''),
         )
     }
     values[surface.id] = entries

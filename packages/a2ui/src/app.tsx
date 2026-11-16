@@ -1,4 +1,5 @@
-import { createContext, useContext, useId } from 'react'
+import { useContext, useId } from 'react'
+import { disabledContext, workbenchComponents } from './workbench'
 import { createRoot } from 'react-dom/client'
 import { App } from '@dovo/studio-ui/mcp-app-sdk'
 import { A2uiSurface, createComponentImplementation, type ReactCatalogComponent } from '@a2ui/react'
@@ -15,12 +16,13 @@ import {
   a2uiInputValues,
   a2uiProcessor,
   a2uiStateSchema,
+  a2uiValidateInputs,
   type A2uiState,
 } from '@dovo/protocol/a2ui'
 
 const app = new App({ name: 'Dovo A2UI', version: '1.0.0' }, {})
-const disabledContext = createContext(false)
 const implementations = [
+  ...workbenchComponents,
   createComponentImplementation(a2uiApis.Text, ({ props }) =>
     props.variant === 'heading' ? (
       <h2>{props.text}</h2>
@@ -146,13 +148,17 @@ let error = ''
 let notice = ''
 let dirty = false
 let saving: Promise<void> = Promise.resolve()
+let savingDraft = false
+let syncing = false
+let syncRequested = false
+let disposed = false
 let saveFailed = false
 let replaceRequested = false
 
 function render() {
   root.render(
     <main>
-      <p className="caption">Interactive card · Dovo A2UI</p>
+      <p className="caption">Interactive workspace</p>
       <disabledContext.Provider value={busy || loading || !!state?.submitted || !!state?.readOnly}>
         {processor &&
           [...processor.model.surfacesMap.values()].map((surface) => (
@@ -262,9 +268,26 @@ function persist() {
       while (dirty && !saveFailed && state && processor) {
         dirty = false
         const values = a2uiInputValues(processor)
-        await app.updateModelContext({
-          structuredContent: { revision: state.revision, draftVersion: state.draftVersion, values },
-        })
+        try {
+          a2uiValidateInputs(processor, false)
+        } catch (cause) {
+          dirty = true
+          notice = cause instanceof Error ? cause.message : String(cause)
+          render()
+          return
+        }
+        savingDraft = true
+        try {
+          await app.updateModelContext({
+            structuredContent: {
+              revision: state.revision,
+              draftVersion: state.draftVersion,
+              values,
+            },
+          })
+        } finally {
+          savingDraft = false
+        }
         state = { ...state, draftVersion: state.draftVersion + 1, values }
         notice = 'Draft saved on the computer.'
         render()
@@ -340,6 +363,7 @@ async function submit(event: ActionPayload) {
   render()
   try {
     await saving
+    a2uiValidateInputs(processor)
     if (saveFailed)
       throw new Error(
         'The draft could not be saved. Your input is still shown. Refresh before submitting.',
@@ -370,9 +394,53 @@ async function submit(event: ActionPayload) {
   }
 }
 
+function receive(input: unknown) {
+  if (disposed) return
+  const next = a2uiStateSchema.parse(input)
+  if (state) {
+    if (
+      next.revision < state.revision ||
+      (next.revision === state.revision && next.draftVersion < state.draftVersion)
+    )
+      return
+    if (JSON.stringify(next) === JSON.stringify(state)) return
+    if (dirty || saveFailed || savingDraft || busy || loading) {
+      // A newer card is available, but replacing its processor would erase local edits.
+      state = {
+        ...state,
+        readOnly: next.readOnly,
+        submitted: next.submitted,
+        delivery: next.delivery,
+      }
+      stale = true
+      error =
+        'The card changed. Your local input is still shown. Load the current card when you are ready to replace it.'
+      render()
+      return
+    }
+  }
+  load(next)
+}
+async function synchronize() {
+  syncRequested = true
+  if (syncing) return
+  syncing = true
+  try {
+    while (syncRequested && !disposed) {
+      syncRequested = false
+      const response = await app.callServerTool({ name: 'a2ui_read', arguments: {} })
+      receive(response.structuredContent)
+    }
+  } finally {
+    syncing = false
+  }
+}
+app.setNotificationHandler('notifications/tools/list_changed', () => {
+  void synchronize().catch(fail)
+})
 app.ontoolresult = (response) => {
   try {
-    load(response.structuredContent)
+    receive(response.structuredContent)
   } catch (cause) {
     fail(cause)
   }
@@ -381,6 +449,7 @@ app.onhostcontextchanged = (context) => {
   if (context.theme) document.documentElement.dataset.theme = context.theme
 }
 app.onteardown = async () => {
+  disposed = true
   await saving
   subscriptions.forEach((subscription) => subscription.unsubscribe())
   processor?.dispose()

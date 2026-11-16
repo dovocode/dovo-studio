@@ -270,7 +270,7 @@ const tools: Array<
   {
     name: 'a2ui',
     description:
-      'Compose a native-styled interactive card using A2UI v1.0. Read the catalog first. Publish ordered messages with a stable key, title and expectedRevision (0 to create). Read before updates. User drafts survive compatible updates; submissions need human approval and return to this thread. No HTML, code, URLs or secrets. Available read-only.',
+      'Compose an interactive workspace with tables, tabs, charts, metrics, code views and forms using A2UI v1.0. Read the catalog first. Publish ordered messages with a stable key, title and expectedRevision (0 to create). Read before updates. Local navigation needs no model call. Saved drafts survive compatible updates. Submissions need approval and return to this thread. No executable code, HTML, URLs or secrets. Available read-only.',
     inputSchema: {
       type: 'object',
       properties: {

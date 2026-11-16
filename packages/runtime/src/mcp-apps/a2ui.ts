@@ -97,8 +97,14 @@ export class A2uiApps {
         return {
           protocolVersion: '1.0',
           catalog: a2uiCatalog.toJson(),
+          patterns: {
+            explore: ['Tabs', 'Disclosure', 'DataTable'],
+            compare: ['Row', 'Metric', 'Badge', 'BarChart'],
+            explain: ['Callout', 'Progress', 'CodeBlock'],
+            configure: ['TextField', 'NumberField', 'ChoicePicker', 'CheckBox'],
+          },
           instructions:
-            'Use A2UI v1.0 with the Dovo catalog. Create surfaces with inline components and dataModel. Input values use absolute @path bindings. Button actions use event.name and optional event.context. Only static child lists are supported. No functions, HTML, URLs or secrets. Publish with expectedRevision 0 to create; read before updates. User submission requires approval and returns as a thread message. It grants no permission for further actions.',
+            'Use A2UI v1.0 with the Dovo catalog. Compose a task workspace with inline components and dataModel. Inputs use absolute @path bindings. DataTable selections are row ID arrays; NumberField accepts a finite number or null. Tabs, disclosure, table filters and sorting are local and stay available after submission. Buttons send event.name and optional bound event.context to the thread after approval; they never execute commands. Use static child lists. No functions, HTML, URLs or secrets. CodeBlock displays text only. Publish with expectedRevision 0 to create; read before updates. The same key updates the workspace. Compatible saved drafts survive updates. User input grants no further permission.',
         }
       const id = createHash('sha256')
         .update(JSON.stringify(['a2ui', taskId, command.key]))

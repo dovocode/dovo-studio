@@ -4,6 +4,7 @@ import { Schema } from 'effect'
 import { decode } from '@dovo/protocol'
 import { a2uiStateSchema } from '@dovo/protocol/a2ui'
 import example from '../../../../examples/a2ui/issue-picker.json'
+import workbench from '../../../../examples/a2ui/change-review-workbench.json'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration'
@@ -14,7 +15,7 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
   vi.restoreAllMocks()
 })
-async function setup(persistent = false) {
+async function setup(persistent = false, publication: unknown = example) {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const options = {
@@ -34,7 +35,7 @@ async function setup(persistent = false) {
   })
   const run = 'a2ui-test-run'
   s.store.updateTask(task.id, (task) => ({ ...task, activeRunId: run }))
-  const command = (input: unknown = example) => s.mcpApps.a2uiCommand(task.id, run, input)
+  const command = (input: unknown = publication) => s.mcpApps.a2uiCommand(task.id, run, input)
   const id = decode(Schema.Struct({ id: Schema.String }), command()).id
   const state = () =>
     a2uiStateSchema.parse(object(s.mcpApps.read(task.id, id).result).structuredContent)
@@ -96,6 +97,94 @@ it('publishes one card per key, restores drafts and rejects stale updates', asyn
   ).toThrow('active')
   expect(() => s.mcpApps.read('other-thread', id)).toThrow(/not found/i)
   s.store.updateTask(task.id, (task) => ({ ...task, activeRunId: run }))
+})
+
+it('persists typed workbench drafts and rejects updates that remove selected rows', async () => {
+  const { s, task, id, command, state, action, send } = await setup(false, workbench)
+  const values = {
+    review: {
+      '/selected': ['runtime', 'protocol'],
+      '/parallel': 4,
+      '/lint': false,
+      '/instructions': 'Keep the user plan',
+    },
+  }
+  await s.mcpApps.action(task.id, id, 'save-plan', 'ui/update-model-context', {
+    structuredContent: { revision: 1, draftVersion: 0, values },
+  })
+  expect(state()).toMatchObject({ revision: 1, draftVersion: 1, values })
+  await expect(
+    s.mcpApps.action(task.id, id, 'invalid-row', 'ui/update-model-context', {
+      structuredContent: {
+        revision: 1,
+        draftVersion: 1,
+        values: { review: { ...values.review, '/selected': ['forged'] } },
+      },
+    }),
+  ).rejects.toThrow('valid A2UI table row')
+  await expect(
+    s.mcpApps.action(task.id, id, 'invalid-number', 'ui/update-model-context', {
+      structuredContent: {
+        revision: 1,
+        draftVersion: 1,
+        values: { review: { ...values.review, '/parallel': 12 } },
+      },
+    }),
+  ).rejects.toThrow('allowed range')
+  expect(state()).toMatchObject({ draftVersion: 1, values })
+  const table = workbench.messages[0].createSurface.components.find(
+    (component) => component.id === 'changes',
+  )
+  if (!table) throw new Error('Workbench fixture is missing its table')
+  expect(() =>
+    command({
+      action: 'publish',
+      key: workbench.key,
+      title: workbench.title,
+      expectedRevision: 1,
+      messages: [
+        {
+          version: '1.0',
+          updateComponents: {
+            surfaceId: 'review',
+            components: [{ ...table, rows: [{ id: 'browser', cells: { file: 'browser.mjs' } }] }],
+          },
+        },
+      ],
+    }),
+  ).toThrow('valid A2UI table row')
+  expect(state()).toMatchObject({ revision: 1, draftVersion: 1, values })
+  command({
+    action: 'publish',
+    key: workbench.key,
+    title: workbench.title,
+    expectedRevision: 1,
+    messages: [
+      {
+        version: '1.0',
+        updateDataModel: { surfaceId: 'review', path: '/status', value: 'Summary updated' },
+      },
+    ],
+  })
+  expect(state()).toMatchObject({ revision: 2, values })
+  const input = {
+    revision: 2,
+    draftVersion: 0,
+    values,
+    surfaceId: 'review',
+    sourceComponentId: 'send',
+  }
+  const response = action('send-plan', 'a2ui_submit', input)
+  await waitForRuntime(() => expect(s.approvals.list()).toHaveLength(1))
+  expect(send).not.toHaveBeenCalled()
+  s.approvals.respond(s.approvals.list()[0].id, true)
+  await response
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(send.mock.calls[0][2]).toContain('"parallel":4')
+  expect(send.mock.calls[0][2]).toContain('"files":["runtime","protocol"]')
+  await action('send-plan', 'a2ui_submit', input)
+  expect(send).toHaveBeenCalledTimes(1)
+  expect(state()).toMatchObject({ submitted: true, delivery: 'sent', values })
 })
 
 it('requires approval, resolves event context on the runtime and deduplicates submissions', async () => {
