@@ -50,7 +50,7 @@ createInterface({input:process.stdin}).on('line',line=>{
       }
       const adapter = await registry.get(agent.provider)
       expect((await adapter.models?.(agent))?.models).toEqual([
-        { id: 'gemini-fixture', name: 'Gemini fixture' },
+        { id: 'gemini-fixture', name: 'Gemini fixture', isDefault: true },
       ])
       const text: string[] = []
       const sessions: string[] = []
