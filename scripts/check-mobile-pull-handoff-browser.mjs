@@ -16,6 +16,7 @@ export const openAppLink=()=>{};export const readMobilePreferences=()=>({locale:
 `
 const boundaries = new Map([
   [mobile + 'scm/pulls/detail/agent-chat', 'export const PullAgentChat=()=>null;'],
+  [mobile + 'scm/pulls/detail/code-review', 'export const MobilePullCodeReview=()=>null;'],
   ...[
     'ui/content/text',
     'ui/controls/action',

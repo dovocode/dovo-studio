@@ -23,6 +23,8 @@ const action = `export const Action=({label,onPress,disabled})=><button disabled
 const field = `export const Field=({label,value,onChangeText,editable=true,multiline})=><label>{label}{multiline?<textarea aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/>:<input aria-label={label} value={value} disabled={!editable} onChange={e=>onChangeText(e.target.value)}/>}</label>;`
 const searchField = `export const SearchField=({placeholder,value,onChangeText})=><input aria-label={placeholder} placeholder={placeholder} value={value} onChange={e=>onChangeText(e.target.value)}/>;`
 const mocks = {
+  // The PR review panel has its own browser suite; keep native bindings out of this audit.
+  './code-review': `export const MobilePullCodeReview=()=>null;`,
   // Model controls have their own browser suite; retain the real project sheet here.
   './harness-settings': `export const HarnessSettings=()=>{throw Error('Unexpected model controls in navigation audit fixture')};`,
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
