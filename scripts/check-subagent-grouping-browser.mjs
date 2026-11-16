@@ -39,7 +39,7 @@ const fixture = `
 const base={repositoryId:'repo',agentId:'',status:'running',createdAt:'2026-10-03T12:00:00Z',draft:'',files:[],messages:[],example:false};
 const record=(id,name,status='working',source='dovo')=>({id,taskId:source==='dovo'?id:undefined,source:source==='dovo'?'dovo':undefined,name,provider:'codex',status,activity:status==='working'?'Inspecting tests':'Saved result',startedAt:'2026-10-03T12:00:00Z',updatedAt:'2026-10-03T12:01:00Z'});
 const parent={...base,id:'parent',title:'Main thread',subagents:[record('child','Live child'),record('done','Ended child','completed'),{...record('native','Native worker','working','native'),provider:'claude'}]};
-parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',requestedModel:'configured-remote-model',executedModel:'executed-remote-model',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
+parent.threadWatches=[{runtimeId:'studio',threadId:'remote-child',computerName:'Mac Studio',relation:'spawned',delegated:true,status:'watching',offline:false,snapshot:{title:'Configure Play testing',requestedModel:'configured-remote-model',executedModel:'executed-remote-model',phase:'running',revision:'one',attention:[],watches:{pipelines:1,pullRequests:1,failures:0}}}];parent.threadWatches.push({runtimeId:'mac',threadId:'dory',computerName:'Mac Studio',relation:'linked',status:'watching',offline:false,snapshot:{title:'Dory',phase:'completed',revision:'one',attention:[],watches:{pipelines:0,pullRequests:0,failures:0}}});parent.watchCounts={pipelines:1,pullRequests:1,failures:2};
 const child={...base,id:'child',title:'Independent child title',delegation:{parentTaskId:'parent',parentRunId:'run',key:'child'},subagents:[record('nested','Nested child'),record('nested-native','Nested native','working','native')]};
 const nested={...base,activeRunId:'nested-run',id:'nested',title:'Independent nested title',delegation:{parentTaskId:'child',parentRunId:'child-run',key:'nested'}};
 const done={...base,id:'done',title:'Independent ended title',status:'done',delegation:{parentTaskId:'parent',parentRunId:'run',key:'done'}};
@@ -187,6 +187,34 @@ try {
     assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
     assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
     assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
+    await subthreads.click()
+    const linkedFinished = page.getByRole('button', {
+      name: 'Finished threads for Main thread',
+      exact: true,
+    })
+    if ((await linkedFinished.getAttribute('aria-expanded')) !== 'true')
+      await linkedFinished.click()
+    await page.getByRole('button', { name: 'Open child thread Dory', exact: true }).waitFor()
+    await linkedFinished.click()
+    await subthreads.click()
+    await page.mouse.move(1000, 700)
+    assert.equal(
+      await page.getByRole('button', { name: 'Open child thread Dory', exact: true }).count(),
+      0,
+    )
+    await page.evaluate(() => {
+      window.publishTasks(
+        window.workspace.tasks.map((task) =>
+          task.id === 'parent'
+            ? {
+                ...task,
+                threadWatches: task.threadWatches.filter((watch) => watch.relation !== 'linked'),
+              }
+            : task,
+        ),
+      )
+      window.renderList(false)
+    })
     if (mobile) {
       await subthreads.click()
       assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
@@ -256,7 +284,10 @@ try {
                   ...task,
                   threadWatches: task.threadWatches.map((watch) => ({
                     ...watch,
-                    snapshot: { ...watch.snapshot, phase: 'needs-input' },
+                    snapshot:
+                      watch.relation === 'spawned'
+                        ? { ...watch.snapshot, phase: 'needs-input' }
+                        : watch.snapshot,
                   })),
                 }
               : task,
@@ -320,7 +351,10 @@ try {
       await page.getByText('Another main thread', { exact: true }).waitFor()
       assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
       await disclosure.click()
-      await page.getByText('· Offline', { exact: true }).waitFor()
+      await page
+        .getByRole('button', { name: 'Open child thread Configure Play testing', exact: true })
+        .getByText('· Offline', { exact: true })
+        .waitFor()
       await page
         .getByText('Mac Studio · executed-remote-model · Running', { exact: true })
         .waitFor()

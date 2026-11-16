@@ -825,15 +825,25 @@ export class ForgePullRequests {
     if (forgePullTarget(cwd)) return this.urlTarget(cwd).identity(refresh)
     return (await this.sourceContext(cwd, refresh)).destination
   }
-  async sourceIdentity(cwd: string, refresh = false) {
-    const { readerIdentity, destination } = await this.sourceContext(cwd, refresh)
+  async sourceIdentity(cwd: string, refresh = false, connectionId?: string) {
+    const { readerIdentity, destination } = await this.guard(cwd, { refresh, connectionId })
     return { readerIdentity, destination }
   }
   async guard(
     cwd: string,
-    input: { expectedDestination?: string; expectedReaderIdentity?: string; refresh?: boolean },
+    input: {
+      expectedDestination?: string
+      expectedReaderIdentity?: string
+      refresh?: boolean
+      connectionId?: string
+    },
   ) {
     const scope = await this.sourceContext(cwd, input.refresh === true)
+    if (input.connectionId && input.connectionId !== scope.connection?.id)
+      throw new HttpError(
+        409,
+        'This PR account does not match the project source. Choose its configured account or open the PR URL with another account.',
+      )
     guardSource(scope, input)
     return scope
   }

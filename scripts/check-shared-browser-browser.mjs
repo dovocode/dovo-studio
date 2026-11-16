@@ -270,6 +270,12 @@ async function captureBrowserSidebar(browser) {
   await preview.mouse.click(1000, 700)
   await sidebar.screenshot({ path: root + 'work/browser-sidebar/narrow.png' })
 
+  const addressBar = preview
+    .locator('form')
+    .filter({ has: preview.getByLabel('Preview URL', { exact: true }) })
+  for (const name of ['New browser tab', 'New browser tab options'])
+    assert.equal(await addressBar.getByRole('button', { name, exact: true }).count(), 0)
+
   const previousTab = await sidebar
     .locator('[data-browser-tab-id][data-active]')
     .getAttribute('data-browser-tab-id')
@@ -1356,6 +1362,7 @@ async function checkThreadBrowserProfiles() {
       normal.key,
     )
     await page.keyboard.press('Escape')
+    await page.getByRole('button', { name: 'Browser options', exact: true }).click()
     await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
     await page.getByRole('menuitem', { name: 'New private tab', exact: true }).click()
     await page

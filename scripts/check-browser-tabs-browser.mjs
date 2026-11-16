@@ -404,6 +404,10 @@ try {
   await page.getByRole('button', { name: 'Close current tab', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'close'))
+  if (
+    !(await page.getByRole('button', { name: 'New browser tab options', exact: true }).isVisible())
+  )
+    await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
   await page.getByRole('tab', { name: /Page/ }).waitFor()
@@ -476,6 +480,10 @@ try {
   if (await page.getByText('Choose a device', { exact: true }).count())
     throw new Error('Device panel leaked into remote browser')
   const first = await page.getByRole('tab', { name: /Page/ }).textContent()
+  if (
+    !(await page.getByRole('button', { name: 'New browser tab options', exact: true }).isVisible())
+  )
+    await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Default', exact: true }).click()
   await page.waitForFunction(
@@ -501,6 +509,10 @@ try {
   await page.waitForFunction(
     () => window.calls.filter((c) => c.path === '/api/previews/browser/open').length === 3,
   )
+  if (
+    !(await page.getByRole('button', { name: 'New browser tab options', exact: true }).isVisible())
+  )
+    await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New local tab · Local Work', exact: true }).click()
   await page.getByLabel('Browser options', { exact: true }).click()

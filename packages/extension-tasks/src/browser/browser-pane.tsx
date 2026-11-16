@@ -856,6 +856,7 @@ function BrowserContent({
     }
     setTabs((previous) => [...previous, tab])
     selectTab(tab)
+    setOptionsOpen(false)
     return tab
   }
   const editing = useRef(false)
@@ -2454,6 +2455,10 @@ function BrowserContent({
           aria-label="Browser settings"
           onCloseAutoFocus={(event) => {
             if (findOpen) event.preventDefault()
+            else if (starterAddressField.current) {
+              event.preventDefault()
+              starterAddressField.current.focus()
+            }
           }}
           className="studio-menu-surface studio-browser-settings z-50 flex max-h-[var(--radix-popover-content-available-height)] w-96 max-w-[calc(100vw-1rem)] flex-col overflow-y-auto border bg-[var(--studio-floating-fill)] text-popover-foreground"
         >
@@ -2489,6 +2494,9 @@ function BrowserContent({
               </div>
             )}
           </div>
+          {(!shared || workspaceControl) && newTabMenu && (
+            <div className="studio-browser-settings-section">{newTabMenu}</div>
+          )}
           {mode === 'remote' && (
             <div className="space-y-2">
               <Button
@@ -3181,7 +3189,6 @@ function BrowserContent({
             </IconButton>
           </>
         )}
-        {newTabMenu}
         {!shared && mode !== 'devices' && (
           <BrowserElementFeedback
             key={`${activeRuntimeId}:${taskId}:${browserKey}:${mode}`}

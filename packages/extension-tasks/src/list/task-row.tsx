@@ -527,13 +527,8 @@ function TaskRowView({
           </button>
         )}
       </div>
-      {!compact && (
-        <ThreadWatchSummary
-          task={task}
-          online={owner.online}
-          runtimeId={owner.runtimeId}
-          includeSpawned={!thread}
-        />
+      {!compact && !thread && (
+        <ThreadWatchSummary task={task} online={owner.online} runtimeId={owner.runtimeId} />
       )}
       {open && !!childCount && (
         <div id={childrenId}>

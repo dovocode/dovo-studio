@@ -1,5 +1,5 @@
 import type { Task, ThreadWatchSummary } from '@dovo/protocol'
-import { decode, randomUUID, snapshotSchema } from '@dovo/protocol'
+import { decode, randomUUID, snapshotSchema, threadChildRows } from '@dovo/protocol'
 import { createTask } from '@dovo/studio-core'
 import { expect, it } from 'vite-plus/test'
 import { collectTasks, taskCollectionKey, type TaskSource } from './task-collection'
@@ -214,6 +214,32 @@ it('deduplicates a paired remote child and keeps unrelated identical IDs and lin
   expect(tree.nodes.get(key('desktop', 'parent'))!.children.map((node) => node.key)).toEqual([
     key('server', 'child'),
   ])
+  expect(
+    threadChildRows(tree.nodes.get(key('desktop', 'parent'))!).map((node) => node.key),
+  ).toEqual([key('server', 'child'), key('server', 'related')])
+})
+
+it('puts linked Bot work behind the subthread disclosure without creating cycles or losing offline facts', () => {
+  const parent = task('parent', {
+    threadWatches: [
+      watch({
+        threadId: 'dory',
+        relation: 'linked',
+        offline: true,
+        snapshot: { ...watch().snapshot!, title: 'Dory', phase: 'completed' },
+      }),
+      watch({ runtimeId: 'local', threadId: 'parent', relation: 'linked' }),
+    ],
+  })
+  const entries = collectTasks([source('desktop', [parent])])
+  const tree = buildThreadTree(entries)
+  const rows = threadChildRows(tree.nodes.get(key('desktop', 'parent'))!)
+  expect(rows).toHaveLength(1)
+  expect(rows[0]).toMatchObject({ title: 'Dory', online: false, phase: 'completed', children: [] })
+  const unchanged = buildThreadTree(entries, tree.nodes)
+  expect(unchanged.nodes.get(key('desktop', 'parent'))).toBe(
+    tree.nodes.get(key('desktop', 'parent')),
+  )
 })
 
 it('retains offline and stopped spawned work and its last known state', () => {

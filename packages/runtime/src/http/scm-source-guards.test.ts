@@ -34,6 +34,52 @@ it('rejects a mismatched explicit project account before reading provider data o
   expect(f.reads).toEqual([])
   expect(f.writes).toEqual([])
 })
+it.each(['forgejo', 'github'] as const)(
+  'accepts the resolved %s account for an unbound project without allowing a different account',
+  async (provider) => {
+    const f = await setup(provider)
+    await f.s.git.command(f.f.directory, [
+      'remote',
+      'add',
+      'origin',
+      provider === 'github'
+        ? 'https://github.com/old/project.git'
+        : 'https://forge.example/old/project.git',
+    ])
+    f.s.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({ ...repo, forge: undefined })),
+    }))
+    const target = { repositoryId: 'repo', connectionId: f.connection.id }
+    const identity = await f.call('source/identity', target)
+    expect(identity.status).toBe(200)
+    const { destination } = decode(forgeSourceIdentitySchema, identity.data)
+    expect(
+      (await f.call('pulls/detail', { ...target, number: 7, section: 'overview' })).status,
+    ).toBe(200)
+    const review = {
+      ...target,
+      number: 7,
+      headSha: sha,
+      action: 'review',
+      event: 'approve',
+      body: 'Retain the review text',
+      expectedDestination: destination,
+    }
+    for (const path of ['source/identity', 'pulls/detail', 'pulls/action'])
+      expect(
+        (await f.call(path, { ...review, connectionId: 'other-account', section: 'overview' }))
+          .status,
+      ).toBe(409)
+    expect(f.writes).toEqual([])
+    expect(f.githubWrites).toEqual([])
+    expect((await f.call('pulls/action', review)).status).toBe(200)
+    const writes = provider === 'github' ? f.githubWrites.map((write) => write.path) : f.writes
+    expect(writes).toHaveLength(1)
+    expect(writes[0]).toContain('/pulls/7/reviews')
+    expect(f.s.store.get().repositories[0].forge).toBeUndefined()
+  },
+)
 async function setup(provider: 'forgejo' | 'github' = 'forgejo') {
   const f = await fixture()
   cleanup.push(f.cleanup)

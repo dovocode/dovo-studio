@@ -39,6 +39,8 @@ export type NestedThread = {
   nativeAgentKey?: string
   nativeAgents?: readonly ThreadNativeAgent[]
   nativeAgentOverflow?: ThreadWatchEntry['nativeAgentOverflow']
+  /** Linked work appears under the disclosure without changing its owning parent or root. */
+  linkedThreads?: readonly NestedThread[]
   needsInput?: boolean
   partial?: boolean
   failureKey?: string
@@ -343,6 +345,28 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         nodes.get(key)!.phase = 'stopping'
     }
   }
+  for (const entry of entries) {
+    const parent = nodes.get(entry.key)!
+    const linked = new Map<string, NestedThread>()
+    for (const watch of entry.task.threadWatches ?? []) {
+      if (watch.relation !== 'linked') continue
+      const fallback = watch.runtimeId === 'local' ? entry.source.runtimeId : watch.runtimeId
+      const identity = watch.snapshot?.runtimeId ?? fallback
+      const key = resolveThreadKey(identity, watch.threadId)
+      if (key === entry.key || parent.children.some((child) => child.key === key)) continue
+      const existing = nodes.get(key)
+      linked.set(key, {
+        ...(existing?.online
+          ? existing
+          : watchedNode(entry, watch, identity === null ? null : resolveIdentity(identity), key)),
+        paused: watch.status === 'stopped' || !!watch.paused,
+        // A reference must not recursively expand the target's own links or reparent its work.
+        children: [],
+        linkedThreads: undefined,
+      })
+    }
+    if (linked.size) parent.linkedThreads = [...linked.values()]
+  }
   const rootKeys = new Map<string, string>()
   for (const key of nodes.keys()) {
     let root = key
@@ -364,6 +388,8 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         node.nativeAgentOverflow = old.nativeAgentOverflow
       if (JSON.stringify(node.nativeAgents) === JSON.stringify(old.nativeAgents))
         node.nativeAgents = old.nativeAgents
+      if (JSON.stringify(node.linkedThreads) === JSON.stringify(old.linkedThreads))
+        node.linkedThreads = old.linkedThreads
       if (
         (Object.keys(node) as (keyof NestedThread)[]).every((key) => Object.is(old[key], node[key]))
       ) {
@@ -519,9 +545,11 @@ export function threadChildRows(
       return {
         ...child,
         nativeAgents: undefined,
+        linkedThreads: undefined,
         children,
       }
     }),
+    ...(thread.linkedThreads ?? []),
     ...(thread.nativeAgents ?? []).map((agent): NestedThread => ({
       key: JSON.stringify([thread.runtimeId, thread.threadId, agent.threadKey ?? agent.key]),
       runtimeId: thread.runtimeId,

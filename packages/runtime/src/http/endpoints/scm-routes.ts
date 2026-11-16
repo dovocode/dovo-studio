@@ -268,7 +268,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
             ),
           )
         if (input.repositoryId && !repo) throw new HttpError(404, 'Repository not found')
-        if (repo && input.connectionId && input.connectionId !== repo.forge?.connectionId)
+        if (repo?.forge && input.connectionId && input.connectionId !== repo.forge.connectionId)
           throw new HttpError(
             409,
             'This PR account does not match the project source. Choose its configured account or open the PR URL with another account.',
@@ -278,7 +278,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(
             input.jiraSourceId
               ? s.forgeWork.sourceIdentityJira(input.jiraSourceId)
-              : s.pulls.sourceIdentity(repo!.path, input.refresh),
+              : s.pulls.sourceIdentity(repo!.path, input.refresh, input.connectionId),
           ),
         )
       }
@@ -466,9 +466,9 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const repo = s.store.get().repositories.find((r) => r.id === input.repositoryId)
         if (
           path.startsWith('/api/scm/pulls/') &&
-          repo &&
+          repo?.forge &&
           input.connectionId &&
-          input.connectionId !== repo.forge?.connectionId
+          input.connectionId !== repo.forge.connectionId
         )
           throw new HttpError(
             409,
@@ -568,6 +568,7 @@ export function scmRoute(request: IncomingMessage, path: string) {
         const readScope =
           input.expectedReaderIdentity !== undefined ||
           input.expectedDestination !== undefined ||
+          input.connectionId !== undefined ||
           input.refresh === true
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
