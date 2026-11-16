@@ -1,0 +1,70 @@
+{
+  "action": "publish",
+  "key": "issue-picker",
+  "title": "Choose issues",
+  "expectedRevision": 0,
+  "messages": [
+    {
+      "version": "1.0",
+      "createSurface": {
+        "surfaceId": "issues",
+        "catalogId": "https://dovo.dev/a2ui/catalog/v1",
+        "components": [
+          { "id": "root", "component": "Column", "children": ["heading", "card", "send"] },
+          {
+            "id": "heading",
+            "component": "Text",
+            "variant": "heading",
+            "text": "Choose the next work"
+          },
+          { "id": "card", "component": "Card", "child": "fields" },
+          {
+            "id": "fields",
+            "component": "Column",
+            "children": ["issues", "instructions", "includeTests"]
+          },
+          {
+            "id": "issues",
+            "component": "ChoicePicker",
+            "label": "Issues",
+            "multiple": true,
+            "required": true,
+            "value": { "@path": "/selected" },
+            "options": [
+              { "value": "123", "label": "Fix reconnect behavior" },
+              { "value": "124", "label": "Improve issue search" }
+            ]
+          },
+          {
+            "id": "instructions",
+            "component": "TextField",
+            "label": "Instructions",
+            "multiline": true,
+            "value": { "@path": "/instructions" }
+          },
+          {
+            "id": "includeTests",
+            "component": "CheckBox",
+            "label": "Include tests",
+            "value": { "@path": "/includeTests" }
+          },
+          {
+            "id": "send",
+            "component": "Button",
+            "label": "Send selection",
+            "action": {
+              "event": {
+                "name": "selectIssues",
+                "context": {
+                  "issues": { "@path": "/selected" },
+                  "instructions": { "@path": "/instructions" }
+                }
+              }
+            }
+          }
+        ],
+        "dataModel": { "selected": [], "instructions": "", "includeTests": true }
+      }
+    }
+  ]
+}

@@ -1,4 +1,9 @@
 import { cp, mkdir } from 'node:fs/promises'
+await mkdir(new URL('../packages/runtime/dist/mcp-apps/', import.meta.url), { recursive: true })
+await cp(
+  new URL('../packages/runtime/src/mcp-apps/a2ui-renderer.json', import.meta.url),
+  new URL('../packages/runtime/dist/mcp-apps/a2ui-renderer.json', import.meta.url),
+)
 const directory = new URL('../packages/runtime/dist/previews/ios-device/', import.meta.url)
 await mkdir(directory, { recursive: true })
 for (const name of ['Cargo.toml', 'Cargo.lock', 'src', 'LICENSE-idevice'])

@@ -160,13 +160,20 @@ it.each([false, true])(
           action: { kind: 'prompt' },
         }).valid,
       ).toBe(false)
+      const a2ui = tools.find((tool) => tool.name === 'a2ui')
+      expect(a2ui).toBeDefined()
+      const a2uiCharacters = JSON.stringify(a2ui).length + 1
+      expect(a2uiCharacters).toBeLessThanOrEqual(2000)
+      expect(a2ui?.description?.length ?? 0).toBeLessThanOrEqual(500)
       const characters = JSON.stringify(tools).length
       const descriptionCharacters = tools.reduce(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 51 : 24)
-      expect(descriptionCharacters).toBeLessThanOrEqual(full ? 11000 : 6000)
+      expect(tools).toHaveLength(full ? 52 : 25)
+      expect(descriptionCharacters - (a2ui?.description?.length ?? 0)).toBeLessThanOrEqual(
+        full ? 11000 : 6000,
+      )
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
       const renameCharacters = JSON.stringify(terminalRename).length + 1
@@ -283,6 +290,7 @@ it.each([false, true])(
       )
       expect(
         characters -
+          a2uiCharacters -
           renameCharacters -
           secureCharacters -
           prepareCharacters -
@@ -294,6 +302,7 @@ it.each([false, true])(
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
+          (a2ui?.description?.length ?? 0) -
           (terminalRename?.description?.length ?? 0) -
           (secureInput?.description?.length ?? 0) -
           (threadPrepare?.description?.length ?? 0) -

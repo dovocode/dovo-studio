@@ -65,6 +65,7 @@ function claudeToolDisposition(run: AgentRun, name: string) {
     name === 'AskUserQuestion' ||
     ([
       'mcp__dovo_task__ask_question',
+      'mcp__dovo_task__a2ui',
       'mcp__dovo_task__todos',
       'mcp__dovo_task__skill_read',
     ].includes(name) &&

@@ -697,6 +697,7 @@ it('keeps read-only providers from sending task terminal or device input', async
       'dovo_help',
       'ask_question',
       'thread_prepare',
+      'a2ui',
       'response_prepare',
       'automation_list',
       'automation_prepare',

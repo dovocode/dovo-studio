@@ -1,0 +1,167 @@
+:root {
+  color-scheme: light;
+  --background: #fff;
+  --foreground: #202124;
+  --border: #d9dce1;
+  --muted: #626975;
+  --accent: #3158cf;
+}
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --background: #191b20;
+  --foreground: #eceef3;
+  --border: #41444d;
+  --muted: #b4bac7;
+  --accent: #a7b9ff;
+}
+* {
+  box-sizing: border-box;
+}
+body {
+  margin: 0;
+  background: var(--background);
+  color: var(--foreground);
+  font:
+    14px/1.5 system-ui,
+    sans-serif;
+}
+main {
+  padding: 16px;
+  max-width: 900px;
+  margin: auto;
+}
+h2,
+p {
+  margin: 0;
+}
+h2 {
+  font-size: 1.2rem;
+}
+p {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.caption {
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 10px;
+}
+.column,
+.list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.row > div {
+  flex: 1 1 160px;
+  min-width: 0;
+}
+.card {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 14px;
+}
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.choices {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  display: grid;
+  gap: 8px;
+}
+.choices legend {
+  margin-bottom: 6px;
+}
+input,
+textarea,
+button {
+  font: inherit;
+}
+input:not([type='checkbox']):not([type='radio']),
+textarea {
+  width: 100%;
+  min-height: 42px;
+  background: var(--background);
+  color: inherit;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px 10px;
+}
+textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+input[type='checkbox'],
+input[type='radio'] {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}
+button {
+  background: var(--accent);
+  color: var(--background);
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 9px 14px;
+  min-height: 42px;
+  cursor: pointer;
+}
+button.secondary {
+  background: transparent;
+  color: var(--foreground);
+  border-color: var(--border);
+}
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+hr {
+  border: 0;
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+[role='alert'] {
+  color: #d44b4b;
+  margin-top: 12px;
+}
+[role='status'] {
+  margin-top: 12px;
+}
+.footer {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+}
+.footer button {
+  font-size: 12px;
+}
+a2ui-react-column,
+a2ui-react-row,
+a2ui-react-list,
+a2ui-react-card,
+a2ui-react-text,
+a2ui-react-textfield,
+a2ui-react-checkbox,
+a2ui-react-choicepicker,
+a2ui-react-button {
+  display: block;
+}

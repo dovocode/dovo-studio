@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./mcp-app-sdk": "./mcp-apps/app-sdk.ts",
     ".": "./src/index.ts",
     "./resource-editors": "./src/resource-editors.ts",
     "./native-tooltip": "./src/native-tooltip.ts",

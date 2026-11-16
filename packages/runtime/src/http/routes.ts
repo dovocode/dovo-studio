@@ -456,6 +456,14 @@ export function route(
         )
         return workflowTool(s, input.taskId, run.runId, input.command)
       }
+      if (method === 'POST' && path === '/api/agent/a2ui') {
+        if (!run) throw new HttpError(403, 'A2UI tools require an active agent run')
+        const input = decode(
+          Schema.Struct({ taskId: Schema.String, command: Schema.Unknown }),
+          yield* serviceResult(body(request, 256 * 1024)),
+        )
+        return yield* serviceResult(s.mcpApps.a2uiCommand(run.taskId, run.runId, input.command))
+      }
       if (method === 'POST' && path === '/api/agent/thread-prepare') {
         if (!run) throw new HttpError(403, 'Thread actions require an active agent run')
         const input = yield* serviceResult(body(request, 64 * 1024))

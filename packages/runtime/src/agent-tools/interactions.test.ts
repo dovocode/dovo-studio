@@ -15,6 +15,7 @@ import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration.js'
 import type { AgentAdapter, AgentRun, AgentSteer } from '../agents/execution/types.js'
+import a2uiExample from '../../../../examples/a2ui/issue-picker.json'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<unknown>> = []
@@ -114,6 +115,30 @@ async function setup(readOnly = false, skills: ManagedSkill[] = [], provider?: A
     })
   return { s, task, execution, runs, gate, steer, client, credential, post, owner }
 }
+
+it('publishes A2UI through the scoped MCP tool and rejects cross-thread or stale requests', async () => {
+  const { client, s, task, post, credential } = await setup()
+  expect((await client.listTools()).tools.map((tool) => tool.name)).toContain('a2ui')
+  const catalog = await client.callTool({ name: 'a2ui', arguments: { action: 'catalog' } })
+  expect(catalog.isError).not.toBe(true)
+  expect(JSON.parse(resultText(catalog))).toMatchObject({ protocolVersion: '1.0' })
+  const published = await client.callTool({ name: 'a2ui', arguments: a2uiExample })
+  expect(published.isError).not.toBe(true)
+  const { id } = decode(mutableStruct({ id: Schema.String }), JSON.parse(resultText(published)))
+  expect(s.mcpApps.read(task.id, id)).toMatchObject({ title: a2uiExample.title, connected: true })
+  const read = await client.callTool({
+    name: 'a2ui',
+    arguments: { action: 'read', key: a2uiExample.key },
+  })
+  expect(read.isError).not.toBe(true)
+  expect(JSON.parse(resultText(read))).toMatchObject({ id, revision: 1 })
+  for (const input of [
+    { taskId: 'other', parentRunId: credential.runId },
+    { taskId: task.id, parentRunId: 'wrong' },
+    { taskId: task.id },
+  ])
+    expect((await post('/api/agent/a2ui', { ...input, command: a2uiExample })).status).toBe(403)
+})
 
 it.each(['live', 'finished', 'declined'] as const)(
   'delivers regular questions through MCP when %s, without duplicate forms or answers',

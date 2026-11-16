@@ -43,6 +43,9 @@ minimumReleaseAgeExclude:
   - effect@4.1.0
 
 overrides:
+  # A2UI's schema generator uses Zod 3. v3.24 avoids the union peer range that
+  # the Zod 4 override below resolves to the host's incompatible schema version.
+  '@a2ui/web_core>zod-to-json-schema': 3.24.6
   # ProseMirror uses only the compatible parse/token API; its declarations need the bundled v15 types.
   prosemirror-markdown>markdown-it: ^15.0.3
   markdown-it@<14.3.3: 14.3.3

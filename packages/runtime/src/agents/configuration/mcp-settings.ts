@@ -47,6 +47,7 @@ export function codexMcpServers(servers: McpServer[]) {
               tools: Object.fromEntries(
                 [
                   'ask_question',
+                  'a2ui',
                   'todos',
                   ...['spawn', 'list', 'answer', 'send', 'read', 'wait', 'cancel'].map(
                     (action) => `subagent_${action}`,

@@ -1,4 +1,5 @@
 import { AppToolViews, appViewTools } from './views.js'
+import { A2uiApps, isA2uiApp } from './a2ui.js'
 import { startPolling } from '@dovo/client-runtime'
 import { runtimeOperation } from '../errors.js'
 import { processEnvironment } from '../process.js'
@@ -90,6 +91,7 @@ const fingerprint = (server: McpServer) =>
   createHash('sha256').update(JSON.stringify(server)).digest('hex')
 /** Owns upstream MCP connections; provider proxies never receive their credentials. */
 export class McpApps {
+  private a2ui: A2uiApps
   private views = new AppToolViews()
   private sessions = new Map<string, Reservation>()
   private resolved = new Map<string, Session>()
@@ -133,6 +135,10 @@ export class McpApps {
     db.exec(
       'CREATE TABLE IF NOT EXISTS mcp_apps (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS mcp_apps_task ON mcp_apps(task_id); CREATE TABLE IF NOT EXISTS mcp_app_actions (id TEXT PRIMARY KEY, input TEXT NOT NULL, state TEXT NOT NULL, result TEXT)',
     )
+    this.a2ui = new A2uiApps(db, store, activity, approvals)
+  }
+  a2uiCommand(taskId: string, runId: string, input: unknown) {
+    return this.a2ui.command(taskId, runId, input)
   }
   proxies(
     taskId: string,
@@ -1050,6 +1056,7 @@ export class McpApps {
   }
   read(taskId: string, id: string): McpApp {
     const { fingerprint: hash, cwd: _cwd, ...app } = this.saved(taskId, id)
+    if (isA2uiApp(app)) return this.a2ui.view(taskId, id)
     try {
       app.connected = fingerprint(this.current(taskId, app.server).server) === hash
     } catch {
@@ -1070,6 +1077,10 @@ export class McpApps {
       send,
       () => {
         authorize()
+        if (isA2uiApp(app)) {
+          if (!this.a2ui.connected(taskId)) throw new HttpError(403, 'A2UI thread is unavailable')
+          return
+        }
         if (fingerprint(this.current(taskId, app.server).server) !== app.fingerprint)
           throw new HttpError(403, 'MCP configuration changed')
       },
@@ -1091,8 +1102,8 @@ export class McpApps {
         this.actions.get(`${taskId}:${id}:${target}`)?.controller.abort()
       return {}
     }
-    const scope = this.current(taskId, app.server)
-    if (fingerprint(scope.server) !== app.fingerprint)
+    const scope = isA2uiApp(app) ? undefined : this.current(taskId, app.server)
+    if (scope && fingerprint(scope.server) !== app.fingerprint)
       throw new HttpError(409, 'This saved app uses an older MCP configuration')
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(requestId))
       throw new HttpError(400, 'Invalid MCP App request identity')
@@ -1132,6 +1143,19 @@ export class McpApps {
     const perform = async () => {
       authorize()
       signal.throwIfAborted()
+      if (!scope)
+        return this.a2ui.action(
+          taskId,
+          id,
+          method,
+          params,
+          signal,
+          authorize,
+          async (messageId, text) => {
+            if (!this.sendMessage) throw new HttpError(503, 'Thread messaging is unavailable')
+            return this.sendMessage(taskId, messageId, text)
+          },
+        )
       if (method === 'ui/update-model-context') {
         if (input.length > 32000) throw new HttpError(413, 'MCP App context is too large')
         this.db

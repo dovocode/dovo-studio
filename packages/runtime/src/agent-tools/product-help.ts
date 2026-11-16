@@ -4,6 +4,7 @@ import { decode, maxValue, minValue, strictStruct } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 
 export const helpDocuments = [
+  'a2ui',
   'bots',
   'bot-learning-and-routines',
   'bot-voice-calls',

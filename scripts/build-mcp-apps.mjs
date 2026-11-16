@@ -1,5 +1,5 @@
 import { build } from 'esbuild'
-import { mkdir, writeFile, rename, rm } from 'node:fs/promises'
+import { mkdir, writeFile, rename, rm, readFile } from 'node:fs/promises'
 import { randomUUID } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 const base = new URL('../packages/studio-ui/mcp-apps/', import.meta.url)
@@ -15,6 +15,7 @@ const publish = async (name, html) => {
     await rm(temporary, { force: true })
   }
 }
+const a2uiStyles = await readFile(new URL('../../a2ui/src/style.css', base), 'utf8')
 const bundle = async (entry) =>
   (
     await build({
@@ -44,4 +45,11 @@ await publish(
     await bundle('host.tsx'),
     "script-src 'unsafe-inline' 'unsafe-eval' http: https:; style-src 'unsafe-inline' http: https:; object-src 'none';",
   ),
+)
+await publish(
+  '../../runtime/src/mcp-apps/a2ui-renderer.json',
+  page(
+    await bundle('../../a2ui/src/app.tsx'),
+    "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none';",
+  ).replace('</style>', `${a2uiStyles}</style>`),
 )
