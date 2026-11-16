@@ -60,8 +60,8 @@ export function reviewRoute(request: IncomingMessage, path: string) {
         return yield* serviceResult(s.pullCodeReviews.save(target, reviewId, version, draft))
       }
       if (path === '/api/review/pull/stop') {
-        const { target, reviewId } = decode(pullCodeReviewStopSchema, input)
-        return yield* serviceResult(s.pullCodeReviews.stop(target, reviewId))
+        const { target, reviewId, stackId } = decode(pullCodeReviewStopSchema, input)
+        return yield* serviceResult(s.pullCodeReviews.stop(target, reviewId, stackId))
       }
       if (path === '/api/review/pull/publish') {
         const { target, reviewId, version, requestId, body } = decode(

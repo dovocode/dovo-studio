@@ -2,7 +2,7 @@ import { modelDisplayName } from './model-display-name.js'
 export { modelDisplayName } from './model-display-name.js'
 import { mutableStruct, mutableArray } from '../shared/schema.js'
 import { Schema, Struct } from 'effect'
-import { agentSchema } from '../workspace.js'
+import { agentSchema, type TaskHarness } from '../workspace.js'
 export const agentDiscoverySchema = agentSchema.mapFields(
   Struct.pick([
     'provider',
@@ -83,6 +83,44 @@ export const modelCatalogSchema = mutableStruct({
 })
 export type AgentDiscovery = Schema.Schema.Type<typeof agentDiscoverySchema>
 export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
+
+/** ACP advertises these settings in the same controls as built-in providers. */
+export function acpModelSetting(option: { id: string; category?: string | null }) {
+  if (option.category === 'model' || (!option.category && option.id === 'model')) return 'model'
+  if (option.category === 'thought_level') return 'reasoning'
+  return undefined
+}
+
+/** Clear older ACP overrides when the user chooses a model or reasoning level. */
+export function changeModelSettings<T extends TaskHarness>(
+  harness: T,
+  selection: { model: string } | { reasoning: string },
+  catalog: ModelCatalog | null | undefined,
+): T {
+  const model = 'model' in selection ? selection.model : harness.model
+  const changedModel = model !== harness.model
+  const reasoning =
+    'reasoning' in selection ? selection.reasoning : changedModel ? '' : harness.reasoning
+  const config = harness.acpConfig
+  const primary = catalog?.acp?.configOptions.filter((option) => {
+    const setting = acpModelSetting(option)
+    return setting === 'reasoning' || (setting === 'model' && 'model' in selection)
+  })
+  return {
+    ...harness,
+    model,
+    reasoning,
+    serviceTier: changedModel ? undefined : harness.serviceTier,
+    cyberAccessProgram: changedModel ? undefined : harness.cyberAccessProgram,
+    ...(harness.provider === 'acp' && config && primary?.length
+      ? {
+          acpConfig: Object.fromEntries(
+            Object.entries(config).filter(([id]) => !primary.some((option) => option.id === id)),
+          ),
+        }
+      : {}),
+  }
+}
 
 /** Model pickers show concrete models, while saved provider defaults remain valid. */
 export function isNamedModelId(id: string) {

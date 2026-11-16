@@ -126,6 +126,7 @@ function App(){const[state,setState]=useState({page:'create',tab:undefined,fragm
     '@dovo/protocol': `${root}/packages/protocol/src/index.ts`,
     '@dovo/client-runtime': `${root}/packages/client-runtime/src/index.ts`,
     '@dovo/studio-core': `${root}/packages/studio-core/src`,
+    '@dovo/studio-core/pull-code-review': `${root}/packages/studio-core/src/scm/use-pull-code-review.ts`,
     '@dovo/studio-core/repository-open': `${root}/packages/studio-core/src/repository-open.ts`,
   },
   plugins: [

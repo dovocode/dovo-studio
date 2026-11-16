@@ -235,8 +235,13 @@ try {
   await page.waitForFunction(() => !window.reader.readConnected && !window.list.connected)
   assert.equal(await page.evaluate(() => window.reader.detail.stale), true)
   assert.equal(await page.evaluate(() => window.list.pages[0].stale), true)
-  for (const name of ['Refresh PR', 'Start task', 'Comment', 'More PRs'])
+  for (const name of ['Refresh PR', 'Comment', 'More PRs'])
     assert.equal(await page.getByRole('button', { name, exact: true }).isEnabled(), false)
+  // Other paired computers remain available even when the PR's owner is offline.
+  assert.equal(
+    await page.getByRole('button', { name: 'Start task', exact: true }).isEnabled(),
+    true,
+  )
   await page.evaluate(() => window.setMounted(false))
   await page.waitForFunction(() => !document.querySelector('header'))
   await page.evaluate(() => window.setMounted(true))

@@ -18,6 +18,7 @@ import { useEffect, useLayoutEffect, useRef } from 'react'
 import { usePullDetail } from './use-pull-detail'
 import {
   useWorkspace,
+  useStudioHost,
   pullState,
   pullChecks,
   pullDetailChecks,
@@ -116,6 +117,7 @@ function PullDetailContent({
   linkedThread,
 }: PullDetailProps) {
   const uiText = useInterfaceText()
+  const host = useStudioHost()
 
   const { connected, workspace, snapshot, activeRuntimeId } = useWorkspace()
   const repository = workspace.repositories.find((repo) => repo.id === repositoryId)
@@ -736,6 +738,15 @@ function PullDetailContent({
                   onAsk={(selection) => setAsking({ selection })}
                   onStatus={setReviewStatus}
                   onRefresh={changed}
+                  onOpenStackReview={(member, runtimeId) => {
+                    if (
+                      !host.openPullLink?.(member.url, {
+                        runtimeId,
+                        repositoryId: member.target.repositoryId,
+                      })
+                    )
+                      selectPull(member.target.number)
+                  }}
                 />
               </section>
             )}

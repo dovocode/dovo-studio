@@ -103,6 +103,50 @@ export const pullCodeReviewTargetSchema = strictStruct({
   expectedDestination: forgeIdentityTokenSchema,
 })
 export type PullCodeReviewTarget = typeof pullCodeReviewTargetSchema.Type
+const pullReviewStackMemberSchema = mutableStruct({
+  target: pullCodeReviewTargetSchema,
+  title: Schema.String,
+  url: Schema.String,
+  headSha: id,
+  baseSha: id,
+  parentNumber: Schema.optional(Schema.Int),
+  requestId: id,
+  reviewId: Schema.optional(id),
+  status: Schema.Literals(['queued', 'running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  findings: Schema.optional(version),
+  suppliedFiles: Schema.optional(version),
+  totalFiles: Schema.optional(version),
+  error: Schema.optional(Schema.String),
+})
+export const pullReviewStackSchema = mutableStruct({
+  id,
+  sequence: version.pipe(Schema.withDecodingDefaultType(Effect.sync(() => 0))),
+  requestId: id,
+  fingerprint: Schema.String,
+  destination: Schema.String,
+  readerIdentity: Schema.String,
+  rootNumber: Schema.Int,
+  status: Schema.Literals(['running', 'completed', 'failed', 'cancelled', 'interrupted']),
+  createdAt: Schema.String,
+  finishedAt: Schema.optional(Schema.String),
+  members: maxValue(mutableArray(pullReviewStackMemberSchema), 100),
+})
+export type PullReviewStack = typeof pullReviewStackSchema.Type
+export const pullReviewStackContextSchema = mutableStruct({
+  id,
+  rootNumber: Schema.Int,
+  readerIdentity: Schema.String,
+  members: mutableArray(
+    mutableStruct({
+      number: Schema.Int,
+      title: Schema.String,
+      url: Schema.String,
+      parentNumber: Schema.optional(Schema.Int),
+      headSha: Schema.String,
+      baseSha: Schema.String,
+    }),
+  ),
+})
 const findingFields = {
   path: codeFindingSchema.fields.path,
   line: codeFindingSchema.fields.line,
@@ -137,6 +181,7 @@ export type PullCodeReviewDraft = typeof pullCodeReviewDraftSchema.Type
 export const pullCodeReviewSchema = mutableStruct({
   id,
   requestId: id,
+  stack: Schema.optional(pullReviewStackContextSchema),
   remainingFrom: Schema.optional(id),
   revision: Schema.String,
   version,
@@ -253,6 +298,7 @@ export const pullReviewerStatusLabels: Record<
 }
 export const pullCodeReviewReportSchema = mutableStruct({
   reviews: mutableArray(pullCodeReviewSchema),
+  stacks: Schema.optional(mutableArray(pullReviewStackSchema)),
   selection: Schema.optional(titleGenerationSettingsSchema),
   reviewers: Schema.optional(reviewerSelections),
   depth: Schema.optional(pullReviewDepthSchema),
@@ -270,10 +316,12 @@ export const pullCodeReviewStartSchema = strictStruct({
   depth: Schema.optional(pullReviewDepthSchema),
   runChecks: Schema.optional(Schema.Boolean),
   remainingFrom: Schema.optional(id),
+  fullStack: Schema.optional(Schema.Boolean),
 })
 export const pullCodeReviewStopSchema = strictStruct({
   target: pullCodeReviewTargetSchema,
   reviewId: id,
+  stackId: Schema.optional(id),
 })
 export const pullCodeReviewSaveSchema = strictStruct({
   target: pullCodeReviewTargetSchema,
@@ -319,7 +367,7 @@ export const pullReviewCoverageLabels: Record<PullCodeReview['coverage'][number]
     'too-large': 'Patch exceeds review limit',
     partial: 'Incomplete forge patch',
     unavailable: 'No patch available',
-    excluded: 'Generated, vendored or binary',
+    excluded: 'Excluded file',
     'previous-pass': 'Supplied in an earlier pass',
     failed: 'Review did not finish',
   }

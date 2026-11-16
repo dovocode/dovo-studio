@@ -4462,7 +4462,17 @@
     "Preparing review…": "Preparing review…",
     "Combining reviewer findings…": "Combining reviewer findings…",
     "Running project checks…": "Running project checks…",
-    "Review progress": "Review progress"
+    "Review progress": "Review progress",
+    "Review scope": "Review scope",
+    "This PR": "This PR",
+    "Full stack · {value0} PRs": "Full stack · {value0} PRs",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Review each PR in dependency order. Findings and drafts stay with their source PR.",
+    "Stack review": "Stack review",
+    "Stop stack review": "Stop stack review",
+    "Open review for PR #{value0}": "Open review for PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch supplied: {value0}/{value1} · {value2} findings",
+    "Open this repository as a project on this computer first.": "Open this repository as a project on this computer first.",
+    "Excluded file": "Excluded file"
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8927,7 +8937,17 @@
     "Preparing review…": "Beoordeling voorbereiden…",
     "Combining reviewer findings…": "Bevindingen van beoordelaars samenvoegen…",
     "Running project checks…": "Projectcontroles uitvoeren…",
-    "Review progress": "Voortgang van de beoordeling"
+    "Review progress": "Voortgang van de beoordeling",
+    "Review scope": "Reviewbereik",
+    "This PR": "Deze PR",
+    "Full stack · {value0} PRs": "Volledige stack · {value0} PR's",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Review elke PR in afhankelijkheidsvolgorde. Bevindingen en concepten blijven bij hun bron-PR.",
+    "Stack review": "Stackreview",
+    "Stop stack review": "Stackreview stoppen",
+    "Open review for PR #{value0}": "Review van PR #{value0} openen",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch aangeleverd: {value0}/{value1} · {value2} bevindingen",
+    "Open this repository as a project on this computer first.": "Open deze repository eerst als project op deze computer.",
+    "Excluded file": "Uitgesloten bestand"
   },
   "de": {
     "Settings": "Einstellungen",
@@ -13392,7 +13412,17 @@
     "Preparing review…": "Prüfung wird vorbereitet…",
     "Combining reviewer findings…": "Ergebnisse der Prüfer werden zusammengeführt…",
     "Running project checks…": "Projektprüfungen werden ausgeführt…",
-    "Review progress": "Prüffortschritt"
+    "Review progress": "Prüffortschritt",
+    "Review scope": "Reviewumfang",
+    "This PR": "Dieser PR",
+    "Full stack · {value0} PRs": "Gesamter Stack · {value0} PRs",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Jeden PR in Abhängigkeitsreihenfolge prüfen. Befunde und Entwürfe bleiben beim jeweiligen PR.",
+    "Stack review": "Stack-Review",
+    "Stop stack review": "Stack-Review stoppen",
+    "Open review for PR #{value0}": "Review für PR #{value0} öffnen",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch bereitgestellt: {value0}/{value1} · {value2} Befunde",
+    "Open this repository as a project on this computer first.": "Öffne dieses Repository zuerst als Projekt auf diesem Computer.",
+    "Excluded file": "Ausgeschlossene Datei"
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17857,7 +17887,17 @@
     "Preparing review…": "Προετοιμασία ελέγχου…",
     "Combining reviewer findings…": "Συνδυασμός ευρημάτων ελεγκτών…",
     "Running project checks…": "Εκτέλεση ελέγχων έργου…",
-    "Review progress": "Πρόοδος ελέγχου"
+    "Review progress": "Πρόοδος ελέγχου",
+    "Review scope": "Εύρος ελέγχου",
+    "This PR": "Αυτό το PR",
+    "Full stack · {value0} PRs": "Πλήρης στοίβα · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Έλεγχος κάθε PR με σειρά εξαρτήσεων. Τα ευρήματα και τα πρόχειρα παραμένουν στο αρχικό PR.",
+    "Stack review": "Έλεγχος στοίβας",
+    "Stop stack review": "Διακοπή ελέγχου στοίβας",
+    "Open review for PR #{value0}": "Άνοιγμα ελέγχου για PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Παρέχεται patch: {value0}/{value1} · {value2} ευρήματα",
+    "Open this repository as a project on this computer first.": "Ανοίξτε πρώτα αυτό το αποθετήριο ως έργο σε αυτόν τον υπολογιστή.",
+    "Excluded file": "Εξαιρούμενο αρχείο"
   },
   "it": {
     "Settings": "Impostazioni",
@@ -22322,7 +22362,17 @@
     "Preparing review…": "Preparazione della revisione…",
     "Combining reviewer findings…": "Combinazione dei risultati dei revisori…",
     "Running project checks…": "Esecuzione dei controlli del progetto…",
-    "Review progress": "Avanzamento della revisione"
+    "Review progress": "Avanzamento della revisione",
+    "Review scope": "Ambito della revisione",
+    "This PR": "Questo PR",
+    "Full stack · {value0} PRs": "Stack completo · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Esamina ogni PR in ordine di dipendenza. Risultati e bozze restano nel PR di origine.",
+    "Stack review": "Revisione dello stack",
+    "Stop stack review": "Interrompi revisione dello stack",
+    "Open review for PR #{value0}": "Apri revisione del PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fornita: {value0}/{value1} · {value2} risultati",
+    "Open this repository as a project on this computer first.": "Apri prima questo repository come progetto su questo computer.",
+    "Excluded file": "File escluso"
   },
   "es": {
     "Settings": "Ajustes",
@@ -26787,7 +26837,17 @@
     "Preparing review…": "Preparando revisión…",
     "Combining reviewer findings…": "Combinando hallazgos de los revisores…",
     "Running project checks…": "Ejecutando comprobaciones del proyecto…",
-    "Review progress": "Progreso de la revisión"
+    "Review progress": "Progreso de la revisión",
+    "Review scope": "Alcance de la revisión",
+    "This PR": "Este PR",
+    "Full stack · {value0} PRs": "Stack completo · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Revisa cada PR en orden de dependencias. Los hallazgos y borradores permanecen en su PR de origen.",
+    "Stack review": "Revisión del stack",
+    "Stop stack review": "Detener revisión del stack",
+    "Open review for PR #{value0}": "Abrir revisión del PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Parche proporcionado: {value0}/{value1} · {value2} hallazgos",
+    "Open this repository as a project on this computer first.": "Primero abre este repositorio como proyecto en este equipo.",
+    "Excluded file": "Archivo excluido"
   },
   "fr": {
     "Settings": "Paramètres",
@@ -31252,7 +31312,17 @@
     "Preparing review…": "Préparation de la revue…",
     "Combining reviewer findings…": "Regroupement des résultats des réviseurs…",
     "Running project checks…": "Exécution des vérifications du projet…",
-    "Review progress": "Progression de la revue"
+    "Review progress": "Progression de la revue",
+    "Review scope": "Portée de la revue",
+    "This PR": "Cette PR",
+    "Full stack · {value0} PRs": "Pile complète · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Examiner chaque PR dans l’ordre des dépendances. Les résultats et brouillons restent dans leur PR source.",
+    "Stack review": "Revue de la pile",
+    "Stop stack review": "Arrêter la revue de la pile",
+    "Open review for PR #{value0}": "Ouvrir la revue de la PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fourni : {value0}/{value1} · {value2} résultats",
+    "Open this repository as a project on this computer first.": "Ouvrez d’abord ce dépôt comme projet sur cet ordinateur.",
+    "Excluded file": "Fichier exclu"
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -35717,7 +35787,17 @@
     "Preparing review…": "Przygotowywanie przeglądu…",
     "Combining reviewer findings…": "Łączenie ustaleń recenzentów…",
     "Running project checks…": "Uruchamianie kontroli projektu…",
-    "Review progress": "Postęp przeglądu"
+    "Review progress": "Postęp przeglądu",
+    "Review scope": "Zakres przeglądu",
+    "This PR": "Ten PR",
+    "Full stack · {value0} PRs": "Cały stos · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Sprawdź każdy PR w kolejności zależności. Wyniki i wersje robocze pozostają przy źródłowym PR.",
+    "Stack review": "Przegląd stosu",
+    "Stop stack review": "Zatrzymaj przegląd stosu",
+    "Open review for PR #{value0}": "Otwórz przegląd PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Dostarczona łatka: {value0}/{value1} · {value2} wyników",
+    "Open this repository as a project on this computer first.": "Najpierw otwórz to repozytorium jako projekt na tym komputerze.",
+    "Excluded file": "Wykluczony plik"
   },
   "pt": {
     "Settings": "Definições",
@@ -40182,7 +40262,17 @@
     "Preparing review…": "A preparar a revisão…",
     "Combining reviewer findings…": "A combinar os resultados dos revisores…",
     "Running project checks…": "A executar verificações do projeto…",
-    "Review progress": "Progresso da revisão"
+    "Review progress": "Progresso da revisão",
+    "Review scope": "Âmbito da revisão",
+    "This PR": "Este PR",
+    "Full stack · {value0} PRs": "Stack completo · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Rever cada PR pela ordem das dependências. Os resultados e rascunhos ficam no PR de origem.",
+    "Stack review": "Revisão do stack",
+    "Stop stack review": "Parar revisão do stack",
+    "Open review for PR #{value0}": "Abrir revisão do PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch fornecido: {value0}/{value1} · {value2} resultados",
+    "Open this repository as a project on this computer first.": "Primeiro abra este repositório como projeto neste computador.",
+    "Excluded file": "Ficheiro excluído"
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -44647,7 +44737,17 @@
     "Preparing review…": "İnceleme hazırlanıyor…",
     "Combining reviewer findings…": "İnceleyici bulguları birleştiriliyor…",
     "Running project checks…": "Proje kontrolleri çalıştırılıyor…",
-    "Review progress": "İnceleme ilerlemesi"
+    "Review progress": "İnceleme ilerlemesi",
+    "Review scope": "İnceleme kapsamı",
+    "This PR": "Bu PR",
+    "Full stack · {value0} PRs": "Tüm yığın · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Her PR bağımlılık sırasıyla incelenir. Bulgular ve taslaklar kaynak PR içinde kalır.",
+    "Stack review": "Yığın incelemesi",
+    "Stop stack review": "Yığın incelemesini durdur",
+    "Open review for PR #{value0}": "PR #{value0} incelemesini aç",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Yama sağlandı: {value0}/{value1} · {value2} bulgu",
+    "Open this repository as a project on this computer first.": "Önce bu depoyu bu bilgisayarda proje olarak açın.",
+    "Excluded file": "Hariç tutulan dosya"
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -49112,7 +49212,17 @@
     "Preparing review…": "جارٍ تحضير المراجعة…",
     "Combining reviewer findings…": "جارٍ دمج نتائج المراجعين…",
     "Running project checks…": "جارٍ تشغيل فحوصات المشروع…",
-    "Review progress": "تقدم المراجعة"
+    "Review progress": "تقدم المراجعة",
+    "Review scope": "نطاق المراجعة",
+    "This PR": "طلب الدمج هذا",
+    "Full stack · {value0} PRs": "المكدس الكامل · {value0} طلبات دمج",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "راجع كل طلب دمج بترتيب التبعيات. تبقى النتائج والمسودات مع طلب الدمج الأصلي.",
+    "Stack review": "مراجعة المكدس",
+    "Stop stack review": "إيقاف مراجعة المكدس",
+    "Open review for PR #{value0}": "فتح مراجعة طلب الدمج #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "التصحيح المتاح: {value0}/{value1} · {value2} نتائج",
+    "Open this repository as a project on this computer first.": "افتح هذا المستودع أولاً كمشروع على هذا الكمبيوتر.",
+    "Excluded file": "ملف مستبعد"
   },
   "bg": {
     "Settings": "Настройки",
@@ -53577,7 +53687,17 @@
     "Preparing review…": "Подготовка на прегледа…",
     "Combining reviewer findings…": "Обединяване на констатациите на рецензентите…",
     "Running project checks…": "Изпълнение на проверки на проекта…",
-    "Review progress": "Напредък на прегледа"
+    "Review progress": "Напредък на прегледа",
+    "Review scope": "Обхват на прегледа",
+    "This PR": "Този PR",
+    "Full stack · {value0} PRs": "Целият стек · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Преглед на всеки PR по реда на зависимостите. Констатациите и черновите остават в изходния PR.",
+    "Stack review": "Преглед на стека",
+    "Stop stack review": "Спиране на прегледа на стека",
+    "Open review for PR #{value0}": "Отваряне на прегледа за PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Предоставена кръпка: {value0}/{value1} · {value2} констатации",
+    "Open this repository as a project on this computer first.": "Първо отворете това хранилище като проект на този компютър.",
+    "Excluded file": "Изключен файл"
   },
   "zh": {
     "Settings": "设置",
@@ -58042,7 +58162,17 @@
     "Preparing review…": "正在准备审查…",
     "Combining reviewer findings…": "正在合并审查者的发现…",
     "Running project checks…": "正在运行项目检查…",
-    "Review progress": "审查进度"
+    "Review progress": "审查进度",
+    "Review scope": "审查范围",
+    "This PR": "当前 PR",
+    "Full stack · {value0} PRs": "完整堆栈 · {value0} 个 PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "按依赖顺序审查每个 PR。发现的问题和草稿保留在各自的源 PR 中。",
+    "Stack review": "堆栈审查",
+    "Stop stack review": "停止堆栈审查",
+    "Open review for PR #{value0}": "打开 PR #{value0} 的审查",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "已提供补丁：{value0}/{value1} · {value2} 个问题",
+    "Open this repository as a project on this computer first.": "请先在此计算机上将此仓库作为项目打开。",
+    "Excluded file": "已排除的文件"
   },
   "hr": {
     "Settings": "Postavke",
@@ -62507,7 +62637,17 @@
     "Preparing review…": "Priprema pregleda…",
     "Combining reviewer findings…": "Spajanje nalaza pregledavatelja…",
     "Running project checks…": "Pokretanje provjera projekta…",
-    "Review progress": "Napredak pregleda"
+    "Review progress": "Napredak pregleda",
+    "Review scope": "Opseg pregleda",
+    "This PR": "Ovaj PR",
+    "Full stack · {value0} PRs": "Cijeli stog · {value0} PR-ova",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Pregledajte svaki PR redoslijedom ovisnosti. Nalazi i skice ostaju uz izvorni PR.",
+    "Stack review": "Pregled stoga",
+    "Stop stack review": "Zaustavi pregled stoga",
+    "Open review for PR #{value0}": "Otvori pregled PR-a #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Dostavljena zakrpa: {value0}/{value1} · {value2} nalaza",
+    "Open this repository as a project on this computer first.": "Najprije otvorite ovaj repozitorij kao projekt na ovom računalu.",
+    "Excluded file": "Izuzeta datoteka"
   },
   "cs": {
     "Settings": "Nastavení",
@@ -66972,7 +67112,17 @@
     "Preparing review…": "Příprava kontroly…",
     "Combining reviewer findings…": "Slučování zjištění recenzentů…",
     "Running project checks…": "Spouštění kontrol projektu…",
-    "Review progress": "Průběh kontroly"
+    "Review progress": "Průběh kontroly",
+    "Review scope": "Rozsah kontroly",
+    "This PR": "Tento PR",
+    "Full stack · {value0} PRs": "Celý stack · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Zkontrolovat každý PR v pořadí závislostí. Zjištění a koncepty zůstávají u původního PR.",
+    "Stack review": "Kontrola stacku",
+    "Stop stack review": "Zastavit kontrolu stacku",
+    "Open review for PR #{value0}": "Otevřít kontrolu PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Dodaná záplata: {value0}/{value1} · {value2} zjištění",
+    "Open this repository as a project on this computer first.": "Nejprve otevřete tento repozitář jako projekt na tomto počítači.",
+    "Excluded file": "Vyloučený soubor"
   },
   "da": {
     "Settings": "Indstillinger",
@@ -71437,7 +71587,17 @@
     "Preparing review…": "Forbereder gennemgang…",
     "Combining reviewer findings…": "Samler resultater fra gennemgangene…",
     "Running project checks…": "Kører projektkontroller…",
-    "Review progress": "Status for gennemgang"
+    "Review progress": "Status for gennemgang",
+    "Review scope": "Gennemgangens omfang",
+    "This PR": "Denne PR",
+    "Full stack · {value0} PRs": "Hele stakken · {value0} PR’er",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Gennemgå hver PR i afhængighedsrækkefølge. Fund og kladder bliver ved deres kilde-PR.",
+    "Stack review": "Gennemgang af stak",
+    "Stop stack review": "Stop gennemgang af stak",
+    "Open review for PR #{value0}": "Åbn gennemgang af PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch leveret: {value0}/{value1} · {value2} fund",
+    "Open this repository as a project on this computer first.": "Åbn først dette repository som et projekt på denne computer.",
+    "Excluded file": "Udeladt fil"
   },
   "et": {
     "Settings": "Seaded",
@@ -75902,7 +76062,17 @@
     "Preparing review…": "Ülevaatuse ettevalmistamine…",
     "Combining reviewer findings…": "Ülevaatajate leidude ühendamine…",
     "Running project checks…": "Projekti kontrollide käivitamine…",
-    "Review progress": "Ülevaatuse edenemine"
+    "Review progress": "Ülevaatuse edenemine",
+    "Review scope": "Ülevaatuse ulatus",
+    "This PR": "See PR",
+    "Full stack · {value0} PRs": "Kogu virn · {value0} PR-i",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Vaata iga PR üle sõltuvuste järjekorras. Leiud ja mustandid jäävad algse PR-i juurde.",
+    "Stack review": "Virna ülevaatus",
+    "Stop stack review": "Peata virna ülevaatus",
+    "Open review for PR #{value0}": "Ava PR #{value0} ülevaatus",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Paik esitatud: {value0}/{value1} · {value2} leidu",
+    "Open this repository as a project on this computer first.": "Ava see hoidla kõigepealt selle arvuti projektina.",
+    "Excluded file": "Välistatud fail"
   },
   "fi": {
     "Settings": "Asetukset",
@@ -80367,7 +80537,17 @@
     "Preparing review…": "Valmistellaan tarkastusta…",
     "Combining reviewer findings…": "Yhdistetään tarkastajien löydöksiä…",
     "Running project checks…": "Suoritetaan projektin tarkistuksia…",
-    "Review progress": "Tarkastuksen edistyminen"
+    "Review progress": "Tarkastuksen edistyminen",
+    "Review scope": "Tarkastuksen laajuus",
+    "This PR": "Tämä PR",
+    "Full stack · {value0} PRs": "Koko pino · {value0} PR:ää",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Tarkasta kukin PR riippuvuuksien mukaisessa järjestyksessä. Havainnot ja luonnokset jäävät lähde-PR:ään.",
+    "Stack review": "Pinon tarkastus",
+    "Stop stack review": "Pysäytä pinon tarkastus",
+    "Open review for PR #{value0}": "Avaa PR:n #{value0} tarkastus",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Korjaus toimitettu: {value0}/{value1} · {value2} havaintoa",
+    "Open this repository as a project on this computer first.": "Avaa tämä tietovarasto ensin projektina tällä tietokoneella.",
+    "Excluded file": "Ohitettu tiedosto"
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -84832,7 +85012,17 @@
     "Preparing review…": "समीक्षा की तैयारी हो रही है…",
     "Combining reviewer findings…": "समीक्षकों के निष्कर्ष जोड़े जा रहे हैं…",
     "Running project checks…": "प्रोजेक्ट की जाँच चलाई जा रही है…",
-    "Review progress": "समीक्षा की प्रगति"
+    "Review progress": "समीक्षा की प्रगति",
+    "Review scope": "समीक्षा का दायरा",
+    "This PR": "यह PR",
+    "Full stack · {value0} PRs": "पूरा स्टैक · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "हर PR की निर्भरता क्रम में समीक्षा करें। निष्कर्ष और ड्राफ्ट अपने मूल PR में रहते हैं।",
+    "Stack review": "स्टैक समीक्षा",
+    "Stop stack review": "स्टैक समीक्षा रोकें",
+    "Open review for PR #{value0}": "PR #{value0} की समीक्षा खोलें",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "दिया गया पैच: {value0}/{value1} · {value2} निष्कर्ष",
+    "Open this repository as a project on this computer first.": "पहले इस रिपॉज़िटरी को इस कंप्यूटर पर प्रोजेक्ट के रूप में खोलें।",
+    "Excluded file": "छोड़ी गई फ़ाइल"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -89297,7 +89487,17 @@
     "Preparing review…": "Ellenőrzés előkészítése…",
     "Combining reviewer findings…": "Ellenőrzők megállapításainak egyesítése…",
     "Running project checks…": "Projektellenőrzések futtatása…",
-    "Review progress": "Ellenőrzés folyamata"
+    "Review progress": "Ellenőrzés folyamata",
+    "Review scope": "Az ellenőrzés hatóköre",
+    "This PR": "Ez a PR",
+    "Full stack · {value0} PRs": "Teljes verem · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Minden PR ellenőrzése függőségi sorrendben. A találatok és piszkozatok a forrás PR-nél maradnak.",
+    "Stack review": "Verem ellenőrzése",
+    "Stop stack review": "Verem ellenőrzésének leállítása",
+    "Open review for PR #{value0}": "PR #{value0} ellenőrzésének megnyitása",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Átadott javítás: {value0}/{value1} · {value2} találat",
+    "Open this repository as a project on this computer first.": "Először nyissa meg ezt a tárolót projektként ezen a számítógépen.",
+    "Excluded file": "Kizárt fájl"
   },
   "ja": {
     "Settings": "設定",
@@ -93762,7 +93962,17 @@
     "Preparing review…": "レビューを準備中…",
     "Combining reviewer findings…": "レビュー担当の指摘を統合中…",
     "Running project checks…": "プロジェクトのチェックを実行中…",
-    "Review progress": "レビューの進捗"
+    "Review progress": "レビューの進捗",
+    "Review scope": "レビュー範囲",
+    "This PR": "この PR",
+    "Full stack · {value0} PRs": "スタック全体 · {value0} 件の PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "依存関係の順に各 PR をレビューします。指摘と下書きは元の PR に保持されます。",
+    "Stack review": "スタックレビュー",
+    "Stop stack review": "スタックレビューを停止",
+    "Open review for PR #{value0}": "PR #{value0} のレビューを開く",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "提供済みパッチ: {value0}/{value1} · {value2} 件の指摘",
+    "Open this repository as a project on this computer first.": "まず、このコンピューターでこのリポジトリをプロジェクトとして開いてください。",
+    "Excluded file": "除外されたファイル"
   },
   "ko": {
     "Settings": "설정",
@@ -98227,7 +98437,17 @@
     "Preparing review…": "검토 준비 중…",
     "Combining reviewer findings…": "검토자들의 발견 사항 통합 중…",
     "Running project checks…": "프로젝트 검사 실행 중…",
-    "Review progress": "검토 진행 상황"
+    "Review progress": "검토 진행 상황",
+    "Review scope": "검토 범위",
+    "This PR": "이 PR",
+    "Full stack · {value0} PRs": "전체 스택 · PR {value0}개",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "의존성 순서로 각 PR을 검토합니다. 발견 사항과 초안은 원본 PR에 유지됩니다.",
+    "Stack review": "스택 검토",
+    "Stop stack review": "스택 검토 중지",
+    "Open review for PR #{value0}": "PR #{value0} 검토 열기",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "제공된 패치: {value0}/{value1} · 발견 사항 {value2}개",
+    "Open this repository as a project on this computer first.": "먼저 이 컴퓨터에서 이 저장소를 프로젝트로 여세요.",
+    "Excluded file": "제외된 파일"
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -102692,7 +102912,17 @@
     "Preparing review…": "Forbereder gjennomgang…",
     "Combining reviewer findings…": "Samler funn fra gjennomgangene…",
     "Running project checks…": "Kjører prosjektkontroller…",
-    "Review progress": "Fremdrift for gjennomgang"
+    "Review progress": "Fremdrift for gjennomgang",
+    "Review scope": "Omfang for gjennomgang",
+    "This PR": "Denne PR-en",
+    "Full stack · {value0} PRs": "Hele stakken · {value0} PR-er",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Gjennomgå hver PR i avhengighetsrekkefølge. Funn og utkast blir ved sin kilde-PR.",
+    "Stack review": "Gjennomgang av stakk",
+    "Stop stack review": "Stopp gjennomgang av stakk",
+    "Open review for PR #{value0}": "Åpne gjennomgang av PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch levert: {value0}/{value1} · {value2} funn",
+    "Open this repository as a project on this computer first.": "Åpne først dette repoet som et prosjekt på denne datamaskinen.",
+    "Excluded file": "Utelatt fil"
   },
   "ro": {
     "Settings": "Setări",
@@ -107157,7 +107387,17 @@
     "Preparing review…": "Se pregătește revizuirea…",
     "Combining reviewer findings…": "Se combină constatările revizorilor…",
     "Running project checks…": "Se execută verificările proiectului…",
-    "Review progress": "Progresul revizuirii"
+    "Review progress": "Progresul revizuirii",
+    "Review scope": "Domeniul revizuirii",
+    "This PR": "Acest PR",
+    "Full stack · {value0} PRs": "Stiva completă · {value0} PR-uri",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Revizuiește fiecare PR în ordinea dependențelor. Constatările și schițele rămân la PR-ul sursă.",
+    "Stack review": "Revizuirea stivei",
+    "Stop stack review": "Oprește revizuirea stivei",
+    "Open review for PR #{value0}": "Deschide revizuirea PR-ului #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch furnizat: {value0}/{value1} · {value2} constatări",
+    "Open this repository as a project on this computer first.": "Deschide mai întâi acest depozit ca proiect pe acest computer.",
+    "Excluded file": "Fișier exclus"
   },
   "ru": {
     "Settings": "Настройки",
@@ -111622,7 +111862,17 @@
     "Preparing review…": "Подготовка проверки…",
     "Combining reviewer findings…": "Объединение замечаний рецензентов…",
     "Running project checks…": "Выполнение проверок проекта…",
-    "Review progress": "Ход проверки"
+    "Review progress": "Ход проверки",
+    "Review scope": "Область проверки",
+    "This PR": "Этот PR",
+    "Full stack · {value0} PRs": "Весь стек · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Проверять каждый PR в порядке зависимостей. Замечания и черновики остаются в исходном PR.",
+    "Stack review": "Проверка стека",
+    "Stop stack review": "Остановить проверку стека",
+    "Open review for PR #{value0}": "Открыть проверку PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Патч передан: {value0}/{value1} · {value2} замечаний",
+    "Open this repository as a project on this computer first.": "Сначала откройте этот репозиторий как проект на этом компьютере.",
+    "Excluded file": "Исключённый файл"
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -116087,7 +116337,17 @@
     "Preparing review…": "Príprava kontroly…",
     "Combining reviewer findings…": "Zlučovanie zistení recenzentov…",
     "Running project checks…": "Spúšťanie kontrol projektu…",
-    "Review progress": "Priebeh kontroly"
+    "Review progress": "Priebeh kontroly",
+    "Review scope": "Rozsah kontroly",
+    "This PR": "Tento PR",
+    "Full stack · {value0} PRs": "Celý stack · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Skontrolovať každý PR v poradí závislostí. Zistenia a koncepty zostávajú pri pôvodnom PR.",
+    "Stack review": "Kontrola stacku",
+    "Stop stack review": "Zastaviť kontrolu stacku",
+    "Open review for PR #{value0}": "Otvoriť kontrolu PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Poskytnutá záplata: {value0}/{value1} · {value2} zistení",
+    "Open this repository as a project on this computer first.": "Najprv otvorte tento repozitár ako projekt na tomto počítači.",
+    "Excluded file": "Vylúčený súbor"
   },
   "sv": {
     "Settings": "Inställningar",
@@ -120552,7 +120812,17 @@
     "Preparing review…": "Förbereder granskning…",
     "Combining reviewer findings…": "Sammanför granskarnas resultat…",
     "Running project checks…": "Kör projektkontroller…",
-    "Review progress": "Granskningens förlopp"
+    "Review progress": "Granskningens förlopp",
+    "Review scope": "Granskningens omfattning",
+    "This PR": "Denna PR",
+    "Full stack · {value0} PRs": "Hela stacken · {value0} PR:er",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Granska varje PR i beroendeordning. Fynd och utkast stannar vid sin käll-PR.",
+    "Stack review": "Stackgranskning",
+    "Stop stack review": "Stoppa stackgranskning",
+    "Open review for PR #{value0}": "Öppna granskning av PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Patch tillhandahållen: {value0}/{value1} · {value2} fynd",
+    "Open this repository as a project on this computer first.": "Öppna först detta repo som ett projekt på den här datorn.",
+    "Excluded file": "Utesluten fil"
   },
   "uk": {
     "Settings": "Налаштування",
@@ -125017,7 +125287,17 @@
     "Preparing review…": "Підготовка перевірки…",
     "Combining reviewer findings…": "Об’єднання зауважень рецензентів…",
     "Running project checks…": "Виконання перевірок проєкту…",
-    "Review progress": "Перебіг перевірки"
+    "Review progress": "Перебіг перевірки",
+    "Review scope": "Обсяг перевірки",
+    "This PR": "Цей PR",
+    "Full stack · {value0} PRs": "Увесь стек · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Перевіряти кожен PR у порядку залежностей. Зауваження та чернетки залишаються у вихідному PR.",
+    "Stack review": "Перевірка стека",
+    "Stop stack review": "Зупинити перевірку стека",
+    "Open review for PR #{value0}": "Відкрити перевірку PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Патч надано: {value0}/{value1} · {value2} зауважень",
+    "Open this repository as a project on this computer first.": "Спочатку відкрийте цей репозиторій як проєкт на цьому комп’ютері.",
+    "Excluded file": "Виключений файл"
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -129482,6 +129762,16 @@
     "Preparing review…": "Đang chuẩn bị đánh giá…",
     "Combining reviewer findings…": "Đang kết hợp phát hiện của các bên đánh giá…",
     "Running project checks…": "Đang chạy kiểm tra dự án…",
-    "Review progress": "Tiến độ đánh giá"
+    "Review progress": "Tiến độ đánh giá",
+    "Review scope": "Phạm vi đánh giá",
+    "This PR": "PR này",
+    "Full stack · {value0} PRs": "Toàn bộ ngăn xếp · {value0} PR",
+    "Review each PR in dependency order. Findings and drafts stay with their source PR.": "Đánh giá từng PR theo thứ tự phụ thuộc. Các phát hiện và bản nháp nằm trong PR nguồn.",
+    "Stack review": "Đánh giá ngăn xếp",
+    "Stop stack review": "Dừng đánh giá ngăn xếp",
+    "Open review for PR #{value0}": "Mở đánh giá PR #{value0}",
+    "Patch supplied: {value0}/{value1} · {value2} findings": "Bản vá đã cung cấp: {value0}/{value1} · {value2} phát hiện",
+    "Open this repository as a project on this computer first.": "Trước tiên, hãy mở kho lưu trữ này dưới dạng dự án trên máy tính này.",
+    "Excluded file": "Tệp bị loại trừ"
   }
 }

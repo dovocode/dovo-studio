@@ -1,4 +1,8 @@
-export { usePullReviewSource } from './pull-review-source'
+export {
+  usePullReviewSource,
+  pullReviewRepositories,
+  resolvePullReviewSource,
+} from './pull-review-source'
 export { prReviewIllustration } from '@dovo/design'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -111,6 +115,11 @@ export function usePullCodeReview({
           setState((previous) => {
             if (previous?.key !== key) return { key, report: next }
             const reviews = new Map(previous.report.reviews.map((review) => [review.id, review]))
+            const stacks = new Map(previous.report.stacks?.map((stack) => [stack.id, stack]))
+            for (const stack of next.stacks ?? []) {
+              const held = stacks.get(stack.id)
+              if (!held || stack.sequence >= held.sequence) stacks.set(stack.id, stack)
+            }
             for (const review of next.reviews) {
               const held = reviews.get(review.id)
               if (!held || review.sequence >= held.sequence) reviews.set(review.id, review)
@@ -119,6 +128,7 @@ export function usePullCodeReview({
               key,
               report: {
                 ...next,
+                stacks: [...stacks.values()].sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
                 reviews: [...reviews.values()].sort((a, b) =>
                   b.createdAt.localeCompare(a.createdAt),
                 ),
@@ -149,7 +159,11 @@ export function usePullCodeReview({
       if (!stopped)
         timer = setTimeout(
           read,
-          result && result.reviews.some((r) => r.status === 'running') ? 1500 : 20_000,
+          result &&
+            (result.reviews.some((r) => r.status === 'running') ||
+              result.stacks?.some((stack) => stack.status === 'running'))
+            ? 1500
+            : 20_000,
         )
     }
     void read()
@@ -214,6 +228,7 @@ export function usePullCodeReview({
       runChecks: boolean
       reviewers?: TitleGenerationSettings[]
       images?: PullReviewImage[]
+      fullStack?: boolean
     } = {
       depth: 'standard',
       runChecks: false,

@@ -151,8 +151,18 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         ).configOptions
       }
     }
+    const currentModel = acpModelOption(config)?.currentValue ?? legacy?.currentModelId
+    const currentReasoning = config?.find(
+      (option) => option.category === 'thought_level' && option.type === 'select',
+    )?.currentValue
     const catalog: ModelCatalog = {
-      models,
+      models: models.map((model) => ({
+        ...model,
+        isDefault: model.id === currentModel,
+        ...(model.id === currentModel && typeof currentReasoning === 'string'
+          ? { defaultReasoning: currentReasoning }
+          : {}),
+      })),
       reasoning: options(config, 'thought_level'),
       acp: {
         modes:

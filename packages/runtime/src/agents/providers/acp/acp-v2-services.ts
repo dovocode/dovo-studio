@@ -82,8 +82,18 @@ export async function acpV2Models(launch: AcpLaunch, agent: AgentDiscovery) {
               .map((item) => ({ id: item.value, name: item.name }))
           : []
       }
+      const thought = options?.find((option) => option.category === 'thought_level')
+      const defaultReasoning =
+        thought && SessionConfigOption.isSelect(thought) ? thought.currentValue : undefined
       return {
-        models: choices('model'),
+        models: choices('model').map((model) => ({
+          ...model,
+          isDefault:
+            options?.some(
+              (option) => option.category === 'model' && option.currentValue === model.id,
+            ) ?? false,
+          defaultReasoning,
+        })),
         reasoning: choices('thought_level'),
         acp: {
           modes: choices('mode'),

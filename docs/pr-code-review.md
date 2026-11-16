@@ -103,6 +103,43 @@ Reports and drafts stay on their owning computer. Temporary disconnection keeps 
 draft visible. Review and publication actions wait for reconnection and verification. The exact
 publication preview names the destination account.
 
+## Review a PR stack
+
+For a stacked PR, choose **Full stack** in **Review scope**, then start the review. Dovo reviews
+each PR in dependency order. You can start from any member. The stack must be complete and have at
+most 100 PRs. Refresh an incomplete stack before starting.
+
+Each PR keeps its own report, coverage, findings, checks and draft. Open a member's review from the
+stack progress list. Preview and publish each draft separately. Starting a stack review does not
+publish reviews. The same reviewers, depth, images and project-check choice apply to every member.
+Project checks run separately at each member's captured head commit.
+
+Dovo pins every member's head and base before queuing the reviews. A changed revision or account
+blocks that member. Other members can still finish. **Stop stack review** cancels the active member
+and prevents queued members from starting. A runtime restart marks an unfinished queue interrupted.
+It does not resume model calls. Start a new stack review to try again.
+
+Each reviewer receives the stack order and member revisions as reference data. Findings cite only
+the current PR's supplied changes. Quick has no repository tools. Standard and Deep can read the
+captured checkout, including ancestor code that exists there. This does not supply a combined diff
+or prove that the model checked every interaction between PRs.
+
+## Choose a computer for PR work
+
+Open **New thread** on desktop or **Start task** on mobile. Choose a computer, then choose the
+branch mode. If several projects on that computer match the PR repository, choose a project first.
+Open the repository as a project on the destination computer if none match. An offline source
+computer does not block this choice when another paired computer is online.
+
+Dovo resolves the destination computer's forge account and checks the PR URL and revision before
+creating the thread. Local account IDs are not copied between computers. The new thread and its
+navigation use the selected computer. A changed PR blocks task creation. Refresh it before trying
+again.
+
+ACP clients use the same model list and reasoning control as built-in providers. Model and reasoning
+choices replace conflicting raw ACP configuration values. Other launch settings stay intact. These
+controls depend on the models and reasoning choices that each ACP client advertises.
+
 ## Review depth and project checks
 
 | Depth                 | File coverage      | Tools     | Extra source context per batch         |
@@ -246,12 +283,25 @@ pnpm --filter @dovo/desktop... -r build
 pnpm exec vp test packages/runtime/src/scm/reviews/pull-review-engine.test.ts packages/runtime/src/scm/reviews/pull-review-checks.test.ts packages/runtime/src/scm/reviews/pull-review-images.test.ts packages/studio-core/src/scm/pull-review-source.test.ts packages/runtime/src/agents/providers/acp/acp.test.ts packages/runtime/src/agents/providers/acp/acp-v2.test.ts packages/runtime/src/http/pull-code-reviews.test.ts packages/protocol/src/scm/pull-code-review.test.ts packages/runtime/src/agents/tasks/title-generation.test.ts packages/runtime/src/http/file-reviews.test.ts packages/protocol/src/scm/task-review.test.ts --maxWorkers=4
 pnpm exec playwright install chromium
 node scripts/check-pr-code-review-browser.mjs
+node scripts/check-harness-row-browser.mjs
+node scripts/check-pr-task-checkout-browser.mjs
+node scripts/check-mobile-pull-handoff-browser.mjs
+node scripts/check-mobile-integration-continuity-browser.mjs
+node scripts/check-native-audit-browser.mjs
 node scripts/check-native-composer-bridge-browser.mjs
 node scripts/check-message-references-browser.mjs
 node scripts/check-browser-tabs-browser.mjs
 node scripts/check-mobile-previews-browser.mjs
 node scripts/check-mobile-shared-browser-browser.mjs
 ```
+
+The stack tests check parent-first execution through authenticated HTTP, separate findings,
+incomplete stack rejection, revision changes, cancellation and restart recovery. Browser checks
+cover stack scope, member navigation and stop requests. The PR task browser check covers remote
+project and account resolution, destination navigation, and blocking writes after a revision change.
+The ACP picker browser check covers model and reasoning selection while preserving launch settings.
+These tests use mocked computers, forge responses and ACP catalogs. They do not verify a live ACP
+client or a physical device.
 
 The PR browser check uses the real report controller and interface components with mocked model,
 forge, diff renderer and native controls. It checks start, draft saving, preview, explicit

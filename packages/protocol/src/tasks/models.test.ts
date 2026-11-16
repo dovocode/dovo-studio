@@ -2,6 +2,8 @@ import { decode } from '../shared/schema.js'
 import { expect, it } from 'vite-plus/test'
 import {
   daybreakChoices,
+  acpModelSetting,
+  changeModelSettings,
   isNamedModelId,
   modelDisplayName,
   modelCatalogChoices,
@@ -12,6 +14,44 @@ import {
   serviceTierValue,
 } from './models'
 import { agentSchema, resolveTaskAgent, taskModelSchema, defaultTaskHarness } from '../workspace'
+
+it('uses primary model and reasoning controls without stale ACP overrides', () => {
+  const catalog = decode(modelCatalogSchema, {
+    models: [{ id: 'new', name: 'New model' }],
+    reasoning: [{ id: 'high', name: 'High' }],
+    acp: {
+      modes: [],
+      commands: [],
+      configOptions: [
+        { id: 'model', name: 'Model', currentValue: 'old', options: [] },
+        {
+          id: 'thought',
+          name: 'Effort',
+          category: 'thought_level',
+          currentValue: 'low',
+          options: [],
+        },
+        { id: 'toggle', name: 'Toggle', currentValue: 'true', options: [] },
+      ],
+    },
+  })
+  const agent = {
+    ...defaultTaskHarness('acp'),
+    model: 'old',
+    reasoning: 'low',
+    acpConfig: { model: 'old', thought: 'low', toggle: 'true' },
+  }
+  expect(catalog.acp?.configOptions.map(acpModelSetting)).toEqual(['model', 'reasoning', undefined])
+  const next = changeModelSettings(agent, { model: 'new' }, catalog)
+  expect(next).toMatchObject({ model: 'new', reasoning: '', acpConfig: { toggle: 'true' } })
+  expect(changeModelSettings(agent, { reasoning: 'high' }, catalog)).toMatchObject({
+    model: 'old',
+    reasoning: 'high',
+    acpConfig: { model: 'old', toggle: 'true' },
+  })
+  expect(changeModelSettings(agent, { model: '' }, catalog).acpConfig).toEqual({ toggle: 'true' })
+  expect(agent.acpConfig).toEqual({ model: 'old', thought: 'low', toggle: 'true' })
+})
 
 it('uses host display names, formats raw versioned GPT IDs and keeps custom identifiers intact', () => {
   expect(modelDisplayName('gpt-5.1-sol')).toBe('5.1 Sol')

@@ -3,6 +3,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import {
   modelCatalogChoices,
+  changeModelSettings,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
@@ -11,6 +12,7 @@ import {
   modelPreferenceKey,
   runtimeDefaultsSchema,
   type RuntimeDefaults,
+  type ModelCatalog,
   type Agent,
   type Task,
 } from '@dovo/protocol'
@@ -39,7 +41,7 @@ type PickerProps = {
   options?: ReactNode
   onChange: (selection: string, agent: Agent) => void
 }
-type CatalogActions = { matches: (() => void)[]; refresh: () => void }
+type CatalogActions = { matches: (() => void)[]; refresh: () => void; catalog: ModelCatalog | null }
 const pageSize = 40
 const plain = (text: string) => text.toLowerCase().replace(/[^a-z0-9]/g, '')
 
@@ -107,13 +109,10 @@ function ComputerModelPicker({
   const applyCustom = () => {
     const model = customId.trim()
     if (!model || !customAgent || !customChoice) return
-    choose(customChoice.id, {
-      ...customAgent,
-      model,
-      reasoning: model === customAgent.model ? customAgent.reasoning : '',
-      serviceTier: model === customAgent.model ? customAgent.serviceTier : undefined,
-      cyberAccessProgram: model === customAgent.model ? customAgent.cyberAccessProgram : undefined,
-    })
+    choose(
+      customChoice.id,
+      changeModelSettings(customAgent, { model }, catalogs.current.get(customChoice.id)?.catalog),
+    )
   }
   const favorite = (candidate: Agent, model: string) =>
     !!preferences[modelPreferenceKey(candidate.provider, model, candidate.acpInstallationId)]
@@ -349,7 +348,9 @@ function ComputerModelPicker({
                 ? [{ id: agent.reasoning, name: agent.reasoning }]
                 : []),
             ]}
-            onChange={(reasoning) => choose(selection, { ...agent, reasoning })}
+            onChange={(reasoning) =>
+              choose(selection, changeModelSettings(agent, { reasoning }, catalog))
+            }
           />
           {!modelsOnly && agent.provider === 'codex' && (
             <ChoiceControl
@@ -540,17 +541,12 @@ function ProviderModels({
       !preferences?.[modelPreferenceKey(candidate.provider, model, candidate.acpInstallationId)]
         ?.disabled
     )
-      onChoose({
-        ...candidate,
-        model,
-        reasoning: model === candidate.model ? candidate.reasoning : '',
-        serviceTier: model === candidate.model ? candidate.serviceTier : undefined,
-        cyberAccessProgram: model === candidate.model ? candidate.cyberAccessProgram : undefined,
-      })
+      onChoose(changeModelSettings(candidate, { model }, catalog))
   }
   useEffect(() => {
     if (open)
       actions.set(choice.id, {
+        catalog,
         matches: [
           ...models.map((model) => () => choose(model.id)),
           ...(savedCustom ? [() => choose(candidate.model)] : []),

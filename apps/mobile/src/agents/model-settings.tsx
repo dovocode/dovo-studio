@@ -17,6 +17,8 @@ import { View } from 'react-native'
 import { Text } from '../ui/content/text'
 import {
   agentSchema,
+  acpModelSetting,
+  changeModelSettings,
   modelPreferenceKey,
   runtimeDefaultsSchema,
   daybreakChoices,
@@ -85,14 +87,7 @@ export function ModelSettings({
       selected?.reasoning ??
       (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
       []
-  const changeModel = (model: string) =>
-    onChange({
-      ...agent,
-      model,
-      reasoning: model === agent.model ? agent.reasoning : '',
-      serviceTier: model === agent.model ? agent.serviceTier : undefined,
-      cyberAccessProgram: model === agent.model ? agent.cyberAccessProgram : undefined,
-    })
+  const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
   return (
     <View
       style={{
@@ -268,12 +263,7 @@ export function ModelSettings({
               ]
             : []),
         ]}
-        onChange={(reasoning) =>
-          onChange({
-            ...agent,
-            reasoning,
-          })
-        }
+        onChange={(reasoning) => onChange(changeModelSettings(agent, { reasoning }, catalog))}
       />
       {serviceTier && agent.provider === 'acp' && catalog?.acp && (
         <ProviderOptions
@@ -300,38 +290,40 @@ export function ModelSettings({
               onChange={(acpMode) => onChange({ ...agent, acpMode: acpMode || undefined })}
             />
           )}
-          {catalog.acp.configOptions.map((option) => {
-            const value = agent.acpConfig?.[option.id] ?? option.currentValue
-            const label = option.category ? `${option.category} · ${option.name}` : option.name
-            return option.options.length ? (
-              <Choice
-                key={option.id}
-                row
-                label={label}
-                disabled={disabled}
-                value={value}
-                items={[
-                  ...(value && !option.options.some((item) => item.id === value)
-                    ? [{ id: value, name: `${value} (saved)` }]
-                    : []),
-                  ...option.options,
-                ]}
-                onChange={(next) =>
-                  onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
-                }
-              />
-            ) : (
-              <Field
-                key={option.id}
-                label={label}
-                value={value}
-                editable={!disabled}
-                onChangeText={(next) =>
-                  onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
-                }
-              />
-            )
-          })}
+          {catalog.acp.configOptions
+            .filter((option) => !acpModelSetting(option))
+            .map((option) => {
+              const value = agent.acpConfig?.[option.id] ?? option.currentValue
+              const label = option.category ? `${option.category} · ${option.name}` : option.name
+              return option.options.length ? (
+                <Choice
+                  key={option.id}
+                  row
+                  label={label}
+                  disabled={disabled}
+                  value={value}
+                  items={[
+                    ...(value && !option.options.some((item) => item.id === value)
+                      ? [{ id: value, name: `${value} (saved)` }]
+                      : []),
+                    ...option.options,
+                  ]}
+                  onChange={(next) =>
+                    onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
+                  }
+                />
+              ) : (
+                <Field
+                  key={option.id}
+                  label={label}
+                  value={value}
+                  editable={!disabled}
+                  onChangeText={(next) =>
+                    onChange({ ...agent, acpConfig: { ...agent.acpConfig, [option.id]: next } })
+                  }
+                />
+              )
+            })}
           {!!catalog.acp.commands.length && (
             <Text style={styles.muted}>
               <InterfaceText

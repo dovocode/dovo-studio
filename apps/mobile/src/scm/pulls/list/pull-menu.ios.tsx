@@ -51,6 +51,32 @@ export function PullMenu(props: PullMenuProps) {
           />
         ))}
         {props.actions.length > 0 && <Divider />}
+        {(props.computers?.length ?? 0) > 1 && (
+          <Menu label={uiText('Computer')}>
+            {props.computers?.map((computer) => (
+              <NativeMenuButton
+                key={computer.id}
+                label={computer.name}
+                icon={computer.id === props.computerId ? 'check' : 'server'}
+                onPress={() => props.onComputerChange?.(computer.id)}
+                modifiers={[disabled(computer.disabled || props.taskDisabled)]}
+              />
+            ))}
+          </Menu>
+        )}
+        {(props.projects?.length ?? 0) > 1 && (
+          <Menu label={uiText('Project')}>
+            {props.projects?.map((project) => (
+              <NativeMenuButton
+                key={project.id}
+                label={`${project.name} · ${project.path}`}
+                icon={project.id === props.projectId ? 'check' : 'folder'}
+                onPress={() => props.onProjectChange?.(project.id)}
+                modifiers={[disabled(props.taskDisabled)]}
+              />
+            ))}
+          </Menu>
+        )}
         <Menu label={uiText('Start task from PR')} modifiers={[disabled(props.taskDisabled)]}>
           <NativeMenuButton
             testID="New branch from PR"

@@ -34,6 +34,7 @@ import {
   type Agent,
   type PullDetail,
   type PullCodeReview,
+  type PullReviewStack,
 } from '@dovo/protocol'
 import { DiffView } from '../../../tasks/preview/diff-view'
 import { RuntimeScope, useRuntime } from '../../../runtime/connection/provider'
@@ -52,12 +53,14 @@ function LocalMobilePullCodeReview({
   sourceReady = true,
   onAsk,
   onRefresh,
+  onOpenStackReview,
 }: {
   repositoryId: string
   sourceReady?: boolean
   detail: PullDetail
   onAsk: (finding: PullCodeReview['findings'][number]) => void
   onRefresh?: () => void
+  onOpenStackReview?: (member: PullReviewStack['members'][number], runtimeId: string) => void
 }) {
   const uiText = useInterfaceText()
   const { snapshot, profile, call, connected: online } = useRuntime()
@@ -91,6 +94,7 @@ function LocalMobilePullCodeReview({
       setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
   }
   const [settings, setSettings] = useState(false)
+  const [fullStack, setFullStack] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
   const [patch, setPatch] = useState<string>()
   const [linkError, setLinkError] = useState('')
@@ -118,7 +122,9 @@ function LocalMobilePullCodeReview({
   const stale =
     !!current &&
     (current.headSha !== detail.pull.headSha || current.baseSha !== detail.pull.baseSha)
-  const running = review.report?.reviews.some((pass) => pass.status === 'running')
+  const running =
+    review.report?.reviews.some((pass) => pass.status === 'running') ||
+    review.report?.stacks?.some((stack) => stack.status === 'running')
   const blocked = !connected || !target.expectedDestination || review.busy || running
   const editable =
     !!current &&
@@ -148,6 +154,7 @@ function LocalMobilePullCodeReview({
           runChecks: review.depth !== 'quick' && review.runChecks,
           reviewers: (additional ?? []).map(titleSettingsForHarness),
           images: review.images,
+          fullStack: !remaining && fullStack,
         },
       )
     else setSettings(true)
@@ -264,6 +271,71 @@ function LocalMobilePullCodeReview({
             setContextPath(undefined)
           }}
         >
+          {review.report?.stacks?.slice(0, 1).map((stack) => (
+            <View
+              key={stack.id}
+              style={[styles.card, { gap: 10 }]}
+              accessibilityLabel={uiText('Stack review')}
+            >
+              <Text style={styles.text}>
+                {uiText('Stack review')} · {uiText(pullReviewerStatusLabels[stack.status])} ·{' '}
+                {stack.members.filter((member) => member.status === 'completed').length}/
+                {stack.members.length}
+              </Text>
+              {stack.status === 'running' && (
+                <Action
+                  secondary
+                  label={uiText('Stop stack review')}
+                  disabled={!connected || review.busy}
+                  onPress={() =>
+                    void review.command('stop', { reviewId: stack.id, stackId: stack.id })
+                  }
+                />
+              )}
+              {stack.members.map((member) => (
+                <View key={member.target.number} style={{ gap: 6 }}>
+                  <Text style={styles.text}>
+                    #{member.target.number} · {member.title}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {uiText(
+                      member.status === 'queued'
+                        ? pullReviewerStatusLabels.pending
+                        : pullReviewerStatusLabels[member.status],
+                    )}
+                  </Text>
+                  {member.reviewId && (
+                    <>
+                      <Text style={styles.muted}>
+                        {uiText('Patch supplied: {value0}/{value1} · {value2} findings', {
+                          value0: member.suppliedFiles ?? 0,
+                          value1: member.totalFiles ?? 0,
+                          value2: member.findings ?? 0,
+                        })}
+                      </Text>
+                      {onOpenStackReview && (
+                        <Action
+                          secondary
+                          label={uiText('Open review for PR #{value0}', {
+                            value0: member.target.number,
+                          })}
+                          onPress={() => {
+                            setOpen(false)
+                            onOpenStackReview(member, profile?.id ?? '')
+                          }}
+                        />
+                      )}
+                    </>
+                  )}
+                  {member.error && (
+                    <Text accessibilityRole="alert" style={styles.error}>
+                      {member.error}
+                    </Text>
+                  )}
+                </View>
+              ))}
+            </View>
+          ))}
           {review.error && (
             <View style={{ gap: 8 }}>
               <Text accessibilityRole="alert" style={styles.error}>
@@ -595,6 +667,29 @@ function LocalMobilePullCodeReview({
                   }
                 }}
               />
+              {detail.stack && (
+                <Choice
+                  label={uiText('Review scope')}
+                  value={fullStack ? 'stack' : 'pull'}
+                  disabled={!!blocked}
+                  items={[
+                    { id: 'pull', name: uiText('This PR') },
+                    {
+                      id: 'stack',
+                      name: uiText('Full stack · {value0} PRs', { value0: detail.stack.size }),
+                      disabled: !detail.stack.complete,
+                    },
+                  ]}
+                  onChange={(value) => setFullStack(value === 'stack')}
+                />
+              )}
+              {fullStack && (
+                <Text style={styles.muted}>
+                  {uiText(
+                    'Review each PR in dependency order. Findings and drafts stay with their source PR.',
+                  )}
+                </Text>
+              )}
               <Text style={styles.muted}>{uiText(pullReviewDepths[review.depth].description)}</Text>
               <Choice
                 label={uiText('Run project checks')}
@@ -1105,6 +1200,7 @@ function RemoteMobilePullCodeReview(props: PanelProps) {
           repositoryId={source.repositoryId}
           detail={{
             ...source.detail,
+            stack: props.detail.stack,
             pull: {
               ...source.detail.pull,
               headSha: props.detail.pull.headSha,

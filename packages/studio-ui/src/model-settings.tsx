@@ -8,6 +8,8 @@ import { ChoicePicker } from './choice-picker'
 import { useEffect, type ReactNode } from 'react'
 import {
   agentSchema,
+  acpModelSetting,
+  changeModelSettings,
   modelPreferenceKey,
   modelCatalogChoices,
   modelDisplayName,
@@ -110,14 +112,7 @@ export function ModelSettings({
     selected?.reasoning ??
     (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
     []
-  const changeModel = (model: string) =>
-    onChange({
-      ...agent,
-      model,
-      reasoning: model === agent.model ? agent.reasoning : '',
-      serviceTier: model === agent.model ? agent.serviceTier : undefined,
-      cyberAccessProgram: model === agent.model ? agent.cyberAccessProgram : undefined,
-    })
+  const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
   const discoveryStatus = loading
     ? 'Loading provider models…'
     : !connected
@@ -183,10 +178,7 @@ export function ModelSettings({
           className="h-9 rounded-md border bg-background px-2 text-xs"
           value={agent.reasoning ?? ''}
           onValueChange={(selection) =>
-            onChange({
-              ...agent,
-              reasoning: selection,
-            })
+            onChange(changeModelSettings(agent, { reasoning: selection }, catalog))
           }
         >
           <option value="">Provider default</option>
@@ -223,46 +215,48 @@ export function ModelSettings({
               </ChoicePicker>
             </FormField>
           )}
-          {catalog.acp.configOptions.map((option) => {
-            const value = agent.acpConfig?.[option.id] ?? option.currentValue
-            return (
-              <FormField key={option.id} label={option.name} layout={layout}>
-                {option.options.length ? (
-                  <ChoicePicker
-                    aria-label={`ACP ${option.name}`}
-                    className="h-9 rounded-md border bg-background px-2 text-xs"
-                    value={value}
-                    onValueChange={(next) =>
-                      onChange({
-                        ...agent,
-                        acpConfig: { ...agent.acpConfig, [option.id]: next },
-                      })
-                    }
-                  >
-                    {value && !option.options.some((item) => item.id === value) && (
-                      <option value={value}>{value} (saved)</option>
-                    )}
-                    {option.options.map((item) => (
-                      <option key={item.id} value={item.id}>
-                        {item.name}
-                      </option>
-                    ))}
-                  </ChoicePicker>
-                ) : (
-                  <Input
-                    aria-label={`ACP ${option.name}`}
-                    value={value}
-                    onChange={(event) =>
-                      onChange({
-                        ...agent,
-                        acpConfig: { ...agent.acpConfig, [option.id]: event.target.value },
-                      })
-                    }
-                  />
-                )}
-              </FormField>
-            )
-          })}
+          {catalog.acp.configOptions
+            .filter((option) => !acpModelSetting(option))
+            .map((option) => {
+              const value = agent.acpConfig?.[option.id] ?? option.currentValue
+              return (
+                <FormField key={option.id} label={option.name} layout={layout}>
+                  {option.options.length ? (
+                    <ChoicePicker
+                      aria-label={`ACP ${option.name}`}
+                      className="h-9 rounded-md border bg-background px-2 text-xs"
+                      value={value}
+                      onValueChange={(next) =>
+                        onChange({
+                          ...agent,
+                          acpConfig: { ...agent.acpConfig, [option.id]: next },
+                        })
+                      }
+                    >
+                      {value && !option.options.some((item) => item.id === value) && (
+                        <option value={value}>{value} (saved)</option>
+                      )}
+                      {option.options.map((item) => (
+                        <option key={item.id} value={item.id}>
+                          {item.name}
+                        </option>
+                      ))}
+                    </ChoicePicker>
+                  ) : (
+                    <Input
+                      aria-label={`ACP ${option.name}`}
+                      value={value}
+                      onChange={(event) =>
+                        onChange({
+                          ...agent,
+                          acpConfig: { ...agent.acpConfig, [option.id]: event.target.value },
+                        })
+                      }
+                    />
+                  )}
+                </FormField>
+              )
+            })}
           {!!catalog.acp.commands.length && (
             <Disclosure title={<> Supported commands </>}>
               <ul className="mt-2 grid gap-1">

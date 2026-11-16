@@ -2,18 +2,21 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
 import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
+import { Schema } from 'effect'
 import {
   defaultTaskHarness,
   pullCodeReviewBody,
   pullDetailSchema,
   decode,
+  mutableStruct,
+  pullReviewStackSchema,
   type TitleGenerationSettings,
 } from '@dovo/protocol'
 import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import { runtimeIntegration } from '../testing/integration.js'
 import type { AgentRun, AgentAdapter } from '../agents/execution/types.js'
-import { pullReviewEvidence } from '../scm/reviews/pull-code-reviews.js'
+import { PullCodeReviews, pullReviewEvidence } from '../scm/reviews/pull-code-reviews.js'
 import { openDatabase } from '../storage/database.js'
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
@@ -43,6 +46,65 @@ const finding = {
   confidence: 9,
 }
 const output = JSON.stringify({ summary: 'Found one bug.', notVerified: [], findings: [finding] })
+async function setupStack() {
+  const f = await setup()
+  const parent = detail()
+  const child = {
+    ...detail(),
+    pull: {
+      ...detail().pull,
+      number: 43,
+      title: 'Child PR',
+      url: 'https://github.com/acme/repo/pull/43',
+      head: 'child',
+      base: 'feature',
+      headSha: 'c'.repeat(40),
+      baseSha: head,
+    },
+  }
+  const values = new Map([
+    [42, parent],
+    [43, child],
+  ])
+  const stack = {
+    rootNumber: 42,
+    position: 1,
+    size: 2,
+    complete: true,
+    members: [parent, child].map((value, index) => ({
+      number: value.pull.number,
+      title: value.pull.title,
+      url: value.pull.url,
+      head: value.pull.head,
+      base: value.pull.base,
+      draft: false,
+      depth: index,
+      ...(index ? { parentNumber: 42 } : {}),
+    })),
+  }
+  f.section.mockImplementation(async (_, number) =>
+    structuredClone({ ...values.get(number)!, stack }),
+  )
+  f.status.mockImplementation(async (_, number) => structuredClone(values.get(number)!))
+  const input = {
+    target: { ...f.target, number: 43 },
+    requestId: 'stack-1',
+    headSha: child.pull.headSha,
+    baseSha: head,
+    selection: { ...selection, harness: { provider: 'claude' as const, endpoint: '' } },
+    depth: 'quick' as const,
+    fullStack: true,
+  }
+  const finished = async () => {
+    await vi.waitFor(async () =>
+      expect((await f.s.pullCodeReviews.read(input.target)).stacks?.[0]?.status).not.toBe(
+        'running',
+      ),
+    )
+    return (await f.s.pullCodeReviews.read(input.target)).stacks![0]
+  }
+  return { ...f, input, values, stack, finished }
+}
 function detail() {
   const value = decode(pullDetailSchema, {
     destination: 'destination',
@@ -103,7 +165,9 @@ async function setup() {
   }
   const guard = vi.spyOn(s.pulls, 'guard').mockResolvedValue(source)
   let current = detail()
-  vi.spyOn(s.pulls, 'section').mockImplementation(async () => structuredClone(current))
+  const section = vi
+    .spyOn(s.pulls, 'section')
+    .mockImplementation(async () => structuredClone(current))
   const status = vi
     .spyOn(s.pulls, 'status')
     .mockImplementation(async () => structuredClone(current))
@@ -165,6 +229,7 @@ async function setup() {
     s,
     source,
     guard,
+    section,
     status,
     agent,
     target,
@@ -897,4 +962,170 @@ it('keeps earlier findings when a later reviewer is cancelled', async () => {
     'completed',
     'cancelled',
   ])
+})
+
+it('reviews a full stack parent-first from a child PR through the HTTP boundary', async () => {
+  const f = await setupStack()
+  const response = await fetch(`http://127.0.0.1:${f.runtime.port}/api/review/pull/start`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer pr-review-owner-token-at-least-32-characters',
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(f.input),
+  })
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ stacks: [{ rootNumber: 42 }] })
+  const stack = await f.finished()
+  expect(stack.status).toBe('completed')
+  expect(
+    stack.members.map((member) => [
+      member.target.number,
+      member.status,
+      member.findings,
+      member.suppliedFiles,
+    ]),
+  ).toEqual([
+    [42, 'completed', 1, 1],
+    [43, 'completed', 1, 1],
+  ])
+  expect(f.calls).toHaveLength(4)
+  const rootReport = await f.s.pullCodeReviews.read(f.target)
+  const childReport = await f.s.pullCodeReviews.read(f.input.target)
+  expect(rootReport.reviews[0].url).toContain('/42')
+  expect(childReport.reviews[0].url).toContain('/43')
+  expect(rootReport.reviews[0].stack?.members.map((member) => member.number)).toEqual([42, 43])
+  expect(childReport.reviews[0].stack?.id).toBe(stack.id)
+  expect(f.calls[0].prompt).toContain('dependency-ordered stack review')
+  expect(f.calls.every((call) => call.tools === 'none')).toBe(true)
+  await f.s.pullCodeReviews.start(f.input)
+  expect(f.calls).toHaveLength(4)
+  await expect(f.s.pullCodeReviews.start({ ...f.input, runChecks: true })).rejects.toMatchObject({
+    status: 400,
+  })
+  await expect(
+    f.s.pullCodeReviews.start({ ...f.input, selection: { ...selection, model: 'other' } }),
+  ).rejects.toMatchObject({ status: 409 })
+  expect(f.act).not.toHaveBeenCalled()
+})
+
+it('rejects incomplete stack membership before any reviewer starts', async () => {
+  const f = await setupStack()
+  f.stack.complete = false
+  await expect(f.s.pullCodeReviews.start(f.input)).rejects.toMatchObject({ status: 409 })
+  expect(f.calls).toHaveLength(0)
+  expect((await f.s.pullCodeReviews.read(f.input.target)).stacks).toBeUndefined()
+})
+
+it('deduplicates concurrent identical full-stack starts', async () => {
+  const f = await setupStack()
+  await Promise.all([f.s.pullCodeReviews.start(f.input), f.s.pullCodeReviews.start(f.input)])
+  const stack = await f.finished()
+  expect(stack.status).toBe('completed')
+  expect((await f.s.pullCodeReviews.read(f.input.target)).stacks).toHaveLength(1)
+  expect(f.calls).toHaveLength(4)
+})
+
+it('does not start a queued PR under a replacement forge reader', async () => {
+  const f = await setupStack()
+  const adapter = await f.s.agents.get('claude')
+  f.agent.mockResolvedValue({
+    ...adapter,
+    run: async (input) => {
+      f.guard.mockResolvedValue({ ...f.source, readerIdentity: 'replacement-reader' })
+      await adapter.run(input)
+    },
+  })
+  await f.s.pullCodeReviews.start(f.input)
+  const db = openDatabase(f.databasePath)
+  try {
+    await vi.waitFor(() => {
+      const row = decode(
+        mutableStruct({ value: Schema.String }),
+        db
+          .prepare('SELECT value FROM pull_stack_reviews WHERE request_id=?')
+          .get(f.input.requestId),
+      )
+      const stack = decode(pullReviewStackSchema, JSON.parse(row.value))
+      expect(stack.status).toBe('failed')
+      expect(stack.members.map((member) => member.status)).toEqual(['completed', 'failed'])
+      expect(stack.members[1].error).toContain('account')
+    })
+  } finally {
+    db.close()
+  }
+  expect(f.calls).toHaveLength(2)
+  expect((await f.s.pullCodeReviews.read(f.input.target)).reviews).toHaveLength(0)
+  f.guard.mockResolvedValue(f.source)
+  expect((await f.s.pullCodeReviews.read(f.target)).reviews).toHaveLength(1)
+})
+
+it('records a queued PR revision change without reviewing its replacement', async () => {
+  const f = await setupStack()
+  const adapter = await f.s.agents.get('claude')
+  f.agent.mockResolvedValue({
+    ...adapter,
+    run: async (input) => {
+      f.values.get(43)!.pull.headSha = 'd'.repeat(40)
+      await adapter.run(input)
+    },
+  })
+  await f.s.pullCodeReviews.start(f.input)
+  const stack = await f.finished()
+  expect(stack.status).toBe('failed')
+  expect(stack.members.map((member) => member.status)).toEqual(['completed', 'failed'])
+  expect(stack.members[1].error).toContain('PR changed')
+  expect(f.calls).toHaveLength(2)
+  expect((await f.s.pullCodeReviews.read(f.input.target)).reviews).toHaveLength(0)
+})
+
+it('cancels the active stack member and does not start queued PRs', async () => {
+  const f = await setupStack()
+  const adapter = await f.s.agents.get('claude')
+  let calls = 0
+  f.agent.mockResolvedValue({
+    ...adapter,
+    run: async (input) => {
+      calls++
+      await new Promise<void>((resolve) =>
+        input.signal.aborted
+          ? resolve()
+          : input.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+    },
+  })
+  const started = await f.s.pullCodeReviews.start(f.input)
+  await vi.waitFor(() => expect(calls).toBe(1))
+  const id = started.stacks![0].id
+  await f.s.pullCodeReviews.stop(f.input.target, id, id)
+  const stack = await f.finished()
+  expect(stack.status).toBe('cancelled')
+  expect(stack.members.map((member) => member.status)).toEqual(['cancelled', 'cancelled'])
+  expect(calls).toBe(1)
+})
+
+it('marks a persisted stack queue interrupted on recovery without resuming model calls', async () => {
+  const f = await setupStack()
+  await f.s.pullCodeReviews.start(f.input)
+  const stack = await f.finished()
+  const db = openDatabase(f.databasePath)
+  const persisted = decode(pullReviewStackSchema, {
+    ...stack,
+    status: 'running',
+    members: stack.members.map((member) => ({ ...member, status: 'queued', reviewId: undefined })),
+  })
+  db.prepare('UPDATE pull_stack_reviews SET value=? WHERE id=?').run(
+    JSON.stringify(persisted),
+    stack.id,
+  )
+  const recovered = new PullCodeReviews(db, f.s)
+  cleanups.push(async () => {
+    await recovered.dispose()
+    db.close()
+  })
+  const calls = f.calls.length
+  const report = await recovered.read(f.input.target)
+  expect(report.stacks![0].status).toBe('interrupted')
+  expect(report.stacks![0].members.every((member) => member.status === 'interrupted')).toBe(true)
+  expect(f.calls).toHaveLength(calls)
 })

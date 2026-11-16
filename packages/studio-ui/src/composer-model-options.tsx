@@ -1,5 +1,7 @@
 import {
   automaticDifficultyChoices,
+  acpModelSetting,
+  changeModelSettings,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
@@ -66,7 +68,9 @@ export function ComposerEffortColumn({
             value={current}
             disabled={disabled || (automatic && !onSelectDifficulty)}
             onValueChange={(reasoning) =>
-              void (automatic ? onSelectDifficulty?.(reasoning) : onChange({ ...value, reasoning }))
+              void (automatic
+                ? onSelectDifficulty?.(reasoning)
+                : onChange(changeModelSettings(value, { reasoning }, catalog)))
             }
           >
             {choices.map((effort) => (
@@ -117,7 +121,7 @@ export function ComposerEffortColumn({
                 onClick={() =>
                   void (automatic
                     ? onSelectDifficulty?.(effort.id)
-                    : onChange({ ...value, reasoning: effort.id }))
+                    : onChange(changeModelSettings(value, { reasoning: effort.id }, catalog)))
                 }
               >
                 <span className="min-w-0 flex-1 truncate">{effort.name}</span>
@@ -156,40 +160,42 @@ export function ComposerEffortColumn({
                 </ChoicePicker>
               </label>
             )}
-            {catalog.acp.configOptions.map((option) => {
-              const current = value.acpConfig?.[option.id] ?? option.currentValue
-              const update = (next: string) =>
-                void onChange({ ...value, acpConfig: { ...value.acpConfig, [option.id]: next } })
-              return (
-                <label key={option.id} className="grid gap-1">
-                  {option.name}
-                  {option.options.length ? (
-                    <ChoicePicker
-                      aria-label={`ACP ${option.name}`}
-                      value={current}
-                      disabled={disabled}
-                      onValueChange={update}
-                    >
-                      {current && !option.options.some((item) => item.id === current) && (
-                        <option value={current}>{current}</option>
-                      )}
-                      {option.options.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name}
-                        </option>
-                      ))}
-                    </ChoicePicker>
-                  ) : (
-                    <Input
-                      aria-label={`ACP ${option.name}`}
-                      value={current}
-                      disabled={disabled}
-                      onChange={(event) => update(event.target.value)}
-                    />
-                  )}
-                </label>
-              )
-            })}
+            {catalog.acp.configOptions
+              .filter((option) => !acpModelSetting(option))
+              .map((option) => {
+                const current = value.acpConfig?.[option.id] ?? option.currentValue
+                const update = (next: string) =>
+                  void onChange({ ...value, acpConfig: { ...value.acpConfig, [option.id]: next } })
+                return (
+                  <label key={option.id} className="grid gap-1">
+                    {option.name}
+                    {option.options.length ? (
+                      <ChoicePicker
+                        aria-label={`ACP ${option.name}`}
+                        value={current}
+                        disabled={disabled}
+                        onValueChange={update}
+                      >
+                        {current && !option.options.some((item) => item.id === current) && (
+                          <option value={current}>{current}</option>
+                        )}
+                        {option.options.map((item) => (
+                          <option key={item.id} value={item.id}>
+                            {item.name}
+                          </option>
+                        ))}
+                      </ChoicePicker>
+                    ) : (
+                      <Input
+                        aria-label={`ACP ${option.name}`}
+                        value={current}
+                        disabled={disabled}
+                        onChange={(event) => update(event.target.value)}
+                      />
+                    )}
+                  </label>
+                )
+              })}
           </div>
         )}
         {!automatic && efforts.length === 0 && !loading && (

@@ -1,3 +1,4 @@
+/// <reference types="node" />
 import { decode, decodeResult } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { mkdtemp, writeFile, rm, realpath } from 'node:fs/promises'
@@ -181,6 +182,7 @@ it('permits scoped conversation, progress and child controls without extra Codex
   const configured = codexMcpServers([builtin, external])
   expect(configured.dovo_task.tools).toEqual({
     ask_question: { approval_mode: 'approve' },
+    a2ui: { approval_mode: 'approve' },
     todos: { approval_mode: 'approve' },
     subagent_spawn: { approval_mode: 'approve' },
     subagent_list: { approval_mode: 'approve' },

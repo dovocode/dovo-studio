@@ -29,6 +29,7 @@ import {
   type PullDetail,
   type PullReviewSelection,
   type PullCodeReview,
+  type PullReviewStack,
 } from '@dovo/protocol'
 import {
   useWorkspace,
@@ -55,6 +56,7 @@ function LocalPullCodeReviewPanel({
   onAsk,
   onStatus,
   onRefresh,
+  onOpenStackReview,
 }: {
   repositoryId: string
   sourceReady?: boolean
@@ -62,6 +64,7 @@ function LocalPullCodeReviewPanel({
   onAsk: (selection: PullReviewSelection) => void
   onStatus?: (status: { running: boolean; findings: number; stale: boolean }) => void
   onRefresh?: () => void
+  onOpenStackReview?: (member: PullReviewStack['members'][number], runtimeId: string) => void
 }) {
   const uiText = useInterfaceText()
   const { workspace, request, connected: online, activeRuntimeId, snapshot } = useWorkspace()
@@ -94,6 +97,7 @@ function LocalPullCodeReviewPanel({
       setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
   }
   const [settings, setSettings] = useState(false)
+  const [fullStack, setFullStack] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
   const [patch, setPatch] = useState<string>()
   const loadModels = useCallback(
@@ -120,7 +124,9 @@ function LocalPullCodeReviewPanel({
   const stale =
     !!current &&
     (current.headSha !== detail.pull.headSha || current.baseSha !== detail.pull.baseSha)
-  const running = review.report?.reviews.some((pass) => pass.status === 'running')
+  const running =
+    review.report?.reviews.some((pass) => pass.status === 'running') ||
+    review.report?.stacks?.some((stack) => stack.status === 'running')
   const blocked = !connected || !target.expectedDestination || review.busy || running
   const editable =
     !!current &&
@@ -155,6 +161,7 @@ function LocalPullCodeReviewPanel({
           runChecks: review.depth !== 'quick' && review.runChecks,
           reviewers: (additional ?? []).map(titleSettingsForHarness),
           images: review.images,
+          fullStack: !remaining && fullStack,
         },
       )
     else setSettings(true)
@@ -323,6 +330,29 @@ function LocalPullCodeReviewPanel({
         </Button>
       </div>
       <div className="space-y-3 border-b px-4 py-3">
+        {detail.stack && (
+          <label className="flex flex-wrap items-center gap-3 text-xs">
+            {uiText('Review scope')}
+            <ChoicePicker
+              aria-label={uiText('Review scope')}
+              value={fullStack ? 'stack' : 'pull'}
+              disabled={!!blocked}
+              onValueChange={(value) => setFullStack(value === 'stack')}
+            >
+              <option value="pull">{uiText('This PR')}</option>
+              <option value="stack" disabled={!detail.stack.complete}>
+                {uiText('Full stack · {value0} PRs', { value0: detail.stack.size })}
+              </option>
+            </ChoicePicker>
+          </label>
+        )}
+        {fullStack && (
+          <p className="text-xs text-muted-foreground">
+            {uiText(
+              'Review each PR in dependency order. Findings and drafts stay with their source PR.',
+            )}
+          </p>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
             {uiText('Review depth')}
@@ -463,6 +493,74 @@ function LocalPullCodeReviewPanel({
           {uiText('Refresh this PR to verify its account before starting a review.')}
         </p>
       )}
+      {review.report?.stacks?.slice(0, 1).map((stack) => (
+        <div key={stack.id} className="space-y-3 border-b p-4" aria-label={uiText('Stack review')}>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs font-medium">
+              {uiText('Stack review')} · {uiText(pullReviewerStatusLabels[stack.status])} ·{' '}
+              {stack.members.filter((member) => member.status === 'completed').length}/
+              {stack.members.length}
+            </span>
+            {stack.status === 'running' && (
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={!connected || review.busy}
+                onClick={() =>
+                  void review.command('stop', { reviewId: stack.id, stackId: stack.id })
+                }
+              >
+                {uiText('Stop stack review')}
+              </Button>
+            )}
+          </div>
+          {stack.members.map((member) => (
+            <div key={member.target.number} className="space-y-1 rounded-lg border p-3 text-xs">
+              <div className="flex items-center justify-between gap-3">
+                <span>
+                  #{member.target.number} · {member.title}
+                </span>
+                <span>
+                  {uiText(
+                    member.status === 'queued'
+                      ? pullReviewerStatusLabels.pending
+                      : pullReviewerStatusLabels[member.status],
+                  )}
+                </span>
+              </div>
+              {member.reviewId && (
+                <>
+                  <p className="text-muted-foreground">
+                    {uiText('Patch supplied: {value0}/{value1} · {value2} findings', {
+                      value0: member.suppliedFiles ?? 0,
+                      value1: member.totalFiles ?? 0,
+                      value2: member.findings ?? 0,
+                    })}
+                  </p>
+                  {onOpenStackReview ? (
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => onOpenStackReview(member, activeRuntimeId ?? '')}
+                    >
+                      {uiText('Open review for PR #{value0}', { value0: member.target.number })}
+                    </Button>
+                  ) : (
+                    <a href={member.url} target="_blank" rel="noreferrer" className="underline">
+                      {uiText('Open PR')}
+                    </a>
+                  )}
+                </>
+              )}
+              {member.error && (
+                <p role="alert" className="text-destructive">
+                  {member.error}
+                </p>
+              )}
+            </div>
+          ))}
+        </div>
+      ))}
       {review.error && (
         <div role="alert" className="space-y-2 border-b p-4 text-xs text-destructive">
           <p>{review.error}</p>
@@ -1146,6 +1244,7 @@ function RemotePullCodeReviewPanel(props: PanelProps) {
           repositoryId={source.repositoryId}
           detail={{
             ...source.detail,
+            stack: props.detail.stack,
             pull: {
               ...source.detail.pull,
               headSha: props.detail.pull.headSha,

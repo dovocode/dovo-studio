@@ -52,7 +52,7 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       env: {},
     },
   )
-  expect(catalog.models).toEqual([{ id: 'a', name: 'A' }])
+  expect(catalog.models).toEqual([{ id: 'a', name: 'A', isDefault: true }])
   expect(catalog.acp?.modes).toEqual([{ id: 'code', name: 'Code' }])
   expect(catalog.acp?.configOptions.find((item) => item.id === 'toggle')).toEqual({
     id: 'toggle',
@@ -111,6 +111,10 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     { command: process.execPath, args: [script], env: {} },
   )
   expect(catalog.reasoning).toEqual([{ id: 'high', name: 'High' }])
+  expect(catalog.models.find((model) => model.id === 'b')).toMatchObject({
+    isDefault: true,
+    defaultReasoning: 'high',
+  })
   expect(catalog.acp?.configOptions.map(({ id, currentValue }) => [id, currentValue])).toEqual([
     ['model', 'b'],
     ['thought', 'high'],

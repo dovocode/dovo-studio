@@ -312,7 +312,13 @@ export function PullDetail({
               onStartTask={taskCreation.start}
               prBranchAvailable={!!detail.pull.headCloneUrl}
               refreshDisabled={!readConnected || refreshing}
-              taskDisabled={!repository || !connected || taskCreation.busy}
+              taskDisabled={!taskCreation.available || taskCreation.busy}
+              computers={taskCreation.computers}
+              computerId={taskCreation.computerId}
+              onComputerChange={taskCreation.chooseComputer}
+              projects={taskCreation.projects}
+              projectId={taskCreation.projectId}
+              onProjectChange={taskCreation.chooseProject}
               actions={actions?.secondary ?? []}
               onAction={openAction}
               actionDisabled={actionDisabled}
@@ -579,6 +585,13 @@ export function PullDetail({
                     repositoryId={repositoryId}
                     detail={detail}
                     onRefresh={refresh}
+                    onOpenStackReview={(member, runtimeId) =>
+                      navigateAfterSheet(() =>
+                        router.push(
+                          pullHref(runtimeId, member.target.repositoryId, member.target.number),
+                        ),
+                      )
+                    }
                     onAsk={(finding) =>
                       setAgentContext({
                         detail,

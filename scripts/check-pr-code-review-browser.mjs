@@ -24,11 +24,14 @@ window.transport=async(path,input,host='runtime')=>{
  if(!reports.has(host))reports.set(host,{reviews:[],...(window.firstUse?{}:{selection})});const report=reports.get(host);
  if(path.endsWith('/start'))report.reviews.unshift({id:input.requestId,requestId:input.requestId,revision:'evidence',version:0,sequence:0,url:'https://github.com/acme/studio/pull/184',destination:'destination',readerIdentity:'reader',account:'dominic',baseSha:base,headSha:head,selection:input.selection,reviewers:input.reviewers,images:(input.images??[]).map((image,index)=>({id:'image-'+index,name:image.name,mime:'image/png',digest:'hash',size:68})),reviewerResults:[input.selection,...(input.reviewers??[])].map((selection,index)=>({id:'reviewer-'+(index+1),selection,status:'completed',completedBatches:2,batches:2})),depth:input.depth,runChecks:input.runChecks,checks:input.runChecks?[{name:"lint",command:"pnpm run lint",headSha:head,status:"failed",exitCode:2,output:"Actual lint output"}]:[],createdAt:new Date().toISOString(),finishedAt:new Date().toISOString(),status:'completed',summary:'One bug needs a closer look.',analysis:{batches:2,completedBatches:2,phase:'completed',rejectedFindings:3,contextFiles:[{path:'src/store.ts',ref:head,text:'export const snapshotOnly = true;'}]},notVerified:['No tests ran. Only supplied patches were available.'],coverage:[{path:'src/drafts.ts',state:'supplied',patch},{path:'assets/logo.png',state:'excluded'}],missingFiles:0,findings:[{...finding,reviewerIds:['reviewer-1']}],draft:{body:'',selected:[],dismissed:[],event:'comment'}});
  if(path.endsWith('/start')){report.selection=input.selection;report.reviewers=input.reviewers;}
+ if(path.endsWith('/start')&&input.fullStack)report.stacks=[{id:'stack-run',sequence:1,requestId:input.requestId,status:'running',createdAt:new Date().toISOString(),members:[183,184].map((number,index)=>({target:{...input.target,number},url:'https://github.com/acme/studio/pull/'+number,title:'Stack member '+number,status:index?'queued':'running',reviewId:index?undefined:'root-review',suppliedFiles:1,totalFiles:2,findings:1}))}];
+ if(path.endsWith('/stop')&&input.stackId){report.stacks[0].status='cancelled';report.stacks[0].sequence++;report.stacks[0].members.forEach(member=>member.status='cancelled');}
  if(path.endsWith('/save')){if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);if(r.version!==input.version)throw new Error('This draft changed on another client.');r.draft=structuredClone(input.draft);r.version++;r.sequence++}
  if(path.endsWith('/publish')){if(window.failPublish){window.failPublish=false;throw new Error('Publish response unavailable. Check the report before retrying.')}if(window.delayPublish)await new Promise(resolve=>window.releasePublish=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);r.publication={requestId:input.requestId,body:input.body,event:r.draft.event,status:'published',url:r.url+'#review-1'};r.sequence++}
  return structuredClone(report);
 };
 const detail={destination:'destination',pull:{number:184,title:'Preserve drafts after reconnect',headSha:head,baseSha:base,url:'https://github.com/acme/studio/pull/184'},files:[]};
+detail.stack={rootNumber:183,position:2,size:2,complete:true,members:[183,184].map((number,index)=>({number,title:'Stack member '+number,url:'https://github.com/acme/studio/pull/'+number,head:'feature-'+number,base:index?'feature-183':'main',draft:false,depth:index,...(index?{parentNumber:183}:{})}))};
 `
 const mobileRoot = root + 'apps/mobile/src/scm/pulls/detail'
 const mobileMocks = [
@@ -128,7 +131,7 @@ try {
           stdin: {
             resolveDir: root,
             loader: 'tsx',
-            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);const [,refresh]=useState(0);window.refreshComputers=()=>refresh(n=>n+1);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);const [,refresh]=useState(0);window.refreshComputers=()=>refresh(n=>n+1);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value} onOpenStackReview={(member,runtimeId)=>window.stackOpened={member,runtimeId}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
           },
           bundle: true,
           write: false,
@@ -511,6 +514,39 @@ try {
       assert.ok(sent.body.startsWith('Please check restore'))
       assert.ok(sent.body.includes('<!-- dovo-review:'))
       assert.ok(sent.body.includes('Latest edit.'))
+      if (mobile)
+        await page
+          .getByRole('combobox', { name: 'Review scope', exact: true })
+          .selectOption('stack')
+      else {
+        await page.getByRole('button', { name: 'Review scope', exact: true }).click()
+        await page.getByRole('option', { name: 'Full stack · 2 PRs', exact: true }).click()
+      }
+      await page.getByRole('button', { name: 'Review again', exact: true }).click()
+      await page.getByText('#183 · Stack member 183', { exact: true }).waitFor()
+      assert.equal(
+        (
+          await page.evaluate(
+            () => window.requests.filter((request) => request.path.endsWith('/start')).at(-1).input,
+          )
+        ).fullStack,
+        true,
+      )
+      await page.getByRole('button', { name: 'Stop stack review', exact: true }).click()
+      const stop = await page.evaluate(() =>
+        window.requests.find((request) => request.input.stackId === 'stack-run'),
+      )
+      assert.equal(stop.path, '/api/review/pull/stop')
+      await page.getByRole('button', { name: 'Open review for PR #183', exact: true }).click()
+      assert.equal((await page.evaluate(() => window.stackOpened)).member.target.number, 183)
+      assert.equal(
+        (await page.evaluate(() => window.stackOpened)).runtimeId,
+        firstUse ? 'remote' : 'runtime',
+      )
+      if (mobile) await page.getByRole('button', { name: 'Open agent review', exact: true }).click()
+      await editor.fill(
+        'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184 Latest edit.',
+      )
       await page.evaluate(() => window.push())
       await page.getByText('This PR has new changes.', { exact: false }).waitFor()
       assert.equal(

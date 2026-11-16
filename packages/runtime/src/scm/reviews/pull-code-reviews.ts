@@ -11,6 +11,8 @@ import {
   pullCodeReviewReportSchema,
   pullCodeReviewBody,
   pullReviewDepthSchema,
+  verifyPullUrl,
+  type PullReviewStack,
   type PullCodeReview,
   type PullCodeReviewTarget,
   type PullCodeReviewDraft,
@@ -27,6 +29,7 @@ import { runPullReviewers } from './pull-reviewers.js'
 import { pullReviewImages } from './pull-review-images.js'
 import { pullReviewSource } from './pull-review-checkout.js'
 import { runPullChecks } from './pull-review-checks.js'
+import { PullStackReviews } from './pull-stack-reviews.js'
 export { pullReviewEvidence } from './pull-review-engine.js'
 
 const pullCodeReviewReportReviewersSchema = pullCodeReviewReportSchema.fields.reviewers
@@ -46,6 +49,8 @@ export class PullCodeReviews {
   private active = new Map<string, AbortController>()
   private publications = new Set<string>()
   private starts = new Set<string>()
+  private executions = new Map<string, Promise<void>>()
+  private stacks: PullStackReviews
   constructor(
     private db: Database.Database,
     private s: Pick<Services, 'pulls' | 'store' | 'titles' | 'activity' | 'git'>,
@@ -82,6 +87,17 @@ export class PullCodeReviews {
       }
       if (changed) this.write(review)
     }
+    this.stacks = new PullStackReviews(
+      db,
+      (input) => this.prepareStack(input),
+      async (input, context) => {
+        const report = await this.start(input, context)
+        const review = report.reviews.find((review) => review.requestId === input.requestId)
+        if (!review) throw new Error('The PR stack member did not create a review.')
+        return { id: review.id, done: this.executions.get(review.id) ?? Promise.resolve() }
+      },
+      (id) => this.active.get(id)?.abort(new Error('PR stack review cancelled.')),
+    )
   }
   private write(review: PullCodeReview) {
     review.sequence++
@@ -117,6 +133,7 @@ export class PullCodeReviews {
         },
         changes: () =>
           this.s.pulls.section(repo.path, target.number, 'changes', source.destination),
+        stack: () => this.s.pulls.section(repo.path, target.number, 'stack', source.destination),
         status: () => this.s.pulls.status(repo.path, target.number, false, source.destination),
         feedback: () => this.s.pulls.feedback(repo.path, target.number, source.destination),
         act: (input: Parameters<Services['pulls']['act']>[1]) => this.s.pulls.act(repo.path, input),
@@ -133,6 +150,7 @@ export class PullCodeReviews {
       overview: () => reader.section(target.number, 'overview', source.destination),
       readSnapshot: undefined,
       changes: () => reader.section(target.number, 'changes', source.destination),
+      stack: () => reader.section(target.number, 'stack', source.destination),
       status: () => reader.status(target.number, false, source.destination),
       feedback: () => reader.feedback(target.number, source.destination),
       act: reader.act,
@@ -140,6 +158,89 @@ export class PullCodeReviews {
   }
   private scope(target: PullCodeReviewTarget, readerIdentity: string) {
     return JSON.stringify([target.expectedDestination, readerIdentity, target.number])
+  }
+  private stackScope(target: PullCodeReviewTarget, readerIdentity: string) {
+    return JSON.stringify([target.expectedDestination, readerIdentity])
+  }
+  private async prepareStack(input: typeof pullCodeReviewStartSchema.Type) {
+    if (input.remainingFrom) throw new HttpError(400, 'Start a new full stack review.')
+    const reader = await this.source(input.target)
+    const detail = await retrievalFresh(true, () => reader.stack())
+    const stack = detail.stack
+    if (
+      detail.stale ||
+      detail.refreshError ||
+      !stack?.complete ||
+      stack.members.length < 2 ||
+      stack.members.length !== stack.size ||
+      stack.members.length > 100
+    )
+      throw new HttpError(
+        409,
+        'The complete PR stack is unavailable. Refresh the stack before reviewing.',
+      )
+    if (
+      !stack.members.some((member) => member.number === input.target.number) ||
+      new Set(stack.members.map((member) => member.number)).size !== stack.members.length
+    )
+      throw new HttpError(409, 'The PR stack membership changed. Refresh before reviewing.')
+    const members: PullReviewStack['members'] = []
+    for (const member of stack.members) {
+      if (
+        member.parentNumber &&
+        !members.some((parent) => parent.target.number === member.parentNumber)
+      )
+        throw new HttpError(
+          409,
+          'The PR stack dependencies are incomplete. Refresh before reviewing.',
+        )
+      const target = {
+        ...input.target,
+        number: member.number,
+        repositoryId: reader.repository ? input.target.repositoryId : member.url,
+      }
+      const source = await this.source(target)
+      guardSource(source.source, {
+        expectedDestination: reader.source.destination,
+        expectedReaderIdentity: reader.source.readerIdentity,
+      })
+      const latest = await retrievalFresh(true, () => source.status())
+      verifyPullUrl(member.url, latest.pull.url)
+      if (
+        latest.stale ||
+        latest.refreshError ||
+        latest.pull.state !== 'open' ||
+        !latest.pull.headSha ||
+        !latest.pull.baseSha ||
+        latest.pull.head !== member.head ||
+        latest.pull.base !== member.base
+      )
+        throw new HttpError(
+          409,
+          'A PR stack member changed or is unavailable. Refresh before reviewing.',
+        )
+      if (
+        member.number === input.target.number &&
+        (latest.pull.headSha !== input.headSha || latest.pull.baseSha !== input.baseSha)
+      )
+        throw new HttpError(409, 'This PR changed. Refresh before starting a review.')
+      members.push({
+        target,
+        title: latest.pull.title,
+        url: latest.pull.url,
+        headSha: latest.pull.headSha,
+        baseSha: latest.pull.baseSha,
+        parentNumber: member.parentNumber,
+        requestId: randomUUID(),
+        status: 'queued',
+      })
+    }
+    return {
+      destination: reader.source.destination,
+      readerIdentity: reader.source.readerIdentity,
+      rootNumber: stack.rootNumber,
+      members,
+    }
   }
   private list(scope: string) {
     return decode(
@@ -163,8 +264,10 @@ export class PullCodeReviews {
       .prepare("SELECT value FROM documents WHERE id='pull-review-reviewers'")
       .get()
     const depth = this.db.prepare("SELECT value FROM documents WHERE id='pull-review-depth'").get()
+    const stacks = this.stacks.list(this.stackScope(target, source.readerIdentity), target.number)
     return {
       reviews: this.list(this.scope(target, source.readerIdentity)),
+      ...(stacks.length ? { stacks } : {}),
       ...(reviewers
         ? {
             reviewers: decode(
@@ -186,16 +289,33 @@ export class PullCodeReviews {
         : {}),
     }
   }
-  async start(input: typeof pullCodeReviewStartSchema.Type) {
+  async start(
+    input: typeof pullCodeReviewStartSchema.Type,
+    stack?: NonNullable<PullCodeReview['stack']>,
+  ): Promise<PullCodeReviewReport> {
     if (this.stopped) throw new HttpError(503, 'The runtime is stopping.')
     if (input.depth === 'quick' && input.runChecks)
       throw new HttpError(
         400,
         'Quick reviews do not run tools or project checks. Choose Standard or Deep.',
       )
+    if (input.fullStack) {
+      await pullReviewImages(input.images ?? [])
+      const fingerprints = [input.selection, ...(input.reviewers ?? [])].map((selection) =>
+        JSON.stringify(selection),
+      )
+      if (new Set(fingerprints).size !== fingerprints.length)
+        throw new HttpError(400, 'Choose distinct reviewer models or settings.')
+      for (const selection of [input.selection, ...(input.reviewers ?? [])])
+        this.s.titles.validateReview(selection, input.depth ?? 'standard')
+      const { source } = await this.source(input.target)
+      await this.stacks.start(input, this.stackScope(input.target, source.readerIdentity))
+      return this.read(input.target)
+    }
     const images = await pullReviewImages(input.images ?? [])
     const imageMetadata = images.map(({ data: _data, ...metadata }) => metadata)
     const reader = await this.source(input.target)
+    if (stack) guardSource(reader.source, { expectedReaderIdentity: stack.readerIdentity })
     const scope = this.scope(input.target, reader.source.readerIdentity)
     const prior = this.list(scope).find((review) => review.requestId === input.requestId)
     if (prior) {
@@ -277,6 +397,7 @@ export class PullCodeReviews {
       const review: PullCodeReview = {
         id: randomUUID(),
         requestId: input.requestId,
+        stack,
         remainingFrom: input.remainingFrom,
         revision,
         version: 0,
@@ -331,8 +452,10 @@ export class PullCodeReviews {
       const done = this.run(review, scope, reader, controller, images).finally(() => {
         this.active.delete(review.id)
         this.runs.delete(done)
+        this.executions.delete(review.id)
       })
       this.runs.add(done)
+      this.executions.set(review.id, done)
       return this.read(input.target)
     } finally {
       this.starts.delete(scope)
@@ -446,8 +569,12 @@ export class PullCodeReviews {
       }
     }
   }
-  async stop(target: PullCodeReviewTarget, reviewId: string) {
+  async stop(target: PullCodeReviewTarget, reviewId: string, stackId?: string) {
     const { source } = await this.source(target)
+    if (stackId) {
+      this.stacks.stop(this.stackScope(target, source.readerIdentity), target.number, stackId)
+      return this.read(target)
+    }
     const review = this.get(this.scope(target, source.readerIdentity), reviewId)
     this.active.get(review.id)?.abort(new Error('PR review cancelled.'))
     return this.read(target)
@@ -577,6 +704,7 @@ export class PullCodeReviews {
     this.stopped = true
     for (const controller of this.active.values())
       controller.abort(new Error('Runtime stopped during PR review.'))
+    await this.stacks.dispose()
     await Promise.allSettled(this.runs)
   }
 }

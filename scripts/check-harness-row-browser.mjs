@@ -41,7 +41,7 @@ try {
             path: './use-model-catalog',
             importer: mobile + 'agents/',
             contents:
-              'export const useModelCatalog=agent=>({catalog:{models:[{id:"model",name:(agent.endpoint==="agy"?"Antigravity":agent.name)+" model"}],reasoning:[]},modelName:agent.model,canDiscover:true,loading:false,refresh(){}});',
+              'export const useModelCatalog=agent=>({catalog:window.catalog(agent),modelName:agent.model,canDiscover:true,loading:false,refresh(){}});',
           },
         ]
       : [
@@ -63,7 +63,7 @@ try {
             path: './harness-catalog',
             importer: desktop,
             contents:
-              'export const useHarnessCatalog=()=>({catalog:{models:[{id:"model",name:"Model"}],reasoning:[]},loading:false,refresh(){}});',
+              'export const useHarnessCatalog=agent=>({catalog:window.catalog(agent),loading:false,refresh(){}});',
           },
         ]
     const built = await bundleBrowser(
@@ -76,7 +76,9 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {defaultTaskHarness} from '@dovo/protocol';
 import {taskHarnessChoices,selectedTaskHarness,harnessHandoffSelectionTask} from '${mobile}tasks/creation/harness-choices.ts';
 import {${isMobile ? 'HarnessModelPicker' : 'ComposerModelPicker'} as Picker} from '${isMobile ? mobile + 'agents/harness-model-picker.tsx' : desktop + 'composer-model-picker.tsx'}';
-const antigravity={...defaultTaskHarness('acp'),id:'dovo:antigravity',name:'Antigravity',endpoint:'agy',args:['acp'],env:{DOVO_PUBLIC_TEST:'kept'}};
+${isMobile ? '' : `import {ComposerEffortColumn} from '${desktop}composer-model-options.tsx';`}
+window.catalog=agent=>({models:[{id:'model',name:(agent.endpoint==='agy'?'Antigravity':'Registry agent')+' model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}],acp:{modes:[],commands:[],configOptions:[{id:'model',name:'Model',category:'model',currentValue:'old',options:[{id:'model',name:'Model'}]},{id:'thought',name:'Thought',category:'thought_level',currentValue:'low',options:[{id:'low',name:'Low'},{id:'high',name:'High'}]},{id:'toggle',name:'Toggle',currentValue:'true',options:[{id:'true',name:'On'},{id:'false',name:'Off'}]}]}});
+const antigravity={...defaultTaskHarness('acp'),id:'dovo:antigravity',name:'Antigravity',endpoint:'agy',args:['acp'],env:{DOVO_PUBLIC_TEST:'kept'},acpConfig:{model:'old',thought:'low',toggle:'true'}};
 const agents=[antigravity,{...antigravity,id:'missing',name:'Unavailable ACP',endpoint:'missing'}];
 const installation={id:'registry-agent',name:'Registry agent',command:'registry',args:['acp'],status:'installed'};
 window.available=new Set(['harness:codex','harness:pi','harness:opencode','agent:dovo:antigravity','acp:registry-agent']);
@@ -85,7 +87,7 @@ function App(){const[mode,setMode]=useState('empty');window.mode=setMode;const[v
 const source={id:'task',title:'Thread',status:mode==='empty'?'draft':'review',agentId:'',harness:defaultTaskHarness('opencode'),providerLock:mode==='switch'?'opencode':undefined,messages:mode==='switch'?[{id:'old',role:'user',text:'Keep history'}]:[],files:[],draft:'Keep draft'};
 const task=mode==='switch'?harnessHandoffSelectionTask(source,{...source.harness,id:'task',name:'OpenCode'}):source;
 const pick=(id,agent)=>{window.selections.push({id,agent,mode});setSelection(id);setValue(agent);return Promise.resolve(true)};
-return ${isMobile ? `<Picker key={mode} task={task} agents={agents} choices={taskHarnessChoices(task,agents,[installation],{},window.available)} selection={selection} agent={{...value,id:'task',name:'Selected'}} disabled={false} onChange={pick}/>` : `<Picker key={mode} value={value} disabled={false} agents={agents} onChange={next=>pick('model',next)} onConfigure={()=>{}} onUseHarness={next=>pick('harness',next)} onSelectAgent={id=>pick(id,agents.find(agent=>agent.id===id))}/>`};};createRoot(document.getElementById('app')).render(<App/>);
+return ${isMobile ? `<Picker key={mode} task={task} agents={agents} choices={taskHarnessChoices(task,agents,[installation],{},window.available)} selection={selection} agent={{...value,id:'task',name:'Selected'}} disabled={false} onChange={pick}/>` : `<Picker key={mode} value={value} disabled={false} agents={agents} onChange={next=>pick('model',next)} onConfigure={()=>{}} onUseHarness={next=>pick('harness',next)} onSelectAgent={id=>pick(id,agents.find(agent=>agent.id===id))} settings={<ComposerEffortColumn value={value} catalog={window.catalog(value)} automatic={false} onChange={next=>pick('reasoning',next)} disabled={false} loading={false} error=""/>}/>`};};createRoot(document.getElementById('app')).render(<App/>);
 `,
         },
         bundle: true,
@@ -123,19 +125,27 @@ return ${isMobile ? `<Picker key={mode} task={task} agents={agents} choices={tas
               'Codex models',
               'OpenCode models',
               'Pi models',
-              'Antigravity harness',
+              'Antigravity models',
               'Registry agent models',
             ],
       )
       assert.equal(await row.getByRole('button', { name: /Unavailable|Claude/ }).count(), 0)
       await row
         .getByRole('button', {
-          name: isMobile ? 'Antigravity · ACP' : 'Antigravity harness',
+          name: isMobile ? 'Antigravity · ACP' : 'Antigravity models',
           exact: true,
         })
         .click()
-      if (isMobile)
-        await page.getByRole('button', { name: 'Antigravity model', exact: true }).click()
+      await page
+        .getByRole(isMobile ? 'button' : 'option', { name: 'Antigravity model', exact: true })
+        .click()
+      if (isMobile) await page.getByLabel('Reasoning level', { exact: true }).selectOption('high')
+      else {
+        await page.getByRole('radio', { name: 'High', exact: true }).click()
+        assert.equal(await page.getByLabel('ACP Model', { exact: true }).count(), 0)
+        assert.equal(await page.getByLabel('ACP Thought', { exact: true }).count(), 0)
+        assert.equal(await page.getByLabel('ACP Toggle', { exact: true }).count(), 1)
+      }
       await page.waitForFunction(
         (mode) =>
           window.selections.some((item) => item.mode === mode && item.agent.endpoint === 'agy'),
@@ -144,6 +154,9 @@ return ${isMobile ? `<Picker key={mode} task={task} agents={agents} choices={tas
       const chosen = await page.evaluate(() => window.selections.at(-1).agent)
       assert.equal(chosen.provider, 'acp')
       assert.equal(chosen.endpoint, 'agy')
+      assert.equal(chosen.model, 'model')
+      assert.equal(chosen.reasoning, 'high')
+      assert.deepEqual(chosen.acpConfig, { toggle: 'true' })
       assert.deepEqual(chosen.args, ['acp'])
       assert.deepEqual(chosen.env, { DOVO_PUBLIC_TEST: 'kept' })
       if (!isMobile) await page.keyboard.press('Escape')

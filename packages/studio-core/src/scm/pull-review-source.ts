@@ -28,7 +28,7 @@ export async function resolvePullReviewSource({
   pin,
   remember,
 }: {
-  detail: PullDetail
+  detail: Pick<PullDetail, 'pull'>
   repositoryId: string
   request: WorkspaceRequest
   pin?: ForgeSourceIdentity
@@ -62,7 +62,7 @@ export async function resolvePullReviewSource({
     resolved.pull.baseSha !== detail.pull.baseSha
   )
     throw new Error(
-      'This PR changed or is unavailable on this computer. Refresh the PR before reviewing.',
+      'This PR changed or is unavailable on this computer. Refresh the PR before continuing.',
     )
   return { ...resolved, destination: identity.destination }
 }
@@ -74,7 +74,7 @@ export function usePullReviewSource({
   scope,
   connected,
 }: {
-  detail: PullDetail
+  detail: Pick<PullDetail, 'pull'>
   repositories: readonly Repository[]
   request: WorkspaceRequest
   scope: string

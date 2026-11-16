@@ -5,6 +5,7 @@ import { Text } from '../../../ui/content/text'
 import { Action } from '../../../ui/controls/action'
 import { Sheet } from '../../../ui/layout/sheet'
 import { useTheme } from '../../../ui/theme'
+import { Choice } from '../../../ui/controls/choice'
 import type { PullActionTarget } from './pull-actions'
 import type { PullActionOption } from './pull-action-options'
 export type PullMenuProps = {
@@ -15,6 +16,12 @@ export type PullMenuProps = {
   prBranchAvailable: boolean
   refreshDisabled: boolean
   taskDisabled: boolean
+  computers?: { id: string; name: string; disabled: boolean }[]
+  computerId?: string
+  onComputerChange?: (id: string) => void
+  projects?: { id: string; name: string; path: string }[]
+  projectId?: string
+  onProjectChange?: (id: string) => void
   actions: PullActionOption[]
   onAction: (target: PullActionTarget) => void
   actionDisabled: boolean
@@ -70,6 +77,30 @@ export function PullMenu(props: PullMenuProps) {
               }
             />
           ))}
+          {(props.computers?.length ?? 0) > 1 && (
+            <Choice
+              label={uiText('Computer')}
+              value={props.computerId ?? ''}
+              items={props.computers ?? []}
+              onChange={(id) => props.onComputerChange?.(id)}
+              disabled={props.taskDisabled}
+            />
+          )}
+          {(props.projects?.length ?? 0) > 1 && (
+            <Choice
+              label={uiText('Project')}
+              value={props.projectId ?? ''}
+              items={[
+                { id: '', name: uiText('Choose a project') },
+                ...(props.projects ?? []).map((project) => ({
+                  id: project.id,
+                  name: `${project.name} · ${project.path}`,
+                })),
+              ]}
+              onChange={(id) => props.onProjectChange?.(id)}
+              disabled={props.taskDisabled}
+            />
+          )}
           <Action
             secondary
             label={uiText('New branch from PR')}
