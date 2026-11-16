@@ -10,6 +10,7 @@ const allowed = new Set([
   '/api/studio/tools',
   '/api/linked-projects',
   '/api/agent/question',
+  '/api/agent/a2ui',
   '/api/agent/help',
   '/api/agent/conversation',
   '/api/agent/todos',

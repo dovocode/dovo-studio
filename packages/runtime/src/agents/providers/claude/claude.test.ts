@@ -751,6 +751,7 @@ it.each([true, false])(
         for await (const _message of prompt) {
           for (const name of [
             'mcp__dovo_task__ask_question',
+            'mcp__dovo_task__a2ui',
             'mcp__dovo_task__todos',
             'mcp__dovo_task__skill_read',
             'mcp__other__todos',
@@ -776,6 +777,7 @@ it.each([true, false])(
     try {
       await adapter.run(run)
       expect(decisions).toEqual([
+        managed ? 'allow' : 'deny',
         managed ? 'allow' : 'deny',
         managed ? 'allow' : 'deny',
         managed ? 'allow' : 'deny',

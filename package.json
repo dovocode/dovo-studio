@@ -3,6 +3,7 @@
   "version": "0.0.9",
   "private": true,
   "scripts": {
+    "test:a2ui:browser": "node scripts/build-mcp-apps.mjs && pnpm --filter @dovo/runtime... -r build && node scripts/check-a2ui-browser.mjs",
     "test:image-gallery:browser": "node scripts/check-image-gallery-browser.mjs",
     "test:bot-harness:browser": "node scripts/check-bot-harness-picker-browser.mjs && node scripts/check-harness-row-browser.mjs",
     "test:bot-conversations:browser": "node scripts/check-bot-conversations-browser.mjs",

@@ -1,5 +1,7 @@
 # MCP Apps
 
+For agent-composed UI with a fixed component catalog, see [A2UI cards](a2ui.md).
+
 Dovo hosts MCP Apps on desktop and mobile for MCP servers configured in project or agent resources.
 The runtime owns one upstream session per thread/server/checkout. Codex, Claude, OpenCode and ACP
 receive a scoped stdio proxy; upstream headers and environment credentials are not placed in app

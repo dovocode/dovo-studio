@@ -44,6 +44,7 @@ const workspaceInputs = [
   '!packages/protocol/src/generated/browser-viewer.ts',
   '!packages/studio-ui/mcp-apps/host.json',
   '!packages/studio-ui/mcp-apps/sandbox.json',
+  '!packages/runtime/src/mcp-apps/a2ui-renderer.json',
   '!packages/runtime/native/ios-device/target/**',
 ]
 
@@ -70,6 +71,7 @@ export default defineConfig({
             'packages/protocol/src/generated/browser-viewer.ts',
             'packages/studio-ui/mcp-apps/host.json',
             'packages/studio-ui/mcp-apps/sandbox.json',
+            'packages/runtime/src/mcp-apps/a2ui-renderer.json',
           ],
           env: ['VITE_*', 'NEXT_PUBLIC_*', 'NODE_ENV', 'CI'],
           // Invocation IDs and browser-check settings do not affect compiled outputs.

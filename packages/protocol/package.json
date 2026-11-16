@@ -7,6 +7,12 @@
   ],
   "type": "module",
   "exports": {
+    "./a2ui": {
+      "types": "./src/a2ui.ts",
+      "development": "./src/a2ui.ts",
+      "import": "./dist/a2ui.js",
+      "default": "./dist/a2ui.js"
+    },
     ".": {
       "types": "./src/index.ts",
       "development": "./src/index.ts",
@@ -61,6 +67,7 @@
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },
   "dependencies": {
+    "@a2ui/web_core": "0.15.0",
     "@dovo/durable-connections": "workspace:*",
     "@noble/hashes": "2.4.0",
     "acorn": "8.19.0",
@@ -73,7 +80,8 @@
     "micromark-extension-gfm": "^3.0.0",
     "proper-lockfile": "4.1.2",
     "tweetnacl": "1.0.3",
-    "uuid": "^14.0.3"
+    "uuid": "^14.0.3",
+    "zod3": "npm:zod@3.25.76"
   },
   "devDependencies": {
     "@types/mdast": "^4.0.4",

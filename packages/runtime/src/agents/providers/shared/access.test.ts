@@ -357,6 +357,7 @@ it('denies pre-allowed mutating Claude tools before execution and preserves owne
       'ToolSearch',
       'AskUserQuestion',
       'mcp__dovo_task__ask_question',
+      'mcp__dovo_task__a2ui',
       'mcp__dovo_task__todos',
     ]) {
       expect(await check(name)).toEqual({})

@@ -268,6 +268,28 @@ const tools: Array<
     inputSchema: strictCommandInput(threadPrepareCommandSchema),
   },
   {
+    name: 'a2ui',
+    description:
+      'Compose a native-styled interactive card using A2UI v1.0. Read the catalog first. Publish ordered messages with a stable key, title and expectedRevision (0 to create). Read before updates. User drafts survive compatible updates; submissions need human approval and return to this thread. No HTML, code, URLs or secrets. Available read-only.',
+    inputSchema: {
+      type: 'object',
+      properties: {
+        action: { type: 'string', enum: ['catalog', 'publish', 'read'] },
+        key: { type: 'string', minLength: 1, maxLength: 120 },
+        title: { type: 'string', minLength: 1, maxLength: 120 },
+        expectedRevision: { type: 'integer', minimum: 0 },
+        messages: {
+          type: 'array',
+          minItems: 1,
+          maxItems: 32,
+          items: { type: 'object', additionalProperties: true },
+        },
+      },
+      required: ['action'],
+      additionalProperties: false,
+    },
+  },
+  {
     name: 'response_prepare',
     description:
       'Offer a reply/command/MCP/form button for paired human review and Send/Run. action is an object or its JSON encoding. Use {{fieldId}} in forms. No secrets. Commands need unrestricted terminals; MCP needs write access. Stable key replaces only unsent buttons. Questions use ask_question. Available read-only.',
@@ -1128,6 +1150,8 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             command: { ...input, kind: 'automation' },
           }),
         )
+      case 'a2ui':
+        return text(await post('/api/agent/a2ui', { taskId: task, parentRunId, command: input }))
       case 'response_prepare':
         return text(
           await post('/api/agent/thread-prepare', {
