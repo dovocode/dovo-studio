@@ -490,18 +490,26 @@ try {
     true,
     'Direct preview address controls follow the page',
   )
-  const navigate = () =>
-    page.evaluate(() =>
-      [...window.webViews.values()][0].onNavigationStateChange({
+  const navigate = (blur = false) =>
+    page.evaluate((blur) => {
+      ;[...window.webViews.values()][0].onNavigationStateChange({
         url: 'http://preview.lan/current',
         canGoBack: true,
         canGoForward: false,
-      }),
-    )
+      })
+      const field = document.querySelector('input[aria-label="Preview URL"]')
+      const address = field.value
+      // Native navigation and blur can arrive before React commits the history update.
+      if (blur) field.blur()
+      return address
+    }, blur)
   await input.focus()
-  await navigate()
-  assert.equal(await input.inputValue(), 'http://preview.lan/initial')
-  await input.blur()
+  assert.equal(await navigate(true), 'http://preview.lan/initial')
+  await page.waitForFunction(
+    () =>
+      document.querySelector('input[aria-label="Preview URL"]').value ===
+      'http://preview.lan/current',
+  )
   assert.equal(
     await input.inputValue(),
     'http://preview.lan/current',

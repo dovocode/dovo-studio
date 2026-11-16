@@ -261,6 +261,7 @@ function BrowserContent({
   })
   const editingAddress = useRef(false)
   const addressAtFocus = useRef(input)
+  const lastAddress = useRef(url)
   useLayoutEffect(() => {
     if (active) return
     // Direct pages are remounted on return; reopen the last navigated URL.
@@ -318,6 +319,7 @@ function BrowserContent({
     act(() =>
       nativeEffect(() => {
         const target = previewUrl(input, profile?.connection.address)
+        lastAddress.current = target
         editingAddress.current = false
         addressField.current?.blur()
         if (target === url) web.current?.reload()
@@ -390,7 +392,8 @@ function BrowserContent({
           onEditing={(value) => {
             editingAddress.current = value
             if (value) addressAtFocus.current = input
-            else if (input === addressAtFocus.current && history.url) setInput(history.url)
+            else if (input === addressAtFocus.current && lastAddress.current)
+              setInput(lastAddress.current)
           }}
           mode="web"
           onMode={(next) => onMode(next, history.url || url)}
@@ -600,6 +603,8 @@ function BrowserContent({
                           url: pageUrl ? state.url : previous.url,
                         }))
                         if (pageUrl) {
+                          // Blur can arrive before React commits the history state.
+                          lastAddress.current = state.url
                           if (!editingAddress.current) setInput(state.url)
                           rememberAddress(scope, state.url)
                         }
