@@ -24,6 +24,9 @@ const mocks = {
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }
+// This reader fixture has no paired computer entries. Remote task selection is
+// covered by check-pr-task-checkout-browser.mjs.
+mocks['@dovo/studio-core'] += `export const useRuntimeSources=()=>[];`
 mocks['@dovo/studio-ui'] += `
 export {Disclosure} from '${root}packages/studio-ui/src/disclosure.tsx';
 export {Textarea} from '${root}packages/web-ui/src/textarea.tsx';
