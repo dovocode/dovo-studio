@@ -61,6 +61,8 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
   './command-palette':
     'export const CommandPalette=({open})=>open?<div role="dialog" aria-label="Command palette" tabIndex={0}>Palette</div>:null;',
   './task-launcher': 'export const TaskLauncher=()=>null;',
+  // The report flow has its own check-report-problem-browser.mjs suite.
+  './report-problem/report-problem': 'export const ReportProblem=()=>null;',
 }
 const built = await build({
   stdin: {

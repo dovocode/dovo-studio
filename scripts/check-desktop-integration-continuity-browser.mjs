@@ -58,6 +58,8 @@ const stubs = [
     './title-bar': 'export const TitleBar=()=>null;',
     './command-palette': 'export const CommandPalette=()=>null;',
     './task-launcher': 'export const TaskLauncher=()=>null;',
+    // The report flow has its own check-report-problem-browser.mjs suite.
+    './report-problem/report-problem': 'export const ReportProblem=()=>null;',
   }).map(([path, contents]) => ({ path, contents, importer: root + 'packages/studio-shell/src/' })),
   {
     path: './use-pulls',
