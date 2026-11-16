@@ -17,6 +17,33 @@ import {
 
 type Request = (path: string, input: unknown) => Promise<PullCodeReviewReport>
 type Draft = { value: PullCodeReviewDraft; version: number }
+
+const activityLabels = {
+  preparing: 'Preparing review…',
+  checks: 'Running project checks…',
+  checking: 'Checking proposed findings…',
+  combining: 'Combining reviewer findings…',
+  reviewing: 'Reviewing captured evidence…',
+  completed: 'Reviewing captured evidence…',
+}
+
+export function pullReviewActivity(review?: PullCodeReview, reviewers = 1) {
+  const phase = review?.checks?.some((check) => check.status === 'running')
+    ? 'checks'
+    : (review?.analysis?.phase ?? 'preparing')
+  const completed = review?.analysis?.completedBatches ?? 0
+  const batches = review?.analysis?.batches ?? 0
+  return {
+    phase,
+    label: activityLabels[phase],
+    completed,
+    batches,
+    count: Math.max(1, Math.min(4, review?.reviewerResults?.length ?? reviewers)),
+    activeBatch: review?.analysis?.activeBatch ?? Math.min(completed + 1, batches),
+    percent: batches ? Math.min(100, (completed / batches) * 100) : 0,
+  }
+}
+
 // Retain unsaved text across navigation. Saved text lives on the owning computer.
 const drafts = new Map<string, Draft>()
 const imagesByScope = new Map<string, PullReviewImage[]>()

@@ -44,6 +44,8 @@ export interface AgentRun {
   signal: AbortSignal
   /** Request a utility turn without tools. Image input remains available where supported. */
   tools?: 'none'
+  /** Ignore provider settings from untrusted PR evidence. */
+  isolateSettings?: boolean
   /** Constrain the final utility response where the provider supports JSON Schema. */
   outputSchema?: Record<string, unknown>
   /** Evidence that the provider accepted this prompt, distinct from session allocation. */

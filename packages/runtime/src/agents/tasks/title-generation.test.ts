@@ -1419,3 +1419,53 @@ function testGate() {
   })
   return { promise, resolve: () => complete() }
 }
+
+it.each(
+  (['quick', 'standard', 'thorough'] as const).flatMap((depth) =>
+    (['review', 'combine'] as const).map((phase) => ({ depth, phase })),
+  ),
+)(
+  'enforces the $depth PR tool policy for $phase through the provider boundary',
+  async ({ depth, phase }) => {
+    const s = setup()
+    const tools = depth !== 'quick' && phase !== 'combine'
+    const captured: AgentRun[] = []
+    const provider = vi.spyOn(s.registry, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (input) => {
+        captured.push(input)
+        input.onText('Investigating the revision')
+        input.onTextBoundary?.()
+        if (tools) input.onActivity('Read')
+        input.onText('{"summary":"Verified result","findings":[],"notVerified":[]}')
+      },
+    })
+    try {
+      const result = await s.titles.reviewPull(
+        '{}',
+        { agentId: 'harness', model: 'review-model', reasoning: '' },
+        new AbortController().signal,
+        phase,
+        [],
+        { depth, directory: '/captured-pr' },
+      )
+      expect(JSON.parse(result).summary).toBe('Verified result')
+      const run = captured[0]
+      expect(run.tools).toBe(tools ? undefined : 'none')
+      expect(run.linkedDirectories).toEqual(
+        tools ? [{ id: 'pr-source', path: '/captured-pr', access: 'read-only' }] : undefined,
+      )
+      expect(run.agent.permission).toBe('read-only')
+      expect(run.agent.resources).toBeUndefined()
+      expect(run.isolateSettings).toBe(true)
+      expect(await run.approve('Write', 'Attempt to edit')).toBe('deny')
+      expect(run.agent.instructions).toContain(tools ? 'Use read-only tools' : 'No tools, files')
+      expect(s.store.get().tasks).toEqual([])
+    } finally {
+      provider.mockRestore()
+      await s.titles.dispose()
+      await s.registry.dispose()
+      s.db.close()
+    }
+  },
+)

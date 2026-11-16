@@ -608,6 +608,9 @@ export function createCodexAdapter(): AgentAdapter {
                 'features.fast_mode': true,
               }
             : {}),
+          ...(run.isolateSettings
+            ? { project_doc_max_bytes: 0, 'features.multi_agent': false }
+            : {}),
           ...(run.tools === 'none'
             ? {
                 'features.shell_tool': false,

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { existsSync } from 'node:fs'
-import { writeFile } from 'node:fs/promises'
+import { readFile, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   defaultTaskHarness,
@@ -120,7 +120,20 @@ async function setup() {
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (input) => {
       calls.push(input)
-      if (input.agent.instructions?.startsWith('Challenge the proposed PR findings')) {
+      if (input.agent.instructions?.startsWith('Combine independent PR reviewer findings')) {
+        const payload = JSON.parse(input.prompt.slice(input.prompt.indexOf('{'))) as {
+          findings: { id: string }[]
+        }
+        input.onText(
+          JSON.stringify({
+            summary: 'Combined supported findings.',
+            groups: payload.findings.map((finding) => ({
+              ids: [finding.id],
+              representative: finding.id,
+            })),
+          }),
+        )
+      } else if (input.agent.instructions?.startsWith('Challenge the proposed PR findings')) {
         const payload = JSON.parse(input.prompt.slice(input.prompt.indexOf('{'))) as {
           candidates: { id: string }[]
         }
@@ -138,8 +151,8 @@ async function setup() {
     },
   })
   const target = { repositoryId: 'repo', number: 42, expectedDestination: 'destination' }
-  const start = (requestId = 'start-1') =>
-    s.pullCodeReviews.start({ target, requestId, headSha: head, baseSha: base, selection })
+  const start = (requestId = 'start-1', depth: 'quick' | 'standard' | 'thorough' = 'standard') =>
+    s.pullCodeReviews.start({ target, requestId, headSha: head, baseSha: base, selection, depth })
   const completed = async () => {
     await vi.waitFor(async () =>
       expect((await s.pullCodeReviews.read(target)).reviews[0]?.status).not.toBe('running'),
@@ -166,10 +179,10 @@ async function setup() {
     },
   }
 }
-it('runs a fresh tools-disabled review, validates anchors, and saves a model separate from titles', async () => {
+it('runs a fresh Quick tools-disabled review, validates anchors, and saves a model separate from titles', async () => {
   const f = await setup()
   const titles = f.s.titles.read()
-  await f.start()
+  await f.start('start-1', 'quick')
   const review = await f.completed()
   expect(review.status).toBe('completed')
   expect(review.findings[0]).toMatchObject({ anchored: true, path: 'hello.txt', side: 'after' })
@@ -186,7 +199,7 @@ it('runs a fresh tools-disabled review, validates anchors, and saves a model sep
     model: 'review-model',
     harness: { provider: 'claude' },
   })
-  await f.start()
+  await f.start('start-1', 'quick')
   expect(f.calls).toHaveLength(2)
 })
 it('persists review depth, keeps check consent per request, and rejects changed retry options', async () => {
@@ -197,13 +210,20 @@ it('persists review depth, keeps check consent per request, and rejects changed 
     headSha: head,
     baseSha: base,
     selection,
-    depth: 'quick' as const,
+    depth: 'standard' as const,
     runChecks: true,
   }
+  await expect(f.s.pullCodeReviews.start({ ...input, depth: 'quick' })).rejects.toMatchObject({
+    status: 400,
+  })
   await f.s.pullCodeReviews.start(input)
   const review = await f.completed()
-  expect(review).toMatchObject({ depth: 'quick', runChecks: true, checks: [{ status: 'skipped' }] })
-  expect((await f.s.pullCodeReviews.read(f.target)).depth).toBe('quick')
+  expect(review).toMatchObject({
+    depth: 'standard',
+    runChecks: true,
+    checks: [{ status: 'skipped' }],
+  })
+  expect((await f.s.pullCodeReviews.read(f.target)).depth).toBe('standard')
   expect(f.calls[0].prompt).toContain('projectChecks')
   await expect(f.s.pullCodeReviews.start({ ...input, depth: 'thorough' })).rejects.toMatchObject({
     status: 409,
@@ -247,6 +267,11 @@ it('reads context from captured Git commits and ignores later working-tree edits
   f.agent.mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: async (input) => {
+      expect(input.tools).toBeUndefined()
+      const captured = input.linkedDirectories?.[0].path
+      expect(captured).toBeDefined()
+      expect(await readFile(join(captured!, 'source.ts'), 'utf8')).toBe(source)
+      expect(await readFile(join(captured!, 'dep.ts'), 'utf8')).toContain('committed dependency')
       f.calls.push(input)
       input.onText(
         JSON.stringify({ summary: 'No grounded findings', findings: [], notVerified: [] }),
@@ -268,8 +293,11 @@ it('reads context from captured Git commits and ignores later working-tree edits
   ])
   expect(f.calls[0].prompt).toContain('committed dependency')
   expect(f.calls[0].prompt).not.toContain('DIRTY')
+  expect(f.calls[0].linkedDirectories?.[0].access).toBe('read-only')
+  expect(f.calls[0].linkedDirectories?.[0].path).not.toBe(directory)
+  await vi.waitFor(() => expect(existsSync(f.calls[0].linkedDirectories![0].path)).toBe(false))
   expect(f.calls[0]).toMatchObject({
-    tools: 'none',
+    isolateSettings: true,
     ephemeral: true,
     agent: { resources: undefined, permission: 'read-only' },
   })
@@ -516,7 +544,7 @@ it('filters invented paths and stops a reviewer that attempts tools', async () =
       input.onText(output)
     },
   })
-  await f.start('start-2')
+  await f.start('start-2', 'quick')
   expect((await f.completed()).status).not.toBe('completed')
 })
 it('reports partial and omitted evidence without cutting patches or looping oversized files', () => {
@@ -588,9 +616,9 @@ it('reviews failed and omitted batches again while preserving successful coverag
     'supplied',
     'supplied',
     'supplied',
-    'budget',
+    'supplied',
   ])
-  expect(reviewer).toHaveBeenCalledTimes(4)
+  expect(reviewer).toHaveBeenCalledTimes(5)
   await f.s.pullCodeReviews.start({
     target: f.target,
     requestId: 'remaining',
@@ -606,7 +634,7 @@ it('reviews failed and omitted batches again while preserving successful coverag
     'previous-pass',
     'previous-pass',
     'previous-pass',
-    'supplied',
+    'previous-pass',
   ])
   expect(reviewer).toHaveBeenCalledTimes(6)
   expect((await f.s.pullCodeReviews.read(f.target)).reviews[1].coverage).toEqual(first.coverage)
@@ -689,6 +717,7 @@ it('permits one active pass per PR and propagates cancellation to the utility ru
   )
   const first = await f.start()
   await expect(f.start('another-client')).rejects.toMatchObject({ status: 409 })
+  await vi.waitFor(() => expect(signal).toBeDefined())
   await f.s.pullCodeReviews.stop(f.target, first.reviews[0].id)
   expect(signal?.aborted).toBe(true)
   expect((await f.completed()).status).toBe('cancelled')
@@ -737,10 +766,17 @@ it('runs independent models against the same evidence and combines exact finding
     'review-model',
     'second-reviewer',
     'second-reviewer',
+    'review-model',
   ])
-  expect(f.calls.every((call) => call.tools === 'none' && call.agent.resources === undefined)).toBe(
-    true,
-  )
+  expect(review.summary).toBe('Combined supported findings.')
+  expect(f.calls.map((call) => call.tools)).toEqual([
+    undefined,
+    undefined,
+    undefined,
+    undefined,
+    'none',
+  ])
+  expect(f.calls.every((call) => call.agent.resources === undefined)).toBe(true)
   await expect(
     f.s.pullCodeReviews.start({
       target: f.target,
@@ -798,7 +834,7 @@ it('sends validated image bytes to both analysis and challenge and removes tempo
         data: png,
       })
       expect(existsSync(input.attachments?.[0].path ?? '')).toBe(true)
-      expect(input.tools).toBe('none')
+      expect(input.tools).toBeUndefined()
       inspected++
       await adapter.run(input)
     },

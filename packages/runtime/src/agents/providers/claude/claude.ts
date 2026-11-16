@@ -196,7 +196,7 @@ function claudeOptions(
         }
       : {}),
     // Coding sessions inherit Claude settings; text-only utilities stay isolated.
-    settingSources: run.tools === 'none' ? [] : ['user', 'project', 'local'],
+    settingSources: run.tools === 'none' || run.isolateSettings ? [] : ['user', 'project', 'local'],
     includePartialMessages: true,
     ...(run.tools === 'none'
       ? {}

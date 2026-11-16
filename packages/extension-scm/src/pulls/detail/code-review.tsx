@@ -1,13 +1,16 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { ReviewActivity } from './review-activity'
 import { PullPatch } from './patch'
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, FileSearch, LoaderCircle, ShieldCheck } from 'lucide-react'
+import { Check, ChevronDown, FileSearch, ShieldCheck } from 'lucide-react'
 import { prReviewIllustration } from '@dovo/studio-core/pull-code-review'
 import {
   defaultTaskHarness,
+  acpHarnessChoiceId,
+  acpInstallationHarness,
   modelCatalogSchema,
   providerSchema,
-  supportsUtilities,
+  supportsPullReview,
   MAX_PULL_REVIEWERS,
   MAX_ATTACHMENT_BYTES,
   resolveTitleHarness,
@@ -137,7 +140,9 @@ function LocalPullCodeReviewPanel({
     current?.coverage.find((file) => file.state === 'supplied')
   const ready =
     !imageBusy &&
-    reviewers.every((reviewer) => reviewer?.model && supportsUtilities(reviewer.provider))
+    reviewers.every(
+      (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
+    )
   const start = (remaining = false) => {
     if (agent && ready)
       void review.start(
@@ -147,7 +152,7 @@ function LocalPullCodeReviewPanel({
         remaining,
         {
           depth: review.depth,
-          runChecks: review.runChecks,
+          runChecks: review.depth !== 'quick' && review.runChecks,
           reviewers: (additional ?? []).map(titleSettingsForHarness),
           images: review.images,
         },
@@ -171,6 +176,11 @@ function LocalPullCodeReviewPanel({
           <ChevronDown className="size-3" />
         </Button>
       </div>
+      {review.busy && (
+        <div className="p-4">
+          <ReviewActivity reviewers={reviewers.length} />
+        </div>
+      )}
       {!current && (
         <div className="flex items-center gap-5 bg-[#17191c] px-5 py-4 text-white">
           <img
@@ -211,8 +221,25 @@ function LocalPullCodeReviewPanel({
               </label>
               <ChoicePicker
                 aria-label={uiText('Reviewer provider')}
-                value={reviewer?.id.startsWith('saved:') ? reviewer.id : (reviewer?.provider ?? '')}
+                value={
+                  reviewer?.id.startsWith('saved:')
+                    ? reviewer.id
+                    : reviewer?.provider === 'acp' && reviewer.acpInstallationId
+                      ? acpHarnessChoiceId(reviewer.acpInstallationId)
+                      : (reviewer?.provider ?? '')
+                }
                 onValueChange={(value) => {
+                  const installation = snapshot?.acpInstallations?.find(
+                    (item) => acpHarnessChoiceId(item.id) === value,
+                  )
+                  if (installation) {
+                    setReviewer(index, {
+                      ...acpInstallationHarness(installation, 'read-only'),
+                      id: 'pr-review',
+                      name: installation.name,
+                    })
+                    return
+                  }
                   const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
                   if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
                   else {
@@ -232,15 +259,27 @@ function LocalPullCodeReviewPanel({
                 {providerSchema.literals
                   .filter((provider) => provider !== 'acp')
                   .map((provider) => (
-                    <option key={provider} value={provider} disabled={!supportsUtilities(provider)}>
+                    <option
+                      key={provider}
+                      value={provider}
+                      disabled={!supportsPullReview(provider, review.depth)}
+                    >
                       {providers[provider].short}
-                      {!supportsUtilities(provider)
-                        ? ` · ${uiText('Tool-free review unavailable')}`
+                      {!supportsPullReview(provider, review.depth)
+                        ? ` · ${uiText('Unavailable for this review depth')}`
                         : ''}
                     </option>
                   ))}
+                {(snapshot?.acpInstallations ?? []).map((installation) => (
+                  <option
+                    key={acpHarnessChoiceId(installation.id)}
+                    value={acpHarnessChoiceId(installation.id)}
+                  >
+                    {installation.name} · ACP
+                  </option>
+                ))}
                 {workspace.agents
-                  .filter((item) => supportsUtilities(item.provider))
+                  .filter((item) => supportsPullReview(item.provider, review.depth))
                   .map((item) => (
                     <option key={item.id} value={`saved:${item.id}`}>
                       {item.name}
@@ -294,7 +333,10 @@ function LocalPullCodeReviewPanel({
               disabled={!!blocked}
               onValueChange={(value) => {
                 const depth = pullReviewDepthSchema.literals.find((item) => item === value)
-                if (depth) review.setDepth(depth)
+                if (depth) {
+                  review.setDepth(depth)
+                  if (depth === 'quick') review.setRunChecks(false)
+                }
               }}
             >
               {pullReviewDepthSchema.literals.map((depth) => (
@@ -307,8 +349,8 @@ function LocalPullCodeReviewPanel({
           <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
             <input
               type="checkbox"
-              checked={review.runChecks}
-              disabled={!!blocked}
+              checked={review.depth !== 'quick' && review.runChecks}
+              disabled={!!blocked || review.depth === 'quick'}
               onChange={(event) => review.setRunChecks(event.target.checked)}
             />
             {uiText('Run project checks')}
@@ -599,22 +641,8 @@ function LocalPullCodeReviewPanel({
               </p>
             )}
             {current.status === 'running' ? (
-              <div role="status" className="flex items-center gap-2 py-4 text-muted-foreground">
-                <LoaderCircle className="size-4 animate-spin" />
-                {current.checks?.find((check) => check.status === 'running')?.command ||
-                  (current.analysis?.phase === 'checking'
-                    ? uiText('Checking proposed findings…')
-                    : uiText('Reviewing captured evidence…'))}
-                {current.analysis && (
-                  <span>
-                    {uiText('Batch {value0} of {value1}', {
-                      value0:
-                        current.analysis.activeBatch ??
-                        Math.min(current.analysis.completedBatches + 1, current.analysis.batches),
-                      value1: current.analysis.batches,
-                    })}
-                  </span>
-                )}
+              <div className="space-y-2 py-3">
+                <ReviewActivity review={current} />
                 <Button
                   variant="ghost"
                   size="sm"

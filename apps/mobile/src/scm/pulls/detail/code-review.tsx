@@ -1,3 +1,4 @@
+import { ReviewActivity } from './review-activity'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useCallback, useEffect, useState } from 'react'
 import * as ImagePicker from 'expo-image-picker'
@@ -11,9 +12,11 @@ import {
 } from '@dovo/studio-core/pull-code-review'
 import {
   defaultTaskHarness,
+  acpHarnessChoiceId,
+  acpInstallationHarness,
   runtimeComputerName,
   providerSchema,
-  supportsUtilities,
+  supportsPullReview,
   MAX_PULL_REVIEWERS,
   MAX_ATTACHMENT_BYTES,
   resolveTitleHarness,
@@ -130,7 +133,9 @@ function LocalMobilePullCodeReview({
   const supplied = current?.coverage.filter((file) => file.state === 'supplied').length ?? 0
   const ready =
     !imageBusy &&
-    reviewers.every((reviewer) => reviewer?.model && supportsUtilities(reviewer.provider))
+    reviewers.every(
+      (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
+    )
   const start = (remaining = false) => {
     if (agent && ready)
       void review.start(
@@ -140,7 +145,7 @@ function LocalMobilePullCodeReview({
         remaining,
         {
           depth: review.depth,
-          runChecks: review.runChecks,
+          runChecks: review.depth !== 'quick' && review.runChecks,
           reviewers: (additional ?? []).map(titleSettingsForHarness),
           images: review.images,
         },
@@ -178,6 +183,7 @@ function LocalMobilePullCodeReview({
           }}
         />
       </View>
+      {!open && current?.status === 'running' && <ReviewActivity review={current} />}
       {open && (
         <Sheet
           busy={review.publishing}
@@ -405,7 +411,9 @@ function LocalMobilePullCodeReview({
                         value={
                           reviewer?.id.startsWith('saved:')
                             ? reviewer.id
-                            : (reviewer?.provider ?? '')
+                            : reviewer?.provider === 'acp' && reviewer.acpInstallationId
+                              ? acpHarnessChoiceId(reviewer.acpInstallationId)
+                              : (reviewer?.provider ?? '')
                         }
                         items={[
                           { id: '', name: uiText('Choose a provider') },
@@ -415,16 +423,31 @@ function LocalMobilePullCodeReview({
                               id: provider,
                               name:
                                 harnessNames[provider] +
-                                (!supportsUtilities(provider)
-                                  ? ` · ${uiText('Tool-free review unavailable')}`
+                                (!supportsPullReview(provider, review.depth)
+                                  ? ` · ${uiText('Unavailable for this review depth')}`
                                   : ''),
-                              disabled: !supportsUtilities(provider),
+                              disabled: !supportsPullReview(provider, review.depth),
                             })),
+                          ...(snapshot?.acpInstallations ?? []).map((installation) => ({
+                            id: acpHarnessChoiceId(installation.id),
+                            name: installation.name + ' · ACP',
+                          })),
                           ...agents
-                            .filter((item) => supportsUtilities(item.provider))
+                            .filter((item) => supportsPullReview(item.provider, review.depth))
                             .map((item) => ({ id: `saved:${item.id}`, name: item.name })),
                         ]}
                         onChange={(value) => {
+                          const installation = snapshot?.acpInstallations?.find(
+                            (item) => acpHarnessChoiceId(item.id) === value,
+                          )
+                          if (installation) {
+                            setReviewer(index, {
+                              ...acpInstallationHarness(installation, 'read-only'),
+                              id: 'pr-review',
+                              name: installation.name,
+                            })
+                            return
+                          }
                           const saved = agents.find((item) => `saved:${item.id}` === value)
                           if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
                           else {
@@ -552,6 +575,7 @@ function LocalMobilePullCodeReview({
                   </Text>
                 )}
               </View>
+              {review.busy && <ReviewActivity reviewers={reviewers.length} />}
               {!agent?.model && (
                 <Text style={styles.muted}>{uiText('Choose a reviewer model to start.')}</Text>
               )}
@@ -565,14 +589,17 @@ function LocalMobilePullCodeReview({
                 }))}
                 onChange={(value) => {
                   const depth = pullReviewDepthSchema.literals.find((item) => item === value)
-                  if (depth) review.setDepth(depth)
+                  if (depth) {
+                    review.setDepth(depth)
+                    if (depth === 'quick') review.setRunChecks(false)
+                  }
                 }}
               />
               <Text style={styles.muted}>{uiText(pullReviewDepths[review.depth].description)}</Text>
               <Choice
                 label={uiText('Run project checks')}
-                value={review.runChecks ? 'yes' : 'no'}
-                disabled={!!blocked}
+                value={review.depth !== 'quick' && review.runChecks ? 'yes' : 'no'}
+                disabled={!!blocked || review.depth === 'quick'}
                 items={[
                   { id: 'no', name: uiText('No') },
                   { id: 'yes', name: uiText('Yes') },
@@ -696,23 +723,7 @@ function LocalMobilePullCodeReview({
                   )}
                   {current.status === 'running' && (
                     <View style={{ gap: 8 }}>
-                      {current.analysis && (
-                        <Text accessibilityLiveRegion="polite" style={styles.muted}>
-                          {uiText('{value0} · Batch {value1} of {value2}', {
-                            value0:
-                              current.analysis.phase === 'checking'
-                                ? uiText('Checking findings')
-                                : uiText('Reviewing evidence'),
-                            value1:
-                              current.analysis.activeBatch ??
-                              Math.min(
-                                current.analysis.completedBatches + 1,
-                                current.analysis.batches,
-                              ),
-                            value2: current.analysis.batches,
-                          })}
-                        </Text>
-                      )}
+                      <ReviewActivity review={current} />
                       <Action
                         secondary
                         label={uiText('Cancel review')}

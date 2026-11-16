@@ -14,10 +14,11 @@ const finding={id:'bug',path:'src/drafts.ts',line:2,side:'after',severity:'high'
 const patch='@@ -1,3 +1,3 @@\\n export async function restore() {\\n-  await saveDraft();\\n+  clearDraft();\\n }\\n';
 let report={reviews:[],...(window.firstUse?{}:{selection})};const reports=new Map([['runtime',report]]);window.requests=[];
 window.changeSavedDecision=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.draft.event='request-changes';r.version++;r.sequence++};
-window.progressReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
+window.combineReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='combining';delete r.analysis.activeBatch;r.sequence++};window.progressReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
 window.finishProgress=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='completed';r.analysis.phase='completed';delete r.analysis.activeBatch;r.analysis.completedBatches=2;r.sequence++};
 window.transport=async(path,input,host='runtime')=>{
  window.requests.push({path,input:structuredClone(input),host});
+ if(path.endsWith('/start')&&window.delayStart)await new Promise(resolve=>window.releaseStart=resolve);
  if(path.endsWith('/identity'))return {readerIdentity:'reader-'+host,destination:'destination-'+host};
  if(path==='/api/scm/pulls/detail')return {...detail,destination:'destination-'+host,pull:{...detail.pull,connectionId:'account-'+host,headSha:window.staleRemote?'stale':head}};
  if(!reports.has(host))reports.set(host,{reviews:[],...(window.firstUse?{}:{selection})});const report=reports.get(host);
@@ -51,12 +52,12 @@ const mobileMocks = [
   },
   {
     path: 'react-native',
-    contents: `const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s;export const View=({style,children})=><div style={flat(style)}>{children}</div>;export const Text=({style,children})=><span style={flat(style)}>{children}</span>;export const Linking={openURL:async url=>{window.openedURL=url}};export const Image=({source,style})=><img alt="" src={source.uri} style={style}/>;export const ScrollView=({children})=><div style={{overflow:'auto'}}>{children}</div>;`,
+    contents: `import {useRef} from 'react';export const Easing={ease:x=>x,inOut:x=>x};class Value{constructor(value){this.value=value}setValue(value){this.value=value}interpolate({outputRange}){return outputRange[0]}};export const Animated={Value,View:({style,children})=><div>{children}</div>,loop:()=>({start(){},stop(){}}),sequence:x=>x,timing:()=>({})};const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s;export const View=({style,children})=><div style={flat(style)}>{children}</div>;export const Text=({style,children})=><span style={flat(style)}>{children}</span>;export const Linking={openURL:async url=>{window.openedURL=url}};export const Image=({source,style})=><img alt="" src={source.uri} style={style}/>;export const ScrollView=({children})=><div style={{overflow:'auto'}}>{children}</div>;`,
   },
   {
     path: '../../../runtime/connection/provider',
     importer: mobileRoot,
-    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const overviews=['runtime','remote'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true,snapshot:{workspace:{repositories:[],agents:[]}}}));export const RuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;const requests=new Map(overviews.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useRuntime=()=>{const id=useContext(Scope),call=requests.get(id);return {call,read:call,overviews,connected:window.offlineHost!==id,profile:overviews.find(x=>x.profile.id===id).profile,snapshot:{runtimeId:id,workspace:{agents:[],repositories:[]}}}};`,
+    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const overviews=['runtime','remote'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true,snapshot:{workspace:{repositories:[],agents:[]}}}));export const RuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;const requests=new Map(overviews.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useRuntime=()=>{const id=useContext(Scope),call=requests.get(id);return {call,read:call,overviews,connected:window.offlineHost!==id,profile:overviews.find(x=>x.profile.id===id).profile,snapshot:{acpInstallations:[{id:'review-acp',name:'Review ACP client'}],runtimeId:id,workspace:{agents:[],repositories:[]}}}};`,
   },
   {
     path: '../../../agents/model-settings',
@@ -96,13 +97,13 @@ const mobileMocks = [
   {
     path: '../../../ui/theme',
     importer: mobileRoot,
-    contents: `export const useTheme=()=>({colors:{border:'#303438',text:'#e9edee',muted:'#9ba5aa',error:'#f08080'},styles:{card:{border:'1px solid #303438',borderRadius:10,padding:14,background:'#191d20'},text:{color:'#e9edee',fontSize:14,lineHeight:'22px'},muted:{color:'#9ba5aa',fontSize:13,lineHeight:'21px'},error:{color:'#f08080'}}});`,
+    contents: `export const useTheme=()=>({reduceMotion:false,colors:{accent:'#77b8a8',border:'#303438',text:'#e9edee',muted:'#9ba5aa',error:'#f08080'},styles:{card:{border:'1px solid #303438',borderRadius:10,padding:14,background:'#191d20'},text:{color:'#e9edee',fontSize:14,lineHeight:'22px'},muted:{color:'#9ba5aa',fontSize:13,lineHeight:'21px'},error:{color:'#f08080'}}});`,
   },
 ]
 const desktopMocks = [
   {
     path: '@dovo/studio-core',
-    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const computers=['runtime','remote'].map(id=>({name:id,profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true}));const requests=new Map(computers.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useRuntimeSources=()=>computers;export const WorkspaceRuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;export const useWorkspace=()=>{const id=useContext(Scope);return {request:requests.get(id),connected:window.offlineHost!==id,activeRuntimeId:id,connection:computers.find(x=>x.profile.id===id).profile.connection,workspace:{agents:[],repositories:[]},snapshot:{defaults:{}}}};`,
+    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const computers=['runtime','remote'].map(id=>({name:id,profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true}));const requests=new Map(computers.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useAppPreferences=()=>({motion:window.reduceMotion?'reduce':'system'});export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useRuntimeSources=()=>computers;export const WorkspaceRuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;export const useWorkspace=()=>{const id=useContext(Scope);return {request:requests.get(id),connected:window.offlineHost!==id,activeRuntimeId:id,connection:computers.find(x=>x.profile.id===id).profile.connection,workspace:{agents:[],repositories:[]},snapshot:{defaults:{},acpInstallations:[{id:'review-acp',name:'Review ACP client'}]}}};`,
   },
   {
     path: './patch',
@@ -189,10 +190,10 @@ try {
         if (mobile)
           await page
             .getByRole('combobox', { name: 'Reviewer provider', exact: true })
-            .selectOption('claude')
+            .selectOption('acp:review-acp')
         else {
           await page.getByRole('button', { name: 'Reviewer provider', exact: true }).click()
-          await page.getByRole('option', { name: 'claude', exact: true }).click()
+          await page.getByRole('option', { name: 'Review ACP client · ACP', exact: true }).click()
         }
         await page.getByRole('combobox', { name: 'Reviewer model', exact: true }).waitFor()
         const start = page.getByRole('button', {
@@ -225,6 +226,8 @@ try {
         const multiStart = await page.evaluate(
           () => window.requests.find((r) => r.path.endsWith('/start')).input,
         )
+        assert.equal(multiStart.selection.harness.acpInstallationId, 'review-acp')
+        assert.equal(multiStart.selection.harness.provider, 'acp')
         assert.equal(multiStart.reviewers[0].model, 'Second model')
         assert.equal(multiStart.images.length, 1)
         assert.equal(multiStart.target.repositoryId, 'https://github.com/acme/studio/pull/184')
@@ -246,12 +249,24 @@ try {
             .selectOption('yes')
         } else {
           await page.getByRole('button', { name: 'Review depth', exact: true }).click()
-          await page.getByRole('option', { name: 'Thorough', exact: true }).click()
+          await page.getByRole('option', { name: 'Deep', exact: true }).click()
           await page.getByRole('checkbox', { name: 'Run project checks', exact: true }).check()
         }
+        await page.evaluate(() => {
+          window.delayStart = true
+        })
         await page
           .getByRole('button', { name: mobile ? 'Start review' : 'Review with agent', exact: true })
           .click()
+        await page.getByText('Preparing review…', { exact: true }).waitFor()
+        await page.screenshot({
+          path: screenshots + '/' + (mobile ? 'mobile' : 'desktop') + '-review-preparing.png',
+          fullPage: true,
+        })
+        await page.evaluate(() => {
+          window.delayStart = false
+          window.releaseStart()
+        })
         const started = await page.evaluate(
           () => window.requests.find((r) => r.path.endsWith('/start')).input,
         )
@@ -296,6 +311,31 @@ try {
       if (!firstUse) {
         await page.evaluate(() => window.progressReview())
         await page.getByText('Batch 2 of 2', { exact: false }).waitFor()
+        await page.screenshot({
+          path: screenshots + '/' + (mobile ? 'mobile' : 'desktop') + '-review-running.png',
+          fullPage: true,
+        })
+        if (!mobile) {
+          assert.ok(
+            (await page
+              .locator('.pr-review-motion')
+              .evaluate((element) => element.getAnimations({ subtree: true }).length)) > 0,
+          )
+          await page.emulateMedia({ reducedMotion: 'reduce' })
+          assert.equal(
+            await page
+              .locator('.pr-review-motion')
+              .evaluate((element) => element.getAnimations({ subtree: true }).length),
+            0,
+          )
+          await page.emulateMedia({ reducedMotion: 'no-preference' })
+        }
+        await page.evaluate(() => window.combineReview())
+        await page.getByText('Combining reviewer findings…', { exact: true }).waitFor()
+        await page.screenshot({
+          path: screenshots + '/' + (mobile ? 'mobile' : 'desktop') + '-review-combining.png',
+          fullPage: true,
+        })
         assert.equal(
           await page.getByRole('button', { name: 'Add to draft', exact: true }).isDisabled(),
           true,

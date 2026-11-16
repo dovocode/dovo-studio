@@ -113,13 +113,11 @@ function run(options: Partial<Parameters<typeof runPullReview>[0]> = {}) {
   })
 }
 
-it('uses real batch and snapshot limits for Quick, Standard and Thorough reviews', async () => {
+it('reviews all eligible files at every depth while bounding snapshot context', async () => {
   const files = Array.from({ length: 15 }, (_, index) => file(`${index}.ts`))
   for (const depth of ['quick', 'standard', 'thorough'] as const) {
-    const plan = pullReviewPlan(detail(files), new Set(), 200, pullReviewDepths[depth].batches)
-    expect(plan.coverage.filter((file) => file.state === 'supplied')).toHaveLength(
-      pullReviewDepths[depth].batches,
-    )
+    const plan = pullReviewPlan(detail(files), new Set(), 200)
+    expect(plan.coverage.filter((file) => file.state === 'supplied')).toHaveLength(files.length)
     const readSnapshot = vi.fn<ReadSnapshot>(async () => 'export const value = true')
     const review = {
       ...report(
@@ -164,7 +162,7 @@ it('supplies recorded command evidence to both model phases without claiming a t
   expect(result.notVerified.join('\n')).not.toContain('No tests ran')
 })
 
-it('packs whole serialized patches into at most four batches and exposes all omissions', () => {
+it('packs every eligible patch into bounded batches and exposes all exclusions', () => {
   const plan = pullReviewPlan(
     detail([
       ...Array.from({ length: 6 }, (_, i) => file(`${i}.ts`)),
@@ -174,6 +172,7 @@ it('packs whole serialized patches into at most four batches and exposes all omi
       { ...file('generated.ts'), attributes: { binary: false, generated: true, vendored: false } },
       { ...file('missing.ts'), patch: undefined },
       file('previous.ts'),
+      file('pnpm-lock.yaml'),
     ]),
     new Set(['previous.ts']),
     200,
@@ -183,8 +182,8 @@ it('packs whole serialized patches into at most four batches and exposes all omi
     ['supplied', 1],
     ['supplied', 2],
     ['supplied', 3],
-    ['budget', undefined],
-    ['budget', undefined],
+    ['supplied', 4],
+    ['supplied', 5],
   ])
   expect(plan.coverage.slice(6).map((f) => f.state)).toEqual([
     'too-large',
@@ -193,6 +192,7 @@ it('packs whole serialized patches into at most four batches and exposes all omi
     'excluded',
     'unavailable',
     'previous-pass',
+    'lockfile',
   ])
   expect(plan.coverage.filter((f) => f.state !== 'supplied').every((f) => !f.patch)).toBe(true)
 })

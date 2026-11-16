@@ -10,7 +10,6 @@ import {
   pullCodeReviewSchema,
   pullCodeReviewReportSchema,
   pullCodeReviewBody,
-  pullReviewDepths,
   pullReviewDepthSchema,
   type PullCodeReview,
   type PullCodeReviewTarget,
@@ -26,6 +25,7 @@ import { pullReviewRevision } from './reviews.js'
 import { pullReviewPlan } from './pull-review-engine.js'
 import { runPullReviewers } from './pull-reviewers.js'
 import { pullReviewImages } from './pull-review-images.js'
+import { pullReviewSource } from './pull-review-checkout.js'
 import { runPullChecks } from './pull-review-checks.js'
 export { pullReviewEvidence } from './pull-review-engine.js'
 
@@ -188,6 +188,11 @@ export class PullCodeReviews {
   }
   async start(input: typeof pullCodeReviewStartSchema.Type) {
     if (this.stopped) throw new HttpError(503, 'The runtime is stopping.')
+    if (input.depth === 'quick' && input.runChecks)
+      throw new HttpError(
+        400,
+        'Quick reviews do not run tools or project checks. Choose Standard or Deep.',
+      )
     const images = await pullReviewImages(input.images ?? [])
     const imageMetadata = images.map(({ data: _data, ...metadata }) => metadata)
     const reader = await this.source(input.target)
@@ -220,7 +225,7 @@ export class PullCodeReviews {
       throw new HttpError(409, 'A review is already running for this PR.')
     const selections = [input.selection, ...(input.reviewers ?? [])]
     const fingerprints = selections.map((selection) => {
-      this.s.titles.validateUtility(selection)
+      this.s.titles.validateReview(selection, input.depth ?? 'standard')
       return JSON.stringify(selection)
     })
     if (new Set(fingerprints).size !== fingerprints.length)
@@ -263,7 +268,7 @@ export class PullCodeReviews {
           for (const file of pass.coverage) if (file.state === 'supplied') previous.add(file.path)
       }
       const depth = input.depth ?? 'standard'
-      const evidence = pullReviewPlan(detail, previous, undefined, pullReviewDepths[depth].batches)
+      const evidence = pullReviewPlan(detail, previous)
       if (!evidence.coverage.some((file) => file.state === 'supplied'))
         throw new HttpError(
           400,
@@ -340,6 +345,8 @@ export class PullCodeReviews {
     controller: AbortController,
     images: Awaited<ReturnType<typeof pullReviewImages>>,
   ) {
+    let checkout: Awaited<ReturnType<typeof pullReviewSource>>['checkout']
+    const sourceNotes: string[] = []
     try {
       if (review.runChecks) {
         review.checks = await runPullChecks({
@@ -355,10 +362,30 @@ export class PullCodeReviews {
         })
       }
       controller.signal.throwIfAborted()
+      if (review.depth !== 'quick') {
+        const source = await pullReviewSource(
+          reader.repository,
+          review.headSha,
+          this.s.git,
+          controller.signal,
+        )
+        checkout = source.checkout
+        sourceNotes.push(...source.notVerified)
+      }
       const result = await runPullReviewers({
         review,
         call: (text, phase, selection) =>
-          this.s.titles.reviewPull(text, selection, controller.signal, phase, images),
+          this.s.titles.reviewPull(
+            text,
+            selection,
+            controller.signal,
+            phase,
+            phase === 'combine' ? [] : images,
+            {
+              depth: review.depth ?? 'standard',
+              directory: phase === 'combine' ? undefined : checkout?.path,
+            },
+          ),
         readSnapshot: reader.readSnapshot,
         signal: controller.signal,
         progress: (progress) => {
@@ -381,7 +408,7 @@ export class PullCodeReviews {
       controller.signal.throwIfAborted()
       const current = this.get(scope, review.id)
       Object.assign(current, result)
-      current.notVerified.push(...revisionNotes)
+      current.notVerified.push(...sourceNotes, ...revisionNotes)
       current.status = 'completed'
       current.finishedAt = now()
       this.write(current)
@@ -407,6 +434,16 @@ export class PullCodeReviews {
         status: current.status,
         error: current.error,
       })
+    } finally {
+      try {
+        await checkout?.dispose()
+      } catch (error) {
+        const current = this.get(scope, review.id)
+        current.notVerified.push(
+          `Could not remove the temporary PR source at ${checkout?.path}: ${errorMessage(error)}`,
+        )
+        this.write(current)
+      }
     }
   }
   async stop(target: PullCodeReviewTarget, reviewId: string) {

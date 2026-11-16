@@ -1,3 +1,5 @@
+import { supportsAccess, supportsUtilities } from '../auth/access.js'
+import type { Agent } from '../workspace.js'
 import { MAX_ATTACHMENT_BYTES } from '../shared/attachments.js'
 import { Effect, Schema } from 'effect'
 import { mutableArray, mutableStruct, strictStruct, minValue, maxValue } from '../shared/schema.js'
@@ -32,22 +34,22 @@ export type PullReviewDepth = typeof pullReviewDepthSchema.Type
 export const pullReviewDepths = {
   quick: {
     label: 'Quick',
-    description: 'One patch batch. No extra file context.',
-    batches: 1,
+    description: 'All eligible files. No tools or extra source context.',
+    tools: false,
     contextFiles: 0,
     contextBudget: 0,
   },
   standard: {
     label: 'Standard',
-    description: 'Up to four batches with nearby source files.',
-    batches: 4,
+    description: 'All eligible files with read-only tools and nearby source context.',
+    tools: true,
     contextFiles: 12,
     contextBudget: 48_000,
   },
   thorough: {
-    label: 'Thorough',
-    description: 'Up to twelve batches with more source context.',
-    batches: 12,
+    label: 'Deep',
+    description: 'All eligible files with read-only tools and deeper source investigation.',
+    tools: true,
     contextFiles: 32,
     contextBudget: 96_000,
   },
@@ -56,11 +58,17 @@ export const pullReviewDepths = {
   {
     label: string
     description: string
-    batches: number
+    tools: boolean
     contextFiles: number
     contextBudget: number
   }
 >
+/** The stored thorough value stays compatible with existing reports and older clients. */
+export function supportsPullReview(provider: Agent['provider'], depth: PullReviewDepth) {
+  return depth === 'quick'
+    ? supportsUtilities(provider)
+    : provider !== 'pi' && supportsAccess(provider, 'read-only')
+}
 export const pullReviewCheckSchema = mutableStruct({
   name: Schema.String,
   command: Schema.String,
@@ -177,7 +185,7 @@ export const pullCodeReviewSchema = mutableStruct({
       batches: version,
       completedBatches: version,
       activeBatch: Schema.optional(version),
-      phase: Schema.Literals(['reviewing', 'checking', 'completed']),
+      phase: Schema.Literals(['reviewing', 'checking', 'combining', 'completed']),
       rejectedFindings: version,
       contextFiles: mutableArray(
         mutableStruct({ path: Schema.String, ref: Schema.String, text: Schema.String }),
@@ -192,6 +200,7 @@ export const pullCodeReviewSchema = mutableStruct({
         'queued',
         'budget',
         'too-large',
+        'lockfile',
         'unavailable',
         'partial',
         'excluded',
@@ -306,6 +315,7 @@ export const pullReviewCoverageLabels: Record<PullCodeReview['coverage'][number]
     supplied: 'Patch supplied',
     queued: 'Waiting for review',
     budget: 'Not yet supplied',
+    lockfile: 'Dependency lock file',
     'too-large': 'Patch exceeds review limit',
     partial: 'Incomplete forge patch',
     unavailable: 'No patch available',

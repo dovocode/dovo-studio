@@ -4452,7 +4452,17 @@
     "Found by {value0}": "Found by {value0}",
     "Pending": "Pending",
     "Partial": "Partial",
-    "{value0}/{value1} batches": "{value0}/{value1} batches"
+    "{value0}/{value1} batches": "{value0}/{value1} batches",
+    "Deep": "Deep",
+    "All eligible files. No tools or extra source context.": "All eligible files. No tools or extra source context.",
+    "All eligible files with read-only tools and nearby source context.": "All eligible files with read-only tools and nearby source context.",
+    "All eligible files with read-only tools and deeper source investigation.": "All eligible files with read-only tools and deeper source investigation.",
+    "Unavailable for this review depth": "Unavailable for this review depth",
+    "Dependency lock file": "Dependency lock file",
+    "Preparing review…": "Preparing review…",
+    "Combining reviewer findings…": "Combining reviewer findings…",
+    "Running project checks…": "Running project checks…",
+    "Review progress": "Review progress"
   },
   "nl": {
     "Settings": "Instellingen",
@@ -8907,7 +8917,17 @@
     "Found by {value0}": "Gevonden door {value0}",
     "Pending": "In behandeling",
     "Partial": "Gedeeltelijk",
-    "{value0}/{value1} batches": "{value0}/{value1} batches"
+    "{value0}/{value1} batches": "{value0}/{value1} batches",
+    "Deep": "Diepgaand",
+    "All eligible files. No tools or extra source context.": "Alle geschikte bestanden. Geen tools of extra broncontext.",
+    "All eligible files with read-only tools and nearby source context.": "Alle geschikte bestanden met alleen-lezen tools en broncontext uit nabije bestanden.",
+    "All eligible files with read-only tools and deeper source investigation.": "Alle geschikte bestanden met alleen-lezen tools en dieper onderzoek van de broncode.",
+    "Unavailable for this review depth": "Niet beschikbaar voor deze beoordelingsdiepte",
+    "Dependency lock file": "Vergrendelbestand voor afhankelijkheden",
+    "Preparing review…": "Beoordeling voorbereiden…",
+    "Combining reviewer findings…": "Bevindingen van beoordelaars samenvoegen…",
+    "Running project checks…": "Projectcontroles uitvoeren…",
+    "Review progress": "Voortgang van de beoordeling"
   },
   "de": {
     "Settings": "Einstellungen",
@@ -13362,7 +13382,17 @@
     "Found by {value0}": "Gefunden von {value0}",
     "Pending": "Ausstehend",
     "Partial": "Teilweise",
-    "{value0}/{value1} batches": "{value0}/{value1}-Stapel"
+    "{value0}/{value1} batches": "{value0}/{value1}-Stapel",
+    "Deep": "Tiefgehend",
+    "All eligible files. No tools or extra source context.": "Alle geeigneten Dateien. Keine Werkzeuge oder zusätzlicher Quellkontext.",
+    "All eligible files with read-only tools and nearby source context.": "Alle geeigneten Dateien mit schreibgeschützten Werkzeugen und Kontext aus benachbarten Quelldateien.",
+    "All eligible files with read-only tools and deeper source investigation.": "Alle geeigneten Dateien mit schreibgeschützten Werkzeugen und tieferer Quellcodeanalyse.",
+    "Unavailable for this review depth": "Für diese Prüftiefe nicht verfügbar",
+    "Dependency lock file": "Sperrdatei für Abhängigkeiten",
+    "Preparing review…": "Prüfung wird vorbereitet…",
+    "Combining reviewer findings…": "Ergebnisse der Prüfer werden zusammengeführt…",
+    "Running project checks…": "Projektprüfungen werden ausgeführt…",
+    "Review progress": "Prüffortschritt"
   },
   "el": {
     "Settings": "Ρυθμίσεις",
@@ -17817,7 +17847,17 @@
     "Found by {value0}": "Βρέθηκε από {value0}",
     "Pending": "Σε εκκρεμότητα",
     "Partial": "Μερική",
-    "{value0}/{value1} batches": "{value0}/{value1} παρτίδες"
+    "{value0}/{value1} batches": "{value0}/{value1} παρτίδες",
+    "Deep": "Σε βάθος",
+    "All eligible files. No tools or extra source context.": "Όλα τα κατάλληλα αρχεία. Χωρίς εργαλεία ή πρόσθετο πλαίσιο πηγαίου κώδικα.",
+    "All eligible files with read-only tools and nearby source context.": "Όλα τα κατάλληλα αρχεία με εργαλεία μόνο για ανάγνωση και πλαίσιο από γειτονικά αρχεία κώδικα.",
+    "All eligible files with read-only tools and deeper source investigation.": "Όλα τα κατάλληλα αρχεία με εργαλεία μόνο για ανάγνωση και βαθύτερη διερεύνηση του πηγαίου κώδικα.",
+    "Unavailable for this review depth": "Μη διαθέσιμο για αυτό το βάθος ελέγχου",
+    "Dependency lock file": "Αρχείο κλειδώματος εξαρτήσεων",
+    "Preparing review…": "Προετοιμασία ελέγχου…",
+    "Combining reviewer findings…": "Συνδυασμός ευρημάτων ελεγκτών…",
+    "Running project checks…": "Εκτέλεση ελέγχων έργου…",
+    "Review progress": "Πρόοδος ελέγχου"
   },
   "it": {
     "Settings": "Impostazioni",
@@ -22272,7 +22312,17 @@
     "Found by {value0}": "Trovato da {value0}",
     "Pending": "In sospeso",
     "Partial": "Parziale",
-    "{value0}/{value1} batches": "Lotti {value0}/{value1}"
+    "{value0}/{value1} batches": "Lotti {value0}/{value1}",
+    "Deep": "Approfondita",
+    "All eligible files. No tools or extra source context.": "Tutti i file idonei. Nessuno strumento o contesto aggiuntivo del codice.",
+    "All eligible files with read-only tools and nearby source context.": "Tutti i file idonei con strumenti di sola lettura e contesto dai file vicini.",
+    "All eligible files with read-only tools and deeper source investigation.": "Tutti i file idonei con strumenti di sola lettura e analisi approfondita del codice.",
+    "Unavailable for this review depth": "Non disponibile per questa profondità di revisione",
+    "Dependency lock file": "File di blocco delle dipendenze",
+    "Preparing review…": "Preparazione della revisione…",
+    "Combining reviewer findings…": "Combinazione dei risultati dei revisori…",
+    "Running project checks…": "Esecuzione dei controlli del progetto…",
+    "Review progress": "Avanzamento della revisione"
   },
   "es": {
     "Settings": "Ajustes",
@@ -26727,7 +26777,17 @@
     "Found by {value0}": "Encontrado por {value0}",
     "Pending": "Pendiente",
     "Partial": "Parcial",
-    "{value0}/{value1} batches": "lotes {value0}/{value1}"
+    "{value0}/{value1} batches": "lotes {value0}/{value1}",
+    "Deep": "Profunda",
+    "All eligible files. No tools or extra source context.": "Todos los archivos aptos. Sin herramientas ni contexto adicional del código.",
+    "All eligible files with read-only tools and nearby source context.": "Todos los archivos aptos con herramientas de solo lectura y contexto de archivos cercanos.",
+    "All eligible files with read-only tools and deeper source investigation.": "Todos los archivos aptos con herramientas de solo lectura e investigación más profunda del código.",
+    "Unavailable for this review depth": "No disponible para esta profundidad de revisión",
+    "Dependency lock file": "Archivo de bloqueo de dependencias",
+    "Preparing review…": "Preparando revisión…",
+    "Combining reviewer findings…": "Combinando hallazgos de los revisores…",
+    "Running project checks…": "Ejecutando comprobaciones del proyecto…",
+    "Review progress": "Progreso de la revisión"
   },
   "fr": {
     "Settings": "Paramètres",
@@ -31182,7 +31242,17 @@
     "Found by {value0}": "Trouvé par {value0}",
     "Pending": "En attente",
     "Partial": "Partiel",
-    "{value0}/{value1} batches": "Lots {value0}/{value1}"
+    "{value0}/{value1} batches": "Lots {value0}/{value1}",
+    "Deep": "Approfondie",
+    "All eligible files. No tools or extra source context.": "Tous les fichiers admissibles. Sans outils ni contexte de code supplémentaire.",
+    "All eligible files with read-only tools and nearby source context.": "Tous les fichiers admissibles avec des outils en lecture seule et le contexte des fichiers voisins.",
+    "All eligible files with read-only tools and deeper source investigation.": "Tous les fichiers admissibles avec des outils en lecture seule et une analyse approfondie du code.",
+    "Unavailable for this review depth": "Indisponible pour cette profondeur de revue",
+    "Dependency lock file": "Fichier de verrouillage des dépendances",
+    "Preparing review…": "Préparation de la revue…",
+    "Combining reviewer findings…": "Regroupement des résultats des réviseurs…",
+    "Running project checks…": "Exécution des vérifications du projet…",
+    "Review progress": "Progression de la revue"
   },
   "pl": {
     "Settings": "Ustawienia",
@@ -35637,7 +35707,17 @@
     "Found by {value0}": "Znaleziono przez {value0}",
     "Pending": "Oczekuje",
     "Partial": "Częściowe",
-    "{value0}/{value1} batches": "Partie {value0}/{value1}"
+    "{value0}/{value1} batches": "Partie {value0}/{value1}",
+    "Deep": "Dogłębny",
+    "All eligible files. No tools or extra source context.": "Wszystkie odpowiednie pliki. Bez narzędzi i dodatkowego kontekstu kodu.",
+    "All eligible files with read-only tools and nearby source context.": "Wszystkie odpowiednie pliki z narzędziami tylko do odczytu i kontekstem z pobliskich plików.",
+    "All eligible files with read-only tools and deeper source investigation.": "Wszystkie odpowiednie pliki z narzędziami tylko do odczytu i dogłębną analizą kodu.",
+    "Unavailable for this review depth": "Niedostępne dla tego poziomu przeglądu",
+    "Dependency lock file": "Plik blokady zależności",
+    "Preparing review…": "Przygotowywanie przeglądu…",
+    "Combining reviewer findings…": "Łączenie ustaleń recenzentów…",
+    "Running project checks…": "Uruchamianie kontroli projektu…",
+    "Review progress": "Postęp przeglądu"
   },
   "pt": {
     "Settings": "Definições",
@@ -40092,7 +40172,17 @@
     "Found by {value0}": "Encontrado por {value0}",
     "Pending": "Pendente",
     "Partial": "Parcial",
-    "{value0}/{value1} batches": "Lotes {value0}/{value1}"
+    "{value0}/{value1} batches": "Lotes {value0}/{value1}",
+    "Deep": "Profunda",
+    "All eligible files. No tools or extra source context.": "Todos os ficheiros elegíveis. Sem ferramentas ou contexto adicional do código.",
+    "All eligible files with read-only tools and nearby source context.": "Todos os ficheiros elegíveis com ferramentas só de leitura e contexto de ficheiros próximos.",
+    "All eligible files with read-only tools and deeper source investigation.": "Todos os ficheiros elegíveis com ferramentas só de leitura e análise mais profunda do código.",
+    "Unavailable for this review depth": "Indisponível para esta profundidade de revisão",
+    "Dependency lock file": "Ficheiro de bloqueio de dependências",
+    "Preparing review…": "A preparar a revisão…",
+    "Combining reviewer findings…": "A combinar os resultados dos revisores…",
+    "Running project checks…": "A executar verificações do projeto…",
+    "Review progress": "Progresso da revisão"
   },
   "tr": {
     "Settings": "Ayarlar",
@@ -44547,7 +44637,17 @@
     "Found by {value0}": "{value0} tarafından bulundu",
     "Pending": "Beklemede",
     "Partial": "Kısmi",
-    "{value0}/{value1} batches": "{value0}/{value1} grupları"
+    "{value0}/{value1} batches": "{value0}/{value1} grupları",
+    "Deep": "Derin",
+    "All eligible files. No tools or extra source context.": "Uygun tüm dosyalar. Araç veya ek kaynak bağlamı yok.",
+    "All eligible files with read-only tools and nearby source context.": "Salt okunur araçlar ve yakın kaynak dosyalarının bağlamıyla uygun tüm dosyalar.",
+    "All eligible files with read-only tools and deeper source investigation.": "Salt okunur araçlar ve daha derin kaynak incelemesiyle uygun tüm dosyalar.",
+    "Unavailable for this review depth": "Bu inceleme derinliğinde kullanılamaz",
+    "Dependency lock file": "Bağımlılık kilit dosyası",
+    "Preparing review…": "İnceleme hazırlanıyor…",
+    "Combining reviewer findings…": "İnceleyici bulguları birleştiriliyor…",
+    "Running project checks…": "Proje kontrolleri çalıştırılıyor…",
+    "Review progress": "İnceleme ilerlemesi"
   },
   "ar": {
     "Settings": "الإعدادات",
@@ -49002,7 +49102,17 @@
     "Found by {value0}": "تم العثور عليه بواسطة {value0}",
     "Pending": "معلق",
     "Partial": "جزئي",
-    "{value0}/{value1} batches": "دفعات {value0}/{value1}"
+    "{value0}/{value1} batches": "دفعات {value0}/{value1}",
+    "Deep": "متعمقة",
+    "All eligible files. No tools or extra source context.": "جميع الملفات المؤهلة. دون أدوات أو سياق إضافي للشيفرة.",
+    "All eligible files with read-only tools and nearby source context.": "جميع الملفات المؤهلة مع أدوات للقراءة فقط وسياق من ملفات الشيفرة المجاورة.",
+    "All eligible files with read-only tools and deeper source investigation.": "جميع الملفات المؤهلة مع أدوات للقراءة فقط وتحليل أعمق للشيفرة.",
+    "Unavailable for this review depth": "غير متاح لمستوى عمق المراجعة هذا",
+    "Dependency lock file": "ملف قفل الاعتماديات",
+    "Preparing review…": "جارٍ تحضير المراجعة…",
+    "Combining reviewer findings…": "جارٍ دمج نتائج المراجعين…",
+    "Running project checks…": "جارٍ تشغيل فحوصات المشروع…",
+    "Review progress": "تقدم المراجعة"
   },
   "bg": {
     "Settings": "Настройки",
@@ -53457,7 +53567,17 @@
     "Found by {value0}": "Намерено от {value0}",
     "Pending": "В очакване",
     "Partial": "Частичен",
-    "{value0}/{value1} batches": "Партиди {value0}/{value1}"
+    "{value0}/{value1} batches": "Партиди {value0}/{value1}",
+    "Deep": "Задълбочен",
+    "All eligible files. No tools or extra source context.": "Всички подходящи файлове. Без инструменти или допълнителен контекст на кода.",
+    "All eligible files with read-only tools and nearby source context.": "Всички подходящи файлове с инструменти само за четене и контекст от съседни файлове.",
+    "All eligible files with read-only tools and deeper source investigation.": "Всички подходящи файлове с инструменти само за четене и по-задълбочено проучване на кода.",
+    "Unavailable for this review depth": "Не е налично за тази дълбочина на преглед",
+    "Dependency lock file": "Файл за заключване на зависимостите",
+    "Preparing review…": "Подготовка на прегледа…",
+    "Combining reviewer findings…": "Обединяване на констатациите на рецензентите…",
+    "Running project checks…": "Изпълнение на проверки на проекта…",
+    "Review progress": "Напредък на прегледа"
   },
   "zh": {
     "Settings": "设置",
@@ -57912,7 +58032,17 @@
     "Found by {value0}": "由{value0}发现",
     "Pending": "待定",
     "Partial": "部分",
-    "{value0}/{value1} batches": "{value0}/{value1}批次"
+    "{value0}/{value1} batches": "{value0}/{value1}批次",
+    "Deep": "深入",
+    "All eligible files. No tools or extra source context.": "所有符合条件的文件。不使用工具或额外的源码上下文。",
+    "All eligible files with read-only tools and nearby source context.": "所有符合条件的文件，使用只读工具和邻近源码上下文。",
+    "All eligible files with read-only tools and deeper source investigation.": "所有符合条件的文件，使用只读工具并深入分析源码。",
+    "Unavailable for this review depth": "此审查深度不可用",
+    "Dependency lock file": "依赖锁定文件",
+    "Preparing review…": "正在准备审查…",
+    "Combining reviewer findings…": "正在合并审查者的发现…",
+    "Running project checks…": "正在运行项目检查…",
+    "Review progress": "审查进度"
   },
   "hr": {
     "Settings": "Postavke",
@@ -62367,7 +62497,17 @@
     "Found by {value0}": "Pronašao {value0}",
     "Pending": "Na čekanju",
     "Partial": "Djelomično",
-    "{value0}/{value1} batches": "Serije {value0}/{value1}"
+    "{value0}/{value1} batches": "Serije {value0}/{value1}",
+    "Deep": "Dubinski",
+    "All eligible files. No tools or extra source context.": "Sve prikladne datoteke. Bez alata ili dodatnog konteksta izvornog koda.",
+    "All eligible files with read-only tools and nearby source context.": "Sve prikladne datoteke uz alate samo za čitanje i kontekst susjednih izvornih datoteka.",
+    "All eligible files with read-only tools and deeper source investigation.": "Sve prikladne datoteke uz alate samo za čitanje i dublju analizu izvornog koda.",
+    "Unavailable for this review depth": "Nije dostupno za ovu dubinu pregleda",
+    "Dependency lock file": "Datoteka zaključavanja ovisnosti",
+    "Preparing review…": "Priprema pregleda…",
+    "Combining reviewer findings…": "Spajanje nalaza pregledavatelja…",
+    "Running project checks…": "Pokretanje provjera projekta…",
+    "Review progress": "Napredak pregleda"
   },
   "cs": {
     "Settings": "Nastavení",
@@ -66822,7 +66962,17 @@
     "Found by {value0}": "Nalezen {value0}",
     "Pending": "Nevyřízeno",
     "Partial": "Částečná",
-    "{value0}/{value1} batches": "{value0}/{value1} šarže"
+    "{value0}/{value1} batches": "{value0}/{value1} šarže",
+    "Deep": "Hloubková",
+    "All eligible files. No tools or extra source context.": "Všechny vhodné soubory. Bez nástrojů a dalšího kontextu zdrojového kódu.",
+    "All eligible files with read-only tools and nearby source context.": "Všechny vhodné soubory s nástroji pouze pro čtení a kontextem z okolních souborů.",
+    "All eligible files with read-only tools and deeper source investigation.": "Všechny vhodné soubory s nástroji pouze pro čtení a hlubším průzkumem zdrojového kódu.",
+    "Unavailable for this review depth": "Pro tuto hloubku kontroly není k dispozici",
+    "Dependency lock file": "Soubor zámku závislostí",
+    "Preparing review…": "Příprava kontroly…",
+    "Combining reviewer findings…": "Slučování zjištění recenzentů…",
+    "Running project checks…": "Spouštění kontrol projektu…",
+    "Review progress": "Průběh kontroly"
   },
   "da": {
     "Settings": "Indstillinger",
@@ -71277,7 +71427,17 @@
     "Found by {value0}": "Fundet af {value0}",
     "Pending": "Afventer",
     "Partial": "Delvis",
-    "{value0}/{value1} batches": "{value0}/{value1} batches"
+    "{value0}/{value1} batches": "{value0}/{value1} batches",
+    "Deep": "Dybdegående",
+    "All eligible files. No tools or extra source context.": "Alle egnede filer. Ingen værktøjer eller ekstra kildekontekst.",
+    "All eligible files with read-only tools and nearby source context.": "Alle egnede filer med skrivebeskyttede værktøjer og kontekst fra nærliggende kildefiler.",
+    "All eligible files with read-only tools and deeper source investigation.": "Alle egnede filer med skrivebeskyttede værktøjer og dybere undersøgelse af kildekoden.",
+    "Unavailable for this review depth": "Ikke tilgængelig for denne gennemgangsdybde",
+    "Dependency lock file": "Låsefil for afhængigheder",
+    "Preparing review…": "Forbereder gennemgang…",
+    "Combining reviewer findings…": "Samler resultater fra gennemgangene…",
+    "Running project checks…": "Kører projektkontroller…",
+    "Review progress": "Status for gennemgang"
   },
   "et": {
     "Settings": "Seaded",
@@ -75732,7 +75892,17 @@
     "Found by {value0}": "Leitud {value0} poolt",
     "Pending": "Ootel",
     "Partial": "Osaline",
-    "{value0}/{value1} batches": "{value0}/{value1} partiid"
+    "{value0}/{value1} batches": "{value0}/{value1} partiid",
+    "Deep": "Põhjalik",
+    "All eligible files. No tools or extra source context.": "Kõik sobivad failid. Ilma tööriistade ja täiendava lähtekoodi kontekstita.",
+    "All eligible files with read-only tools and nearby source context.": "Kõik sobivad failid kirjutuskaitstud tööriistade ja lähedaste lähtefailide kontekstiga.",
+    "All eligible files with read-only tools and deeper source investigation.": "Kõik sobivad failid kirjutuskaitstud tööriistade ja põhjalikuma lähtekoodi uurimisega.",
+    "Unavailable for this review depth": "Pole selle ülevaatuse põhjalikkuse jaoks saadaval",
+    "Dependency lock file": "Sõltuvuste lukufail",
+    "Preparing review…": "Ülevaatuse ettevalmistamine…",
+    "Combining reviewer findings…": "Ülevaatajate leidude ühendamine…",
+    "Running project checks…": "Projekti kontrollide käivitamine…",
+    "Review progress": "Ülevaatuse edenemine"
   },
   "fi": {
     "Settings": "Asetukset",
@@ -80187,7 +80357,17 @@
     "Found by {value0}": "Löytäjä {value0}",
     "Pending": "Odottaa",
     "Partial": "Osittainen",
-    "{value0}/{value1} batches": "{value0}/{value1} erät"
+    "{value0}/{value1} batches": "{value0}/{value1} erät",
+    "Deep": "Syvä",
+    "All eligible files. No tools or extra source context.": "Kaikki soveltuvat tiedostot. Ei työkaluja tai ylimääräistä lähdekoodikontekstia.",
+    "All eligible files with read-only tools and nearby source context.": "Kaikki soveltuvat tiedostot vain luku -työkaluilla ja läheisten lähdetiedostojen kontekstilla.",
+    "All eligible files with read-only tools and deeper source investigation.": "Kaikki soveltuvat tiedostot vain luku -työkaluilla ja lähdekoodin syvemmällä tutkimuksella.",
+    "Unavailable for this review depth": "Ei käytettävissä tällä tarkastuksen syvyydellä",
+    "Dependency lock file": "Riippuvuuksien lukitustiedosto",
+    "Preparing review…": "Valmistellaan tarkastusta…",
+    "Combining reviewer findings…": "Yhdistetään tarkastajien löydöksiä…",
+    "Running project checks…": "Suoritetaan projektin tarkistuksia…",
+    "Review progress": "Tarkastuksen edistyminen"
   },
   "hi": {
     "Settings": "सेटिंग्स",
@@ -84642,7 +84822,17 @@
     "Found by {value0}": "{value0} द्वारा पाया गया",
     "Pending": "लंबित",
     "Partial": "आंशिक",
-    "{value0}/{value1} batches": "{value0}/{value1} बैच"
+    "{value0}/{value1} batches": "{value0}/{value1} बैच",
+    "Deep": "गहन",
+    "All eligible files. No tools or extra source context.": "सभी उपयुक्त फ़ाइलें। कोई टूल या अतिरिक्त स्रोत संदर्भ नहीं।",
+    "All eligible files with read-only tools and nearby source context.": "केवल पढ़ने वाले टूल और आस-पास की स्रोत फ़ाइलों के संदर्भ के साथ सभी उपयुक्त फ़ाइलें।",
+    "All eligible files with read-only tools and deeper source investigation.": "केवल पढ़ने वाले टूल और स्रोत कोड की गहन जाँच के साथ सभी उपयुक्त फ़ाइलें।",
+    "Unavailable for this review depth": "समीक्षा की इस गहराई के लिए उपलब्ध नहीं",
+    "Dependency lock file": "निर्भरताओं की लॉक फ़ाइल",
+    "Preparing review…": "समीक्षा की तैयारी हो रही है…",
+    "Combining reviewer findings…": "समीक्षकों के निष्कर्ष जोड़े जा रहे हैं…",
+    "Running project checks…": "प्रोजेक्ट की जाँच चलाई जा रही है…",
+    "Review progress": "समीक्षा की प्रगति"
   },
   "hu": {
     "Settings": "Beállítások",
@@ -89097,7 +89287,17 @@
     "Found by {value0}": "{value0} találta",
     "Pending": "Függőben",
     "Partial": "Részleges",
-    "{value0}/{value1} batches": "{value0}/{value1} kötegek"
+    "{value0}/{value1} batches": "{value0}/{value1} kötegek",
+    "Deep": "Mélyreható",
+    "All eligible files. No tools or extra source context.": "Minden alkalmas fájl. Eszközök és további forráskörnyezet nélkül.",
+    "All eligible files with read-only tools and nearby source context.": "Minden alkalmas fájl csak olvasási eszközökkel és a közeli forrásfájlok környezetével.",
+    "All eligible files with read-only tools and deeper source investigation.": "Minden alkalmas fájl csak olvasási eszközökkel és mélyebb forráskódvizsgálattal.",
+    "Unavailable for this review depth": "Nem érhető el ezen az ellenőrzési mélységen",
+    "Dependency lock file": "Függőségi zárolási fájl",
+    "Preparing review…": "Ellenőrzés előkészítése…",
+    "Combining reviewer findings…": "Ellenőrzők megállapításainak egyesítése…",
+    "Running project checks…": "Projektellenőrzések futtatása…",
+    "Review progress": "Ellenőrzés folyamata"
   },
   "ja": {
     "Settings": "設定",
@@ -93552,7 +93752,17 @@
     "Found by {value0}": "{value0} によって見つかりました",
     "Pending": "保留中",
     "Partial": "部分的",
-    "{value0}/{value1} batches": "{value0}/{value1} バッチ"
+    "{value0}/{value1} batches": "{value0}/{value1} バッチ",
+    "Deep": "詳細",
+    "All eligible files. No tools or extra source context.": "対象の全ファイル。ツールや追加のソースコンテキストは使いません。",
+    "All eligible files with read-only tools and nearby source context.": "対象の全ファイルを読み取り専用ツールと周辺のソースコンテキストでレビューします。",
+    "All eligible files with read-only tools and deeper source investigation.": "対象の全ファイルを読み取り専用ツールでレビューし、ソースコードを詳しく調査します。",
+    "Unavailable for this review depth": "このレビュー深度では利用できません",
+    "Dependency lock file": "依存関係のロックファイル",
+    "Preparing review…": "レビューを準備中…",
+    "Combining reviewer findings…": "レビュー担当の指摘を統合中…",
+    "Running project checks…": "プロジェクトのチェックを実行中…",
+    "Review progress": "レビューの進捗"
   },
   "ko": {
     "Settings": "설정",
@@ -98007,7 +98217,17 @@
     "Found by {value0}": "{value0}에 의해 발견됨",
     "Pending": "보류 중",
     "Partial": "부분적",
-    "{value0}/{value1} batches": "{value0}/{value1} 배치"
+    "{value0}/{value1} batches": "{value0}/{value1} 배치",
+    "Deep": "심층",
+    "All eligible files. No tools or extra source context.": "모든 검토 대상 파일. 도구나 추가 소스 맥락을 사용하지 않습니다.",
+    "All eligible files with read-only tools and nearby source context.": "읽기 전용 도구와 주변 소스 맥락으로 모든 검토 대상 파일을 검토합니다.",
+    "All eligible files with read-only tools and deeper source investigation.": "읽기 전용 도구와 심층 소스 조사로 모든 검토 대상 파일을 검토합니다.",
+    "Unavailable for this review depth": "이 검토 깊이에서는 사용할 수 없음",
+    "Dependency lock file": "의존성 잠금 파일",
+    "Preparing review…": "검토 준비 중…",
+    "Combining reviewer findings…": "검토자들의 발견 사항 통합 중…",
+    "Running project checks…": "프로젝트 검사 실행 중…",
+    "Review progress": "검토 진행 상황"
   },
   "nb": {
     "Settings": "Innstillinger",
@@ -102462,7 +102682,17 @@
     "Found by {value0}": "Funnet av {value0}",
     "Pending": "Venter",
     "Partial": "Delvis",
-    "{value0}/{value1} batches": "{value0}/{value1} partier"
+    "{value0}/{value1} batches": "{value0}/{value1} partier",
+    "Deep": "Grundig",
+    "All eligible files. No tools or extra source context.": "Alle egnede filer. Ingen verktøy eller ekstra kildekontekst.",
+    "All eligible files with read-only tools and nearby source context.": "Alle egnede filer med skrivebeskyttede verktøy og kontekst fra nærliggende kildefiler.",
+    "All eligible files with read-only tools and deeper source investigation.": "Alle egnede filer med skrivebeskyttede verktøy og dypere undersøkelse av kildekoden.",
+    "Unavailable for this review depth": "Ikke tilgjengelig for denne gjennomgangsdybden",
+    "Dependency lock file": "Låsefil for avhengigheter",
+    "Preparing review…": "Forbereder gjennomgang…",
+    "Combining reviewer findings…": "Samler funn fra gjennomgangene…",
+    "Running project checks…": "Kjører prosjektkontroller…",
+    "Review progress": "Fremdrift for gjennomgang"
   },
   "ro": {
     "Settings": "Setări",
@@ -106917,7 +107147,17 @@
     "Found by {value0}": "Găsit de {value0}",
     "Pending": "În așteptare",
     "Partial": "Parțial",
-    "{value0}/{value1} batches": "{value0}/{value1} loturi"
+    "{value0}/{value1} batches": "{value0}/{value1} loturi",
+    "Deep": "Aprofundată",
+    "All eligible files. No tools or extra source context.": "Toate fișierele eligibile. Fără instrumente sau context suplimentar din codul sursă.",
+    "All eligible files with read-only tools and nearby source context.": "Toate fișierele eligibile cu instrumente doar pentru citire și context din fișierele sursă apropiate.",
+    "All eligible files with read-only tools and deeper source investigation.": "Toate fișierele eligibile cu instrumente doar pentru citire și analiză aprofundată a codului sursă.",
+    "Unavailable for this review depth": "Indisponibil pentru acest nivel de profunzime a revizuirii",
+    "Dependency lock file": "Fișier de blocare a dependențelor",
+    "Preparing review…": "Se pregătește revizuirea…",
+    "Combining reviewer findings…": "Se combină constatările revizorilor…",
+    "Running project checks…": "Se execută verificările proiectului…",
+    "Review progress": "Progresul revizuirii"
   },
   "ru": {
     "Settings": "Настройки",
@@ -111372,7 +111612,17 @@
     "Found by {value0}": "Найден пользователем {value0}.",
     "Pending": "Ожидается",
     "Partial": "Частичный",
-    "{value0}/{value1} batches": "Пакеты {value0}/{value1}"
+    "{value0}/{value1} batches": "Пакеты {value0}/{value1}",
+    "Deep": "Глубокая",
+    "All eligible files. No tools or extra source context.": "Все подходящие файлы. Без инструментов и дополнительного контекста исходного кода.",
+    "All eligible files with read-only tools and nearby source context.": "Все подходящие файлы с инструментами только для чтения и контекстом соседних исходных файлов.",
+    "All eligible files with read-only tools and deeper source investigation.": "Все подходящие файлы с инструментами только для чтения и углублённым исследованием исходного кода.",
+    "Unavailable for this review depth": "Недоступно для этой глубины проверки",
+    "Dependency lock file": "Файл фиксации зависимостей",
+    "Preparing review…": "Подготовка проверки…",
+    "Combining reviewer findings…": "Объединение замечаний рецензентов…",
+    "Running project checks…": "Выполнение проверок проекта…",
+    "Review progress": "Ход проверки"
   },
   "sk": {
     "Settings": "Nastavenia",
@@ -115827,7 +116077,17 @@
     "Found by {value0}": "Nájdené {value0}",
     "Pending": "Čaká sa",
     "Partial": "Čiastočné",
-    "{value0}/{value1} batches": "{value0}/{value1} šarže"
+    "{value0}/{value1} batches": "{value0}/{value1} šarže",
+    "Deep": "Hĺbková",
+    "All eligible files. No tools or extra source context.": "Všetky vhodné súbory. Bez nástrojov a ďalšieho kontextu zdrojového kódu.",
+    "All eligible files with read-only tools and nearby source context.": "Všetky vhodné súbory s nástrojmi iba na čítanie a kontextom okolitých zdrojových súborov.",
+    "All eligible files with read-only tools and deeper source investigation.": "Všetky vhodné súbory s nástrojmi iba na čítanie a hlbším skúmaním zdrojového kódu.",
+    "Unavailable for this review depth": "Pre túto hĺbku kontroly nie je k dispozícii",
+    "Dependency lock file": "Súbor zámku závislostí",
+    "Preparing review…": "Príprava kontroly…",
+    "Combining reviewer findings…": "Zlučovanie zistení recenzentov…",
+    "Running project checks…": "Spúšťanie kontrol projektu…",
+    "Review progress": "Priebeh kontroly"
   },
   "sv": {
     "Settings": "Inställningar",
@@ -120282,7 +120542,17 @@
     "Found by {value0}": "Hittat av {value0}",
     "Pending": "Väntar",
     "Partial": "Partiell",
-    "{value0}/{value1} batches": "{value0}/{value1} satser"
+    "{value0}/{value1} batches": "{value0}/{value1} satser",
+    "Deep": "Djupgående",
+    "All eligible files. No tools or extra source context.": "Alla lämpliga filer. Inga verktyg eller extra källkodskontext.",
+    "All eligible files with read-only tools and nearby source context.": "Alla lämpliga filer med skrivskyddade verktyg och kontext från närliggande källfiler.",
+    "All eligible files with read-only tools and deeper source investigation.": "Alla lämpliga filer med skrivskyddade verktyg och djupare undersökning av källkoden.",
+    "Unavailable for this review depth": "Inte tillgängligt för detta granskningsdjup",
+    "Dependency lock file": "Låsfil för beroenden",
+    "Preparing review…": "Förbereder granskning…",
+    "Combining reviewer findings…": "Sammanför granskarnas resultat…",
+    "Running project checks…": "Kör projektkontroller…",
+    "Review progress": "Granskningens förlopp"
   },
   "uk": {
     "Settings": "Налаштування",
@@ -124737,7 +125007,17 @@
     "Found by {value0}": "Знайдено {value0}",
     "Pending": "Очікує",
     "Partial": "Часткова",
-    "{value0}/{value1} batches": "Партії {value0}/{value1}"
+    "{value0}/{value1} batches": "Партії {value0}/{value1}",
+    "Deep": "Глибока",
+    "All eligible files. No tools or extra source context.": "Усі придатні файли. Без інструментів і додаткового контексту вихідного коду.",
+    "All eligible files with read-only tools and nearby source context.": "Усі придатні файли з інструментами лише для читання та контекстом сусідніх вихідних файлів.",
+    "All eligible files with read-only tools and deeper source investigation.": "Усі придатні файли з інструментами лише для читання та глибшим дослідженням вихідного коду.",
+    "Unavailable for this review depth": "Недоступно для цієї глибини перевірки",
+    "Dependency lock file": "Файл фіксації залежностей",
+    "Preparing review…": "Підготовка перевірки…",
+    "Combining reviewer findings…": "Об’єднання зауважень рецензентів…",
+    "Running project checks…": "Виконання перевірок проєкту…",
+    "Review progress": "Перебіг перевірки"
   },
   "vi": {
     "Settings": "Cài đặt",
@@ -129192,6 +129472,16 @@
     "Found by {value0}": "Được tìm thấy bởi {value0}",
     "Pending": "Đang chờ xử lý",
     "Partial": "Một phần",
-    "{value0}/{value1} batches": "Lô {value0}/{value1}"
+    "{value0}/{value1} batches": "Lô {value0}/{value1}",
+    "Deep": "Chuyên sâu",
+    "All eligible files. No tools or extra source context.": "Tất cả tệp đủ điều kiện. Không dùng công cụ hoặc ngữ cảnh mã nguồn bổ sung.",
+    "All eligible files with read-only tools and nearby source context.": "Tất cả tệp đủ điều kiện với công cụ chỉ đọc và ngữ cảnh từ các tệp mã nguồn lân cận.",
+    "All eligible files with read-only tools and deeper source investigation.": "Tất cả tệp đủ điều kiện với công cụ chỉ đọc và phân tích mã nguồn chuyên sâu.",
+    "Unavailable for this review depth": "Không khả dụng ở mức độ đánh giá này",
+    "Dependency lock file": "Tệp khóa phụ thuộc",
+    "Preparing review…": "Đang chuẩn bị đánh giá…",
+    "Combining reviewer findings…": "Đang kết hợp phát hiện của các bên đánh giá…",
+    "Running project checks…": "Đang chạy kiểm tra dự án…",
+    "Review progress": "Tiến độ đánh giá"
   }
 }

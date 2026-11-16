@@ -19,7 +19,6 @@ type Coverage = PullCodeReview['coverage']
 type Analysis = NonNullable<PullCodeReview['analysis']>
 type Candidate = (typeof pullCodeReviewOutputSchema.Type.findings)[number]
 const batchLimit = 180_000
-const maxBatches = 4
 const minConfidence = 8
 const evidenceLimit = 240_000
 const checkerLimit = 320_000
@@ -43,6 +42,12 @@ export function pullReviewEvidence(
     const cost = file.patch ? patchCost(file.path, file.patch) : 0
     let state: Coverage[number]['state']
     if (previous.has(file.path)) state = 'previous-pass'
+    else if (
+      /(?:^|\/)(?:pnpm-lock\.yaml|package-lock\.json|npm-shrinkwrap\.json|yarn\.lock|bun\.lockb?|Cargo\.lock|poetry\.lock|uv\.lock|Gemfile\.lock|composer\.lock|Podfile\.lock)$/.test(
+        file.path,
+      )
+    )
+      state = 'lockfile'
     else if (file.attributes?.binary || file.attributes?.generated || file.attributes?.vendored)
       state = 'excluded'
     else if (!file.patch) state = 'unavailable'
@@ -69,14 +74,14 @@ export function pullReviewPlan(
   detail: PullDetail,
   previous = new Set<string>(),
   budget = batchLimit,
-  limit = maxBatches,
 ) {
   const result = pullReviewEvidence(detail, previous, budget)
   const patches = new Map(detail.files.map((file) => [file.path, file.patch]))
-  for (let batch = 0; batch < limit; batch++) {
+  for (let batch = 0; batch < result.coverage.length; batch++) {
     const pending = result.coverage.filter((file) =>
       batch === 0 ? file.state === 'supplied' : file.state === 'budget',
     )
+    if (!pending.length) break
     let remaining = budget
     for (const file of pending) {
       const patch = patches.get(file.path)
@@ -235,9 +240,11 @@ export async function runPullReview({
       file.state === 'supplied' ? { ...file, state: 'queued' } : file,
     ),
     notVerified: [
-      review.runChecks
-        ? 'Project command results are listed separately. Passing commands do not prove a finding or full test coverage. Callers outside the supplied evidence were not inspected.'
-        : 'No project commands ran. Context contains only captured patches and the listed immutable Git files. Callers outside that evidence were not inspected.',
+      review.depth !== 'quick'
+        ? 'Read-only tools may inspect the captured PR source. Patch coverage does not count extra tool reads. Project command results are listed separately when commands ran.'
+        : review.runChecks
+          ? 'Project command results are listed separately. Passing commands do not prove a finding or full test coverage. Callers outside the supplied evidence were not inspected.'
+          : 'No project commands ran. Context contains only captured patches and the listed immutable Git files. Callers outside that evidence were not inspected.',
     ],
     analysis: {
       batches: batches.length,
@@ -403,7 +410,7 @@ export async function runPullReview({
   result.notVerified.push(
     `Completed ${result.analysis.completedBatches} of ${batches.length} batches. A second model pass challenged supported candidates. Model confidence is not proof of correctness.`,
   )
-  if (!result.analysis.contextFiles.length)
+  if (!result.analysis.contextFiles.length && review.depth === 'quick')
     result.notVerified.push(
       'No additional immutable Git file context was available. This review used patches only.',
     )

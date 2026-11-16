@@ -145,6 +145,23 @@ it('runs the Claude compact command and reports its boundary', async () => {
     compact: undefined,
     sessionId: undefined,
     ephemeral: true,
+    isolateSettings: true,
+    agent: { ...run.agent, permission: 'read-only' },
+  })
+  expect(mocks.query).toHaveBeenCalledWith(
+    expect.objectContaining({
+      options: expect.objectContaining({
+        settingSources: [],
+        tools: ['Read', 'Glob', 'Grep', 'ToolSearch', 'AskUserQuestion'],
+      }),
+    }),
+  )
+  mocks.query.mockClear()
+  await claudeAdapter.run({
+    ...run,
+    compact: undefined,
+    sessionId: undefined,
+    ephemeral: true,
     tools: 'none',
     agent: {
       ...run.agent,

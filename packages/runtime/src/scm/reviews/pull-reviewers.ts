@@ -1,5 +1,6 @@
 import { type PullCodeReview, type TitleGenerationSettings } from '@dovo/protocol'
 import { runPullReview, type PullReviewProgress } from './pull-review-engine.js'
+import { orchestratePullReview } from './pull-review-orchestrator.js'
 import { errorMessage } from '../../errors.js'
 
 type Reviewer = NonNullable<PullCodeReview['reviewerResults']>[number]
@@ -103,7 +104,7 @@ export async function runPullReviewers({
   review: PullCodeReview
   call: (
     text: string,
-    phase: 'review' | 'check',
+    phase: 'review' | 'check' | 'combine',
     selection: TitleGenerationSettings,
   ) => Promise<string>
   readSnapshot?: (path: string, ref: string) => Promise<string | undefined>
@@ -174,5 +175,18 @@ export async function runPullReviewers({
         .filter(Boolean)
         .join('\n') || 'No reviewer completed a batch.',
     )
-  return combinePullReviewers(review, results, reviewers)
+  let combined = combinePullReviewers(review, results, reviewers)
+  if (selections.length > 1 && combined.findings.length) {
+    combined.analysis.phase = 'combining'
+    delete combined.analysis.activeBatch
+    progress(structuredClone(combined))
+    combined = await orchestratePullReview(
+      combined,
+      (text) => call(text, 'combine', review.selection),
+      signal,
+    )
+    combined.analysis.phase = 'completed'
+    progress(structuredClone(combined))
+  }
+  return combined
 }

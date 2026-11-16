@@ -508,6 +508,19 @@ it('starts a title-style utility turn as an ephemeral Codex thread even with too
   const rows = await requests()
   expect(rows.find((row) => row.method === 'thread/start')?.params?.ephemeral).toBe(true)
 })
+it('isolates PR repository instructions and delegation while retaining read-only source tools', async () => {
+  const { run, requests } = await fixture()
+  run.ephemeral = true
+  run.isolateSettings = true
+  run.agent.permission = 'read-only'
+  await codexAdapter.run(run)
+  const thread = (await requests()).find((row) => row.method === 'thread/start')
+  expect(thread?.params).toMatchObject({
+    sandbox: 'read-only',
+    config: { project_doc_max_bytes: 0, 'features.multi_agent': false },
+  })
+  expect(thread?.params?.config).not.toHaveProperty('features.shell_tool')
+})
 it('fails before a turn on older harnesses that could silently ignore Daybreak', async () => {
   const { run, requests } = await fixture('0.150.0')
   run.agent.cyberAccessProgram = 'daybreakBlue'

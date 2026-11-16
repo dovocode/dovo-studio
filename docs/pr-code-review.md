@@ -13,17 +13,18 @@ and report storage. HTTP runtimes, pairing codes and device tokens work as befor
 ## Read and share a review
 
 1. Start a review. The runtime captures PR intent and patches between checks of the base and head.
-   It reviews the selected number of batches automatically. It then challenges supported findings in
-   fresh model calls. Progress shows the active batch and phase.
+   It reviews every eligible changed file in bounded batches automatically. It then challenges
+   supported findings in fresh model calls. Progress shows the active batch and phase.
 2. Read the findings beside the captured diff. On mobile, open a finding's file to read its diff.
 3. Open **Evidence and finding check** to see the exact code quote, challenge reason and model
    confidence. Open snapshot context to inspect the surrounding code supplied to the model.
 4. Check file coverage. Each batch holds whole patches within a 180,000-character serialized patch
    budget. Generated, vendored and binary files are excluded when the forge or local attributes
    identify them. Incomplete, missing, oversized and failed patches have separate coverage states.
-   **Review remaining files** retries failed batches and files omitted by the batch limit.
-   Successful files from completed passes stay covered. Each pass has its own report. Separate
-   batches and passes can miss bugs that involve files they do not analyze together.
+   **Review remaining files** retries failed batches and omissions from older reports. Dependency
+   lock files, such as `pnpm-lock.yaml`, are excluded. A patch that cannot fit one batch is marked
+   too large. Successful files from completed passes stay covered. Each pass has its own report.
+   Separate batches and passes can miss bugs that involve files they do not analyze together.
 5. Select **Add to draft** for findings you want to share. Nothing is selected by default. Select
    **Remove from draft** to undo it. Dovo removes unchanged generated text. It keeps your edited
    text and shows a notice. Dismissing an added finding follows the same rule. Edit the draft and
@@ -52,11 +53,11 @@ same captured patches, project command results and images. Each uses the selecte
 challenge call. Reviewers run in order to limit simultaneous provider processes. More reviewers use
 more time and model tokens. Project commands run once for the complete review.
 
-Dovo combines findings only when their location, code evidence and normalized title match exactly.
-Each finding names the models that found it. Different findings remain separate. Model agreement is
-not proof. The report shows each reviewer's completed batch count and failure. A provider failure
-keeps completed results from the other reviewers. File coverage means that at least one reviewer
-received that patch. Partial reviewers can have different coverage.
+Dovo first removes exact duplicate findings. The primary reviewer then groups overlapping findings
+in a final combining pass. Each finding names the models that found it. Model agreement is not
+proof. The report shows each reviewer's completed batch count and failure. A provider failure keeps
+completed results from the other reviewers. File coverage means that at least one reviewer received
+that patch. Partial reviewers can have different coverage.
 
 Select **Add images** for screenshots or designs. Desktop accepts PNG, JPEG, WebP and GIF files.
 Mobile opens the photo library and uses the existing image optimizer, including HEIC conversion.
@@ -71,16 +72,17 @@ Images are user-supplied context. They do not prove that a browser ran or that t
 image. A finding still requires exact evidence from a changed patch line. A model that rejects image
 input fails its own review. Dovo does not silently fall back to text-only analysis.
 
-| Provider                                 | Bounded review support                                                                                       |
-| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| Codex, Claude, OpenCode, Copilot, Cursor | Uses the existing adapter with tools disabled and native image input. The selected model must accept images. |
-| Configured ACP agents                    | Uses restricted execution. Visual review also requires advertised image input.                               |
-| Hermes, Grok, Muse, Vibe                 | Unavailable. Current adapters lack a complete tool-disable path for this review mode.                        |
-| Pi                                       | Unavailable. The adapter requires an imported session and does not accept images.                            |
+| Provider                                 | Review support                                                                                                                                                                             |
+| ---------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Codex, Claude, OpenCode, Copilot, Cursor | Quick disables tools. Standard and Deep use read-only tools. Image input depends on the chosen model.                                                                                      |
+| ACP clients                              | Installed clients appear by name in both reviewer pickers. Quick requires tool-disable support. Standard and Deep require read-only execution. Images also require advertised image input. |
+| Vibe                                     | Standard and Deep support read-only tools. Quick is unavailable because the adapter lacks a complete tool-disable path.                                                                    |
+| Hermes, Grok, Muse                       | Unavailable because the current adapters cannot enforce the required restricted sessions.                                                                                                  |
+| Pi                                       | Unavailable because the adapter requires an imported session and does not accept images.                                                                                                   |
 
-Unavailable providers remain visible with **Tool-free review unavailable**. Dovo does not enable
-their tools to bypass this limit. Provider and model access still depends on the selected computer's
-installation and credentials. No live provider claims follow from the mocked checks below.
+The picker shows unavailable providers with **Unavailable for this review depth**. The runtime
+checks the selected provider policy again before starting. Models and ACP clients use the chosen
+computer's own installation and credentials. Mocked tests do not establish live provider support.
 
 ## Review on another computer
 
@@ -102,16 +104,33 @@ publication preview names the destination account.
 
 ## Review depth and project checks
 
-| Depth                 | Patch batches | Extra source context per batch         |
-| --------------------- | ------------- | -------------------------------------- |
-| Quick                 | 1             | None                                   |
-| Standard, the default | Up to 4       | 12 files, 48,000 serialized characters |
-| Thorough              | Up to 12      | 32 files, 96,000 serialized characters |
+| Depth                 | File coverage      | Tools     | Extra source context per batch         |
+| --------------------- | ------------------ | --------- | -------------------------------------- |
+| Quick                 | All eligible files | Disabled  | None                                   |
+| Standard, the default | All eligible files | Read-only | 12 files, 48,000 serialized characters |
+| Deep                  | All eligible files | Read-only | 32 files, 96,000 serialized characters |
 
-All depths check the evidence and challenge supported candidates in a fresh model call. Depth sets
-coverage and context limits. It does not promise that a model read every line. **Review remaining
-files** uses the selected depth for another pass. The computer remembers depth. Earlier reports
-without a depth use Standard.
+All depths review every available, eligible patch and challenge supported findings in fresh model
+calls. Files do not wait for another pass because of a batch-count limit. Dependency lock files,
+generated files, vendored files and binary files are skipped. Patches larger than a single batch,
+incomplete patches and missing patches have explicit coverage states. Coverage records evidence
+supplied to the model. It does not prove that the model checked every line.
+
+Deep keeps the stored `thorough` value so existing reports and older clients remain compatible. The
+computer remembers depth. Earlier reports without a depth use Standard. Quick rejects project checks
+in the API and disables the option on both clients.
+
+With several reviewers, the primary reviewer runs a final combining pass. It groups overlapping
+findings from the same file and patch side, selects an existing finding as the representative and
+keeps the reviewer attribution. Every finding must appear in exactly one group. Invalid, incomplete
+or failed combining results leave the individual findings intact. The orchestrator cannot invent
+code quotes, change anchors or silently drop findings. Its input is capped at 240,000 characters.
+The combining pass disables tools and has a two-minute timeout. If the primary provider cannot
+disable tools, Dovo keeps the individual findings and records that limit.
+
+Preparation, review, finding checks and combining have an activity animation on desktop and mobile.
+The progress bar counts completed batches. It does not estimate time. Reduced-motion settings stop
+the animation. Cancellation stops later model calls and keeps results already saved.
 
 **Run project checks** is off by default and requires an explicit start. It installs dependencies
 and executes repository code on the connected computer. Enable it only for PR code you trust. The
@@ -145,30 +164,36 @@ network access and host permissions, as they can in a terminal.
 
 ## Evidence and recovery
 
-- The model runs in a fresh temporary directory with tools disabled and agent resources removed.
-  Claude does not load repository settings in this mode. Unexpected tool activity aborts the pass.
+- Every model call uses a fresh temporary directory and removes agent resources. Quick disables
+  tools and aborts on unexpected tool activity. Standard and Deep allow read-only tools. They can
+  inspect a separate detached clone of the captured PR head. The clone does not change the user's
+  working files. Missing local commits fall back to the supplied evidence with an explicit limit.
+  Claude ignores provider settings for these PR calls. Codex disables project instruction loading
+  and native delegation. Approvals are denied. Project files remain untrusted evidence.
 - The runtime supplies numbered patch lines, PR title and body, and a bounded changed-file manifest.
   For a local Git project, it also tries to read whole changed source files at the captured head
   SHA. If a file is absent there, it tries the captured base SHA. A bounded relative JS/TS import
   heuristic adds nearby modules. This does not resolve aliases, reverse callers or the whole build
   graph.
-- Standard context holds at most 12 files and 48,000 serialized characters per batch. Thorough
-  context holds at most 32 files and 96,000 characters. Quick does not read extra files. Each file
-  has at most 16,000 raw characters. Standard tries at most 32 paths from a queue capped at 80.
-  Thorough tries at most 96 paths from a queue capped at 240. It accepts common source and
-  configuration file extensions. It skips truncated previews and oversize files. Git errors appear
-  in the limits. Missing heuristic import paths are normal. URL-only reviews and commits unavailable
-  on the computer use patch evidence without this context.
-- Snapshot reads use existing Git object previews. They do not read dirty working files or execute
-  PR code. Git itself still uses the runtime's existing Git configuration. The review does not claim
-  that all runtime activity is offline. Project code runs only when you enable **Run project
-  checks**.
+- Standard context holds at most 12 files and 48,000 serialized characters per batch. Deep context
+  holds at most 32 files and 96,000 characters. Quick does not read extra files. Each file has at
+  most 16,000 raw characters. Standard tries at most 32 paths from a queue capped at 80. Deep tries
+  at most 96 paths from a queue capped at 240. It accepts common source and configuration file
+  extensions. It skips truncated previews and oversize files. Git errors appear in the limits.
+  Missing heuristic import paths are normal. URL-only reviews and commits unavailable on the
+  computer use patch evidence without this context.
+- Snapshot reads use Git objects. Read-only tools use the captured clone. Neither reads dirty
+  working files. Reviewer prompts prohibit project execution. Git itself still uses the runtime's
+  existing Git configuration. The review does not claim that all runtime activity is offline. Dovo
+  starts project commands only when you enable **Run project checks**. Standard and Deep rely on the
+  provider's read-only restrictions and the review instructions. These restrictions do not establish
+  that every provider can prevent all code execution or network access.
 - Each analysis JSON input is capped at 240,000 characters. Each challenge JSON input is capped at
   320,000 characters, including candidates. Context and metadata can be reduced to fit, with a note.
   Numbering and JSON escaping count toward these limits. Provider instructions and message framing
-  are outside these JSON caps. Each model call has a 60,000-character output cap and a 120-second
-  timeout. These are character limits, not model-specific token budgets or context-window
-  guarantees.
+  are outside these JSON caps. Each model call has a 60,000-character output cap. Quick has a
+  two-minute timeout per call. Standard has five minutes. Deep has ten minutes. These are character
+  limits, not model-specific token budgets or context-window guarantees.
 - A finding must cite an exact supplied changed path and 1 to 10 consecutive hunk lines, with at
   least one changed line. Confidence must be at least 8/10. Unsupported findings are filtered
   individually. A fresh call with the same evidence challenges the remaining findings. It must
@@ -179,10 +204,12 @@ network access and host permissions, as they can in a terminal.
   supplied patches. Findings become editable when the report completes. Exact duplicates are
   removed. The final report keeps at most 100 findings, ordered by severity and confidence, and
   notes omissions.
-- Quick can make up to two model calls, Standard up to eight, and Thorough up to 24. A batch with no
-  supported candidates needs no challenge call. This can cost more and take longer than the previous
-  single call. There is no measured latency or accuracy claim. Supplying a patch does not prove that
-  the model checked every line. The same model can repeat a mistake in both phases.
+- Each reviewer makes one analysis call per batch and one challenge call when it proposes supported
+  findings. Multiple reviewers add one combining call when findings exist. The batch count depends
+  on the eligible patch size. A batch with no supported candidates needs no challenge call. This can
+  cost more and take longer than the previous single call. There is no measured latency or accuracy
+  claim. Supplying a patch does not prove that the model checked every line. The same model can
+  repeat a mistake in both phases.
 - A push preserves the old report and draft. Publishing checks both commits and the evidence
   fingerprint again. It rejects a stale report.
 - Reports, coverage, drafts and publication intent live in SQLite on the owning runtime. A process
@@ -204,9 +231,9 @@ network access and host permissions, as they can in a terminal.
   client during that check stays intact. Report sequence numbers prevent late responses from
   replacing newer report state.
 
-Inline batch comments, automatic triggers, tool-enabled repository PR reviews, cross-computer report
-sharing and automatic finding matching across revisions are outside this release. Earlier reports
-remain available in review history. An absent finding does not prove a fix.
+Inline batch comments, automatic triggers, cross-computer report sharing and automatic finding
+matching across revisions are outside this release. Earlier reports remain available in review
+history. An absent finding does not prove a fix.
 
 ## Verification
 
@@ -235,12 +262,12 @@ routing and destination-local account IDs. Runtime tests check exact finding att
 reviewer recovery, image delivery to both passes, temporary file cleanup and image validation.
 Source tests reject wrong projects, stale revisions and account guard changes. It saves screenshots
 in `output/pr-review-checks`. Runtime tests use real HTTP authentication and SQLite, with mocked
-forge and provider boundaries. They exercise the real tools-disabled utility runner. A real Git
-fixture verifies that committed source and imported context reach the model while later working-tree
-edits do not. Engine tests cover serialized budgets, exact quotes, deletion evidence, confidence
-filtering, malformed challenge IDs, duplicate findings, partial failure recovery and cancellation.
-These checks do not establish live model quality, remote forge behavior, or native iOS and Android
-layout.
+forge and provider boundaries. They exercise the real utility runner, Quick tool denial, and
+Standard and Deep read-only policies. A real Git fixture verifies that committed source and imported
+context reach the model while later working-tree edits do not. Engine tests cover serialized
+budgets, exact quotes, deletion evidence, confidence filtering, malformed challenge IDs, duplicate
+findings, partial failure recovery and cancellation. These checks do not establish live model
+quality, remote forge behavior, or native iOS and Android layout.
 
 The command runner tests use real Git, npm and small Node fixture scripts. They check the captured
 commit, dirty file preservation, command failures, output limits, cancellation, timeout and cleanup.
