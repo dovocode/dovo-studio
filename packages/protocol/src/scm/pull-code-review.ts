@@ -1,3 +1,4 @@
+import { MAX_ATTACHMENT_BYTES } from '../shared/attachments.js'
 import { Effect, Schema } from 'effect'
 import { mutableArray, mutableStruct, strictStruct, minValue, maxValue } from '../shared/schema.js'
 import { titleGenerationSettingsSchema } from '../tasks/title-generation.js'
@@ -6,7 +7,87 @@ import { forgeIdentityTokenSchema } from './forges/source-identity.js'
 
 const id = maxValue(minValue(Schema.String, 1), 4000)
 const ids = maxValue(mutableArray(id), 100)
+export const MAX_PULL_REVIEWERS = 4
+export const MAX_PULL_REVIEW_IMAGES = 3
+export const pullReviewImageSchema = strictStruct({
+  mime: Schema.optional(Schema.Literals(['image/png', 'image/jpeg', 'image/webp', 'image/gif'])),
+  name: maxValue(minValue(Schema.String, 1), 250),
+  data: maxValue(Schema.String, Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4),
+})
+export type PullReviewImage = typeof pullReviewImageSchema.Type
+const reviewerSelections = maxValue(
+  mutableArray(titleGenerationSettingsSchema),
+  MAX_PULL_REVIEWERS - 1,
+)
+const imageMetadata = mutableStruct({
+  id,
+  name: Schema.String,
+  mime: Schema.String,
+  size: Schema.Int,
+  digest: Schema.String,
+})
 const version = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+export const pullReviewDepthSchema = Schema.Literals(['quick', 'standard', 'thorough'])
+export type PullReviewDepth = typeof pullReviewDepthSchema.Type
+export const pullReviewDepths = {
+  quick: {
+    label: 'Quick',
+    description: 'One patch batch. No extra file context.',
+    batches: 1,
+    contextFiles: 0,
+    contextBudget: 0,
+  },
+  standard: {
+    label: 'Standard',
+    description: 'Up to four batches with nearby source files.',
+    batches: 4,
+    contextFiles: 12,
+    contextBudget: 48_000,
+  },
+  thorough: {
+    label: 'Thorough',
+    description: 'Up to twelve batches with more source context.',
+    batches: 12,
+    contextFiles: 32,
+    contextBudget: 96_000,
+  },
+} satisfies Record<
+  PullReviewDepth,
+  {
+    label: string
+    description: string
+    batches: number
+    contextFiles: number
+    contextBudget: number
+  }
+>
+export const pullReviewCheckSchema = mutableStruct({
+  name: Schema.String,
+  command: Schema.String,
+  headSha: Schema.String,
+  status: Schema.Literals([
+    'running',
+    'passed',
+    'failed',
+    'skipped',
+    'cancelled',
+    'timed-out',
+    'interrupted',
+  ]),
+  output: maxValue(Schema.String, 20000),
+  exitCode: Schema.optional(Schema.Int),
+  startedAt: Schema.optional(Schema.String),
+  finishedAt: Schema.optional(Schema.String),
+})
+export const pullReviewCheckLabels: Record<typeof pullReviewCheckSchema.Type.status, string> = {
+  running: 'Running',
+  passed: 'Passed',
+  failed: 'Failed',
+  skipped: 'Skipped',
+  cancelled: 'Cancelled',
+  'timed-out': 'Timed out',
+  interrupted: 'Interrupted',
+}
 export const pullCodeReviewTargetSchema = strictStruct({
   repositoryId: id,
   number: Schema.Int.check(Schema.isGreaterThan(0)),
@@ -59,6 +140,31 @@ export const pullCodeReviewSchema = mutableStruct({
   baseSha: Schema.String,
   headSha: Schema.String,
   selection: titleGenerationSettingsSchema,
+  reviewers: Schema.optional(reviewerSelections),
+  images: Schema.optional(mutableArray(imageMetadata)),
+  reviewerResults: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        id,
+        selection: titleGenerationSettingsSchema,
+        status: Schema.Literals([
+          'pending',
+          'running',
+          'completed',
+          'partial',
+          'failed',
+          'cancelled',
+          'interrupted',
+        ]),
+        completedBatches: version,
+        batches: version,
+        error: Schema.optional(Schema.String),
+      }),
+    ),
+  ),
+  depth: Schema.optional(pullReviewDepthSchema),
+  runChecks: Schema.optional(Schema.Boolean),
+  checks: Schema.optional(mutableArray(pullReviewCheckSchema)),
   createdAt: Schema.String,
   finishedAt: Schema.optional(Schema.String),
   status: Schema.Literals(['running', 'completed', 'failed', 'cancelled', 'interrupted']),
@@ -101,6 +207,7 @@ export const pullCodeReviewSchema = mutableStruct({
     mutableStruct({
       ...findingFields,
       id,
+      reviewerIds: Schema.optional(mutableArray(id)),
       side: Schema.Literals(['before', 'after']),
       anchored: Schema.Boolean,
       evidence: Schema.optional(Schema.String),
@@ -123,9 +230,23 @@ export const pullCodeReviewSchema = mutableStruct({
   ),
 })
 export type PullCodeReview = typeof pullCodeReviewSchema.Type
+export const pullReviewerStatusLabels: Record<
+  NonNullable<PullCodeReview['reviewerResults']>[number]['status'],
+  string
+> = {
+  pending: 'Pending',
+  running: 'Running',
+  completed: 'Completed',
+  partial: 'Partial',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+  interrupted: 'Interrupted',
+}
 export const pullCodeReviewReportSchema = mutableStruct({
   reviews: mutableArray(pullCodeReviewSchema),
   selection: Schema.optional(titleGenerationSettingsSchema),
+  reviewers: Schema.optional(reviewerSelections),
+  depth: Schema.optional(pullReviewDepthSchema),
 })
 export type PullCodeReviewReport = typeof pullCodeReviewReportSchema.Type
 export const pullCodeReviewReadSchema = strictStruct({ target: pullCodeReviewTargetSchema })
@@ -135,6 +256,10 @@ export const pullCodeReviewStartSchema = strictStruct({
   headSha: id,
   baseSha: id,
   selection: titleGenerationSettingsSchema,
+  reviewers: Schema.optional(reviewerSelections),
+  images: Schema.optional(maxValue(mutableArray(pullReviewImageSchema), MAX_PULL_REVIEW_IMAGES)),
+  depth: Schema.optional(pullReviewDepthSchema),
+  runChecks: Schema.optional(Schema.Boolean),
   remainingFrom: Schema.optional(id),
 })
 export const pullCodeReviewStopSchema = strictStruct({

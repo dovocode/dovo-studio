@@ -8,7 +8,10 @@ import {
   mutableArray,
   forgePullTarget,
   pullCodeReviewSchema,
+  pullCodeReviewReportSchema,
   pullCodeReviewBody,
+  pullReviewDepths,
+  pullReviewDepthSchema,
   type PullCodeReview,
   type PullCodeReviewTarget,
   type PullCodeReviewDraft,
@@ -20,9 +23,13 @@ import { HttpError, errorMessage } from '../../errors.js'
 import { retrievalFresh } from '../../retrieval/context.js'
 import { guardSource } from '../forges/integration/source-context.js'
 import { pullReviewRevision } from './reviews.js'
-import { pullReviewPlan, runPullReview } from './pull-review-engine.js'
+import { pullReviewPlan } from './pull-review-engine.js'
+import { runPullReviewers } from './pull-reviewers.js'
+import { pullReviewImages } from './pull-review-images.js'
+import { runPullChecks } from './pull-review-checks.js'
 export { pullReviewEvidence } from './pull-review-engine.js'
 
+const pullCodeReviewReportReviewersSchema = pullCodeReviewReportSchema.fields.reviewers
 const row = mutableStruct({ value: Schema.String })
 const rows = mutableArray(row)
 const now = () => new Date().toISOString()
@@ -54,6 +61,21 @@ export class PullCodeReviews {
         review.finishedAt = now()
         changed = true
       }
+      for (const reviewer of review.reviewerResults ?? []) {
+        if (reviewer.status === 'running' || reviewer.status === 'pending') {
+          reviewer.status = 'interrupted'
+          changed = true
+        }
+      }
+      for (const check of review.checks ?? []) {
+        if (check.status === 'running') {
+          check.status = 'interrupted'
+          check.finishedAt = now()
+          check.output += '\nRuntime stopped before this command result was saved.'
+          check.output = check.output.slice(-20000)
+          changed = true
+        }
+      }
       if (review.publication?.status === 'publishing') {
         review.publication.status = 'unknown'
         changed = true
@@ -78,6 +100,7 @@ export class PullCodeReviews {
         throw new HttpError(409, 'The PR account changed. Refresh before continuing.')
       return {
         source,
+        repository: repo.path,
         overview: () =>
           this.s.pulls.section(repo.path, target.number, 'overview', source.destination),
         readSnapshot: async (path: string, ref: string) => {
@@ -106,6 +129,7 @@ export class PullCodeReviews {
     guardSource(source, { expectedDestination: target.expectedDestination })
     return {
       source,
+      repository: undefined,
       overview: () => reader.section(target.number, 'overview', source.destination),
       readSnapshot: undefined,
       changes: () => reader.section(target.number, 'changes', source.destination),
@@ -135,8 +159,23 @@ export class PullCodeReviews {
     const selection = this.db
       .prepare("SELECT value FROM documents WHERE id='pull-review-model'")
       .get()
+    const reviewers = this.db
+      .prepare("SELECT value FROM documents WHERE id='pull-review-reviewers'")
+      .get()
+    const depth = this.db.prepare("SELECT value FROM documents WHERE id='pull-review-depth'").get()
     return {
       reviews: this.list(this.scope(target, source.readerIdentity)),
+      ...(reviewers
+        ? {
+            reviewers: decode(
+              pullCodeReviewReportReviewersSchema,
+              JSON.parse(decode(row, reviewers).value),
+            ),
+          }
+        : {}),
+      ...(depth
+        ? { depth: decode(pullReviewDepthSchema, JSON.parse(decode(row, depth).value)) }
+        : {}),
       ...(selection
         ? {
             selection: decode(
@@ -149,6 +188,8 @@ export class PullCodeReviews {
   }
   async start(input: typeof pullCodeReviewStartSchema.Type) {
     if (this.stopped) throw new HttpError(503, 'The runtime is stopping.')
+    const images = await pullReviewImages(input.images ?? [])
+    const imageMetadata = images.map(({ data: _data, ...metadata }) => metadata)
     const reader = await this.source(input.target)
     const scope = this.scope(input.target, reader.source.readerIdentity)
     const prior = this.list(scope).find((review) => review.requestId === input.requestId)
@@ -157,6 +198,10 @@ export class PullCodeReviews {
         prior.headSha !== input.headSha ||
         prior.baseSha !== input.baseSha ||
         prior.remainingFrom !== input.remainingFrom ||
+        (prior.depth ?? 'standard') !== (input.depth ?? 'standard') ||
+        (prior.runChecks ?? false) !== (input.runChecks ?? false) ||
+        !isDeepStrictEqual(prior.reviewers ?? [], input.reviewers ?? []) ||
+        !isDeepStrictEqual(prior.images ?? [], imageMetadata) ||
         !isDeepStrictEqual(
           prior.selection,
           decode(
@@ -173,7 +218,13 @@ export class PullCodeReviews {
     }
     if (this.starts.has(scope) || this.list(scope).some((review) => review.status === 'running'))
       throw new HttpError(409, 'A review is already running for this PR.')
-    this.s.titles.validateUtility(input.selection)
+    const selections = [input.selection, ...(input.reviewers ?? [])]
+    const fingerprints = selections.map((selection) => {
+      this.s.titles.validateUtility(selection)
+      return JSON.stringify(selection)
+    })
+    if (new Set(fingerprints).size !== fingerprints.length)
+      throw new HttpError(400, 'Choose distinct reviewer models or settings.')
     this.starts.add(scope)
     try {
       const before = await retrievalFresh(true, () => reader.status())
@@ -211,7 +262,8 @@ export class PullCodeReviews {
         ))
           for (const file of pass.coverage) if (file.state === 'supplied') previous.add(file.path)
       }
-      const evidence = pullReviewPlan(detail, previous)
+      const depth = input.depth ?? 'standard'
+      const evidence = pullReviewPlan(detail, previous, undefined, pullReviewDepths[depth].batches)
       if (!evidence.coverage.some((file) => file.state === 'supplied'))
         throw new HttpError(
           400,
@@ -232,6 +284,22 @@ export class PullCodeReviews {
         baseSha: input.baseSha,
         headSha: input.headSha,
         selection: input.selection,
+        reviewers: input.reviewers ?? [],
+        images: imageMetadata,
+        reviewerResults: selections.map((selection, index) => ({
+          id: `reviewer-${index + 1}`,
+          selection,
+          status: 'pending',
+          batches: new Set(
+            evidence.coverage
+              .filter((file) => file.state === 'supplied')
+              .map((file) => file.batch ?? 0),
+          ).size,
+          completedBatches: 0,
+        })),
+        depth,
+        runChecks: input.runChecks ?? false,
+        checks: [],
         createdAt: now(),
         status: 'running',
         summary: '',
@@ -247,9 +315,15 @@ export class PullCodeReviews {
       this.db
         .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-model',?)")
         .run(JSON.stringify(input.selection))
+      this.db
+        .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-depth',?)")
+        .run(JSON.stringify(depth))
+      this.db
+        .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-reviewers',?)")
+        .run(JSON.stringify(input.reviewers ?? []))
       const controller = new AbortController()
       this.active.set(review.id, controller)
-      const done = this.run(review, scope, reader, controller).finally(() => {
+      const done = this.run(review, scope, reader, controller, images).finally(() => {
         this.active.delete(review.id)
         this.runs.delete(done)
       })
@@ -264,13 +338,27 @@ export class PullCodeReviews {
     scope: string,
     reader: Awaited<ReturnType<PullCodeReviews['source']>>,
     controller: AbortController,
+    images: Awaited<ReturnType<typeof pullReviewImages>>,
   ) {
     try {
-      const result = await runPullReview({
+      if (review.runChecks) {
+        review.checks = await runPullChecks({
+          repository: reader.repository,
+          headSha: review.headSha,
+          git: this.s.git,
+          signal: controller.signal,
+          progress: (checks) => {
+            const current = this.get(scope, review.id)
+            current.checks = checks
+            this.write(current)
+          },
+        })
+      }
+      controller.signal.throwIfAborted()
+      const result = await runPullReviewers({
         review,
-        intent: review.intent ?? { title: '', body: '' },
-        call: (text, phase) =>
-          this.s.titles.reviewPull(text, review.selection, controller.signal, phase),
+        call: (text, phase, selection) =>
+          this.s.titles.reviewPull(text, selection, controller.signal, phase, images),
         readSnapshot: reader.readSnapshot,
         signal: controller.signal,
         progress: (progress) => {
@@ -306,6 +394,9 @@ export class PullCodeReviews {
     } catch (error) {
       const current = this.get(scope, review.id)
       current.status = controller.signal.aborted ? 'cancelled' : 'failed'
+      for (const reviewer of current.reviewerResults ?? [])
+        if (reviewer.status === 'running' || reviewer.status === 'pending')
+          reviewer.status = controller.signal.aborted ? 'cancelled' : 'failed'
       current.error = errorMessage(error)
       current.finishedAt = now()
       this.write(current)

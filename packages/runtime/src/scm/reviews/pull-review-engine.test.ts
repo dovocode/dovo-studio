@@ -1,6 +1,7 @@
 import { expect, it, vi } from 'vite-plus/test'
 import {
   defaultTaskHarness,
+  pullReviewDepths,
   type PullCodeReview,
   type PullDetail,
   type pullCodeReviewOutputSchema,
@@ -111,6 +112,57 @@ function run(options: Partial<Parameters<typeof runPullReview>[0]> = {}) {
     ...options,
   })
 }
+
+it('uses real batch and snapshot limits for Quick, Standard and Thorough reviews', async () => {
+  const files = Array.from({ length: 15 }, (_, index) => file(`${index}.ts`))
+  for (const depth of ['quick', 'standard', 'thorough'] as const) {
+    const plan = pullReviewPlan(detail(files), new Set(), 200, pullReviewDepths[depth].batches)
+    expect(plan.coverage.filter((file) => file.state === 'supplied')).toHaveLength(
+      pullReviewDepths[depth].batches,
+    )
+    const readSnapshot = vi.fn<ReadSnapshot>(async () => 'export const value = true')
+    const review = {
+      ...report(
+        files.map((file) => ({
+          path: file.path,
+          patch: file.patch,
+          state: 'supplied' as const,
+          batch: 0,
+        })),
+      ),
+      depth,
+    }
+    const result = await run({ review, readSnapshot, call: async () => output([]) })
+    expect(result.analysis.contextFiles).toHaveLength(
+      depth === 'quick' ? 0 : depth === 'standard' ? 12 : 15,
+    )
+    expect(readSnapshot.mock.calls.length).toBe(
+      depth === 'quick' ? 0 : depth === 'standard' ? 12 : 15,
+    )
+  }
+})
+
+it('supplies recorded command evidence to both model phases without claiming a test passed', async () => {
+  const review = report()
+  review.runChecks = true
+  review.checks = [
+    {
+      name: 'lint',
+      command: 'pnpm run lint',
+      headSha: review.headSha,
+      status: 'failed',
+      exitCode: 2,
+      output: 'Actual lint failure',
+    },
+  ]
+  const call = vi.fn<Call>(async (_, phase) =>
+    phase === 'review' ? output([candidate]) : JSON.stringify({ decisions: [keep('0')] }),
+  )
+  const result = await run({ review, call })
+  for (const [input] of call.mock.calls) expect(input).toContain('Actual lint failure')
+  expect(result.notVerified.join('\n')).toContain('Project command results are listed separately')
+  expect(result.notVerified.join('\n')).not.toContain('No tests ran')
+})
 
 it('packs whole serialized patches into at most four batches and exposes all omissions', () => {
   const plan = pullReviewPlan(

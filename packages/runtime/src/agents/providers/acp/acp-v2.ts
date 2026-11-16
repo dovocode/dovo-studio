@@ -308,6 +308,8 @@ export function createAcpV2Adapter() {
                 ),
             ),
           )
+        if (!warm.image && run.attachments?.some(isImageAttachment) && run.tools === 'none')
+          throw new Error('This ACP agent does not accept image input for tool-free reviews.')
         // The response only acknowledges insertion. Only a subsequent foreground idle state ends work.
         await Promise.race([
           connection.rpc.request('session/prompt', {

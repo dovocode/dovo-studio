@@ -16,7 +16,7 @@ export const Text=({children})=><span>{children}</span>;
 export const useTheme=()=>({mode:window.previewTheme??'dark',colors:{},styles:{}});
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const IconButton=Action;
-export const Field=({label,value,onChangeText,inputRef,onFocus,onBlur})=><input ref={inputRef} aria-label={label} value={value} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;
+export const Field=({label,value,onChangeText,inputRef,onFocus,onBlur,onSubmitEditing})=><input ref={inputRef} aria-label={label} value={value} onKeyDown={event=>{if(event.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} onChange={event=>onChangeText(event.target.value)}/>;
 export const Choice=({label,value,items,onChange})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;
 `
 const stubs = [
@@ -245,6 +245,48 @@ try {
   await page.getByLabel('Browser options').selectOption('diagnostics')
   await page.evaluate(() => window.bridge('performance', { details: 'Network round trip: 40 ms' }))
   assert.equal(await page.evaluate(() => window.alerts.at(-1).details), 'Network round trip: 40 ms')
+  await remoteAddress.fill('http://remote.lan/submitted')
+  await remoteAddress.press('Enter')
+  await page.waitForFunction(() =>
+    window.commands.some(({ code }) => code.includes('http://remote.lan/submitted')),
+  )
+  await page.evaluate(() =>
+    window.bridge('state', {
+      url: 'http://remote.lan/redirected',
+      title: 'Redirected',
+      back: true,
+      forward: false,
+      loading: false,
+      editable: false,
+    }),
+  )
+  await page.waitForFunction(
+    () =>
+      document.querySelector('input[aria-label="Preview URL"]').value ===
+      'http://remote.lan/redirected',
+  )
+  assert.equal(
+    await remoteAddress.inputValue(),
+    'http://remote.lan/redirected',
+    'Remote address follows redirects after Enter',
+  )
+  await remoteAddress.focus()
+  await page.evaluate(() =>
+    window.bridge('state', {
+      url: 'http://remote.lan/link',
+      title: 'Link',
+      back: true,
+      forward: false,
+      loading: false,
+      editable: false,
+    }),
+  )
+  await remoteAddress.blur()
+  assert.equal(
+    await remoteAddress.inputValue(),
+    'http://remote.lan/link',
+    'Remote address catches up after untouched focus',
+  )
   // Host navigation must not overwrite an address being edited.
   await remoteAddress.focus()
   await remoteAddress.fill('http://remote.lan/draft')
@@ -456,7 +498,15 @@ try {
         canGoForward: false,
       }),
     )
+  await input.focus()
   await navigate()
+  assert.equal(await input.inputValue(), 'http://preview.lan/initial')
+  await input.blur()
+  assert.equal(
+    await input.inputValue(),
+    'http://preview.lan/current',
+    'Direct address catches up after untouched focus',
+  )
   await page.getByRole('button', { name: 'Open in default browser', exact: true }).click()
   assert.deepEqual(
     await page.evaluate(() => window.openedLinks.at(-1)),

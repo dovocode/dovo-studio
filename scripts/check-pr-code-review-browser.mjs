@@ -12,13 +12,17 @@ const taskTimer=window.setTimeout.bind(window);window.setTimeout=(callback,delay
 const selection={harness:{provider:'claude',endpoint:''},agentId:'',model:'Review model',reasoning:''};
 const finding={id:'bug',path:'src/drafts.ts',line:2,side:'after',severity:'high',title:'Restore clears a valid draft',trigger:'Reconnect while the saved draft is unavailable.',impact:'The current draft is lost.',suggestion:'Keep the current draft until restore succeeds.',anchored:true,evidence:'  clearDraft();',confidence:9,verification:'Clearing before restore loses the current draft.'};
 const patch='@@ -1,3 +1,3 @@\\n export async function restore() {\\n-  await saveDraft();\\n+  clearDraft();\\n }\\n';
-let report={reviews:[],...(window.firstUse?{}:{selection})};window.requests=[];
-window.changeSavedDecision=()=>{const r=report.reviews[0];r.draft.event='request-changes';r.version++;r.sequence++};
-window.progressReview=()=>{const r=report.reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
-window.finishProgress=()=>{const r=report.reviews[0];r.status='completed';r.analysis.phase='completed';delete r.analysis.activeBatch;r.analysis.completedBatches=2;r.sequence++};
-window.transport=async(path,input)=>{
- window.requests.push({path,input:structuredClone(input)});
- if(path.endsWith('/start'))report.reviews.unshift({id:input.requestId,requestId:input.requestId,revision:'evidence',version:0,sequence:0,url:'https://github.com/acme/studio/pull/184',destination:'destination',readerIdentity:'reader',account:'dominic',baseSha:base,headSha:head,selection,createdAt:new Date().toISOString(),finishedAt:new Date().toISOString(),status:'completed',summary:'One bug needs a closer look.',analysis:{batches:2,completedBatches:2,phase:'completed',rejectedFindings:3,contextFiles:[{path:'src/store.ts',ref:head,text:'export const snapshotOnly = true;'}]},notVerified:['No tests ran. Only supplied patches were available.'],coverage:[{path:'src/drafts.ts',state:'supplied',patch},{path:'assets/logo.png',state:'excluded'}],missingFiles:0,findings:[finding],draft:{body:'',selected:[],dismissed:[],event:'comment'}});
+let report={reviews:[],...(window.firstUse?{}:{selection})};const reports=new Map([['runtime',report]]);window.requests=[];
+window.changeSavedDecision=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.draft.event='request-changes';r.version++;r.sequence++};
+window.progressReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
+window.finishProgress=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='completed';r.analysis.phase='completed';delete r.analysis.activeBatch;r.analysis.completedBatches=2;r.sequence++};
+window.transport=async(path,input,host='runtime')=>{
+ window.requests.push({path,input:structuredClone(input),host});
+ if(path.endsWith('/identity'))return {readerIdentity:'reader-'+host,destination:'destination-'+host};
+ if(path==='/api/scm/pulls/detail')return {...detail,destination:'destination-'+host,pull:{...detail.pull,connectionId:'account-'+host,headSha:window.staleRemote?'stale':head}};
+ if(!reports.has(host))reports.set(host,{reviews:[],...(window.firstUse?{}:{selection})});const report=reports.get(host);
+ if(path.endsWith('/start'))report.reviews.unshift({id:input.requestId,requestId:input.requestId,revision:'evidence',version:0,sequence:0,url:'https://github.com/acme/studio/pull/184',destination:'destination',readerIdentity:'reader',account:'dominic',baseSha:base,headSha:head,selection:input.selection,reviewers:input.reviewers,images:(input.images??[]).map((image,index)=>({id:'image-'+index,name:image.name,mime:'image/png',digest:'hash',size:68})),reviewerResults:[input.selection,...(input.reviewers??[])].map((selection,index)=>({id:'reviewer-'+(index+1),selection,status:'completed',completedBatches:2,batches:2})),depth:input.depth,runChecks:input.runChecks,checks:input.runChecks?[{name:"lint",command:"pnpm run lint",headSha:head,status:"failed",exitCode:2,output:"Actual lint output"}]:[],createdAt:new Date().toISOString(),finishedAt:new Date().toISOString(),status:'completed',summary:'One bug needs a closer look.',analysis:{batches:2,completedBatches:2,phase:'completed',rejectedFindings:3,contextFiles:[{path:'src/store.ts',ref:head,text:'export const snapshotOnly = true;'}]},notVerified:['No tests ran. Only supplied patches were available.'],coverage:[{path:'src/drafts.ts',state:'supplied',patch},{path:'assets/logo.png',state:'excluded'}],missingFiles:0,findings:[{...finding,reviewerIds:['reviewer-1']}],draft:{body:'',selected:[],dismissed:[],event:'comment'}});
+ if(path.endsWith('/start')){report.selection=input.selection;report.reviewers=input.reviewers;}
  if(path.endsWith('/save')){if(window.delaySave)await new Promise(resolve=>window.releaseSave=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);if(r.version!==input.version)throw new Error('This draft changed on another client.');r.draft=structuredClone(input.draft);r.version++;r.sequence++}
  if(path.endsWith('/publish')){if(window.failPublish){window.failPublish=false;throw new Error('Publish response unavailable. Check the report before retrying.')}if(window.delayPublish)await new Promise(resolve=>window.releasePublish=resolve);const r=report.reviews.find(r=>r.id===input.reviewId);r.publication={requestId:input.requestId,body:input.body,event:r.draft.event,status:'published',url:r.url+'#review-1'};r.sequence++}
  return structuredClone(report);
@@ -27,6 +31,19 @@ const detail={destination:'destination',pull:{number:184,title:'Preserve drafts 
 `
 const mobileRoot = root + 'apps/mobile/src/scm/pulls/detail'
 const mobileMocks = [
+  {
+    path: 'expo-image-picker',
+    contents: `export const launchImageLibraryAsync=async()=>({canceled:false,assets:[{uri:'fixture:image',fileName:'mobile-shot.png',mimeType:'image/png'}]});`,
+  },
+  {
+    path: 'expo-file-system',
+    contents: `export class File{size=68;async base64(){return 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='}}`,
+  },
+  {
+    path: '../../../tasks/composer/optimize-attachment-image',
+    importer: mobileRoot,
+    contents: `export const optimizeAttachmentImage=async asset=>asset;`,
+  },
   {
     path: '../../../tasks/preview/diff-view',
     importer: mobileRoot,
@@ -39,12 +56,12 @@ const mobileMocks = [
   {
     path: '../../../runtime/connection/provider',
     importer: mobileRoot,
-    contents: `const call=(path,input)=>window.transport(path,input);export const useRuntime=()=>({call,connected:true,profile:{id:'mobile'},snapshot:{runtimeId:'runtime',workspace:{agents:[]}}});`,
+    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const overviews=['runtime','remote'].map(id=>({profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true,snapshot:{workspace:{repositories:[],agents:[]}}}));export const RuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;const requests=new Map(overviews.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useRuntime=()=>{const id=useContext(Scope),call=requests.get(id);return {call,read:call,overviews,connected:window.offlineHost!==id,profile:overviews.find(x=>x.profile.id===id).profile,snapshot:{runtimeId:id,workspace:{agents:[],repositories:[]}}}};`,
   },
   {
     path: '../../../agents/model-settings',
     importer: mobileRoot,
-    contents: `export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option></select></label>;`,
+    contents: `export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
   },
   {
     path: '../../../tasks/creation/harness-choices',
@@ -85,7 +102,7 @@ const mobileMocks = [
 const desktopMocks = [
   {
     path: '@dovo/studio-core',
-    contents: `const request=(path,input)=>window.transport(path,input);export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useWorkspace=()=>({request,connected:true,activeRuntimeId:'runtime',workspace:{agents:[]},snapshot:{defaults:{}}});`,
+    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const computers=['runtime','remote'].map(id=>({name:id,profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true}));const requests=new Map(computers.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useRuntimeSources=()=>computers;export const WorkspaceRuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;export const useWorkspace=()=>{const id=useContext(Scope);return {request:requests.get(id),connected:window.offlineHost!==id,activeRuntimeId:id,connection:computers.find(x=>x.profile.id===id).profile.connection,workspace:{agents:[],repositories:[]},snapshot:{defaults:{}}}};`,
   },
   {
     path: './patch',
@@ -94,7 +111,7 @@ const desktopMocks = [
   },
   {
     path: '@dovo/studio-ui',
-    contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker';export {Textarea} from '${root}packages/studio-ui/src/components/ui/textarea';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option></select></label>;`,
+    contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker';export {Textarea} from '${root}packages/studio-ui/src/components/ui/textarea';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
   },
 ]
 const browser = await chromium.launch()
@@ -110,7 +127,7 @@ try {
           stdin: {
             resolveDir: root,
             loader: 'tsx',
-            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);const [,refresh]=useState(0);window.refreshComputers=()=>refresh(n=>n+1);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value}/>};createRoot(document.getElementById('app')).render(<App/>);`,
           },
           bundle: true,
           write: false,
@@ -148,12 +165,25 @@ try {
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
 
+      assert.ok(
+        await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
+        'Review controls must fit the viewport',
+      )
       if (!firstUse)
         await page.screenshot({
           path: screenshots + (mobile ? '/mobile-empty.png' : '/desktop-empty.png'),
           fullPage: true,
         })
       if (firstUse) {
+        if (mobile)
+          await page
+            .getByRole('combobox', { name: 'Review on computer', exact: true })
+            .selectOption('remote')
+        else {
+          await page.getByRole('button', { name: 'Review on computer', exact: true }).click()
+          await page.getByRole('option', { name: 'remote', exact: true }).click()
+        }
+        await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
         if (mobile)
           await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
         if (mobile)
@@ -173,8 +203,69 @@ try {
         await page
           .getByRole('combobox', { name: 'Reviewer model', exact: true })
           .selectOption('Review model')
+        await page.getByRole('button', { name: 'Add reviewer', exact: true }).click()
+        await page
+          .getByRole('combobox', { name: 'Reviewer model', exact: true })
+          .nth(1)
+          .selectOption('Second model')
+        if (mobile) await page.getByRole('button', { name: 'Add images', exact: true }).click()
+        else
+          await page.locator('input[type=file]').setInputFiles({
+            name: 'desktop-shot.png',
+            mimeType: 'image/png',
+            buffer: Buffer.from(
+              'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==',
+              'base64',
+            ),
+          })
+        await page
+          .getByText(mobile ? 'mobile-shot.png' : 'desktop-shot.png', { exact: true })
+          .waitFor()
         await start.click()
-      } else await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+        const multiStart = await page.evaluate(
+          () => window.requests.find((r) => r.path.endsWith('/start')).input,
+        )
+        assert.equal(multiStart.reviewers[0].model, 'Second model')
+        assert.equal(multiStart.images.length, 1)
+        assert.equal(multiStart.target.repositoryId, 'https://github.com/acme/studio/pull/184')
+        assert.equal(multiStart.target.connectionId, 'account-remote')
+        assert.equal(multiStart.target.expectedDestination, 'destination-remote')
+        assert.equal(
+          await page.evaluate(() => window.requests.find((r) => r.path.endsWith('/start')).host),
+          'remote',
+        )
+      } else {
+        if (mobile)
+          await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+        if (mobile) {
+          await page
+            .getByRole('combobox', { name: 'Review depth', exact: true })
+            .selectOption('thorough')
+          await page
+            .getByRole('combobox', { name: 'Run project checks', exact: true })
+            .selectOption('yes')
+        } else {
+          await page.getByRole('button', { name: 'Review depth', exact: true }).click()
+          await page.getByRole('option', { name: 'Thorough', exact: true }).click()
+          await page.getByRole('checkbox', { name: 'Run project checks', exact: true }).check()
+        }
+        await page
+          .getByRole('button', { name: mobile ? 'Start review' : 'Review with agent', exact: true })
+          .click()
+        const started = await page.evaluate(
+          () => window.requests.find((r) => r.path.endsWith('/start')).input,
+        )
+        assert.equal(started.depth, 'thorough')
+        assert.equal(started.runChecks, true)
+        if (mobile) {
+          await page.getByText('pnpm run lint · Failed', { exact: true }).waitFor()
+          await page.getByRole('button', { name: 'Show output', exact: true }).click()
+        } else {
+          await page.getByText('Project check results', { exact: false }).click()
+          await page.getByText('pnpm run lint · Failed', { exact: true }).click()
+        }
+        await page.getByText('Actual lint output', { exact: true }).waitFor()
+      }
       await page.getByRole('button', { name: 'Add to draft', exact: true }).waitFor()
       if (mobile) {
         await page
@@ -238,6 +329,62 @@ try {
           (r) => r.path.endsWith('/save') && r.input.draft.body.startsWith('Please check'),
         ),
       )
+      if (firstUse) {
+        // The report and draft stay visible through a remote host outage.
+        await page.evaluate(() => {
+          window.offlineHost = 'remote'
+          window.refreshComputers()
+        })
+        assert.equal(
+          await editor.inputValue(),
+          'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184',
+        )
+        await page.waitForFunction(() =>
+          [...document.querySelectorAll('button')].some(
+            (button) => button.textContent === 'Preview review' && button.disabled,
+          ),
+        )
+        await page.evaluate(() => {
+          delete window.offlineHost
+          window.refreshComputers()
+        })
+        await page.getByRole('button', { name: 'Preview review', exact: true }).waitFor()
+        // Reports and saved drafts follow their owning computer.
+        if (mobile) await page.getByRole('button', { name: 'Close', exact: true }).click()
+        const chooseComputer = async (id) => {
+          if (mobile)
+            await page
+              .getByRole('combobox', { name: 'Review on computer', exact: true })
+              .selectOption(id)
+          else {
+            await page.getByRole('button', { name: 'Review on computer', exact: true }).click()
+            await page.getByRole('option', { name: id, exact: true }).click()
+          }
+        }
+        await chooseComputer('runtime')
+        await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
+        assert.equal(
+          await page.getByRole('button', { name: 'Add to draft', exact: true }).count(),
+          0,
+        )
+        await chooseComputer('remote')
+        if (mobile) {
+          await page.getByRole('button', { name: 'Open agent review', exact: true }).click()
+        }
+        await editor.waitFor()
+        assert.equal(
+          await editor.inputValue(),
+          'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184',
+        )
+        assert.equal(
+          await page.evaluate(
+            () =>
+              window.requests.filter((r) => r.path.endsWith('/start') && r.host === 'runtime')
+                .length,
+          ),
+          0,
+        )
+      }
       await page
         .getByRole('button', { name: 'Preview review', exact: true })
         .waitFor({ state: 'visible' })
@@ -334,7 +481,7 @@ try {
       await page.close()
     }
   console.log(
-    'PR review desktop and mobile: evidence and finding checks, snapshot context navigation, active batch progress, first-use model setup, saved reviewer start, finding add/remove with edited-text preservation, copied drafts across passes, save on preview, exact preview, failed publish retention, in-flight guard, explicit publish, stale report and draft retention passed. Screenshots: output/pr-review-checks. Native controls, model and forge are mocked.',
+    'PR review desktop and mobile: multiple reviewers, image input, remote host/account routing, offline report retention, draft isolation across computers, evidence and finding checks, snapshot context navigation, active batch progress, first-use model setup, saved reviewer start, finding add/remove with edited-text preservation, copied drafts across passes, save on preview, exact preview, failed publish retention, in-flight guard, explicit publish, stale report and draft retention passed. Screenshots: output/pr-review-checks. Native controls, model and forge are mocked.',
   )
 } finally {
   await browser.close()

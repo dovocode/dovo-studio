@@ -424,6 +424,16 @@ function BrowserContent({
   const pageNavigation = useRef({ input, history })
   pageNavigation.current = { input, history }
   const restoredAddressDraft = useRef<{ tabId: string; url: string } | null>(null)
+  const addressAtFocus = useRef(input)
+  const onAddressEditing = (value: boolean) => {
+    editing.current = value
+    if (value) addressAtFocus.current = pageNavigation.current.input
+    else if (
+      pageNavigation.current.input === addressAtFocus.current &&
+      pageNavigation.current.history.url
+    )
+      updatePageAddress(activeTab, pageNavigation.current.history.url)
+  }
   const updatePageAddress = (tabId: string, address: string) => {
     const draft = restoredAddressDraft.current
     if (draft?.tabId === tabId && draft.url !== address) restoredAddressDraft.current = null
@@ -1220,6 +1230,9 @@ function BrowserContent({
           )
         : previewUrl(address, mode === 'remote' ? undefined : connection?.address)
       restoredAddressDraft.current = null
+      editing.current = false
+      addressField.current?.blur()
+      starterAddressField.current?.blur()
       if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
       else if (target === url) {
         if (browser)
@@ -3054,9 +3067,7 @@ function BrowserContent({
                 newTab(tab.url, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
               else navigate(tab.url)
             }}
-            onEditing={(value) => {
-              editing.current = value
-            }}
+            onEditing={onAddressEditing}
           />
           <IconButton
             label="Go to address"
@@ -3921,9 +3932,7 @@ function BrowserContent({
               openInNewTab
                 ? newTab(tab.url, selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
                 : navigate(tab.url),
-            onEditing: (value) => {
-              editing.current = value
-            },
+            onEditing: onAddressEditing,
           }}
           controls={
             <>

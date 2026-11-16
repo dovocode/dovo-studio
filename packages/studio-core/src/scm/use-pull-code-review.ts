@@ -1,3 +1,4 @@
+export { usePullReviewSource } from './pull-review-source'
 export { prReviewIllustration } from '@dovo/design'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import {
@@ -8,12 +9,17 @@ import {
   type PullCodeReviewReport,
   type PullCodeReviewTarget,
   type TitleGenerationSettings,
+  type PullReviewDepth,
+  type PullReviewImage,
+  MAX_PULL_REVIEW_IMAGES,
+  MAX_ATTACHMENT_BYTES,
 } from '@dovo/protocol'
 
 type Request = (path: string, input: unknown) => Promise<PullCodeReviewReport>
 type Draft = { value: PullCodeReviewDraft; version: number }
 // Retain unsaved text across navigation. Saved text lives on the owning computer.
 const drafts = new Map<string, Draft>()
+const imagesByScope = new Map<string, PullReviewImage[]>()
 const starts = new Map<string, { fingerprint: string; requestId: string }>()
 
 export function usePullCodeReview({
@@ -37,6 +43,25 @@ export function usePullCodeReview({
   const [publishing, setPublishing] = useState(false)
   const [dirty, setDirty] = useState(0)
   const [selected, setSelected] = useState('')
+  const [depth, setDepth] = useState<PullReviewDepth>()
+  const [runChecks, setRunChecks] = useState(false)
+  const [, updateImages] = useState(0)
+  const images = imagesByScope.get(key) ?? []
+  const setImages = (next: PullReviewImage[]) => {
+    imagesByScope.set(key, next)
+    updateImages((n) => n + 1)
+  }
+  const addImages = (next: PullReviewImage[]) => {
+    const combined = [...(imagesByScope.get(key) ?? []), ...next]
+    if (
+      combined.length > MAX_PULL_REVIEW_IMAGES ||
+      combined.some((image) => image.data.length > Math.ceil(MAX_ATTACHMENT_BYTES / 3) * 4) ||
+      combined.reduce((n, image) => n + Math.floor((image.data.length * 3) / 4), 0) >
+        10 * 1024 * 1024
+    )
+      throw new Error('Attach up to three images, 5 MB each and 10 MB in total.')
+    setImages(combined)
+  }
   const saving = useRef<Promise<boolean> | undefined>(undefined)
   const submitting = useRef(false)
   const operation = useRef(false)
@@ -157,13 +182,28 @@ export function usePullCodeReview({
     headSha: string,
     baseSha: string,
     remaining = false,
+    options: {
+      depth: PullReviewDepth
+      runChecks: boolean
+      reviewers?: TitleGenerationSettings[]
+      images?: PullReviewImage[]
+    } = {
+      depth: 'standard',
+      runChecks: false,
+    },
   ) => {
     if (operation.current) return
     operation.current = true
     setBusy(true)
     try {
       if (review && !(await save())) return
-      const fingerprint = JSON.stringify([selection, headSha, baseSha, remaining && review?.id])
+      const fingerprint = JSON.stringify([
+        selection,
+        headSha,
+        baseSha,
+        remaining && review?.id,
+        options,
+      ])
       let attempt = starts.get(key)
       if (!attempt || attempt.fingerprint !== fingerprint) {
         attempt = { fingerprint, requestId: randomUUID() }
@@ -174,6 +214,7 @@ export function usePullCodeReview({
         selection,
         headSha,
         baseSha,
+        ...options,
         ...(remaining && review ? { remainingFrom: review.id } : {}),
       })
       if (result) {
@@ -223,6 +264,13 @@ export function usePullCodeReview({
   }
   return {
     report,
+    images,
+    setImages,
+    addImages,
+    depth: depth ?? report?.depth ?? 'standard',
+    setDepth,
+    runChecks,
+    setRunChecks,
     review,
     draft,
     error,

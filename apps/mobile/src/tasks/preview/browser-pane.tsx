@@ -6,7 +6,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { type ComponentRef, useEffect, useLayoutEffect, useRef } from 'react'
 import { captureRef } from 'react-native-view-shot'
-import { Image, Keyboard, Platform, ScrollView, View, StyleSheet } from 'react-native'
+import { Image, Keyboard, Platform, ScrollView, View, StyleSheet, TextInput } from 'react-native'
 import { SafeAreaView } from 'react-native-screens/experimental'
 import { WebView } from 'react-native-webview'
 import {
@@ -250,6 +250,7 @@ function BrowserContent({
     [loadError, setLoadError] = useApplicationState('')
   const [previewGeneration, setPreviewGeneration] = useApplicationState(0)
   const web = useRef<WebView>(null)
+  const addressField = useRef<ComponentRef<typeof TextInput>>(null)
   useEffect(() => {
     if (reloadToken && mode === 'web' && url) web.current?.reload()
   }, [reloadToken])
@@ -259,6 +260,7 @@ function BrowserContent({
     url: '',
   })
   const editingAddress = useRef(false)
+  const addressAtFocus = useRef(input)
   useLayoutEffect(() => {
     if (active) return
     // Direct pages are remounted on return; reopen the last navigated URL.
@@ -316,6 +318,8 @@ function BrowserContent({
     act(() =>
       nativeEffect(() => {
         const target = previewUrl(input, profile?.connection.address)
+        editingAddress.current = false
+        addressField.current?.blur()
         if (target === url) web.current?.reload()
         setUrl(target)
         setHistory({ back: false, forward: false, url: target })
@@ -380,10 +384,13 @@ function BrowserContent({
     mode === 'web' ? (
       <View style={{ display: expanded ? 'none' : 'flex' }}>
         <BrowserToolbar
+          addressRef={addressField}
           address={input}
           onAddress={setInput}
           onEditing={(value) => {
             editingAddress.current = value
+            if (value) addressAtFocus.current = input
+            else if (input === addressAtFocus.current && history.url) setInput(history.url)
           }}
           mode="web"
           onMode={(next) => onMode(next, history.url || url)}

@@ -383,3 +383,21 @@ it.each([true, false])(
     }
   },
 )
+
+it('rejects tool-free image review before prompting an agent without image capability', async () => {
+  const { cwd, launch, record } = await fixture()
+  const { run: input } = run(cwd, launch, { tools: 'none' })
+  input.attachments = [
+    {
+      id: 'image',
+      name: 'shot.png',
+      mime: 'image/png',
+      size: 1,
+      path: join(cwd, 'shot.png'),
+      data: 'AA==',
+    },
+  ]
+  await expect(acpAdapter.run(input)).rejects.toThrow('does not accept image input')
+  const messages = JSON.parse(await readFile(record, 'utf8')) as { method?: string }[]
+  expect(messages.some((message) => message.method === 'session/prompt')).toBe(false)
+})

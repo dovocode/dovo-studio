@@ -4,7 +4,7 @@ import { useBrowserWorkspace } from './browser-workspace'
 import { BrowserNavigation } from './browser-navigation'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState, type ComponentRef } from 'react'
 import {
   Keyboard,
   KeyboardAvoidingView,
@@ -116,6 +116,16 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const locked = useRef(false)
   const [address, setAddress] = useState('')
   const editing = useRef(false)
+  const addressField = useRef<ComponentRef<typeof TextInput>>(null)
+  const addressAtFocus = useRef(address)
+  const onAddressEditing = (value: boolean) => {
+    editing.current = value
+    if (value) addressAtFocus.current = address
+    else if (address === addressAtFocus.current) {
+      const tab = current.current.tabs.find((tab) => tab.id === current.current.active)
+      if (tab) setAddress(tab.url === 'about:blank' ? '' : tab.url)
+    }
+  }
   const [navigation, setNavigation] = useState({ back: false, forward: false })
   const [source, setSource] = useState('device')
   const [clock, setClock] = useState(() => Date.now())
@@ -280,6 +290,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   }
   useEffect(() => {
     setAddress(active.url)
+    editing.current = false
     setNavigation({ back: false, forward: false })
     return () => {
       const request = pending.current
@@ -703,14 +714,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       if (DovoWebKitBrowser && !native.status)
         throw new Error(native.error || 'Native browser is still starting.')
       const url = browserAddress(address, searchProfile?.search)
+      editing.current = false
+      addressField.current?.blur()
+      setAddress(url)
+      Keyboard.dismiss()
       if (nativeAvailable && DovoWebKitBrowser) {
         if (url === active.url) await DovoWebKitBrowser.reload(active.id)
         else await DovoWebKitBrowser.navigate(active.id, url)
-        change((state) => recordPage(state, active.id, { url, title: '' }))
+        // Native navigation can already have reported a redirect before its promise resolves.
+        if (current.current.tabs.find((tab) => tab.id === active.id)?.url === active.url)
+          change((state) => recordPage(state, active.id, { url, title: '' }))
       } else if (url === active.url) web.current?.reload()
       else change((state) => recordPage(state, active.id, { url, title: '' }))
-      setAddress(url)
-      Keyboard.dismiss()
     })
   const capture = async (): Promise<BrowserSelection> => {
     if (active.kind === 'remote') {
@@ -1149,11 +1164,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       </View>
       {Platform.OS === 'ios' && active.kind === 'local' ? (
         <BrowserNavigation
+          addressRef={addressField}
           address={address}
           onAddress={setAddress}
-          onEditing={(value) => {
-            editing.current = value
-          }}
+          onEditing={onAddressEditing}
           onNavigate={navigateLocal}
           changed={address !== active.url || !active.url}
           back={navigation.back}
@@ -1206,6 +1220,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 onPress={() => setOptionsOpen(true)}
               />
               <TextInput
+                ref={addressField}
                 accessibilityLabel={uiText('Search or enter address')}
                 testID="Search or enter address"
                 placeholder={uiText('Search or enter address')}
@@ -1217,12 +1232,8 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 autoCorrect={false}
                 selectTextOnFocus
                 keyboardType="web-search"
-                onFocus={() => {
-                  editing.current = true
-                }}
-                onBlur={() => {
-                  editing.current = false
-                }}
+                onFocus={() => onAddressEditing(true)}
+                onBlur={() => onAddressEditing(false)}
                 returnKeyType="go"
                 onSubmitEditing={navigateLocal}
                 style={{

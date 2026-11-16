@@ -42,7 +42,7 @@ export interface AgentRun {
   goal?: import('@dovo/protocol').GoalCommand
   sessionId?: string
   signal: AbortSignal
-  /** Request a text-only utility turn. Adapters disable tools where supported. */
+  /** Request a utility turn without tools. Image input remains available where supported. */
   tools?: 'none'
   /** Constrain the final utility response where the provider supports JSON Schema. */
   outputSchema?: Record<string, unknown>

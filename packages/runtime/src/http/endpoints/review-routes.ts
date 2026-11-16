@@ -40,7 +40,9 @@ export function reviewRoute(request: IncomingMessage, path: string) {
           path === '/api/review/organize'
             ? 2_500_000
             : path.startsWith('/api/review/pull/')
-              ? 300_000
+              ? path === '/api/review/pull/start'
+                ? 15_000_000
+                : 300_000
               : 16_000,
         ),
       )

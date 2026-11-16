@@ -573,6 +573,8 @@ export function createAcpAdapter(): AgentAdapter {
         const supportsImages =
           launch.authentication === 'grok' ||
           !!initialization.agentCapabilities?.promptCapabilities?.image
+        if (run.attachments?.some(isImageAttachment) && !supportsImages && run.tools === 'none')
+          throw new Error('This ACP agent does not accept image input for tool-free reviews.')
         if (run.attachments?.some(isImageAttachment) && !supportsImages)
           run.onActivity(
             'This ACP agent does not accept image input; images are available as attached files only.',

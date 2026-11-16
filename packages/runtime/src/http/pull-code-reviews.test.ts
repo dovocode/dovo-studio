@@ -189,6 +189,35 @@ it('runs a fresh tools-disabled review, validates anchors, and saves a model sep
   await f.start()
   expect(f.calls).toHaveLength(2)
 })
+it('persists review depth, keeps check consent per request, and rejects changed retry options', async () => {
+  const f = await setup()
+  const input = {
+    target: f.target,
+    requestId: 'depth-options',
+    headSha: head,
+    baseSha: base,
+    selection,
+    depth: 'quick' as const,
+    runChecks: true,
+  }
+  await f.s.pullCodeReviews.start(input)
+  const review = await f.completed()
+  expect(review).toMatchObject({ depth: 'quick', runChecks: true, checks: [{ status: 'skipped' }] })
+  expect((await f.s.pullCodeReviews.read(f.target)).depth).toBe('quick')
+  expect(f.calls[0].prompt).toContain('projectChecks')
+  await expect(f.s.pullCodeReviews.start({ ...input, depth: 'thorough' })).rejects.toMatchObject({
+    status: 409,
+  })
+  await expect(f.s.pullCodeReviews.start({ ...input, runChecks: false })).rejects.toMatchObject({
+    status: 409,
+  })
+  await f.s.pullCodeReviews.start({
+    ...input,
+    requestId: 'without-check-consent',
+    runChecks: undefined,
+  })
+  expect((await f.completed()).runChecks).toBe(false)
+})
 it('reads context from captured Git commits and ignores later working-tree edits', async () => {
   const f = await setup()
   const directory = f.f.directory
@@ -606,9 +635,23 @@ it('keeps drafts across restart and recovers unfinished work without restarting 
     }),
     review.id,
   )
+  db.prepare(
+    "UPDATE pull_code_reviews SET value=json_set(value, '$.checks', json(?)) WHERE id=?",
+  ).run(
+    JSON.stringify([
+      {
+        name: 'lint',
+        command: 'pnpm run lint',
+        headSha: review.headSha,
+        status: 'running',
+        output: 'Started',
+      },
+    ]),
+    review.id,
+  )
   // Older reports predate snapshot context and exact finding evidence.
   db.prepare(
-    "UPDATE pull_code_reviews SET value=json_remove(value, '$.analysis', '$.intent', '$.findings[0].evidence', '$.findings[0].confidence', '$.findings[0].verification') WHERE id=?",
+    "UPDATE pull_code_reviews SET value=json_remove(value, '$.depth', '$.runChecks', '$.analysis', '$.intent', '$.findings[0].evidence', '$.findings[0].confidence', '$.findings[0].verification') WHERE id=?",
   ).run(review.id)
   db.close()
   const restarted = await startRuntime({
@@ -625,6 +668,10 @@ it('keeps drafts across restart and recovers unfinished work without restarting 
   expect(saved.status).toBe('interrupted')
   expect(saved.publication?.status).toBe('unknown')
   expect(saved.analysis).toBeUndefined()
+  expect(saved.depth).toBeUndefined()
+  expect(saved.checks).toMatchObject([
+    { status: 'interrupted', output: expect.stringContaining('Runtime stopped') },
+  ])
   expect(saved.findings[0]).toMatchObject({ title: finding.title, anchored: true })
   expect(act).not.toHaveBeenCalled()
   expect(model).not.toHaveBeenCalled()
@@ -654,4 +701,164 @@ it('filters unsupported code evidence and separates reader histories', async () 
   expect((await f.completed()).findings).toEqual([])
   f.guard.mockResolvedValue({ ...f.source, readerIdentity: 'another-reader' })
   expect((await f.s.pullCodeReviews.read(f.target)).reviews).toEqual([])
+})
+
+it('runs independent models against the same evidence and combines exact findings with attribution', async () => {
+  const f = await setup()
+  const second = {
+    ...selection,
+    harness: { provider: 'codex' as const, endpoint: '' },
+    model: 'second-reviewer',
+  }
+  await f.s.pullCodeReviews.start({
+    target: f.target,
+    requestId: 'multi',
+    headSha: head,
+    baseSha: base,
+    selection,
+    reviewers: [second],
+  })
+  const review = await f.completed()
+  expect(review.status).toBe('completed')
+  expect(
+    review.reviewerResults?.map((item) => [
+      item.selection.model,
+      item.status,
+      item.completedBatches,
+    ]),
+  ).toEqual([
+    ['review-model', 'completed', 1],
+    ['second-reviewer', 'completed', 1],
+  ])
+  expect(review.findings).toHaveLength(1)
+  expect(review.findings[0].reviewerIds).toEqual(['reviewer-1', 'reviewer-2'])
+  expect(f.calls.map((call) => call.agent.model)).toEqual([
+    'review-model',
+    'review-model',
+    'second-reviewer',
+    'second-reviewer',
+  ])
+  expect(f.calls.every((call) => call.tools === 'none' && call.agent.resources === undefined)).toBe(
+    true,
+  )
+  await expect(
+    f.s.pullCodeReviews.start({
+      target: f.target,
+      requestId: 'multi',
+      headSha: head,
+      baseSha: base,
+      selection,
+      reviewers: [{ ...second, model: 'changed-model' }],
+    }),
+  ).rejects.toThrow('another revision or reviewer')
+})
+
+it('keeps the completed reviewer report when another provider fails', async () => {
+  const f = await setup()
+  const adapter = await f.s.agents.get('claude')
+  f.agent.mockImplementation(async (provider) =>
+    provider === 'codex'
+      ? {
+          ...adapter,
+          run: async () => {
+            throw new Error('Provider unavailable')
+          },
+        }
+      : adapter,
+  )
+  await f.s.pullCodeReviews.start({
+    target: f.target,
+    requestId: 'partial',
+    headSha: head,
+    baseSha: base,
+    selection,
+    reviewers: [
+      { ...selection, harness: { provider: 'codex', endpoint: '' }, model: 'offline-model' },
+    ],
+  })
+  const review = await f.completed()
+  expect(review.status).toBe('completed')
+  expect(review.findings).toHaveLength(1)
+  expect(review.reviewerResults?.map((item) => item.status)).toEqual(['completed', 'failed'])
+  expect(review.notVerified.join('\n')).toContain('Provider unavailable')
+})
+
+it('sends validated image bytes to both analysis and challenge and removes temporary files', async () => {
+  const f = await setup()
+  const png =
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='
+  const adapter = await f.s.agents.get('claude')
+  let inspected = 0
+  f.agent.mockResolvedValue({
+    ...adapter,
+    run: async (input) => {
+      expect(input.attachments?.[0]).toMatchObject({
+        name: 'screenshot.png',
+        mime: 'image/png',
+        data: png,
+      })
+      expect(existsSync(input.attachments?.[0].path ?? '')).toBe(true)
+      expect(input.tools).toBe('none')
+      inspected++
+      await adapter.run(input)
+    },
+  })
+  const input = {
+    target: f.target,
+    requestId: 'visual',
+    headSha: head,
+    baseSha: base,
+    selection,
+    images: [{ name: 'screenshot.png', data: png }],
+  }
+  await f.s.pullCodeReviews.start(input)
+  const review = await f.completed()
+  expect(review.status).toBe('completed')
+  expect(inspected).toBe(2)
+  expect(review.images?.[0]).toMatchObject({ name: 'screenshot.png', mime: 'image/png' })
+  expect(review.images?.[0]).not.toHaveProperty('data')
+  expect(f.calls.every((call) => !existsSync(call.attachments?.[0].path ?? ''))).toBe(true)
+  await f.s.pullCodeReviews.start(input)
+  expect(inspected).toBe(2)
+  await expect(
+    f.s.pullCodeReviews.start({ ...input, images: [{ name: 'different.png', data: png }] }),
+  ).rejects.toThrow('another revision or reviewer')
+})
+
+it('keeps earlier findings when a later reviewer is cancelled', async () => {
+  const f = await setup()
+  const adapter = await f.s.agents.get('claude')
+  let secondStarted = false
+  f.agent.mockResolvedValue({
+    ...adapter,
+    run: async (input) => {
+      if (input.agent.model !== 'waiting-model') return adapter.run(input)
+      secondStarted = true
+      await new Promise<void>((_resolve, reject) => {
+        if (input.signal.aborted) reject(input.signal.reason)
+        else
+          input.signal.addEventListener('abort', () => reject(input.signal.reason), { once: true })
+      })
+    },
+  })
+  await f.s.pullCodeReviews.start({
+    target: f.target,
+    requestId: 'cancel-multi',
+    headSha: head,
+    baseSha: base,
+    selection,
+    reviewers: [{ ...selection, model: 'waiting-model' }],
+  })
+  await vi.waitFor(() => expect(secondStarted).toBe(true))
+  const active = (await f.s.pullCodeReviews.read(f.target)).reviews[0]
+  expect(active.findings).toHaveLength(1)
+  expect(active.analysis?.activeBatch).toBe(2)
+  await f.s.pullCodeReviews.stop(f.target, active.id)
+  const review = await f.completed()
+  expect(review.status).toBe('cancelled')
+  expect(review.findings).toHaveLength(1)
+  expect(review.reviewerResults?.map((reviewer) => reviewer.status)).toEqual([
+    'completed',
+    'cancelled',
+  ])
 })

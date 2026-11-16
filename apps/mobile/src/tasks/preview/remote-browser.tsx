@@ -110,6 +110,7 @@ function RemoteBrowserContent({
   const [address, setAddress] = useApplicationState(initialUrl ?? '')
   const lastAddress = useRef(initialUrl ?? '')
   const editing = useRef(false)
+  const addressAtFocus = useRef(address)
   const addressField = useRef<ComponentRef<typeof TextInput>>(null)
   const [preset, setPreset] = useApplicationState('fill')
   const [landscape, setLandscape] = useApplicationState(false)
@@ -552,6 +553,8 @@ function RemoteBrowserContent({
           onAddress={setAddress}
           onEditing={(value) => {
             editing.current = value
+            if (value) addressAtFocus.current = address
+            else if (address === addressAtFocus.current) setAddress(lastAddress.current)
           }}
           available={online}
           back={browserState?.back ?? false}
@@ -560,6 +563,8 @@ function RemoteBrowserContent({
             try {
               if (tabId && !searchReady)
                 throw new Error('Browser profiles are still loading on this computer.')
+              editing.current = false
+              addressField.current?.blur()
               post({
                 type: 'input',
                 input: {

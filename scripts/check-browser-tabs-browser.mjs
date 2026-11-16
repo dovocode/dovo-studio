@@ -9,6 +9,7 @@ function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',
 window.addEventListener('message',event=>{const m=event.data;
 if(m.type==='connect'){tab=new URL(m.url).searchParams.get('ticket');url='http://localhost:3000/'+tab;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
+if(m.type==='fixture-navigation'){url=m.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
 });</script></body></html>`
 const built = await build({
@@ -437,6 +438,35 @@ try {
       (input) => input.type === 'navigate' && input.url === 'http://localhost:4321/shared-ui',
     ),
   )
+  const pageNavigation = async (url) => {
+    await page.evaluate((url) => {
+      const frame = [...document.querySelectorAll('iframe')].find(
+        (frame) => frame.getBoundingClientRect().height > 0,
+      )
+      frame.contentWindow.postMessage({ type: 'fixture-navigation', url }, '*')
+    }, url)
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+  }
+  await pageNavigation('http://localhost:4321/redirected')
+  await page.waitForFunction(
+    () =>
+      document.querySelector('input[aria-label="Preview URL"]').value ===
+      'http://localhost:4321/redirected',
+  )
+  await input.focus()
+  await pageNavigation('http://localhost:4321/spa-route')
+  if ((await input.inputValue()) !== 'http://localhost:4321/redirected')
+    throw new Error('Navigation overwrote the focused address')
+  await input.blur()
+  if ((await input.inputValue()) !== 'http://localhost:4321/spa-route')
+    throw new Error('Address did not catch up after blur')
+  await input.fill('http://localhost:4321/unsent-draft')
+  await pageNavigation('http://localhost:4321/link-target')
+  await input.blur()
+  if ((await input.inputValue()) !== 'http://localhost:4321/unsent-draft')
+    throw new Error('Navigation erased an unsent address draft')
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('combobox', { name: 'Viewport', exact: true }).selectOption('tablet')
   await page.waitForFunction(() =>

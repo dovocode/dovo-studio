@@ -1,6 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PullPatch } from './patch'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Check, ChevronDown, FileSearch, LoaderCircle, ShieldCheck } from 'lucide-react'
 import { prReviewIllustration } from '@dovo/studio-core/pull-code-review'
 import {
@@ -8,12 +8,18 @@ import {
   modelCatalogSchema,
   providerSchema,
   supportsUtilities,
+  MAX_PULL_REVIEWERS,
+  MAX_ATTACHMENT_BYTES,
   resolveTitleHarness,
   titleSettingsForHarness,
   pullCodeReviewReportSchema,
   pullCodeReviewBody,
   pullReviewCoverageLabels,
   pullReviewReferences,
+  pullReviewDepthSchema,
+  pullReviewDepths,
+  pullReviewCheckLabels,
+  pullReviewerStatusLabels,
   randomUUID,
   type Agent,
   type AgentDiscovery,
@@ -21,8 +27,13 @@ import {
   type PullReviewSelection,
   type PullCodeReview,
 } from '@dovo/protocol'
-import { useWorkspace, providers } from '@dovo/studio-core'
-import { usePullCodeReview } from '@dovo/studio-core/pull-code-review'
+import {
+  useWorkspace,
+  useRuntimeSources,
+  WorkspaceRuntimeScope,
+  providers,
+} from '@dovo/studio-core'
+import { usePullReviewSource, usePullCodeReview } from '@dovo/studio-core/pull-code-review'
 import {
   Button,
   ModelSettings,
@@ -34,21 +45,24 @@ import {
   DialogDescription,
 } from '@dovo/studio-ui'
 
-export function PullCodeReviewPanel({
+function LocalPullCodeReviewPanel({
   repositoryId,
   detail,
+  sourceReady = true,
   onAsk,
   onStatus,
   onRefresh,
 }: {
   repositoryId: string
+  sourceReady?: boolean
   detail: PullDetail
   onAsk: (selection: PullReviewSelection) => void
   onStatus?: (status: { running: boolean; findings: number; stale: boolean }) => void
   onRefresh?: () => void
 }) {
   const uiText = useInterfaceText()
-  const { workspace, request, connected, activeRuntimeId, snapshot } = useWorkspace()
+  const { workspace, request, connected: online, activeRuntimeId, snapshot } = useWorkspace()
+  const connected = online && sourceReady
   const transport = useCallback(
     (path: string, input: unknown) => request(path, input, pullCodeReviewReportSchema),
     [request],
@@ -66,6 +80,16 @@ export function PullCodeReviewPanel({
     connected: connected && !!target.expectedDestination,
   })
   const [agent, setAgent] = useState<Agent | null>(null)
+  const [additional, setAdditional] = useState<Agent[]>()
+  const [imageError, setImageError] = useState('')
+  const [imageBusy, setImageBusy] = useState(false)
+  const imageInput = useRef<HTMLInputElement>(null)
+  const reviewers = [agent, ...(additional ?? [])]
+  const setReviewer = (index: number, value: Agent) => {
+    if (index === 0) setAgent(value)
+    else
+      setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
+  }
   const [settings, setSettings] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
   const [patch, setPatch] = useState<string>()
@@ -79,6 +103,15 @@ export function PullCodeReviewPanel({
     const saved = resolveTitleHarness(selection, workspace.agents)
     if (saved) setAgent({ ...saved, model: selection.model, reasoning: selection.reasoning })
   }, [review.report?.selection, agent, workspace.agents])
+  useEffect(() => {
+    if (additional !== undefined || !review.report) return
+    setAdditional(
+      (review.report.reviewers ?? []).flatMap((selection) => {
+        const saved = resolveTitleHarness(selection, workspace.agents)
+        return saved ? [{ ...saved, model: selection.model, reasoning: selection.reasoning }] : []
+      }),
+    )
+  }, [additional, review.report, workspace.agents])
   const current = review.review
   const draft = review.draft
   const stale =
@@ -102,13 +135,22 @@ export function PullCodeReviewPanel({
   const selectedPatch =
     current?.coverage.find((file) => file.path === patch) ??
     current?.coverage.find((file) => file.state === 'supplied')
+  const ready =
+    !imageBusy &&
+    reviewers.every((reviewer) => reviewer?.model && supportsUtilities(reviewer.provider))
   const start = (remaining = false) => {
-    if (agent)
+    if (agent && ready)
       void review.start(
         titleSettingsForHarness(agent),
         detail.pull.headSha,
         detail.pull.baseSha,
         remaining,
+        {
+          depth: review.depth,
+          runChecks: review.runChecks,
+          reviewers: (additional ?? []).map(titleSettingsForHarness),
+          images: review.images,
+        },
       )
     else setSettings(true)
   }
@@ -123,7 +165,9 @@ export function PullCodeReviewPanel({
           {uiText('Agent review')}
         </div>
         <Button variant="ghost" size="sm" onClick={() => setSettings(!settings)}>
-          {agent?.model || uiText('Choose reviewer')}
+          {reviewers.length > 1
+            ? uiText('{value0} reviewers', { value0: reviewers.length })
+            : agent?.model || uiText('Choose reviewer')}
           <ChevronDown className="size-3" />
         </Button>
       </div>
@@ -144,63 +188,222 @@ export function PullCodeReviewPanel({
           </div>
         </div>
       )}
-      {(settings || !agent?.model) && (
+      {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
         <div className="space-y-3 border-b p-4">
-          <label className="block text-xs text-muted-foreground">
-            {uiText('Reviewer provider')}
-          </label>
-          <ChoicePicker
-            aria-label={uiText('Reviewer provider')}
-            value={agent?.id.startsWith('saved:') ? agent.id : (agent?.provider ?? '')}
-            onValueChange={(value) => {
-              const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
-              if (saved) setAgent({ ...saved, id: `saved:${saved.id}` })
-              else {
-                const provider = providerSchema.literals.find((item) => item === value)
-                if (provider)
-                  setAgent({
-                    ...defaultTaskHarness(provider),
-                    id: 'pr-review',
-                    name: providers[provider].short,
-                  })
-              }
-            }}
-          >
-            <option value="" disabled>
-              {uiText('Choose a provider')}
-            </option>
-            {providerSchema.literals
-              .filter((provider) => supportsUtilities(provider) && provider !== 'acp')
-              .map((provider) => (
-                <option key={provider} value={provider}>
-                  {providers[provider].short}
+          {reviewers.map((reviewer, index) => (
+            <div key={index} className="space-y-3 rounded-lg border p-3">
+              <div className="flex items-center justify-between text-xs">
+                <span>{uiText('Reviewer {value0}', { value0: index + 1 })}</span>
+                {index > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() =>
+                      setAdditional((items) => items?.filter((_, at) => at !== index - 1))
+                    }
+                  >
+                    {uiText('Remove')}
+                  </Button>
+                )}
+              </div>
+              <label className="block text-xs text-muted-foreground">
+                {uiText('Reviewer provider')}
+              </label>
+              <ChoicePicker
+                aria-label={uiText('Reviewer provider')}
+                value={reviewer?.id.startsWith('saved:') ? reviewer.id : (reviewer?.provider ?? '')}
+                onValueChange={(value) => {
+                  const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
+                  if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
+                  else {
+                    const provider = providerSchema.literals.find((item) => item === value)
+                    if (provider)
+                      setReviewer(index, {
+                        ...defaultTaskHarness(provider),
+                        id: 'pr-review',
+                        name: providers[provider].short,
+                      })
+                  }
+                }}
+              >
+                <option value="" disabled>
+                  {uiText('Choose a provider')}
                 </option>
-              ))}
-            {workspace.agents
-              .filter((item) => supportsUtilities(item.provider))
-              .map((item) => (
-                <option key={item.id} value={`saved:${item.id}`}>
-                  {item.name}
-                </option>
-              ))}
-          </ChoicePicker>
-          {agent && (
-            <ModelSettings
-              agent={agent}
-              onChange={setAgent}
-              loadModels={loadModels}
-              connected={connected}
-              modes={false}
-              preferences={snapshot?.defaults?.modelPreferences}
-            />
-          )}
+                {providerSchema.literals
+                  .filter((provider) => provider !== 'acp')
+                  .map((provider) => (
+                    <option key={provider} value={provider} disabled={!supportsUtilities(provider)}>
+                      {providers[provider].short}
+                      {!supportsUtilities(provider)
+                        ? ` · ${uiText('Tool-free review unavailable')}`
+                        : ''}
+                    </option>
+                  ))}
+                {workspace.agents
+                  .filter((item) => supportsUtilities(item.provider))
+                  .map((item) => (
+                    <option key={item.id} value={`saved:${item.id}`}>
+                      {item.name}
+                    </option>
+                  ))}
+              </ChoicePicker>
+              {reviewer && (
+                <ModelSettings
+                  agent={reviewer}
+                  onChange={(value) => setReviewer(index, value)}
+                  loadModels={loadModels}
+                  connected={connected}
+                  modes={false}
+                  preferences={snapshot?.defaults?.modelPreferences}
+                />
+              )}
+            </div>
+          ))}
+
           <p className="text-xs text-muted-foreground">
             {uiText(
-              'Reviews PR patches and available Git snapshots, then checks proposed findings. No tests run. Your reviewer choice is saved on this computer.',
+              'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
             )}
           </p>
         </div>
       )}
+      <div className="border-b px-4 py-2">
+        {' '}
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!!blocked || reviewers.length >= MAX_PULL_REVIEWERS}
+          onClick={() =>
+            setAdditional((items) => [
+              ...(items ?? []),
+              { ...defaultTaskHarness('claude'), id: 'pr-review', name: 'Claude' },
+            ])
+          }
+        >
+          {uiText('Add reviewer')}
+        </Button>
+      </div>
+      <div className="space-y-3 border-b px-4 py-3">
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
+            {uiText('Review depth')}
+            <ChoicePicker
+              className="w-36 flex-none"
+              aria-label={uiText('Review depth')}
+              value={review.depth}
+              disabled={!!blocked}
+              onValueChange={(value) => {
+                const depth = pullReviewDepthSchema.literals.find((item) => item === value)
+                if (depth) review.setDepth(depth)
+              }}
+            >
+              {pullReviewDepthSchema.literals.map((depth) => (
+                <option key={depth} value={depth}>
+                  {uiText(pullReviewDepths[depth].label)}
+                </option>
+              ))}
+            </ChoicePicker>
+          </label>
+          <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
+            <input
+              type="checkbox"
+              checked={review.runChecks}
+              disabled={!!blocked}
+              onChange={(event) => review.setRunChecks(event.target.checked)}
+            />
+            {uiText('Run project checks')}
+          </label>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          {uiText(pullReviewDepths[review.depth].description)}
+        </p>
+        {review.runChecks && (
+          <p className="text-xs text-muted-foreground">
+            {uiText(
+              'Installs dependencies and runs project scripts. Use only for code you trust. This runs on your computer without a security sandbox.',
+            )}
+          </p>
+        )}
+      </div>
+      <div className="space-y-2 border-b px-4 py-3">
+        <input
+          ref={imageInput}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          hidden
+          aria-label={uiText('Review images')}
+          onChange={(event) => {
+            const files = Array.from(event.target.files ?? [])
+            event.target.value = ''
+            setImageError('')
+            setImageBusy(true)
+            void Promise.all(
+              files.map(async (file) => {
+                if (file.size > MAX_ATTACHMENT_BYTES) throw new Error('Use images up to 5 MB each.')
+                const data = await new Promise<string>((resolve, reject) => {
+                  const reader = new FileReader()
+                  reader.onload = () =>
+                    typeof reader.result === 'string'
+                      ? resolve(reader.result.slice(reader.result.indexOf(',') + 1))
+                      : reject(new Error('Could not read image.'))
+                  reader.onerror = () => reject(new Error('Could not read image.'))
+                  reader.readAsDataURL(file)
+                })
+                return {
+                  name: file.name,
+                  data,
+                  mime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].find(
+                    (mime): mime is 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' =>
+                      mime === file.type,
+                  ),
+                }
+              }),
+            )
+              .then(review.addImages)
+              .catch((error) =>
+                setImageError(error instanceof Error ? error.message : String(error)),
+              )
+              .finally(() => setImageBusy(false))
+          }}
+        />
+        <Button
+          variant="outline"
+          size="sm"
+          disabled={!!blocked || imageBusy || review.images.length >= 3}
+          onClick={() => imageInput.current?.click()}
+        >
+          {uiText(imageBusy ? 'Loading images…' : 'Add images')}
+        </Button>
+        <p className="text-xs text-muted-foreground">
+          {uiText(
+            'Optional screenshots or designs. Each reviewer must support image input. Up to three images.',
+          )}
+        </p>
+        {review.images.map((image, index) => (
+          <div key={index} className="flex items-center justify-between gap-2 text-xs">
+            <img
+              alt={image.name}
+              src={`data:${image.mime ?? 'image/png'};base64,${image.data}`}
+              className="size-14 shrink-0 rounded border object-contain"
+            />
+            <span className="min-w-0 flex-1 truncate">{image.name}</span>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={!!blocked}
+              onClick={() => review.setImages(review.images.filter((_, at) => at !== index))}
+            >
+              {uiText('Remove')}
+            </Button>
+          </div>
+        ))}
+        {imageError && (
+          <p role="alert" className="text-xs text-destructive">
+            {imageError}
+          </p>
+        )}
+      </div>
       {!current && (
         <div className="space-y-2 border-b p-4">
           {!agent?.model && (
@@ -208,7 +411,7 @@ export function PullCodeReviewPanel({
               {uiText('Choose a reviewer model to start.')}
             </p>
           )}
-          <Button size="sm" disabled={!!blocked || !agent?.model} onClick={() => start()}>
+          <Button size="sm" disabled={!!blocked || !ready} onClick={() => start()}>
             {uiText('Review with agent')}
           </Button>
         </div>
@@ -257,6 +460,41 @@ export function PullCodeReviewPanel({
         <p role="status" className="border-b p-4 text-xs text-muted-foreground">
           {review.notice}
         </p>
+      )}
+      {current && (
+        <div className="space-y-2 border-b p-4 text-xs">
+          <p className="text-muted-foreground">
+            {uiText('Review depth')} · {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
+          </p>
+          {!!current.checks?.length && (
+            <details open={current.status === 'running'}>
+              <summary className="cursor-pointer">
+                {uiText('Project check results')} ·{' '}
+                {current.checks.filter((check) => check.status === 'passed').length}/
+                {current.checks.length}
+              </summary>
+              <p className="py-2 text-muted-foreground">
+                {uiText(
+                  'Commands ran on this computer at commit {value0}. Results are separate from model findings.',
+                  { value0: current.headSha.slice(0, 7) },
+                )}
+              </p>
+              {current.checks.map((check, index) => (
+                <details key={index} className="border-t py-2">
+                  <summary className="cursor-pointer">
+                    {check.command || check.name} · {uiText(pullReviewCheckLabels[check.status])}
+                  </summary>
+                  <pre className="mt-2 max-h-64 overflow-auto whitespace-pre-wrap break-words rounded bg-muted p-2">
+                    {check.output || uiText('Waiting for command output')}
+                  </pre>
+                  {check.exitCode !== undefined && (
+                    <p>{uiText('Exit code: {value0}', { value0: check.exitCode })}</p>
+                  )}
+                </details>
+              ))}
+            </details>
+          )}
+        </div>
       )}
       {current && (
         <div className="grid min-w-0 @3xl/review:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
@@ -322,11 +560,29 @@ export function PullCodeReviewPanel({
               <Button
                 size="sm"
                 variant="outline"
-                disabled={!!blocked || !agent?.model}
+                disabled={!!blocked || !ready}
                 onClick={() => start()}
               >
                 {stale ? uiText('Review latest revision') : uiText('Review again')}
               </Button>
+            </div>
+            <div className="space-y-1 text-xs text-muted-foreground">
+              {current.reviewerResults?.map((reviewer) => (
+                <p key={reviewer.id}>
+                  {reviewer.selection.harness?.provider ?? reviewer.selection.agentId} ·{' '}
+                  {reviewer.selection.model} · {uiText(pullReviewerStatusLabels[reviewer.status])} ·{' '}
+                  {uiText('{value0}/{value1} batches', {
+                    value0: reviewer.completedBatches,
+                    value1: reviewer.batches,
+                  })}
+                  {reviewer.error ? ` · ${reviewer.error}` : ''}
+                </p>
+              ))}
+              {current.images?.map((image) => (
+                <p key={image.id}>
+                  {image.name} · {image.mime}
+                </p>
+              ))}
             </div>
             <p className="text-xs text-muted-foreground">
               {current.selection.model} · {current.baseSha.slice(0, 7)} →{' '}
@@ -345,9 +601,10 @@ export function PullCodeReviewPanel({
             {current.status === 'running' ? (
               <div role="status" className="flex items-center gap-2 py-4 text-muted-foreground">
                 <LoaderCircle className="size-4 animate-spin" />
-                {current.analysis?.phase === 'checking'
-                  ? uiText('Checking proposed findings…')
-                  : uiText('Reviewing captured evidence…')}
+                {current.checks?.find((check) => check.status === 'running')?.command ||
+                  (current.analysis?.phase === 'checking'
+                    ? uiText('Checking proposed findings…')
+                    : uiText('Reviewing captured evidence…'))}
                 {current.analysis && (
                   <span>
                     {uiText('Batch {value0} of {value1}', {
@@ -413,7 +670,7 @@ export function PullCodeReviewPanel({
                 <Button
                   variant="outline"
                   size="sm"
-                  disabled={!!blocked || !agent?.model}
+                  disabled={!!blocked || !ready}
                   onClick={() => start(true)}
                 >
                   {uiText('Review remaining files')}
@@ -446,6 +703,19 @@ export function PullCodeReviewPanel({
                         ? `:${finding.line} · ${finding.side}`
                         : uiText(' · location not verified')}
                     </button>
+                    {finding.reviewerIds?.length ? (
+                      <p className="mb-2 text-xs text-muted-foreground">
+                        {uiText('Found by {value0}', {
+                          value0: finding.reviewerIds
+                            .map(
+                              (id) =>
+                                current.reviewerResults?.find((reviewer) => reviewer.id === id)
+                                  ?.selection.model ?? id,
+                            )
+                            .join(', '),
+                        })}
+                      </p>
+                    ) : null}
                     <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.trigger}</p>
                     <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.impact}</p>
                     <p className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
@@ -766,5 +1036,119 @@ export function PullCodeReviewPanel({
         </Dialog>
       )}
     </section>
+  )
+}
+
+type PanelProps = Parameters<typeof LocalPullCodeReviewPanel>[0]
+
+export function PullCodeReviewPanel(props: PanelProps) {
+  const uiText = useInterfaceText()
+  const { activeRuntimeId } = useWorkspace()
+  const computers = useRuntimeSources()
+  const [chosen, setChosen] = useState('')
+  const runtimeId = chosen || activeRuntimeId || ''
+  return (
+    <div className="space-y-3">
+      {computers.length > 1 && (
+        <label className="flex flex-wrap items-center gap-3 text-xs">
+          <span className="shrink-0 whitespace-nowrap">{uiText('Review on computer')}</span>
+          <ChoicePicker
+            className="w-60 max-w-full flex-none"
+            aria-label={uiText('Review on computer')}
+            value={runtimeId}
+            onValueChange={setChosen}
+          >
+            {computers.map((computer) => (
+              <option key={computer.profile.id} value={computer.profile.id}>
+                {computer.name}
+                {computer.connected ? '' : ` · ${uiText('Offline')}`}
+              </option>
+            ))}
+          </ChoicePicker>
+        </label>
+      )}
+      {runtimeId === activeRuntimeId || !runtimeId ? (
+        <LocalPullCodeReviewPanel key={runtimeId} {...props} />
+      ) : (
+        <WorkspaceRuntimeScope runtimeId={runtimeId}>
+          <RemotePullCodeReviewPanel key={runtimeId} {...props} />
+        </WorkspaceRuntimeScope>
+      )}
+    </div>
+  )
+}
+
+function RemotePullCodeReviewPanel(props: PanelProps) {
+  const uiText = useInterfaceText()
+  const { workspace, request, connected, activeRuntimeId, connection } = useWorkspace()
+  const source = usePullReviewSource({
+    detail: props.detail,
+    repositories: workspace.repositories,
+    request,
+    connected,
+    scope: JSON.stringify([activeRuntimeId, connection]),
+  })
+  return (
+    <div className="space-y-3">
+      {source.candidates.length > 1 && (
+        <ChoicePicker
+          aria-label={uiText('Project')}
+          value={source.repositoryId}
+          onValueChange={source.choose}
+        >
+          <option value="">{uiText('Choose a project')}</option>
+          {source.candidates.map((repository) => (
+            <option key={repository.id} value={repository.id}>
+              {repository.name} · {repository.path}
+            </option>
+          ))}
+        </ChoicePicker>
+      )}
+      {source.detail && source.error && (
+        <p role="alert" className="text-xs text-destructive">
+          {source.error}{' '}
+          <Button size="sm" variant="outline" onClick={source.refresh}>
+            {uiText('Retry')}
+          </Button>
+        </p>
+      )}
+      {source.detail ? (
+        <LocalPullCodeReviewPanel
+          {...props}
+          repositoryId={source.repositoryId}
+          detail={{
+            ...source.detail,
+            pull: {
+              ...source.detail.pull,
+              headSha: props.detail.pull.headSha,
+              baseSha: props.detail.pull.baseSha,
+            },
+          }}
+          sourceReady={source.ready}
+          onRefresh={source.refresh}
+        />
+      ) : (
+        <div
+          role="status"
+          className="space-y-2 rounded-xl border p-4 text-xs text-muted-foreground"
+        >
+          <p>
+            {!connected
+              ? uiText('Reconnect this computer to review.')
+              : (source.error ??
+                uiText(
+                  source.repositoryId
+                    ? 'Loading PR on this computer…'
+                    : 'Choose a project on this computer.',
+                ))}
+          </p>
+          {source.error && (
+            <Button size="sm" variant="outline" onClick={source.refresh}>
+              {uiText('Retry')}
+            </Button>
+          )}
+        </div>
+      )}
+    </div>
   )
 }

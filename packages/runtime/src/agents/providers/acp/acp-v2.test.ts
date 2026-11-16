@@ -263,3 +263,20 @@ it('retains a negotiated v1 warm session while the v2 rollout flag stays enabled
   expect(messages.filter((m) => m.method === 'session/prompt')).toHaveLength(2)
   expect(f.output.join('')).toBe('v1 replyv1 reply')
 })
+
+it('rejects tool-free image review before prompting a v2 agent without image capability', async () => {
+  const f = await fixture()
+  f.run.tools = 'none'
+  f.run.attachments = [
+    {
+      id: 'image',
+      name: 'shot.png',
+      mime: 'image/png',
+      size: 1,
+      path: f.cwd + '/shot.png',
+      data: 'AA==',
+    },
+  ]
+  await expect(f.adapter.run(f.run)).rejects.toThrow('does not accept image input')
+  expect((await f.messages()).some((message) => message.method === 'session/prompt')).toBe(false)
+})

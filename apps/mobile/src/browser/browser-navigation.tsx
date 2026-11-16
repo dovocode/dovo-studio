@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useState } from 'react'
+import { useState, type ComponentRef, type Ref } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
 import { Glass } from '../ui/layout/glass'
 import { IconButton } from '../ui/controls/icon-button'
@@ -9,6 +9,7 @@ import { useTheme } from '../ui/theme'
 /** A single glass row leaves the page and native app tabs their own space. */
 export function BrowserNavigation({
   address,
+  addressRef,
   onAddress,
   onEditing,
   onNavigate,
@@ -23,6 +24,7 @@ export function BrowserNavigation({
   onOptions,
 }: {
   address: string
+  addressRef?: Ref<ComponentRef<typeof TextInput>>
   onAddress: (address: string) => void
   onEditing: (editing: boolean) => void
   onNavigate: () => void
@@ -80,6 +82,7 @@ export function BrowserNavigation({
         )}
         <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: 'center' }}>
           <TextInput
+            ref={addressRef}
             accessibilityLabel={uiText('Search or enter address')}
             testID="Search or enter address"
             placeholder={uiText('Search or enter address')}
