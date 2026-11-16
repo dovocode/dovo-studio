@@ -25,6 +25,11 @@ The policy uses these machine limits:
   `memory_pressure -Q` for the reclaimable free-memory percentage. Low `os.freemem()` alone cannot
   cause an active stop.
 
+Without memory pressure, the runtime still releases an idle provider process two minutes after its
+last turn ends. It keeps at most four idle provider processes across all harnesses and releases the
+oldest first. A check runs every 15 seconds while idle processes exist. The next message resumes the
+saved session. See [cross-harness subagents](cross-harness-subagents.md) for warm reuse.
+
 When available memory falls below the headroom, the runtime first releases idle provider processes.
 Providers with working native children are not idle. After cleanup, fresh readings must show both
 machine pressure and owned-agent RSS above the budget for at least ten seconds. The runtime then

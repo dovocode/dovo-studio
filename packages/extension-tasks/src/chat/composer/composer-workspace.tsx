@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import type { TaskSource } from '../../list/task-collection'
 import type { Repository } from '@dovo/studio-core'
 import { ComposerProject } from './composer-project'
+import { ComposerSandbox } from './composer-sandbox'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { Schema } from 'effect'
 import { Check, ChevronDown, Folder, GitBranch, GitFork, Link2, ListFilter } from 'lucide-react'
@@ -109,6 +110,7 @@ export function ComposerWorkspace({
       <ComposerWorkspaceBar>
         {children}
         {machineControl}
+        <ComposerSandbox task={task} disabled={disabled} />
         <ChoicePicker
           aria-label="Scope checkout"
           className="h-6 w-auto gap-1.5 border-0 px-2 text-[0.6875rem] shadow-none"
@@ -141,6 +143,7 @@ export function ComposerWorkspace({
       <ComposerWorkspaceBar>
         {children}
         {machineControl}
+        <ComposerSandbox task={task} disabled={disabled} />
         {repository.kind === 'scratch' ? (
           <>
             <Button
@@ -187,6 +190,7 @@ export function ComposerWorkspace({
     <ComposerWorkspaceBar>
       {children}
       {machineControl}
+      <ComposerSandbox task={task} disabled={disabled} />
       {editable && <span className="h-4 border-l border-border/60" aria-hidden="true" />}
       {editable ? (
         <DropdownMenu.Root>

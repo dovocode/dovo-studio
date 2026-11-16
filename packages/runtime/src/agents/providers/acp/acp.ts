@@ -87,9 +87,12 @@ export function createAcpAdapter(): AgentAdapter {
       run.signal.throwIfAborted()
       if (!run.acpLaunch && !run.agent.endpoint)
         throw new Error('Configure an ACP executable and arguments first')
-      const launch = run.acpLaunch ?? {
-        ...legacyAcpLaunch(run.agent.endpoint, run.agent.args ?? []),
-        env: run.agent.env ?? {},
+      const launch = {
+        ...(run.acpLaunch ?? {
+          ...legacyAcpLaunch(run.agent.endpoint, run.agent.args ?? []),
+          env: run.agent.env ?? {},
+        }),
+        ...(run.sandbox ? { sandbox: run.sandbox } : {}),
       }
       const launchKey = JSON.stringify([launch, run.agent, run.tools])
       const held = run.taskId ? idle.get(run.taskId) : undefined

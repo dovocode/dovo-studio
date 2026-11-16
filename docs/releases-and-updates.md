@@ -94,7 +94,9 @@ are not sent to archive downloads, public metadata fallbacks or paired clients. 
 upgrades also use this fallback when `HOMEBREW_GITHUB_API_TOKEN` is unset. Browser and mobile
 release checks retain their public metadata fallback.
 
-1. Update the root `package.json` version and mobile `app.json` version as appropriate.
+1. Update the root `package.json` version and mobile `app.json` version as appropriate. Run
+   `pnpm changelog:release` to move the `changelog.d/` fragments into a new `CHANGELOG.md` section.
+   Commit `CHANGELOG.md` and `changelog.d/` with the version change.
 2. Verify with `pnpm check`, `pnpm typecheck`, `pnpm test` and `pnpm build`.
 3. Configure Mac-only GitHub Actions secrets: `MAC_CERTIFICATE` (Developer ID `.p12` as base64),
    `MAC_CERTIFICATE_PASSWORD`, `MAC_SIGNING_IDENTITY`, `APPLE_ID`, `APPLE_APP_SPECIFIC_PASSWORD`,
@@ -102,7 +104,9 @@ release checks retain their public metadata fallback.
    described in [Windows signing setup](windows-signing.md). Linux needs no signing credentials.
 4. Run **Release** manually with a matching `vX.Y.Z` tag, or push that tag. All jobs build the
    selected commit. The workflow creates a draft and verifies every expected architecture/format and
-   update feed. Inspect the artifacts and publish the draft only after native installation tests.
+   update feed. The draft notes start with the version's `CHANGELOG.md` section, followed by the
+   notes that GitHub generates. The workflow stops if fragments remain in `changelog.d/`. Inspect
+   the artifacts and publish the draft only after native installation tests.
 5. On an older install, exercise download, Later, restart/install and retained runtime data.
 
 Check runs the full build, lint, typechecks and test suite on Linux, with separate macOS and Windows
@@ -145,12 +149,14 @@ publishing; a slow Check run leaves a verified draft pending. Retry publication 
 with `gh workflow run publish-nightly.yml -f sha=COMMIT_SHA`. Already-published tags are skipped to
 avoid duplicate distribution runs. If distribution dispatch fails after publication, rerun
 Distribution directly with that tag. Nightly releases are GitHub prereleases and do not replace the
-latest Stable release. Their release notes list commit messages since the previous published
-nightly, including direct commits to main. Failed draft builds do not advance that baseline. They
-include separate signed **Dovo Studio (Nightly)** Mac bundles, Windows/Linux installers, server
-archives, update metadata, Homebrew definitions, and a pinned mise config. The Stable release
-remains an explicit review and publish step. When preparing the next Stable version, update the
-`version_prefix` for both Nightly tools in `distribution/mise.toml` to the new base version.
+latest Stable release. Their release notes start with the `changelog.d/` fragments added since the
+previous published nightly. Without new fragments, highlights from commit titles come first. The
+notes then list commit messages since that nightly, including direct commits to main. Failed draft
+builds do not advance that baseline. They include separate signed **Dovo Studio (Nightly)** Mac
+bundles, Windows/Linux installers, server archives, update metadata, Homebrew definitions, and a
+pinned mise config. The Stable release remains an explicit review and publish step. When preparing
+the next Stable version, update the `version_prefix` for both Nightly tools in
+`distribution/mise.toml` to the new base version.
 
 Use Node 26, `pnpm build`, then `pnpm exec node scripts/packaging/package-desktop.mjs` on the target
 OS and architecture. Append `--dir` for an unpacked build. Linux packaging requires Ruby/FPM and RPM
@@ -332,11 +338,14 @@ accounts and project directories work.
 For installation, service setup and pairing, see the [Homebrew guide](server-setup.md#homebrew). A
 source push does not make downloadable installers. The `Release` workflow creates a draft containing
 server archives, the signed desktop ZIP/DMG and a desktop mise archive. Publish only after all jobs
-succeed. `Update Homebrew and mise distribution` then computes SHA-256 hashes, attaches `mise.toml`
-and `SHA256SUMS`, and commits `Formula/` and `Casks/` to the default branch. It refuses incomplete
-or older releases. The same repository acts as the tap; no separate tap token is needed. If branch
-protection disallows the bot push, apply the generated definitions through your normal PR flow. The
-workflow can be rerun with a published tag.
+succeed. `Update Homebrew, mise and container distribution` then computes SHA-256 hashes, attaches
+`mise.toml` and `SHA256SUMS`, and commits `Formula/` and `Casks/` to the default branch. It refuses
+incomplete or older releases. Its container job builds `ghcr.io/dovocode/dovo-server` for
+`linux/amd64` and `linux/arm64` from the published Linux server archives. It checks the amd64 image
+first, then pushes the version tag and `latest` for Stable or `nightly` for Nightly. Only that job
+has `packages: write`. See [Docker](server-setup.md#docker). The same repository acts as the tap; no
+separate tap token is needed. If branch protection disallows the bot push, apply the generated
+definitions through your normal PR flow. The workflow can be rerun with a published tag.
 
 ```sh
 brew tap dovocode/studio https://github.com/dovocode/dovo-studio

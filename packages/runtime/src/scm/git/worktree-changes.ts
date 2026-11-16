@@ -6,7 +6,7 @@ import type { GitService } from './git.js'
 /** Status and even non-forced removal trust index flags. Inspect hidden content without
  * refreshing the index or clearing flags. Any failed or ambiguous read prevents cleanup. */
 export async function worktreeChanged(
-  git: Pick<GitService, 'command' | 'readCommand'>,
+  git: Pick<GitService, 'command' | 'readCommand'> & Partial<Pick<GitService, 'sandboxLayout'>>,
   cwd: string,
 ): Promise<boolean> {
   const directory = await lstat(cwd).catch((error: unknown) => {
@@ -58,6 +58,9 @@ export async function worktreeChanged(
       // An uninitialized submodule is an empty directory. Initialized submodules
       // can hide their own edits even when the parent's gitlink has no flags.
       if (!(await readdir(path)).length) continue
+      // A sandboxed agent controls the nested repository and its config. Never run Git in it;
+      // count it as changed, so cleanup keeps the checkout.
+      if (await git.sandboxLayout?.(cwd)) return true
       const top = (await git.readCommand(path, ['rev-parse', '--show-toplevel'])).trim()
       if ((await realpath(top)) !== (await realpath(path)))
         throw new Error('Cannot inspect submodule checkout')

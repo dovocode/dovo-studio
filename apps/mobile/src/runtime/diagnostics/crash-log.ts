@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage'
-import { diagnosticMessage } from '@dovo/protocol'
+import { diagnosticMessage, recordClientError } from '@dovo/protocol'
 
 const key = 'dovo.lastCrash'
 export type CrashRecord = { at: string; message: string; fatal: boolean }
@@ -8,6 +8,7 @@ let pending: Promise<unknown> = Promise.resolve()
 /** Keep the last unexpected error on this device so the next launch can show it once. Nothing
  * leaves the device: there is no reporting service, matching the no-account policy. */
 function recordCrash(error: unknown, fatal: boolean) {
+  recordClientError(error, fatal ? 'fatal' : 'unhandled')
   const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error)
   const record: CrashRecord = {
     at: new Date().toISOString(),

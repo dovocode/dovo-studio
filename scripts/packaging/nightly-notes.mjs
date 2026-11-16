@@ -1,5 +1,11 @@
 import { execFileSync, spawnSync } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
+import {
+  FRAGMENT_DIRECTORY,
+  isFragmentName,
+  parseFragment,
+  renderNotes,
+} from '../changelog/fragments.mjs'
 
 export function nightlyNotes({ target, releases, repository, cwd }) {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repository)) throw new Error('Invalid release repository')
@@ -17,6 +23,30 @@ export function nightlyNotes({ target, releases, repository, cwd }) {
     return result.status === 0
   })
   const range = previous ? `${previous.tagName}..${commit}` : commit
+  // Fragments added since the previous nightly are the curated user-facing summary.
+  const fragmentPaths = (
+    previous
+      ? git(
+          'diff',
+          '--name-only',
+          '--diff-filter=A',
+          previous.tagName,
+          commit,
+          '--',
+          FRAGMENT_DIRECTORY,
+        )
+      : git('ls-tree', '-r', '--name-only', commit, '--', FRAGMENT_DIRECTORY)
+  )
+    .split('\n')
+    .filter((path) => {
+      const [directory, name, ...nested] = path.split('/')
+      return directory === FRAGMENT_DIRECTORY && !nested.length && isFragmentName(name ?? '')
+    })
+  const fragments = fragmentPaths.flatMap((path) => {
+    const { fragment, errors } = parseFragment(path.split('/')[1], git('show', `${commit}:${path}`))
+    if (errors) console.error(`Skipping invalid fragment ${path}: ${errors.join('; ')}`)
+    return fragment ? [fragment] : []
+  })
   const lines = git('log', '--reverse', '--format=%H %s', range).split('\n').filter(Boolean)
   const entries = lines.map((line) => {
     const sha = line.slice(0, 40)
@@ -48,7 +78,11 @@ export function nightlyNotes({ target, releases, repository, cwd }) {
     .slice(0, 7)
     .map(({ line }) => line)
   return [
-    ...(highlights.length ? ['## Highlights', '', ...highlights, ''] : []),
+    ...(fragments.length
+      ? ["## What's new", '', renderNotes(fragments)]
+      : highlights.length
+        ? ['## Highlights', '', ...highlights, '']
+        : []),
     '## Changes',
     '',
     ...(entries.length

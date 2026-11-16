@@ -1,6 +1,6 @@
 import { type StudioTools, nativeAgentWorking } from '@dovo/protocol'
 import type { MemoryScope, SandboxMode, PermissionPolicy } from '@dovo/protocol'
-import { mkdtempSync, writeFileSync, renameSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
@@ -81,11 +81,20 @@ export class RunCredentials {
     this.current.set(policy.taskId, token)
     return token
   }
-  file(token: string) {
+  /** `directory` places the file where a sandboxed thread's container can read it: its own
+   * mounted state directory, which holds no other thread's grant. */
+  file(token: string, directory?: string) {
     const grant = this.authenticate(token)
-    this.directory ??= mkdtempSync(join(tmpdir(), 'dovo-run-credentials-'))
     let file = this.files.get(grant.taskId)
+    const wanted = directory ? join(directory, 'run-credential.json') : undefined
+    if (wanted && directory && file !== wanted) {
+      if (file) rmSync(file, { force: true })
+      mkdirSync(directory, { recursive: true, mode: 0o700 })
+      file = wanted
+      this.files.set(grant.taskId, file)
+    }
     if (!file) {
+      this.directory ??= mkdtempSync(join(tmpdir(), 'dovo-run-credentials-'))
       file = join(this.directory, `${randomUUID()}.json`)
       this.files.set(grant.taskId, file)
     }

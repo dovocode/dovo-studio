@@ -36,6 +36,7 @@ import { stopAcpChild } from '../providers/acp/acp-process.js'
 import {
   REGISTRY_URL,
   distributionAvailable,
+  parseRegistryEntry,
   parseRegistryResponse,
   platformKey,
   publicUrl,
@@ -630,6 +631,35 @@ export class AcpInstallations {
       command: installation.command,
       args: [...installation.args],
       env: { ...installation.env },
+    }
+  }
+
+  /** The installed Registry entry's Linux distribution, for an install inside a sandbox
+   * container. It uses the same pinned version and checksum as the host installation. */
+  async sandboxDistribution(id: string, arch: string = this.arch) {
+    const installation = this.installations.get(id)
+    if (!installation) throw new Error('ACP agent is not installed on this runtime')
+    const entry = parseRegistryEntry(JSON.parse(await readFile(installation.metadataPath, 'utf8')))
+    if (!entry) throw new Error('The saved ACP Registry entry could not be read')
+    const target = platformKey('linux', arch)
+    const binary = target ? entry.distribution.binary?.[target] : undefined
+    const distribution: Distribution | undefined = binary
+      ? { kind: 'binary', value: binary }
+      : entry.distribution.npx
+        ? { kind: 'npx', value: entry.distribution.npx }
+        : entry.distribution.uvx
+          ? { kind: 'uvx', value: entry.distribution.uvx }
+          : undefined
+    if (!distribution)
+      throw new Error(`${entry.name} has no Linux distribution in the ACP Registry`)
+    return {
+      hostCommand: installation.command,
+      registryId: entry.id,
+      version: entry.version,
+      distribution,
+      ...(distribution.kind === 'binary'
+        ? {}
+        : { package: packageName(distribution.value.package, distribution.kind) }),
     }
   }
 

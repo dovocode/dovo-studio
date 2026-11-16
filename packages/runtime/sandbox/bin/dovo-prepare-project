@@ -1,0 +1,19 @@
+#!/bin/sh
+# dovo-prepare-project <checkout>: trust the checkout's own mise configuration files, then
+# install the tools they and idiomatic version files request. Never trusts other paths.
+set -u
+checkout=$1
+found=
+for name in mise.toml .mise.toml mise.local.toml .mise.local.toml .config/mise.toml \
+  .config/mise/config.toml mise/config.toml .mise/config.toml .tool-versions; do
+  if [ -f "$checkout/$name" ]; then
+    mise trust "$checkout/$name" || exit 1
+    found=1
+  fi
+done
+for name in .nvmrc .node-version .python-version .ruby-version .go-version rust-toolchain.toml; do
+  [ -f "$checkout/$name" ] && found=1
+done
+[ -n "$found" ] || exit 0
+cd "$checkout" || exit 1
+exec mise install

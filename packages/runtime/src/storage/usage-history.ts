@@ -77,6 +77,19 @@ export class UsageHistory {
       ).map((row) => row.value),
     )
   }
+  /** Finished Dovo turns of these tasks that started at or after `since`. Running turns are
+   * recorded when they end. */
+  turns(taskIds: readonly string[], since: string): UsageRecord[] {
+    if (!taskIds.length) return []
+    return decode(
+      mutableArray(rowSchema),
+      this.db
+        .prepare(
+          "SELECT value FROM usage_records WHERE started_at >= ? AND id NOT LIKE 'external:%' AND json_extract(value, '$.taskId') IN (SELECT value FROM json_each(?)) ORDER BY started_at, id",
+        )
+        .all(since, JSON.stringify(taskIds)),
+    ).map((row) => decode(usageRecordSchema, JSON.parse(row.value)))
+  }
   recordExternal(records: readonly UsageRecord[]) {
     const write = this.db.prepare(
       'INSERT INTO usage_records VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value WHERE value != excluded.value',

@@ -90,6 +90,8 @@ export function readServerConfig(directory: string): ServerConfig {
     )
   return validateServerConfig(JSON.parse(readFileSync(path, 'utf8')), directory)
 }
+/** Saves the listen settings. An omitted option keeps the saved value. An empty
+ * `publicAddress` removes the saved public address. */
 export function setupServer(
   directory: string,
   options: {
@@ -113,7 +115,10 @@ export function setupServer(
       databasePath: options.database
         ? resolve(options.database)
         : (saved.databasePath ?? join(directory, 'runtime.sqlite')),
-      publicAddress: options.publicAddress ?? saved.publicAddress,
+      publicAddress:
+        options.publicAddress === undefined
+          ? saved.publicAddress
+          : options.publicAddress.trim() || undefined,
     },
     directory,
   )

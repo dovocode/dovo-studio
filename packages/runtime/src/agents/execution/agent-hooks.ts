@@ -1,5 +1,6 @@
 import { HookEvents, type HookEventData } from './hook-events.js'
 import { spawn } from 'node:child_process'
+import { spawnHarness, type SandboxSession } from '../../sandbox/launcher.js'
 import type { AgentHook } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from './types.js'
 import { stopOwnedChild } from './stop-owned-child.js'
@@ -17,16 +18,21 @@ export async function executeHook(
   signal: AbortSignal,
   context?: HookContext,
   onOwnedProcess?: AgentRun['onOwnedProcess'],
+  /** A sandboxed thread's container. The hook runs inside it, not on the host: the checkout
+   * and the event data on stdin come from the sandboxed agent. */
+  sandbox?: SandboxSession,
 ): Promise<HookResult> {
   signal.throwIfAborted()
-  const child = spawn(hook.command, {
+  const options = {
     windowsHide: true,
     cwd,
     env: processEnvironment(),
-    shell: true,
     detached: process.platform !== 'win32',
-    stdio: [context ? 'pipe' : 'ignore', 'pipe', 'pipe'],
-  })
+    stdio: [context ? 'pipe' : 'ignore', 'pipe', 'pipe'] as ['pipe' | 'ignore', 'pipe', 'pipe'],
+  }
+  const child = sandbox
+    ? spawnHarness(sandbox, '/bin/sh', ['-c', hook.command], options)
+    : spawn(hook.command, { ...options, shell: true })
   onOwnedProcess?.(child)
   let output = ''
   const collect = (chunk: Buffer) => {
@@ -88,6 +94,8 @@ export async function runWithHooks(
   hooks: AgentHook[],
   report: (result: HookResult) => void,
   repairStarted: () => void,
+  /** For a sandboxed thread: its container, where every hook runs. */
+  sandbox?: () => Promise<SandboxSession>,
 ) {
   const enabled = hooks.filter(
     (hook) =>
@@ -154,6 +162,7 @@ export async function runWithHooks(
           ...data,
         },
         run.onOwnedProcess,
+        sandbox ? await sandbox() : undefined,
       )
       report(result)
       if (!result.ok) failed.push(result)

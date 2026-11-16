@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnHarness, type SandboxSession } from '../../../sandbox/launcher.js'
 import { Transform } from 'node:stream'
 import {
   createMessageConnection,
@@ -17,9 +17,17 @@ export function openHermesConnection(
   agent: AgentDiscovery,
   cwd: string,
   managedDirectory?: string,
+  sandbox?: SandboxSession,
 ) {
-  const launch = hermesLaunch(agent)
-  const child = spawn(launch.command, launch.args, {
+  // Inside a sandbox, run the Linux Hermes installed with mise, never a host interpreter.
+  const launch = sandbox
+    ? {
+        command: 'hermes',
+        args: agent.args?.length ? agent.args : ['--run-module', 'tui_gateway.entry'],
+        env: agent.env ?? {},
+      }
+    : hermesLaunch(agent)
+  const child = spawnHarness(sandbox, launch.command, launch.args, {
     windowsHide: true,
     cwd,
     detached: process.platform !== 'win32',

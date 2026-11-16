@@ -6,6 +6,7 @@ import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
 import { useForegroundInterval } from '../runtime/state/app-active'
 import { UsagePrices } from './usage-prices'
+import { UsageSpendLimit } from './usage-spend-limit'
 import { useUsageData } from './use-usage-data'
 import { SettingsAction as Action } from './settings-controls'
 import { ResetCredits } from './reset-credits'
@@ -20,6 +21,7 @@ import {
   formatUsageDuration,
   formatUsageTokens,
   createUsageSummary,
+  limitPace,
   usageChartDays,
   usageChartHours,
   type UsageRow,
@@ -467,6 +469,12 @@ export default function UsageScreen() {
                             const state = quotaReadingState(limit, limit.connected, now)
                             const expired = state === 'awaiting'
                             const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
+                            const pace = limitPace(limit, now)
+                            const paceLabel =
+                              pace &&
+                              uiText('Even pace: {value0}% of window elapsed', {
+                                value0: Math.round(pace.elapsedPercent),
+                              })
                             return (
                               <View key={limit.key} style={{ gap: 5 }}>
                                 <Text style={styles.text}>
@@ -489,6 +497,7 @@ export default function UsageScreen() {
                                       min: 0,
                                       max: 100,
                                       now: Math.round(remaining),
+                                      text: `${uiText('{value0}% left', { value0: Math.round(remaining) })}${paceLabel ? `. ${paceLabel}` : ''}`,
                                     }}
                                     style={{
                                       height: 7,
@@ -509,6 +518,21 @@ export default function UsageScreen() {
                                               : colors.accent,
                                       }}
                                     />
+                                    {pace && (
+                                      <View
+                                        importantForAccessibility="no"
+                                        style={{
+                                          position: 'absolute',
+                                          top: -2,
+                                          bottom: -2,
+                                          left: `${pace.markPercent}%`,
+                                          width: 2,
+                                          marginLeft: -1,
+                                          borderRadius: 1,
+                                          backgroundColor: colors.text,
+                                        }}
+                                      />
+                                    )}
                                   </View>
                                 )}
                                 <Text style={styles.muted}>
@@ -521,6 +545,7 @@ export default function UsageScreen() {
                                   >
                                     {'Reported by {value0} · Updated {value1} · {value2}'}
                                   </InterfaceText>
+                                  {paceLabel && !expired ? ` · ${paceLabel}` : ''}
                                 </Text>
                               </View>
                             )
@@ -538,6 +563,7 @@ export default function UsageScreen() {
                     )
                   })}
                 </SettingsGroup>
+                <UsageSpendLimit computer={selectedComputer} />
               </View>
             )}
             {view !== 'limits' && (

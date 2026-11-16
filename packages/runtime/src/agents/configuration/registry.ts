@@ -1,7 +1,10 @@
+import { sandboxRun } from '../../sandbox/run.js'
 import { homedir } from 'node:os'
 import type { ManagedPolicy } from '../../policy/managed-policy.js'
 import { SecretReferences } from './secret-references.js'
-import { join } from 'node:path'
+import { isAbsolute, join } from 'node:path'
+import { constants } from 'node:fs'
+import { access } from 'node:fs/promises'
 import { Effect } from 'effect'
 import { runtimeOperation, runtimeFailure } from '../../errors.js'
 import { decode } from '@dovo/protocol'
@@ -9,8 +12,12 @@ import { ExtensionHost, runClientEffect } from '@dovo/client-runtime'
 import { commandsSchema, type CommandSettings, type AgentDiscovery } from '@dovo/protocol'
 import type { Agent } from '@dovo/protocol'
 import type { AcpLaunch, AgentAdapter } from '../execution/types.js'
+import type { SandboxSession } from '../../sandbox/launcher.js'
 const expandHome = (path: string) =>
   path === '~' ? homedir() : path.startsWith('~/') ? join(homedir(), path.slice(2)) : path
+
+const sandboxWritableDetail = (command: string) =>
+  `Dovo did not run ${command} to check it, because a sandboxed thread can change that file. Dovo still starts it when a thread uses this agent.`
 
 export class AgentRegistry {
   readonly secretReferences = new SecretReferences()
@@ -135,37 +142,77 @@ export class AgentRegistry {
                 id: string,
                 sessionId: string | undefined,
                 cwd?: string,
+                sandbox?: SandboxSession,
               ) =>
                 this.secretReferences
                   .resolve(this.configure(agent))
-                  .then((resolved) => readNativeThread(resolved, id, sessionId, cwd)),
+                  .then((resolved) => readNativeThread(resolved, id, sessionId, cwd, sandbox)),
             }
           : {}),
         run: async (run) => {
           const managed = this.policy?.agent(run.agent) ?? run.agent
           const agent = await this.secretReferences.resolve(this.configure(managed), run.signal)
-          return adapter.run({ ...run, agent, acpLaunch: this.launch(agent) })
+          const acpLaunch = this.launch(agent)
+          if (!run.prepareSandbox) return adapter.run({ ...run, agent, acpLaunch })
+          const sandbox = await run.prepareSandbox(agent, acpLaunch)
+          run.signal.throwIfAborted()
+          return adapter.run(await sandboxRun({ ...run, agent, acpLaunch }, sandbox))
         },
         probe: (agent) => {
           const configured = this.configure(agent)
           this.launch(configured)
-          return this.secretReferences
-            .resolve(configured)
-            .then((resolved) => adapter.probe(resolved, this.launch(resolved)))
+          return this.secretReferences.resolve(configured).then(async (resolved) => {
+            const launch = this.launch(resolved)
+            const blocked = await this.sandboxWritableCommand(resolved, launch)
+            if (!blocked) return adapter.probe(resolved, launch)
+            return {
+              provider: resolved.provider,
+              // Only a file check: the command itself does not run.
+              available:
+                !isAbsolute(blocked) ||
+                (await access(blocked, constants.X_OK).then(
+                  () => true,
+                  () => false,
+                )),
+              detail: sandboxWritableDetail(blocked),
+            }
+          })
         },
         ...(models
           ? {
               models: (agent: AgentDiscovery) => {
                 const configured = this.configure(agent)
                 this.launch(configured)
-                return this.secretReferences
-                  .resolve(configured)
-                  .then((resolved) => models(resolved, this.launch(resolved)))
+                return this.secretReferences.resolve(configured).then(async (resolved) => {
+                  const launch = this.launch(resolved)
+                  const blocked = await this.sandboxWritableCommand(resolved, launch)
+                  if (blocked) throw new Error(sandboxWritableDetail(blocked))
+                  return models(resolved, launch)
+                })
               },
             }
           : {}),
       } satisfies AgentAdapter
     })
+  }
+  private hostCommandWritable?: (
+    command: string,
+    env: Readonly<Record<string, string | undefined>>,
+  ) => Promise<boolean>
+  /** Container sandboxes report the commands that a sandboxed agent can change. */
+  setHostCommandGuard(
+    guard: (command: string, env: Readonly<Record<string, string | undefined>>) => Promise<boolean>,
+  ) {
+    this.hostCommandWritable = guard
+  }
+  /** The configured command when a sandboxed agent can change it. Availability checks and
+   * model discovery must not run it on the host. */
+  private async sandboxWritableCommand(agent: AgentDiscovery, launch?: AcpLaunch) {
+    const command = launch?.command || agent.endpoint
+    if (!command || !this.hostCommandWritable) return undefined
+    return (await this.hostCommandWritable(command, { ...agent.env, ...launch?.env }))
+      ? command
+      : undefined
   }
   get(provider: Agent['provider']) {
     return runClientEffect(this.getEffect(provider))

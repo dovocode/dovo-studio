@@ -92,6 +92,7 @@ type WarmHermes = {
   config: Awaited<ReturnType<typeof hermesConfig>>
   key: string
   cwd: string
+  container?: string
   session: string
   stored: string
 }
@@ -140,19 +141,22 @@ export function createHermesAdapter(): AgentAdapter {
         previous &&
         previous.key === key &&
         previous.cwd === run.cwd &&
+        previous.container === run.sandbox?.container &&
         previous.stored === run.sessionId &&
         !previous.connection.signal.aborted
           ? previous
           : undefined
       if (previous && !warm) await close(previous)
       if (!warm) {
-        const config = await hermesConfig(run.agent)
+        // A sandboxed Hermes reads its managed configuration from the mounted state directory.
+        const config = await hermesConfig(run.agent, run.sandbox?.stateDirectory)
         try {
           warm = {
-            connection: openHermesConnection(run.agent, run.cwd, config.directory),
+            connection: openHermesConnection(run.agent, run.cwd, config.directory, run.sandbox),
             config,
             key,
             cwd: run.cwd,
+            container: run.sandbox?.container,
             stored: '',
             session: '',
           }

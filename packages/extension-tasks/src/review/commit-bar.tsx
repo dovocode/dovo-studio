@@ -1,8 +1,14 @@
 import { useState } from 'react'
 import { Schema } from 'effect'
 import { GitCommitHorizontal, Sparkles } from 'lucide-react'
-import { mutableStruct, responses } from '@dovo/protocol'
+import {
+  containerSandboxEnabled,
+  mutableStruct,
+  responses,
+  taskContainerSandbox,
+} from '@dovo/protocol'
 import { useWorkspace, type Task } from '@dovo/studio-core'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button, Textarea } from '@dovo/studio-ui'
 import { useReviewDraftText } from './review-drafts'
 
@@ -15,7 +21,15 @@ const commitSchema = mutableStruct({
 /** Commit everything in the task's checkout from Changes, with a message the title model can
  * write from the conversation and the diff. */
 export function CommitBar({ task }: { task: Task }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, workspace, snapshot } = useWorkspace()
+  const uiText = useInterfaceText()
+  const sandboxed = containerSandboxEnabled(
+    taskContainerSandbox(
+      task,
+      snapshot?.defaults,
+      workspace.repositories.find((repo) => repo.id === task.repositoryId),
+    ),
+  )
   const [message, setMessage, readDraft] = useReviewDraftText(task, 'commit')
   const [busy, setBusy] = useState<'' | 'write' | 'commit' | 'push'>('')
   const [status, setStatus] = useState('')
@@ -153,6 +167,13 @@ export function CommitBar({ task }: { task: Task }) {
           <Button size="sm" disabled={!idle} onClick={push}>
             {busy === 'push' ? 'Pushing…' : 'Retry push'}
           </Button>
+        )}
+        {sandboxed && (
+          <span className="w-full text-[0.6875rem] text-muted-foreground">
+            {uiText(
+              'Git hooks do not run for commits in a sandboxed thread. The agent can change files that hooks run.',
+            )}
+          </span>
         )}
         {status && (
           <span

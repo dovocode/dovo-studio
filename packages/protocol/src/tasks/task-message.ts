@@ -35,6 +35,7 @@ const threadStartFields = new Set<string>([
   'worktreeBaseBranch',
   'worktreeFromOrigin',
   'worktreeIncludeChanges',
+  'containerSandbox',
   'checkoutBranch',
   'setupCommand',
   'submodules',

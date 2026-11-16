@@ -589,6 +589,7 @@ class RuntimeSync {
       s.peers.relay.status(),
       s.defaults.version(),
       s.acpInstallations.list(),
+      s.sandboxes.revision,
     ])
   }
   private async build(view: View, signature: string) {

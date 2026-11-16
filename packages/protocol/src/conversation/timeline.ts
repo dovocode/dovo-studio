@@ -136,6 +136,7 @@ export function conversationPresentation(task: Conversation) {
     string,
     {
       groupId: string
+      status: ConversationTurn['status']
       header: boolean
       final: boolean
       footer: boolean
@@ -149,6 +150,7 @@ export function conversationPresentation(task: Conversation) {
     for (const message of group.messages)
       result.set(message.id, {
         groupId: group.id,
+        status: group.status,
         header: assistants[0]?.id === message.id,
         final: final?.id === message.id,
         footer: assistants.at(-1)?.id === message.id,

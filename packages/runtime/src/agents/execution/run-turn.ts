@@ -1,4 +1,8 @@
 import { nativeGoalSchema } from '@dovo/protocol'
+import { containerSandboxEnabled, type Agent, type ContainerSandbox } from '@dovo/protocol'
+import { threadContainerSandbox } from '../../sandbox/thread-terminal.js'
+import type { Sandboxes } from '../../sandbox/sandboxes.js'
+import { sandboxInstructions } from '../../sandbox/instructions.js'
 import { explainProviderFailure } from './provider-failure.js'
 import { botContextMessages, botInstructions, botRoutineContext } from '@dovo/protocol'
 import { goalCommand, goalCommandText } from '@dovo/protocol'
@@ -44,7 +48,7 @@ import { estimatedTurnCost } from '../tasks/estimated-cost.js'
 import { compactBotSession, completedCompaction } from '../tasks/compaction.js'
 import { updateSubagents } from './subagents.js'
 import { ReasoningEvents, safeReasoningEvent } from './reasoning-event.js'
-import type { AgentSteer, AgentRun, NativeAgentSession } from './types.js'
+import type { AcpLaunch, AgentSteer, AgentRun, NativeAgentSession } from './types.js'
 import {
   decodeResult,
   claudeProviderRetry,
@@ -145,6 +149,22 @@ export class TaskTurnRunner {
   private mcpApps?: McpApps
   setMcpApps(apps: McpApps) {
     this.mcpApps = apps
+  }
+  private sandboxes?: Sandboxes
+  setSandboxes(sandboxes: Sandboxes) {
+    this.sandboxes = sandboxes
+  }
+  /** The thread's container sandbox. The first run records the project default, so later
+   * project changes never move the thread. Child threads follow their parent. */
+  private threadSandbox(id: string): ContainerSandbox | undefined {
+    const task = this.store.taskSummary(id)
+    if (task.containerSandbox) return task.containerSandbox
+    const value = threadContainerSandbox(this.store, id, task.activeRunId)
+    if (!value) return undefined
+    this.store.updateTask(id, (current) =>
+      current.containerSandbox ? current : { ...current, containerSandbox: value },
+    )
+    return value
   }
   private taskTools?: { port: number; host: string }
   setTaskTools(port: number, _token: string, host: string) {
@@ -259,6 +279,10 @@ export class TaskTurnRunner {
   ) {
     return Effect.scoped(
       Effect.gen({ self: this }, function* () {
+        const sandboxSettings = this.threadSandbox(id)
+        const sandboxes = containerSandboxEnabled(sandboxSettings) ? this.sandboxes : undefined
+        if (containerSandboxEnabled(sandboxSettings) && !sandboxes)
+          throw new HttpError(409, 'This runtime cannot run container sandboxes')
         const task = this.store.taskSummary(id)
         const memoryScopes = this.memoryScopes(id)
         const studioTools = this.studioTools()
@@ -329,9 +353,12 @@ export class TaskTurnRunner {
         resources.skills = resources.skills.map(
           (skill) => materializedSkills.get(skill.name) ?? skill,
         )
-        const cuaServer = yield* runtimeOperation(() =>
-          cuaAgentServer(this.commands.get(), configured.permission),
-        )
+        // Computer use controls the host desktop; a sandboxed thread does not get it.
+        const cuaServer = sandboxes
+          ? undefined
+          : yield* runtimeOperation(() =>
+              cuaAgentServer(this.commands.get(), configured.permission),
+            )
         if (cuaServer && resources.mcpServers.some((server) => server.name === CUA_SERVER_NAME))
           throw new HttpError(
             409,
@@ -339,7 +366,8 @@ export class TaskTurnRunner {
           )
         let taskToolsToken: string | undefined
         const originalMcpServers = [...resources.mcpServers]
-        if (this.mcpApps && this.taskTools)
+        // MCP App proxies run on the host. A sandboxed harness starts the servers itself.
+        if (this.mcpApps && this.taskTools && !sandboxes)
           resources.mcpServers = this.mcpApps.proxies(
             id,
             resources.mcpServers,
@@ -375,9 +403,9 @@ export class TaskTurnRunner {
             400,
             `${agent.provider} does not support access mode ${agent.permission}`,
           )
-        const githubEnvironment = hasGit
-          ? yield* runtimeOperation(() => this.git.githubEnvironment(cwd))
-          : {}
+        // No GitHub credential enters a sandbox unless the harness settings add one.
+        const githubEnvironment =
+          hasGit && !sandboxes ? yield* runtimeOperation(() => this.git.githubEnvironment(cwd)) : {}
         const commands = this.commands.get()
         const branch = hasGit
           ? (yield* runtimeOperation(() => this.git.inspect(cwd))).branch
@@ -538,7 +566,7 @@ export class TaskTurnRunner {
           taskToolsToken = token
           yield* Effect.addFinalizer(() => Effect.sync(() => credentials.retire(token)))
           controller.signal.throwIfAborted()
-          const credentialFile = credentials.file(token)
+          const credentialFile = credentials.file(token, sandboxes?.stateDirectory(id))
           resources.mcpServers = resources.mcpServers.filter(
             (server) => server.name !== 'dovo_task',
           )
@@ -562,6 +590,10 @@ export class TaskTurnRunner {
               scopedSkillReads && enabledSkills.length > 0,
             ),
           )
+          if (sandboxes)
+            resources.mcpServers = resources.mcpServers.map((server) =>
+              server.name === 'dovo_task' ? sandboxes.toolServer(id, server) : server,
+            )
         }
         // Warm providers retain MCP connections with their native children. Bind tools to
         // the provider session; resolve the active attempt at admission without a restart.
@@ -915,7 +947,7 @@ export class TaskTurnRunner {
                     child.source !== 'dovo' &&
                     child.sessionId === nativeSessionId &&
                     nativeAgentWorking(child),
-                ))) &&
+                ) === true)) &&
             current.sessionId === nativeSessionId &&
             current.sessionAgentId === fingerprint &&
             resolveTaskAgent(current, this.store.get().agents)?.permission ===
@@ -1085,7 +1117,9 @@ export class TaskTurnRunner {
                   deviceHubEnabled: this.deviceHubEnabled(),
                 })
               : []),
-            `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
+            sandboxes
+              ? sandboxInstructions(cwd, sandboxSettings)
+              : `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
             linked.length
               ? `Additional linked checkouts on this machine (authorized for this thread): ${JSON.stringify(linked.map((item) => ({ id: item.id, repositoryId: item.repositoryId, project: this.store.get().repositories.find((repo) => repo.id === item.repositoryId)?.name, path: item.directory, access: item.access, branch: item.branch })))}. Run commands in the appropriate checkout. Read-only links are reference material: do not modify them. Keep commits and pull requests separate for each repository. Primary-project defaults remain authoritative; read each linked repository's instructions before working there.`
               : '',
@@ -1249,6 +1283,30 @@ export class TaskTurnRunner {
               },
               {
                 taskId: id,
+                ...(sandboxes && sandboxSettings
+                  ? {
+                      prepareSandbox: (resolved: Agent, acpLaunch: AcpLaunch | undefined) => {
+                        let shown = 0
+                        return sandboxes.ensure({
+                          taskId: id,
+                          sandbox: sandboxSettings,
+                          cwd,
+                          linked: linked.map((item) => ({
+                            path: item.directory,
+                            access: item.access,
+                          })),
+                          agent: resolved,
+                          acpLaunch,
+                          signal: controller.signal,
+                          progress: (text) => {
+                            if (Date.now() - shown < 500 || !acceptsProviderEvents()) return
+                            shown = Date.now()
+                            this.store.updateTask(id, (t) => ({ ...t, activity: text }))
+                          },
+                        })
+                      },
+                    }
+                  : {}),
                 onOwnedProcess: this.protectRun?.(id, turnId, controller),
                 agent: {
                   ...agent,
@@ -1436,7 +1494,10 @@ export class TaskTurnRunner {
                       !(previous && nativeAgentWorking(previous))
                     )
                       return record
-                    if (record.workflowId) return { ...record, completion: 'read' as const }
+                    // A record with the session's own ID is the root agent working without a
+                    // turn. Its replies are already saved; they are not a child result.
+                    if (record.workflowId || record.id === ownerSessionId)
+                      return { ...record, completion: 'read' as const }
                     return {
                       ...record,
                       completionId: `native-result:${record.provider}:${ownerSessionId}:${record.id}:${record.startedAt}`,
@@ -1754,6 +1815,7 @@ export class TaskTurnRunner {
                   this.store.updateTask(id, (t) => ({ ...t, activity: text }))
                 },
                 nativeAgentInteractions: {
+                  active: acceptsNativeInteractions,
                   approve: (title, detail, signal, kind, options) =>
                     acceptsNativeInteractions()
                       ? this.approvals.request(
@@ -1847,6 +1909,20 @@ export class TaskTurnRunner {
                 }))
                 assistantId = nextAssistantId
               },
+              sandboxes && sandboxSettings
+                ? async () =>
+                    sandboxes.current(id) ??
+                    sandboxes.ensure({
+                      taskId: id,
+                      sandbox: sandboxSettings,
+                      cwd,
+                      linked: linked.map((item) => ({
+                        path: item.directory,
+                        access: item.access,
+                      })),
+                      signal: controller.signal,
+                    })
+                : undefined,
             ),
           ).pipe(
             Effect.onExit((exit) =>

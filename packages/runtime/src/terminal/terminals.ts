@@ -1,3 +1,4 @@
+import { sandboxLaunch, type SandboxSession } from '../sandbox/launcher.js'
 import type { AcpLaunch } from '../agents/execution/types.js'
 import {
   decode,
@@ -105,6 +106,14 @@ export class Terminals {
   private sleeping = new Map<string, Promise<void>>()
   private sleepChecks = new WeakMap<Session, TerminalInfo['activity']>()
   private disposing = false
+  /** Thread terminals of a sandboxed thread start a shell inside its container. */
+  private sandbox?: {
+    required: (taskId: string) => boolean
+    current: (taskId: string) => SandboxSession | undefined
+  }
+  setSandbox(sandbox: NonNullable<Terminals['sandbox']>) {
+    this.sandbox = sandbox
+  }
   private recoveryTimer?: ReturnType<typeof setInterval>
   constructor(
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
@@ -469,6 +478,26 @@ export class Terminals {
     this.shutdowns.add(shutdown)
     void shutdown.finally(() => this.shutdowns.delete(shutdown))
   }
+  /** A thread terminal for a sandboxed thread runs `bash -l` inside the container. The
+   * thread's container must be ready; a sandboxed thread never falls back to the host. */
+  private sandboxLaunch(taskId: string, cwd: string, launch: AcpLaunch, env: NodeJS.ProcessEnv) {
+    if (!this.sandbox?.required(taskId)) return undefined
+    const session = this.sandbox.current(taskId)
+    if (!session)
+      throw new HttpError(409, 'The thread sandbox is not running. Open the terminal again.')
+    return sandboxLaunch(
+      {
+        ...session,
+        explicitEnv: new Set([
+          ...Object.keys(launch.env),
+          ...Object.keys(this.serverEnvironment(taskId)),
+          'TERM',
+        ]),
+      },
+      { command: 'bash', args: ['-l'], env: { ...env, TERM: 'xterm-256color' }, cwd },
+      { tty: true },
+    )
+  }
   private start(session: Session) {
     const { info, launch, output } = session
     const id = info.id,
@@ -522,14 +551,27 @@ export class Terminals {
         }
       }
     }
-    const terminal = loadPty().spawn(launch.command, launch.args, {
-      name: 'xterm-256color',
-      cols: 100,
-      rows: 24,
-      cwd,
-      env,
-      ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
-    })
+    const wrapped = this.sandboxLaunch(taskId, cwd, launch, env)
+    const terminal = loadPty().spawn(
+      wrapped?.command ?? launch.command,
+      wrapped?.args ?? launch.args,
+      {
+        name: 'xterm-256color',
+        cols: 100,
+        rows: 24,
+        cwd,
+        env: wrapped?.env ?? env,
+        ...(process.platform === 'win32' ? { useConptyDll: true } : {}),
+      },
+    )
+    if (wrapped)
+      terminal.onExit(() => {
+        void wrapped
+          .release()
+          .catch((error: unknown) =>
+            console.error('Could not stop sandboxed terminal processes', id, error),
+          )
+      })
     session.process = terminal
     session.info = { ...session.info, dormant: false, exited: false, exitCode: undefined }
     this.readStatus(session)

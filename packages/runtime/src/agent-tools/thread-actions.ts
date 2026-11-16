@@ -1,3 +1,4 @@
+import { prepareThreadTerminal } from '../sandbox/thread-terminal.js'
 import { createHash } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -703,6 +704,8 @@ function sendResponseActionEffect(s: Services, value: unknown, authorize: () => 
           throw rejected(409, 'The thread settings changed.')
         authorize()
         if (directory !== review.directory) throw rejected(409, 'The working directory changed.')
+        await prepareThreadTerminal(s, source.id, directory)
+        authorize()
         const terminal = s.terminals.create(source.id, directory)
         terminalId = terminal.id
         s.terminals.input(terminal.id, `${response.command.replace(/\r?\n/g, '\r')}\r`)

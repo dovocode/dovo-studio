@@ -1,9 +1,10 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { hubPlanLimitSources } from '@dovo/protocol'
+import { hubPlanLimitSources, limitPace } from '@dovo/protocol'
 import { UsageHubs } from './usage-hubs'
 import { UsagePool } from './usage-pool'
 import { runtimeComputerName } from '@dovo/protocol'
 import { UsagePrices } from './usage-prices'
+import { UsageSpendLimit } from './usage-spend-limit'
 import { useUsageData } from './use-usage-data'
 import { ResetCredits } from './reset-credits'
 import { useMemo, useState, useEffect, memo } from 'react'
@@ -123,6 +124,7 @@ const Rows = memo(function Rows({ rows }: { rows: UsageRow[] }) {
 
 /** Settings → Usage: agent time, turns and tokens across every connected computer. */
 export default function UsageSettings() {
+  const uiText = useInterfaceText()
   const { runtimes } = useWorkspace()
   const [computer, setComputer] = useState('all')
   const [view, setView] = useState<'costs' | 'tokens' | 'limits'>('costs')
@@ -449,6 +451,12 @@ export default function UsageSettings() {
                         const state = quotaReadingState(limit, limit.connected, now)
                         const expired = state === 'awaiting'
                         const remaining = Math.max(0, Math.min(100, 100 - limit.usedPercent))
+                        const pace = limitPace(limit, now)
+                        const paceLabel =
+                          pace &&
+                          uiText('Even pace: {value0}% of window elapsed', {
+                            value0: Math.round(pace.elapsedPercent),
+                          })
                         return (
                           <div key={limit.key} className="text-xs">
                             <div className="flex items-baseline justify-between gap-2">
@@ -466,12 +474,21 @@ export default function UsageSettings() {
                                 aria-valuemin={0}
                                 aria-valuemax={100}
                                 aria-valuenow={Math.round(remaining)}
-                                className="mt-2 h-2 overflow-hidden rounded-full bg-muted"
+                                aria-valuetext={`${uiText('{value0}% left', { value0: Math.round(remaining) })}${paceLabel ? `. ${paceLabel}` : ''}`}
+                                className="relative mt-2 h-2 overflow-hidden rounded-full bg-muted"
                               >
                                 <div
                                   className={`h-full rounded-full transition-[width] duration-150 motion-reduce:transition-none ${remaining <= 10 ? 'bg-destructive' : remaining <= 25 ? 'bg-status-warning' : 'bg-primary'}`}
                                   style={{ width: `${remaining}%` }}
                                 />
+                                {pace && (
+                                  <span
+                                    aria-hidden
+                                    title={paceLabel}
+                                    className="absolute inset-y-0 w-0.5 -translate-x-1/2 bg-foreground"
+                                    style={{ left: `${pace.markPercent}%` }}
+                                  />
+                                )}
                               </div>
                             )}
                             <div className="mt-1.5 flex flex-wrap justify-between gap-x-2 text-xs text-muted-foreground">
@@ -479,7 +496,10 @@ export default function UsageSettings() {
                                 Reported by {limit.computers.join(', ')} · Updated{' '}
                                 {new Date(limit.updatedAt).toLocaleString()}
                               </span>
-                              <span>{formatQuotaReset(limit.resetsAt, now)}</span>
+                              <span>
+                                {formatQuotaReset(limit.resetsAt, now)}
+                                {paceLabel && !expired ? ` · ${paceLabel}` : ''}
+                              </span>
                             </div>
                           </div>
                         )
@@ -495,6 +515,7 @@ export default function UsageSettings() {
               )
             })}
           </div>
+          <UsageSpendLimit computer={selectedComputer} />
         </section>
       )}
       {view !== 'limits' && (

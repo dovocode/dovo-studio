@@ -22,6 +22,8 @@ export function useHarnessAvailability(
   active: boolean,
   agents: readonly Agent[],
   prefetch = false,
+  /** The thread runs in a container sandbox: only harnesses that can run there are available. */
+  sandboxed = false,
 ) {
   const { connection, connected, request, snapshot, activeRuntimeId } = useWorkspace()
   const visible = useCatalogVisible()
@@ -75,10 +77,17 @@ export function useHarnessAvailability(
   }, [key, active, prefetch, visible, connected, request, refreshVersion])
   const usable =
     connected && (cache.isFresh(key) || (state.key === key && !state.loading && !state.error))
+  const ready = (usable ? (choices ?? []) : []).filter((item) => item.available)
   return {
     available: new Set(
-      (usable ? (choices ?? []) : []).filter((item) => item.available).map((item) => item.id),
+      ready
+        .filter((item) => !sandboxed || item.sandbox?.supported !== false)
+        .map((item) => item.id),
     ),
+    /** Why a harness cannot run in the sandbox, or what it needs there. */
+    sandboxNotes: sandboxed
+      ? ready.flatMap((item) => (item.sandbox?.note ? [{ id: item.id, ...item.sandbox }] : []))
+      : [],
     loading: active && visible && connected && (state.key !== key || state.loading),
     error: state.key === key ? state.error : '',
     refresh: () => setRefreshVersion((version) => version + 1),

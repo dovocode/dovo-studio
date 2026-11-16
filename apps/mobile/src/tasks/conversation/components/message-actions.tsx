@@ -1,8 +1,15 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { responseReply } from '@dovo/protocol'
-import { botResultSchema, taskIsWorking } from '@dovo/protocol'
+import {
+  botResultSchema,
+  messageForkBlocker,
+  randomUUID,
+  taskForkResultSchema,
+  taskIsWorking,
+  threadForkBlocker,
+} from '@dovo/protocol'
 import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { AccessibilityInfo, ActionSheetIOS, Alert, Platform, Pressable, View } from 'react-native'
 import { Icon } from '../../../ui/controls/icon'
 import { Text } from '../../../ui/content/text'
@@ -17,7 +24,12 @@ import {
   type CodeBlock,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { useAppendConversationTemplate, useConversationSelector } from '../state/provider'
+import {
+  useAppendConversationTemplate,
+  useConversationPresentation,
+  useConversationSelector,
+  usePendingConversationMessage,
+} from '../state/provider'
 import { router } from 'expo-router'
 import { Schema } from 'effect'
 import { modelCatalogSchema, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
@@ -63,6 +75,19 @@ export function MessageActions({
   const [forking, setForking] = useState(false)
   const { snapshot } = useRuntime()
   const latest = !!turn && task.turns?.at(-1)?.id === turn.id && task.status !== 'running'
+  // Runtimes with message forks also offer settled user and assistant messages.
+  const messageForks = snapshot?.messageForkSupported === true
+  const presentation = useConversationPresentation(messageId ?? '')
+  const pending = usePendingConversationMessage(messageId ?? '')
+  const message = messageId ? task.messages.find((item) => item.id === messageId) : undefined
+  const forkable =
+    messageForks &&
+    !task.bot &&
+    !!message &&
+    !pending &&
+    !messageForkBlocker(message, presentation?.status ?? 'completed', task.status === 'running')
+  // One ID per fork attempt, so a retry after a lost reply returns the same thread.
+  const forkId = useRef<string | undefined>(undefined)
   const [retrying, setRetrying] = useState(false)
   const retry = (model?: string) => {
     if (!turn) return
@@ -131,7 +156,7 @@ export function MessageActions({
   const fork = () => {
     if (!turn || forking || !activeId || task.bot) return
     Alert.alert(
-      uiText('Fork from here?'),
+      uiText('Fork with files from this turn?'),
       uiText(
         'A new task starts with the conversation up to this reply, and this turn’s files in its own worktree.',
       ),
@@ -145,6 +170,42 @@ export function MessageActions({
               .then((result) =>
                 router.navigate(taskHref(activeId, result.id), { withAnchor: true }),
               )
+              .catch((error: unknown) =>
+                Alert.alert(
+                  uiText('Could not fork'),
+                  error instanceof Error ? error.message : String(error),
+                ),
+              )
+              .finally(() => setForking(false))
+          },
+        },
+      ],
+    )
+  }
+  const forkMessage = () => {
+    if (!message || forking || !activeId) return
+    const blocker = threadForkBlocker(task)
+    if (blocker) return Alert.alert(uiText('Could not fork'), blocker)
+    Alert.alert(
+      uiText('Fork conversation?'),
+      uiText(
+        'A new thread starts with the conversation up to and including this message. It uses this thread’s harness, model and access. Files are not rewound.',
+      ),
+      [
+        { text: uiText('Cancel'), style: 'cancel' },
+        {
+          text: uiText('Fork'),
+          onPress: () => {
+            setForking(true)
+            void call(
+              '/api/tasks/fork-message',
+              { id: task.id, messageId: message.id, forkId: (forkId.current ??= randomUUID()) },
+              taskForkResultSchema,
+            )
+              .then((result) => {
+                forkId.current = undefined
+                router.navigate(taskHref(activeId, result.id), { withAnchor: true })
+              })
               .catch((error: unknown) =>
                 Alert.alert(
                   uiText('Could not fork'),
@@ -318,11 +379,33 @@ export function MessageActions({
           <Icon name="refresh" size={14} color={colors.muted} />
         </Pressable>
       )}
+      {forkable && (
+        <Pressable
+          testID="Fork conversation"
+          accessibilityRole="button"
+          accessibilityLabel={uiText('Fork conversation')}
+          accessibilityHint={uiText(
+            'Starts a new thread with the conversation up to this message. Files are not rewound.',
+          )}
+          accessibilityState={{ disabled: !connected || forking, busy: forking }}
+          disabled={!connected || forking}
+          onPress={forkMessage}
+          style={({ pressed }) => ({
+            width: 44,
+            minHeight: 44,
+            alignItems: 'center',
+            justifyContent: 'center',
+            opacity: pressed || !connected || forking ? 0.5 : 1,
+          })}
+        >
+          <Icon name="newChat" size={14} color={colors.muted} />
+        </Pressable>
+      )}
       {!!turn && !task.bot && turn.status !== 'running' && (
         <Pressable
-          testID="Fork from here"
+          testID="Fork with files from this turn"
           accessibilityRole="button"
-          accessibilityLabel={uiText('Fork from here')}
+          accessibilityLabel={uiText('Fork with files from this turn')}
           accessibilityHint={uiText('Starts a new task with the conversation up to this reply.')}
           accessibilityState={{ disabled: !connected || forking, busy: forking }}
           disabled={!connected || forking}

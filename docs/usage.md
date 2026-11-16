@@ -35,6 +35,12 @@ Account identity includes workspace/organization information when the provider r
 named limit buckets and model-specific windows remain separate. Unknown configurations are kept
 separate. The newest account reading is used across computers; percentages are never added.
 
+Each limit bar has a thin mark at the even-use point. The mark shows how much of the window has
+passed, from the window start to its reset time. If the bar ends left of the mark, you are using the
+window faster than an even pace and can run out before the reset. Screen readers announce the same
+value, for example "Even pace: 40% of window elapsed". Dovo hides the mark when the provider does
+not report the window length or reset time.
+
 Readings older than five minutes are marked stale. Offline readings remain labelled offline. After a
 reported reset passes, Dovo waits for a fresh reading instead of assuming the account is back to
 100%. Failed refreshes preserve the last successful reading. API keys and providers that do not
@@ -44,6 +50,58 @@ separately from context-window fullness and does not block a send solely because
 Reset credits can be checked after the account has been verified, without creating a thread.
 Redeeming still requires explicit confirmation and a persistent attempt ID. Provider-specific
 limitations still apply; Claude reset redemption on macOS requires access not provided by this flow.
+
+## Unattended spend limit
+
+Work can run on a computer without a new message from you: Bot follow-ups, routine steps that run
+for a Bot, scheduled messages, watch notifications and child agents that an agent starts. The
+unattended spend limit holds this work after it reaches an estimated cost. It is off by default. Set
+it per computer in Usage & limits → Limits on desktop, web or mobile. A computer with an older Dovo
+version shows an update note instead of the control.
+
+The limit applies to work in an existing thread family. A routine step that does not run for a Bot
+starts a new top-level thread on each run. That thread starts a new family with a new count, so the
+limit does not hold it. To limit those runs, set the routine's time, token or estimated cost limit
+in **Monitoring and limits**. See
+[Bot learning and routines](bot-learning-and-routines.md#monitoring-limits-and-testing).
+
+Dovo counts spend per thread family. A family is a top-level thread or Bot together with the child
+agents, Bot workers and threads that its agents started on the same computer. The count includes
+every finished turn in the family that started after your last message to any thread in the family,
+after Continue or after you turned the limit on. The turn that answers your message counts too. A
+child that runs on another computer counts against that computer's limit.
+
+Dovo checks the count before each new turn. This includes input that arrives while a turn runs, such
+as a watch notification or a child agent's result. When the count reaches the limit, new unattended
+turns in the family do not start. Their input stays queued and the thread shows "Paused: spend
+limit" with the estimated amount and a Continue button. Continue resets the count and starts the
+held work. A new message from you also resets the count. Held work starts first, then your message.
+**Run** and **Retry** from you reset the count too and start that thread. Dovo never stops a running
+turn. Your own messages always start. Raising or turning off the limit releases held work within a
+few seconds. Agents cannot change the limit or select Continue. A Run or Retry that an agent
+requests waits at the limit.
+
+The field shows the computer's saved limit until you type a new amount. **Save limit** needs an
+amount. An empty field does not turn the limit off. To turn it off, select **Turn off**.
+
+The limit uses estimated cost, not your bill. Dovo prices each turn with the same rates as Costs,
+including custom prices. A finished turn without a price has an unknown cost, and Dovo does not
+treat it as free. Any unpriced turn since the last reset holds new unattended work. The pause shows
+how many turns have no price. Add a custom price for that model to count it. Turns of deleted
+threads no longer belong to a family and are not counted. Held state survives a runtime restart.
+After a restart, Continue also resumes the queue that the restart held.
+
+Verify from the repository root:
+
+```sh
+pnpm exec vp test packages/runtime/src/agents/tasks/spend-limit.test.ts packages/protocol/src/tasks/spend-limit.test.ts packages/protocol/src/conversation/workflow/plan-limits.test.ts --maxWorkers=1
+pnpm exec playwright install chromium
+pnpm test:usage-overview:browser
+```
+
+The runtime test uses HTTP, SQLite, a scripted Codex provider and a runtime restart. It covers input
+that arrives during a turn, owner and agent Run and Retry, child agents and Continue. The browser
+checks cover the Limits page on desktop and mobile with stubbed computers.
 
 ## Cost estimates and caching
 

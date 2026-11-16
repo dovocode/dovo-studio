@@ -4,6 +4,7 @@ import { relative, isAbsolute, delimiter, join, resolve, dirname } from 'node:pa
 import { access, realpath } from 'node:fs/promises'
 import { constants } from 'node:fs'
 import { CopilotClient, RuntimeConnection } from '@github/copilot-sdk'
+import { sandboxLaunch, type SandboxSession } from '../../../sandbox/launcher.js'
 import type { SessionConfig, MCPServerConfig, PermissionHandler } from '@github/copilot-sdk'
 import { Schema } from 'effect'
 import { decode, questionPromptSchema } from '@dovo/protocol'
@@ -60,27 +61,52 @@ async function workspaceWrite(run: AgentRun, path: string) {
     value !== '..' && !value.startsWith('../') && !value.startsWith('..\\') && !isAbsolute(value)
   )
 }
-async function clientFor(agent: AgentDiscovery, cwd: string) {
-  return new CopilotClient({
-    connection: RuntimeConnection.forStdio({
-      path: await copilotExecutable(
-        agent.endpoint || 'copilot',
-        processEnvironment(agent.env),
-        cwd,
-      ),
-      args: agent.args,
-      env: Object.fromEntries(
-        Object.entries(processEnvironment(agent.env)).filter(
-          (entry): entry is [string, string] => typeof entry[1] === 'string',
-        ),
-      ),
-    }),
+/** Container cleanup for a client whose CLI the SDK started inside a sandbox. */
+const sandboxReleases = new WeakMap<CopilotClient, () => Promise<void>>()
+const stringEnvironment = (env: NodeJS.ProcessEnv) =>
+  Object.fromEntries(
+    Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
+  )
+async function clientFor(agent: AgentDiscovery, cwd: string, sandbox?: SandboxSession) {
+  // The SDK owns the spawn. In a sandbox it starts the container CLI, which runs the Linux
+  // Copilot CLI installed with mise.
+  const wrapped =
+    sandbox &&
+    sandboxLaunch(sandbox, {
+      command: 'copilot',
+      args: agent.args ?? [],
+      env: processEnvironment(agent.env),
+      cwd,
+    })
+  const client = new CopilotClient({
+    connection: RuntimeConnection.forStdio(
+      wrapped
+        ? { path: wrapped.command, args: wrapped.args, env: stringEnvironment(wrapped.env) }
+        : {
+            path: await copilotExecutable(
+              agent.endpoint || 'copilot',
+              processEnvironment(agent.env),
+              cwd,
+            ),
+            args: agent.args,
+            env: stringEnvironment(processEnvironment(agent.env)),
+          },
+    ),
     workingDirectory: cwd,
     baseDirectory: agent.configDirectory || undefined,
     mode: 'copilot-cli',
   })
+  if (wrapped) sandboxReleases.set(client, wrapped.release)
+  return client
 }
 async function close(client: CopilotClient) {
+  try {
+    await stopClient(client)
+  } finally {
+    await sandboxReleases.get(client)?.()
+  }
+}
+async function stopClient(client: CopilotClient) {
   const signal = new AbortController().signal
   try {
     const errors = await nativeWait(client.stop(), signal, 10000)
@@ -243,7 +269,7 @@ export function createCopilotAdapter(): AgentAdapter {
       run.signal.throwIfAborted()
       const lifetime = new AbortController(),
         signal = AbortSignal.any([run.signal, lifetime.signal])
-      const client = await clientFor(run.agent, run.cwd)
+      const client = await clientFor(run.agent, run.cwd, run.sandbox)
       let session: Awaited<ReturnType<CopilotClient['createSession']>> | undefined
       let unsubscribe: (() => void) | undefined,
         heartbeat: ReturnType<typeof setInterval> | undefined

@@ -57,6 +57,7 @@ import { ModelSettings } from './model-settings'
 import { SettingsGroup, SettingRow, SettingsSaveBar, Toggle } from './settings-layout'
 import { PermissionPolicyFields, permissionPolicyUIIssue } from './permission-policy-fields'
 import { SettingSource } from './setting-source'
+import { ContainerSandboxSettings } from './container-sandbox-settings'
 
 /** Local detail panels can expand this; dedicated settings pages show the form directly. */
 export function TaskDefaultSettings(props: {
@@ -726,6 +727,15 @@ function TaskDefaultSettingsForm({
               )}
             </SettingsGroup>
           </>
+        )}
+        {snapshot?.containerSandboxSupported && (
+          <ContainerSandboxSettings
+            value={draft.containerSandbox}
+            inherited={inherited.containerSandbox}
+            status={snapshot.containerSandbox}
+            source={source('containerSandbox')}
+            onChange={(containerSandbox) => change({ ...draft, containerSandbox })}
+          />
         )}
         <SettingsGroup
           title="Saved prompts"

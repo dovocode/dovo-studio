@@ -5,6 +5,7 @@ import {
   accountPlanLimits,
   accountLimitGroups,
   formatQuotaReset,
+  limitPace,
 } from './plan-limits.js'
 
 it('keeps newer account observations when delayed snapshots arrive', () => {
@@ -357,4 +358,27 @@ it('attributes anonymous windows without replacing newer observations with older
   expect(mergePlanLimits([anonymous, latest], [incoming])).toEqual([latest])
   const other = { ...anonymous, sourceTaskId: 'other' }
   expect(mergePlanLimits([other], [incoming])).toEqual([other, incoming])
+})
+
+describe('limitPace', () => {
+  const now = Date.parse('2026-11-16T12:00:00.000Z')
+  it('marks the share of the window that has elapsed from its start to its reset', () => {
+    // A five-hour window that started two hours ago resets in three hours.
+    const pace = limitPace({ resetsAt: (now + 3 * 3_600_000) / 1000, durationMins: 300 }, now)
+    expect(pace?.elapsedPercent).toBeCloseTo(40)
+    expect(pace?.markPercent).toBeCloseTo(60)
+    // The window start itself is the first known point.
+    expect(
+      limitPace({ resetsAt: (now + 7 * 86_400_000) / 1000, durationMins: 10080 }, now),
+    ).toMatchObject({ elapsedPercent: 0, markPercent: 100 })
+  })
+  it('is unknown without a window length or reset time, and outside the window', () => {
+    const resetsAt = (now + 3_600_000) / 1000
+    expect(limitPace({ durationMins: 300 }, now)).toBeUndefined()
+    expect(limitPace({ resetsAt }, now)).toBeUndefined()
+    expect(limitPace({ resetsAt: now / 1000, durationMins: 300 }, now)).toBeUndefined()
+    expect(
+      limitPace({ resetsAt: (now + 6 * 3_600_000) / 1000, durationMins: 300 }, now),
+    ).toBeUndefined()
+  })
 })

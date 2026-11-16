@@ -113,6 +113,7 @@ export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListFoo
     './message-copy': 'MessageCopy',
     '../actions/run-in-terminal': 'RunInTerminal',
     '../actions/fork-turn': 'ForkTurn',
+    '../actions/fork-message': 'ForkMessage',
     '../actions/retry-turn': 'RetryTurn',
     './components/message-actions': 'MessageActions',
     './components/message-attachments': 'MessageAttachments',

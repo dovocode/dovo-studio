@@ -13,6 +13,8 @@ data there.
 - To run a standalone background runtime, see the [server setup guide](docs/server-setup.md). It
   covers release archives, source installs, pairing, network access, and keeping an existing desktop
   workspace.
+- To run the runtime in Docker, use the `ghcr.io/dovocode/dovo-server` image. The
+  [Docker section](docs/server-setup.md#docker) has the Compose example, pairing and upgrade steps.
 - For iPhone, use the
   [local iPhone install guide](docs/releases-and-updates.md#local-iphone-updates).
 

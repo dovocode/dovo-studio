@@ -1,3 +1,4 @@
+import type { SandboxSession } from '../../sandbox/launcher.js'
 import type { Agent, ProviderStatus, AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import type { QuestionPrompt, QuestionAnswers, QuestionOutcomes } from '@dovo/protocol'
 export type AgentInput = {
@@ -18,6 +19,8 @@ export interface AcpLaunch {
   command: string
   args: string[]
   env: Record<string, string>
+  /** Start this agent inside a thread's container sandbox. */
+  sandbox?: SandboxSession
 }
 export interface AgentRun {
   /** Register only a dedicated, detached launcher owned by this run. Rebind on warm reuse. */
@@ -32,6 +35,11 @@ export interface AgentRun {
   onSteer?: (steer: AgentSteer | undefined) => void
   agent: Agent
   acpLaunch?: AcpLaunch
+  /** Prepare the thread's container sandbox for the resolved harness. The registry calls it
+   * once per run and passes the result as `sandbox`. */
+  prepareSandbox?: (agent: Agent, acpLaunch: AcpLaunch | undefined) => Promise<SandboxSession>
+  /** Every harness process for this run starts inside this container through `spawnHarness`. */
+  sandbox?: SandboxSession
   cwd: string
   linkedDirectories?: Array<{ id: string; path: string; access: 'read-only' | 'edit' }>
   attachments?: Array<import('@dovo/protocol').Attachment & { path: string; data: string }>
@@ -63,6 +71,10 @@ export interface AgentRun {
   onNativeTurnEnd?: () => void
   /** Session-owned interactions for native agents that outlive the parent turn. */
   nativeAgentInteractions?: {
+    /** True while the thread still accepts native work under this run's session and policy.
+     * Providers that let native work run without a turn must check it before every tool use.
+     * Claude refuses such work when it is absent. */
+    active?: () => boolean
     approve: (
       title: string,
       detail: string,
@@ -98,6 +110,8 @@ export interface AgentAdapter {
     id: string,
     sessionId: string | undefined,
     cwd?: string,
+    /** A sandboxed thread's container. Only Codex reads through it; see `sandboxNativeReads`. */
+    sandbox?: SandboxSession,
   ) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
   models?: (agent: AgentDiscovery, launch?: AcpLaunch) => Promise<ModelCatalog>
   run: (run: AgentRun) => Promise<void>

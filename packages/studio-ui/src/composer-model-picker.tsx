@@ -54,6 +54,14 @@ type PickerItem = {
   installationId?: string
   sourceAgentId?: string
 }
+/** `harness:claude` or `agent:<id>`, as a short label for a sandbox note. */
+function harnessNoteLabel(id: string) {
+  const [kind, value = id] = id.split(':')
+  return kind === 'harness' && value in providers
+    ? providers[value as keyof typeof providers].short
+    : value
+}
+
 export function ComposerModelPicker({
   value,
   disabled,
@@ -74,7 +82,10 @@ export function ComposerModelPicker({
   footer,
   effortLabel,
   fast = false,
+  sandboxed = false,
 }: {
+  /** The thread runs in a container sandbox. */
+  sandboxed?: boolean
   settings?: ReactNode
   footer?: ReactNode
   effortLabel?: string
@@ -111,7 +122,7 @@ export function ComposerModelPicker({
   const settingsRef = useRef<HTMLDivElement>(null)
   const [choosing, setChoosing] = useApplicationState(false)
   const choosingRef = useRef(false)
-  const availability = useHarnessAvailability(repositoryId, open, agents, true)
+  const availability = useHarnessAvailability(repositoryId, open, agents, true, sandboxed)
   const [provider, setProvider] = useApplicationState(value.provider)
   const [installationId, setInstallationId] = useApplicationState(value.acpInstallationId)
   const [browsedAgentId, setBrowsedAgentId] = useApplicationState<string | undefined>(undefined)
@@ -932,6 +943,18 @@ export function ComposerModelPicker({
                     Loading provider models…
                   </p>
                 )}
+                {availability.sandboxNotes.map((item) => (
+                  <p
+                    key={item.id}
+                    role="note"
+                    className={cn(
+                      'p-2 text-xs',
+                      item.supported ? 'text-muted-foreground' : 'text-destructive',
+                    )}
+                  >
+                    {uiText('Sandbox')} · {harnessNoteLabel(item.id)}: {item.note}
+                  </p>
+                ))}
                 {availability.error && (
                   <p role="alert" className="p-2 text-xs text-destructive">
                     Could not check available providers: {availability.error}

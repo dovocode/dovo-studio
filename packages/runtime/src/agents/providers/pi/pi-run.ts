@@ -14,7 +14,8 @@ export async function runPiSession(run: AgentRun) {
     throw new Error('Pi custom launch arguments are unavailable for safe continuation')
   if (run.agent.resources?.mcpServers?.some((server) => server.enabled))
     throw new Error('Pi continuation does not support MCP servers')
-  await requirePiVersion(run.agent)
+  // The sandbox installs a Linux Pi build matching the host version, or the latest one.
+  if (!run.sandbox) await requirePiVersion(run.agent)
   const toolsAllowed = piBuiltinToolsAllowed(run.agent, {
     textOnly: run.tools === 'none',
     readOnlyCheckout: run.linkedDirectories?.some((link) => link.access === 'read-only'),
@@ -32,6 +33,7 @@ export async function runPiSession(run: AgentRun) {
     args,
     run.cwd,
     processEnvironment(run.agent.env),
+    run.sandbox,
   )
   run.onOwnedProcess?.(rpc.child)
   let removeEvent = () => {},

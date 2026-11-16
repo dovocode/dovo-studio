@@ -1,3 +1,4 @@
+import { prepareThreadTerminal } from '../../sandbox/thread-terminal.js'
 import { checkCodeAccess } from '../../agent-tools/code-access.js'
 import { effectivePermissionPolicy } from '@dovo/protocol'
 import { isAbsolute, relative } from 'node:path'
@@ -206,12 +207,17 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           return yield* runtimeOperation(() =>
             s.terminals.ensure(
               taskId,
-              () => s.checkouts.selectedDirectory(taskId, checkoutId),
+              async () => {
+                const cwd = await s.checkouts.selectedDirectory(taskId, checkoutId)
+                await prepareThreadTerminal(s, taskId, cwd)
+                return cwd
+              },
               checkoutId,
               authorize,
             ),
           )
         const cwd = yield* runtimeOperation(() => s.checkouts.selectedDirectory(taskId, checkoutId))
+        yield* runtimeOperation(() => prepareThreadTerminal(s, taskId, cwd))
         return yield* runtimeOperation(() => {
           authorize()
           return s.terminals.create(taskId, cwd, checkoutId)
@@ -314,6 +320,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
               if (cwd !== expected)
                 throw new HttpError(409, 'Code mode working directory changed. Start a new turn.')
             }
+            await prepareThreadTerminal(s, taskId, cwd)
             authorize()
             return s.terminals.create(taskId, cwd, checkoutId)
           }))

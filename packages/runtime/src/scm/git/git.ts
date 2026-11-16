@@ -4,6 +4,15 @@ import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
 import { worktreeRecords } from './worktree-records.js'
 import { workingGitStatus } from './working-status.js'
 import {
+  assertPinnedGitFolders,
+  gitAddWithoutGitlinks,
+  gitlinkPaths,
+  gitSubcommandIndex,
+  hardenedGitArguments,
+  hardenedGitEnvironment,
+  type PinnedGitLayout,
+} from './hardened-git.js'
+import {
   stopOwnedChild,
   OwnedProcessShutdownError,
 } from '../../agents/execution/stop-owned-child.js'
@@ -326,6 +335,67 @@ export class GitService {
   async githubEnvironment(cwd: string) {
     return this.repositoryGithubEnvironment?.(cwd) ?? {}
   }
+  private sandboxedCheckouts?: (
+    realPath: string,
+  ) => PinnedGitLayout | undefined | Promise<PinnedGitLayout | undefined>
+  /** Checkouts whose Git folders a container sandbox can write. Every Git call in them runs
+   * hardened. */
+  setSandboxedCheckouts(
+    lookup: (
+      realPath: string,
+    ) => PinnedGitLayout | undefined | Promise<PinnedGitLayout | undefined>,
+  ) {
+    this.sandboxedCheckouts = lookup
+  }
+  /** The recorded Git layout when a sandbox can write this folder's checkout. */
+  async sandboxLayout(cwd: string) {
+    const lookup = this.sandboxedCheckouts
+    if (!lookup) return undefined
+    return lookup(await realpath(cwd).catch(() => resolve(cwd)))
+  }
+  /** The hardened environment for a Git process outside `run`, or undefined. */
+  private async sandboxEnvironment(cwd: string) {
+    const layout = await this.sandboxLayout(cwd)
+    if (!layout) return undefined
+    await assertPinnedGitFolders(layout)
+    return hardenedGitEnvironment(layout, processEnvironment())
+  }
+  /**
+   * Git in a checkout that a sandboxed agent can write must not run code that the agent
+   * planted. Uses the recorded Git folders, turns off hooks and the file system monitor, skips
+   * nested repositories in status and diff, and keeps `git add` away from gitlinks. Other
+   * checkouts keep Git's normal behavior.
+   */
+  private async hardenedCall(cwd: string, args: string[], env: NodeJS.ProcessEnv) {
+    const subcommand = args[gitSubcommandIndex(args)]
+    // A clone creates a new repository and reads nothing from the folder it runs in.
+    const layout = subcommand === 'clone' ? undefined : await this.sandboxLayout(cwd)
+    if (!layout) return { args, env, dispose: async () => {} }
+    await assertPinnedGitFolders(layout)
+    const hardenedEnv = hardenedGitEnvironment(layout, env)
+    // The same index as the call itself, which may be a temporary one (GIT_INDEX_FILE).
+    const add =
+      subcommand === 'add'
+        ? await gitAddWithoutGitlinks(
+            args,
+            gitlinkPaths(
+              (
+                await exec(this.settings().git, ['ls-files', '--stage', '-z'], {
+                  cwd,
+                  env: hardenedEnv,
+                  timeout: 30000,
+                  maxBuffer: 256 * 1024 * 1024,
+                })
+              ).stdout,
+            ),
+          )
+        : undefined
+    return {
+      args: add?.args ?? hardenedGitArguments(args),
+      env: hardenedEnv,
+      dispose: add?.dispose ?? (async () => {}),
+    }
+  }
   private async run(
     cwd: string,
     executable: string,
@@ -337,15 +407,23 @@ export class GitService {
   ) {
     this.audit?.(cwd, [executable, ...args])
     try {
-      const result = await exec(executable, args, {
-        cwd,
-        env,
-        timeout,
-        maxBuffer,
-        signal,
-      })
-      this.audit?.(cwd, [executable, ...args], {})
-      return result.stdout
+      const call =
+        executable === this.settings().git
+          ? await this.hardenedCall(cwd, args, env)
+          : { args, env, dispose: async () => {} }
+      try {
+        const result = await exec(executable, call.args, {
+          cwd,
+          env: call.env,
+          timeout,
+          maxBuffer,
+          signal,
+        })
+        this.audit?.(cwd, [executable, ...args], {})
+        return result.stdout
+      } finally {
+        await call.dispose()
+      }
     } catch (error) {
       this.audit?.(cwd, [executable, ...args], {
         error: errorMessage(error),
@@ -437,18 +515,20 @@ export class GitService {
   ) {
     const changesIdentity = changesRepositoryIdentity(args)
     if (changesIdentity) this.identities.clear()
+    const call = await this.hardenedCall(cwd, args, env)
     try {
       return await this.runOwnedCommand(
         cwd,
         this.settings().git,
-        args,
+        call.args,
         'Git checkout',
         12 * 1024 * 1024,
         signal,
-        env,
+        call.env,
         timeoutMs,
       )
     } finally {
+      await call.dispose()
       if (changesIdentity) this.identities.clear()
     }
   }
@@ -643,13 +723,29 @@ export class GitService {
       )
     const executable = this.settings().git
     this.audit?.(cwd, [executable, ...args])
+    return this.hardenedCall(cwd, args, processEnvironment()).then(
+      (call) => this.readWithInput(cwd, executable, args, call, limits).finally(call.dispose),
+      (error: unknown) => {
+        this.audit?.(cwd, [executable, ...args], { error: errorMessage(error) })
+        throw error
+      },
+    )
+  }
+  private readWithInput(
+    cwd: string,
+    executable: string,
+    /** The call as Dovo made it, for the audit. `call` holds the hardened form. */
+    args: string[],
+    call: { args: string[]; env: NodeJS.ProcessEnv },
+    limits: { signal?: AbortSignal; timeout?: number; maxBuffer?: number; input?: string },
+  ) {
     return new Promise<string>((resolve, reject) => {
       const child = execFile(
         executable,
-        args,
+        call.args,
         {
           cwd,
-          env: processEnvironment(),
+          env: call.env,
           windowsHide: true,
           signal: limits.signal,
           timeout: limits.timeout ?? 5_000,
@@ -1773,10 +1869,16 @@ export class GitService {
   private async withBlobs<T>(cwd: string, read: (blobs: GitBlobReader) => Promise<T>): Promise<T> {
     const args = [this.settings().git, 'cat-file', '--batch']
     let started = false
-    const blobs = new GitBlobReader(args[0], cwd, undefined, () => {
-      started = true
-      this.audit?.(cwd, args)
-    })
+    const blobs = new GitBlobReader(
+      args[0],
+      cwd,
+      undefined,
+      () => {
+        started = true
+        this.audit?.(cwd, args)
+      },
+      await this.sandboxEnvironment(cwd),
+    )
     try {
       const result = await read(blobs)
       if (started) this.audit?.(cwd, args, {})
@@ -1836,12 +1938,13 @@ export class GitService {
     )
   }
   /** Read a bounded prefix without buffering the rest of a potentially huge saved blob. */
-  private blobPrefix(cwd: string, hash: string, limit: number): Promise<Buffer> {
+  private async blobPrefix(cwd: string, hash: string, limit: number): Promise<Buffer> {
+    const env = (await this.sandboxEnvironment(cwd)) ?? processEnvironment()
     return new Promise((resolve, reject) => {
       const child = spawn(this.settings().git, ['cat-file', 'blob', hash], {
         windowsHide: true,
         cwd,
-        env: processEnvironment(),
+        env,
         stdio: ['ignore', 'pipe', 'pipe'],
       })
       const chunks: Buffer[] = []

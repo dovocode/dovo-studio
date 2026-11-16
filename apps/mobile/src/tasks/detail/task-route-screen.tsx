@@ -167,6 +167,16 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
       }
     />
   ) : null
+  // Forks have no parent; their source opens as a separate thread on the same computer.
+  const forkSource = task?.forkedFrom
+  const forkButton =
+    forkSource && !parent ? (
+      <Action
+        label={uiText('Forked from {value0}', { value0: forkSource.title })}
+        secondary
+        onPress={() => router.push(taskHref(params.runtimeId, forkSource.taskId))}
+      />
+    ) : null
   if (task?.replica)
     return (
       <ReplicatedThread key={`${params.runtimeId}:${task.id}`} task={task} onBack={backToTasks} />
@@ -192,7 +202,7 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
                 )
             : backToTasks
         }
-        parentNavigation={parentButton}
+        parentNavigation={parentButton ?? forkButton}
       />
     )
   return (

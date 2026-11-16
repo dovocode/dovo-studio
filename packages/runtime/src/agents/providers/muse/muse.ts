@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { realpath } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { Session, spawnMspConnection, readSessionDurability } from '@muse-code/sdk'
+import { sandboxLaunch, type SandboxSession } from '../../../sandbox/launcher.js'
 import { Schema } from 'effect'
 import {
   decode,
@@ -213,15 +214,36 @@ function launch(
   agent: AgentDiscovery,
   cwd: string,
   options: { readOnly?: boolean; fullAccess?: boolean; sessionLogging?: boolean } = {},
+  sandbox?: SandboxSession,
 ) {
   const env = { ...processEnvironment(agent.env), MUSE_NO_AUTO_UPDATE: '1' }
   const resolved = museLaunch(agent.endpoint || 'muse', process.platform, env)
-  return spawnMspConnection({
-    command: resolved.command,
-    args: [...resolved.args, ...(agent.args?.length ? agent.args : museServeArgs(options))],
-    cwd,
-    env,
+  const args = [...resolved.args, ...(agent.args?.length ? agent.args : museServeArgs(options))]
+  if (!sandbox)
+    return spawnMspConnection({
+      command: resolved.command,
+      args,
+      cwd,
+      env,
+      connection: { frameLimitBytes: 32 * 1024 * 1024 },
+    })
+  // The SDK owns the spawn; give it the container CLI and stop the container side on close.
+  const wrapped = sandboxLaunch(sandbox, { command: resolved.command, args, env, cwd })
+  const connection = spawnMspConnection({
+    command: wrapped.command,
+    args: wrapped.args,
+    env: wrapped.env,
     connection: { frameLimitBytes: 32 * 1024 * 1024 },
+  })
+  const close = connection.close.bind(connection)
+  return Object.assign(connection, {
+    close: async () => {
+      try {
+        await close()
+      } finally {
+        await wrapped.release()
+      }
+    },
   })
 }
 export type MuseSelection = { providerId: string; modelId: string }
@@ -437,8 +459,9 @@ export function createMuseAdapter(): AgentAdapter {
     },
     async run(inputRun) {
       let run = checkedPolicyRun(inputRun, 'muse')
-      const config = JSON.stringify([run.agent, run.cwd, run.tools], (key, value: unknown) =>
-        key === 'DOVO_TASK_RUN_ID' ? undefined : value,
+      const config = JSON.stringify(
+        [run.agent, run.cwd, run.tools, run.sandbox?.container],
+        (key, value: unknown) => (key === 'DOVO_TASK_RUN_ID' ? undefined : value),
       )
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (previous && previous.sessionId === run.sessionId && previous.config === config) {
@@ -456,12 +479,17 @@ export function createMuseAdapter(): AgentAdapter {
       }
       run.signal.throwIfAborted()
       const readOnly = run.tools === 'none' || run.agent.permission === 'read-only'
-      const host = launch(run.agent, run.cwd, {
-          readOnly,
-          fullAccess: run.agent.permission === 'full-access',
-          // Utility turns still need item notifications to stream their reply.
-          sessionLogging: run.tools === 'none',
-        }),
+      const host = launch(
+          run.agent,
+          run.cwd,
+          {
+            readOnly,
+            fullAccess: run.agent.permission === 'full-access',
+            // Utility turns still need item notifications to stream their reply.
+            sessionLogging: run.tools === 'none',
+          },
+          run.sandbox,
+        ),
         lifetime = new AbortController()
       let signal = AbortSignal.any([run.signal, lifetime.signal])
       let session: Session | undefined,

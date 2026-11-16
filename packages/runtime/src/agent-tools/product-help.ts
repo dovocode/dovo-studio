@@ -1,4 +1,6 @@
 import { readFileSync, existsSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { Schema } from 'effect'
 import { decode, maxValue, minValue, strictStruct } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
@@ -47,6 +49,35 @@ function index() {
       id,
       text: readFileSync(new URL(`../../../../docs/${id}.md`, import.meta.url), 'utf8'),
     })),
+  })
+}
+
+let build: { version: string; commit?: string; development: boolean } | undefined
+/** The release version and source commit of this runtime build. Bundled builds record the
+ * commit at build time. A source checkout reads its current Git commit once. */
+export function runtimeBuild() {
+  if (build) return build
+  const catalog = index()
+  const development = catalog.revision === 'working-checkout'
+  let commit: string | undefined = /^[0-9a-f]{40}$/i.test(catalog.revision)
+    ? catalog.revision
+    : undefined
+  if (development)
+    try {
+      const head = execFileSync('git', ['rev-parse', 'HEAD'], {
+        cwd: fileURLToPath(new URL('../../../../', import.meta.url)),
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+        timeout: 2000,
+      }).trim()
+      if (/^[0-9a-f]{40}$/i.test(head)) commit = head
+    } catch {
+      // A copied checkout without Git has no commit to report.
+    }
+  return (build = {
+    version: process.env.DOVO_RELEASE_VERSION || catalog.version,
+    ...(commit ? { commit } : {}),
+    development,
   })
 }
 

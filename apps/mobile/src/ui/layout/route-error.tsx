@@ -3,7 +3,7 @@ import { useContext, useEffect, useMemo, useState } from 'react'
 import { Platform } from 'react-native'
 import Constants from 'expo-constants'
 import * as Clipboard from 'expo-clipboard'
-import { clientDiagnostic, diagnosticMessage } from '@dovo/protocol'
+import { clientDiagnostic, diagnosticMessage, recordClientError } from '@dovo/protocol'
 import { RuntimeContext } from '../../runtime/connection/context'
 import { ScrollView, View } from 'react-native'
 import { router, type ErrorBoundaryProps } from 'expo-router'
@@ -19,6 +19,8 @@ export function RouteError({ error, retry }: ErrorBoundaryProps) {
   const { colors, styles } = useTheme()
   const runtime = useContext(RuntimeContext)
   const failure = useMemo(() => clientDiagnostic(error), [error])
+  // Kept in memory for "Report a problem"; it leaves the device only if a person includes it.
+  useEffect(() => recordClientError(error, 'screen'), [error])
   const diagnostic = {
     ...failure,
     context: {

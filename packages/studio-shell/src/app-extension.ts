@@ -92,7 +92,8 @@ export const appSettingsExtension = defineStudioExtension(
       icon: 'runtime',
       order: 0.7,
       settingsSection: 'app',
-      keywords: 'updates version release channel stable nightly licenses notices about',
+      keywords:
+        'updates version release channel stable nightly licenses notices about help report problem bug issue feedback triage diagnostics',
       load: () => import('./app-settings/about'),
     },
     {

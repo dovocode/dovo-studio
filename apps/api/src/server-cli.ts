@@ -84,7 +84,7 @@ async function main() {
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
   --database <path>         Setup: database in the selected data directory
-  --public-address <url>    Setup/pair: reachable LAN/VPN or HTTPS proxy origin
+  --public-address <url>    Setup/pair: reachable LAN/VPN or HTTPS proxy origin; setup with "" clears it
   --launcher <path>         Service update: new mise/archive bin/dovo-server path
   --memory-low <size>       Service protect enable/preview: optional systemd MemoryLow, e.g. 512M
   --backup <path>          Restore: verified SQLite backup (runtime must be stopped)

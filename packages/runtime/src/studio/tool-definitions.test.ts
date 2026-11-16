@@ -7,6 +7,15 @@ const commands = [
     name: 'studio_automations',
     command: { action: 'run', id: 'workflow-42', requestId: 'run-42' },
   },
+  {
+    name: 'studio_automations',
+    command: {
+      action: 'dryRun',
+      automation: { id: 'workflow-42', name: 'Workflow', nodes: [], edges: [] },
+      input: { payload: { ref: 'main' }, sourceUnchanged: true },
+      stopAt: 'task-42',
+    },
+  },
   { name: 'studio_browsers', command: { action: 'snapshot', id: 'tab-42' } },
   { name: 'studio_ui', command: { action: 'theme-set', sessionId: 'ui-42', mode: 'dark' } },
   { name: 'studio_diagnostics', command: { action: 'health' } },

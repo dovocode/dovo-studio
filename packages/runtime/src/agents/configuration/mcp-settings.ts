@@ -109,10 +109,10 @@ export function acpMcpServers(servers: McpServer[]) {
 
 /** Claude CLI --mcp-config accepts JSON file paths. The SDK otherwise serializes
  * mcpServers (including env and headers) directly into process arguments. */
-export function claudeMcpConfigFile(servers: McpServer[]) {
+export function claudeMcpConfigFile(servers: McpServer[], parent = tmpdir()) {
   const config = claudeMcpServers(servers)
   if (!Object.keys(config).length) return { path: undefined, dispose: () => {} }
-  const directory = mkdtempSync(join(tmpdir(), 'dovo-claude-mcp-'))
+  const directory = mkdtempSync(join(parent, 'dovo-claude-mcp-'))
   const path = join(directory, 'mcp.json')
   try {
     writeFileSync(path, JSON.stringify({ mcpServers: config }), { mode: 0o600, flag: 'wx' })

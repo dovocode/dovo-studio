@@ -1,0 +1,6 @@
+# The runtime image needs only the Linux server archives and its start script.
+# Everything else stays out of the build context, including local data, .env files and keys.
+*
+!release/Dovo-Server-*-linux-x64.tar.gz
+!release/Dovo-Server-*-linux-arm64.tar.gz
+!apps/api/docker-start.sh

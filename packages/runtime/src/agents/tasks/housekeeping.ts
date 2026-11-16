@@ -66,6 +66,7 @@ export function inactiveTaskIds(
 
 type ArchiveServices = Pick<
   Services,
+  | 'sandboxes'
   | 'store'
   | 'tasks'
   | 'jobs'
@@ -125,6 +126,9 @@ export async function archiveTask(
         s.deviceHosts.closeTask(member),
         s.agents.releaseTask(member),
       ])
+      // Provider processes are gone; the thread's container goes with the archive.
+      const sandbox = await Promise.allSettled([s.sandboxes.remove(member)])
+      cleanup.push(...sandbox)
       for (const result of cleanup) if (result.status === 'rejected') throw result.reason
     }
     const latest = s.store.get().tasks.find((task) => task.id === id)
@@ -179,6 +183,7 @@ export class Housekeeping {
   constructor(
     private s: Pick<
       Services,
+      | 'sandboxes'
       | 'store'
       | 'preferences'
       | 'tasks'

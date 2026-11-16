@@ -652,7 +652,7 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     },
     run: async (run) => {
       run = checkedPolicyRun(run, 'opencode')
-      const lease = await servers.acquire(run.agent, run.taskId, run.cwd)
+      const lease = await servers.acquire(run.agent, run.taskId, run.cwd, run.sandbox)
       let completed = false
       let held = false
       try {

@@ -1517,6 +1517,7 @@ export class WorkspaceStore {
           record.worktreeBase !== undefined ||
           record.worktreeSubmodulesComplete !== undefined ||
           record.quotaContinuation !== undefined ||
+          record.spendPause !== undefined ||
           record.autoSettled !== undefined ||
           record.waitingForFeedback !== undefined ||
           record.threadWatches !== undefined ||
@@ -1717,6 +1718,7 @@ export class WorkspaceStore {
             'worktreeIncludeChanges',
             'submodules',
             'setupCommand',
+            'containerSandbox',
           ])
         : null
     let changed = false
@@ -1760,7 +1762,8 @@ export class WorkspaceStore {
           key === 'worktreeFromOrigin' ||
           key === 'worktreeIncludeChanges' ||
           key === 'submodules' ||
-          key === 'setupCommand') &&
+          key === 'setupCommand' ||
+          key === 'containerSandbox') &&
         summary &&
         !canChangeTaskCheckout(summary)
       )

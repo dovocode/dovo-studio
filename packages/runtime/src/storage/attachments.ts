@@ -158,6 +158,29 @@ export class Attachments {
       return attachment
     })
   }
+  /** Gives `taskId` its own copy of each file in copied conversation history. A turn fork from an
+   * older runtime kept the ids of its source thread, so each file is read from the thread that
+   * owns it. A file whose thread was deleted is left out and its message stays. Pass stored
+   * history only: this does not check that the caller may read the owning thread. */
+  copyHistory<M extends { attachments?: Attachment[] }>(taskId: string, messages: readonly M[]) {
+    const query = this.db.prepare('SELECT task,metadata,data FROM attachments WHERE id=?')
+    const insert = this.db.prepare('INSERT INTO attachments VALUES(?,?,?,?)')
+    return messages.map((message): M => {
+      if (!message.attachments?.length) return message
+      const attachments = message.attachments.flatMap((file) => {
+        const value = query.get(file.id)
+        if (!value) return []
+        const row = decode(rowSchema, value)
+        const attachment = {
+          ...decode(attachmentSchema, JSON.parse(row.metadata)),
+          id: randomUUID(),
+        }
+        insert.run(attachment.id, taskId, JSON.stringify(attachment), row.data)
+        return [attachment]
+      })
+      return { ...message, attachments }
+    })
+  }
   replace(value: unknown) {
     const { replaceId, ...input } = decode(attachmentReplaceSchema, value)
     if (replaceId === input.id) throw new HttpError(400, 'Edited images need a new attachment ID')

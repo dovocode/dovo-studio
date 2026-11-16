@@ -27,6 +27,7 @@ import {
   ActivitySettingsScreen,
 } from '../../../screens/settings-computer'
 import AppearanceScreen from '../../../screens/appearance'
+import ReportProblemScreen from '../../../screens/report-problem'
 import { router, useLocalSearchParams } from 'expo-router'
 import { View } from 'react-native'
 import AgentsScreen from '../../../screens/agents'
@@ -47,6 +48,8 @@ const screens: Readonly<Partial<Record<string, ComponentType>>> = {
   'task-settings': () => <SettingsScreen categorySlug="task-settings" />,
   'computer-settings': () => <SettingsScreen categorySlug="computer-settings" />,
   'history-settings': () => <SettingsScreen categorySlug="history-settings" />,
+  'help-settings': () => <SettingsScreen categorySlug="help-settings" />,
+  'report-problem': ReportProblemScreen,
   'device-hosts': DeviceHostsScreen,
   appearance: AppearanceScreen,
   'task-defaults': TaskDefaultsScreen,

@@ -7,6 +7,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentRun } from '../../execution/types.js'
 import { acpClientTools } from './acp-client-tools.js'
+import { fakeContainerCli } from '../../../sandbox/testing/fake-container-cli.js'
 
 const dirs: string[] = []
 afterEach(async () => {
@@ -454,4 +455,48 @@ it('classifies actual ACP command arguments explicitly and never reuses rules fo
   } finally {
     await tools.close()
   }
+})
+
+it('runs ACP terminal commands through the sandbox container CLI', async () => {
+  const { cwd, run } = await setup('workspace-write')
+  const fake = fakeContainerCli()
+  dirs.push(fake.directory)
+  const sandboxed = await acpClientTools(
+    {
+      ...run,
+      sandbox: {
+        taskId: 'task',
+        cli: fake.cli,
+        container: 'dovo-sandbox-acp',
+        user: '1000:1000',
+        stateDirectory: cwd,
+        commands: new Map(),
+        explicitEnv: new Set(),
+        hostEnv: new Set(),
+        env: {},
+        mounts: [cwd],
+        lease: () => () => {},
+        stopExec: async () => {},
+      },
+    },
+    () => 'session',
+  )
+  const terminal = await sandboxed.client.createTerminal?.({
+    sessionId: 'session',
+    command: 'sh',
+    args: ['-c', 'printf "in-sandbox"'],
+    cwd,
+  })
+  const exit = await sandboxed.client.waitForTerminalExit?.({
+    sessionId: 'session',
+    terminalId: terminal!.terminalId,
+  })
+  expect(exit?.exitCode).toBe(0)
+  const output = await sandboxed.client.terminalOutput?.({
+    sessionId: 'session',
+    terminalId: terminal!.terminalId,
+  })
+  expect(output?.output).toBe('in-sandbox')
+  expect(await readFile(fake.log, 'utf8')).toContain('"dovo-sandbox-acp","sh","-c"')
+  await sandboxed.close()
 })

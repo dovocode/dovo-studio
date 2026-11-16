@@ -203,6 +203,253 @@ then start it again. Update the desktop with its in-app updater or
 To host your own optional connection broker and publishing service, follow
 [Custom Connect and artifact store](self-hosting.md). Those are separate services from the runtime.
 
+## Docker
+
+The `ghcr.io/dovocode/dovo-server` image runs the standalone runtime from the Linux server release
+archive. It supports `linux/amd64` and `linux/arm64`. The image includes Git, the OpenSSH client and
+Node. It does not include agent CLIs or the GitHub CLI. It is about 620 MB to download and 2.3 GB on
+disk.
+
+When a release is published, the distribution workflow pushes the image to GHCR. Stable releases get
+the `X.Y.Z` and `latest` tags. Nightly releases get `X.Y.Z-nightly.N` and `nightly`. The first image
+comes with the first release that includes Docker support. Until then,
+[build the image locally](#build-the-image-locally).
+
+| Item           | Value                                                    |
+| -------------- | -------------------------------------------------------- |
+| User           | `node`, uid 1000, gid 1000                               |
+| Listen address | `0.0.0.0:51464` over HTTP                                |
+| Home volume    | `/home/node`. Runtime data is in `/home/node/.dovo`.     |
+| Projects       | Mount them under `/projects`.                            |
+| Health check   | `GET /health`, the same unauthenticated connection probe |
+
+The home volume also keeps agent logins, Git settings, SSH keys and agent CLIs that you install with
+npm. It contains the owner credential and device trust records. Keep it and its backups private.
+
+### Run with Compose
+
+From an empty folder on the Docker host:
+
+```sh
+curl -fsSLO https://raw.githubusercontent.com/dovocode/dovo-studio/main/apps/api/compose.yaml
+mkdir projects
+echo 'DOVO_PUBLIC_ADDRESS=http://192.168.1.10:51464' > .env
+docker compose up -d
+docker compose ps
+```
+
+Replace `192.168.1.10` with the host's LAN or VPN address. Phones and other computers connect to
+that address. The container cannot see the host's addresses, so set it here. `docker compose ps`
+shows `healthy` when the runtime answers `/health`.
+
+The container saves `DOVO_PUBLIC_ADDRESS` each time it starts. To change the address, edit `.env`
+and run `docker compose up -d`. To remove it, delete the line from `.env` and run
+`docker compose up -d`. Pairings and paired devices stay. Do not save the address with
+`dovo-server setup --public-address` inside the container. The next start replaces it with the
+`DOVO_PUBLIC_ADDRESS` value.
+
+Compose reads these optional settings from `.env`:
+
+| Variable              | Default                               | Purpose                                                      |
+| --------------------- | ------------------------------------- | ------------------------------------------------------------ |
+| `DOVO_PUBLIC_ADDRESS` | None                                  | Address in pairing codes and QR codes.                       |
+| `DOVO_PROJECTS`       | `./projects`                          | Host folder mounted at `/projects`.                          |
+| `DOVO_PORT`           | `51464`                               | Host port. Use the same port in `DOVO_PUBLIC_ADDRESS`.       |
+| `DOVO_BIND`           | `0.0.0.0`                             | Host address that Docker publishes the port on.              |
+| `DOVO_HOSTNAME`       | `dovo-docker`                         | Computer name that clients show.                             |
+| `DOVO_IMAGE`          | `ghcr.io/dovocode/dovo-server:latest` | Image to run. Use the `nightly` tag for the Nightly channel. |
+
+Without Compose, use the same volume, port and address:
+
+```sh
+docker run -d --name dovo --restart unless-stopped \
+  -p 51464:51464 \
+  -e DOVO_PUBLIC_ADDRESS=http://192.168.1.10:51464 \
+  -v dovo-home:/home/node \
+  -v "$PWD/projects:/projects" \
+  ghcr.io/dovocode/dovo-server:latest
+```
+
+Then use `docker exec dovo` where this section shows `docker compose exec dovo`.
+
+### Pair a device from the container
+
+```sh
+docker compose exec dovo dovo-server pair
+```
+
+The command prints the runtime address, an eight-digit code and a QR code. Scan the QR code in the
+mobile app, or enter the address and code. The code expires after two minutes. The output also lists
+an `eth0` address. That is the container's internal address. Do not use it on a phone. If
+`DOVO_PUBLIC_ADDRESS` is not set, add `--public-address http://192.168.1.10:51464` to the command.
+`pair --manual`, `pair devices`, `pair approve` and `pair deny` work as in
+[Pair phones, browsers, and other computers](#pair-phones-browsers-and-other-computers).
+
+### Tailscale and NetBird
+
+Run the VPN on the Docker host, not in the container.
+
+1. Connect the Docker host and the phone to the same tailnet.
+2. Find the host's address with `tailscale ip -4`, or use its MagicDNS name.
+3. Put that address in `.env`, for example
+   `DOVO_PUBLIC_ADDRESS=http://my-server.tailnet-name.ts.net:51464`.
+4. Optionally, set `DOVO_BIND` to the host's Tailscale IP. Docker then publishes the port only on
+   the tailnet. If that address does not exist when the container starts, Docker cannot publish the
+   port.
+5. Run `docker compose up -d`, then pair.
+
+HTTP is supported over Tailscale. Tailscale encrypts the connection. `--host tailscale` and
+`pair --network tailscale` do not work in the container, because the container cannot see the host's
+VPN interface. Use `DOVO_PUBLIC_ADDRESS` instead. NetBird works the same way with the host's NetBird
+IP or DNS name. For HTTPS, put a reverse proxy in front of the published port, as described in
+[LAN, Tailscale, NetBird, and DNS](#lan-tailscale-netbird-and-dns).
+
+### Add agent CLIs
+
+The image includes no agent CLIs. The runtime finds them on its `PATH`, which includes
+`/home/node/.local/bin`. Install them into the home volume, so they stay after upgrades:
+
+```sh
+docker compose exec dovo npm install -g @openai/codex
+docker compose exec dovo npm install -g @anthropic-ai/claude-code
+docker compose exec dovo npm install -g opencode-ai
+```
+
+The image sets `NPM_CONFIG_PREFIX=/home/node/.local`, so npm writes to the volume. Run the same
+command with `@latest` to update a CLI. To pin versions instead, build a derived image:
+
+```dockerfile
+FROM ghcr.io/dovocode/dovo-server:latest
+USER root
+RUN npm install --global --prefix /usr/local @openai/codex @anthropic-ai/claude-code \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends gh \
+ && rm -rf /var/lib/apt/lists/*
+USER node
+```
+
+Use `--prefix /usr/local` in a derived image. The default prefix is in the home volume, and the
+volume hides files that the image puts there. The `gh` package is the version that Debian ships.
+
+Sign in to each CLI inside the container, for example `docker compose exec -it dovo codex login`.
+The logins stay in the home volume. Run `docker compose exec dovo dovo-server doctor` to see which
+CLIs the runtime detects. See [Agent adapters and updates](#agent-adapters-and-updates).
+
+### Project files, Git and SSH
+
+The runtime runs as uid 1000 and gid 1000, and needs write access to each project. On a Linux host,
+check the owner of a project with `ls -nd projects/my-app`. If another user owns it, do one of
+these:
+
+- Give uid 1000 access, for example `sudo chown -R 1000:1000 projects/my-app`.
+- Build a derived image that uses your uid and gid. Do this before the first start, or also change
+  the owner of the files in the volume.
+
+```dockerfile
+FROM ghcr.io/dovocode/dovo-server:latest
+USER root
+RUN groupmod -g 1001 node && usermod -u 1001 -g 1001 node
+USER node
+```
+
+Git refuses to work in a repository that another user owns and reports "dubious ownership". Fix the
+owner rather than trusting every directory with `safe.directory`. On Docker Desktop for macOS or
+Windows, check write access with `docker compose exec dovo touch /projects/my-app/.dovo-write-test`,
+then delete that file.
+
+In Dovo, add a mounted project by its container path, such as `/projects/my-app`. Projects that Dovo
+clones go to `/home/node/.dovo/projects`. Task worktrees go to `/home/node/.dovo/worktrees`. Both
+are in the home volume. The host repository records the container paths of those worktrees, so
+`git worktree list` on the host shows them as prunable. Do not run `git worktree prune` on the host
+while Dovo uses them.
+
+Set a Git identity and create an SSH key for the container:
+
+```sh
+docker compose exec dovo git config --global user.name "Your Name"
+docker compose exec dovo git config --global user.email you@example.com
+docker compose exec dovo ssh-keygen -t ed25519 -C dovo-docker
+docker compose exec dovo cat /home/node/.ssh/id_ed25519.pub
+```
+
+Add the public key to your Git host.
+
+### Upgrade the container
+
+Finish or stop active work first. An upgrade replaces the container, so running tasks stop.
+
+```sh
+docker compose pull
+docker compose up -d
+```
+
+The home volume keeps the database, owner credential, pairings, agent logins and agent CLIs. Paired
+devices reconnect without pairing again. `dovo-server update` and the `service` commands do not
+apply in a container. A new image is the update.
+
+### Back up the volume
+
+To back up the database while the runtime runs:
+
+```sh
+docker compose exec dovo dovo-server backup
+```
+
+This writes a verified SQLite backup to `/home/node/.dovo/backups`, inside the volume. To copy the
+complete volume, stop the runtime first:
+
+```sh
+docker compose stop
+docker run --rm -v dovo-home:/data:ro -v "$PWD":/backup alpine tar -czf /backup/dovo-home.tar.gz -C /data .
+docker compose start
+```
+
+To restore, extract the archive into an empty `dovo-home` volume before you start the container:
+
+```sh
+docker compose down
+docker volume rm dovo-home
+docker run --rm -v dovo-home:/data -v "$PWD":/backup alpine tar -xzf /backup/dovo-home.tar.gz -C /data
+docker compose up -d
+```
+
+`docker volume rm` deletes the current data. Run it only when the backup is complete. The volume
+does not contain projects that you mount from the host. Back them up separately.
+
+### Build the image locally
+
+The Dockerfile does not compile Dovo. It packages a Linux server archive from `release/`, the same
+archive that the release publishes. Run these commands from the repository root. To build the
+archive from your checkout, use a Linux host with the same CPU architecture as the image, Node 26,
+CMake and a C++ compiler:
+
+```sh
+pnpm install --frozen-lockfile
+pnpm --filter @dovo/api... -r build
+pnpm package:server
+```
+
+On any other host, download a published archive instead. Replace `vX.Y.Z` with a release tag:
+
+```sh
+gh release download vX.Y.Z --repo dovocode/dovo-studio --pattern 'Dovo-Server-*-linux-*.tar.gz' --dir release
+```
+
+Then build and check the image:
+
+```sh
+docker build -f apps/api/Dockerfile -t dovo-server:local .
+node scripts/packaging/runtime-image-smoke.mjs dovo-server:local
+```
+
+The check runs the packaged native modules in the image, waits for the health check, pairs a test
+device over the published port and confirms that the pairing survives a new container. To run the
+local image, add `DOVO_IMAGE=dovo-server:local` to `.env` next to `compose.yaml`. `release/` must
+contain one archive per architecture. Remove older archives first. For both architectures, put both
+archives in `release/` and run
+`docker buildx build --platform linux/amd64,linux/arm64 -f apps/api/Dockerfile .`. This needs QEMU
+for the architecture that is not native.
+
 ## Crash records
 
 If the runtime process ends on an uncaught exception, it writes `last-crash.json` beside its
@@ -414,7 +661,9 @@ pnpm server pair --public-address https://dovo.example.com
 
 `--public-address` changes the address shown to clients; it does not create DNS, configure TLS,
 change the bind address, or open a port. It must be a reachable HTTP(S) origin without a path,
-query, or embedded credentials. An explicit public address takes precedence over `--network`.
+query, or embedded credentials. An explicit public address takes precedence over `--network`. To
+remove a saved address, run `pnpm server setup --public-address ""`. Setup without
+`--public-address` keeps the saved address.
 
 For HTTPS, terminate TLS at your reverse proxy and forward both HTTP and WebSocket traffic to the
 runtime. An HTTPS web frontend needs an HTTPS/WSS runtime endpoint because browsers block mixed

@@ -74,6 +74,41 @@ With triggers disabled, use **Test run**. It performs real work with the saved t
 Inspect its result before enabling the schedule. A test does not enable triggers or move the next
 scheduled time. A lost acknowledgement retains the same manual-start request ID.
 
+## Why a routine exists
+
+Dovo records who changed each routine and why. Open an automation's **Triggers** view on desktop and
+read **Change history**. On mobile, open the automation and select **Show change history**. Each run
+shows **Why this run happened**. It shows the newest change before that run started.
+
+- When a Bot or agent creates, edits, enables or pauses a routine with `studio_automations`, Dovo
+  records your newest message from that turn. It shows **During your request:** with up to 500
+  characters of your words. This shows when the change happened. It does not prove that you asked
+  for it, because content that the agent read in that turn, such as a web page, can also cause a
+  change. Select **Open source message** to jump to the message.
+- The agent can send `source: { messageId, quote }` to cite your exact words. The runtime checks
+  that the quote occurs in your own message in the same thread. The quote must have at least 12
+  characters, or be a whole line or sentence of your message. Only a checked quote shows **Because
+  you said:**. A false or too short source rejects the change.
+- Only messages that Dovo marks as yours count. Agent replies, child results, automation and webhook
+  input, watcher and thread messages, prompts that an agent writes into a new thread, imported and
+  button messages and quoted Reply blocks never count. Undo, redo and handoff notes, diff comments
+  and pipeline or PR watch messages from older versions have no source, so they never count.
+- A change without your message in that turn shows **Changed by an agent without an owner message**.
+  Changes from another computer's thread and Studio integrations also show this. The runtime ignores
+  a `source` that comes from another computer.
+- A change that you save in the editor or Settings shows **Changed by you in the editor**. It adds
+  the paired device name when Dovo knows it.
+- Each entry lists what changed, such as the trigger, instructions, steps, limits or triggers
+  switch. Moves on the canvas do not create an entry.
+- If you delete the thread that holds the source message, Dovo keeps the quote. It shows **Source
+  message unavailable** instead of the link. Dovo does not pause or remove the routine.
+- Routines saved before this feature show **Source not recorded**. Dovo keeps the latest 50 changes
+  for each routine. Deleting a routine deletes its history.
+- Run audits include the same source as `routineChange`.
+
+Clients read the history with `POST /api/jobs/provenance` and `{ "id": "<automation id>" }`. They
+show it only when the runtime advertises `routineProvenanceSupported`.
+
 ## Reviewed skill proposals
 
 After a completed method proves useful, the coordinator can call `propose_skill` with a stable key,
@@ -93,7 +128,7 @@ Run from the checkout root:
 ```sh
 pnpm --filter @dovo/protocol build
 pnpm --filter @dovo/runtime build
-pnpm exec vp test packages/runtime/src/http/endpoints/bot-memory-review.test.ts packages/runtime/src/http/endpoints/bot-routines.test.ts packages/runtime/src/http/endpoints/bot-context.test.ts packages/runtime/src/http/endpoints/bot-skill-proposals.test.ts packages/runtime/src/jobs/source-monitor.test.ts packages/protocol/src/automation/routine-policy.test.ts
+pnpm exec vp test packages/runtime/src/http/endpoints/bot-memory-review.test.ts packages/runtime/src/http/endpoints/bot-routines.test.ts packages/runtime/src/http/endpoints/bot-context.test.ts packages/runtime/src/http/endpoints/bot-skill-proposals.test.ts packages/runtime/src/jobs/source-monitor.test.ts packages/runtime/src/jobs/routine-provenance.test.ts packages/protocol/src/automation/routine-policy.test.ts packages/protocol/src/automation/routine-provenance.test.ts
 pnpm exec playwright install chromium
 pnpm test:bots:browser
 pnpm build

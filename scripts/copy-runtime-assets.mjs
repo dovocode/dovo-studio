@@ -15,6 +15,33 @@ for (const name of ['Cargo.toml', 'Cargo.lock', 'src', 'LICENSE-idevice'])
     { recursive: true },
   )
 
+// Container sandboxes: the image definition, and the agent-tools MCP server as one Node file
+// that runs inside the container without Dovo's node_modules.
+await cp(
+  new URL('../packages/runtime/sandbox/', import.meta.url),
+  new URL('../packages/runtime/dist/sandbox-image/', import.meta.url),
+  { recursive: true },
+)
+const { build: bundle } = await import('esbuild')
+await bundle({
+  entryPoints: [
+    fileURLToPath(new URL('../packages/runtime/src/sandbox/agent-tools-entry.ts', import.meta.url)),
+  ],
+  outfile: fileURLToPath(
+    new URL('../packages/runtime/dist/sandbox-tools/agent-tools.mjs', import.meta.url),
+  ),
+  bundle: true,
+  platform: 'node',
+  format: 'esm',
+  target: 'node20',
+  conditions: ['development'],
+  external: ['bufferutil', 'utf-8-validate'],
+  banner: {
+    js: "import { createRequire as dovoCreateRequire } from 'node:module'; const require = dovoCreateRequire(import.meta.url);",
+  },
+  logLevel: 'warning',
+})
+
 // Bundle maintained help with the exact runtime build. No network or model call is needed at read time.
 const { readFile, writeFile } = await import('node:fs/promises')
 const { execFileSync } = await import('node:child_process')

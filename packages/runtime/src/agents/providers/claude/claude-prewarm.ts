@@ -11,11 +11,7 @@ import { IdleProviders, releaseIdleProvider } from '../../execution/warm-process
 
 export type ClaudeBinding = {
   child?: ChildProcess
-  activeRun: (
-    agentId?: string,
-    signal?: AbortSignal,
-    sessionRequest?: boolean,
-  ) => AgentRun | undefined
+  activeRun: (agentId?: string, signal?: AbortSignal) => AgentRun | undefined
   capabilities: { unanswered: boolean }
 }
 

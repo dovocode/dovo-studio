@@ -15,7 +15,8 @@ import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { OwnedProcessShutdownError, stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import { spawnHarness } from '../../../sandbox/launcher.js'
 import { createMessageConnection, ErrorCodes, ResponseError } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
 import type { AgentAdapter, AgentInput, AgentRun } from '../../execution/types.js'
@@ -47,6 +48,8 @@ type CodexConnection = {
   endpoint: string
   launchConfig: string
   cwd: string
+  /** Container that owns this process; a host process never serves a sandboxed run. */
+  container?: string
   initialized: unknown
   rateLimitUpdates: ReturnType<typeof codexRateLimitUpdates>
   stderr: string
@@ -96,7 +99,8 @@ export function createCodexAdapter(): AgentAdapter {
   }
 
   return {
-    readNativeThread: (agent, id, _sessionId, cwd) => readCodexThread(agent, id, cwd),
+    readNativeThread: (agent, id, _sessionId, cwd, sandbox) =>
+      readCodexThread(agent, id, cwd, sandbox),
     releaseTask: (taskId) => idle.release(taskId),
     models: codexModels,
     probe: async (agent) => ({
@@ -148,6 +152,7 @@ export function createCodexAdapter(): AgentAdapter {
         previous.endpoint === endpoint &&
         previous.launchConfig === launchConfig &&
         previous.cwd === run.cwd &&
+        previous.container === run.sandbox?.container &&
         previous.child.exitCode === null &&
         !previous.transportError &&
         !previous.closing &&
@@ -167,7 +172,8 @@ export function createCodexAdapter(): AgentAdapter {
       }
       const child =
         reusable?.child ??
-        spawn(
+        spawnHarness(
+          run.sandbox,
           endpoint,
           ['app-server', '--listen', 'stdio://', ...(run.agent.args ?? []), ...providerArgs],
           {
@@ -192,6 +198,7 @@ export function createCodexAdapter(): AgentAdapter {
         endpoint,
         launchConfig,
         cwd: run.cwd,
+        container: run.sandbox?.container,
         initialized: undefined,
         rateLimitUpdates: codexRateLimitUpdates(),
         stderr: '',
@@ -728,7 +735,7 @@ export function createCodexAdapter(): AgentAdapter {
           {
             readThread: async (id) =>
               transport.closing
-                ? readCodexThread(run.agent, id, run.cwd)
+                ? readCodexThread(run.agent, id, run.cwd, run.sandbox)
                 : codexThreadEntries(
                     await nativeWait(
                       rpc.sendRequest('thread/read', { threadId: id, includeTurns: true }),

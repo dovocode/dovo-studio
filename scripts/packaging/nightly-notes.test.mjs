@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { execFileSync } from 'node:child_process'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
@@ -81,6 +81,47 @@ await test('nightly notes include commits since the last published ancestor, ski
     assert.ok(!highlights.includes('ci:'))
     assert.ok(complete.includes('Homebrew'))
     assert.ok(complete.includes('Add useful feature 0'))
+  } finally {
+    await rm(cwd, { recursive: true, force: true })
+  }
+})
+
+await test('nightly notes lead with changelog fragments added since the previous nightly', async () => {
+  const cwd = await mkdtemp(join(tmpdir(), 'dovo-nightly-fragments-'))
+  const git = (...args) => execFileSync('git', args, { cwd, encoding: 'utf8' }).trim()
+  const fragment = (category, clients, text) =>
+    `---\ncategory: ${category}\nclients: ${clients}\n---\n${text}\n`
+  try {
+    git('init', '-b', 'main')
+    git('config', 'user.name', 'Fixture')
+    git('config', 'user.email', 'fixture@example.com')
+    await mkdir(join(cwd, 'changelog.d'))
+    await writeFile(join(cwd, 'changelog.d', 'README.md'), '# Format\n')
+    await writeFile(join(cwd, 'changelog.d', '10.md'), fragment('Added', 'web', 'Old entry.'))
+    git('add', '.')
+    git('commit', '-m', 'Add old entry')
+    git('tag', 'v1.0.0-nightly.1')
+    await writeFile(
+      join(cwd, 'changelog.d', '12.md'),
+      fragment('Fixed', 'mobile, desktop', 'Thread titles stay after a reconnect.'),
+    )
+    await writeFile(join(cwd, 'changelog.d', 'broken.md'), 'no header\n')
+    git('add', '.')
+    git('commit', '-m', 'Fix thread titles')
+    const notes = nightlyNotes({
+      cwd,
+      target: 'HEAD',
+      repository: 'dovocode/dovo-studio',
+      releases: [{ tagName: 'v1.0.0-nightly.1', isDraft: false }],
+    })
+    assert.ok(
+      notes.startsWith(
+        "## What's new\n\n### Fixed\n\n- Desktop, mobile: Thread titles stay after a reconnect. (#12)\n\n## Changes",
+      ),
+    )
+    assert.ok(!notes.includes('Old entry'))
+    assert.ok(!notes.includes('## Highlights'))
+    assert.ok(notes.includes('Fix thread titles'))
   } finally {
     await rm(cwd, { recursive: true, force: true })
   }

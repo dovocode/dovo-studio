@@ -24,6 +24,7 @@ import {
   studioToolSettings,
   type Task,
   type Automation,
+  type MessageSource,
   type StudioToolPart,
   taskFamilyRunToken,
   SCRATCH_PROJECT_ID,
@@ -42,8 +43,42 @@ import {
   desktopBrowserList,
 } from '../previews/desktop-browser.js'
 import { studioSessions } from './ui-sessions.js'
+import type { RoutineActor } from '../jobs/routine-provenance.js'
+import { dryRunAutomation } from '../jobs/dry-run.js'
 
 export type StudioPolicy = Pick<RunPolicy, 'permissions' | 'readOnly' | 'studioTools'>
+
+/** A routine change from Studio Tools is always an agent change. Only a local run token that
+ * names this thread can point at its owner message; forwarded and integration calls cannot. */
+function routineActor(
+  taskId: string,
+  policy: StudioPolicy | undefined,
+  claimed: { messageId: string; quote: string } | undefined,
+): RoutineActor {
+  const runId =
+    policy && 'runId' in policy && 'taskId' in policy && policy.taskId === taskId
+      ? policy.runId
+      : undefined
+  return {
+    kind: 'agent',
+    taskId,
+    ...(typeof runId === 'string' ? { runId } : {}),
+    ...(claimed ? { claimed } : {}),
+  }
+}
+
+/** The sender of a prompt that an agent writes into another thread. Never the person. */
+function agentMessageSource(s: Services, taskId: string): MessageSource {
+  return s.store.get().tasks.some((task) => task.id === taskId)
+    ? {
+        kind: 'thread',
+        runtimeId: 'local',
+        runtimeIdentity: s.runtimeId,
+        threadId: taskId,
+        title: s.store.taskSummary(taskId).title.slice(0, 400),
+      }
+    : { kind: 'system', label: 'Agent on paired computer' }
+}
 
 const safeReference = (s: Services, kind: 'thread' | 'browser', id: string) => {
   try {
@@ -73,7 +108,7 @@ export function studioReadAction(part: string, action: unknown) {
         String(action),
       )) ||
     (part === 'automations' &&
-      ['list', 'read', 'validate', 'runs', 'wait'].includes(String(action))) ||
+      ['list', 'read', 'validate', 'dryRun', 'runs', 'wait'].includes(String(action))) ||
     (part === 'browsers' && ['list', 'snapshot', 'screenshot', 'logs'].includes(String(action))) ||
     (part === 'ui' && ['list', 'snapshot', 'theme-read'].includes(String(action))) ||
     part === 'diagnostics'
@@ -302,6 +337,7 @@ export async function studioTool(
           agentOverrides: overrides,
           agentId: command.agentId ?? '',
           objective: command.prompt ?? '',
+          messageSource: agentMessageSource(s, taskId),
         })
         if (command.coordinationDepth || command.spawnParent)
           s.store.updateTask(task.id, (task) => ({
@@ -390,15 +426,7 @@ export async function studioTool(
           undefined,
           true,
           undefined,
-          workspace.tasks.some((task) => task.id === taskId)
-            ? {
-                kind: 'thread',
-                runtimeId: 'local',
-                runtimeIdentity: s.runtimeId,
-                threadId: taskId,
-                title: s.store.taskSummary(taskId).title.slice(0, 400),
-              }
-            : { kind: 'system', label: 'Agent on paired computer' },
+          agentMessageSource(s, taskId),
         ),
       )
     }
@@ -429,6 +457,20 @@ export async function studioTool(
           enabled: enabled ?? false,
         })),
       }
+    if (command.action === 'dryRun') {
+      // Evaluation only, like `POST /api/jobs/dry-run`: it saves, starts and sends nothing.
+      let webhookBlocked: string | undefined
+      try {
+        s.policy.require('webhookTasks')
+      } catch (error) {
+        if (!(error instanceof HttpError)) throw error
+        webhookBlocked = error.message
+      }
+      return dryRunAutomation(
+        { flow: command.automation, input: command.input, stopAt: command.stopAt },
+        { workspace, webhookBlocked },
+      )
+    }
     if ('automation' in command) {
       const flow = command.automation
       const issues =
@@ -461,6 +503,8 @@ export async function studioTool(
           changes: existing ? changes : {},
         },
         `studio:${taskId}`,
+        undefined,
+        routineActor(taskId, policy, command.source),
       )
       if (result.outcome === 'rejected')
         throw new HttpError(409, result.reason ?? 'Automation changed; read it again')
@@ -507,6 +551,8 @@ export async function studioTool(
         changes: { enabled: { before: flow.enabled, after: command.enabled } },
       },
       `studio:${taskId}`,
+      undefined,
+      routineActor(taskId, policy, command.source),
     )
   }
   if (part === 'browsers') {

@@ -1,3 +1,4 @@
+import { containerSandboxEnabled, taskContainerSandbox } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
   taskModelSelectionDifficultySchema,
@@ -149,6 +150,13 @@ export const ComposerHarnessControls = memo(function ComposerHarnessControls({
             : undefined
         }
         repositoryId={task.bot ? undefined : task.repositoryId}
+        sandboxed={containerSandboxEnabled(
+          taskContainerSandbox(
+            task,
+            snapshot?.defaults,
+            workspace.repositories.find((repo) => repo.id === task.repositoryId),
+          ),
+        )}
         agents={agents}
         selectedAgent={customAgent}
         value={value}

@@ -1,4 +1,11 @@
-import { updateAppPreferences, useAppPreferences, useStudioHost } from '@dovo/studio-core'
+import {
+  updateAppPreferences,
+  useAppPreferences,
+  useStudioHost,
+  useWorkspace,
+} from '@dovo/studio-core'
+import { Button } from '@dovo/studio-ui'
+import { openReportProblem } from '../report-problem/open-state'
 import { LicenseSettingsRow } from './licenses'
 import { UpdateSettings } from './updates'
 import { SettingsPage, SettingsGroup, SettingRow, Toggle } from './layout'
@@ -25,6 +32,7 @@ export default function AboutSettings() {
         </SettingRow>
         <LicenseSettingsRow />
       </SettingsGroup>
+      <HelpSettings />
       <UpdateSettings />
       <SettingsGroup title="Provider updates">
         <SettingRow
@@ -39,5 +47,26 @@ export default function AboutSettings() {
         </SettingRow>
       </SettingsGroup>
     </SettingsPage>
+  )
+}
+
+function HelpSettings() {
+  const { runtimes } = useWorkspace()
+  const supported = runtimes.some((entry) => entry.snapshot?.problemReportsSupported === true)
+  return (
+    <SettingsGroup title="Help">
+      <SettingRow
+        label="Report a problem"
+        description={
+          supported
+            ? 'Start a thread where an agent reads redacted diagnostics and the Dovo source for your version, then drafts an issue for you to review.'
+            : 'Update a connected computer to report problems from Dovo.'
+        }
+      >
+        <Button variant="outline" disabled={!supported} onClick={openReportProblem}>
+          Report a problem…
+        </Button>
+      </SettingRow>
+    </SettingsGroup>
   )
 }

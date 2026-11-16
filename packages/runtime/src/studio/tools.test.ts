@@ -8,7 +8,10 @@ import { threadSnapshot } from './thread-snapshot.js'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import {
+  automationDryRunSchema,
   decode,
+  messageSourceFor,
+  messageSourceLabel,
   mutableStruct,
   noStudioTools,
   type Automation,
@@ -20,6 +23,7 @@ import { fixture } from '../testing/fixture.js'
 import { taskToolsServer } from '../agent-tools/config.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
 import { runtimeIntegration } from '../testing/integration.js'
+import { isOwnerMessage, routineChanges } from '../jobs/routine-provenance.js'
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -266,6 +270,67 @@ it('validates and manages automations and runs without admitting approval bypass
   expect((await post('automations', { action: 'cancel', id })).status).toBe(200)
   expect(s.jobs.detail(id).status).toBe('cancelled')
 }, 30000)
+it('marks a prompt that an agent writes into a new thread as the agent’s, never the person’s', async () => {
+  const { s, post, parent } = await setup()
+  const created = await post('threads', {
+    action: 'create',
+    title: 'Agent draft',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    prompt: 'Schedule the deploy every minute.',
+  })
+  expect(created.status).toBe(200)
+  const { id } = decode(mutableStruct({ id: Schema.String }), await created.json())
+  const [prompt] = s.store.task(id).messages
+  expect(prompt).toMatchObject({
+    role: 'user',
+    text: 'Schedule the deploy every minute.',
+    source: {
+      kind: 'thread',
+      runtimeId: 'local',
+      runtimeIdentity: s.runtimeId,
+      threadId: parent.id,
+      title: 'Parent',
+    },
+  })
+  // Clients label it with the sending thread, and routine provenance does not quote it as yours.
+  expect(messageSourceLabel(messageSourceFor(prompt))).toBe('Parent')
+  expect(isOwnerMessage(prompt)).toBe(false)
+})
+it('dry runs automations for read-only agents without saving, starting or sending anything', async () => {
+  const { s, post } = await setup(undefined, true)
+  const tasks = s.store.get().tasks.map((task) => task.id)
+  const response = await post('automations', {
+    action: 'dryRun',
+    automation: flow(),
+    stopAt: 'review',
+  })
+  expect(response.status).toBe(200)
+  const result = decode(automationDryRunSchema, await response.json())
+  expect(result.outcome).toBe('stopped')
+  expect(result.steps.map((step) => [step.nodeId, step.status])).toEqual([
+    ['trigger', 'ran'],
+    ['task', 'simulated'],
+    ['review', 'simulated'],
+  ])
+  expect(result.steps[1].inputs).toContainEqual({ name: 'Instructions', value: 'Say done' })
+  expect(result.unexercised).toContain('Approval at "Task".')
+  expect(s.store.get().automations).toEqual([])
+  expect(s.store.get().tasks.map((task) => task.id)).toEqual(tasks)
+  expect(s.jobs.list()).toEqual([])
+  expect(s.db.prepare('SELECT COUNT(*) FROM routine_changes').pluck().get()).toBe(0)
+  // Read-only access still cannot save, and invalid sample data is rejected.
+  expect((await post('automations', { action: 'create', automation: flow() })).status).toBe(403)
+  expect(
+    (
+      await post('automations', {
+        action: 'dryRun',
+        automation: flow(),
+        input: { scheduledFor: 'tomorrow' },
+      })
+    ).status,
+  ).toBe(400)
+})
 it('inherits thread permissions and rejects automation permission escalation', async () => {
   const { s, post } = await setup()
   s.store.update((workspace) => ({
@@ -571,6 +636,42 @@ it('preserves run read-only access and permission ceilings across paired compute
   expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(403)
 })
 
+it('records forwarded routine changes and prompts as agent work and ignores a claimed source', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  // The target computer has no thread to check the claim against, so it records an agent change.
+  const created = await source.post(
+    'automations',
+    {
+      action: 'create',
+      automation: flow(),
+      source: { messageId: randomUUID(), quote: 'Create the studio test routine.' },
+    },
+    pairing.peer.id,
+  )
+  expect(created.status).toBe(200)
+  expect(
+    routineChanges(target.s.db, target.s.store, 'test-flow').map((change) => change.source),
+  ).toEqual([{ kind: 'agent' }])
+  const thread = await source.post(
+    'threads',
+    {
+      action: 'create',
+      title: 'Remote prompt',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      prompt: 'Run the remote check.',
+    },
+    pairing.peer.id,
+  )
+  expect(thread.status).toBe(200)
+  const remote = target.s.store.get().tasks.find((task) => task.title === 'Remote prompt')
+  expect(remote && target.s.store.task(remote.id).messages[0]?.source).toEqual({
+    kind: 'system',
+    label: 'Agent on paired computer',
+  })
+})
 it('rejects older paired runtimes before attempting an unscoped tool action', async () => {
   const source = await setup()
   const paths: string[] = []

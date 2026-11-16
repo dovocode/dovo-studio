@@ -43,6 +43,8 @@ export async function readRoutineSource(value: string, signal: AbortSignal, json
   }
   throw new Error('Monitoring source could not be read.')
 }
+/** Characters of source content a task step receives. */
+export const ROUTINE_SOURCE_TEXT_LIMIT = 24000
 export function routineSourceContent(bytes: Buffer, url: string, jsonPointer?: string) {
   if (jsonPointer !== undefined) decode(routineJsonPointerSchema, jsonPointer)
   const content =
@@ -52,7 +54,7 @@ export function routineSourceContent(bytes: Buffer, url: string, jsonPointer?: s
   return {
     hash: createHash('sha256').update(content).digest('hex'),
     url,
-    text: content.toString('utf8').slice(0, 24000),
+    text: content.toString('utf8').slice(0, ROUTINE_SOURCE_TEXT_LIMIT),
   }
 }
 

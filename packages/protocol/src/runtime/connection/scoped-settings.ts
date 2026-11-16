@@ -488,6 +488,7 @@ const taskDefaultFields = [
   { key: 'submodules', label: 'Submodules' },
   { key: 'worktreeFromOrigin', label: 'Start from origin' },
   { key: 'setupCommand', label: 'Worktree setup' },
+  { key: 'containerSandbox', label: 'Container sandbox' },
 ] as const
 export function taskDefaultOrigins(
   runtime: RuntimeDefaults | undefined,
@@ -625,6 +626,7 @@ const changeLabels: Record<string, string> = {
   approvalPolicy: 'Approval policy',
   sandboxMode: 'Sandbox mode',
   worktreeFromOrigin: 'Create worktrees from remote',
+  containerSandbox: 'Container sandbox',
 }
 function changeValue(value: unknown): string {
   if (value === undefined) return 'Inherit'

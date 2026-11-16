@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnHarness } from '../../../sandbox/launcher.js'
 import { setImmediate as nextTurn } from 'node:timers/promises'
 import { createMessageConnection } from 'vscode-jsonrpc/node'
 import { Schema } from 'effect'
@@ -104,13 +104,18 @@ export function createVibeAdapter(): AgentAdapter {
           'Mistral Vibe does not expose a tool-free unified session; choose another provider for utilities',
         )
       run.signal.throwIfAborted()
-      const child = spawn(run.agent.endpoint || 'vibe-app-server', run.agent.args ?? [], {
-        windowsHide: true,
-        cwd: run.cwd,
-        detached: process.platform !== 'win32',
-        env: processEnvironment(run.agent.env),
-        stdio: ['pipe', 'pipe', 'pipe'],
-      })
+      const child = spawnHarness(
+        run.sandbox,
+        run.agent.endpoint || 'vibe-app-server',
+        run.agent.args ?? [],
+        {
+          windowsHide: true,
+          cwd: run.cwd,
+          detached: process.platform !== 'win32',
+          env: processEnvironment(run.agent.env),
+          stdio: ['pipe', 'pipe', 'pipe'],
+        },
+      )
       run.onOwnedProcess?.(child)
       const rpc = createMessageConnection(
         new JsonLineReader(child.stdout),

@@ -26,6 +26,7 @@ import { useSettingsTheme as useTheme } from '../screens/settings-theme'
 import { useAction } from '../ui/controls/use-action'
 import { linearNodes, newAutomationNode, withLinearNodes, scheduleChoices } from './linear-flow'
 import { StepFields } from './step-fields'
+import { DryRun } from './dry-run'
 import { useNavigation } from '../shell/navigation'
 export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose: () => void }) {
   const uiText = useInterfaceText()
@@ -566,6 +567,9 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
             }}
           />
         </>
+      )}
+      {snapshot?.automationDryRunSupported && (
+        <DryRun key={draft.id} flow={draft} disabled={busy || !connected} />
       )}
     </Sheet>
   )

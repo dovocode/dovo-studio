@@ -1,6 +1,7 @@
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
-import { spawn, type ChildProcess } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
+import { spawnHarness } from '../../../sandbox/launcher.js'
 import { constants } from 'node:fs'
 import { lstat, open, realpath } from 'node:fs/promises'
 import { isAbsolute, relative, dirname, basename, join } from 'node:path'
@@ -184,7 +185,8 @@ export async function acpClientTools(
           }
           delete env.DOVO_OWNER_TOKEN
           delete env.ELECTRON_RUN_AS_NODE
-          const child = spawn(params.command, params.args ?? [], {
+          // A sandboxed thread runs the agent's terminal commands in its container.
+          const child = spawnHarness(run.sandbox, params.command, params.args ?? [], {
             windowsHide: true,
             cwd: safeCwd,
             env,

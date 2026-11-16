@@ -207,6 +207,9 @@ const built = await build({
           if (path === 'lucide-react-native') return { path: 'a11y-icons', namespace: 'mock' }
           if (path === './code-theme' && importer.endsWith('/screens/appearance.tsx'))
             return { path: 'code-theme', namespace: 'mock' }
+          // The report screen's agent picker needs native modules that this check does not mock.
+          if (path === '../../../screens/report-problem')
+            return { path: 'report-problem', namespace: 'mock' }
           if (Object.hasOwn(mocks, path)) return { path, namespace: 'mock' }
         })
         builder.onLoad({ filter: /.*/, namespace: 'mock' }, ({ path }) => ({
@@ -215,15 +218,17 @@ const built = await build({
               ? `const Icon=({size,color})=><span aria-hidden style={{width:size,height:size,color}}>●</span>;export const CircleCheck=Icon,CircleX=Icon,TriangleAlert=Icon;`
               : path === 'code-theme'
                 ? `export const CodeThemeSettings=()=>null;`
-                : path === 'header'
-                  ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title,onBack})=>{const contextBack=useContext(ScreenBackContext);const back=onBack??contextBack;const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
-                  : path === 'state'
-                    ? `export {useState as useApplicationState} from 'react';`
-                    : path === 'runtime'
-                      ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry,activeId:runtimeId}}>{children}</Context.Provider>:null};`
-                      : path === 'sheet'
-                        ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
-                        : mocks[path],
+                : path === 'report-problem'
+                  ? `export default ()=>null;`
+                  : path === 'header'
+                    ? `import {createContext,useContext} from 'react';import {View,Text,Pressable} from 'react-native';import {useTheme} from './src/ui/theme';export const ScreenBackContext=createContext(null);export const ScreenHeader=({title,onBack})=>{const contextBack=useContext(ScreenBackContext);const back=onBack??contextBack;const {styles}=useTheme();return <View style={{padding:16,flexDirection:'row',alignItems:'center',gap:16}}>{back&&<Pressable accessibilityLabel="Back" onPress={back}><Text style={styles.text}>Back</Text></Pressable>}<Text numberOfLines={1} style={[styles.text,{fontWeight:'600',flex:1,minWidth:0}]} accessibilityRole="heading">{title}</Text></View>};`
+                    : path === 'state'
+                      ? `export {useState as useApplicationState} from 'react';`
+                      : path === 'runtime'
+                        ? `import {createContext,useContext} from 'react';const Context=createContext(null);export const useRuntime=()=>useContext(Context)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const runtime=useRuntime();const entry=runtime.overviews.find(item=>item.profile.id===runtimeId);return entry?<Context.Provider value={{...runtime,...entry,activeId:runtimeId}}>{children}</Context.Provider>:null};`
+                        : path === 'sheet'
+                          ? `import {createContext,useContext} from 'react';import {View} from 'react-native';const Context=createContext(false);export const useInsideSheet=()=>useContext(Context);export const Sheet=({children,title})=><Context.Provider value><View accessibilityLabel={title} style={{position:'fixed',inset:0,background:'#f2f2f7',zIndex:1}}>{children}</View></Context.Provider>;`
+                          : mocks[path],
           loader: 'tsx',
           resolveDir: root + 'apps/mobile',
         }))

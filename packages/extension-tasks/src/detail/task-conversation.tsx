@@ -30,6 +30,7 @@ import {
 import { ChatThread } from '../chat/thread/chat-thread'
 import { Composer } from '../chat/composer/composer'
 import { MachineHandoffNotice } from './machine-handoff-notice'
+import { SpendPauseNotice } from './spend-pause-notice'
 import type { SelectRemoteProject } from '../chat/composer/composer-project'
 import { TaskEmptyState } from '../task-creation/task-empty-state'
 import { PreparationProgress } from '../chat/thread/preparation-progress'
@@ -401,6 +402,7 @@ export function TaskConversation({
               {retryError && <span role="alert">{retryError}</span>}
             </div>
           )}
+          <SpendPauseNotice task={task} />
           <TaskQuestions taskId={task.id} />
           {visible && <TaskSecureInputs taskId={task.id} />}
           <RunControls task={task} />

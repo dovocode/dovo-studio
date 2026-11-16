@@ -43,8 +43,8 @@ export * from '@dovo/protocol';
 const now=Date.now();
 const turn=(id,age)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-age*86400000).toISOString(),finishedAt:new Date(now-age*86400000+60000).toISOString(),usageAccount:{id:'account',label:'Personal',subscription:'Pro'}});
 const tasks=[{id:'task',title:'Improve composer',example:false,turns:[{...turn('recent',1),tokens:12000,estimatedCostUsd:.035},turn('partial',2),turn('older',20)]}];
-const reading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'5-hour',resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal',subscription:'Pro'}};
-const initialRuntimes=[{connected:true,profile:{id:'mac',name:'Mac',connection:{address:'http://runtime',token:'test-token'}},snapshot:{workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
+const reading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'5-hour',durationMins:300,resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal',subscription:'Pro'}};
+const initialRuntimes=[{connected:true,profile:{id:'mac',name:'Mac',connection:{address:'http://runtime',token:'test-token'}},snapshot:{unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
 let runtimes=initialRuntimes;
 const cache={read:async()=>null,write:async()=>{}};
 window.usageProbes=0;window.usageWrites=[];window.usageReads=[];window.hubWrites=[];window.hubEntries=[];window.failHubWrite=false;
@@ -61,9 +61,10 @@ const hubRead=(path,input)=>{
  }
 };
 
-const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};return {sourceId:'stable',records:[],notices:[]}};
+const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return {sourceId:'stable',records:[],notices:[]}};
 const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};
 window.changeUsageScenario=scenario=>{runtimes=scenario==='unpaired'?[]:initialRuntimes.map(entry=>({...entry,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...tasks[0],turns:[{...turn('zero',1),tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...tasks[0],turns:[turn('missing',1)]}]:tasks,planLimits:[]}}}));listeners.forEach(callback=>callback())};
+window.reportSpendLimit=value=>{runtimes=runtimes.map(entry=>({...entry,snapshot:{...entry.snapshot,unattendedSpendLimitUsd:value}}));listeners.forEach(callback=>callback())};
 export const useWorkspace=()=>{useSyncExternalStore(subscribe,()=>runtimes);return {runtimes,readRuntime,refreshRuntime:async()=>{},runtimeReadCache:()=>cache}};`,
           resolveDir: root + 'packages/studio-shell',
           loader: 'js',
@@ -114,6 +115,43 @@ try {
   )
   if ((await page.getByRole('progressbar').count()) !== 1)
     throw new Error('Expired limits appeared as a live progress bar')
+  assert.equal(
+    await page.getByRole('progressbar').getAttribute('aria-valuetext'),
+    '8% left. Even pace: 80% of window elapsed',
+  )
+  await page.getByText(/· Even pace: 80% of window elapsed/).waitFor()
+  const mark = await page.locator('[title="Even pace: 80% of window elapsed"]').boundingBox()
+  const track = await page.getByRole('progressbar').boundingBox()
+  assert.ok(
+    mark && track && Math.abs(mark.x + mark.width / 2 - (track.x + track.width * 0.2)) < 2,
+    'The pace mark sits at the even-use point of the remaining bar',
+  )
+  const limitField = page.getByLabel(/^Limit in USD for /)
+  // An empty field never turns the limit off; that stays the Turn off action.
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page
+    .getByText('Enter an amount in USD above 0 and up to 10,000.', { exact: true })
+    .waitFor()
+  // A snapshot that arrives after the page opened fills the untouched field.
+  await page.evaluate(() => window.reportSpendLimit(3))
+  await page.getByText('$3.00 per thread family', { exact: true }).waitFor()
+  assert.equal(await limitField.inputValue(), '3')
+  await limitField.fill('20000')
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page
+    .getByText('Enter an amount in USD above 0 and up to 10,000.', { exact: true })
+    .waitFor()
+  await limitField.fill('5')
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page.getByText('Limit saved.', { exact: true }).waitFor()
+  await page.getByText('$5.00 per thread family', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.limitWrites), [{ unattendedSpendLimitUsd: 5 }])
+  // Another device changes the limit: the field follows it.
+  await page.evaluate(() => window.reportSpendLimit(7))
+  await page.getByText('$7.00 per thread family', { exact: true }).waitFor()
+  assert.equal(await limitField.inputValue(), '7')
+  mkdirSync(root + 'work/usage-preview', { recursive: true })
+  await page.screenshot({ path: root + 'work/usage-preview/limits.png', fullPage: true })
   await page.getByRole('radio', { name: 'Costs', exact: true }).click()
   await page.getByRole('radio', { name: 'Models', exact: true }).click()
   await page.getByText('Models by agent time', { exact: true }).waitFor()

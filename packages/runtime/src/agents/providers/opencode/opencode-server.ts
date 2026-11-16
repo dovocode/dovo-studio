@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess, type SpawnOptions } from 'node:child_process'
+import { sandboxPortForward, spawnHarness, type SandboxSession } from '../../../sandbox/launcher.js'
 import { randomBytes } from 'node:crypto'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
@@ -74,6 +75,8 @@ type OwnedServer = {
   /** Backoff for asking a pinned server again when no turn, release or pressure does. */
   recheck?: { timer: ReturnType<typeof setTimeout>; delay: number }
   directories: Set<string>
+  /** Host loopback forward to a server inside a sandbox container. */
+  forward: { url?: string; close?: () => void }
   /** Set once retirement starts. The map slot stays reserved until the process is confirmed gone. */
   retiring?: Promise<void>
 }
@@ -114,6 +117,8 @@ export class OpenCodeServers {
     agent: T,
     taskId?: string,
     directory?: string,
+    /** A sandboxed thread gets its own server inside its container. */
+    sandbox?: SandboxSession,
   ): Promise<OpenCodeLease<T>> {
     if (this.shutdown.signal.aborted) throw new Error('OpenCode is shutting down')
     if (agent.endpoint.trim()) {
@@ -143,7 +148,7 @@ export class OpenCodeServers {
       throw new Error(
         'Dovo manages the local OpenCode listener. Configure a server URL to use custom network flags.',
       )
-    const key = JSON.stringify([command, args, agent.env])
+    const key = JSON.stringify([command, args, agent.env, sandbox?.container])
     let owned: OwnedServer | undefined
     while (true) {
       const existing = this.servers.get(key)
@@ -157,7 +162,7 @@ export class OpenCodeServers {
         continue
       }
       if (this.servers.size < maxServers) {
-        owned = this.start(key, command, args, agent)
+        owned = this.start(key, command, args, agent, sandbox)
         break
       }
       if (!(await this.reserve()))
@@ -202,24 +207,31 @@ export class OpenCodeServers {
     owned.tasks.delete(taskId)
     return owned
   }
-  private start(key: string, command: string, args: string[], agent: AgentDiscovery) {
+  private start(
+    key: string,
+    command: string,
+    args: string[],
+    agent: AgentDiscovery,
+    sandbox?: SandboxSession,
+  ) {
     const env = {
       ...processEnvironment(agent.env),
       OPENCODE_SERVER_USERNAME: agent.env?.OPENCODE_SERVER_USERNAME || 'opencode',
       OPENCODE_SERVER_PASSWORD:
         agent.env?.OPENCODE_SERVER_PASSWORD || randomBytes(32).toString('base64url'),
     }
-    const child = this.launch(
-      command,
-      ['serve', ...args, '--hostname', '127.0.0.1', '--port', '0'],
-      {
-        windowsHide: true,
-        cwd: homedir(),
-        env,
-        detached: process.platform !== 'win32',
-        stdio: ['ignore', 'pipe', 'pipe'],
-      },
-    )
+    const serveArgs = ['serve', ...args, '--hostname', '127.0.0.1', '--port', '0']
+    const serveOptions: SpawnOptions = {
+      windowsHide: true,
+      cwd: homedir(),
+      env,
+      detached: process.platform !== 'win32',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    }
+    const forward: OwnedServer['forward'] = {}
+    const child = sandbox
+      ? spawnHarness(sandbox, command, serveArgs, serveOptions)
+      : this.launch(command, serveArgs, serveOptions)
     let endpoint = '',
       startupError: Error | undefined
     let output = ''
@@ -228,7 +240,7 @@ export class OpenCodeServers {
       const address = /(?:server listening on|listening at)\s+(http:\/\/127\.0\.0\.1:\d+)/i.exec(
         output,
       )?.[1]
-      if (address) endpoint = address
+      if (address && !forward.url) endpoint = address
       const password = /server password\s+(\S+)/i.exec(output)?.[1]
       if (password) env.OPENCODE_SERVER_PASSWORD = password
     }
@@ -252,6 +264,12 @@ export class OpenCodeServers {
       while (Date.now() < deadline) {
         this.shutdown.signal.throwIfAborted()
         if (startupError) throw startupError
+        if (endpoint && sandbox && !forward.url) {
+          // The address is the container's loopback. Reach it from the host through the CLI.
+          const opened = await sandboxPortForward(sandbox, Number(new URL(endpoint).port))
+          Object.assign(forward, opened)
+          endpoint = opened.url
+        }
         if (endpoint) {
           try {
             const response = await fetch(`${endpoint}/api/info`, {
@@ -304,6 +322,7 @@ export class OpenCodeServers {
       failures: 0,
       idleAt: Date.now(),
       directories: new Set(),
+      forward,
     }
     this.servers.set(key, owned)
     return owned
@@ -388,6 +407,7 @@ export class OpenCodeServers {
     if (this.servers.get(owned.key) === owned) this.servers.delete(owned.key)
   }
   private async stop(owned: OwnedServer) {
+    owned.forward.close?.()
     try {
       await stopOwnedChild(owned.child)
     } catch (error) {

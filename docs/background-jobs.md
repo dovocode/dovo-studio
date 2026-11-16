@@ -29,6 +29,14 @@ provider session, so the next follow-up does not feed them back as new context. 
 responsibility for delivering its background command notification; Studio does not inject a second
 copy as a new prompt.
 
+A finished background task can wake Claude's main agent when no Studio turn is active. Studio shows
+that work as a **Main agent: …** row with the session's own ID. The row keeps the thread working and
+the session owned, Stop interrupts it, and its finish is never queued as a child result. Its tools
+use the policy of the last turn, but only while the thread still has that session and the same
+permission, approval policy and sandbox mode. After a change, the pre-use hook denies every tool. A
+new message waits up to 10 minutes for the woken agent's result, so that result cannot end the new
+turn early. The wait ends when the turn is cancelled.
+
 Child results change to read when their receiving prompt is accepted, in the same transaction as the
 acceptance record. Result-version checks prevent an old acknowledgement consuming a newer result.
 Existing inbox receipts continue to deduplicate repeated delivery and survive restarts.

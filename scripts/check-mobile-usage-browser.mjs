@@ -9,7 +9,7 @@ const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):styl
 const css=style=>{const value=flat(style);return {...value,paddingLeft:value.paddingHorizontal,paddingRight:value.paddingHorizontal,paddingTop:value.paddingVertical,paddingBottom:value.paddingVertical,fontSize:value.fontSize?value.fontSize*window.fontScale:undefined,lineHeight:value.lineHeight?value.lineHeight*window.fontScale+'px':undefined}};
 export const StyleSheet={hairlineWidth:1};
 export const useWindowDimensions=()=>({width:innerWidth,height:innerHeight,fontScale:window.fontScale});
-export const View=({children,style,accessibilityRole,accessibilityLabel,accessibilityValue})=><div role={accessibilityRole==='image'?'img':accessibilityRole} aria-label={accessibilityLabel} aria-valuenow={accessibilityValue?.now} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minWidth:0,...css(style)}}>{children}</div>;
+export const View=({children,style,accessibilityRole,accessibilityLabel,accessibilityValue})=><div role={accessibilityRole==='image'?'img':accessibilityRole} aria-label={accessibilityLabel} aria-valuenow={accessibilityValue?.now} aria-valuetext={accessibilityValue?.text} style={{display:'flex',flexDirection:'column',boxSizing:'border-box',flexShrink:0,minWidth:0,...css(style)}}>{children}</div>;
 export const Text=({children,style,numberOfLines,accessibilityLiveRegion})=><span data-text aria-live={accessibilityLiveRegion} style={{display:'block',overflowWrap:'anywhere',...css(style),...(numberOfLines?{display:'-webkit-box',WebkitBoxOrient:'vertical',WebkitLineClamp:numberOfLines,overflow:'hidden'}:{})}}>{children}</span>;
 export const FlatList=({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,contentContainerStyle})=><View style={contentContainerStyle}>{ListHeaderComponent}{data.map((item,index)=><View key={keyExtractor(item)}>{renderItem({item,index})}</View>)}{!data.length&&ListEmptyComponent}</View>;
 export const SettingsPage=View;
@@ -26,7 +26,8 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import Usage from './src/screens/usage';
 window.fontScale=1;const now=Date.now();const turn=(id,reported)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-(id==='missing'?2:1)*86400000).toISOString(),finishedAt:new Date(now-(id==='missing'?2:1)*86400000+60000).toISOString(),...(reported?{tokens:12000,estimatedCostUsd:.035}:{})});
-window.usageHost={connected:true,profile:{id:'mac',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://runtime',token:'test-token'}},snapshot:{workspace:{tasks:[{id:'task',title:'Improve composer and usage visualization across computers',example:false,turns:[turn('reported',true),turn('missing',false)]}],planLimits:[]}}};window.missingTurn=turn('unreported',false);
+window.paceReading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'Session',durationMins:300,resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal'}};
+window.usageHost={connected:true,profile:{id:'mac',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://runtime',token:'test-token'}},snapshot:{unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks:[{id:'task',title:'Improve composer and usage visualization across computers',example:false,turns:[turn('reported',true),turn('missing',false)]}],planLimits:[]}}};window.missingTurn=turn('unreported',false);
 function App(){const[,render]=useState(0);window.refreshLayout=scale=>{window.fontScale=scale;render(value=>value+1)};return <Usage/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -73,7 +74,7 @@ const hubRead=(path,input)=>{
   window.hubEntries=[...window.hubEntries.filter(h=>h.id!==value.id),value];return window.hubEntries;
  }
 };
-const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:[]}}}]);listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
+const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{...window.usageHost.snapshot,workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:scenario==='limits'?[window.paceReading]:[]}}}]);listeners.forEach(callback=>callback())};window.reportSpendLimit=value=>{overviews=current().map(entry=>({...entry,snapshot:{...entry.snapshot,unattendedSpendLimitUsd:value}}));listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
     },
   ],
 )
@@ -204,6 +205,38 @@ try {
   await page.getByRole('button', { name: 'Confirm removal', exact: true }).click()
   await page.waitForFunction(() => window.hubEntries.length === 0)
   await page.getByRole('button', { name: 'Save hub', exact: true }).waitFor()
+  await page.evaluate(() => window.changeUsageScenario('limits'))
+  const sessionBar = page.getByRole('progressbar', { name: 'codex Session remaining' })
+  assert.equal(
+    await sessionBar.getAttribute('aria-valuetext'),
+    '8% left. Even pace: 80% of window elapsed',
+  )
+  await page.getByText(/Even pace: 80% of window elapsed/).waitFor()
+  const limitField = page.getByLabel('Limit in USD for Mac Studio', { exact: true })
+  // An empty field never turns the limit off; that stays the Turn off action.
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page
+    .getByText('Enter an amount in USD above 0 and up to 10,000.', { exact: true })
+    .waitFor()
+  // A snapshot that arrives after the page opened fills the untouched field.
+  await page.evaluate(() => window.reportSpendLimit(3))
+  await page.getByText('Mac Studio · $3.00 per thread family', { exact: true }).waitFor()
+  assert.equal(await limitField.inputValue(), '3')
+  await limitField.fill('0')
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page
+    .getByText('Enter an amount in USD above 0 and up to 10,000.', { exact: true })
+    .waitFor()
+  await limitField.fill('5')
+  await page.getByRole('button', { name: 'Save limit', exact: true }).click()
+  await page.getByText('Limit saved.', { exact: true }).waitFor()
+  await page.getByText('Mac Studio · $5.00 per thread family', { exact: true }).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.limitWrites), [{ unattendedSpendLimitUsd: 5 }])
+  // Another device changes the limit: the field follows it.
+  await page.evaluate(() => window.reportSpendLimit(7))
+  await page.getByText('Mac Studio · $7.00 per thread family', { exact: true }).waitFor()
+  assert.equal(await limitField.inputValue(), '7')
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
   await page.evaluate(() => window.changeUsageScenario('unpaired'))
   await page
     .getByText('Connect a computer to see recorded usage and account limits.', { exact: true })

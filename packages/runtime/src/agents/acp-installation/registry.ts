@@ -80,6 +80,12 @@ export function parseRegistryResponse(raw: unknown) {
   return { version: envelope.data.version, agents }
 }
 
+/** One saved Registry entry, as written beside an installation. */
+export function parseRegistryEntry(raw: unknown): RegistryEntry | undefined {
+  const parsed = decodeResult(registryEntrySchema, raw)
+  return parsed.success && validRegistryVersion(parsed.data.version) ? parsed.data : undefined
+}
+
 export function platformKey(platform: NodeJS.Platform, arch: string): RegistryPlatform | undefined {
   const os =
     platform === 'darwin'

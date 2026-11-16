@@ -659,6 +659,7 @@ export function ChatThread({
                                     taskId={task.id}
                                     message={message}
                                     turn={turn}
+                                    groupStatus={group.status}
                                     tools={activityGroups.byMessage.get(message.id) ?? emptyTools}
                                     summaryTools={
                                       turn

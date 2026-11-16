@@ -19,11 +19,13 @@ import { minValue, maxValue, refine, urlSchema, isoDateTime } from './shared/sch
 import { subagentSchema } from './conversation/workflow/subagents.js'
 import { agentSecretReferencesSchema } from './tasks/secret-references.js'
 import { botSchema } from './tasks/bots.js'
+import { spendPauseSchema } from './tasks/spend-limit.js'
 import { maxThreadActions, threadActionSchema } from './tasks/thread-actions.js'
 import { agentTodosSchema } from './conversation/workflow/agent-interactions.js'
 import { jiraBindingSchema, jiraSourceSchema, jiraIssueLinkSchema } from './scm/forges/jira.js'
 import { taskWorkItemSchema } from './scm/work/work-task.js'
 import { resourceSettingsSchema } from './shared/resources.js'
+import { containerSandboxSchema } from './tasks/container-sandbox.js'
 import { attachmentSchema, MAX_ATTACHMENTS } from './shared/attachments.js'
 import { Schema, Struct } from 'effect'
 import { forgeBindingSchema, forgeProviderSchema } from './scm/forges/forges.js'
@@ -144,6 +146,8 @@ export const projectTaskDefaultsSchema = mutableStruct({
   // on read. A task can still pick its own base branch before its first message.
   /** Start worktrees from origin (fetched first) instead of the local branch. */
   worktreeFromOrigin: Schema.optional(Schema.Boolean),
+  /** Default container sandbox for new threads in this project. */
+  containerSandbox: Schema.optional(containerSandboxSchema),
 })
 export type ProjectTaskDefaults = Schema.Schema.Type<typeof projectTaskDefaultsSchema>
 /** A one-tap command for a project, such as "Run tests", run in the task's terminal. */
@@ -798,6 +802,8 @@ export const taskSchema = mutableStruct({
     mutableStruct({
       taskId: Schema.String,
       turnId: Schema.optional(Schema.String),
+      /** Last source message copied into a message fork. */
+      messageId: Schema.optional(Schema.String),
       head: Schema.optional(Schema.String),
       title: maxValue(Schema.String, 400),
       snapshot: Schema.optional(Schema.String),
@@ -908,6 +914,9 @@ export const taskSchema = mutableStruct({
     mutableStruct({ tree: Schema.String, head: Schema.String }),
   ),
   checkoutLocked: Schema.optional(Schema.Boolean),
+  /** Container sandbox chosen before the first message. The runtime records the project default
+   * on the first run when a client sent none; later project changes never move the thread. */
+  containerSandbox: Schema.optional(containerSandboxSchema),
   // Captured on the first submitted input; queued input keeps the lock after removal.
   providerLock: Schema.optional(providerSchema),
   /** Human-selected change for the next turn. Current execution keeps its original settings. */
@@ -1084,6 +1093,8 @@ export const taskSchema = mutableStruct({
       resume: Schema.Boolean,
     }),
   ),
+  /** Runtime-owned: new unattended work waits because the spend limit was reached. */
+  spendPause: Schema.optional(spendPauseSchema),
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
   agentOverrides: Schema.optional(taskModelSchema),
   harness: Schema.optional(Schema.NullOr(taskHarnessSchema)),

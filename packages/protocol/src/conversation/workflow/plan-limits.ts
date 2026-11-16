@@ -321,6 +321,22 @@ export function formatQuotaReset(resetsAt: number | undefined, now = Date.now())
   return `Resets in ${remaining} · ${new Date(resetsAt * 1000).toLocaleString()}`
 }
 
+/** The even-use point of a window: the share of its time that has passed. A remaining bar marks
+ * it at `markPercent`; less remaining than the mark means use is ahead of an even pace. Unknown
+ * when the window length or reset time is missing, or when `now` is outside the window. */
+export function limitPace(
+  limit: Pick<PlanLimit, 'resetsAt' | 'durationMins'>,
+  now = Date.now(),
+): { elapsedPercent: number; markPercent: number } | undefined {
+  if (!limit.resetsAt || !limit.durationMins) return undefined
+  const end = limit.resetsAt * 1000
+  const length = limit.durationMins * 60_000
+  const start = end - length
+  if (!Number.isFinite(start) || now < start || now >= end) return undefined
+  const elapsedPercent = ((now - start) / length) * 100
+  return { elapsedPercent, markPercent: 100 - elapsedPercent }
+}
+
 export function accountLimitGroups(windows: ReturnType<typeof accountPlanLimits>) {
   const groups = new Map<
     string,

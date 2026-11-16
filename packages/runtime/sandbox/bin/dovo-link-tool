@@ -1,0 +1,53 @@
+#!/bin/sh
+# dovo-link-tool <name> <mise-tool> <executable>: write /opt/dovo/harness/<name>, which runs the
+# executable from an installed mise tool. A Node script runs with the system Node LTS, so a
+# project's own Node version applies only to the commands that the harness runs.
+set -eu
+name=$1
+tool=$2
+executable=$3
+directory=$(mise where "$tool")
+case "$tool" in
+  npm:*)
+    # mise can install npm packages with aube. Its .bin entry is a shell wrapper, and the
+    # package itself can be a directory symlink with the executable's name. Read npm's bin
+    # contract to find the real entry, so Node scripts still use the global Node LTS below.
+    package=${tool#npm:}
+    package=${package%@*}
+    node="$(mise where node@lts)/bin/node"
+    path=$("$node" -e '
+      const fs = require("node:fs"), path = require("node:path");
+      const root = path.join(process.argv[1], "node_modules", process.argv[2]);
+      const { bin } = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8"));
+      const entries = typeof bin === "string" ? { [process.argv[2].split("/").at(-1)]: bin } : bin ?? {};
+      const entry = entries[process.argv[3]] ?? (Object.keys(entries).length === 1 ? Object.values(entries)[0] : undefined);
+      if (typeof entry !== "string") process.exit(1);
+      process.stdout.write(path.join(root, entry));
+    ' "$directory" "$package" "$executable")
+    ;;
+  *) path=$(mise which --tool "$tool" "$executable" 2>/dev/null || true) ;;
+esac
+if [ -z "$path" ] || [ ! -f "$path" ]; then
+  path=$(find -L "$directory" -maxdepth 5 -type f -name "$executable" 2>/dev/null | head -n 1)
+fi
+if { [ -z "$path" ] || [ ! -e "$path" ]; } && [ -d "$directory/bin" ]; then
+  # A package whose only executable has another name, such as an ACP Registry npm package.
+  only=$(ls -1 "$directory/bin")
+  [ "$(printf '%s\n' "$only" | grep -c .)" = 1 ] && path="$directory/bin/$only"
+fi
+if [ -z "$path" ] || [ ! -f "$path" ]; then
+  echo "The mise tool $tool has no executable named $executable." >&2
+  exit 1
+fi
+target="/opt/dovo/harness/$name"
+first=$(head -c 256 "$path" | head -n 1 || true)
+case "$first" in
+  '#!'*node*)
+    node="$(mise where node@lts)/bin/node"
+    printf '#!/bin/sh\nexec "%s" "%s" "$@"\n' "$node" "$path" >"$target"
+    ;;
+  *)
+    printf '#!/bin/sh\nexec "%s" "$@"\n' "$path" >"$target"
+    ;;
+esac
+chmod 0755 "$target"

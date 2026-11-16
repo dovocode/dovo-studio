@@ -118,6 +118,7 @@ export default function TasksView({
   nativeAgentKey,
   navigationKey,
   pullTarget,
+  messageId,
   embedded = false,
   onBotDeleted,
 }: StudioViewProps & { embedded?: boolean; onBotDeleted?: (id: string) => void }) {
@@ -920,6 +921,16 @@ export default function TasksView({
     window.addEventListener('dovo:bot-memory-source', reveal)
     return () => window.removeEventListener('dovo:bot-memory-source', reveal)
   }, [task?.id, snapshot?.runtimeId, activeRuntimeId, store.connection, setRevealMessage])
+  // A link to one message, such as a routine source, opens the chat and scrolls to it once.
+  const messageRoute = useRef('')
+  useEffect(() => {
+    if (!entityId || !messageId || task?.id !== entityId) return
+    const route = JSON.stringify([entityId, messageId, navigationKey])
+    if (messageRoute.current === route) return
+    messageRoute.current = route
+    selectSurface('chat')
+    setRevealMessage(`message-${entityId}-${messageId}`)
+  }, [entityId, messageId, navigationKey, task?.id])
   const revealHandled = useCallback(() => setRevealMessage(''), [setRevealMessage])
   const allEntries = useMemo(() => collectTasks(sources), [sources])
   useEffect(() => {
@@ -1160,6 +1171,11 @@ export default function TasksView({
               }
               onDeselect={deselectTask}
               onProjectDeleted={() => setProjectId('scratch')}
+              onOpenForkSource={(taskId, messageId) => {
+                host.navigate({ viewId: 'tasks', entityId: taskId })
+                selectSurface('chat')
+                setRevealMessage(`message-${taskId}-${messageId}`)
+              }}
               surface={surface}
               onSurface={(next) => {
                 if (next === 'terminal') setTerminalFocus('')

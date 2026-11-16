@@ -29,6 +29,7 @@ import { checkpointUndoTurn } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
+import { ThreadSandboxChoice } from '../detail/thread-sandbox'
 import { LinkedCheckoutEditor } from '../detail/linked-projects'
 import { TaskMachineSelector } from '../creation/task-machine-selector'
 import { WorktreeBasePicker } from '../creation/worktree-base-picker'
@@ -870,6 +871,22 @@ export function Composer({
                   dismissComposerKeyboard()
                   setLinkingProjects(true)
                 }}
+              />
+            )}
+            {!dictation.active && (
+              <ThreadSandboxChoice
+                task={task}
+                disabled={busy || !connected}
+                onChange={(containerSandbox) =>
+                  act(() =>
+                    patch({
+                      containerSandbox: {
+                        before: task.containerSandbox ?? null,
+                        after: containerSandbox,
+                      },
+                    }),
+                  )
+                }
               />
             )}
             {(task.autoProject || hasGit) && !dictation.active && (

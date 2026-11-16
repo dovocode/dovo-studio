@@ -21,6 +21,7 @@ import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { triggerSummary, linearNodes } from './linear-flow'
 import { RunProgress } from './run-progress'
+import { RoutineHistory } from './routine-provenance'
 import { automationRuns } from './automation-summary'
 import { automationStarts } from './automation-starts'
 import { useNavigation } from '../shell/navigation'
@@ -108,6 +109,7 @@ export function AutomationCard({
         </Text>
       )}
       {latest ? <RunProgress key={latest.id} run={latest} /> : null}
+      <RoutineHistory automationId={flow.id} />
       <View
         style={[
           styles.row,

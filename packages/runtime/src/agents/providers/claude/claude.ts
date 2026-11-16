@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnHarness } from '../../../sandbox/launcher.js'
 import { stopOwnedChild } from '../../execution/stop-owned-child.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { randomUUID } from 'node:crypto'
@@ -93,7 +93,7 @@ function claudeOptions(
 ): Options {
   return {
     spawnClaudeCodeProcess: (options) => {
-      const child = spawn(options.command, options.args, {
+      const child = spawnHarness(run.sandbox, options.command, options.args, {
         cwd: options.cwd,
         env: options.env,
         detached: process.platform !== 'win32',
@@ -241,7 +241,7 @@ function claudeOptions(
           },
         }),
     onElicitation: async (request, options) => {
-      const current = binding.activeRun(undefined, options.signal, true)
+      const current = binding.activeRun(undefined, options.signal)
       if (!current) return { action: 'decline' }
       if (request.mode !== 'form' && request.mode !== undefined) {
         current.onActivity('This Claude MCP input request is not a supported form')
@@ -417,6 +417,49 @@ type WarmClaude = {
   owner: AgentRun
   nativeAgents: Subagent[]
   backgroundTasks: ClaudeBackgroundTasks
+  /** The root agent is working without a Dovo turn, woken by a background task notification. */
+  wake?: { id: string; done: Promise<void>; finish: () => void }
+}
+
+/** How long a new turn waits for a woken root agent before it fails with a clear message. */
+const wakeWaitMs = 10 * 60_000
+
+/** Report root work outside a turn as a native record with the session's own ID. Studio then
+ * shows the thread as working, keeps the session owned and can stop the work. */
+function reportRoot(
+  session: WarmClaude,
+  id: string,
+  fields:
+    | { subtype: 'task_started' }
+    | { subtype: 'task_progress'; last_tool_name: string }
+    | { subtype: 'task_notification'; status: 'completed' | 'failed' | 'stopped' },
+) {
+  const event = {
+    type: 'system',
+    session_id: id,
+    task_id: id,
+    ...(fields.subtype === 'task_started'
+      ? { task_type: 'local_agent', description: 'Main agent: handling a finished background task' }
+      : {}),
+    ...fields,
+  }
+  session.nativeAgents = updateSubagents(
+    session.nativeAgents,
+    'claude',
+    event,
+    new Date().toISOString(),
+    'system',
+    id,
+  )
+  session.onSubagentEvent?.('system', event, id)
+}
+
+function finishWake(session: WarmClaude, status?: 'completed' | 'failed' | 'stopped') {
+  const wake = session.wake
+  if (!wake) return
+  session.wake = undefined
+  if (status) reportRoot(session, wake.id, { subtype: 'task_notification', status })
+  wake.finish()
 }
 
 export function createClaudeAdapter(): AgentAdapter {
@@ -431,8 +474,17 @@ export function createClaudeAdapter(): AgentAdapter {
       owner.onNativeSession?.(
         {
           stop: async (id) => {
+            const root = session.wake?.id ?? session.sessionId
+            if (session.wake && (!id || id === session.wake.id)) await session.stream.interrupt()
+            // The saved root record can miss its finish while a new turn takes over the session.
+            else if (id && id === root)
+              reportRoot(session, id, { subtype: 'task_notification', status: 'stopped' })
             for (const agent of session.nativeAgents.filter(
-              (agent) => nativeAgentWorking(agent) && !agent.workflowId && (!id || agent.id === id),
+              (agent) =>
+                nativeAgentWorking(agent) &&
+                !agent.workflowId &&
+                agent.id !== root &&
+                (!id || agent.id === id),
             ))
               await session.stream.stopTask(agent.id)
           },
@@ -447,6 +499,7 @@ export function createClaudeAdapter(): AgentAdapter {
     active.delete(session)
     session.closed = true
     session.input.close()
+    finishWake(session)
     session.closing = (async () => {
       let closeError: unknown
       try {
@@ -464,6 +517,33 @@ export function createClaudeAdapter(): AgentAdapter {
     })()
     return session.closing
   }
+  // A user message sent while a woken root agent works waits for its result. Otherwise the new
+  // turn would take the wake's events and finish early on the wake's result.
+  const waitForWake = async (session: WarmClaude, run: AgentRun) => {
+    const wake = session.wake
+    if (!wake) return
+    // Studio ignores the previous turn's native callbacks once this turn starts.
+    const handler = session.onSubagentEvent
+    session.onSubagentEvent = run.onSubagentEvent
+    run.onActivity('Waiting for Claude to finish a background task result')
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let abort = () => {}
+    const outcome = await new Promise<'done' | 'timeout' | 'aborted'>((resolve) => {
+      void wake.done.then(() => resolve('done'))
+      timer = setTimeout(() => resolve('timeout'), wakeWaitMs)
+      abort = () => resolve('aborted')
+      run.signal.addEventListener('abort', abort, { once: true })
+      if (run.signal.aborted) abort()
+    })
+    clearTimeout(timer)
+    run.signal.removeEventListener('abort', abort)
+    if (outcome === 'done') return
+    if (session.onSubagentEvent === run.onSubagentEvent) session.onSubagentEvent = handler
+    run.signal.throwIfAborted()
+    throw new Error(
+      'Claude is still handling a finished background task. Stop it, or send the message again when it finishes.',
+    )
+  }
   const runWarm = async (run: AgentRun, command: string) => {
     if (!run.taskId) throw new Error('Warm Claude turn needs a task')
     const config = JSON.stringify(
@@ -472,7 +552,11 @@ export function createClaudeAdapter(): AgentAdapter {
     )
     const mcpServers = claudeMcpServers(run.agent.resources?.mcpServers ?? [])
     const mcpBinding = JSON.stringify(mcpServers)
-    const previous = idle.get(run.taskId)
+    let previous = idle.get(run.taskId)
+    if (previous?.wake) {
+      await waitForWake(previous, run)
+      previous = idle.get(run.taskId)
+    }
     idle.delete(run.taskId)
     const reusable =
       previous &&
@@ -496,19 +580,19 @@ export function createClaudeAdapter(): AgentAdapter {
     else {
       const input = new MessageQueue()
       const controller = new AbortController()
-      const currentRun = (
-        agentId?: string,
-        signal?: AbortSignal,
-        sessionRequest = false,
-      ): AgentRun | undefined => {
+      const currentRun = (agentId?: string, signal?: AbortSignal): AgentRun | undefined => {
         if (!session) return run.signal.aborted || signal?.aborted ? undefined : run
         if (session.closed || session.controller.signal.aborted || signal?.aborted) return
         if (session.turn) return session.turn.run
         const owner = session.owner
+        // Without a Dovo turn, Claude acts only for work this session started: a live native
+        // agent, or the root agent woken by a background task notification. Both use the
+        // owner's policy and route approvals through the session-owned channel. That policy
+        // is from the owner's turn, so it applies only while the thread still has the same
+        // session and policy. Otherwise Claude would run tools the thread no longer allows.
         if (
-          (!agentId && (!sessionRequest || !session.nativeAgents.some(nativeAgentWorking))) ||
           !signal ||
-          !owner.nativeAgentInteractions ||
+          !owner.nativeAgentInteractions?.active?.() ||
           (agentId &&
             !session.nativeAgents.some(
               (agent) => agent.id === agentId && nativeAgentWorking(agent),
@@ -541,7 +625,10 @@ export function createClaudeAdapter(): AgentAdapter {
         }
       }
       const capabilities = { unanswered: false }
-      const configFile = claudeMcpConfigFile(run.agent.resources?.mcpServers ?? [])
+      const configFile = claudeMcpConfigFile(
+        run.agent.resources?.mcpServers ?? [],
+        run.sandbox?.stateDirectory,
+      )
       let stream: ReturnType<typeof query> | undefined
       const binding: ClaudeBinding = { activeRun: currentRun, capabilities }
       const abortStartup = () => {
@@ -552,8 +639,9 @@ export function createClaudeAdapter(): AgentAdapter {
       try {
         const options = claudeOptions(run, controller, binding, command, configFile.path)
         // Only an empty input queue is claimed. No prompt runs before MCP ownership is rebound.
+        // A prewarmed spare runs on the host; a sandboxed thread always starts its own process.
         const claimed =
-          !run.sessionId && !run.compact
+          !run.sessionId && !run.compact && !run.sandbox
             ? await spares.claim(options, binding, input, run.signal)
             : undefined
         if (run.signal.aborted) {
@@ -568,7 +656,7 @@ export function createClaudeAdapter(): AgentAdapter {
             throw new Error('Claude prewarm MCP binding failed')
           }
         }
-        if (!run.compact)
+        if (!run.compact && !run.sandbox)
           spares.remember(() => {
             let owner: ClaudeBinding = {
               activeRun: () => undefined,
@@ -644,6 +732,19 @@ export function createClaudeAdapter(): AgentAdapter {
             )
             session.onSubagentEvent?.(message.type, message, session.sessionId)
             if (!turn) {
+              // A background task notification wakes the root agent without a Dovo turn.
+              // Track that work until its result, so a new turn cannot claim its events.
+              if (
+                !session.wake &&
+                session.sessionId &&
+                (message.type === 'assistant' || message.type === 'stream_event') &&
+                message.parent_tool_use_id == null
+              ) {
+                let finish = () => {}
+                const done = new Promise<void>((resolve) => (finish = resolve))
+                session.wake = { id: session.sessionId, done, finish }
+                reportRoot(session, session.wake.id, { subtype: 'task_started' })
+              }
               // Native background work can produce a root reply after the user turn has ended.
               // Persist the canonical message through the session-owned callback, not retired turn hooks.
               if (message.type === 'assistant' && message.parent_tool_use_id == null) {
@@ -656,7 +757,28 @@ export function createClaudeAdapter(): AgentAdapter {
                     { id: message.uuid, text },
                     session.sessionId,
                   )
+                for (const block of message.message.content)
+                  if (
+                    session.wake &&
+                    (block.type === 'tool_use' ||
+                      block.type === 'server_tool_use' ||
+                      block.type === 'mcp_tool_use')
+                  )
+                    reportRoot(session, session.wake.id, {
+                      subtype: 'task_progress',
+                      last_tool_name: block.name,
+                    })
               }
+              if (message.type === 'result')
+                finishWake(
+                  session,
+                  message.terminal_reason === 'aborted_streaming' ||
+                    message.terminal_reason === 'aborted_tools'
+                    ? 'stopped'
+                    : message.subtype === 'success' && !message.is_error
+                      ? 'completed'
+                      : 'failed',
+                )
               continue
             }
             try {
@@ -698,6 +820,7 @@ export function createClaudeAdapter(): AgentAdapter {
           // Explicit shutdown owns stream closure and the final session notification.
           if (session.closed) return
           session.closed = true
+          finishWake(session)
           session.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)
           active.delete(session)
           idle.delete(session.taskId)
@@ -828,7 +951,10 @@ export function createClaudeAdapter(): AgentAdapter {
     async run(run) {
       run = checkedPolicyRun(run, 'claude')
       if (run.goal) run = { ...run, prompt: goalCommandText(run.goal) }
-      const command = await claudeCommand(run.agent.endpoint, run.agent.env)
+      // Inside a sandbox the launcher maps `claude` to the Linux build installed with mise.
+      const command = run.sandbox
+        ? 'claude'
+        : await claudeCommand(run.agent.endpoint, run.agent.env)
       if (run.taskId && run.tools !== 'none') return runWarm(run, command)
       const controller = new AbortController(),
         abort = () => controller.abort()
@@ -838,6 +964,7 @@ export function createClaudeAdapter(): AgentAdapter {
       if (run.signal.aborted) abort()
       const configFile = claudeMcpConfigFile(
         run.tools === 'none' ? [] : (run.agent.resources?.mcpServers ?? []),
+        run.sandbox?.stateDirectory,
       )
       let stream: ReturnType<typeof query> | undefined
       const capabilities = { unanswered: false }

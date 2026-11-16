@@ -10,6 +10,8 @@ import { peerConfigSchema, peerRelayIdentitySchema, peerRelayProviderSchema } fr
 import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
 import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
+import { unattendedSpendLimitSchema } from '../../tasks/spend-limit.js'
+import { containerSandboxStatusSchema } from '../../tasks/container-sandbox.js'
 import { memorySettingsSchema } from '../memory.js'
 import { browserProfilesSchema, defaultBrowserProfiles } from '../previews/browser-profiles.js'
 import { artifactRetentionSchema } from '../../conversation/artifacts.js'
@@ -280,11 +282,24 @@ export const snapshotSchema = mutableStruct({
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
   botBackupSupported: Schema.optional(Schema.Literal(true)),
+  /** `unattendedSpendLimitUsd` preference, `Task.spendPause` and `/api/tasks/spend-limit/continue`. */
+  unattendedSpendLimitSupported: Schema.optional(Schema.Literal(true)),
+  /** Computer-wide unattended spend limit in USD; null when off. */
+  unattendedSpendLimitUsd: Schema.optional(Schema.NullOr(Schema.Number)),
+  /** `/api/problem-reports/preview` and `/start`: redacted diagnostics for a triage thread. */
+  problemReportsSupported: Schema.optional(Schema.Literal(true)),
+  /** Project and thread `containerSandbox` settings, sandbox badges and setup status. */
+  containerSandboxSupported: Schema.optional(Schema.Literal(true)),
+  containerSandbox: Schema.optional(containerSandboxStatusSchema),
   pendingBotHarnessSupported: Schema.optional(Schema.Literal(true)),
   routineJsonMonitoringSupported: Schema.optional(Schema.Literal(true)),
   routineMcpMonitoringSupported: Schema.optional(Schema.Literal(true)),
   freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
   runAuditSupported: Schema.optional(Schema.Literal(true)),
+  /** `POST /api/jobs/dry-run` evaluates a flow with sample data and runs no external steps. */
+  automationDryRunSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/jobs/provenance`, routine change sources and `routineChange` in run audits. */
+  routineProvenanceSupported: Schema.optional(Schema.Literal(true)),
   routineFindingGroupsSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.bot.resources` and `/api/bots/update` `resources`. */
   botResourcesSupported: Schema.optional(Schema.Literal(true)),
@@ -302,6 +317,8 @@ export const snapshotSchema = mutableStruct({
   persistentTurnModelsSupported: Schema.optional(Schema.Boolean),
   projectTransfersSupported: Schema.optional(Schema.Boolean),
   threadHandoffsSupported: Schema.optional(Schema.Boolean),
+  /** `/api/tasks/fork-message` forks settled history into a new thread. */
+  messageForkSupported: Schema.optional(Schema.Literal(true)),
   /** Stores project pin/archive categories and the local-only repository flags. */
   projectOrganizationSupported: Schema.optional(Schema.Literal(true)),
   projectWorktreeTransfersSupported: Schema.optional(Schema.Boolean),
@@ -646,6 +663,10 @@ export const runtimePreferencesSchema = mutableStruct({
     Schema.withDecodingDefaultType(Effect.sync(() => 'inherit' as const)),
   ),
   suggestNextPrompt: Schema.Boolean.pipe(Schema.withDecodingDefaultType(Effect.sync(() => false))),
+  /** Off by default. Holds new unattended work of a thread family after this estimated cost. */
+  unattendedSpendLimitUsd: Schema.NullOr(unattendedSpendLimitSchema).pipe(
+    Schema.withDecodingDefaultType(Effect.sync(() => null)),
+  ),
   enableSmartModelSelection: Schema.Boolean.pipe(
     Schema.withDecodingDefaultType(Effect.sync(() => false)),
   ),

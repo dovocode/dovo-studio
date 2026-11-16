@@ -8,6 +8,11 @@ import {
   taskHarnessSchema,
   taskModelSchema,
 } from '../workspace.js'
+import { routineSourceInputSchema } from '../automation/routine-provenance.js'
+import {
+  automationDryRunInputSchema,
+  automationDryRunStopAtSchema,
+} from '../automation/dry-run-input.js'
 
 export const studioPeerAccessSetting = {
   label: 'Access paired computers',
@@ -136,10 +141,19 @@ export const studioAutomationsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
   mutableStruct({ action: Schema.Literal('read'), id }),
   mutableStruct({
-    action: Schema.Literals(['create', 'update', 'validate']),
+    action: Schema.Literals(['create', 'update', 'validate', 'dryRun']),
     automation: automationSchema,
+    source: Schema.optional(routineSourceInputSchema),
+    /** dryRun only: sample trigger data and a simulated failure or rejection. */
+    input: Schema.optional(automationDryRunInputSchema),
+    stopAt: Schema.optional(automationDryRunStopAtSchema),
   }),
-  mutableStruct({ action: Schema.Literal('enable'), id, enabled: Schema.Boolean }),
+  mutableStruct({
+    action: Schema.Literal('enable'),
+    id,
+    enabled: Schema.Boolean,
+    source: Schema.optional(routineSourceInputSchema),
+  }),
   mutableStruct({ action: Schema.Literal('run'), id, requestId: id }),
   mutableStruct({ action: Schema.Literals(['runs', 'cancel', 'retry']), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),

@@ -29,6 +29,8 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Automations](automations.md): triggers, execution, reviews, and recovery.
 - [Scoped settings](scoped-settings.md): global, environment, shared project and local project
   inheritance.
+- [Container sandboxes](sandboxes.md): run a thread's harness, commands and terminals in a local
+  Docker or Podman container with mise, per-harness logins and optional network isolation.
 - [Harness instruction files](harness-instructions.md): edit native instructions on a selected
   computer from desktop or mobile.
 - [Memory](memory.md): optional project, system-wide and projectless notes shared across threads.
@@ -41,11 +43,14 @@ provider setup, and feature manual. The guides below focus on particular workflo
 - [Desktop dictation](desktop-dictation.md): offline Nemotron streaming speech-to-text, model
   download, microphone permissions, packaging and licences.
 - [Chat interactions](chat-interactions.md): queues, steering, questions, and approvals.
+- [Fork a thread from a message](thread-forks.md): start a new thread from earlier settled history.
 - [Usage and limits](usage.md): account windows, CLI history, pricing, refresh, and caching.
 - [Codex modes](codex-modes.md): supported Codex reasoning and speed choices.
 - [Native agent providers](agent-providers.md): Hermes, Copilot, Grok Build, and Muse setup and
   integration boundaries.
 - [Orchestration](orchestration.md): task turn ownership and recovery behavior.
+- [Report a problem](report-a-problem.md): start a triage thread with redacted diagnostics and a
+  draft GitHub issue for you to review.
 - [Automatic memory protection](automatic-memory-protection.md): agent process ownership, memory
   stops, recovery and platform limits.
 - [Browser and device previews](design/browser-and-devices.md): setup and current preview

@@ -179,11 +179,16 @@ it.each([false, true])(
         0,
       )
       expect(tools).toHaveLength(full ? 54 : 27)
+      // The studio_automations dry run text has its own budget below.
+      const dryRunText = ' dryRun tests automation with sample input; changes nothing.'
+      const studioAutomations = tools.find((tool) => tool.name === 'studio_automations')
+      expect(studioAutomations?.description?.includes(dryRunText) ?? false).toBe(full)
       expect(
         descriptionCharacters -
           (a2ui?.description?.length ?? 0) -
           (code?.description?.length ?? 0) -
-          (vision?.description?.length ?? 0),
+          (vision?.description?.length ?? 0) -
+          (full ? dryRunText.length : 0),
       ).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
@@ -295,6 +300,53 @@ it.each([false, true])(
       expect(planInput({ action: 'list', phases: [] }).valid).toBe(false)
       const workflowCharacters = JSON.stringify(workflow).length + 1
       expect(workflowCharacters).toBeLessThanOrEqual(3000)
+      // The routine source input has its own budget, so it cannot hide growth in other tools.
+      const withoutRoutineSource = (value: unknown): unknown =>
+        Array.isArray(value)
+          ? value.map(withoutRoutineSource)
+          : value && typeof value === 'object'
+            ? Object.fromEntries(
+                Object.entries(value)
+                  .filter(
+                    ([key, child]) =>
+                      key !== 'RoutineSource' &&
+                      !(key === 'source' && JSON.stringify(child).includes('RoutineSource')),
+                  )
+                  .map(([key, child]) => [key, withoutRoutineSource(child)]),
+              )
+            : value
+      const routineSourceCharacters = studioAutomations
+        ? JSON.stringify(studioAutomations).length -
+          JSON.stringify(withoutRoutineSource(studioAutomations)).length
+        : 0
+      expect(routineSourceCharacters > 0).toBe(full)
+      expect(routineSourceCharacters).toBeLessThanOrEqual(400)
+      // Dry runs have their own budget too: the action, its sample input and its description.
+      const withoutDryRun = (value: unknown): unknown => {
+        if (Array.isArray(value))
+          return value.filter((entry) => entry !== 'dryRun').map(withoutDryRun)
+        if (!value || typeof value !== 'object') return value
+        const entries = Object.entries(value)
+        const dryRunBranch = entries.some(
+          ([key, child]) => key === 'action' && JSON.stringify(child).includes('"dryRun"'),
+        )
+        return Object.fromEntries(
+          entries
+            .filter(([key]) => !(dryRunBranch && (key === 'input' || key === 'stopAt')))
+            .map(([key, child]) => [
+              key,
+              key === 'description' && typeof child === 'string'
+                ? child.replace(dryRunText, '')
+                : withoutDryRun(child),
+            ]),
+        )
+      }
+      const dryRunCharacters = studioAutomations
+        ? JSON.stringify(studioAutomations).length -
+          JSON.stringify(withoutDryRun(studioAutomations)).length
+        : 0
+      expect(dryRunCharacters > 0).toBe(full)
+      expect(dryRunCharacters).toBeLessThanOrEqual(700)
       const automationCharacters = automationTools.reduce(
         (total, tool) => total + JSON.stringify(tool).length + 1,
         0,
@@ -308,6 +360,8 @@ it.each([false, true])(
           secureCharacters -
           prepareCharacters -
           automationCharacters -
+          routineSourceCharacters -
+          dryRunCharacters -
           workflowCharacters -
           helpCharacters -
           conversationCharacters -

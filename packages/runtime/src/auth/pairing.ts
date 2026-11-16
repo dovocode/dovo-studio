@@ -29,6 +29,13 @@ export class Pairing {
     }
     return { code: this.code.value, expiresAt: new Date(this.code.expiresAt).toISOString() }
   }
+  /** Live pairing values. Exported diagnostics replace them even where no key names them. */
+  activeSecrets() {
+    return [
+      this.code?.value,
+      ...[...this.requests.values()].flatMap((request) => [request.secret, request.token]),
+    ].filter((value): value is string => !!value)
+  }
   request(code: string, name: string, address: string) {
     this.cleanup()
     const attempts = this.attempts.get(address) ?? { count: 0, until: this.now() + 60000 }

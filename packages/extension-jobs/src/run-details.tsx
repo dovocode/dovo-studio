@@ -1,6 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { RunAudit } from './run-audit'
+import { RunRoutineSource, type RoutineProvenanceState } from './routine-provenance'
 import {
   ArrowUpRight,
   Check,
@@ -70,6 +71,7 @@ export function RunDetails({
   flow,
   runs,
   run,
+  provenance,
   selectRun,
   actions,
   onStep,
@@ -77,6 +79,7 @@ export function RunDetails({
   flow: Automation
   runs: JobRun[]
   run: JobRun | undefined
+  provenance: RoutineProvenanceState
   selectRun: (id: string) => void
   actions: JobActions
   onStep: (id: string) => void
@@ -129,6 +132,7 @@ export function RunDetails({
     })
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
+      <RunRoutineSource state={provenance} runCreatedAt={run.createdAt} />
       {snapshot?.runAuditSupported && (
         <RunAudit key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
       )}

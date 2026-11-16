@@ -179,6 +179,7 @@ export function botsRoute(request: IncomingMessage, path: string, agentAccess: b
               sessionId: undefined,
               sessionAgentId: undefined,
               scheduledMessages: undefined,
+              spendPause: undefined,
               threadWatches: undefined,
               watchCounts: undefined,
               subagents: undefined,

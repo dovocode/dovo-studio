@@ -168,6 +168,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       importer: editorImporter,
       contents: 'export const RoutineOptions=()=>null;',
     },
+    // Dry-run controls have their own real-component check in check-automation-dry-run-browser.
+    { path: './dry-run', importer: editorImporter, contents: 'export const DryRun=()=>null;' },
     {
       path: '@dovo/studio-core',
       importer: inspectorImporter,

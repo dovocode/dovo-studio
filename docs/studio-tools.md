@@ -7,7 +7,7 @@ its own toggle; all five default to off.
 | Part           | Tool               | Operations                                                                                                                            |
 | -------------- | ------------------ | ------------------------------------------------------------------------------------------------------------------------------------- |
 | Threads        | studio_threads     | List/search, create drafts with project/agent/model choices, send prompts, read paginated history, wait, stop/resume, archive/restore |
-| Automations    | studio_automations | Create/edit/validate workflows, configure triggers, enable/disable, run, inspect runs, wait, cancel/retry                             |
+| Automations    | studio_automations | Create/edit/validate/dry run workflows, configure triggers, enable/disable, run, inspect runs, wait, cancel/retry                     |
 | Browsers       | studio_browsers    | List/open/close tabs, navigate/interact, capture screenshots/accessibility snapshots, inspect console and failed-request logs         |
 | UI interaction | studio_ui          | Inspect and control live desktop/web Studio sessions on this machine only                                                             |
 | Diagnostics    | studio_diagnostics | Read runtime health and paginated activity, optionally scoped to a thread/run                                                         |

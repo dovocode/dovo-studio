@@ -54,6 +54,7 @@ import {
   permissionPolicyUIIssue,
 } from '../../agents/permission-policy-controls'
 import { SettingSource } from './setting-source'
+import { ContainerSandboxSettings } from './container-sandbox-settings'
 import { useSettingsDraft } from './settings-target'
 import { SettingsSaveBar } from '../../screens/settings-save-bar'
 export function TaskDefaultSettings(props: {
@@ -648,6 +649,16 @@ function TaskDefaultSettingsForm({
           )}
         </View>
       </SettingsGroup>
+      {snapshot?.containerSandboxSupported && (
+        <ContainerSandboxSettings
+          value={draft.containerSandbox}
+          inherited={inherited?.containerSandbox}
+          status={snapshot.containerSandbox}
+          source={source('containerSandbox')}
+          disabled={disabled}
+          onChange={(containerSandbox) => change({ ...draft, containerSandbox })}
+        />
+      )}
       <SettingsGroup title={uiText('Saved prompts')}>
         <View style={{ padding: 16, gap: 12 }}>
           {!prompts.length && !inheritedPrompts.length && (

@@ -1,7 +1,8 @@
-import { Play, RotateCw } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { FlaskConical, Play, RotateCw } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { useWorkspace, type Automation } from '@dovo/studio-core'
-import { Button } from '@dovo/studio-ui'
+import { Button, Dialog, DialogContent, DialogDescription, DialogTitle } from '@dovo/studio-ui'
+import { DryRunPanel } from './dry-run'
 import { validateGraph } from './graph'
 import type { JobActions } from './use-job-actions'
 
@@ -28,6 +29,7 @@ export function JobControls({
   const pending = actions.pendingStart(flow.id)
   const webhook = actions.webhook(flow.id)
   const disabled = !connected || actions.busy || !!syncError
+  const [dryRun, setDryRun] = useState(false)
   return (
     <div className="shrink-0 space-y-2 border-b px-4 py-2">
       <div className="flex flex-wrap items-center gap-2">
@@ -45,6 +47,17 @@ export function JobControls({
               ? 'Test run'
               : 'Run automation'}
         </Button>
+        {snapshot?.automationDryRunSupported && (
+          <Button
+            size="sm"
+            variant="outline"
+            disabled={!connected || !!syncError}
+            onClick={() => setDryRun(true)}
+          >
+            <FlaskConical />
+            Dry run
+          </Button>
+        )}
         {configuringTriggers && (
           <Button
             size="sm"
@@ -110,6 +123,17 @@ export function JobControls({
           {pending && ' Retry start checks the same request without starting a duplicate run.'}
         </p>
       )}
+      <Dialog open={dryRun} onOpenChange={setDryRun}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-2xl">
+          <DialogTitle>Dry run “{flow.name}”</DialogTitle>
+          <DialogDescription className="sr-only">
+            Test this automation with sample data without running its tasks.
+          </DialogDescription>
+          <div className="min-h-0 overflow-y-auto">
+            <DryRunPanel key={flow.id} flow={flow} />
+          </div>
+        </DialogContent>
+      </Dialog>
       {configuringTriggers && webhook && (
         <div className="rounded border p-2 text-xs">
           <p>POST {webhook.path} · Bearer token (shown once):</p>

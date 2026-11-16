@@ -1,0 +1,25 @@
+# Standalone Dovo runtime. See docs/server-setup.md#docker.
+# Set DOVO_PUBLIC_ADDRESS in .env next to this file, for example
+# DOVO_PUBLIC_ADDRESS=http://my-server.tailnet-name.ts.net:51464
+services:
+  dovo:
+    image: ${DOVO_IMAGE:-ghcr.io/dovocode/dovo-server:latest}
+    # Clients show this name for the computer.
+    hostname: ${DOVO_HOSTNAME:-dovo-docker}
+    restart: unless-stopped
+    environment:
+      DOVO_PUBLIC_ADDRESS: ${DOVO_PUBLIC_ADDRESS:-}
+    ports:
+      # DOVO_BIND limits the host address, such as a Tailscale IP. DOVO_PORT changes the host port;
+      # use the same port in DOVO_PUBLIC_ADDRESS.
+      - '${DOVO_BIND:-0.0.0.0}:${DOVO_PORT:-51464}:51464'
+    volumes:
+      - dovo-home:/home/node
+      - ${DOVO_PROJECTS:-./projects}:/projects
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  dovo-home:
+    name: dovo-home

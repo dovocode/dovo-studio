@@ -10,15 +10,27 @@ import {
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { validateAutomation } from '../../jobs/validation.js'
+import {
+  recordRoutineChange,
+  routineChangeSource,
+  type RoutineActor,
+} from '../../jobs/routine-provenance.js'
 
-/** Filesystem preparation is idempotent and stays outside SQLite transactions. */
+/** Filesystem preparation is idempotent and stays outside SQLite transactions. `actor` records
+ * who changed a routine; the record commits with the change. */
 export async function patchWorkspace(
   s: Services,
   input: unknown,
   deviceId: string,
   id?: string,
+  actor?: RoutineActor,
 ): Promise<WorkspacePatchResult> {
   const requested = decode(patchSchema, input)
+  // Validate an agent's claimed source before anything is written.
+  const source =
+    actor && requested.collection === 'automations'
+      ? routineChangeSource(s.store, actor)
+      : undefined
   let preparationError: unknown
   try {
     const patch = s.store.previewPatch(requested)
@@ -39,7 +51,12 @@ export async function patchWorkspace(
   const run = () =>
     s.store.transaction(() => {
       if (preparationError) throw preparationError
-      return apply(s, requested)
+      const find = () => s.store.get().automations.find((item) => item.id === requested.id)
+      const before = source && find()
+      const result = apply(s, requested)
+      const after = source && find()
+      if (source && after) recordRoutineChange(s.db, before, after, source)
+      return result
     })
   const settle = (
     reason: 'acknowledged' | 'interrupted' | 'rejected',

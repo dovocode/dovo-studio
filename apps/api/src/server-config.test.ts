@@ -66,3 +66,28 @@ it('prevents concurrent operations and releases only the lock it owns', () => {
   release()
   expect(readFileSync(path, 'utf8')).toContain('replacement')
 })
+
+it('keeps the saved public address until setup gets an empty one, and keeps pairings', () => {
+  const path = directory()
+  writeFileSync(join(path, 'runtime.sqlite'), 'existing workspace with pairings')
+  const config = setupServer(path, { publicAddress: 'http://192.168.1.10:51464' })
+  expect(config.publicAddress).toBe('http://192.168.1.10:51464')
+  // Omitting the option keeps the saved address.
+  expect(setupServer(path, { port: '51464' }).publicAddress).toBe('http://192.168.1.10:51464')
+  // An empty value, as the container passes when DOVO_PUBLIC_ADDRESS is unset, clears it.
+  const cleared = setupServer(path, { publicAddress: '' })
+  expect(cleared).toEqual({ ...config, publicAddress: undefined })
+  expect(readServerConfig(path)).not.toHaveProperty('publicAddress')
+  expect(JSON.parse(readFileSync(join(path, 'server.json'), 'utf8'))).not.toHaveProperty(
+    'publicAddress',
+  )
+  expect(setupServer(path, { publicAddress: '  ' })).not.toHaveProperty('publicAddress')
+  expect(readFileSync(join(path, 'runtime.sqlite'), 'utf8')).toBe(
+    'existing workspace with pairings',
+  )
+  // It can be set again.
+  expect(setupServer(path, { publicAddress: 'http://my-server.tailnet.ts.net:51464' })).toEqual({
+    ...config,
+    publicAddress: 'http://my-server.tailnet.ts.net:51464',
+  })
+})

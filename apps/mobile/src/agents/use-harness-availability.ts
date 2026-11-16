@@ -17,7 +17,12 @@ const cache = new DiscoveryCache<HarnessAvailability>(30_000, {
   maxPending: 64,
 })
 
-export function useHarnessAvailability(repositoryId: string | undefined, agents: readonly Agent[]) {
+export function useHarnessAvailability(
+  repositoryId: string | undefined,
+  agents: readonly Agent[],
+  /** The thread runs in a container sandbox: only harnesses that can run there are available. */
+  sandboxed = false,
+) {
   const { profile, connected, readRuntime, snapshot } = useRuntime()
   const foreground = useAppActive()
   const key = JSON.stringify([
@@ -64,10 +69,17 @@ export function useHarnessAvailability(repositoryId: string | undefined, agents:
   }, [key, connected, foreground, readRuntime])
   const usable =
     connected && (cache.isFresh(key) || (state.key === key && !state.loading && !state.error))
+  const ready = (usable ? (choices ?? []) : []).filter((item) => item.available)
   return {
     available: new Set(
-      (usable ? (choices ?? []) : []).filter((item) => item.available).map((item) => item.id),
+      ready
+        .filter((item) => !sandboxed || item.sandbox?.supported !== false)
+        .map((item) => item.id),
     ),
+    /** Why a harness cannot run in the sandbox, or what it needs there. */
+    sandboxNotes: sandboxed
+      ? ready.flatMap((item) => (item.sandbox?.note ? [{ id: item.id, ...item.sandbox }] : []))
+      : [],
     loading: foreground && connected && (state.key !== key || state.loading),
     error: state.key === key ? state.error : '',
   }

@@ -1,0 +1,25 @@
+#!/bin/sh
+# dovo-kill <exec-id>: stop every process that one Dovo launch started. Each launch sets
+# DOVO_EXEC_ID, and its child processes inherit it, including those in a new session.
+set -u
+id=$1
+pids() {
+  for environ in /proc/[0-9]*/environ; do
+    pid=${environ#/proc/}
+    pid=${pid%/environ}
+    [ "$pid" = "$$" ] && continue
+    tr '\0' '\n' <"$environ" 2>/dev/null | grep -qx "DOVO_EXEC_ID=$id" && echo "$pid"
+  done
+}
+running=$(pids)
+[ -z "$running" ] && exit 0
+kill -TERM $running 2>/dev/null
+attempt=0
+while [ "$attempt" -lt 15 ]; do
+  sleep 0.2
+  running=$(pids)
+  [ -z "$running" ] && exit 0
+  attempt=$((attempt + 1))
+done
+kill -KILL $running 2>/dev/null
+exit 0

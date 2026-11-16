@@ -67,7 +67,8 @@ Verification builds first, so generated package exports exist even in a fresh ch
 same checks as CI and installs Playwright's managed Chromium. On Linux, install missing browser
 dependencies first with `pnpm exec playwright install --with-deps chromium`. To reproduce one CI
 browser shard, run `node scripts/run-browser-suites.mjs 3 4` (zero-based shard).
-`pnpm test:ci:scripts` runs the same packaging and CI script tests as the Check workflow.
+`pnpm test:ci:scripts` runs the same packaging, CI, changelog and proof script tests as the Check
+workflow.
 
 `verify:ci` covers the portable checks. CI additionally runs platform-specific Windows/macOS process
 tests, Electron/media checks under a window manager, native mobile builds, bundled model inference
@@ -83,6 +84,77 @@ Test observable behavior at the boundary: cover a user-visible change, a meaning
 recovery path, and cancellation when it affects the caller. Avoid tests that only repeat an
 implementation detail. Handle errors where the caller can recover, preserve useful domain errors,
 and keep cancellation distinct from ordinary failure.
+
+## Prove a bug fix
+
+A regression test is only useful if it fails without the fix. Check this with:
+
+```sh
+pnpm prove -- packages/runtime/src/agents/catalogs/codex.test.ts
+pnpm prove -- --base origin/main path/to/first.test.ts path/to/second.test.ts
+```
+
+The script finds the merge-base of `HEAD` and `main`, or of `HEAD` and the `--base` ref. It makes a
+temporary git worktree at that commit and copies only the given files into it. Then it installs the
+base dependencies and runs the tests there. The tests must fail. Last, it runs the same tests on
+your checkout, including uncommitted changes. The tests must pass.
+
+- The command exits with 0 when the proof holds and 1 when it does not. Setup errors exit with 2. If
+  a test file cannot load on the base, the command exits with 3.
+- `*.test.ts` and `*.test.tsx` files run with `vp test`. `*.test.mjs` files run with `node --test`.
+- If a test needs a new helper or fixture, pass that file too. The script copies it, but runs only
+  `*.test.*` files.
+- Add `--build` for tests that import compiled package output. It builds the `@dovo/api` chain in
+  the base worktree. Build your own checkout first.
+- A test file that cannot load on the base proves nothing. This happens when it imports a module or
+  an export that the base does not have, or has a syntax error. The script reports "Not proven: the
+  test could not load on the base". Make the test import only code that the base has, such as the
+  function you fix, and pass new helpers as files.
+- Still read the base output. Vitest turns a missing export into `undefined`, so a call to it fails
+  inside the test with a `TypeError`. The script counts that as a normal failure.
+
+The temporary worktree goes in `~/.cache/dovo-prove`. Set `DOVO_PROVE_DIR` to use another folder.
+Keep it on the same disk as the pnpm store, because pnpm then hard-links packages instead of copying
+them. With a warm store, the install takes about 10 seconds. The script does not symlink your
+`node_modules`, because pnpm's workspace links would then load your checkout's packages instead of
+the base's. The script removes the worktree when it finishes, fails or gets Ctrl-C. It does not
+change your working tree, index or stash.
+
+## Changelog fragments
+
+Add one file to `changelog.d/` for each pull request that users will notice. The file has a short
+header with the category and the affected clients, then one to three plain lines for users. See
+[changelog.d/README.md](changelog.d/README.md) for the format and the release steps.
+
+```sh
+pnpm changelog:check
+pnpm changelog:preview
+```
+
+The Changelog workflow fails a pull request that changes files under `apps/` or `packages/` but adds
+no fragment. A change to an existing fragment does not count. Changes to tests, test helpers,
+fixtures and Markdown docs do not count. Neither do changes to `apps/site`, `apps/design-system` and
+`apps/review-demo`, because they do not ship in releases. If users will not notice the change, add
+the `skip-changelog` label. The check runs again when you add or remove a label.
+
+## Change checklist
+
+This list is the same as the one in [AGENTS.md](AGENTS.md).
+
+- Cover every entry point: desktop and web, mobile, the command palette, and agent MCP tools when
+  agents can use the feature.
+- Expect older runtimes. Gate new runtime features behind a snapshot capability flag, such as
+  `botsSupported` in `packages/protocol/src/runtime/connection/runtime.ts`, and show a clear
+  fallback when the flag is missing.
+- Make every state reversible. If a user can turn something on, they can turn it off. A one-way door
+  is a bug.
+- Test offline and reconnect. Keep drafts, settings and pairings. Recover without new setup.
+- Keep HTTP for LAN and VPN runtime addresses, including Tailscale and NetBird. Keep pairing codes
+  and device tokens required.
+- Update docs in the same change.
+- Add a `changelog.d/` fragment when users will notice the change.
+- For a bug fix with a test, run `pnpm prove -- <test files>` to show that the test fails without
+  the fix.
 
 ## Code structure
 

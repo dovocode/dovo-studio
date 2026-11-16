@@ -5,9 +5,11 @@ import { Effect, Schema } from 'effect'
 import { startPolling } from '@dovo/client-runtime'
 import {
   canChangeTaskCheckout,
+  containerSandboxEnabled,
   gitPrimaryAction,
   mutableStruct,
   responses,
+  taskContainerSandbox,
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
@@ -236,6 +238,13 @@ export function CommitSection({ task }: { task: Task }) {
           onPress={() => act(refresh)}
         />
       </View>
+      {containerSandboxEnabled(taskContainerSandbox(task, snapshot?.defaults, repo)) && (
+        <Text style={styles.muted}>
+          {uiText(
+            'Git hooks do not run for commits in a sandboxed thread. The agent can change files that hooks run.',
+          )}
+        </Text>
+      )}
       {!git && (
         <Text style={styles.muted}>
           {ready ? uiText('Checking Git status…') : uiText('Git checkout is unavailable.')}

@@ -13,6 +13,7 @@ import { useAction } from '../ui/controls/use-action'
 import { formatDateTime } from '../ui/content/format-date'
 import { automationRunSummary } from './automation-summary'
 import { RunAudit } from './run-audit'
+import { RunRoutineSource } from './routine-provenance'
 export function RunProgress({
   run,
   anotherActive = false,
@@ -75,6 +76,13 @@ export function RunProgress({
         gap: 6,
       }}
     >
+      {expanded && snapshot?.routineProvenanceSupported && (
+        <RunRoutineSource
+          key={`${profile?.id}:${run.id}`}
+          automationId={run.automationId}
+          runCreatedAt={run.createdAt}
+        />
+      )}
       {expanded && snapshot?.runAuditSupported && (
         <RunAudit key={`${profile?.id}:${run.id}`} runId={run.id} />
       )}

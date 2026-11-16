@@ -57,7 +57,7 @@ try {
             path: './use-harness-availability',
             importer: desktop,
             contents:
-              'export const useHarnessAvailability=()=>({available:window.available,loading:false,refresh(){}});',
+              'export const useHarnessAvailability=()=>({available:window.available,loading:false,sandboxNotes:[],refresh(){}});',
           },
           {
             path: './harness-catalog',

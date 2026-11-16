@@ -81,12 +81,15 @@ export function TaskHeader({
   onCreate,
   onDeselect,
   onProjectDeleted,
+  onOpenForkSource,
 }: {
   projectPanelOpen: boolean
   onProjectPanel: () => void
   onCreate: () => void
   onDeselect: () => void
   onProjectDeleted?: () => void
+  /** Opens the source thread at the message a fork was made from. */
+  onOpenForkSource?: (taskId: string, messageId: string) => void
   task: Task
   parentThread?: StudioThreadReference
   windowRightEdge?: boolean
@@ -379,11 +382,13 @@ export function TaskHeader({
                   <button
                     type="button"
                     className="hidden max-w-48 truncate hover:text-foreground hover:underline md:inline"
-                    title={`Forked from ${task.forkedFrom.title}`}
-                    onClick={() =>
-                      task.forkedFrom &&
-                      host.navigate({ viewId: 'tasks', entityId: task.forkedFrom.taskId })
-                    }
+                    title={`Forked from ${task.forkedFrom.title}${task.forkedFrom.messageId ? '. Files were not rewound.' : ''}`}
+                    onClick={() => {
+                      const source = task.forkedFrom
+                      if (source?.messageId && onOpenForkSource)
+                        onOpenForkSource(source.taskId, source.messageId)
+                      else if (source) host.navigate({ viewId: 'tasks', entityId: source.taskId })
+                    }}
                   >
                     Forked from {task.forkedFrom.title}
                   </button>

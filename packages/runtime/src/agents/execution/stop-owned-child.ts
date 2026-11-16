@@ -11,11 +11,33 @@ export class OwnedProcessShutdownError extends Error {
 }
 
 const stopping = new WeakMap<ChildProcess, Promise<void>>()
+const cleanups = new WeakMap<ChildProcess, () => Promise<void>>()
+
+/** Extra shutdown for a launcher whose real work runs elsewhere, such as a sandboxed process
+ * inside a container. `stopOwnedChild` confirms it after the local process tree is gone. */
+export function registerOwnedChildCleanup(child: ChildProcess, cleanup: () => Promise<void>) {
+  cleanups.set(child, cleanup)
+}
 
 /** Owned launchers must be spawned detached on Unix so their descendants share a killable group. */
 export function stopOwnedChild(child: ChildProcess): Promise<void> {
   const existing = stopping.get(child)
   if (existing) return existing
+  const cleanup = cleanups.get(child)
+  if (cleanup) {
+    const local = stopLocalChild(child)
+    const all = local.then(cleanup, async (error: unknown) => {
+      await cleanup().catch(() => undefined)
+      throw error
+    })
+    stopping.set(child, all)
+    void all.catch(() => undefined)
+    return all
+  }
+  return stopLocalChild(child)
+}
+
+function stopLocalChild(child: ChildProcess): Promise<void> {
   let confirm!: () => void
   const confirmed = new Promise<void>((resolve) => {
     confirm = resolve

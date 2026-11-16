@@ -18,7 +18,7 @@ import {
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import { BotCreateForm } from './bot-create'
 
-export default function BotsView({ entityId }: StudioViewProps) {
+export default function BotsView({ entityId, messageId, navigationKey }: StudioViewProps) {
   const uiText = useInterfaceText()
 
   const store = useWorkspace()
@@ -220,6 +220,8 @@ export default function BotsView({ entityId }: StudioViewProps) {
         ) : current && current.source.runtimeId === store.activeRuntimeId ? (
           <TasksView
             entityId={current.task.id}
+            messageId={current.task.id === entityId ? messageId : undefined}
+            navigationKey={current.task.id === entityId && messageId ? navigationKey : undefined}
             embedded
             onBotDeleted={(id) => {
               if (

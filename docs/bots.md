@@ -97,6 +97,12 @@ Retrying a delete for a Bot that is already gone is safe.
 **Resume** starts the next held message when the thread is idle. A queue that you paused yourself
 stays paused. Pause state survives restarts.
 
+The optional unattended spend limit can also hold a Bot. It counts the estimated cost of the Bot,
+its child agents and its routine workers since your last message to any of them. At the limit, new
+routine, scheduled and child-result turns wait with "Paused: spend limit" and a Continue button.
+This includes input that arrives while a turn runs. A routine step that targets the Bot waits too. A
+routine time budget still applies. See [Usage and limits](usage.md#unattended-spend-limit).
+
 ## Bot memory
 
 Each Bot has a `bot` memory scope. It is always on for that Bot and has no switch. The Dovo memory

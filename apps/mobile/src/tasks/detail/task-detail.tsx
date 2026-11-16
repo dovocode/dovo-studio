@@ -59,6 +59,7 @@ import { ProjectTransferDialog } from '../../scm/connections/project-transfer'
 import { ContinueElsewhere } from './continue-elsewhere'
 import { TaskQuestions } from './task-questions'
 import { TaskSecureInputs } from './task-secure-inputs'
+import { SpendPauseNotice } from './spend-pause-notice'
 import { LinkedProjects } from './linked-projects'
 import { RenameThread } from './rename-thread'
 import { useTaskLifecycle } from './use-task-lifecycle'
@@ -1454,6 +1455,7 @@ function TaskDetailContent({
                       {quota.error && <Text style={{ color: colors.error }}>{quota.error}</Text>}
                     </View>
                   )}
+                  <SpendPauseNotice task={task} />
                   <TaskQuestions taskId={task.id} questionId={questionId} />
                   {focused && pane === 'chat' && <TaskSecureInputs taskId={task.id} />}
                   {(budget.tokenExceeded || budget.timeExceeded) && (

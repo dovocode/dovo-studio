@@ -1,6 +1,7 @@
 import { DatabaseSpaceRecovery } from './storage/database-space.js'
 import { applyBotBackup } from './agents/tasks/bot-backup.js'
 import { applyPendingHarness } from './agents/tasks/pending-harness.js'
+import { UnattendedSpend } from './agents/tasks/spend-limit.js'
 import { BotMemoryReview } from './memory/bot-review.js'
 import { BotAvatars } from './agents/tasks/bot-avatar.js'
 import { RuntimeDictation } from './speech/runtime-dictation.js'
@@ -84,6 +85,9 @@ import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
 import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
+import { Sandboxes } from './sandbox/sandboxes.js'
+import { threadContainerSandbox } from './sandbox/thread-terminal.js'
+import { containerSandboxEnabled } from '@dovo/protocol'
 import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
 import { LegacyThreadArchive } from './storage/legacy-thread-archive.js'
 export function createServices(
@@ -296,6 +300,28 @@ export function createServices(
       },
       runtimeId,
     )
+  const sandboxes = new Sandboxes({
+    runtimeId,
+    root:
+      db.name === ':memory:'
+        ? join(tmpdir(), `dovo-sandboxes-${randomUUID()}`)
+        : join(dirname(resolve(db.name)), 'sandboxes'),
+    taskTools: () => tasks.taskToolsAddress(),
+    keepThread: (id) =>
+      store.get().tasks.some((task) => task.id === id && !task.archived && !task.archivedAt),
+    threadExists: (id) => store.get().tasks.some((task) => task.id === id),
+    acpDistribution: (id) => acpInstallations.sandboxDistribution(id),
+  })
+  tasks.setSandboxes(sandboxes)
+  // Dovo's own Git calls in a checkout that a sandbox can write use its recorded layout.
+  git.setSandboxedCheckouts((path) => sandboxes.gitLayout(path))
+  agents.setHostCommandGuard((command, env) => sandboxes.hostCommandWritable(command, env))
+  terminals.setSandbox({
+    required: (taskId) =>
+      store.get().tasks.some((task) => task.id === taskId) &&
+      containerSandboxEnabled(threadContainerSandbox(store, taskId)),
+    current: (taskId) => sandboxes.current(taskId),
+  })
   const automaticWorkerLimit = tasks.workerLimit
   tasks.workerLimit = () =>
     Math.max(2, preferences.get().maxConcurrentWorkers || automaticWorkerLimit())
@@ -544,6 +570,9 @@ export function createServices(
     }
   })
   tasks.onTurnFailed = (id, turnId) => applyBotBackup(services, id, turnId)
+  tasks.spendLimit = new UnattendedSpend(db, store, () => preferences.get().unattendedSpendLimitUsd)
+  tasks.spendLimit.prune()
+  tasks.spendLimit.limitUsd()
   const pendingChanges = new Map<string, Promise<void>>()
   tasks.onBeforeStart = (id) => {
     const existing = pendingChanges.get(id)
@@ -654,6 +683,7 @@ export function createServices(
     browserTickets: new SocketTickets(),
     checkouts,
     projectFiles: new ProjectFiles(git),
+    sandboxes,
   }
   return services
 }
@@ -729,4 +759,5 @@ export interface Services {
   browsers: RemoteBrowsers
   browserTickets: SocketTickets
   projectFiles: ProjectFiles
+  sandboxes: Sandboxes
 }

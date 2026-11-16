@@ -33,7 +33,7 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel,accessibil
   '../../agents/permission-policy-controls': `export const PermissionPolicyControls=()=>null;`,
   '../../agents/harness-model-picker': `export const HarnessModelPicker=()=>null;`,
   '../../agents/model-settings': `export const ModelSettings=()=>null;`,
-  '../../agents/use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['codex']),loading:false,error:''});`,
+  '../../agents/use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['codex']),loading:false,sandboxNotes:[],error:''});`,
 }
 const built = await build({
   stdin: {

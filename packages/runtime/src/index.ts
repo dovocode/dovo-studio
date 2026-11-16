@@ -287,6 +287,15 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         ['Pull request watcher', () => services.pullRequestWatch.start()],
         ['Pipeline watcher', () => services.pipelineWatch.start()],
         ['Thread watcher', () => services.threadWatch.start()],
+        [
+          'Sandboxes',
+          () => {
+            // Docker commands can take seconds; startup does not wait for them.
+            void services.sandboxes
+              .reconcile()
+              .catch((error: unknown) => console.error('Sandbox reconcile failed:', error))
+          },
+        ],
       ] as const)
         yield* startOptional(name, start)
       profile?.('workers started')

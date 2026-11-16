@@ -356,13 +356,33 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
         },
       ],
     },
+    {
+      title: uiText('Help'),
+      path: '/settings/help-settings',
+      items: [
+        {
+          title: uiText('Report a problem'),
+          subtitle: uiText('Draft an issue with an agent and redacted diagnostics'),
+          icon: 'info',
+          path: '/settings/report-problem',
+          group: 'Help',
+          local: true,
+          keywords: 'bug issue feedback triage diagnostics logs support crash',
+        },
+      ],
+    },
   ] as const
+  // Older runtimes do not offer problem reports; the entry appears once one computer does.
+  const reportsSupported = overviews.some(
+    (entry) => entry.snapshot?.problemReportsSupported === true,
+  )
   const category = groups.find((group) => group.path === `/settings/${categorySlug}`)
   const needle = query.trim().toLocaleLowerCase(locale)
   const matches = (category ? [category] : groups)
     .map((group) => ({
       ...group,
       items: group.items.filter((item) => {
+        if (item.path === '/settings/report-problem' && !reportsSupported) return false
         const text =
           `${group.title} ${uiText(item.group)} ${item.title} ${item.subtitle} ${'keywords' in item ? item.keywords : ''} ${(mobileSettingsFields[item.path] ?? []).flatMap((label) => [label, uiText(label)]).join(' ')}`.toLocaleLowerCase(
             locale,

@@ -170,10 +170,50 @@ it.each(['permission', 'session', 'approvalPolicy', 'sandboxMode'] as const)(
             ? { agentOverrides: { sandboxMode: 'read-only' as const } }
             : { sessionId: 'replacement-session' }),
     }))
+    // Claude checks this before tools that the stale policy would allow without asking.
+    expect(interactions.active?.()).toBe(false)
     expect(await interactions.approve('Stale', '', new AbortController().signal)).toBe('deny')
     expect(s.approvals.list()).toEqual([])
   },
 )
+
+it('reports native work as current until the thread changes', async () => {
+  const { interactions } = await setup()
+  expect(interactions.active?.()).toBe(true)
+})
+
+it('shows a woken root agent as working and never queues its finish as a child result', async () => {
+  const { s, task, owner, runs } = await setup()
+  owner.onSubagentEvent?.(
+    'system',
+    {
+      type: 'system',
+      subtype: 'task_started',
+      task_type: 'local_agent',
+      task_id: 'native-session',
+      description: 'Main agent: handling a finished background task',
+    },
+    'native-session',
+  )
+  expect(taskIsWorking(s.store.task(task.id))).toBe(true)
+  expect(() => s.tasks.requireIdle(task.id)).toThrow('Stop')
+  owner.onSubagentEvent?.(
+    'system',
+    {
+      type: 'system',
+      subtype: 'task_notification',
+      task_id: 'native-session',
+      status: 'completed',
+    },
+    'native-session',
+  )
+  await s.tasks.runScheduled()
+  expect(
+    s.store.task(task.id).subagents?.find((record) => record.id === 'native-session'),
+  ).toMatchObject({ status: 'completed', completion: 'read' })
+  expect(s.store.task(task.id).subagentInbox ?? []).toEqual([])
+  expect(runs).toHaveLength(1)
+})
 
 it('keeps checkout and task settings owned until native children stop, including while idle', async () => {
   const { s, task, owner, stop } = await setup()

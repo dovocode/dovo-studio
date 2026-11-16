@@ -234,7 +234,7 @@ it('rolls back admission when the child copy cannot be stored', async () => {
     { id: randomUUID(), name: 'context.txt', mime: 'text/plain', size: data.length },
     data,
   )
-  const copy = vi.spyOn(s.attachments, 'copy').mockImplementation(() => {
+  const copy = vi.spyOn(s.attachments, 'copyHistory').mockImplementation(() => {
     throw Error('Copy failed')
   })
   const input = {

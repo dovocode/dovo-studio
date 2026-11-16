@@ -20,6 +20,7 @@ for (const [path, name] of [
   ['./message-copy', 'MessageCopy'],
   ['../actions/run-in-terminal', 'RunInTerminal'],
   ['../actions/fork-turn', 'ForkTurn'],
+  ['../actions/fork-message', 'ForkMessage'],
   ['../actions/retry-turn', 'RetryTurn'],
   ['./turn-label', 'TurnLabel'],
 ])

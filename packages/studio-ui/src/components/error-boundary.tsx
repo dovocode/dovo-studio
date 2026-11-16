@@ -1,6 +1,11 @@
 import { Component, createContext, type ContextType, type ErrorInfo, type ReactNode } from 'react'
 import { Button } from './ui/button'
-import { clientDiagnostic, diagnosticMessage, type ClientDiagnosticContext } from '@dovo/protocol'
+import {
+  clientDiagnostic,
+  diagnosticMessage,
+  recordClientError,
+  type ClientDiagnosticContext,
+} from '@dovo/protocol'
 import { copyTextToClipboard } from '../clipboard'
 const DiagnosticContext = createContext<ClientDiagnosticContext>({})
 
@@ -29,6 +34,8 @@ export class ErrorBoundary extends Component<
   componentDidCatch(error: Error, info: ErrorInfo) {
     const context = { ...this.context, ...this.props.diagnosticContext }
     const surface = this.props.scope ?? 'view'
+    // Kept in memory for "Report a problem"; it leaves the device only if a person includes it.
+    recordClientError(error, surface)
     this.setState(({ diagnostic }) => ({
       diagnostic: diagnostic
         ? {

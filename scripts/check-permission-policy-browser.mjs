@@ -23,7 +23,7 @@ const moduleMocks = new Map([
   ],
   [
     `${ui}src/use-harness-availability.ts`,
-    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude']),loading:false,error:null});`,
+    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude']),loading:false,error:null,sandboxNotes:[]});`,
   ],
   [`${ui}src/model-settings.tsx`, `export const ModelSettings=()=>null;`],
   [`${ui}src/setting-source.tsx`, `export const SettingSource=()=>null;`],
@@ -44,7 +44,7 @@ const moduleMocks = new Map([
   [`${mobile}agents/acp-registry.tsx`, `export const AcpRegistry=()=>null;`],
   [
     `${mobile}agents/use-harness-availability.ts`,
-    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude','agent:preset']),loading:false,error:null});`,
+    `export const useHarnessAvailability=()=>({available:new Set(['harness:codex','harness:claude','agent:preset']),loading:false,error:null,sandboxNotes:[]});`,
   ],
   [
     `${mobile}runtime/state/application-state.ts`,

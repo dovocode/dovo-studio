@@ -22,6 +22,7 @@ import { archiveTask, taskIsBusy } from '../../agents/tasks/housekeeping.js'
 type PullStatus = NonNullable<TaskSummary['pullStatus']>
 type WatcherServices = Pick<
   Services,
+  | 'sandboxes'
   | 'git'
   | 'store'
   | 'pullCache'

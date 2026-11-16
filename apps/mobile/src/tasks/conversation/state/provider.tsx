@@ -152,6 +152,7 @@ export function ConversationProvider({
         if (
           old &&
           old.groupId === item.groupId &&
+          old.status === item.status &&
           old.header === item.header &&
           old.final === item.final &&
           old.footer === item.footer &&

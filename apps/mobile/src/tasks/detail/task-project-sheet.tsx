@@ -34,6 +34,7 @@ import { CommitSection } from './commit-section'
 import { ThreadServers } from './thread-servers'
 import { ThreadInfoCustomization } from './thread-info-customization'
 import { ThreadInfoUsage } from './thread-info-usage'
+import { ThreadSandboxBadge } from './thread-sandbox'
 import { HarnessSettings } from './harness-settings'
 import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
 import { taskHarnessLabel } from '../creation/harness-choices'
@@ -248,6 +249,7 @@ export function TaskProjectSheet({
         {show('usage') && (
           <>
             <ThreadInfoUsage task={task} detailed={details} />
+            <ThreadSandboxBadge task={task} />
           </>
         )}
       </>

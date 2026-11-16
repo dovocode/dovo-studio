@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
+import { routineChangeSchema } from './routine-provenance.js'
 
 export const runAuditSchema = mutableStruct({
   runId: Schema.String,
@@ -39,4 +40,6 @@ export const runAuditSchema = mutableStruct({
   estimatedCostUsd: Schema.Number,
   tokens: Schema.Number,
   usageIncomplete: Schema.Boolean,
+  /** The newest recorded routine change before this run started, with its source. */
+  routineChange: Schema.optional(routineChangeSchema),
 })

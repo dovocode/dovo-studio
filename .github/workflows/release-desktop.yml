@@ -88,10 +88,26 @@ jobs:
             else
               gh release create "$TAG" --draft --prerelease --title "Dovo Studio (Nightly) ${TAG#v}" --target "$GITHUB_SHA" --notes-file /tmp/dovo-nightly-notes.md
             fi
-          elif test "$EXISTS" = true; then
-            gh release edit "$TAG" --target "$GITHUB_SHA"
           else
-            gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes
+            # Stable notes come from the CHANGELOG.md section that pnpm changelog:release wrote.
+            PENDING=$(find changelog.d -maxdepth 1 -name '*.md' ! -name README.md | sort)
+            if test -n "$PENDING"; then
+              echo "::error title=Changelog::Fragments remain in changelog.d. Run pnpm changelog:release, commit CHANGELOG.md and changelog.d, then tag again."
+              echo "$PENDING"
+              exit 1
+            fi
+            node scripts/changelog/assemble-fragments.mjs notes "$VERSION" > /tmp/dovo-release-notes.md
+            NOTES=()
+            if test -s /tmp/dovo-release-notes.md; then
+              NOTES=(--notes-file /tmp/dovo-release-notes.md)
+            else
+              echo "::warning title=Changelog::CHANGELOG.md has no $VERSION section. The draft uses generated notes only."
+            fi
+            if test "$EXISTS" = true; then
+              gh release edit "$TAG" --target "$GITHUB_SHA"
+            else
+              gh release create "$TAG" --draft --title "Dovo Studio ${TAG#v}" --target "$GITHUB_SHA" --generate-notes "${NOTES[@]}"
+            fi
           fi
           echo 'build=true' >> "$GITHUB_OUTPUT"
   mac:

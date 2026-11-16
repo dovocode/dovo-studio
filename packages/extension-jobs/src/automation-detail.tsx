@@ -25,6 +25,7 @@ import { newNode, validateGraph } from './graph'
 import { useAutomation } from './use-automation'
 import { useJobActions } from './use-job-actions'
 import { RunDetails } from './run-details'
+import { RoutineHistory, useRoutineProvenance } from './routine-provenance'
 export function AutomationDetail({
   automationId,
   onBack,
@@ -42,6 +43,7 @@ export function AutomationDetail({
     useAutomation(automationId)
   const { snapshot, connected } = useWorkspace()
   const botJob = flow && automationBotJobSummary(flow, workspace.tasks)
+  const provenance = useRoutineProvenance(flow?.id)
   const compact = useCompactLayout()
   const actions = useJobActions()
   const [runId, setRunId] = useApplicationState<string | null>(initialRunId ?? null)
@@ -276,6 +278,7 @@ export function AutomationDetail({
                     flow={flow}
                     runs={runs}
                     run={run}
+                    provenance={provenance}
                     selectRun={selectRun}
                     actions={actions}
                     onStep={(id) => {
@@ -396,6 +399,7 @@ export function AutomationDetail({
                     <Plus className="size-3.5" />
                     Add trigger
                   </Button>
+                  <RoutineHistory state={provenance} />
                 </div>
               </div>
             )}

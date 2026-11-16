@@ -43,3 +43,35 @@ it('bounds and redacts an optional component stack without truncating the error'
   expect(clientDiagnostic('failure')).not.toHaveProperty('componentStack')
   expect(clientDiagnostic('failure', {}, null)).not.toHaveProperty('componentStack')
 })
+
+it('removes URL credentials for any scheme, private keys and command-line secrets', () => {
+  const text = [
+    'postgres://dovo:pg-secret@db:5432/app',
+    'redis://:redis-secret@cache:6379',
+    'mongodb+srv://dovo:mongo-secret@cluster0.example.net/app',
+    'git clone https://dovo:git-secret@example.com/repo.git',
+    '--api-key cli-secret --token "quoted secret" passwd=pw-secret',
+    '-----BEGIN PRIVATE KEY----- MC4CAQAwBQYDK2VwBCIEIBn+key/body== -----END PRIVATE KEY-----',
+  ].join('\n')
+  const redacted = redactCredentialText(text)
+  for (const secret of [
+    'pg-secret',
+    'redis-secret',
+    'mongo-secret',
+    'git-secret',
+    'cli-secret',
+    'quoted secret',
+    'pw-secret',
+    'MC4CAQAw',
+  ])
+    expect(redacted).not.toContain(secret)
+  for (const kept of [
+    'postgres://db:5432/app',
+    'redis://cache:6379',
+    'mongodb+srv://cluster0.example.net/app',
+    'https://example.com/repo.git',
+    '--api-key [redacted] --token "[redacted]"',
+  ])
+    expect(redacted).toContain(kept)
+  expect(redactCredentialText(redacted)).toBe(redacted)
+})

@@ -23,6 +23,8 @@ export class GitBlobReader {
     private readonly cwd: string,
     private readonly signal?: AbortSignal,
     private readonly onStart?: () => void,
+    /** Environment for the Git process; a sandboxed checkout passes its hardened one. */
+    private readonly env?: NodeJS.ProcessEnv,
   ) {}
 
   async text(hash: string, size: number): Promise<string> {
@@ -92,7 +94,7 @@ export class GitBlobReader {
     const child = spawn(this.executable, ['cat-file', '--batch'], {
       windowsHide: true,
       cwd: this.cwd,
-      env: processEnvironment(),
+      env: this.env ?? processEnvironment(),
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.child = child

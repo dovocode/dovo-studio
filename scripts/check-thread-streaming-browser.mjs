@@ -16,6 +16,7 @@ for (const path of [
   './message-copy',
   '../actions/run-in-terminal',
   '../actions/fork-turn',
+  '../actions/fork-message',
   '../actions/retry-turn',
   './turn-label',
 ]) {
@@ -25,6 +26,7 @@ for (const path of [
     './message-copy': 'MessageCopy',
     '../actions/run-in-terminal': 'RunInTerminal',
     '../actions/fork-turn': 'ForkTurn',
+    '../actions/fork-message': 'ForkMessage',
     '../actions/retry-turn': 'RetryTurn',
     './turn-label': 'TurnLabel',
   }[path]

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadWatchSummary } from './thread-watch-summary'
 import { MiddleTruncate } from './middle-truncate'
 import { NestedThreads } from './nested-threads'
@@ -107,6 +108,7 @@ function TaskRowView({
   revealSearch?: boolean
   titleIcon?: ReactNode
 }) {
+  const uiText = useInterfaceText()
   const activeTerminals = terminals + taskBackgroundTerminalCount(task)
   const terminalIndicator = activeTerminals > 0 && (
     <SquareTerminal
@@ -236,6 +238,7 @@ function TaskRowView({
     status,
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
     queue ? `${queue} queued` : '',
+    task.spendPause ? uiText('Paused: spend limit') : '',
     task.queuePaused
       ? 'Queue paused'
       : task.queue?.some((message) => message.paused)

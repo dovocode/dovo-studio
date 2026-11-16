@@ -28,6 +28,8 @@ export interface StudioNavigation {
   entityId?: string
   pullTarget?: StudioPullTarget
   automationTarget?: StudioAutomationTarget
+  /** Scroll this message of the `entityId` thread into view after opening it. */
+  messageId?: string
   nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
@@ -58,6 +60,7 @@ export interface StudioViewProps {
   entityId?: string
   pullTarget?: StudioPullTarget
   automationTarget?: StudioAutomationTarget
+  messageId?: string
   /** Changes for explicit navigation, including reopening the same destination. */
   navigationKey?: number
 }

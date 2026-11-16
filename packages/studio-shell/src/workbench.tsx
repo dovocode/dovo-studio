@@ -63,6 +63,7 @@ import { ActivityBar, visibleWorkspaceTarget, workspaceModeVisible } from './act
 import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
 import { TaskLauncher } from './task-launcher'
+import { ReportProblem } from './report-problem/report-problem'
 import { TitleBar, type DesktopPlatform } from './title-bar'
 import { workbenchDiagnosticContext } from './workbench-diagnostics'
 type WorkbenchProps = {
@@ -1179,6 +1180,7 @@ function WorkbenchContent({
                           threadParent={parentThread}
                           pullTarget={target.pullTarget}
                           automationTarget={target.automationTarget}
+                          messageId={target.messageId}
                           threadConnection={target.threadConnection}
                           navigationKey={navigationKey}
                         />
@@ -1251,6 +1253,7 @@ function WorkbenchContent({
             </main>
           </div>
           {taskLauncher && <TaskLauncher bridge={taskLauncher} />}
+          <ReportProblem />
           <CommandPalette
             open={palette}
             onOpenChange={setPalette}

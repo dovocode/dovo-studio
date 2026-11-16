@@ -1,0 +1,7 @@
+# System mise configuration for Dovo sandboxes. Node LTS is the only global default tool.
+# Projects add their own tools with mise.toml, .tool-versions or idiomatic version files.
+[tools]
+node = "lts"
+
+[settings]
+idiomatic_version_file_enable_tools = ["node", "python", "ruby", "go", "rust"]

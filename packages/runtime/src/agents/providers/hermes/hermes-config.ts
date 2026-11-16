@@ -19,7 +19,7 @@ async function optionalFile(path: string) {
 }
 
 /** Hermes' documented deployment overlay keeps task credentials out of the user's config. */
-export async function hermesConfig(agent: Agent) {
+export async function hermesConfig(agent: Agent, parent = tmpdir()) {
   const environment = processEnvironment(agent.env)
   const managed = environment.HERMES_MANAGED_DIR || '/etc/hermes'
   const source = await optionalFile(join(managed, 'config.yaml'))
@@ -55,7 +55,7 @@ export async function hermesConfig(agent: Agent) {
     tool_progress: 'all',
     show_reasoning: true,
   }
-  const directory = await mkdtemp(join(tmpdir(), 'dovo-hermes-'))
+  const directory = await mkdtemp(join(parent, 'dovo-hermes-'))
   try {
     await writeFile(join(directory, 'config.yaml'), stringify(config), { mode: 0o600 })
     const secrets = await optionalFile(join(managed, '.env'))

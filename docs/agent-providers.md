@@ -47,7 +47,8 @@ retain their own schemas.
 
 Muse and Hermes cannot enforce tool-free utilities or read-only execution. Use Codex, Claude,
 OpenCode, Copilot or Cursor for titles and dictation. Supervised and auto-edit behavior follows each
-provider's native approval policy; none of these adapters adds an operating-system sandbox.
+provider's native approval policy; none of these adapters adds an operating-system sandbox. To
+isolate a thread, use a [container sandbox](sandboxes.md).
 
 Cursor uses the SDK’s public local agent API, including session resume, model variants, streaming
 message boundaries, exposed thinking and tool activity, per-turn usage, steering and cancellation.

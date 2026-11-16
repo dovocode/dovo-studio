@@ -3,7 +3,7 @@ import { decode, resourceSettingsSchema } from '@dovo/protocol'
 import { taskToolsServer } from '../../../agent-tools/config.js'
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { expect, it, vi } from 'vite-plus/test'
-import type { AgentRun } from '../../execution/types.js'
+import type { AgentRun, NativeAgentSession } from '../../execution/types.js'
 import type { Options, SDKUserMessage, SlashCommand } from '@anthropic-ai/claude-agent-sdk'
 
 const mocks = vi.hoisted(() => ({
@@ -508,6 +508,8 @@ it.each([
               status: 'completed',
               session_id: 'session',
             }
+            // The woken root agent ends its reply with a result, like every Claude turn.
+            yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
           }
         }
       },
@@ -634,7 +636,7 @@ it('routes only live native-agent approvals and questions through the session af
     async () => 'approve' as const,
   )
   const ask = vi.fn<AgentRun['ask']>(async () => ({ '0': ['Small change'] }))
-  run.nativeAgentInteractions = { approve, ask }
+  run.nativeAgentInteractions = { active: () => true, approve, ask }
   const controller = new AbortController()
   const request = {
     signal: controller.signal,
@@ -675,9 +677,6 @@ it('routes only live native-agent approvals and questions through the session af
     })
     expect(ask).toHaveBeenCalledOnce()
     await expect(
-      options.canUseTool('Bash', {}, { ...request, agentID: undefined }),
-    ).resolves.toMatchObject({ behavior: 'deny' })
-    await expect(
       options.canUseTool('Bash', {}, { ...request, agentID: 'unknown' }),
     ).resolves.toMatchObject({ behavior: 'deny' })
     expect(run.approve).not.toHaveBeenCalled()
@@ -694,8 +693,245 @@ it('routes only live native-agent approvals and questions through the session af
       behavior: 'deny',
     })
     expect(approve).toHaveBeenCalledOnce()
+    // The finished child wakes the root agent. Its approval uses the session channel too.
+    await expect(
+      options.canUseTool('Bash', { command: 'git status' }, { ...request, agentID: undefined }),
+    ).resolves.toMatchObject({ behavior: 'allow' })
+    expect(approve).toHaveBeenCalledTimes(2)
+    expect(run.approve).not.toHaveBeenCalled()
   } finally {
     finishChild()
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+const denied = { hookSpecificOutput: expect.objectContaining({ permissionDecision: 'deny' }) }
+it.each([
+  ['full-access', true, {}],
+  ['read-only', true, denied],
+  // The thread lowered its access or reset its session after the turn that set this policy.
+  ['full-access', false, denied],
+] as const)(
+  'applies the %s owner policy to root tools after a background task wakes the session (current: %s)',
+  async (permission, current, expected) => {
+    const adapter = createClaudeAdapter()
+    const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+    let finish = () => {}
+    const finished = new Promise<void>((resolve) => {
+      finish = resolve
+    })
+    let options: Options | undefined
+    mocks.query.mockImplementation(({ prompt, options: current }) => {
+      options = current
+      return {
+        async *[Symbol.asyncIterator]() {
+          if (typeof prompt === 'string') throw new Error('Expected streaming input')
+          for await (const _message of prompt) {
+            yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+            await finished
+          }
+        },
+        close: finish,
+      }
+    })
+    const run = nativeRun(vi.fn<NonNullable<AgentRun['onSubagentEvent']>>())
+    run.agent = { ...run.agent, permission }
+    run.nativeAgentInteractions = {
+      active: () => current,
+      approve: vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+        async () => 'approve' as const,
+      ),
+      ask: vi.fn<AgentRun['ask']>(async () => null),
+    }
+    try {
+      await adapter.run(run)
+      const hook = options?.hooks?.PreToolUse?.[0].hooks[0]
+      if (!hook) throw new Error('Expected a pre-use hook')
+      // No Dovo turn is active: Claude's root agent is answering a task notification.
+      const result = await hook(
+        {
+          hook_event_name: 'PreToolUse',
+          tool_name: 'Bash',
+          tool_input: { command: 'git status' },
+          tool_use_id: 'tool',
+          session_id: 'session',
+          transcript_path: '/tmp/transcript',
+          cwd: '/tmp',
+        },
+        'tool',
+        { signal: new AbortController().signal },
+      )
+      expect(result).toEqual(expected)
+      if (!options?.canUseTool) throw new Error('Expected a permission handler')
+      const request = { signal: new AbortController().signal, toolUseID: 'tool', requestId: 'r' }
+      await expect(options.canUseTool('Edit', {}, request)).resolves.toMatchObject({
+        behavior: permission === 'full-access' && current ? 'allow' : 'deny',
+      })
+    } finally {
+      finish()
+      await adapter.dispose?.()
+      pressure.mockRestore()
+    }
+  },
+)
+
+function gate() {
+  let resolve = () => {}
+  const promise = new Promise<void>((done) => (resolve = done))
+  return { promise, resolve }
+}
+function wakeFixture() {
+  const gates = { wake: gate(), result: gate(), closed: gate() }
+  let interrupted = false
+  const submitted: SDKUserMessage[] = []
+  const interrupt = vi.fn<() => Promise<void>>(async () => {
+    interrupted = true
+    gates.result.resolve()
+  })
+  mocks.query.mockImplementation(({ prompt }) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string') throw new Error('Expected streaming input')
+      for await (const message of prompt) {
+        submitted.push(message)
+        if (submitted.length > 1) {
+          yield {
+            type: 'stream_event',
+            session_id: 'session',
+            parent_tool_use_id: null,
+            event: {
+              type: 'content_block_delta',
+              index: 0,
+              delta: { type: 'text_delta', text: 'Second reply' },
+            },
+          }
+          yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+          continue
+        }
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+        // A background job finishes after the turn. Its notification wakes the root agent.
+        await gates.wake.promise
+        yield {
+          type: 'stream_event',
+          session_id: 'session',
+          parent_tool_use_id: null,
+          event: { type: 'message_start' },
+        }
+        yield {
+          type: 'assistant',
+          uuid: 'wake-reply',
+          session_id: 'session',
+          parent_tool_use_id: null,
+          message: {
+            content: [
+              { type: 'text', text: 'The build passed. Checking the output.' },
+              { type: 'tool_use', id: 'wake-tool', name: 'Bash', input: { command: 'ls' } },
+            ],
+          },
+        }
+        await Promise.race([gates.result.promise, gates.closed.promise])
+        yield interrupted
+          ? {
+              type: 'result',
+              subtype: 'success',
+              is_error: false,
+              terminal_reason: 'aborted_streaming',
+              session_id: 'session',
+            }
+          : { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+      }
+    },
+    interrupt,
+    stopTask: vi.fn<(id: string) => Promise<void>>(async () => {}),
+    close: () => gates.closed.resolve(),
+  }))
+  return { gates, submitted, interrupt }
+}
+const rootEvent = (subtype: string, fields: Record<string, unknown> = {}) =>
+  expect.objectContaining({ type: 'system', subtype, task_id: 'session', ...fields })
+
+it('makes a new turn wait for a woken root agent and keeps the wake result out of it', async () => {
+  const adapter = createClaudeAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const { gates, submitted } = wakeFixture()
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  const run = nativeRun(native)
+  try {
+    await adapter.run(run)
+    gates.wake.resolve()
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith('system', rootEvent('task_started'), 'session'),
+    )
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'system',
+        rootEvent('task_progress', { last_tool_name: 'Bash' }),
+        'session',
+      ),
+    )
+    const rebound = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+    const text = vi.fn<AgentRun['onText']>()
+    const activity = vi.fn<AgentRun['onActivity']>()
+    let settled = false
+    const second = adapter
+      .run({
+        ...run,
+        sessionId: 'session',
+        prompt: 'Second',
+        onText: text,
+        onActivity: activity,
+        onSubagentEvent: rebound,
+      })
+      .finally(() => (settled = true))
+    await vi.waitFor(() => expect(activity).toHaveBeenCalledWith(expect.stringContaining('Wait')))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(settled).toBe(false)
+    expect(submitted).toHaveLength(1)
+    gates.result.resolve()
+    await second
+    // The new turn ends on its own result, and the wake's completion reaches its callbacks.
+    expect(submitted).toHaveLength(2)
+    expect(text).toHaveBeenCalledWith('Second reply')
+    expect(rebound).toHaveBeenCalledWith(
+      'system',
+      rootEvent('task_notification', { status: 'completed' }),
+      'session',
+    )
+  } finally {
+    gates.result.resolve()
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+it('lets Stop interrupt a woken root agent and report it stopped', async () => {
+  const adapter = createClaudeAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const { gates, interrupt } = wakeFixture()
+  const native = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+  let control: NativeAgentSession | undefined
+  const run = {
+    ...nativeRun(native),
+    onNativeSession: (session: NativeAgentSession) => (control = session),
+  }
+  try {
+    await adapter.run(run)
+    gates.wake.resolve()
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith('system', rootEvent('task_started'), 'session'),
+    )
+    if (!control) throw new Error('Expected a native session')
+    await control.stop()
+    expect(interrupt).toHaveBeenCalledOnce()
+    await vi.waitFor(() =>
+      expect(native).toHaveBeenCalledWith(
+        'system',
+        rootEvent('task_notification', { status: 'stopped' }),
+        'session',
+      ),
+    )
+  } finally {
+    gates.result.resolve()
     await adapter.dispose?.()
     pressure.mockRestore()
   }

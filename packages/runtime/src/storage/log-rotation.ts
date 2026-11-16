@@ -1,7 +1,7 @@
 import { stat, truncate, rename, rm, chmod, open } from 'node:fs/promises'
 import { join } from 'node:path'
 
-const LOG_NAMES = [
+export const LOG_NAMES = [
   'server.log',
   'runtime-service.log',
   'server-update.log',

@@ -33,6 +33,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
               ['./message-copy', 'MessageCopy'],
               ['../actions/run-in-terminal', 'RunInTerminal'],
               ['../actions/fork-turn', 'ForkTurn'],
+              ['../actions/fork-message', 'ForkMessage'],
               ['../actions/retry-turn', 'RetryTurn'],
               ['./task-activity', 'TaskActivity'],
             ].map(([path, name]) => ({
@@ -84,7 +85,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
             {
               path: '../state/provider',
               importer: folder,
-              contents: `export const useAppendConversationTemplate=()=>window.append;export const useConversationSelector=selector=>selector({task:window.task,history:{setBookmark:()=>{}}});`,
+              contents: `export const useAppendConversationTemplate=()=>window.append;export const useConversationSelector=selector=>selector({task:window.task,history:{setBookmark:()=>{}}});export const useConversationPresentation=()=>undefined;export const usePendingConversationMessage=()=>null;`,
             },
             { path: 'expo-router', contents: `export const router={};` },
             {

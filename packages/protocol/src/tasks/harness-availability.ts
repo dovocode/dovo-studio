@@ -2,10 +2,16 @@ import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { defaultTaskHarness, providerSchema, type Agent, type TaskHarness } from '../workspace.js'
 import { acpHarnessChoiceId, acpInstallationHarness } from './acp-harness.js'
+import { harnessSandboxSupportSchema } from './container-sandbox.js'
 import type { AcpInstallation } from '../auth/acp-registry.js'
 
 export const harnessAvailabilitySchema = mutableArray(
-  mutableStruct({ id: Schema.String, available: Schema.Boolean }),
+  mutableStruct({
+    id: Schema.String,
+    available: Schema.Boolean,
+    /** Present on runtimes with container sandboxes. */
+    sandbox: Schema.optional(harnessSandboxSupportSchema),
+  }),
 )
 export type HarnessAvailability = Schema.Schema.Type<typeof harnessAvailabilitySchema>
 

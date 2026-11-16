@@ -57,6 +57,7 @@ import {
 import { readTaskImage } from './endpoints/task-images.js'
 import { deviceHostRoute } from './endpoints/device-host-routes.js'
 import { memoryRoute } from './endpoints/memory-routes.js'
+import { problemReportRoute } from './endpoints/problem-report-routes.js'
 import { linkedProjectsTool } from '../scm/tasks/linked-project-tools.js'
 import { agentInteraction } from '../agent-tools/interactions.js'
 import { secureInputTool } from '../agent-tools/secure-input-route.js'
@@ -85,7 +86,7 @@ import {
 import { compactActivityEvents } from '@dovo/protocol'
 import { recoverableMutation } from '@dovo/protocol'
 import { runClientEffect } from '@dovo/client-runtime'
-import { mcpAppRpcSchema } from '@dovo/protocol'
+import { mcpAppRpcSchema, MAX_PROBLEM_REPORT_BYTES } from '@dovo/protocol'
 import {
   artifactFeedPreviewSchema,
   artifactFeedEnableSchema,
@@ -987,6 +988,16 @@ export function route(
         s.devices.revoke(device.id)
         return yield* serviceResult({ ok: true })
       }
+      // Untracked: the request carries the report text, and the started thread records it.
+      if (method === 'POST' && path.startsWith('/api/problem-reports/')) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Problem reports are started from a paired human client.')
+        return yield* problemReportRoute(
+          s,
+          path,
+          yield* serviceResult(body(request, 4 * MAX_PROBLEM_REPORT_BYTES)),
+        )
+      }
       if (
         path !== '/api/activity' &&
         path !== '/api/tasks/viewed' &&
@@ -1706,9 +1717,18 @@ export function route(
           'enableStudioPeerRegistration' in input
         )
           throw new HttpError(403, 'Only paired human clients can change Studio computer access')
+        if (
+          agentDeviceAccess &&
+          input &&
+          typeof input === 'object' &&
+          'unattendedSpendLimitUsd' in input
+        )
+          throw new HttpError(403, 'Only paired human clients can change the spend limit')
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
         const settings = s.preferences.save(input)
+        // Turning the limit on starts every family counter at this moment.
+        s.tasks.spendLimit?.limitUsd()
         const profileStatus =
           input && typeof input === 'object' && 'browserProfiles' in input
             ? yield* serviceResult(s.browsers.applyProfiles())
@@ -1789,7 +1809,18 @@ export function route(
         const input = yield* serviceResult(body(request))
         const header = request.headers['x-dovo-mutation-id']
         const id = header === undefined ? undefined : decode(idSchema, header)
-        return yield* serviceResult(patchWorkspace(s, input, device.id, id))
+        // Settings and editor saves come from a paired person unless the client marked agent access.
+        const routine =
+          !!input && typeof input === 'object' && Reflect.get(input, 'collection') === 'automations'
+        const actor = !routine
+          ? undefined
+          : agentDeviceAccess
+            ? ({ kind: 'agent-device' } as const)
+            : ({
+                kind: 'person',
+                deviceName: s.devices.list().find((entry) => entry.id === device.id)?.name,
+              } as const)
+        return yield* serviceResult(patchWorkspace(s, input, device.id, id, actor))
       }
       if (method === 'GET' && path === '/api/workspace/recovered-edits') {
         const cursor = url.searchParams.get('cursor') ?? undefined
@@ -1989,7 +2020,7 @@ export function route(
         path.startsWith('/api/agents/') ||
         path.startsWith('/api/tasks/')
       )
-        return yield* agentsRoute(request, path)
+        return yield* agentsRoute(request, path, !agentDeviceAccess)
       if (path === '/api/terminals' || path.startsWith('/api/terminals/'))
         return yield* terminalsRoute(request, path, token)
       if (path.startsWith('/api/dictation/')) return yield* dictationRoute(request, path, token)

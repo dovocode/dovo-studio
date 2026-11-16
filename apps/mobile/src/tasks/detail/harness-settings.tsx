@@ -1,3 +1,4 @@
+import { containerSandboxEnabled, taskContainerSandbox } from '@dovo/protocol'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { HarnessModelPicker } from '../../agents/harness-model-picker'
 import { useHarnessHandoff } from '@dovo/studio-core/harness-handoff'
@@ -72,7 +73,7 @@ export function HarnessSettings({
 }) {
   const uiText = useInterfaceText()
 
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
   const [turnError, setTurnError] = useState('')
   const [advanced, setAdvanced] = useState(false)
   const sheet = useRef<SheetHandle>(null)
@@ -143,7 +144,17 @@ export function HarnessSettings({
     : selectionTask
   const custom = selection.startsWith('agent:')
   const installations = snapshot?.acpInstallations ?? []
-  const availability = useHarnessAvailability(task.bot ? undefined : task.repositoryId, agents)
+  const availability = useHarnessAvailability(
+    task.bot ? undefined : task.repositoryId,
+    agents,
+    containerSandboxEnabled(
+      taskContainerSandbox(
+        task,
+        snapshot?.defaults,
+        snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId),
+      ),
+    ),
+  )
   const choices = taskHarnessChoices(
     pickerTask,
     agents,
@@ -465,6 +476,14 @@ export function HarnessSettings({
                 }
                 onChange={(value, next) => save(next, value)}
               />
+              {availability.sandboxNotes.map((item) => (
+                <Text
+                  key={item.id}
+                  style={item.supported ? styles.muted : [styles.muted, { color: colors.error }]}
+                >
+                  {uiText('Sandbox')} · {item.id.replace(/^(harness|agent):/, '')}: {item.note}
+                </Text>
+              ))}
               {(availability.loading || availability.error || !choices.length) && (
                 <Text style={styles.muted}>
                   {availability.loading

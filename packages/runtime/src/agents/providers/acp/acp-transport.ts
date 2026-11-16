@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawnHarness } from '../../../sandbox/launcher.js'
 import { basename } from 'node:path'
 import { ndJsonStream, type Stream } from '@agentclientprotocol/sdk/unstable'
 import { processEnvironment } from '../../../process.js'
@@ -22,7 +22,7 @@ export function openAcpTransport<T extends Lifecycle>(
   const env = { ...processEnvironment(), ...launch.env }
   delete env.DOVO_OWNER_TOKEN
   delete env.ELECTRON_RUN_AS_NODE
-  const child = spawn(launch.command, launch.args, {
+  const child = spawnHarness(launch.sandbox, launch.command, launch.args, {
     windowsHide: true,
     cwd,
     env,

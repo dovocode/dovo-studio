@@ -1,9 +1,17 @@
 import { Schema } from 'effect'
-import { decode, mutableArray, mutableStruct, runAuditSchema, taskFamilyIds } from '@dovo/protocol'
+import {
+  decode,
+  mutableArray,
+  mutableStruct,
+  routineChangeForRun,
+  runAuditSchema,
+  taskFamilyIds,
+} from '@dovo/protocol'
 import type Database from 'better-sqlite3'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import type { StoredRun } from './run-state.js'
 import { redact } from '../storage/activity.js'
+import { routineChanges } from './routine-provenance.js'
 
 /** Only isolated step workers and their descendants belong to this audit. Never claim a
  * coordinator Bot's shared history, even for older runs that executed there directly. */
@@ -79,5 +87,6 @@ export function runAudit(
     usageIncomplete: turns.some(
       (turn) => turn.tokens === undefined || turn.estimatedCostUsd === undefined,
     ),
+    routineChange: routineChangeForRun(routineChanges(db, store, run.automationId), run.createdAt),
   })
 }

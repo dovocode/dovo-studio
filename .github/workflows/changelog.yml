@@ -1,0 +1,39 @@
+name: Changelog
+on:
+  push:
+    branches: [main]
+  # Label changes re-run only this small check, never the full Check workflow.
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+permissions:
+  contents: read
+concurrency:
+  group: changelog-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+jobs:
+  changelog:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Validate changelog fragments
+        if: github.event_name != 'pull_request'
+        run: node scripts/changelog/check-fragments.mjs
+      - name: Require a changelog fragment for app and package changes
+        if: github.event_name == 'pull_request'
+        env:
+          SKIP: ${{ contains(github.event.pull_request.labels.*.name, 'skip-changelog') }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if test "$SKIP" = true; then
+            echo 'The skip-changelog label is set. Only the fragment format is checked.'
+            node scripts/changelog/check-fragments.mjs
+          elif ! node scripts/changelog/check-fragments.mjs --base "$BASE_SHA"; then
+            echo '::error title=Changelog::Add a changelog.d fragment or the skip-changelog label. The job log explains how.'
+            exit 1
+          fi

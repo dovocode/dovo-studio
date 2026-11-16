@@ -82,6 +82,56 @@ between polls are combined, and GitHub does not expose the pusher through this c
 actor/write-access filters are unavailable for synchronization. Multiple discussion edits between
 polls are likewise combined. Label filters use the item's labels at polling time.
 
+## Test with a dry run
+
+A dry run tests an automation with sample data. It starts no work and changes nothing.
+
+On desktop/web, open the automation and choose **Dry run**. It tests the current canvas. On mobile,
+open the automation, tap its settings button, then choose **Dry run** at the end of the editor. It
+tests the unsaved draft.
+
+1. Check the sample trigger data. Dovo fills in a sample for each trigger:
+   - Webhook: a small JSON body. Paste a real payload to test your instructions with it.
+   - GitHub event: an event for the saved repository, event and actor.
+   - Schedule or one time: the next due time.
+   - Monitored source: sample content. Choose **Unchanged** to test the path where an automatic run
+     ends without work.
+2. Optional: under **Simulated outcome**, choose a task that fails or a review that rejects.
+3. Choose **Start dry run**.
+
+The result lists each step in the order a real run reaches it:
+
+- **Ran:** the step ran for real. Only the trigger runs. It reads the sample data and applies the
+  GitHub actor filter.
+- **Simulated:** the step did not run. Tasks, Bot jobs, review gates and source checks are always
+  simulated. Open a step to see the inputs it would receive, such as its exact instructions with the
+  trigger data.
+- **Not reached:** a real run with this input stops before this step.
+
+**Not tested by this dry run** lists the paths that this input did not test. Examples are a review
+rejection, a task failure, a GitHub label filter, the write access check and quiet hours. Change the
+sample data or the simulated outcome to test another path. Warnings show current conditions that
+make a real run fail or not start, such as a paused Bot or paused triggers.
+
+For a monitored source, the instructions show the sample content. After the first successful run, a
+real run also adds a **Previous successful source** block. The dry run cannot show that block, so it
+lists it under **Not tested by this dry run**.
+
+A dry run never fires a trigger, creates a thread, posts to a Bot, sends a notification or reads a
+monitored source. The runtime does not store dry runs. They do not appear in Runs, use a schedule
+occurrence or webhook delivery, or count toward routine limits. Use **Test run** for real work with
+triggers disabled.
+
+Clients call `POST /api/jobs/dry-run` with `{ "flow": …, "input": …, "stopAt": "node-id" }`. The
+runtime advertises `automationDryRunSupported`. Clients hide **Dry run** for older runtimes.
+`packages/runtime/src/jobs/dry-run.ts` classifies every step kind as pure or external. A new step
+kind fails typechecking until someone classifies it. The runtime simulates unknown step kinds.
+
+Agents call `studio_automations` with
+`{ "action": "dryRun", "automation": …, "input": …, "stopAt": "node-id" }`. The automation can be an
+unsaved draft. To test a saved automation, read it first. Read-only agents can use dry runs. An
+older runtime rejects the `dryRun` action.
+
 ## Follow a run
 
 Each run records the current step, completed steps, review gates, failures, task links and start/end

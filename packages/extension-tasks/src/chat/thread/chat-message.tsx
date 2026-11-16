@@ -14,6 +14,7 @@ import {
   watchMessage,
   hasToolImages,
   turnSummary,
+  type ConversationTurn,
   type PendingMessage,
   type recentTools,
 } from '@dovo/protocol'
@@ -28,6 +29,7 @@ import { MessageAttachments } from '../composer/message-attachments'
 import { MessageCopy } from './message-copy'
 import { RunInTerminal } from '../actions/run-in-terminal'
 import { ForkTurn } from '../actions/fork-turn'
+import { ForkMessage } from '../actions/fork-message'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity } from './task-activity'
 
@@ -36,6 +38,7 @@ export const ChatMessage = memo(function ChatMessage({
   onUseTemplate,
   message,
   turn,
+  groupStatus = 'completed',
   tools,
   summaryTools = tools,
   compactions,
@@ -55,6 +58,8 @@ export const ChatMessage = memo(function ChatMessage({
   onUseTemplate?: (prompt: string) => void
   message: Task['messages'][number]
   turn?: TaskTurn
+  /** Status of the request this message belongs to. Only settled history can be forked. */
+  groupStatus?: ConversationTurn['status']
   tools: ReturnType<typeof recentTools>
   summaryTools?: ReturnType<typeof recentTools>
   compactions: NonNullable<Task['compactions']>
@@ -317,6 +322,9 @@ export const ChatMessage = memo(function ChatMessage({
             )}
             {message.role === 'assistant' && turn?.status !== 'running' && onTerminal && (
               <RunInTerminal taskId={taskId} text={message.text} onRan={onTerminal} />
+            )}
+            {pending?.message.id !== message.id && (
+              <ForkMessage taskId={taskId} message={message} status={groupStatus} />
             )}
             {ownsFooter && turn && turn.status !== 'running' && (
               <ForkTurn taskId={taskId} turnId={turn.id} />

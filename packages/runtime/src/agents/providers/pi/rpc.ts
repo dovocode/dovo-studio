@@ -1,4 +1,5 @@
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawnHarness, type SandboxSession } from '../../../sandbox/launcher.js'
 import { StringDecoder } from 'node:string_decoder'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
@@ -23,8 +24,14 @@ export class PiRpc {
   private failed?: Error
   private closing?: Promise<void>
 
-  constructor(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
-    this.child = spawn(command, [...args, '--mode', 'rpc'], {
+  constructor(
+    command: string,
+    args: string[],
+    cwd: string,
+    env: NodeJS.ProcessEnv,
+    sandbox?: SandboxSession,
+  ) {
+    this.child = spawnHarness(sandbox, command, [...args, '--mode', 'rpc'], {
       cwd,
       env,
       stdio: ['pipe', 'pipe', 'pipe'],

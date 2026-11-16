@@ -1,10 +1,13 @@
+import type { Sandboxes } from '../../sandbox/sandboxes.js'
 import { WorkerCapacity } from './worker-capacity.js'
 import { totalmem } from 'node:os'
 import { ToolLoopStop } from '../execution/tool-loop.js'
 import { MemoryProtection, MemoryPressureStop } from '../execution/memory-protection.js'
 import { isAbsolute, relative, sep } from 'node:path'
 import { taskInputOwner, planModeAgent, planModeRequested, goalCommand } from '@dovo/protocol'
-import { botPaused, botPausedMessage } from '@dovo/protocol'
+import { botPaused, botPausedMessage, containerSandboxEnabled } from '@dovo/protocol'
+import { threadContainerSandbox } from '../../sandbox/thread-terminal.js'
+import { sandboxNativeReads } from '../../sandbox/harnesses.js'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import {
@@ -58,6 +61,7 @@ import {
   type CompletedCommand,
 } from '../execution/run-turn.js'
 import { TaskQueue } from './task-queue.js'
+import type { UnattendedSpend } from './spend-limit.js'
 import { safeFile } from '../../scm/repositories/paths.js'
 import type { Questions } from '../execution/questions.js'
 import type { Activity } from '../../storage/activity.js'
@@ -148,6 +152,8 @@ export class Tasks {
   onStopChildren?: (parentId: string) => void
   onTurnFailed?: (id: string, turnId: string) => Promise<void>
   onBeforeStart?: (id: string) => Promise<void>
+  /** Optional computer-wide limit on estimated cost of unattended work. */
+  spendLimit?: UnattendedSpend
   private scheduleTimer?: ReturnType<typeof setInterval>
   private checkingSchedule = false
   private scheduleWork?: Promise<void>
@@ -350,7 +356,17 @@ export class Tasks {
     this.mcpApps = apps
     this.runner.setMcpApps(apps)
   }
+  private sandboxes?: Sandboxes
+  setSandboxes(sandboxes: Sandboxes) {
+    this.sandboxes = sandboxes
+    this.runner.setSandboxes(sandboxes)
+  }
+  taskToolsAddress() {
+    return this.taskTools
+  }
+  private taskTools?: { port: number; host: string }
   setTaskTools(port: number, token: string, host: string) {
+    this.taskTools = { port, host }
     this.runner.setTaskTools(port, token, host)
   }
   reserveDeletion(ids: readonly string[]) {
@@ -448,6 +464,7 @@ export class Tasks {
   private async runScheduledTick() {
     try {
       this.deliverCompletions()
+      this.reviewSpendHolds()
       const now = Date.now()
       for (const task of this.store.get().tasks) {
         if (
@@ -936,35 +953,39 @@ export class Tasks {
     if (turn.status === 'running')
       throw new HttpError(409, 'Wait for this turn to finish before forking.')
     const end = task.messages.findIndex((message) => message.id === turn.assistantId)
-    const messages = (end >= 0 ? task.messages.slice(0, end + 1) : task.messages).filter(
+    const history = (end >= 0 ? task.messages.slice(0, end + 1) : task.messages).filter(
       (message) => message.role === 'assistant' || !message.file,
     )
     const snapshot = turn.checkpoint?.after
-    const fork: Task = {
-      id: randomUUID(),
-      title: `Fork: ${task.title}`.slice(0, 200),
-      repositoryId: task.repositoryId,
-      agentId: task.agentId,
-      agentName: task.agentName,
-      agentIcon: task.agentIcon,
-      linkedCheckouts: task.linkedCheckouts,
-      ...(task.harness ? { harness: task.harness } : {}),
-      ...(task.agentOverrides ? { agentOverrides: task.agentOverrides } : {}),
-      execution: snapshot ? 'worktree' : task.execution,
-      ...(snapshot && task.checkoutBranch ? { worktreeBaseBranch: task.checkoutBranch } : {}),
-      ...(task.setupCommand ? { setupCommand: task.setupCommand } : {}),
-      submodules: task.submodules,
-      status: 'draft',
-      createdAt: new Date().toISOString(),
-      messages,
-      files: [],
-      draft: '',
-      example: false,
-      forkedFrom: { taskId: id, turnId, title: task.title, ...(snapshot ? { snapshot } : {}) },
-    }
-    this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, fork] }))
-    this.activity?.add('task', fork.id, 'Forked from another task', { taskId: id, turnId })
-    return { id: fork.id }
+    const forkId = randomUUID()
+    // The fork owns copies of its files, so it keeps them when the source thread is deleted.
+    return this.store.transaction(() => {
+      const fork: Task = {
+        id: forkId,
+        title: `Fork: ${task.title}`.slice(0, 200),
+        repositoryId: task.repositoryId,
+        agentId: task.agentId,
+        agentName: task.agentName,
+        agentIcon: task.agentIcon,
+        linkedCheckouts: task.linkedCheckouts,
+        ...(task.harness ? { harness: task.harness } : {}),
+        ...(task.agentOverrides ? { agentOverrides: task.agentOverrides } : {}),
+        execution: snapshot ? 'worktree' : task.execution,
+        ...(snapshot && task.checkoutBranch ? { worktreeBaseBranch: task.checkoutBranch } : {}),
+        ...(task.setupCommand ? { setupCommand: task.setupCommand } : {}),
+        submodules: task.submodules,
+        status: 'draft',
+        createdAt: new Date().toISOString(),
+        messages: this.attachments.copyHistory(forkId, history),
+        files: [],
+        draft: '',
+        example: false,
+        forkedFrom: { taskId: id, turnId, title: task.title, ...(snapshot ? { snapshot } : {}) },
+      }
+      this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, fork] }))
+      this.activity?.add('task', fork.id, 'Forked from another task', { taskId: id, turnId })
+      return { id: fork.id }
+    })
   }
   /** Continue the conversation in an independent worktree at the source's committed HEAD. */
   async startFork(id: string, forkId: string, text: string, attachmentIds: string[]) {
@@ -1032,20 +1053,10 @@ export class Tasks {
         forkedFrom: { taskId: id, title: source.title, head },
         status: 'draft',
         createdAt: new Date().toISOString(),
-        messages: source.messages
-          .filter((message) => message.role === 'assistant' || !message.file)
-          .map((message) => ({
-            ...message,
-            ...(message.attachments?.length
-              ? {
-                  attachments: this.attachments.copy(
-                    id,
-                    forkId,
-                    message.attachments.map((file) => file.id),
-                  ),
-                }
-              : {}),
-          })),
+        messages: this.attachments.copyHistory(
+          forkId,
+          source.messages.filter((message) => message.role === 'assistant' || !message.file),
+        ),
         files: [],
         draft: '',
         example: false,
@@ -1150,20 +1161,10 @@ export class Tasks {
             : end >= 0
               ? parent.messages.slice(0, end + 1)
               : []
-        const messages = history
-          .filter((message) => message.role === 'assistant' || !message.file)
-          .map((message) => ({
-            ...message,
-            ...(message.attachments?.length
-              ? {
-                  attachments: this.attachments.copy(
-                    id,
-                    childId,
-                    message.attachments.map((file) => file.id),
-                  ),
-                }
-              : {}),
-          }))
+        const messages = this.attachments.copyHistory(
+          childId,
+          history.filter((message) => message.role === 'assistant' || !message.file),
+        )
         const child: Task = {
           id: childId,
           title: `Side thread: ${parent.title}`.slice(0, 200),
@@ -1612,20 +1613,12 @@ export class Tasks {
         this.store.get().tasks.some((task) => task.id === childId)
       )
         continue
-      const messages = [...botContextMessages(parent.messages, parent.bot), input]
-        .filter((message) => message.role === 'assistant' || !message.file)
-        .map((message) => ({
-          ...message,
-          ...(message.attachments?.length
-            ? {
-                attachments: this.attachments.copy(
-                  parent.id,
-                  childId,
-                  message.attachments.map((file) => file.id),
-                ),
-              }
-            : {}),
-        }))
+      const messages = this.attachments.copyHistory(
+        childId,
+        [...botContextMessages(parent.messages, parent.bot), input].filter(
+          (message) => message.role === 'assistant' || !message.file,
+        ),
+      )
       const child: Task = {
         id: childId,
         title: parent.title,
@@ -2179,6 +2172,9 @@ export class Tasks {
         next.runPhase !== 'finalizing'
       )
         return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
+      // Held, not failed: the input stays queued and the thread shows the spend pause.
+      if (!continuingRunId && this.holdForSpendLimit(id, firstMessage?.id))
+        return Effect.succeed({ completion: Effect.void })
       const selectModel = (signal?: AbortSignal) =>
         (!retryFailed && firstMessage?.turnSettings) ||
         (continuingRunId && next.runAttempt?.turnSettings)
@@ -2551,6 +2547,20 @@ export class Tasks {
                   preparation: undefined,
                   activity: undefined,
                   queuePaused: recoveringQueue ? true : current.queuePaused,
+                }))
+                return
+              }
+              // Input that arrived during the previous turn starts a new unattended turn. It
+              // stays queued at the spend limit, as it would after this run released the thread.
+              if (
+                !firstAttempt &&
+                this.holdForSpendLimit(id, nextQueuedMessage(this.store.taskSummary(id))?.id)
+              ) {
+                this.store.updateTask(id, (current) => ({
+                  ...current,
+                  runPhase: undefined,
+                  preparation: undefined,
+                  activity: undefined,
                 }))
                 return
               }
@@ -3552,6 +3562,104 @@ export class Tasks {
   resumeSubagentInbox() {
     this.deliverCompletions()
   }
+  /** New unattended work waits once its family reached the spend limit. The owner's own
+   * messages always start. A running turn is never interrupted. */
+  private holdForSpendLimit(id: string, inputId: string | undefined) {
+    const spend = this.spendLimit
+    if (!spend) return false
+    const pause =
+      spend.limitUsd() === undefined || (inputId && spend.ownerMessage(id, inputId))
+        ? undefined
+        : spend.reached(id)
+    const current = this.store.taskSummary(id).spendPause
+    if (!pause) {
+      if (current) this.store.updateTask(id, (task) => ({ ...task, spendPause: undefined }))
+      return false
+    }
+    if (!current)
+      this.activity?.add('task', id, 'New unattended work paused at the spend limit', {
+        spentUsd: pause.spentUsd,
+        unpricedTurns: pause.unpricedTurns,
+        limitUsd: pause.limitUsd,
+      })
+    this.store.updateTask(id, (task) => ({
+      ...task,
+      spendPause: { ...pause, at: task.spendPause?.at ?? pause.at },
+    }))
+    return true
+  }
+  /** An owner message, Run, Retry or Continue resets the family's counter and releases its held
+   * work. With `callerStarts`, the caller starts `id` itself, for example after queueing the
+   * owner's message `ownerMessageId`. */
+  resetSpendLimit(id: string, ownerMessageId?: string, callerStarts = !!ownerMessageId) {
+    const spend = this.spendLimit
+    // Turning the limit on starts every count at zero, so a reset matters only while it is on.
+    if (!spend || spend.limitUsd() === undefined) return
+    const held = this.store.transaction(() => {
+      spend.reset(id, ownerMessageId)
+      const ids = spend.family(id).filter((taskId) => this.store.taskSummary(taskId).spendPause)
+      for (const taskId of ids)
+        this.store.updateTask(taskId, (task) => ({ ...task, spendPause: undefined }))
+      return ids
+    })
+    for (const taskId of held)
+      if (taskId !== id || !callerStarts) this.releaseSpendHold(taskId, true)
+  }
+  /** A raised or removed limit, new prices or an emptied queue release held work. */
+  private reviewSpendHolds() {
+    for (const task of this.store.get().tasks) {
+      const held = task.spendPause
+      if (!held) continue
+      const pending = hasAgentInput(task) || task.status === 'draft'
+      const pause = pending ? this.spendLimit?.reached(task.id) : undefined
+      if (pause) {
+        if (
+          pause.spentUsd !== held.spentUsd ||
+          pause.unpricedTurns !== held.unpricedTurns ||
+          pause.limitUsd !== held.limitUsd
+        )
+          this.store.updateTask(task.id, (current) => ({
+            ...current,
+            spendPause: { ...pause, at: current.spendPause?.at ?? pause.at },
+          }))
+        continue
+      }
+      this.store.updateTask(task.id, (current) => ({ ...current, spendPause: undefined }))
+      if (pending) this.releaseSpendHold(task.id, false)
+    }
+  }
+  private releaseSpendHold(id: string, consent: boolean) {
+    // Continue or an owner message is consent for input that a restart held with the spend
+    // pause. A queue that the user paused, or an interrupted turn, keeps its own controls.
+    if (consent && this.store.taskSummary(id).restartRecovery?.kind === 'queue')
+      this.store.updateTask(id, (current) =>
+        current.restartRecovery?.kind === 'queue'
+          ? { ...current, queuePaused: undefined, restartRecovery: undefined }
+          : current,
+      )
+    const ready = () => {
+      const task = this.store.get().tasks.find((item) => item.id === id)
+      return (
+        !!task &&
+        !task.queuePaused &&
+        !botPaused(task) &&
+        !this.running.has(id) &&
+        (hasAgentInput(task) || task.status === 'draft')
+      )
+    }
+    if (!ready()) return
+    this.executor.runFork(
+      this.startEffect(id, false, ready).pipe(
+        Effect.catch((error) =>
+          Effect.sync(() =>
+            this.activity?.add('task', id, 'Held work could not start after the spend pause', {
+              error: errorMessage(error),
+            }),
+          ),
+        ),
+      ),
+    )
+  }
   /** Optimistic snapshot guard also permits stopping children while their parent is idle. */
   stopAgents(id: string, runToken: string, childId?: string) {
     this.store.taskSummary(id)
@@ -3794,7 +3902,12 @@ export class Tasks {
     else {
       const resolved = resolveTaskAgent(task, this.store.agentsFor(task.repositoryId))
       const cwd = await this.checkouts.reviewDirectory(task.id)
-      if (resolved?.provider === child.provider) {
+      const sandboxed = containerSandboxEnabled(threadContainerSandbox(this.store, task.id))
+      const sandbox = sandboxed ? this.sandboxes?.current(task.id) : undefined
+      if (
+        resolved?.provider === child.provider &&
+        (!sandboxed || sandboxNativeReads(child.provider, !!sandbox))
+      ) {
         const adapter = await this.registry.get(resolved.provider)
         if (adapter.readNativeThread)
           entries = await adapter.readNativeThread(
@@ -3802,6 +3915,7 @@ export class Tasks {
             child.threadId ?? child.id,
             child.sessionId,
             cwd,
+            sandbox,
           )
       }
     }

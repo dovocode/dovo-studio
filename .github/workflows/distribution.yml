@@ -1,4 +1,4 @@
-name: Update Homebrew and mise distribution
+name: Update Homebrew, mise and container distribution
 on:
   release:
     types: [published]
@@ -51,3 +51,97 @@ jobs:
             git pull --rebase origin "${{ github.event.repository.default_branch }}"
             git push
           fi
+  # Publish the runtime image from the published Linux server archives. The Release workflow only
+  # builds drafts. Publishing here keeps unreviewed Stable drafts and unverified nightlies off GHCR.
+  container:
+    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.release.tag_name, 'v')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
+    steps:
+      - name: Check release and choose image tags
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-nightly\.[0-9]+)?$ ]] || { echo 'Stable or nightly version required'; exit 1; }
+          test "$(gh release view "$TAG" --json isDraft --jq .isDraft)" = false
+          IMAGE="ghcr.io/${OWNER,,}/dovo-server"
+          if [[ "$TAG" == *-nightly.* ]]; then
+            test "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = true
+            CHANNEL=nightly
+            PRERELEASE=true
+            PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.[0-9]+$'
+          else
+            test "$(gh release view "$TAG" --json isPrerelease --jq .isPrerelease)" = false
+            CHANNEL=latest
+            PRERELEASE=false
+            PATTERN='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          fi
+          # Every release gets its version tag. Only the highest published version of its channel
+          # moves the channel tag, so a patch for an older line or a re-run cannot move it back.
+          NEWEST="$(
+            gh release list --limit 1000 --json tagName,isDraft,isPrerelease \
+              --jq ".[] | select((.isDraft | not) and .isPrerelease == $PRERELEASE) | .tagName" |
+              { grep -E "$PATTERN" || true; } | sort -V | tail -n 1
+          )"
+          TAGS="$IMAGE:${TAG#v}"
+          if [[ "$NEWEST" == "$TAG" ]]; then
+            TAGS+=$'\n'"$IMAGE:$CHANNEL"
+          else
+            echo "::notice::$TAG is older than $NEWEST, so the $CHANNEL image tag stays on $NEWEST."
+          fi
+          {
+            echo "version=${TAG#v}"
+            echo 'tags<<EOF'
+            echo "$TAGS"
+            echo 'EOF'
+          } >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TAG }}
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Download published Linux server archives
+        id: source
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release download "$TAG" --pattern 'Dovo-Server*-linux-*.tar.gz' --dir release
+          echo "revision=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-qemu-action@v4
+      - uses: docker/setup-buildx-action@v4
+      - name: Build linux/amd64 image for checks
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: dovo-server:release-check
+      - name: Check health, pairing and volume persistence
+        run: node scripts/packaging/runtime-image-smoke.mjs dovo-server:release-check
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Build and push linux/amd64 and linux/arm64
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          file: apps/api/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.release.outputs.tags }}
+          labels: |
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.revision=${{ steps.source.outputs.revision }}

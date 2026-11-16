@@ -1,3 +1,4 @@
+import type { Agent } from '@dovo/protocol'
 import { agentSecretReferenceSchema } from '@dovo/protocol'
 import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
 import { isSpreadsheet } from '@dovo/protocol'
@@ -37,6 +38,8 @@ import { continueHarnessSchema } from '@dovo/protocol'
 import { pendingHarnessSchema } from '@dovo/protocol'
 import { savePendingHarness } from '../../agents/tasks/pending-harness.js'
 import { continueHarness } from '../../agents/tasks/thread-handoff.js'
+import { forkFromMessage } from '../../agents/tasks/message-fork.js'
+import { forkMessageSchema } from '@dovo/protocol'
 import { uncommittedChanges } from '../../scm/work/change-summary.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { runtimeSetupSchema, titleGenerationSettingsSchema } from '@dovo/protocol'
@@ -78,7 +81,8 @@ import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { nativeThreadReadSchema } from '@dovo/protocol'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
-export function agentsRoute(request: IncomingMessage, path: string) {
+/** `owner` is false for requests made with agent access; only owners reset the spend limit. */
+export function agentsRoute(request: IncomingMessage, path: string, owner = false) {
   if (path.startsWith('/api/tasks/codex-sessions/')) return codexSessionRoute(request, path)
   if (path.startsWith('/api/tasks/pi-sessions/')) return codexSessionRoute(request, path)
   if (path.startsWith('/api/tasks/commits/')) return localCommitRoute(request, path)
@@ -197,15 +201,28 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           yield* serviceResult(body(request)),
         )
         const { availability: checker } = agentDiscoveryCache(s.db, s.agents)
+        const checkout = s.store.get().repositories.find((item) => item.id === repositoryId)?.path
+        const sandboxSupport = (agent: Agent) => {
+          try {
+            const configured = s.agents.configure(agent)
+            return s.sandboxes.support(configured, s.agents.launch(configured), checkout)
+          } catch (error) {
+            return { supported: false, note: errorMessage(error).slice(0, 1000) }
+          }
+        }
         return yield* serviceResult(
           Promise.all(
             harnessAvailabilityCandidates(
               s.store.agentsFor(repositoryId),
               s.acpInstallations.list(),
-            ).map(async ({ id, agent }) => ({
-              id,
-              available: await checker.check(agent, s.agents, refresh),
-            })),
+            ).map(async ({ id, agent }) => {
+              return {
+                id,
+                available: await checker.check(agent, s.agents, refresh),
+                // Local facts only; a missing executable in the container shows at run time.
+                sandbox: sandboxSupport(agent),
+              }
+            }),
           ),
         )
       }
@@ -567,6 +584,13 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         }))
         return yield* serviceResult({ ok: true })
       }
+      if (method === 'POST' && path === '/api/tasks/spend-limit/continue') {
+        if (!owner) throw new HttpError(403, 'Only paired human clients can continue held work')
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        s.store.taskSummary(id)
+        s.tasks.resetSpendLimit(id)
+        return { ok: true }
+      }
       if (method === 'POST' && path === '/api/tasks/quota/cancel') {
         const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
         s.store.updateTask(id, (task) => ({
@@ -773,6 +797,7 @@ export function agentsRoute(request: IncomingMessage, path: string) {
               409,
               'Update Dovo or refresh this thread before steering its current run',
             )
+          if (owner) s.tasks.resetSpendLimit(input.id, input.messageId)
           return yield* s.tasks.steerEffect(
             input.id,
             input.messageId,
@@ -785,6 +810,8 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         if (input.createTask)
           yield* startThreadEffect(s, { messageId: input.messageId, createTask: input.createTask })
         const before = s.store.taskSummary(input.id)
+        // A message from a paired human resets unattended spend before it is queued.
+        if (owner) s.tasks.resetSpendLimit(input.id, input.messageId)
         const firstSubmission =
           !taskHistoryCounts(before).messages &&
           !before.queue?.length &&
@@ -1195,6 +1222,10 @@ export function agentsRoute(request: IncomingMessage, path: string) {
         )
         return yield* serviceResult(s.tasks.fork(input.id, input.turnId))
       }
+      if (method === 'POST' && path === '/api/tasks/fork-message') {
+        const input = decode(forkMessageSchema, yield* serviceResult(body(request)))
+        return yield* serviceResult(forkFromMessage(s, input))
+      }
       if (method === 'POST' && path === '/api/tasks/worktree-thread') {
         const input = decode(
           mutableStruct({ id: idSchema, mode: Schema.Literals(['reuse', 'fork']) }),
@@ -1582,6 +1613,9 @@ export function agentsRoute(request: IncomingMessage, path: string) {
           }),
           yield* serviceResult(body(request)),
         )
+        // Run and Retry from a paired human are consent, like a message: they reset unattended
+        // spend and start this thread now. An agent's request still waits at the limit.
+        if (owner) s.tasks.resetSpendLimit(id, undefined, true)
         yield* s.tasks.startEffect(id, false, undefined, undefined, retryFailed)
         return yield* serviceResult({
           ok: true,
@@ -1743,6 +1777,8 @@ export function taskLifecycle(
             ]),
           )
           for (const result of cleanup) if (result.status === 'rejected') throw result.reason
+          // After its provider processes stop, archive or delete removes the thread container.
+          yield* serviceResult(s.sandboxes.remove(taskId))
         }
         const latestIds = lifecycleIds()
         if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
