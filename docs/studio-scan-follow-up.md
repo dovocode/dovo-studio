@@ -749,3 +749,31 @@ proof or verify native window dragging.
 
 The full script passed locally, including all eight shell layout variants. The repository check
 passed with zero errors and 36 existing warnings.
+
+### Browser shard timing refresh and notarization retry
+
+Check `44137002910` passed every job except browser shard 0. That shard reached the overall
+20-minute step limit after 47 successful suites. Its last suite had started two seconds before
+the limit. No assertion failed. The four timing reports recorded 1,142.9, 1,120.0, 813.2 and
+811.9 seconds of completed checks. The checked-in estimates no longer matched current suite times.
+
+Refreshed the estimates with successful measurements from all four reports. The existing scheduler
+now assigns all 197 registered suites exactly once across four shards. Estimated check time is
+971.9 to 972.4 seconds per shard. The previous build took about 70 seconds inside the timed step.
+The 20-minute limit and four-job matrix remain unchanged. These estimates need confirmation in
+hosted CI. Local scheduling tests passed all five cases. The repository check passed with zero
+errors and 36 existing warnings.
+
+To refresh these estimates from downloaded CI timing reports, run:
+
+```sh
+node scripts/ci/update-browser-durations.mjs /path/to/browser-timings-*.json
+node --test scripts/ci/browser-shards.test.mjs
+pnpm check
+```
+
+Release `44137023483` passed the Mac build, smoke tests, code signing and signature verification.
+Apple notarization then returned HTTP 500 with request ID
+`XWAKVG7DIQO7IPA75GKWT6WGGI.0.0`. This error does not establish a credential failure. GitHub
+rejected a job retry while the workflow was still running. A cancellation request and a fresh
+nightly dispatch followed. No signing credentials or notarization code changed.
