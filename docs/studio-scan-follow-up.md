@@ -514,3 +514,30 @@ Run `node --test scripts/ci/build-cache.test.mjs` and
 `pnpm prove -- --base 0f916044 scripts/ci/build-cache.test.mjs`. The tests execute the action's Bash
 step with controlled pnpm results. They verify successful output, command failure and empty output.
 The original runner's pnpm failure cause still needs hosted evidence if it occurs again.
+
+### Extension catalog test setup
+
+Check `44101272876` passed all browser, design-system, Windows and Mac runtime jobs. Its main suite
+passed 8,617 tests, but the shipped-extension catalog test exceeded five seconds. That test imported
+six extension modules inside its timed body. The runtime extension also imports shared UI code
+through its Windows gate export.
+
+The test now imports those modules during module setup. Its assertions still register every shipped
+extension and check the contributed views. The five-second test limit stays unchanged. This changes
+test setup only. It does not change application loading.
+
+Run `pnpm exec vp test run packages/studio-shell/src/extension-catalog.test.ts --maxWorkers=1`, then
+`pnpm exec vp test --maxWorkers=4` to match the hosted suite. The focused test passed locally before
+and after the change. Before the change, test bodies used about three seconds of a 4.73-second run.
+After the change, imports account for most of the run and test bodies account for less than one
+percent. The local host did not reproduce the hosted timeout.
+
+`pnpm prove -- --base e4034d1c packages/studio-shell/src/extension-catalog.test.ts` could not load
+the temporary base because its generated `@dovo/web-ui/button` output was absent. This result does
+not establish a regression proof.
+
+The full local run passed 8,612 tests and skipped 15. The catalog test passed in that run. Six
+browser integration tests failed because Chromium reported `No usable sandbox!` on this host. These
+failures were in `agent-browser.test.ts`, `browser-do-not-track.test.ts` and
+`browser-session-cookies.test.ts`. Playwright's managed Chromium was installed. The repository check
+passed with zero errors and 36 existing warnings. Hosted checks must confirm the fix.

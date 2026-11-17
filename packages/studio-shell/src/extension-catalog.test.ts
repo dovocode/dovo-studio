@@ -1,5 +1,11 @@
 import { expect, it, vi } from 'vite-plus/test'
 import { defineStudioExtension, type StudioHostApi, type StudioView } from '@dovo/studio-core'
+import { runtimeExtension } from '../../extension-runtime/src/index'
+import { tasksExtension } from '../../extension-tasks/src/index'
+import { scmExtension } from '../../extension-scm/src/index'
+import { agentsExtension } from '../../extension-agents/src/index'
+import { jobsExtension } from '../../extension-jobs/src/index'
+import { appSettingsExtension } from './app-extension'
 import { createExtensionCatalog } from './extension-catalog'
 it('contributes views before loading and disposes activated commands', async () => {
   const unregister = vi.fn<() => void>()
@@ -85,21 +91,6 @@ it('reuses settings keywords as command aliases without loading the settings com
 })
 
 it('registers all shipped settings and feature views without ID collisions', async () => {
-  const [
-    { appSettingsExtension },
-    { runtimeExtension },
-    { tasksExtension },
-    { scmExtension },
-    { agentsExtension },
-    { jobsExtension },
-  ] = await Promise.all([
-    import('../../studio-shell/src/app-extension'),
-    import('../../extension-runtime/src/index'),
-    import('../../extension-tasks/src/index'),
-    import('../../extension-scm/src/index'),
-    import('../../extension-agents/src/index'),
-    import('../../extension-jobs/src/index'),
-  ])
   const api: StudioHostApi = {
     navigate: vi.fn<StudioHostApi['navigate']>(),
     registerCommand: vi.fn<StudioHostApi['registerCommand']>(() => () => {}),
