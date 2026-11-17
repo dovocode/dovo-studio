@@ -64,6 +64,7 @@ export const appSettingsExtension = defineStudioExtension(
     {
       id: 'conversation-settings',
       settingsFields: [
+        'Voice pause',
         'Send messages with',
         'Follow-ups while a thread runs',
         'Response streaming',

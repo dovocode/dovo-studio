@@ -297,6 +297,7 @@ export function createServices(
         memory,
         mcpApps,
         checkouts,
+        attachments,
       },
       runtimeId,
     )
@@ -337,7 +338,8 @@ export function createServices(
   })
   const secureInputs = new SecureInputs(
     () => activity.add('integration', 'secure-input', 'Secure input state changed', {}),
-    (taskId, runId, id, status) => tasks.reportSecureInput(taskId, runId, id, status),
+    (taskId, runId, id, status, cancelledBy) =>
+      tasks.reportSecureInput(taskId, runId, id, status, cancelledBy),
   )
   tasks.setSecureInputs(secureInputs)
   const pullCodeReviews = new PullCodeReviews(db, { store, pulls, titles, activity, git })

@@ -11,7 +11,7 @@ import {
 import { accessibleThemeColors, statusColors } from './accessibility'
 import { defaultThreadSectionOrder, threadSectionOrderSchema } from '@dovo/protocol'
 import { serviceUrlsSchema } from '@dovo/protocol'
-import { dictationLanguageSchema, sharedSettingsSchema } from '@dovo/protocol'
+import { botVoicePauseSchema, dictationLanguageSchema, sharedSettingsSchema } from '@dovo/protocol'
 import { useMemo, useSyncExternalStore } from 'react'
 import { Schema } from 'effect'
 import { fontFamilySchema, terminalFontSizeSchema } from './fonts'
@@ -72,6 +72,7 @@ const schema = mutableStruct({
   runtimeDictationIds: Schema.Array(Schema.String),
   dictationEnabled: Schema.Boolean,
   dictationLanguage: dictationLanguageSchema,
+  botVoicePause: botVoicePauseSchema,
   quitShortcut: Schema.Literals(['immediate', 'hold', 'disabled']),
   theme: Schema.Literals(['dark', 'light', 'system']),
   themePalette: Schema.Literals([...studioThemeIds]),
@@ -206,6 +207,7 @@ export const defaultAppPreferences: AppPreferences = {
   runtimeDictationIds: [],
   dictationEnabled: false,
   dictationLanguage: 'auto',
+  botVoicePause: 1100,
   quitShortcut: 'immediate',
   theme: 'dark',
   turnAnnouncements: 'off',

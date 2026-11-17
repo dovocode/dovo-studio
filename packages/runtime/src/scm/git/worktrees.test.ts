@@ -397,3 +397,37 @@ it('rechecks hidden edits after listing and before removing a worktree', async (
   await expect(runClientEffect(removeWorktreeEffect(s, cwd))).rejects.toThrow('uncommitted changes')
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('changed during inspection\n')
 })
+
+it('creates sparse worktrees from repository patterns without changing the main checkout and can disable sparsity', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  await mkdir(join(f.directory, 'keep'))
+  await mkdir(join(f.directory, 'omit'))
+  await writeFile(join(f.directory, 'keep', 'selected.txt'), 'selected\n')
+  await writeFile(join(f.directory, 'omit', 'hidden.txt'), 'hidden\n')
+  await writeFile(join(f.directory, '.worktreesparse'), '/keep/\n/.worktreesparse\n')
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'sparse-owner-token-with-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  await s.git.command(f.directory, ['add', '.'])
+  await s.git.command(f.directory, ['commit', '-qm', 'Sparse fixture'])
+  const task = s.tasks.create({
+    title: 'Sparse',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    execution: 'worktree',
+    objective: 'Work',
+  })
+  const cwd = await s.checkouts.directory(task.id)
+  expect(await readFile(join(cwd, 'keep', 'selected.txt'), 'utf8')).toBe('selected\n')
+  expect(existsSync(join(cwd, 'omit', 'hidden.txt'))).toBe(false)
+  expect(await readFile(join(f.directory, 'omit', 'hidden.txt'), 'utf8')).toBe('hidden\n')
+  expect((await s.git.command(f.directory, ['status', '--porcelain'])).trim()).toBe('')
+  await s.git.command(cwd, ['sparse-checkout', 'disable'])
+  expect(await readFile(join(cwd, 'omit', 'hidden.txt'), 'utf8')).toBe('hidden\n')
+})

@@ -1,3 +1,4 @@
+import { registerFileDrag } from './file-drag.js'
 import { nativeTooltipWindow, setNativeTooltipVisible } from './native-tooltip.js'
 import { studioContents, createStudioWindow } from './studio-window.js'
 import { useLinuxXWayland } from './linux-window-backend.js'
@@ -203,6 +204,7 @@ app.once('will-quit', () => dictation.dispose())
 const inputPreview = registerInputPreview(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => inputPreview.dispose())
 registerRepositoryOpeners(rendererPath)
+registerFileDrag(rendererPath)
 const browserWindows = registerBrowserWindows(rendererPath, join(__dirname, 'preload.mjs'))
 app.once('will-quit', () => browserWindows.dispose())
 const browserBridge = registerBrowser(

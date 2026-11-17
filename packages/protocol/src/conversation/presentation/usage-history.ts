@@ -28,6 +28,21 @@ export const usageHistorySchema = mutableStruct({
   overrides: Schema.optional(Schema.Record(Schema.String, usagePriceSchema)),
 })
 export type UsageHistoryResult = Schema.Schema.Type<typeof usageHistorySchema>
+export const usageRetentionSchema = mutableStruct({
+  days: Schema.NullOr(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 36500 }))),
+})
+export const usageStorageSchema = mutableStruct({
+  ...usageRetentionSchema.fields,
+  count: Schema.Number,
+  oldest: Schema.NullOr(Schema.String),
+  newest: Schema.NullOr(Schema.String),
+})
+export const usageExportCursorSchema = mutableStruct({ at: Schema.String, id: Schema.String })
+export const usageExportSchema = mutableStruct({
+  sourceId: Schema.String,
+  records: mutableArray(usageRecordSchema),
+  next: Schema.optional(usageExportCursorSchema),
+})
 
 /** Blank cache prices use the input price; zero is a valid explicit price. */
 export function usagePriceInput(

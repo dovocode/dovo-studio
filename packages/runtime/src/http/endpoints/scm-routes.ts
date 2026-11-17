@@ -504,6 +504,16 @@ export function scmRoute(request: IncomingMessage, path: string) {
             )
           if (input.taskId || input.number !== target.number)
             throw new HttpError(400, 'PR target does not match its URL')
+          if (path === '/api/scm/pulls/detail' && input.filePath !== undefined)
+            return yield* serviceResult(
+              pulls.file(
+                target.number,
+                decode(maxValue(minValue(Schema.String, 1), 4096), input.filePath),
+                decode(Schema.String, input.headSha),
+                decode(Schema.String, input.baseSha),
+                urlScope?.destination,
+              ),
+            )
           const section =
             path === '/api/scm/pulls/detail'
               ? decode(Schema.UndefinedOr(pullDetailSectionSchema), input.section)
@@ -572,6 +582,19 @@ export function scmRoute(request: IncomingMessage, path: string) {
           input.refresh === true
             ? yield* serviceResult(s.pulls.guard(cwd, input))
             : undefined
+        if (path === '/api/scm/pulls/detail' && input.filePath !== undefined) {
+          const scope = readScope ?? (yield* serviceResult(s.pulls.sourceContext(cwd)))
+          return yield* serviceResult(
+            s.pulls.fileInContext(
+              cwd,
+              decode(pullSummarySchema.fields.number, input.number),
+              decode(maxValue(minValue(Schema.String, 1), 4096), input.filePath),
+              decode(Schema.String, input.headSha),
+              decode(Schema.String, input.baseSha),
+              scope,
+            ),
+          )
+        }
         if (path === '/api/scm/open-location')
           return {
             path: cwd,

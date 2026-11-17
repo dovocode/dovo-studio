@@ -459,7 +459,7 @@ export class PullRequests {
       ),
       !changes
         ? Promise.resolve([])
-        : api(`pulls/${number}/files?per_page=100`, true).then((v) =>
+        : api(`pulls/${number}/files?per_page=30`, true).then((v) =>
             decode(mutableArray(mutableArray(restFile)), v).flat(),
           ),
       checksRequested

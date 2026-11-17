@@ -11,6 +11,7 @@ import {
 } from 'react'
 import {
   resolveMarkdownLink,
+  parseStudioLink,
   localMarkdownURL,
   markdownURLLocalPath,
   messageReferences,
@@ -105,39 +106,53 @@ export const MessageResponse = memo(function MessageResponse({
     [baseURL, fileBaseURL, localFiles],
   )
   const components = useMemo(
-    () =>
-      localFiles || referenced.chips.size
-        ? {
-            a: (props: ComponentProps<'a'>) => {
-              const reference = props.href && referenced.chips.get(props.href)
-              if (reference) return <MessageReference reference={reference} />
-              const path = props.href ? markdownURLLocalPath(props.href) : undefined
-              return path !== undefined && localFiles ? (
-                <button
-                  type="button"
-                  title={path}
-                  className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-left text-xs font-medium text-primary hover:bg-muted"
-                  onClick={() => localFiles.open(path)}
-                >
-                  <FileTypeIcon path={path} />
-                  <span className="wrap-anywhere">{props.children}</span>
-                </button>
-              ) : (
-                <defaultComponents.a {...props} />
-              )
-            },
-            img: ({ src, alt }: ComponentProps<'img'>) => {
-              const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
-              return path !== undefined && localFiles ? (
-                localFiles.image(path, alt ?? 'Image')
-              ) : typeof src === 'string' && localFiles?.remoteImage ? (
-                localFiles.remoteImage(src, alt ?? 'Image')
-              ) : (
-                <defaultComponents.img src={src} alt={alt} />
-              )
-            },
-          }
-        : undefined,
+    () => ({
+      a: (props: ComponentProps<'a'>) => {
+        const reference = props.href && referenced.chips.get(props.href)
+        if (reference) return <MessageReference reference={reference} />
+        const internal = props.href && parseStudioLink(props.href)
+        if (internal)
+          return (
+            <a
+              {...props}
+              className="inline-flex max-w-full items-center gap-1 rounded-md border bg-muted/40 px-2 py-1 text-sm text-primary"
+              title={
+                internal.kind === 'settings'
+                  ? 'Open settings. No value will change.'
+                  : 'Open referenced thread'
+              }
+            >
+              {internal.kind === 'settings'
+                ? `Settings › ${internal.label}${internal.field ? ` › ${internal.field}` : ''}`
+                : props.children}
+            </a>
+          )
+        const path = props.href ? markdownURLLocalPath(props.href) : undefined
+        return path !== undefined && localFiles ? (
+          <button
+            type="button"
+            title={path}
+            className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-left text-xs font-medium text-primary hover:bg-muted"
+            onClick={() => localFiles.open(path)}
+          >
+            <FileTypeIcon path={path} />
+            <span className="wrap-anywhere">{props.children}</span>
+          </button>
+        ) : (
+          <defaultComponents.a {...props} />
+        )
+      },
+      img: ({ src, alt }: ComponentProps<'img'>) => {
+        const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
+        return path !== undefined && localFiles ? (
+          localFiles.image(path, alt ?? 'Image')
+        ) : typeof src === 'string' && localFiles?.remoteImage ? (
+          localFiles.remoteImage(src, alt ?? 'Image')
+        ) : (
+          <defaultComponents.img src={src} alt={alt} />
+        )
+      },
+    }),
     [localFiles, referenced.chips],
   )
   const props = {

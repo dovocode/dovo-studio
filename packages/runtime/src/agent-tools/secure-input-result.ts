@@ -2,7 +2,17 @@ import { decode, secureInputResultSchema } from '@dovo/protocol/agent-tools'
 
 /** Model-facing state and next steps. The HTTP contract remains status metadata. */
 export function secureInputToolResult(value: unknown) {
-  const { id, status } = decode(secureInputResultSchema, value)
+  const { id, status, cancelledBy } = decode(secureInputResultSchema, value)
+  if (status === 'cancelled' && cancelledBy === 'user')
+    return {
+      id,
+      status,
+      cancelledBy,
+      deliveryCompleted: false,
+      nextAction: 'wait_for_user',
+      guidance:
+        'The user selected Cancel. Do not request this input again or try another route for this step. Report the cancellation and wait for the user before trying again.',
+    }
   if (status === 'pending' || status === 'running') {
     return {
       id,

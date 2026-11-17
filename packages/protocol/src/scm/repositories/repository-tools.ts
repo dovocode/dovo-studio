@@ -88,3 +88,8 @@ export const sshRepositoryOpenTargets: readonly RepositoryOpenTarget[] = [
   ...codeEditorOpenTargets.map(([target]) => target),
   'zed',
 ]
+
+export interface FileDragBridge {
+  prepare: (name: string, data: Uint8Array) => Promise<string>
+  start: (id: string) => void
+}

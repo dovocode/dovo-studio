@@ -580,3 +580,70 @@ it('keeps the change table after a rolled back save and records routines with lo
     { automationId: id, source: { kind: 'owner', quote: 'Create the long routine for me.' } },
   ])
 })
+
+it('restores a retained run with conflict protection, paused triggers and correct actor source', async () => {
+  const r = await runtimeFor()
+  const s = r.s()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      input.onText('Done')
+    },
+  })
+  s.store.update((workspace) => ({ ...workspace, automations: [routine()] }))
+  const runId = s.jobs.startManual('routine', 'restore-fixture')
+  await vi.waitFor(() => expect(s.jobs.detail(runId).status).toBe('completed'))
+  const current = {
+    ...routine('0 10 * * 1'),
+    name: 'Current name',
+    enabled: true,
+    monitor: { url: 'http://lan/source' },
+    policy: { minutes: 5 },
+  }
+  s.store.update((workspace) => ({ ...workspace, automations: [current] }))
+  const ticket = await r.request('/api/jobs/definition', { id: runId })
+  expect(ticket.status).toBe(200)
+  const { definition } = await ticket.json()
+  expect(definition.enabled).toBe(false)
+  expect(definition.nodes[0].data.schedule).toBe('0 9 * * 1')
+  const conflict = await r.request('/api/jobs/restore', {
+    id: runId,
+    expected: routine(),
+    definition,
+  })
+  expect(conflict.status).toBe(409)
+  expect(s.store.get().automations[0]).toEqual(current)
+  const invalid = await r.request('/api/jobs/restore', {
+    id: runId,
+    expected: current,
+    definition: { ...definition, nodes: [] },
+  })
+  expect(invalid.status).toBe(400)
+  expect(s.store.get().automations[0]).toEqual(current)
+  const restored = await r.request(
+    '/api/jobs/restore',
+    { id: runId, expected: current, definition },
+    ownerToken,
+    'POST',
+    { 'x-dovo-agent-access': '1' },
+  )
+  expect(restored.status).toBe(200)
+  expect(s.store.get().automations[0].enabled).toBe(false)
+  expect(s.store.get().automations[0].monitor).toBeUndefined()
+  expect(s.store.get().automations[0].policy).toBeUndefined()
+  expect(s.jobs.detail(runId).flow).toEqual(routine())
+  expect((await r.provenance()).at(-1)?.source.kind).toBe('agent')
+  const prepared = await r.agent({ action: 'definition', id: runId })
+  expect(prepared.status).toBe(200)
+  const copy = await prepared.json()
+  expect(copy).toMatchObject({ automation: { enabled: false }, expected: { id: 'routine' } })
+  expect(
+    (await r.agent({ action: 'restore', id: runId, expected: current, definition })).status,
+  ).toBe(409)
+  s.store.update((workspace) => ({ ...workspace, automations: [current] }))
+  r.say({ text: 'Restore this run definition and remove its monitor and policy.' })
+  expect(
+    (await r.agent({ action: 'restore', id: runId, expected: current, definition })).status,
+  ).toBe(200)
+  expect(s.store.get().automations[0]).toEqual(await restored.json())
+})

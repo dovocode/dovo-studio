@@ -44,10 +44,10 @@ const now=Date.now();
 const turn=(id,age)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-age*86400000).toISOString(),finishedAt:new Date(now-age*86400000+60000).toISOString(),usageAccount:{id:'account',label:'Personal',subscription:'Pro'}});
 const tasks=[{id:'task',title:'Improve composer',example:false,turns:[{...turn('recent',1),tokens:12000,estimatedCostUsd:.035},turn('partial',2),turn('older',20)]}];
 const reading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'5-hour',durationMins:300,resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal',subscription:'Pro'}};
-const initialRuntimes=[{connected:true,profile:{id:'mac',name:'Mac',connection:{address:'http://runtime',token:'test-token'}},snapshot:{unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
+const initialRuntimes=[{connected:true,profile:{id:'mac',name:'Mac',connection:{address:'http://runtime',token:'test-token'}},snapshot:{usageRetentionSupported:true,unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks,planLimits:[reading,{...reading,window:'Weekly',usedPercent:40,resetsAt:Math.floor(now/1000)-10}]}}}];
 let runtimes=initialRuntimes;
 const cache={read:async()=>null,write:async()=>{}};
-window.usageProbes=0;window.usageWrites=[];window.usageReads=[];window.hubWrites=[];window.hubEntries=[];window.failHubWrite=false;
+window.storedUsage={days:null,count:300,oldest:'2025-01-01T00:00:00.000Z',newest:new Date(now).toISOString()};window.retentionWrites=[];window.exportReads=[];window.usageProbes=0;window.usageWrites=[];window.usageReads=[];window.hubWrites=[];window.hubEntries=[];window.failHubWrite=false;
 const hubRead=(path,input)=>{
  if(path==='/api/usage/hubs/read')return window.hubEntries;
  if(path==='/api/usage/hubs/remove'){window.hubEntries=window.hubEntries.filter(h=>h.id!==input.id);return window.hubEntries}
@@ -61,7 +61,7 @@ const hubRead=(path,input)=>{
  }
 };
 
-const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return {sourceId:'stable',records:[],notices:[]}};
+const readRuntime=async(profile,path,input)=>{window.usageReads.push(path);if(path==='/api/usage/storage/read')return window.storedUsage;if(path==='/api/usage/storage/write'){window.retentionWrites.push(input);window.storedUsage={...window.storedUsage,days:input.days,count:input.days===null?window.storedUsage.count:1};return window.storedUsage};if(path==='/api/usage/storage/export'){window.exportReads.push(input);return {sourceId:'stable',records:input.cursor?[{id:'last-old-record'}]:Array.from({length:256},(_,i)=>({id:'old-record-'+i})),...(input.cursor?{}:{next:{at:'2025-01-01T00:00:00.000Z',id:'old-record-255'}})}};if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/usage/limits/read'){window.usageProbes++;return {checkedAt:new Date().toISOString(),accounts:[{agentId:'agent',provider:'codex',status:'ok'}],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}};if(path==='/api/usage/prices/write'){window.usageWrites.push(input);return {ok:true}};if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return {sourceId:'stable',records:[],notices:[]}};
 const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};
 window.changeUsageScenario=scenario=>{runtimes=scenario==='unpaired'?[]:initialRuntimes.map(entry=>({...entry,snapshot:{workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...tasks[0],turns:[{...turn('zero',1),tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...tasks[0],turns:[turn('missing',1)]}]:tasks,planLimits:[]}}}));listeners.forEach(callback=>callback())};
 window.reportSpendLimit=value=>{runtimes=runtimes.map(entry=>({...entry,snapshot:{...entry.snapshot,unattendedSpendLimitUsd:value}}));listeners.forEach(callback=>callback())};
@@ -152,6 +152,43 @@ try {
   assert.equal(await limitField.inputValue(), '7')
   mkdirSync(root + 'work/usage-preview', { recursive: true })
   await page.screenshot({ path: root + 'work/usage-preview/limits.png', fullPage: true })
+  await page.getByText(/300 records · 2025-01-01/).waitFor()
+  for (const [index, label] of ['first', 'next'].entries()) {
+    const downloadPromise = page.waitForEvent('download')
+    await page
+      .getByRole('button', { name: `Export ${label} page, up to 256 records`, exact: true })
+      .click()
+    const download = await downloadPromise
+    assert.equal(download.suggestedFilename(), `dovo-usage-stable-${index + 1}.json`)
+    const exported = JSON.parse(readFileSync(await download.path(), 'utf8'))
+    assert.equal(exported.sourceId, 'stable')
+    assert.equal(exported.records.length, index === 0 ? 256 : 1)
+    assert.equal(!!exported.next, index === 0)
+  }
+  assert.deepEqual(await page.evaluate(() => window.exportReads), [
+    { cursor: undefined },
+    { cursor: { at: '2025-01-01T00:00:00.000Z', id: 'old-record-255' } },
+  ])
+  await page
+    .getByText('Last page exported. The next export starts again.', { exact: true })
+    .waitFor()
+  const retention = page.getByRole('spinbutton', { name: 'Usage retention days', exact: true })
+  await retention.fill('0')
+  await page.getByRole('button', { name: 'Save retention and clean up', exact: true }).click()
+  await page
+    .getByText('Enter 1 to 36500 days, or leave blank to keep all.', { exact: true })
+    .waitFor()
+  assert.deepEqual(await page.evaluate(() => window.retentionWrites), [])
+  await retention.fill('30')
+  await page.getByRole('button', { name: 'Save retention and clean up', exact: true }).click()
+  await page.getByText(/1 records .*Keep 30 days/).waitFor()
+  await retention.fill('')
+  await page.getByRole('button', { name: 'Save retention and clean up', exact: true }).click()
+  await page.getByText(/1 records .*Keep all/).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.retentionWrites), [
+    { days: 30 },
+    { days: null },
+  ])
   await page.getByRole('radio', { name: 'Costs', exact: true }).click()
   await page.getByRole('radio', { name: 'Models', exact: true }).click()
   await page.getByText('Models by agent time', { exact: true }).waitFor()
@@ -308,7 +345,7 @@ try {
   )
   if (overflow || errors.length) throw new Error(JSON.stringify({ overflow, errors }))
   console.log(
-    'Usage cards, partial coverage, period and breakdown controls, expired quota readings, and quarterly narrow charts, missing-report and empty states passed. Screenshots: work/usage-preview/.',
+    'Usage cards, partial coverage, period and breakdown controls, expired quota readings, and quarterly narrow charts, missing-report and empty states, retention validation and downloaded JSON pages passed. Screenshots: work/usage-preview/.',
   )
 } finally {
   await browser.close()

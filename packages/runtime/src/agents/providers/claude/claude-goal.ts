@@ -1,5 +1,6 @@
 import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import type { AgentRun } from '../../execution/types.js'
+import { nativeWait } from '../shared/native.js'
 
 /** Check before submitting input, so an older CLI cannot treat /goal as model text. */
 export async function requireClaudeGoal(stream: Query, run: AgentRun) {
@@ -9,7 +10,7 @@ export async function requireClaudeGoal(stream: Query, run: AgentRun) {
       'Claude supports /goal, /goal <objective> and /goal clear. Stop the turn to interrupt work; send a message to continue.',
     )
   if (
-    !(await stream.supportedCommands()).some(
+    !(await nativeWait(stream.supportedCommands(), run.signal, 15_000)).some(
       (command) => command.name === 'goal' && command.builtin === true,
     )
   )

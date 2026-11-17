@@ -313,3 +313,56 @@ it('runs bundled Mirage in all five modes through real code-mode MCP', async () 
     (await code(`await tools.dovo.vision({action:'decide',image:{path:'screen.png'}})`)).isError,
   ).toBe(true)
 })
+
+it('recovers completed large MCP output through the authorized result reader', async () => {
+  const { command, code, s, controller } = await setup()
+  const execute = vi
+    .spyOn(s.mcpApps, 'codeTools')
+    .mockResolvedValue({ content: [{ type: 'text', text: 'x'.repeat(5 * 1024 * 1024) }] })
+  const result = await command({
+    source: 'mcp',
+    server: 'fixture',
+    name: 'write_once',
+    arguments: {},
+  })
+  expect(result.status).toBe(200)
+  const retained = result.value
+  expect(retained).toMatchObject({ toolCompleted: true, retained: true })
+  const page = execution(
+    await code(
+      `return await tools.harness.read_tool_result({resultId:${JSON.stringify(retained.resultId)},limit:64})`,
+    ),
+  )
+  expect(page.result).toMatchObject({ untrusted: true, offset: 0, nextOffset: 64 })
+  expect(execute).toHaveBeenCalledTimes(1)
+  controller.abort()
+  expect(
+    (
+      await command({
+        source: 'harness',
+        name: 'read_tool_result',
+        arguments: { resultId: retained.resultId },
+      })
+    ).status,
+  ).toBe(401)
+  expect(execute).toHaveBeenCalledTimes(1)
+})
+
+it('keeps recovery details when an MCP discovery catalog exceeds the code value limit', async () => {
+  const { code, s } = await setup()
+  const execute = vi.spyOn(s.mcpApps, 'codeTools').mockResolvedValue({
+    tools: [{ name: 'large_schema', description: 'x'.repeat(5 * 1024 * 1024) }],
+  })
+  const found = execution(await code(`return await tools.search({source:'mcp',server:'fixture'})`))
+  expect(found.result).toMatchObject({ toolCompleted: true, retained: true, tools: [] })
+  if (!found.result || typeof found.result !== 'object' || !('resultId' in found.result))
+    throw new Error('Missing catalog recovery ID')
+  const resultId = found.result.resultId
+  const page = execution(
+    await code(
+      `return await tools.harness.read_tool_result({resultId:${JSON.stringify(resultId)},limit:64})`,
+    ),
+  )
+  expect(page.result).toMatchObject({ untrusted: true, offset: 0, nextOffset: 64 })
+  expect(execute).toHaveBeenCalledTimes(1)
+})

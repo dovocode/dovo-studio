@@ -768,6 +768,9 @@ try {
   assert.equal(await page.evaluate(() => window.harnessScope.id), 'two')
   await page.evaluate(() => window.harnessScope.read())
   assert.equal(await page.evaluate(() => window.calls.at(-1).owner), 'two')
+  await page
+    .getByLabel('Bot first task', { exact: true })
+    .fill('Compare the release blockers and recommend the next step.')
   const beforePick = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/bots/create').length,
   )
@@ -820,6 +823,11 @@ try {
   assert.equal(remoteCreate.input.createTask.harness.model, 'two-model')
   assert.equal(remoteCreate.input.createTask.harness.provider, 'claude')
   assert.equal(remoteCreate.input.createTask.execution, 'main')
+  assert.equal(
+    remoteCreate.input.createTask.draft,
+    'Compare the release blockers and recommend the next step.',
+  )
+  assert.equal(await page.getByLabel('Bot first task', { exact: true }).count(), 0)
   assert.equal(await page.evaluate(() => window.owner), 'two')
   await page.locator('textarea[data-task-id="' + remoteCreate.input.createTask.id + '"]').waitFor()
 

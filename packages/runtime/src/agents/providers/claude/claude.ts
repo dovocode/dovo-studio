@@ -32,6 +32,7 @@ import { nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { readClaudeThread } from './claude-thread.js'
 import { ClaudeBackgroundTasks } from './claude-background-tasks.js'
 import { isContextRejection } from '../../execution/handover.js'
+import { nativeWait } from '../shared/native.js'
 
 class ClaudeContextRejection extends Error {}
 function rejectedContext(message: SDKMessage) {
@@ -393,6 +394,8 @@ type WarmTurn = {
   compacted: boolean
   steered: boolean
   workStarted: boolean
+  pendingPrompts: Set<string>
+  submitted: boolean
   resolve: () => void
   reject: (error: Error) => void
 }
@@ -475,7 +478,8 @@ export function createClaudeAdapter(): AgentAdapter {
         {
           stop: async (id) => {
             const root = session.wake?.id ?? session.sessionId
-            if (session.wake && (!id || id === session.wake.id)) await session.stream.interrupt()
+            if (session.wake && (!id || id === session.wake.id))
+              await nativeWait(session.stream.interrupt(), session.controller.signal, 15_000)
             // The saved root record can miss its finish while a new turn takes over the session.
             else if (id && id === root)
               reportRoot(session, id, { subtype: 'task_notification', status: 'stopped' })
@@ -486,7 +490,7 @@ export function createClaudeAdapter(): AgentAdapter {
                 agent.id !== root &&
                 (!id || agent.id === id),
             ))
-              await session.stream.stopTask(agent.id)
+              await nativeWait(session.stream.stopTask(agent.id), session.controller.signal, 15_000)
           },
         },
         session.sessionId,
@@ -650,7 +654,7 @@ export function createClaudeAdapter(): AgentAdapter {
         }
         stream = claimed ?? query({ prompt: input, options })
         if (claimed) {
-          const result = await stream.setMcpServers(mcpServers)
+          const result = await nativeWait(stream.setMcpServers(mcpServers), run.signal, 15_000)
           if (Object.keys(result.errors).length) {
             stream.close()
             throw new Error('Claude prewarm MCP binding failed')
@@ -782,17 +786,34 @@ export function createClaudeAdapter(): AgentAdapter {
               continue
             }
             try {
+              // New CLIs echo prompt identities, including batches and folded steering.
+              // Never let an older or duplicate result settle the current prompt.
+              if (!turn.submitted && message.type === 'result') continue
+              const ids =
+                message.type === 'result'
+                  ? [
+                      ...(message.user_message_uuids ?? []),
+                      ...(message.user_message_uuid ? [message.user_message_uuid] : []),
+                    ]
+                  : []
+              if (message.type === 'result') {
+                if (ids.length) {
+                  if (!ids.some((id) => turn.pendingPrompts.has(id))) continue
+                  for (const id of ids) turn.pendingPrompts.delete(id)
+                }
+              }
               if (
                 (message.type === 'assistant' && !contextErrorAssistant(message)) ||
                 message.type === 'stream_event'
               )
                 turn.workStarted = true
               const intermediate =
-                turn.steered &&
-                !turn.run.signal.aborted &&
                 message.type === 'result' &&
-                (message.terminal_reason === 'aborted_streaming' ||
-                  message.terminal_reason === 'aborted_tools')
+                ((ids.length > 0 && turn.pendingPrompts.size > 0) ||
+                  (turn.steered &&
+                    !turn.run.signal.aborted &&
+                    (message.terminal_reason === 'aborted_streaming' ||
+                      message.terminal_reason === 'aborted_tools')))
               handleMessage(turn.run, message, () => (turn.compacted = true), intermediate)
               if (intermediate) continue
               if (message.type === 'result') {
@@ -841,7 +862,16 @@ export function createClaudeAdapter(): AgentAdapter {
     session.owner = run
     publish(session, run)
     const completion = new Promise<void>((resolve, reject) => {
-      session.turn = { run, compacted: false, steered: false, workStarted: false, resolve, reject }
+      session.turn = {
+        run,
+        compacted: false,
+        steered: false,
+        workStarted: false,
+        pendingPrompts: new Set(),
+        submitted: false,
+        resolve,
+        reject,
+      }
     })
     const turn = session.turn
     const abort = () => {
@@ -853,7 +883,7 @@ export function createClaudeAdapter(): AgentAdapter {
       run.signal.throwIfAborted()
       const accountInfo = (session.accountInfo ??=
         typeof session.stream.accountInfo === 'function'
-          ? session.stream.accountInfo().catch((error) => {
+          ? nativeWait(session.stream.accountInfo(), run.signal, 15_000).catch((error) => {
               console.warn(
                 'Claude account metadata unavailable:',
                 error instanceof Error ? error.message : String(error),
@@ -883,7 +913,11 @@ export function createClaudeAdapter(): AgentAdapter {
         (async () => {
           // Rebind attempt ownership without restarting the provider or removing host settings.
           if (session.mcpBinding !== mcpBinding) {
-            const result = await session.stream.setMcpServers(mcpServers)
+            const result = await nativeWait(
+              session.stream.setMcpServers(mcpServers),
+              run.signal,
+              15_000,
+            )
             const errors = Object.entries(result.errors)
             if (errors.length)
               throw new Error(
@@ -893,7 +927,11 @@ export function createClaudeAdapter(): AgentAdapter {
           }
           await requireClaudeGoal(session.stream, run)
           run.signal.throwIfAborted()
-          session.input.push(claudeMessage(run))
+          const prompt = { ...claudeMessage(run), uuid: randomUUID() }
+          if (!turn) throw new Error('Claude turn is unavailable')
+          turn.pendingPrompts.add(prompt.uuid)
+          turn.submitted = true
+          session.input.push(prompt)
           if (!run.compact)
             run.onSteer?.(async (input) => {
               const checkActive = () => {
@@ -911,6 +949,7 @@ export function createClaudeAdapter(): AgentAdapter {
               await session.backgroundTasks.preserve(session.stream, run.signal)
               const current = checkActive()
               current.steered = true
+              if (message.uuid) current.pendingPrompts.add(message.uuid)
               session.input.push(message)
             })
         })(),

@@ -22,6 +22,23 @@ function setup() {
   const controller = new AbortController()
   return { store, reports, changed, controller }
 }
+it('keeps the human cancellation origin without delivering a value or repeating delivery', async () => {
+  const { store, reports, controller } = setup()
+  const consume = vi.fn<(value: string, signal: AbortSignal) => Promise<void>>(async () => {})
+  const result = store.request('thread', 'run', request, '/fixture', controller.signal, consume)
+  expect(store.cancel('thread', result.id, 'user')).toEqual({
+    id: result.id,
+    status: 'cancelled',
+    cancelledBy: 'user',
+  })
+  expect(store.replay('thread', 'run', request)).toEqual({
+    id: result.id,
+    status: 'cancelled',
+    cancelledBy: 'user',
+  })
+  expect(consume).not.toHaveBeenCalled()
+  expect(reports).toHaveBeenCalledExactlyOnceWith('thread', 'run', result.id, 'cancelled', 'user')
+})
 it('encrypts exact private text and exposes only status through requests, lists and reports', async () => {
   const { store, reports, controller } = setup()
   const consume = vi.fn<(value: string, signal: AbortSignal) => Promise<void>>(

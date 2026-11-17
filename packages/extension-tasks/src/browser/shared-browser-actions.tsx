@@ -1,9 +1,14 @@
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
+import { Schema } from 'effect'
 import { browserQuote } from './shared-browser-tabs'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { Copy, MessageSquarePlus } from 'lucide-react'
 import {
   browserContextActionSchema,
+  attachmentUploadResultSchema,
+  mutableStruct,
+  screenshotData,
+  randomUUID,
   decodeResult,
   watchRuntimeSettled,
   workspacePatchResultSchema,
@@ -30,7 +35,14 @@ import {
 } from '@dovo/studio-ui'
 import { collectTasks, taskSources, type TaskEntry } from '../list/task-collection'
 
-type Selection = { text: string; url: string; title: string }
+export type BrowserSelection = {
+  text: string
+  url: string
+  title: string
+  draft?: string
+  image?: string
+}
+type Selection = BrowserSelection
 export function SharedBrowserActions({
   enabled,
   capture,
@@ -38,7 +50,11 @@ export function SharedBrowserActions({
   url,
   title,
   children,
+  prepared,
+  onPreparedClose,
 }: {
+  prepared?: Selection | null
+  onPreparedClose?: () => void
   enabled: boolean
   url: string
   title: string
@@ -55,6 +71,17 @@ export function SharedBrowserActions({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
+  useEffect(() => {
+    if (prepared) {
+      setSelection(prepared)
+      setQuery('')
+      setError('')
+    }
+  }, [prepared])
+  const closeSelection = () => {
+    setSelection(null)
+    onPreparedClose?.()
+  }
   useEffect(() => {
     setError('')
     setNotice('')
@@ -146,6 +173,54 @@ export function SharedBrowserActions({
       if (timer) clearTimeout(timer)
     }
   }
+  const attachImage = async (
+    taskId: string,
+    runtimeId: string | null,
+    image: string,
+    expectedDraft: string,
+  ) => {
+    if (!runtimeId) throw new Error('The destination computer is unavailable.')
+    const profile = store.runtimeRegistry.profiles.find((item) => item.id === runtimeId)
+    const read = <T extends Schema.Codec<unknown, unknown>>(
+      path: string,
+      input: unknown,
+      schema: T,
+    ) =>
+      runtimeId === store.activeRuntimeId
+        ? store.request(path, input, schema)
+        : profile
+          ? store.readRuntime(profile, path, input, schema)
+          : Promise.reject(new Error('The destination computer is no longer paired.'))
+    const capability =
+      runtimeId === store.activeRuntimeId
+        ? store.snapshot?.attachmentDraftCompareSupported
+        : store.runtimes.find((entry) => entry.profile.id === runtimeId)?.snapshot
+            ?.attachmentDraftCompareSupported
+    if (!capability)
+      throw new Error('Update the destination computer before attaching an element image safely.')
+    const guard = await read(
+      '/api/attachments/draft-guard',
+      { taskId, expectedDraft },
+      mutableStruct({
+        guard: Schema.String,
+        guardedUploads: Schema.optional(Schema.Literal(1)),
+        draftCompared: Schema.optional(Schema.Boolean),
+      }),
+    )
+    if (guard.guardedUploads !== 1 || !guard.draftCompared)
+      throw new Error('Update the destination computer before attaching images safely.')
+    await read(
+      '/api/attachments/upload',
+      {
+        taskId,
+        id: randomUUID(),
+        name: 'element.png',
+        data: screenshotData(image),
+        draftGuard: guard.guard,
+      },
+      attachmentUploadResultSchema,
+    )
+  }
   const insert = async (entry: TaskEntry) => {
     if (!selection || pending.current) return
     pending.current = true
@@ -153,17 +228,24 @@ export function SharedBrowserActions({
     setError('')
     try {
       if (!entry.source.online) throw new Error('This thread’s computer is offline.')
-      const quote = browserQuote(selection)
+      const quote = selection.draft ?? browserQuote(selection)
+      let destinationDraft = [entry.task.draft, quote].filter(Boolean).join('\n\n')
       if (entry.source.runtimeId === store.activeRuntimeId) {
         store.setWorkspace((workspace) => {
           if (!workspace.tasks.some((task) => task.id === entry.task.id))
             throw new Error('This thread no longer exists.')
+          destinationDraft = [
+            workspace.tasks.find((task) => task.id === entry.task.id)?.draft,
+            quote,
+          ]
+            .filter(Boolean)
+            .join('\n\n')
           return updateTask(workspace, entry.task.id, (task) => ({
             ...task,
-            draft: [task.draft, quote].filter(Boolean).join('\n\n'),
+            draft: destinationDraft,
           }))
         })
-        setSelection(null)
+        closeSelection()
         if (host.browserWindowId) await syncDraft()
         else
           void store
@@ -199,7 +281,7 @@ export function SharedBrowserActions({
             result.reason ||
               'The draft changed on that computer. Your selection was saved in Recovered edits.',
           )
-        setSelection(null)
+        closeSelection()
         try {
           await store.refreshRuntime(profile)
         } catch {
@@ -209,8 +291,22 @@ export function SharedBrowserActions({
           return
         }
       }
-      setSelection(null)
-      setNotice(`Added to ${entry.task.title || 'Untitled thread'} as a draft.`)
+      let imageError = ''
+      if (selection.image) {
+        try {
+          if (entry.source.runtimeId === store.activeRuntimeId) await syncDraft()
+          await attachImage(
+            entry.task.id,
+            entry.source.runtimeId,
+            selection.image,
+            destinationDraft,
+          )
+        } catch (cause) {
+          imageError = ` Image was not attached: ${String(cause)}`
+        }
+      }
+      closeSelection()
+      setNotice(`Added to ${entry.task.title || 'Untitled thread'} as a draft.${imageError}`)
       host.openThread?.({
         runtimeId: entry.source.runtimeId,
         threadId: entry.task.id,
@@ -242,10 +338,10 @@ export function SharedBrowserActions({
           ...resolveTaskDefaults(store.snapshot?.defaults, repository),
           repositoryId: repository.id,
         }),
-        draft: browserQuote(selection),
+        draft: selection.draft ?? browserQuote(selection),
       }
       store.setWorkspace((workspace) => ({ ...workspace, tasks: [task, ...workspace.tasks] }))
-      setSelection(null)
+      closeSelection()
       if (host.browserWindowId) await syncDraft()
       else
         void store
@@ -253,7 +349,16 @@ export function SharedBrowserActions({
           .catch((cause: unknown) =>
             setError(`The draft is kept locally, but has not synced: ${String(cause)}`),
           )
-      setNotice('Created a draft thread. Review before sending.')
+      let imageError = ''
+      if (selection.image) {
+        try {
+          await syncDraft()
+          await attachImage(task.id, store.activeRuntimeId, selection.image, task.draft)
+        } catch (cause) {
+          imageError = ` Image was not attached: ${String(cause)}`
+        }
+      }
+      setNotice('Created a draft thread. Review before sending.' + imageError)
       host.openThread?.({ runtimeId: store.activeRuntimeId, threadId: task.id, title: task.title })
     } catch (cause) {
       setError(String(cause))
@@ -319,7 +424,7 @@ export function SharedBrowserActions({
       <Dialog
         open={!!selection}
         onOpenChange={(open) => {
-          if (!open && !busy) setSelection(null)
+          if (!open && !busy) closeSelection()
         }}
       >
         <DialogContent className="max-w-lg">
@@ -336,7 +441,7 @@ export function SharedBrowserActions({
           )}
           {selection?.text ? (
             <blockquote className="max-h-28 overflow-y-auto whitespace-pre-wrap border-l-2 pl-3 text-xs text-muted-foreground">
-              {selection.text}
+              {selection.draft ?? selection.text}
             </blockquote>
           ) : (
             <p className="break-all text-xs text-muted-foreground">

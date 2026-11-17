@@ -66,6 +66,7 @@ createRoot(root).render(
           popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}
           desktopPlatform={window.dovo?.platform}
+          fileDrag={window.dovo?.fileDrag}
           repositoryOpener={window.dovo?.repositoryOpener}
           pickDirectory={window.dovo?.pickDirectory}
           defaultBrowser={window.dovo?.defaultBrowser}

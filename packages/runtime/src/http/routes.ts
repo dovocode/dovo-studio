@@ -383,7 +383,7 @@ export function route(
         )
         return path.endsWith('/status')
           ? s.secureInputs.status(taskId, id)
-          : s.secureInputs.cancel(taskId, id)
+          : s.secureInputs.cancel(taskId, id, 'user')
       }
       if (method === 'POST' && path === '/api/agent/secure-input') {
         if (!run) throw new HttpError(403, 'Secure input tools require an active agent run.')
@@ -1348,11 +1348,23 @@ export function route(
         return { ok: true }
       }
       if (method === 'POST' && path === '/api/attachments/draft-guard') {
-        const { taskId } = decode(
-          mutableStruct({ taskId: idSchema }),
-          yield* serviceResult(body(request, 8192)),
+        const { taskId, expectedDraft } = decode(
+          mutableStruct({
+            taskId: idSchema,
+            expectedDraft: Schema.optional(maxValue(Schema.String, 120000)),
+          }),
+          yield* serviceResult(body(request, 512 * 1024)),
         )
-        return { guard: s.attachments.draftUploadGuard(taskId), guardedUploads: 1 }
+        if (expectedDraft !== undefined && s.store.taskSummary(taskId).draft !== expectedDraft)
+          throw new HttpError(
+            409,
+            'The destination draft changed. Text was kept, but the image was not attached.',
+          )
+        return {
+          guard: s.attachments.draftUploadGuard(taskId),
+          guardedUploads: 1,
+          draftCompared: expectedDraft !== undefined,
+        }
       }
       if (method === 'POST' && path === '/api/attachments/commit-upload') {
         const { id, guard } = decode(
@@ -2000,7 +2012,13 @@ export function route(
       }
       if (
         method === 'POST' &&
-        (path === '/api/usage/history/read' || path === '/api/usage/prices/write')
+        [
+          '/api/usage/history/read',
+          '/api/usage/prices/write',
+          '/api/usage/storage/read',
+          '/api/usage/storage/write',
+          '/api/usage/storage/export',
+        ].includes(path)
       )
         return yield* usageHistory(request, path)
       if (
@@ -2024,7 +2042,18 @@ export function route(
       if (path === '/api/terminals' || path.startsWith('/api/terminals/'))
         return yield* terminalsRoute(request, path, token)
       if (path.startsWith('/api/dictation/')) return yield* dictationRoute(request, path, token)
-      if (path.startsWith('/api/jobs/')) return yield* jobsRoute(request, path, owner)
+      if (path.startsWith('/api/jobs/'))
+        return yield* jobsRoute(
+          request,
+          path,
+          owner,
+          agentDeviceAccess
+            ? { kind: 'agent-device' }
+            : {
+                kind: 'person',
+                deviceName: s.devices.list().find((entry) => entry.id === device.id)?.name,
+              },
+        )
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/project-transfer/'))
         return yield* projectTransferRoute(request, path, device.id, token)

@@ -1,3 +1,4 @@
+import { SharedBrowserActions, type BrowserSelection } from './shared-browser-actions'
 import { useEffect, useRef, useState } from 'react'
 import { ScanLine } from 'lucide-react'
 import {
@@ -63,6 +64,7 @@ export function BrowserElementFeedback({
 }) {
   const store = useWorkspace()
   const attachments = useScreenshotAttachment(taskId)
+  const [destination, setDestination] = useState<BrowserSelection | null>(null)
   const [open, setOpen] = useState(false)
   const [image, setImage] = useState<BrowserElementCapture | null>(null)
   const [element, setElement] = useState<BrowserElement | null>(null)
@@ -186,6 +188,20 @@ export function BrowserElementFeedback({
   }
   return (
     <>
+      <SharedBrowserActions
+        enabled={enabled}
+        tabKey={`element:${taskId}`}
+        url={destination?.url ?? ''}
+        title={destination?.title ?? ''}
+        capture={async () => {
+          if (!destination) throw new Error('Select an element first')
+          return destination
+        }}
+        prepared={destination}
+        onPreparedClose={() => setDestination(null)}
+      >
+        {() => null}
+      </SharedBrowserActions>
       <IconButton
         type="button"
         label="Point at an element"
@@ -322,6 +338,37 @@ export function BrowserElementFeedback({
             )}
             <Button variant="ghost" onClick={close}>
               {draftAdded.current ? 'Skip image' : 'Cancel'}
+            </Button>
+            <Button
+              variant="outline"
+              disabled={!element || !image || busy || !enabled}
+              onClick={() => {
+                if (!image || !element) return
+                void (async () => {
+                  setBusy(true)
+                  setError('')
+                  const attempt = generation.current
+                  try {
+                    const crop = includeImage ? await cropElement(image, element) : undefined
+                    if (attempt !== generation.current) return
+                    setDestination({
+                      text: element.text || element.label || element.tag,
+                      url: image.snapshot.url,
+                      title: image.snapshot.title,
+                      draft: browserElementDraft(image.snapshot, element, comment),
+                      image: crop,
+                    })
+                    close()
+                  } catch (cause) {
+                    if (attempt === generation.current) {
+                      setError(String(cause))
+                      setBusy(false)
+                    }
+                  }
+                })()
+              }}
+            >
+              Add to another thread…
             </Button>
             <Button disabled={!element || busy || !enabled} onClick={() => void add()}>
               Add to draft

@@ -1,5 +1,11 @@
 import { defaultRehypePlugins, type StreamdownProps } from 'streamdown'
-import { resolveMarkdownLink, localMarkdownURL, markdownURLLocalPath } from '@dovo/protocol'
+import {
+  resolveMarkdownLink,
+  localMarkdownURL,
+  markdownURLLocalPath,
+  parseStudioLink,
+  studioNavigationURL,
+} from '@dovo/protocol'
 
 type MarkdownNode = {
   children?: MarkdownNode[]
@@ -14,11 +20,13 @@ type LinkOptions = { baseURL?: string; fileBaseURL?: string; localFiles: boolean
 function resolveLinks({ baseURL, fileBaseURL, localFiles }: LinkOptions) {
   return (tree: MarkdownNode) => {
     const link = (url: string) =>
-      localFiles && !baseURL && !fileBaseURL
-        ? ((markdownURLLocalPath(url) !== undefined ? url : localMarkdownURL(url)) ??
-          resolveMarkdownLink(url) ??
-          '')
-        : (resolveMarkdownLink(url, baseURL, fileBaseURL) ?? '')
+      parseStudioLink(url)
+        ? studioNavigationURL(url)
+        : localFiles && !baseURL && !fileBaseURL
+          ? ((markdownURLLocalPath(url) !== undefined ? url : localMarkdownURL(url)) ??
+            resolveMarkdownLink(url) ??
+            '')
+          : (resolveMarkdownLink(url, baseURL, fileBaseURL) ?? '')
     const visit = (node: MarkdownNode) => {
       if (node.tagName === 'a' && typeof node.properties?.href === 'string')
         node.properties.href = link(node.properties.href)
@@ -58,7 +66,7 @@ export function markdownPluginsForLinks(
   // Keep Streamdown's HTML parsing, sanitization and hardening in their original order.
   return [
     ...Object.entries(defaultRehypePlugins).flatMap(([name, plugin]) =>
-      name === (localFiles ? 'sanitize' : 'harden') ? [links, plugin] : [plugin],
+      name === 'sanitize' ? [links, plugin] : [plugin],
     ),
     labelTaskItems,
   ]

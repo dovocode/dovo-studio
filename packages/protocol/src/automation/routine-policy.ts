@@ -5,6 +5,7 @@ const positive = Schema.Number.pipe(
   Schema.check(Schema.isGreaterThan(0)),
 )
 export const routinePolicySchema = mutableStruct({
+  startupRetry: Schema.optional(Schema.Boolean),
   matter: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   minutes: Schema.optional(maxValue(positive, 1440)),
   tokens: Schema.optional(maxValue(positive.pipe(Schema.check(Schema.isInt())), 100000000)),
@@ -58,6 +59,7 @@ export function routineOptionFields(flow: {
   monitor?: typeof routineMonitorSchema.Type
 }) {
   return {
+    startupRetry: flow.policy?.startupRetry ? 'yes' : 'no',
     matter: flow.policy?.matter ?? '',
     minutes: flow.policy?.minutes?.toString() ?? '',
     tokens: flow.policy?.tokens?.toString() ?? '',
@@ -75,7 +77,10 @@ export function routineOptionFields(flow: {
   }
 }
 export function parseRoutineOptions(fields: ReturnType<typeof routineOptionFields>) {
+  if (!['yes', 'no'].includes(fields.startupRetry))
+    throw new Error('Choose yes or no for provider startup retry.')
   const policy = Schema.decodeUnknownSync(routinePolicySchema)({
+    startupRetry: fields.startupRetry === 'yes',
     matter: fields.matter.trim() || undefined,
     minutes: fields.minutes.trim() ? Number(fields.minutes) : undefined,
     tokens: fields.tokens.trim() ? Number(fields.tokens) : undefined,
@@ -105,6 +110,7 @@ export function parseRoutineOptions(fields: ReturnType<typeof routineOptionField
   return { policy, monitor }
 }
 export const routineOptionLabels = {
+  startupRetry: 'Retry provider startup',
   matter: 'Finding group (optional, shared across routines for this Bot)',
   url: 'Monitor source URL',
   jsonPointer: 'JSON pointer (optional, e.g. /release/version)',

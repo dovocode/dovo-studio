@@ -16,9 +16,7 @@ const run = vi.hoisted(() =>
 )
 vi.mock('../../process.js', () => ({
   exec: run,
-  processEnvironment: () => ({
-    PATH: '/bin',
-  }),
+  processEnvironment: (env: Record<string, string> = {}) => ({ PATH: '/bin', ...env }),
 }))
 vi.mock('../catalogs/vibe.js', () => ({
   vibeVersion: vi.fn<() => Promise<string>>(async () => '2.26.1'),
@@ -50,7 +48,10 @@ it('checks the installed adapters without contacting an update registry or runni
     ['codex', 'hermes', 'copilot', 'grok', 'muse', 'claude', 'opencode'].map((command) => [
       command,
       ['--version'],
-      expect.objectContaining({ timeout: 5000, env: { PATH: '/bin' } }),
+      expect.objectContaining({
+        timeout: 5000,
+        env: { PATH: '/bin', ...(command === 'copilot' ? { COPILOT_AUTO_UPDATE: 'false' } : {}) },
+      }),
     ]),
   )
   expect(request).not.toHaveBeenCalled()
@@ -299,4 +300,31 @@ it('checks the V2 CLI release when the local executable is OpenCode 2', async ()
       urlString(input).includes(encodeURIComponent('@opencode/cli')),
     ),
   ).toBe(true)
+})
+
+it('uses configured environments and isolates Pi version probes from project files', async () => {
+  await checkAdapterUpdates(settings, {
+    agents: [
+      {
+        provider: 'copilot',
+        endpoint: 'copilot',
+        model: '',
+        env: { PATH: '/custom', COPILOT_AUTO_UPDATE: 'true' },
+      },
+      { provider: 'pi', endpoint: 'pi', model: '', env: { PI_CODING_AGENT_DIR: '/configured' } },
+    ],
+  })
+  expect(run.mock.calls).toContainEqual([
+    'copilot',
+    ['--version'],
+    expect.objectContaining({ env: { PATH: '/custom', COPILOT_AUTO_UPDATE: 'false' } }),
+  ])
+  expect(run.mock.calls).toContainEqual([
+    'pi',
+    ['--version'],
+    expect.objectContaining({
+      cwd: expect.stringContaining('dovo-provider-probe-'),
+      env: { PATH: '/bin', PI_CODING_AGENT_DIR: '/configured' },
+    }),
+  ])
 })

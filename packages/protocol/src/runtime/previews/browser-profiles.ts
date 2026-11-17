@@ -80,6 +80,21 @@ export const browserProfileEmojiSchema = Schema.String.pipe(
   ),
 )
 export const browserProfileSchema = mutableStruct({
+  timezone: Schema.optional(
+    Schema.String.pipe(
+      Schema.check(Schema.isMaxLength(100)),
+      Schema.check(
+        Schema.makeFilter((value) => {
+          try {
+            new Intl.DateTimeFormat('en', { timeZone: value })
+            return !!value.trim() && !/^[+-]/.test(value)
+          } catch {
+            return false
+          }
+        }),
+      ),
+    ),
+  ),
   id: browserProfileIdSchema,
   name: Schema.String.pipe(
     Schema.check(Schema.isMinLength(1)),

@@ -8,15 +8,60 @@ import { HttpError } from '../../errors.js'
 import { body } from '../support/body.js'
 import { newSecret, hashSecret } from '../../auth/devices.js'
 import { dryRunAutomation } from '../../jobs/dry-run.js'
+import { isDeepStrictEqual } from 'node:util'
+import { automationSchema, automationIssues, restorableAutomation } from '@dovo/protocol'
+import { recordRoutineChange } from '../../jobs/routine-provenance.js'
+import { routineChangeSource, type RoutineActor } from '../../jobs/routine-provenance.js'
 import { routineChanges } from '../../jobs/routine-provenance.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 /** A flow plus a sample payload as large as a webhook body. */
 const DRY_RUN_BODY_LIMIT = 1024 * 1024
-export function jobsRoute(request: IncomingMessage, path: string, owner: () => void) {
+export function jobsRoute(
+  request: IncomingMessage,
+  path: string,
+  owner: () => void,
+  actor: RoutineActor,
+) {
   return routeProgram(
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/jobs/definition') {
+        const { id } = decode(mutableStruct({ id: idSchema }), yield* serviceResult(body(request)))
+        const saved = s.jobs.detail(id)
+        const current = s.store.get().automations.find((flow) => flow.id === saved.automationId)
+        if (!current) throw new HttpError(404, 'Automation no longer exists')
+        return { definition: restorableAutomation(saved.flow, current), expected: current }
+      }
+      if (method === 'POST' && path === '/api/jobs/restore') {
+        const input = decode(
+          mutableStruct({ id: idSchema, expected: automationSchema, definition: automationSchema }),
+          yield* serviceResult(body(request, DRY_RUN_BODY_LIMIT)),
+        )
+        const saved = s.jobs.detail(input.id)
+        const current = s.store.get().automations.find((flow) => flow.id === saved.automationId)
+        if (!current) throw new HttpError(404, 'Automation no longer exists')
+        if (!isDeepStrictEqual(current, input.expected))
+          throw new HttpError(
+            409,
+            'Automation changed. Keep your draft and compare it with the current definition before saving.',
+          )
+        if (input.definition.id !== current.id)
+          throw new HttpError(400, 'Restore must keep the automation ID')
+        const restored = restorableAutomation(input.definition, current)
+        const issues = automationIssues(restored, s.store.get())
+        if (issues.length) throw new HttpError(400, issues.join('\n'))
+        s.store.transaction(() => {
+          s.store.update((workspace) => ({
+            ...workspace,
+            automations: workspace.automations.map((flow) =>
+              flow.id === current.id ? restored : flow,
+            ),
+          }))
+          recordRoutineChange(s.db, current, restored, routineChangeSource(s.store, actor))
+        })
+        return restored
+      }
       if (method === 'POST' && path === '/api/jobs/audit') {
         const input = decode(
           mutableStruct({

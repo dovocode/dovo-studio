@@ -1,3 +1,4 @@
+import { NativeFileDrag } from './native-file-drag'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { ImageViewer } from '@dovo/studio-ui/image-viewer'
@@ -217,46 +218,48 @@ export function TaskMessageResponse({
     [children, props.isStreaming],
   )
   const fileCard = (path: string, label: string) => (
-    <div className="my-2 flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-xl border bg-card/60 p-3">
-      <button
-        type="button"
-        aria-label={`Preview ${label}`}
-        title={path}
-        onClick={() => openFile(path)}
-        className="flex min-w-0 flex-1 items-center gap-3 text-left"
-      >
-        <FileTypeIcon path={path} />
-        <span className="min-w-0">
-          <span className="block truncate text-sm font-medium">{label}</span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {markdownFileName(path)} · Preview file
+    <NativeFileDrag taskId={taskId} path={path}>
+      <div className="my-2 flex min-w-0 max-w-full flex-wrap items-center gap-2 rounded-xl border bg-card/60 p-3">
+        <button
+          type="button"
+          aria-label={`Preview ${label}`}
+          title={path}
+          onClick={() => openFile(path)}
+          className="flex min-w-0 flex-1 items-center gap-3 text-left"
+        >
+          <FileTypeIcon path={path} />
+          <span className="min-w-0">
+            <span className="block truncate text-sm font-medium">{label}</span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {markdownFileName(path)} · Preview file
+            </span>
           </span>
-        </span>
-      </button>
-      <Button size="sm" variant="ghost" onClick={() => openFile(path, true)}>
-        Download
-      </Button>
-      <DropdownMenu.Root>
-        <DropdownMenu.Trigger asChild>
-          <Button size="sm" variant="ghost">
-            Open in…
-          </Button>
-        </DropdownMenu.Trigger>
-        <DropdownMenu.Portal>
-          <DropdownMenu.Content className="z-50 min-w-48 rounded-md border bg-popover p-1 text-xs shadow-md">
-            <p className="px-2 py-1 text-muted-foreground">On your computer</p>
-            <RepositoryOpenItems
-              itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
-              onSelect={(target) => {
-                void openRepository({ taskId, path }, target).catch((cause: unknown) =>
-                  setError(cause instanceof Error ? cause.message : String(cause)),
-                )
-              }}
-            />
-          </DropdownMenu.Content>
-        </DropdownMenu.Portal>
-      </DropdownMenu.Root>
-    </div>
+        </button>
+        <Button size="sm" variant="ghost" onClick={() => openFile(path, true)}>
+          Download
+        </Button>
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
+            <Button size="sm" variant="ghost">
+              Open in…
+            </Button>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content className="z-50 min-w-48 rounded-md border bg-popover p-1 text-xs shadow-md">
+              <p className="px-2 py-1 text-muted-foreground">On your computer</p>
+              <RepositoryOpenItems
+                itemClass="flex cursor-default items-center gap-2 rounded px-2 py-1.5 outline-none focus:bg-accent"
+                onSelect={(target) => {
+                  void openRepository({ taskId, path }, target).catch((cause: unknown) =>
+                    setError(cause instanceof Error ? cause.message : String(cause)),
+                  )
+                }}
+              />
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>
+      </div>
+    </NativeFileDrag>
   )
   return (
     <div className="min-w-0 max-w-full">

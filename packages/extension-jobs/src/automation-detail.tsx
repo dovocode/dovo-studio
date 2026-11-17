@@ -79,9 +79,10 @@ export function AutomationDetail({
   const triggers = flow?.nodes.filter((item) => item.data.kind === 'trigger') ?? []
   const menuItem =
     'flex cursor-default items-center gap-2 rounded-md px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent'
-  const inspector = node && (
+  const inspector = node && flow && (
     <NodeInspector
       node={node}
+      flow={flow}
       defaults={snapshot?.defaults}
       workspace={workspace}
       onChange={(data) =>

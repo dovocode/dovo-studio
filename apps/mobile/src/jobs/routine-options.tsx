@@ -10,6 +10,8 @@ import {
 import { SettingsField as Field, SettingsAction as Action } from '../screens/settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
+import { useRuntime } from '../runtime/connection/provider'
+import { SettingsChoice } from '../screens/settings-controls'
 export function RoutineOptions({
   flow,
   disabled,
@@ -30,6 +32,7 @@ export function RoutineOptions({
   const { styles } = useTheme()
   const [fields, setFields] = useState(() => routineOptionFields(flow))
   const [error, setError] = useState('')
+  const { snapshot } = useRuntime()
   return (
     <View style={{ gap: 8 }}>
       <Text style={styles.text}>
@@ -42,20 +45,37 @@ export function RoutineOptions({
           }
         </InterfaceText>
       </Text>
+      {!snapshot?.automationStartupRetrySupported && (
+        <Text style={styles.muted}>Update this runtime to configure provider startup retry.</Text>
+      )}
       {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
         .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
         .filter((key) => key !== 'matter' || findingGroupsSupported)
         .filter((key) => !['mcpServer', 'mcpUri'].includes(key) || mcpMonitoringSupported)
-        .map((key) => (
-          <Field
-            key={key}
-            label={routineOptionLabels[key]}
-            value={fields[key]}
-            editable={!disabled}
-            placeholder={key === 'start' || key === 'end' ? uiText('HH:mm') : undefined}
-            onChangeText={(value) => setFields((f) => ({ ...f, [key]: value }))}
-          />
-        ))}
+        .map((key) =>
+          key === 'startupRetry' ? (
+            <SettingsChoice
+              key={key}
+              label={routineOptionLabels[key]}
+              value={fields[key]}
+              items={[
+                { id: 'no', name: 'No' },
+                { id: 'yes', name: 'Yes, before provider acceptance only' },
+              ]}
+              disabled={disabled || !snapshot?.automationStartupRetrySupported}
+              onChange={(value) => setFields((f) => ({ ...f, startupRetry: value }))}
+            />
+          ) : (
+            <Field
+              key={key}
+              label={routineOptionLabels[key]}
+              value={fields[key]}
+              editable={!disabled}
+              placeholder={key === 'start' || key === 'end' ? uiText('HH:mm') : undefined}
+              onChangeText={(value) => setFields((f) => ({ ...f, [key]: value }))}
+            />
+          ),
+        )}
       <Action
         label={uiText('Save monitoring and limits')}
         disabled={disabled}

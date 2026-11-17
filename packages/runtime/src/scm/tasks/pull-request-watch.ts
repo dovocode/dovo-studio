@@ -51,6 +51,8 @@ const stateSchema = z.object({
   commentVersions: z.record(z.string(), z.string()).default({}),
   failedChecks: z.array(z.string()),
   error: z.string().optional(),
+  retryFailures: z.number().int().nonnegative().optional(),
+  nextRetryAt: z.string().optional(),
   careStarted: z.boolean().optional(),
   careHead: z.string().optional(),
   careBase: z.string().optional(),
@@ -100,6 +102,7 @@ const watchSummary = (state: State) => ({
   startedAt: state.startedAt,
   checkedAt: state.checkedAt,
   error: state.error,
+  nextRetryAt: state.nextRetryAt,
   careStatus: state.careStatus,
   carePaused: state.carePaused,
 })
@@ -112,6 +115,7 @@ export class PullRequestWatch {
   private poller?: ReturnType<typeof startPolling>
   private busy = false
   private stopped = false
+  private retryRequested = false
   private registrations = new Map<
     string,
     {
@@ -507,7 +511,21 @@ export class PullRequestWatch {
     try {
       await this.startLinkedBabysitting()
       const reads = new Map<string, Promise<PullDetail>>()
-      for (const state of this.readAll()) {
+      const states = this.readAll()
+      const retryNow = this.retryRequested
+      this.retryRequested = false
+      const resourceKey = (state: State) =>
+        JSON.stringify([state.repositoryId, state.number, state.source])
+      const retries = new Map<string, { failures: number; due: number }>()
+      for (const state of states) {
+        const key = resourceKey(state)
+        const previous = retries.get(key)
+        retries.set(key, {
+          failures: Math.max(previous?.failures ?? 0, state.retryFailures ?? 0),
+          due: Math.max(previous?.due ?? 0, Date.parse(state.nextRetryAt ?? '') || 0),
+        })
+      }
+      for (const state of states) {
         if (this.stopped) return
         const task = this.s.store.get().tasks.find((task) => task.id === state.taskId)
         if (!task) {
@@ -538,6 +556,9 @@ export class PullRequestWatch {
           this.save({ ...state, status: 'stopped', error: accessError })
           continue
         }
+        const retry = retries.get(resourceKey(state)) ?? { failures: 0, due: 0 }
+        if (!retryNow && retry.due > Date.now()) continue
+        let readCompleted = false
         try {
           const cwd = state.source?.url ?? this.repository(state.repositoryId).path
           const readKey = JSON.stringify([cwd, state.number, state.source])
@@ -573,6 +594,7 @@ export class PullRequestWatch {
           verifyPullUrl(state.url, detail.pull.url)
           if (detail.stale || detail.refreshError)
             throw new Error(detail.refreshError ?? 'Waiting for fresh PR feedback')
+          readCompleted = true
           // A failed section must not consume that section’s cursor or replay cached data.
           const unavailable = new Set(
             detail.warnings.flatMap((warning) =>
@@ -613,6 +635,8 @@ export class PullRequestWatch {
           )
           const next: State = {
             ...state,
+            retryFailures: undefined,
+            nextRetryAt: undefined,
             careStatus: state.updateNotice,
             checkedAt: new Date().toISOString(),
             error: detail.warnings.join('\n') || undefined,
@@ -809,7 +833,20 @@ export class PullRequestWatch {
           const message = errorMessage(error)
           // Cursor remains unchanged when reads or queue admission fail.
           const latest = this.read(state.taskId, state.repositoryId)
-          if (latest) this.save({ ...latest, checkedAt: new Date().toISOString(), error: message })
+          if (latest) {
+            const failures = readCompleted ? 0 : Math.min(retry.failures + 1, 10)
+            this.save({
+              ...latest,
+              checkedAt: new Date().toISOString(),
+              error: message,
+              retryFailures: failures || undefined,
+              nextRetryAt: failures
+                ? new Date(
+                    Date.now() + Math.min(60_000 * 2 ** (failures - 1), 30 * 60_000),
+                  ).toISOString()
+                : undefined,
+            })
+          }
           if (state.error !== message)
             this.s.activity.add('task', state.taskId, `PR feedback watcher: ${message}`)
         }
@@ -819,6 +856,7 @@ export class PullRequestWatch {
     }
   }
   refresh() {
+    this.retryRequested = true
     this.poller?.refresh()
   }
   start() {

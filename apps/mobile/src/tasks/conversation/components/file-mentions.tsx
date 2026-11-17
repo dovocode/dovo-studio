@@ -4,7 +4,8 @@ import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
 import {
   modelMentionsSchema,
-  botMentionSuggestions,
+  contextMentionSuggestions,
+  insertThreadMention,
   insertBotMention,
   runtimeComputerName,
   insertModelMention,
@@ -27,7 +28,7 @@ import { BotAvatar } from '../../../bots/bot-avatar'
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread'
   avatar?: string
   value: string
   name?: string
@@ -136,7 +137,7 @@ export function FileMentions({
   if (!mention) return null
   const suggestions: Suggestion[] = [
     ...(mention.trigger === '@'
-      ? botMentionSuggestions(
+      ? contextMentionSuggestions(
           overviews.map((owner) => ({
             runtimeId:
               owner.snapshot?.runtimeId ?? owner.profile.connection.runtimeId ?? owner.profile.id,
@@ -145,7 +146,7 @@ export function FileMentions({
           })),
           mention.query,
         ).map((bot) => ({
-          kind: 'bot' as const,
+          kind: bot.kind ?? ('bot' as const),
           value: bot.reference,
           name: bot.name,
           detail: bot.detail,
@@ -232,7 +233,7 @@ export function FileMentions({
         const label =
           item.kind === 'file'
             ? item.value.slice(item.value.lastIndexOf('/') + 1)
-            : item.kind === 'model' || item.kind === 'bot'
+            : item.kind === 'model' || item.kind === 'bot' || item.kind === 'thread'
               ? item.name
               : item.kind === 'command'
                 ? `/${item.value}`
@@ -266,6 +267,15 @@ export function FileMentions({
                       })
             }
             onPress={() => {
+              if (item.kind === 'thread') {
+                onChange(
+                  insertThreadMention(text, mention.start, caret, {
+                    name: item.name ?? 'Thread',
+                    reference: item.value,
+                  }).text,
+                )
+                return
+              }
               if (item.kind === 'bot')
                 onChange(
                   insertBotMention(text, mention.start, caret, {

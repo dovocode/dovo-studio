@@ -108,6 +108,7 @@ export function pullRevision(detail: Pick<PullDetail, 'pull'>) {
 }
 
 export const pullDetailSchema = mutableStruct({
+  omittedFiles: Schema.optional(Schema.Number),
   destination: Schema.optional(forgeIdentityTokenSchema),
   stack: Schema.optional(pullStackSchema),
   capabilities: Schema.optional(forgeCapabilitiesSchema),
@@ -145,6 +146,7 @@ export const pullDetailSchema = mutableStruct({
       additions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       deletions: Schema.NullOr(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
       patch: Schema.optional(Schema.String),
+      patchOmitted: Schema.optional(Schema.Boolean),
       attributes: Schema.optional(
         mutableStruct({
           binary: Schema.Boolean,

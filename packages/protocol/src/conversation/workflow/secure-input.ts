@@ -53,7 +53,18 @@ export const secureInputReplySchema = mutableStruct({
     ciphertext: Schema.String.pipe(Schema.check(Schema.isPattern(/^(?:[a-f0-9]{2}){16,65536}$/))),
   }),
 })
-export const secureInputResultSchema = mutableStruct({ id, status: secureInputStatusSchema })
+export const secureInputCancellationSchema = Schema.Literals([
+  'user',
+  'agent',
+  'turn-ended',
+  'shutdown',
+])
+export type SecureInputCancellation = typeof secureInputCancellationSchema.Type
+export const secureInputResultSchema = mutableStruct({
+  id,
+  status: secureInputStatusSchema,
+  cancelledBy: Schema.optional(secureInputCancellationSchema),
+})
 export type SecureInputRequest = typeof secureInputRequestSchema.Type
 export type SecureInputCommand = typeof secureInputCommandSchema.Type
 export type PendingSecureInput = typeof pendingSecureInputSchema.Type

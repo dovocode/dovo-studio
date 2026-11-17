@@ -163,3 +163,23 @@ it('validates one-time dates in their saved zone, rejecting calendar errors and 
     'Enter a valid date, time and time zone.',
   )
 })
+
+it('allows only selected preceding task results, including through a review gate', () => {
+  const automation = flow()
+  const task = automation.nodes[1]!
+  automation.nodes.push(
+    { ...task, id: 'review', data: { ...task.data, kind: 'review' } },
+    { ...task, id: 'next', data: { ...task.data, inputFrom: ['task'], inputFiles: true } },
+  )
+  automation.edges.push(
+    { id: 'review', source: 'task', target: 'review' },
+    { id: 'next', source: 'review', target: 'next' },
+  )
+  expect(automationIssues(automation, workspace)).toEqual([])
+  for (const inputFrom of [['next'], ['trigger'], ['unknown'], ['task', 'task']]) {
+    automation.nodes[3]!.data.inputFrom = inputFrom
+    expect(automationIssues(automation, workspace)).toContain(
+      'Choose connected preceding tasks as inputs for Review.',
+    )
+  }
+})

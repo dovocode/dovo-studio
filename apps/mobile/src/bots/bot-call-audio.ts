@@ -27,7 +27,7 @@ function microphoneStopped(dictation: ReturnType<typeof createMobileDictation>) 
     if (idle()) finish()
   })
 }
-export function mobileBotCallAudio(): BotCallAudio {
+export function mobileBotCallAudio(pauseMs = 1100): BotCallAudio {
   const dictation = createMobileDictation(true)
   return {
     async listen(signal, events) {
@@ -52,7 +52,7 @@ export function mobileBotCallAudio(): BotCallAudio {
           if (/[\p{L}\p{N}]/u.test(text)) events.speechStarted?.()
           events.preview(text)
           clearTimeout(silence)
-          silence = setTimeout(() => dictation.stop(), 1100)
+          silence = setTimeout(() => dictation.stop(), pauseMs)
         },
         onFinish: (text) => {
           clearTimeout(silence)

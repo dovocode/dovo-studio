@@ -1,6 +1,10 @@
 import { githubRead } from '../../retrieval/request.js'
 import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retrieval/context.js'
-import { includedWorktreeFiles, copyWorktreeFiles } from './worktree-include.js'
+import {
+  includedWorktreeFiles,
+  copyWorktreeFiles,
+  sparseWorktreePatterns,
+} from './worktree-include.js'
 import { worktreeRecords } from './worktree-records.js'
 import { workingGitStatus } from './working-status.js'
 import {
@@ -860,6 +864,7 @@ export class GitService {
     const files = await this.measureCheckout(root, 'include-files', () =>
       includedWorktreeFiles(root, signal),
     )
+    const sparse = await sparseWorktreePatterns(root)
     const reason = `dovo-creating ${randomUUID()}`
     let identity: Awaited<ReturnType<typeof lstat>> | undefined
     let canonical: string | undefined
@@ -895,7 +900,15 @@ export class GitService {
           await this.measureCheckout(root, 'checkout', () =>
             this.checkoutCommand(
               root,
-              ['worktree', 'add', '--lock', '--reason', reason, ...args],
+              [
+                'worktree',
+                'add',
+                '--lock',
+                '--reason',
+                reason,
+                ...(sparse.length ? ['--no-checkout'] : []),
+                ...args,
+              ],
               signal,
             ),
           )
@@ -906,6 +919,19 @@ export class GitService {
               409,
               'The worktree registration changed during creation; its files were preserved.',
             )
+          if (sparse.length) {
+            const checkout = canonical
+            const ownership = new Map(preparationOwnership.getStore())
+            ownership.set(checkout, reason)
+            await preparationOwnership.run(ownership, async () => {
+              await this.checkoutCommand(
+                checkout,
+                ['sparse-checkout', 'set', '--no-cone', '--', ...sparse],
+                signal,
+              )
+              await this.checkoutCommand(checkout, ['read-tree', '-mu', 'HEAD'], signal)
+            })
+          }
         },
         signal,
       )

@@ -11,6 +11,7 @@ const built = await build({
       import {TooltipProvider} from '@dovo/studio-ui';
       import {ComposerDictation} from './src/chat/composer/composer-dictation';
       import {SpeechSettings} from '../studio-shell/src/app-settings/speech';
+      import {DictationNotice} from '../studio-shell/src/dictation-notice';
       import {createComposerDraft} from './src/chat/composer/composer-draft';
       window.statusCalls=0;window.cancelled=[];window.installCalls=0;window.audioBytes=0;window.installed=localStorage.getItem('dictation-test-installed')==='true';window.failInstall=false;window.failTranscribe=false;window.downloading=false;
       const listeners=new Map();
@@ -23,8 +24,8 @@ const built = await build({
         subscribe:(id,listener)=>{listeners.set(id,listener);return()=>listeners.delete(id)},
         cancel:async(id)=>{window.cancelled.push(id);if(window.downloading)window.rejectInstall(Error('Download cancelled'))}
       }};
-      function Editor(){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId="task" controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
-      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><Editor key={key}/></TooltipProvider>};
+      function Editor({id}){const[controller]=useState(()=>createComposerDraft('Existing text.',()=>{}));const input=useRef(null);const[active,setActive]=useState(false);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);window.edit=(value)=>controller.update(value);window.text=()=>controller.text;return <><textarea ref={input} aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><ComposerDictation taskId={"task-"+id} controller={controller} input={input} disabled={false} onActive={setActive}/><button disabled={active}>Send</button></>}
+      function App(){const[key,setKey]=useState(0);window.switchThread=()=>setKey(value=>value+1);return <TooltipProvider><SpeechSettings/><DictationNotice/><Editor key={key} id={key}/></TooltipProvider>};
       createRoot(document.getElementById('app')).render(<App/>);
     `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
@@ -39,7 +40,7 @@ const built = await build({
           namespace: 'speech-workspace',
         }))
         builder.onLoad({ filter: /.*/, namespace: 'speech-workspace' }, () => ({
-          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useWorkspace=()=>({snapshot:{},connection:{},request:async()=>{throw Error('Unexpected runtime request')}});`,
+          contents: `export * from '${fileURLToPath(new URL('../packages/studio-core/src/index.ts', import.meta.url))}';export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({workspace:{tasks:[]},snapshot:{},connection:null,request:async()=>{throw Error('Unexpected runtime request')}});`,
           loader: 'tsx',
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
         }))
@@ -74,7 +75,7 @@ try {
   await page.goto('https://dovo.test/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const mic = page.getByRole('button', { name: 'Dictate message', exact: true })
-  const recording = page.getByRole('button', { name: 'Stop dictation', exact: true })
+  const recording = page.getByRole('button', { name: 'Stop dictation', exact: true }).first()
   const download = page.getByRole('button', { name: 'Download & enable dictation', exact: true })
   const enabled = page.getByRole('switch', { name: 'Enable dictation', exact: true })
   await download.waitFor()
@@ -160,6 +161,7 @@ try {
   await page.evaluate(() => window.complete())
   await page.getByRole('alert').filter({ hasText: 'Transcription failed' }).waitFor()
   assert.equal(await input.inputValue(), 'Typed while transcribing Fix de desktop app.')
+  await page.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
   await page.evaluate(() => {
     window.failTranscribe = false
     window.complete = null
@@ -176,6 +178,12 @@ try {
   await page.evaluate(() => window.switchThread())
   await page.evaluate(() => window.resolveLate('WRONG THREAD'))
   await page.waitForFunction(() => window.text() === 'Existing text.')
+  await page.getByRole('textbox', { name: 'Dictation transcript', exact: true }).waitFor()
+  assert.equal(
+    await page.getByRole('button', { name: 'Insert transcript', exact: true }).count(),
+    0,
+  )
+  await page.getByRole('button', { name: 'Cancel dictation', exact: true }).click()
   await mic.click()
   await recording.waitFor()
   await page.keyboard.press('Escape')
@@ -183,7 +191,7 @@ try {
   assert.equal(await page.evaluate(() => window.cancelled.length >= 3), true)
   assert.deepEqual(errors, [])
   console.log(
-    'Nemotron dictation: Settings download/progress/cancel/retry, enable toggle, language selection, live preview with real microphone/worklet PCM, insertion, draft protection, failures and thread cancellation passed.',
+    'Nemotron dictation: Settings download/progress/cancel/retry, enable toggle, language selection, live preview with real microphone/worklet PCM, insertion, draft protection, failures and retained dictation across thread navigation passed.',
   )
 } finally {
   await browser.close()

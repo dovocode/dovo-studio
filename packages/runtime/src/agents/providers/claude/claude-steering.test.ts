@@ -53,7 +53,7 @@ afterEach(async () => {
   for (const dispose of cleanup.splice(0)) await dispose()
 })
 
-function fixture() {
+function fixture(goal?: AgentRun['goal']) {
   const adapter = createClaudeAdapter()
   cleanup.push(async () => adapter.dispose?.())
   mocks.query.mockClear()
@@ -61,6 +61,9 @@ function fixture() {
   const input: SDKUserMessage[] = []
   const close = vi.fn<() => void>(() => events.close())
   const interrupt = vi.fn<() => Promise<void>>(async () => {})
+  const supportedCommands = vi.fn<() => Promise<{ name: string; builtin: boolean }[]>>(async () => [
+    { name: 'goal', builtin: true },
+  ])
   const backgroundTasks = vi.fn<(toolUseId?: string) => Promise<boolean>>(async () => true)
   mocks.query.mockImplementation(({ prompt }) => {
     if (typeof prompt === 'string') throw new Error('Expected streaming input')
@@ -72,6 +75,7 @@ function fixture() {
       close,
       interrupt,
       backgroundTasks,
+      supportedCommands,
     }
   })
   const controller = new AbortController()
@@ -86,6 +90,7 @@ function fixture() {
   let steer: AgentSteer | undefined
   const run: AgentRun = {
     taskId: 'task',
+    goal,
     agent: {
       id: 'claude',
       name: 'Claude',
@@ -121,6 +126,7 @@ function fixture() {
     close,
     interrupt,
     backgroundTasks,
+    supportedCommands,
     controller,
     running,
     onNativeTurnEnd,
@@ -487,4 +493,35 @@ it('rejects stale steering callbacks and resets steering state when a warm query
   f.events.push({ ...success, terminal_reason: 'aborted_streaming' })
   await expect(followup).rejects.toThrow('Claude turn interrupted')
   expect(mocks.query).toHaveBeenCalledOnce()
+})
+
+it('waits for the steered prompt and ignores results from other prompts', async () => {
+  const f = fixture()
+  const steer = await f.ready()
+  await steer({ id: 'guide', prompt: 'Continue' })
+  await vi.waitFor(() => expect(f.input).toHaveLength(2))
+  let done = false
+  void f.running.then(() => {
+    done = true
+  })
+  f.events.push({ ...success, user_message_uuid: 'foreign-prompt' })
+  f.events.push({ ...success, user_message_uuid: f.input[0].uuid })
+  await vi.waitFor(() => expect(f.onEvent).toHaveBeenCalledWith('result', expect.anything()))
+  expect(done).toBe(false)
+  expect(f.onNativeTurnEnd).not.toHaveBeenCalled()
+  f.events.push({ ...success, user_message_uuids: [f.input[0].uuid, f.input[1].uuid] })
+  await f.running
+  expect(f.onNativeTurnEnd).toHaveBeenCalledOnce()
+})
+
+it('times out a machine goal capability request before submitting a prompt', async () => {
+  vi.useFakeTimers()
+  const f = fixture({ action: 'set', objective: 'Finish the task' })
+  f.supportedCommands.mockImplementation(() => new Promise(() => {}))
+  const failed = (async () => {
+    await expect(f.running).rejects.toThrow('control request timed out')
+  })()
+  await vi.advanceTimersByTimeAsync(15_001)
+  await failed
+  expect(f.input).toHaveLength(0)
 })

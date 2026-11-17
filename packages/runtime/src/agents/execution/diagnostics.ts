@@ -1,8 +1,9 @@
 import { opencodeHeaders } from '../providers/opencode/opencode-server.js'
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
-import { readFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { dirname, join, resolve } from 'node:path'
+import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 import { stripVTControlCharacters } from 'node:util'
 import { compare, valid } from 'semver'
@@ -57,16 +58,23 @@ function reportedVersion(output: string) {
   )?.[1]
   return candidate ? valid(candidate) : null
 }
-function executable(command: string) {
+function executable(command: string, env = processEnvironment(), isolated = false) {
   return async () => {
-    const { stdout } = await exec(command, ['--version'], {
-      timeout: 5000,
-      maxBuffer: 64 * 1024,
-      env: processEnvironment(),
-    })
-    return {
-      version: reportedVersion(stdout),
-      detail: 'Executable responds. Provider authentication was not tested.',
+    const cwd = isolated ? await mkdtemp(join(tmpdir(), 'dovo-provider-probe-')) : undefined
+    const program = cwd && /[/\\\\]/.test(command) ? resolve(command) : command
+    try {
+      const { stdout } = await exec(program, ['--version'], {
+        timeout: 5000,
+        maxBuffer: 64 * 1024,
+        env,
+        ...(cwd ? { cwd } : {}),
+      })
+      return {
+        version: reportedVersion(stdout),
+        detail: 'Executable responds. Provider authentication was not tested.',
+      }
+    } finally {
+      if (cwd) await rm(cwd, { recursive: true, force: true })
     }
   }
 }
@@ -181,7 +189,10 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
       provider,
       name,
       kind: 'executable',
-      inspect: executable(command),
+      inspect: executable(
+        command,
+        processEnvironment(provider === 'copilot' ? { COPILOT_AUTO_UPDATE: 'false' } : undefined),
+      ),
       guidance: 'Update this CLI with its original installer. Authenticate on the runtime host.',
       documentationUrl: url,
     })
@@ -231,8 +242,9 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
   ]) {
     if (agent.provider === 'opencode' || agent.provider === 'cursor') continue
     const command = agent.endpoint || (agent.provider === 'claude' ? 'claude' : '')
-    if (!command || configured.has(`${agent.provider}\0${command}`)) continue
-    configured.add(`${agent.provider}\0${command}`)
+    const key = `${agent.provider}\0${command}${'env' in agent && agent.env ? '\0' + JSON.stringify(agent.env) : ''}`
+    if (!command || configured.has(key)) continue
+    configured.add(key)
     result.push({
       id: `${agent.provider}-executable-${result.length}`,
       name: `${agent.provider === 'pi' ? 'Pi' : agent.provider === 'claude' ? 'Claude' : agent.provider === 'codex' ? 'Codex' : agent.provider === 'hermes' ? 'Hermes' : agent.provider === 'copilot' ? 'Copilot' : agent.provider === 'grok' ? 'Grok Build' : agent.provider === 'muse' ? 'Muse Code' : agent.provider === 'vibe' ? 'Mistral Vibe' : 'ACP'} executable (${command})`,
@@ -251,8 +263,19 @@ function checks(settings: CommandSettings, agents: AgentDiscovery[]): Check[] {
         agent.provider === 'vibe'
           ? () => vibeExecutable(agent)
           : agent.provider === 'hermes'
-            ? () => executable(hermesExecutable(command, processEnvironment(agent.env)))()
-            : executable(command),
+            ? () =>
+                executable(
+                  hermesExecutable(command, processEnvironment(agent.env)),
+                  processEnvironment(agent.env),
+                )()
+            : executable(
+                command,
+                processEnvironment({
+                  ...('env' in agent ? agent.env : {}),
+                  ...(agent.provider === 'copilot' ? { COPILOT_AUTO_UPDATE: 'false' } : {}),
+                }),
+                agent.provider === 'pi',
+              ),
       guidance:
         agent.provider === 'hermes'
           ? 'Update this Hermes executable using its original installer (hermes update). Provider credentials use hermes model.'

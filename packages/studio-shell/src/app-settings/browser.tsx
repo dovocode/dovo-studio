@@ -119,11 +119,13 @@ function ProfileName({
   onSave,
   onRemove,
   routing,
+  timezoneSupported,
   saving,
 }: {
   profile: BrowserProfile
   disabled: boolean
   routing: boolean
+  timezoneSupported?: boolean
   saving: boolean
   onSave: (profile: BrowserProfile) => Promise<boolean>
   onRemove: () => void
@@ -135,6 +137,7 @@ function ProfileName({
       name: string
       emoji: string
       language: string
+      timezone: string
       doNotTrack: boolean
       keepSessionCookies: boolean
       engine: BrowserSearchEngine['engine']
@@ -146,13 +149,24 @@ function ProfileName({
     name: profile.name,
     emoji: profile.emoji ?? '',
     language: profile.language ?? 'en-US',
+    timezone: profile.timezone ?? '',
     doNotTrack: profile.doNotTrack === true,
     keepSessionCookies: profile.keepSessionCookies === true,
     engine: profile.search?.engine ?? 'google',
     searchUrl: profile.search?.engine === 'custom' ? profile.search.url : '',
     domains: (profile.linkDomains ?? []).join(', '),
   }
-  const { name, emoji, language, doNotTrack, keepSessionCookies, engine, searchUrl, domains } = {
+  const {
+    name,
+    emoji,
+    language,
+    timezone,
+    doNotTrack,
+    keepSessionCookies,
+    engine,
+    searchUrl,
+    domains,
+  } = {
     ...saved,
     ...edits,
   }
@@ -190,18 +204,22 @@ function ProfileName({
     linkDomains.every((value): value is string => value !== undefined) &&
     new Set(linkDomains).size === linkDomains.length
   const validLanguage = decodeResult(browserLanguageSchema, language).success
+  const validTimezone =
+    !timezone ||
+    decodeResult(browserProfilesSchema, [{ ...profile, id: 'default', timezone }]).success
   return (
     <form
       aria-label={`Browser profile ${profile.name}`}
       className="studio-browser-profile-fields flex flex-wrap items-center gap-2"
       onSubmit={async (event) => {
         event.preventDefault()
-        if (validLanguage && validDomains && validSearch)
+        if (validLanguage && validDomains && validSearch && validTimezone)
           if (
             await onSave({
               ...profile,
               name: name.trim(),
               language: Intl.getCanonicalLocales(language)[0]!,
+              timezone: timezone.trim() || undefined,
               linkDomains,
               emoji: emoji || undefined,
               search,
@@ -293,6 +311,23 @@ function ProfileName({
           )}
         </label>
       )}
+      {timezoneSupported !== undefined && (
+        <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-muted-foreground">
+          Time zone, blank uses the runtime time zone
+          <Input
+            aria-label={`Time zone for ${profile.name}`}
+            value={timezone}
+            disabled={disabled || !timezoneSupported}
+            placeholder="Europe/Amsterdam"
+            aria-invalid={!validTimezone}
+            onChange={(event) =>
+              setEdits((current) => ({ ...current, timezone: event.target.value }))
+            }
+          />
+          {!timezoneSupported && <span>Update this runtime to set a browser time zone.</span>}
+          {!validTimezone && <span role="alert">Enter a valid IANA time zone.</span>}
+        </label>
+      )}
       {routing && (
         <label className="flex min-w-0 basis-full flex-col gap-1 text-xs text-muted-foreground">
           Open links in this profile
@@ -344,6 +379,7 @@ function ProfileName({
           disabled ||
           !name.trim() ||
           !validLanguage ||
+          !validTimezone ||
           !validDomains ||
           !validSearch ||
           (!dirty && unchangedSearch)
@@ -371,11 +407,13 @@ function Profiles({
   save,
   disabled = false,
   routing = false,
+  timezoneSupported,
 }: {
   profiles: BrowserProfile[]
   save: (profiles: BrowserProfile[]) => void | Promise<void>
   disabled?: boolean
   routing?: boolean
+  timezoneSupported?: boolean
 }) {
   const [name, setName] = useState('')
   const [busy, setBusy] = useState(false)
@@ -414,6 +452,7 @@ function Profiles({
           key={profile.id}
           profile={profile}
           routing={routing}
+          timezoneSupported={timezoneSupported}
           disabled={disabled || busy}
           saving={busy}
           onSave={(updated) =>
@@ -480,6 +519,9 @@ function RemoteProfiles({
   computerName: string
 }) {
   const catalog = useRemoteBrowserProfiles(profile)
+  const { runtimes } = useWorkspace()
+  const timezoneSupported = !!runtimes.find((entry) => entry.profile.id === profile.id)?.snapshot
+    ?.browserTimezoneSupported
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -521,7 +563,12 @@ function RemoteProfiles({
         </div>
       )}
       {catalog.profiles ? (
-        <Profiles profiles={catalog.profiles} save={catalog.save} disabled={!catalog.connected} />
+        <Profiles
+          profiles={catalog.profiles}
+          save={catalog.save}
+          disabled={!catalog.connected}
+          timezoneSupported={timezoneSupported}
+        />
       ) : (
         catalog.connected &&
         !catalog.error && (

@@ -435,3 +435,6 @@ export {
   databaseSpaceSchema,
   databaseSpaceRecoverySchema,
 } from './runtime/connection/diagnostics.js'
+
+export * from './automation/restore.js'
+export * from './conversation/presentation/studio-links.js'

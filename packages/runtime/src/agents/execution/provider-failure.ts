@@ -22,7 +22,7 @@ export function providerFailureKind(error: unknown): ProviderFailureKind {
   )
     return 'configuration'
   if (
-    /MODEL_CAPACITY_EXHAUSTED|No capacity available for model|overloaded_error|model (?:is )?(?:busy|overloaded)/i.test(
+    /\b529\b|MODEL_CAPACITY_EXHAUSTED|No capacity available for model|overloaded_error|model (?:is )?(?:busy|overloaded)/i.test(
       message,
     )
   )

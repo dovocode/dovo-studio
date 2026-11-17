@@ -128,7 +128,13 @@ export async function runPiSession(run: AgentRun) {
     abort = () => rejectTurn(new Error('Pi turn was cancelled'))
     run.signal.addEventListener('abort', abort, { once: true })
     timer = setTimeout(() => rejectTurn(new Error('Pi turn timed out')), 30 * 60 * 1000)
-    const response = await rpc.request({ type: 'prompt', message: run.prompt }, run.signal)
+    // Preparation can include model loading and compaction. The turn deadline above
+    // still bounds this wait; ordinary RPC commands keep their short deadline.
+    const response = await rpc.request(
+      { type: 'prompt', message: run.prompt },
+      run.signal,
+      30 * 60_000,
+    )
     run.onPromptAccepted?.()
     if (object(response.data).disposition !== 'handled') await completed
   } finally {

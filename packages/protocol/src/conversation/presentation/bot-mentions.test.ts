@@ -60,3 +60,29 @@ it('extracts only explicit mentions in sent prose', () => {
   ])
     expect(botMentionTargets(text)).toEqual([])
 })
+
+it('finds older archived threads by title and inserts an escaped reference without history', async () => {
+  const { contextMentionSuggestions, insertThreadMention } = await import('./bot-mentions.js')
+  const task = decode(taskSchema, {
+    id: 'old',
+    title: 'Release [notes]',
+    repositoryId: '',
+    agentId: '',
+    status: 'review',
+    createdAt: '2026-01-01T00:00:00Z',
+    messages: [{ id: 'private', role: 'user', text: 'private history' }],
+    files: [],
+    draft: '',
+    example: false,
+    archived: true,
+  })
+  const sources = [{ runtimeId: 'mac', name: 'Mac', tasks: [task] }]
+  expect(contextMentionSuggestions(sources, '')).toEqual([])
+  const items = contextMentionSuggestions(sources, 'thread:release')
+  expect(items).toHaveLength(1)
+  expect(items[0].detail).toContain('Archived')
+  expect(JSON.stringify(items)).not.toContain('private history')
+  const inserted = insertThreadMention('@thread:release', 0, 15, items[0]).text
+  expect(inserted).toContain('[Release \\[notes\\]](dovo://thread?runtimeId=mac&threadId=old)')
+  expect(botMentionTargets(inserted)).toEqual([])
+})

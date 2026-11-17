@@ -12,15 +12,18 @@ import {
 import { ChoicePicker, HarnessFields, LinkedCheckoutEditor } from '@dovo/studio-ui'
 import type { AutomationData, AutomationNode, Workspace } from '@dovo/studio-core'
 import { useWorkspace } from '@dovo/studio-core'
+import { automationInputSources, type Automation } from '@dovo/protocol'
 import { Button, FormField, Input, Textarea } from '@dovo/studio-ui'
 export function NodeInspector({
   node,
+  flow,
   workspace,
   defaults,
   onChange,
   onDelete,
 }: {
   node: AutomationNode
+  flow: Automation
   workspace: Workspace
   defaults?: RuntimeDefaults
   onChange: (data: AutomationData) => void
@@ -321,6 +324,36 @@ export function NodeInspector({
               onChange={(event) => field({ objective: event.target.value })}
             />
           </FormField>
+          <fieldset disabled={!snapshot?.automationStepInputsSupported} className="space-y-2">
+            <legend>Inputs from preceding tasks</legend>
+            {!snapshot?.automationStepInputsSupported && (
+              <p>Update this runtime to pass step results and files.</p>
+            )}
+            {automationInputSources(flow, node.id).map((source) => (
+              <label key={source.id} className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={data.inputFrom?.includes(source.id) ?? false}
+                  onChange={(event) =>
+                    field({
+                      inputFrom: event.target.checked
+                        ? [...(data.inputFrom ?? []), source.id]
+                        : data.inputFrom?.filter((id) => id !== source.id),
+                    })
+                  }
+                />
+                {source.data.label}
+              </label>
+            ))}
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={data.inputFiles ?? false}
+                onChange={(event) => field({ inputFiles: event.target.checked })}
+              />
+              Include result files
+            </label>
+          </fieldset>
         </>
       )}
       {data.kind === 'review' && (

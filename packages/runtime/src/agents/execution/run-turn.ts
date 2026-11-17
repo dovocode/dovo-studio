@@ -851,6 +851,7 @@ export class TaskTurnRunner {
         let providerFinishedAt: string | undefined
         let providerOpen = true
         let promptAccepted = false
+        let meaningfulEvent = false
         const acceptPrompt = () => {
           if (!acceptsProviderEvents() || promptAccepted) return
           this.store.transaction(() => {
@@ -1331,6 +1332,7 @@ export class TaskTurnRunner {
                 signal: controller.signal,
                 onPromptAccepted: acceptPrompt,
                 onQuestions: (prompt) => {
+                  meaningfulEvent = true
                   acceptPrompt()
                   if (acceptsProviderEvents()) onQuestions?.(prompt)
                 },
@@ -1769,6 +1771,7 @@ export class TaskTurnRunner {
                     this.store.updateTask(id, (task) => ({ ...task, subagents }))
                   const reasoningOnly = reasoning.accept(name, payload)
                   const tool = toolEvent(agent.provider, name, payload)
+                  if (tool || subagents !== current) meaningfulEvent = true
                   if (tool) acceptPrompt()
                   if (tool) {
                     for (const event of commandEvents.accept(name, payload)) {
@@ -1948,6 +1951,21 @@ export class TaskTurnRunner {
           if (task.delegation) yield* runtimeOperation(() => this.registry.releaseTask(id))
           if (flushError) throw flushError
           if (controller.signal.aborted) throw new Error('Task cancelled')
+          flush()
+          if (
+            this.store
+              .task(id)
+              .messages.some(
+                (message) => message.role === 'user' && message.source?.kind === 'automation',
+              ) &&
+            !compact &&
+            !goal &&
+            !meaningfulEvent &&
+            !textOwners.some((owner) => this.store.taskMessage(id, owner.messageId)?.text.trim())
+          )
+            throw new Error(
+              'The automation worker ended without an answer or a work step. Review the run before retrying.',
+            )
           const finishedAt = new Date().toISOString()
           providerFinishedAt = finishedAt
           flush()

@@ -766,3 +766,19 @@ it('keeps inline Bots and the separate overview independent across restarts', as
     })
   }
 })
+
+it('defaults and saves the device voice pause across reloads', async () => {
+  let saved = '{}'
+  storage.getItem = async () => saved
+  storage.setItem = async (value) => {
+    saved = value
+  }
+  let preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().botVoicePause).toBe(1100)
+  preferences.updateMobilePreferences({ botVoicePause: 3000 })
+  await vi.waitFor(() => expect(JSON.parse(saved).botVoicePause).toBe(3000))
+  preferences = await loadPreferences()
+  await preferences.preferencesReady
+  expect(preferences.readMobilePreferences().botVoicePause).toBe(3000)
+})

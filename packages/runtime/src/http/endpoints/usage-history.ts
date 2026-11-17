@@ -3,6 +3,8 @@ import {
   decode,
   mutableStruct,
   usagePriceSchema,
+  usageRetentionSchema,
+  usageExportCursorSchema,
   resolveTaskAgent,
   type Agent,
 } from '@dovo/protocol'
@@ -14,6 +16,18 @@ import { errorMessage } from '../../errors.js'
 export const usageHistory = (request: IncomingMessage, path: string) =>
   Effect.gen(function* () {
     const s = yield* RuntimeServices
+    if (path === '/api/usage/storage/read') return s.store.usage.storage()
+    if (path === '/api/usage/storage/write') {
+      const input = decode(usageRetentionSchema, yield* serviceResult(body(request)))
+      return s.store.usage.setRetention(input.days)
+    }
+    if (path === '/api/usage/storage/export') {
+      const input = decode(
+        mutableStruct({ cursor: Schema.optional(usageExportCursorSchema) }),
+        yield* serviceResult(body(request)),
+      )
+      return s.store.usage.exportPage(input.cursor)
+    }
     if (path === '/api/usage/prices/write') {
       const input = decode(
         mutableStruct({

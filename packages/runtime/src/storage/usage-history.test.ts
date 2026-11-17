@@ -154,3 +154,41 @@ it('projects only owned provider/session identities while yielding between pages
     db.close()
   }
 })
+
+it('exports older stored records in bounded pages and persists optional retention without reimporting expired rows', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const turn = task.turns?.[0]
+    if (!turn) throw new Error('Missing fixture turn')
+    const records = Array.from({ length: 300 }, (_, index) => ({
+      taskId: 'archive',
+      title: 'Archive',
+      origin: 'cli' as const,
+      turn: { ...turn, id: String(index), startedAt: '2020-01-01T00:00:00.000Z' },
+    }))
+    store.usage.recordExternal(records)
+    expect(store.usage.storage()).toMatchObject({
+      days: null,
+      count: 300,
+      oldest: '2020-01-01T00:00:00.000Z',
+    })
+    const first = store.usage.exportPage()
+    expect(first.records).toHaveLength(256)
+    const second = store.usage.exportPage(first.next)
+    expect(second.records).toHaveLength(44)
+    expect(second.next).toBeUndefined()
+    expect(new Set([...first.records, ...second.records].map((row) => row.turn.id)).size).toBe(300)
+    store.usage.setRetention(90)
+    expect(store.usage.storage().count).toBe(0)
+    store.usage.recordExternal(records)
+    expect(store.usage.storage().count).toBe(0)
+    const reopened = new WorkspaceStore(db)
+    expect(reopened.usage.storage().days).toBe(90)
+    reopened.usage.setRetention(null)
+    reopened.usage.recordExternal(records)
+    expect(reopened.usage.storage().count).toBe(300)
+  } finally {
+    db.close()
+  }
+})

@@ -1,3 +1,4 @@
+import { botVoicePauseSchema } from '@dovo/protocol'
 import { turnAnnouncementsSchema } from '@dovo/protocol'
 import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
@@ -89,6 +90,7 @@ const schema = mutableStruct({
   readRepliesAloud: Schema.Boolean,
   runtimeDictationIds: Schema.Array(Schema.String),
   dictationLanguage: Schema.String,
+  botVoicePause: botVoicePauseSchema,
   speechLanguage: Schema.String,
   speechVoice: Schema.String,
   speechRate: Schema.Literals([1, 1.25, 1.5, 1.75, 2]),
@@ -163,6 +165,7 @@ const defaults: MobilePreferences = {
   readRepliesAloud: true,
   runtimeDictationIds: [],
   dictationLanguage: '',
+  botVoicePause: 1100,
   speechLanguage: '',
   speechVoice: '',
   speechRate: 1.25,

@@ -1,7 +1,24 @@
 import { mutableStruct, taskFamilyWorking } from '@dovo/protocol'
-import { automationSchema, jobRunSchema, type JobRunStep, type TaskSummary } from '@dovo/protocol'
+import {
+  automationSchema,
+  jobRunSchema,
+  attachmentSchema,
+  type JobRunStep,
+  type TaskSummary,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 export const storedRunSchema = mutableStruct({
+  retryTurnId: Schema.optional(Schema.String),
+  outputs: Schema.optional(
+    Schema.Record(
+      Schema.String,
+      mutableStruct({
+        taskId: Schema.String,
+        text: Schema.String,
+        attachments: Schema.Array(attachmentSchema),
+      }),
+    ),
+  ),
   ...jobRunSchema.fields,
   sourceHash: Schema.optional(Schema.String),
   sourceJsonPointer: Schema.optional(Schema.String),

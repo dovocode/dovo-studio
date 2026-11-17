@@ -189,7 +189,7 @@ export class GitLabForge implements ForgeAdapter {
     }
     throw new HttpError(502, 'GitLab returned too many pages. Open the remaining data on GitLab.')
   }
-  async detail(number: number) {
+  async detail(number: number, requestedFile?: string) {
     const [pull, repo, viewer] = await Promise.all([
       this.pull(number),
       this.http.json(this.path).then((value) => decode(gitlabProject, value)),
@@ -226,6 +226,7 @@ export class GitLabForge implements ForgeAdapter {
             additions: null,
             deletions: null,
             patch: file.collapsed || file.too_large ? undefined : file.diff || undefined,
+            patchOmitted: file.collapsed === true || file.too_large === true,
           }))
         : []
     if (!pull.diff_refs?.base_sha || !pull.sha)
@@ -234,6 +235,7 @@ export class GitLabForge implements ForgeAdapter {
         'GitLab has not prepared this merge request’s commits yet. Refresh shortly.',
       )
     if (
+      requestedFile !== undefined &&
       diffs.status === 'fulfilled' &&
       diffs.value.some((file) => file.collapsed || file.too_large)
     ) {
@@ -241,11 +243,15 @@ export class GitLabForge implements ForgeAdapter {
         const patches = completeForgeDiff(await this.http.text(`${base}/raw_diffs`))
         for (const [index, source] of diffs.value.entries()) {
           const file = files[index]!
-          if ((!source.collapsed && !source.too_large) || file.patch) continue
+          if (file.path !== requestedFile || (!source.collapsed && !source.too_large) || file.patch)
+            continue
           const matches = patches.filter(
             (patch) => patch.path === file.path && patch.previousPath === file.previousPath,
           )
-          if (matches.length === 1 && matches[0]?.patch) file.patch = matches[0].patch
+          if (matches.length === 1 && matches[0]?.patch) {
+            file.patch = matches[0].patch
+            file.patchOmitted = false
+          }
         }
         if (
           diffs.value.some(
@@ -275,7 +281,35 @@ export class GitLabForge implements ForgeAdapter {
           'The merge request changed while loading its diff. Refresh and try again.',
         )
     }
+    for (const file of files) {
+      if (!file.patch) continue
+      const lines = file.patch.split('\n')
+      file.additions = lines.filter((line) => line.startsWith('+')).length
+      file.deletions = lines.filter((line) => line.startsWith('-')).length
+    }
+    const knownCount =
+      pull.changes_count && /^\d+$/.test(pull.changes_count) ? Number(pull.changes_count) : null
+    const completeCounts =
+      diffs.status === 'fulfilled' &&
+      files.length > 0 &&
+      !pull.changes_count?.endsWith('+') &&
+      (knownCount === null || knownCount === files.length) &&
+      files.every((file) => file.additions !== null && file.deletions !== null)
+    const omittedFiles = files.filter((file) => file.patchOmitted).length
+    if (omittedFiles && requestedFile === undefined)
+      warnings.push(
+        `${omittedFiles} file patches were omitted by GitLab. Load them individually or open GitLab.`,
+      )
+    if (knownCount !== null && knownCount > files.length)
+      warnings.push(
+        `GitLab returned ${files.length} of ${knownCount} changed files. Open GitLab for files outside its API limit.`,
+      )
+    if (pull.changes_count?.endsWith('+'))
+      warnings.push(
+        `GitLab reports ${pull.changes_count} changed files. The returned file list can be incomplete.`,
+      )
     return decode(pullDetailSchema, {
+      omittedFiles,
       capabilities: {
         actions: ['create', 'edit', 'comment', 'merge', 'close', 'reopen'],
         reviewDecisions: [],
@@ -303,9 +337,17 @@ export class GitLabForge implements ForgeAdapter {
         connectionId: this.http.connection.id,
         headRef: `refs/merge-requests/${number}/head`,
         body: pull.description ?? '',
-        additions: null,
-        deletions: null,
-        changedFiles: diffs.status === 'fulfilled' ? files.length : null,
+        additions: completeCounts
+          ? files.reduce((sum, file) => sum + (file.additions ?? 0), 0)
+          : null,
+        deletions: completeCounts
+          ? files.reduce((sum, file) => sum + (file.deletions ?? 0), 0)
+          : null,
+        changedFiles:
+          knownCount ??
+          (diffs.status === 'fulfilled' && !pull.changes_count?.endsWith('+')
+            ? files.length
+            : null),
         mergeable:
           pull.detailed_merge_status === 'mergeable'
             ? true
@@ -341,6 +383,16 @@ export class GitLabForge implements ForgeAdapter {
         : [],
       warnings,
     })
+  }
+  async file(number: number, path: string, headSha: string, baseSha: string) {
+    const detail = await this.detail(number, path)
+    if (detail.pull.headSha !== headSha || detail.pull.baseSha !== baseSha)
+      throw new HttpError(409, 'The merge request changed. Refresh before loading this file.')
+    const file = detail.files.find((file) => file.path === path)
+    if (!file) throw new HttpError(404, 'This file is no longer in the merge request.')
+    if (!file.patch)
+      throw new HttpError(409, 'GitLab did not return this text patch. Open the file on GitLab.')
+    return { ...detail, files: [file] }
   }
   async comment(_input: typeof pullLineCommentSchema.Type): Promise<{ url: string }> {
     throw new HttpError(

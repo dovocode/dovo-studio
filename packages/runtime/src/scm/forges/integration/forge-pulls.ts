@@ -176,6 +176,12 @@ export class ForgePullRequests {
         )
       case 'detail':
         return adapter()?.detail(operation.number) ?? github().detail(cwd, operation.number)
+      case 'file': {
+        const source = adapter()
+        if (!source?.file)
+          throw new HttpError(400, 'Individual patch loading is unavailable for this source.')
+        return source.file(operation.number, operation.path, operation.headSha, operation.baseSha)
+      }
       case 'section':
         return scope.provider === 'github'
           ? github().section(cwd, operation.number, operation.section)
@@ -397,6 +403,17 @@ export class ForgePullRequests {
           await this.operation(cwd, scope, { kind: 'detail', number }, pullDetailSchema),
           scope,
         )
+      },
+      file: async (
+        number: number,
+        path: string,
+        headSha: string,
+        baseSha: string,
+        expectedDestination?: string,
+      ) => {
+        const scope = await prepare()
+        guardSource(scope, { expectedDestination })
+        return this.fileInContext(cwd, number, path, headSha, baseSha, scope)
       },
       status: async (number: number, background = false, expectedDestination?: string) => {
         const scope = await prepare()
@@ -928,6 +945,25 @@ export class ForgePullRequests {
     return this.sectionInContext(cwd, number, section, scope)
   }
   /** The request already verified this credential; still validate the binding before dispatch. */
+  async fileInContext(
+    cwd: string,
+    number: number,
+    path: string,
+    headSha: string,
+    baseSha: string,
+    scope: SourceContext,
+  ) {
+    scope.validate()
+    return this.tagDetail(
+      await this.operation(
+        cwd,
+        scope,
+        { kind: 'file', number, path, headSha, baseSha },
+        pullDetailSchema,
+      ),
+      scope,
+    )
+  }
   async sectionInContext(
     cwd: string,
     number: number,

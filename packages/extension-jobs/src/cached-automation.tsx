@@ -65,7 +65,8 @@ export function CachedAutomation({
             >
               {row.runs.map((item) => (
                 <option key={item.id} value={item.id}>
-                  {formatDateTime(item.createdAt)} · {runLabels[item.status]}
+                  {formatDateTime(item.createdAt)} ·{' '}
+                  {item.retryAt ? 'Waiting for provider' : runLabels[item.status]}
                 </option>
               ))}
             </ChoicePicker>

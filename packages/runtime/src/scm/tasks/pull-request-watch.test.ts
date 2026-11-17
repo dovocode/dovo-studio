@@ -269,6 +269,7 @@ it('retains progress through unavailable sections, stale results and a full queu
   f.read.mockResolvedValue(
     detail({ comments: [comment('new')], warnings: ['Conversation: offline'] }),
   )
+  f.s.pullRequestWatch.refresh()
   await f.s.pullRequestWatch.tick()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
   expect(await f.status()).toMatchObject({ watches: [{ error: 'Conversation: offline' }] })
@@ -1264,3 +1265,25 @@ it.each([false, true])(
     )
   },
 )
+
+it('backs off a failing PR while healthy watches continue, and explicit refresh retries', async () => {
+  const f = await linkedSetup()
+  await f.watch()
+  await f.linkedWatch()
+  f.read.mockClear()
+  f.read.mockImplementation(async (path) => {
+    if (path === f.f.directory) throw new Error('Temporary forge failure')
+    return detail({ pull: { ...detail().pull, url: f.linkedUrl }, comments: [] })
+  })
+  await f.s.pullRequestWatch.tick()
+  const next = (await f.status()).watches.find((w) => w.repositoryId === 'repo')
+  expect(next?.nextRetryAt).toBeDefined()
+  f.read.mockClear()
+  await f.s.pullRequestWatch.tick()
+  expect(f.read.mock.calls.map(([path]) => path)).not.toContain(f.f.directory)
+  expect(f.read).toHaveBeenCalled()
+  f.s.pullRequestWatch.refresh()
+  f.read.mockClear()
+  await f.s.pullRequestWatch.tick()
+  expect(f.read.mock.calls.map(([path]) => path)).toContain(f.f.directory)
+})

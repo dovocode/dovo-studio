@@ -40,6 +40,14 @@ contextBridge.exposeInMainWorld('dovo', {
       ipcRenderer.invoke('browser:default-status'),
     request: (): Promise<void> => ipcRenderer.invoke('browser:default-request'),
   },
+  fileDrag: {
+    prepare: (name: string, data: Uint8Array): Promise<string> =>
+      ipcRenderer.invoke('files:prepare-drag', name, data),
+    start: (id: string) => {
+      const result: { error?: string } = ipcRenderer.sendSync('files:start-drag', id)
+      if (result.error) throw new Error(result.error)
+    },
+  },
   repositoryOpener: {
     list: (): ReturnType<import('@dovo/protocol').RepositoryOpenerBridge['list']> =>
       ipcRenderer.invoke('repositories:local-openers'),

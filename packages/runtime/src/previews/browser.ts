@@ -89,6 +89,7 @@ type QueuedInput = {
   operation?: Promise<void>
 }
 type Session = {
+  profileId?: string
   uploads: BrowserUploads
   downloads?: BrowserDownloads
   logs: { time: string; kind: string; message: string }[]
@@ -128,6 +129,7 @@ type Session = {
   liveFrame?: Uint8Array
   dialog?: Dialog
   failedNavigation?: string
+  downloadErrors?: Array<{ message: string; at: string }>
   /** Epoch milliseconds of the last agent command; mirrored into recent state updates. */
   agentActiveAt?: number
 }
@@ -686,6 +688,7 @@ export class RemoteBrowsers {
       page.setDefaultTimeout(10000)
       page.setDefaultNavigationTimeout(20000)
       const session: Session = {
+        profileId,
         uploads: new BrowserUploads(
           (message) => this.emit(session, message),
           (error) => this.report(session, error),
@@ -718,6 +721,8 @@ export class RemoteBrowsers {
         streaming: false,
         stream: Promise.resolve(),
       }
+      const timezone = this.browserProfiles().find((profile) => profile.id === profileId)?.timezone
+      await session.cdp.send('Emulation.setTimezoneOverride', { timezoneId: timezone ?? '' })
       let directory = this.downloadDirectories.get(context)
       if (!directory) {
         directory = this.transfers.allocate('download')
@@ -727,7 +732,13 @@ export class RemoteBrowsers {
         session.cdp,
         await directory,
         (message) => this.emit(session, message),
-        (message) => this.emit(session, { type: 'error', message }),
+        (message) => {
+          session.downloadErrors = [
+            ...(session.downloadErrors ?? []),
+            { message: message.slice(0, 2000), at: new Date().toISOString() },
+          ].slice(-5)
+          this.emit(session, { type: 'error', message })
+        },
         (error) => this.report(session, error),
       )
       await session.downloads.start()
@@ -1701,6 +1712,8 @@ export class RemoteBrowsers {
         ok: true as const,
         url: page.url(),
         title: await page.title(),
+        timezone: await page.evaluate(() => Intl.DateTimeFormat().resolvedOptions().timeZone),
+        ...(session.downloadErrors?.length ? { downloadErrors: session.downloadErrors } : {}),
       }
       if (command.action === 'evaluate') return { ...details, result: scriptResult }
       if (command.action === 'screenshot')
@@ -1826,6 +1839,17 @@ export class RemoteBrowsers {
               : {},
           )
       }),
+    )
+    results.push(
+      ...(await Promise.allSettled(
+        [...this.sessions.values()].map(async (pending) => {
+          const session = await pending
+          if (session.closing || session.page.isClosed()) return
+          const timezone =
+            profiles.find((profile) => profile.id === session.profileId)?.timezone ?? ''
+          await session.cdp.send('Emulation.setTimezoneOverride', { timezoneId: timezone })
+        }),
+      )),
     )
     if (this.profileDirectory) {
       // Finish every operation before a queued apply starts, including failed attempts.

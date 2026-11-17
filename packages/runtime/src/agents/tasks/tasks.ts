@@ -2352,6 +2352,10 @@ export class Tasks {
                 task.quotaContinuation?.at === task.snoozedUntil ? null : task.snoozedUntil,
               status: 'running',
               activeRunId: run.id,
+              workerAdmission: {
+                queuedAt: new Date().toISOString(),
+                ...(run.waitingForCapacity ? {} : { admittedAt: new Date().toISOString() }),
+              },
               runPhase: task.runPhase === 'finalizing' ? 'finalizing' : 'preparing',
               runAttempt: recoveringTurn ? task.runAttempt : undefined,
               restartRecovery: undefined,
@@ -2398,7 +2402,14 @@ export class Tasks {
                   },
                 ),
               )
-              this.store.updateTask(id, (current) => ({ ...current, activity: 'Starting agent' }))
+              this.store.updateTask(id, (current) => ({
+                ...current,
+                activity: 'Starting agent',
+                workerAdmission: {
+                  queuedAt: current.workerAdmission?.queuedAt ?? new Date().toISOString(),
+                  admittedAt: new Date().toISOString(),
+                },
+              }))
             }
             // Selection belongs to the admitted run, so Send can finish and Stop can
             // cancel its utility model before checkout or coding work starts.
@@ -3048,14 +3059,22 @@ export class Tasks {
       throw new HttpError(409, 'Secure input requires this thread’s active agent turn')
     return run.controller.signal
   }
-  reportSecureInput(id: string, runId: string, requestId: string, status: string) {
+  reportSecureInput(
+    id: string,
+    runId: string,
+    requestId: string,
+    status: string,
+    cancelledBy?: import('@dovo/protocol').SecureInputCancellation,
+  ) {
     this.deliverHumanInput(
       id,
       runId,
-      `Secure input ${requestId}: ${status}. The private value was not shared with the agent.`,
+      `Secure input ${requestId}: ${status}. The private value was not shared with the agent.${cancelledBy === 'user' ? ' The user selected Cancel. Do not request this input again or try another route for this step. Wait for the user before trying again.' : cancelledBy ? ` Cancellation origin: ${cancelledBy}.` : ''}`,
       {
         id: requestId,
-        fingerprint: createHash('sha256').update(status).digest('hex'),
+        fingerprint: createHash('sha256')
+          .update(JSON.stringify([status, cancelledBy]))
+          .digest('hex'),
       },
     )
   }

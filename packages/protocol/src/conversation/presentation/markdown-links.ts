@@ -1,5 +1,7 @@
+import { parseStudioLink } from './studio-links.js'
 /** Resolve repository files at the reviewed revision and navigation links at their source. */
 export function resolveMarkdownLink(url: string, baseURL?: string, fileBaseURL?: string) {
+  if (parseStudioLink(url)) return url
   try {
     const fileBase = fileBaseURL ? new URL(fileBaseURL) : undefined
     // Azure uses a query parameter for repository files instead of /blob/<revision>/ paths.

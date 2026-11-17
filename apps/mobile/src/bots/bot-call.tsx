@@ -10,12 +10,14 @@ import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
 import { BotAvatar } from './bot-avatar'
 import { mobileBotCallAudio } from './bot-call-audio'
+import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
 
 export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) {
   const uiText = useInterfaceText()
 
   const { styles } = useTheme()
+  const preferences = useMobilePreferences()
   const { call: request, connected, snapshot, profile } = useRuntime()
   const scope = JSON.stringify([
     profile?.id,
@@ -26,7 +28,7 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
   const call = useMemo(
     () =>
       createBotCall(
-        mobileBotCallAudio(),
+        mobileBotCallAudio(preferences.botVoicePause),
         async (messageId, text) => {
           await request(
             '/api/tasks/message',
@@ -36,7 +38,7 @@ export function BotCall({ task, onClose }: { task: Task; onClose: () => void }) 
         },
         randomUUID,
       ),
-    [scope, request],
+    [scope, request, preferences.botVoicePause],
   )
   const state = useSyncExternalStore(call.subscribe, call.getSnapshot, call.getSnapshot)
   const available =

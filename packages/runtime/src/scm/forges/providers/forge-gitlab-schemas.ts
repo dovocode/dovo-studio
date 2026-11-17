@@ -16,6 +16,7 @@ export const gitlabProject = mutableStruct({
   squash_option: Schema.optional(Schema.String),
 })
 export const gitlabMergeRequest = mutableStruct({
+  changes_count: Schema.optional(Schema.String),
   iid: Schema.Number,
   title: Schema.String,
   description: Schema.optional(Schema.NullOr(Schema.String)),

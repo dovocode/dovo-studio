@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import { GithubTriggers } from './github-triggers.js'
 import { GithubEvents } from './github-events.js'
@@ -240,7 +241,7 @@ it('fires due schedules and authenticates webhook payload delivery', async () =>
   }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async () => {},
+    run: async (run) => run.onText('Done'),
   })
   const now = Date.parse('2026-09-07T12:00:00Z')
   s.jobs.tick(now)
@@ -332,7 +333,7 @@ it('isolates broken schedules and resets due times when trigger modes change', a
   const errors = vi.spyOn(console, 'error').mockImplementation(() => {})
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async () => {},
+    run: async (run) => run.onText('Done'),
   })
   const now = Date.parse('2026-09-07T12:00:00Z')
   s.jobs.tick(now)
@@ -570,7 +571,7 @@ it('cancels during checkout preparation and retries the same unfinished task', a
     await gate
     return directory(id)
   })
-  const execute = vi.fn<AgentAdapter['run']>(async () => {})
+  const execute = vi.fn<AgentAdapter['run']>(async (run) => run.onText('Done'))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: execute,
@@ -710,7 +711,7 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   })
   vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async () => {},
+    run: async (run) => run.onText('Done'),
   })
   const response = await fetch(`http://127.0.0.1:${runtime.port}/api/jobs/retry`, {
     method: 'POST',
@@ -747,7 +748,7 @@ it.each([false, true])(
     }))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
-      run: async () => {},
+      run: async (run) => run.onText('Done'),
     })
     const id = runtime.services.jobs.start('flow')
     await waitForJob(() => {
@@ -783,7 +784,7 @@ it.each([false, true])(
       .run(JSON.stringify(stored), id)
     await runtime.close()
     runtime = await startRuntime(options)
-    const execute = vi.fn<AgentAdapter['run']>(async () => {})
+    const execute = vi.fn<AgentAdapter['run']>(async (run) => run.onText('Done'))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run: execute,
@@ -817,7 +818,7 @@ it('rolls back task creation when persisting its step association fails', async 
   s.db.exec(
     "CREATE TRIGGER fail_task_link BEFORE UPDATE OF value ON job_runs WHEN json_array_length(NEW.value, '$.taskIds') > 0 BEGIN SELECT RAISE(ABORT, 'fixture task link failure'); END",
   )
-  const execute = vi.fn<AgentAdapter['run']>(async () => {})
+  const execute = vi.fn<AgentAdapter['run']>(async (run) => run.onText('Done'))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
     run: execute,
@@ -1192,7 +1193,7 @@ it('records skipped recurring occurrences with due time, without creating a run 
   s.store.update(() => ({ ...f.workspace, automations: [flow] }))
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async () => {},
+    run: async (run) => run.onText('Done'),
   })
   const now = Date.parse('2026-09-07T12:00:00Z')
   s.jobs.tick(now)
@@ -1282,3 +1283,151 @@ it('watches selected JSON values through the real scheduler and keeps the succes
   expect(prompts).toHaveLength(3)
   expect(prompts[2]).not.toContain('Previous successful source')
 })
+
+it('passes only selected preceding results and destination-owned files through a review gate', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'handoff-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const flow = createFlow()
+  flow.nodes.push({
+    ...flow.nodes[1]!,
+    id: 'next',
+    data: {
+      ...flow.nodes[1]!.data,
+      inputFrom: ['task'],
+      inputFiles: true,
+      objective: 'Use selected input',
+    },
+  })
+  flow.edges.push({ id: 'next-edge', source: 'review', target: 'next' })
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const received: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      received.push(run)
+      run.onText(received.length === 1 ? 'Saved step result' : 'Input processed')
+      if (received.length === 1 && run.taskId) {
+        const file = await s.attachments.upload({
+          taskId: run.taskId,
+          id: randomUUID(),
+          name: 'result.txt',
+          data: Buffer.from('file from preceding step').toString('base64'),
+        })
+        s.store.updateTaskHistory(run.taskId, (task) => ({
+          ...task,
+          messages: task.messages.map((message) =>
+            message.role === 'assistant' ? { ...message, attachments: [file.attachment] } : message,
+          ),
+        }))
+      }
+    },
+  })
+  const id = s.jobs.start('flow')
+  await waitForJob(() =>
+    expect({ status: s.jobs.detail(id).status, error: s.jobs.detail(id).error }).toEqual({
+      status: 'waiting',
+      error: undefined,
+    }),
+  )
+  const firstTask = s.jobs.detail(id).taskIds[0]!
+  // The immutable completed result must win over later edits in the source thread.
+  s.store.updateTaskHistory(firstTask, (task) => ({
+    ...task,
+    messages: task.messages.map((message) =>
+      message.role === 'assistant' ? { ...message, text: 'Later user edit' } : message,
+    ),
+  }))
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+  expect(received).toHaveLength(2)
+  expect(received[1]?.prompt).toContain('Saved step result')
+  expect(received[1]?.prompt).not.toContain('Later user edit')
+  const destination = s.store.task(s.jobs.detail(id).taskIds[1]!)
+  const copied = destination.messages[0]?.attachments?.[0]
+  expect(copied?.name).toBe('result.txt')
+  expect(
+    Buffer.from(s.attachments.read(destination.id, copied!.id).data, 'base64').toString(),
+  ).toBe('file from preceding step')
+  expect(received[1]?.attachments?.[0]?.name).toBe('result.txt')
+  expect(s.jobs.detail(id).steps?.find((step) => step.nodeId === 'next')).toMatchObject({
+    status: 'completed',
+    queuedAt: expect.any(String),
+    workStartedAt: expect.any(String),
+  })
+})
+
+it('fails an empty automation answer and keeps an intentional no-update reply valid', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'empty-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => ({ ...f.workspace, automations: [createFlow()] }))
+  const run = vi.fn<AgentAdapter['run']>().mockResolvedValue(undefined)
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const id = s.jobs.start('flow')
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('failed'))
+  expect(s.jobs.detail(id).error).toContain('without an answer or a work step')
+  run.mockImplementation(async (input) => input.onText('No update. The source is unchanged.'))
+  s.jobs.retry(id)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('waiting'))
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+})
+
+it.each([false, true])(
+  'retries scheduled startup failures only before prompt acceptance, accepted=%s',
+  async (accepted) => {
+    const f = await fixture()
+    cleanups.push(f.cleanup)
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'startup-test-owner-token-at-least-32-characters',
+      port: 0,
+    })
+    cleanups.push(() => runtime.close())
+    const s = runtime.services
+    const flow = createFlow()
+    flow.enabled = true
+    flow.policy = { startupRetry: true }
+    s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+    let calls = 0
+    vi.spyOn(s.agents, 'get').mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run: async (input) => {
+        calls++
+        if (calls === 1) {
+          if (accepted) input.onPromptAccepted?.()
+          throw new Error('API Error: 529 overloaded')
+        }
+        input.onText('Recovered')
+      },
+    })
+    const id = s.jobs.start('flow', `schedule:${Date.now()}`)
+    await waitForJob(() => expect(s.jobs.detail(id).status).toBe(accepted ? 'failed' : 'waiting'))
+    expect(!!s.jobs.detail(id).retryAt).toBe(!accepted)
+    expect(calls).toBe(1)
+    if (accepted) return
+    const waiting = s.jobs.detail(id)
+    expect(waiting.startupRetryCount).toBe(1)
+    expect(waiting.retryAt).toBeDefined()
+    s.jobs.tick(Date.parse(waiting.retryAt!))
+    await waitForJob(() => expect(s.jobs.detail(id).waitingNodeId).toBe('review'))
+    expect(s.jobs.detail(id).taskIds).toEqual(waiting.taskIds)
+    expect(calls).toBe(2)
+    s.jobs.approve(id, true)
+    await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+    expect(s.jobs.detail(id).retryAt).toBeUndefined()
+  },
+)

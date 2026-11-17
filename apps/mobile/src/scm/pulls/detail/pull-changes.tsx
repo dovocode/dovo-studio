@@ -1,3 +1,4 @@
+import { pullDetailSchema } from '@dovo/protocol'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { pullCommentsByFile } from '@dovo/protocol'
 import { type ComponentRef, useEffect, useMemo, useState } from 'react'
@@ -71,12 +72,28 @@ export function PullChanges({
   const [feedbackPath, setFeedbackPath] = useState('')
   const [controlsHeight, setControlsHeight] = useState(88)
   const { headSha, baseSha } = detail.pull
+  const revision = JSON.stringify([repositoryId, detail.destination, headSha, baseSha])
+  const [loaded, setLoaded] = useState<{ revision: string; files: PullDetail['files'] }>({
+    revision,
+    files: [],
+  })
+  const [loadingFile, setLoadingFile] = useState(false)
+  const [loadError, setLoadError] = useState('')
+  const reviewFiles = useMemo(
+    () =>
+      detail.files.map(
+        (file) =>
+          (loaded.revision === revision && loaded.files.find((item) => item.path === file.path)) ||
+          file,
+      ),
+    [detail.files, loaded, revision],
+  )
   const fingerprints = useMemo(
     () =>
       new Map(
-        detail.files.map((file) => [file.path, pullFileFingerprint(file, { headSha, baseSha })]),
+        reviewFiles.map((file) => [file.path, pullFileFingerprint(file, { headSha, baseSha })]),
       ),
-    [detail.files, headSha, baseSha],
+    [reviewFiles, headSha, baseSha],
   )
   const reviewVersion = useMemo(() => JSON.stringify([...fingerprints]), [fingerprints])
   const review = useFileReview(
@@ -85,7 +102,7 @@ export function PullChanges({
     active,
   )
   const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
-  const { connection, snapshot } = useRuntime()
+  const { connection, snapshot, call } = useRuntime()
   const { draft, setField } = useDetailDraft(
     changeDrafts,
     integrationDraftKey(
@@ -112,14 +129,14 @@ export function PullChanges({
   const allFiles = useMemo(
     () =>
       orderReviewFiles(
-        detail.files.map((file) => ({
+        reviewFiles.map((file) => ({
           ...file,
           viewed: fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false,
         })),
         review.progress?.groups ?? [],
         related,
       ),
-    [detail.files, review.progress, fingerprints, related, fileState],
+    [reviewFiles, review.progress, fingerprints, related, fileState],
   )
   const files = allFiles.filter((file) => !kind || pullFileKind(file) === kind)
   const file =
@@ -280,9 +297,59 @@ export function PullChanges({
           />
         </View>
       ) : (
-        <Text style={styles.muted}>
-          <InterfaceText>{'No text patch available. Open this PR on its server.'}</InterfaceText>
-        </Text>
+        <View style={{ gap: 8 }}>
+          <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
+          {file.patchOmitted &&
+            (snapshot?.pullFileLoadingSupported ? (
+              <Action
+                label={loadingFile ? 'Loading patch…' : 'Load this patch'}
+                disabled={loadingFile || !!detail.stale}
+                onPress={() => {
+                  setLoadingFile(true)
+                  setLoadError('')
+                  void call(
+                    '/api/scm/pulls/detail',
+                    {
+                      repositoryId,
+                      number: detail.pull.number,
+                      filePath: file.path,
+                      headSha,
+                      baseSha,
+                      connectionId: detail.pull.connectionId,
+                      expectedDestination: detail.destination,
+                    },
+                    pullDetailSchema,
+                  )
+                    .then(
+                      (result) => {
+                        const patch = result.files.find((item) => item.path === file.path)
+                        if (!patch?.patch) {
+                          setLoadError(
+                            result.warnings.join(' ') ||
+                              'GitLab did not return this patch. Open it on GitLab.',
+                          )
+                          return
+                        }
+                        setLoaded((current) => ({
+                          revision,
+                          files: [
+                            ...(current.revision === revision
+                              ? current.files.filter((item) => item.path !== file.path)
+                              : []),
+                            patch,
+                          ],
+                        }))
+                      },
+                      (cause: unknown) => setLoadError(String(cause)),
+                    )
+                    .finally(() => setLoadingFile(false))
+                }}
+              />
+            ) : (
+              <Text style={styles.muted}>Update this computer to load omitted patches.</Text>
+            ))}
+          {!!loadError && <Text style={styles.error}>{loadError}</Text>}
+        </View>
       )}
       {onAskAgent && (
         <Action

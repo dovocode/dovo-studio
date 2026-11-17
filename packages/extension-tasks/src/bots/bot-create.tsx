@@ -56,11 +56,18 @@ type Draft = {
   name: string
   role: string
   responsibilities: string
+  firstTask: string
   pairing?: number
   pending?: Pending
 }
 // Text follows the human. Agent choices and request identities belong to one exact pairing.
-const emptyDraft = (): Draft => ({ id: randomUUID(), name: '', role: '', responsibilities: '' })
+const emptyDraft = (): Draft => ({
+  id: randomUUID(),
+  name: '',
+  role: '',
+  responsibilities: '',
+  firstTask: '',
+})
 let session: { draft: Draft; inFlight: readonly string[] } = { draft: emptyDraft(), inFlight: [] }
 const listeners = new Set<() => void>()
 const subscribe = (listener: () => void) => {
@@ -196,7 +203,7 @@ export function BotCreateForm({
         <header className="mb-7 @3xl:mb-9">
           <h1 className="text-3xl font-semibold tracking-tight @3xl:text-4xl">Create your Bot</h1>
           <p className="mt-3 text-sm leading-relaxed text-muted-foreground @3xl:text-base">
-            One conversation. Its own memory. A role that lasts.
+            Start with one useful task. Review the result before adding routines.
           </p>
         </header>
         <form
@@ -243,6 +250,7 @@ export function BotCreateForm({
                           worktreeFromOrigin: undefined,
                         }),
                         harnessCustomized: true,
+                        draft: draft.firstTask,
                       },
                       role: draft.role.trim(),
                       responsibilities: draft.responsibilities,
@@ -316,7 +324,21 @@ export function BotCreateForm({
             className="order-2 grid min-w-0 content-start gap-5 rounded-xl border bg-card p-5 @3xl:order-none @3xl:col-start-1 @3xl:row-span-2 @3xl:row-start-1 @3xl:p-6"
           >
             <legend className="sr-only">Bot purpose</legend>
-            <h2 className="text-lg font-semibold tracking-tight">Give it a role</h2>
+            <h2 className="text-lg font-semibold tracking-tight">Start with a task</h2>
+            <FormField label="First task · optional">
+              <Textarea
+                aria-label="Bot first task"
+                rows={3}
+                maxLength={120000}
+                value={draft.firstTask}
+                onChange={(event) => change({ firstTask: event.target.value })}
+                placeholder="Compare these options and give me a short recommendation."
+              />
+              <p className="text-xs text-muted-foreground">
+                Opens as a draft in your Bot. Review and send it when ready. Add a routine after you
+                have a useful result.
+              </p>
+            </FormField>
             <FormField label={uiText('Name')}>
               <Input
                 aria-label="Bot name"

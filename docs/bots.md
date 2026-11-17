@@ -169,23 +169,23 @@ object. If a tool description is incomplete, inspect its input schema before dec
 unavailable. The automation list, canvas and mobile editor identify these steps as **Bot jobs** and
 show the target Bot. Bot jobs use the same automation engine and run history as other steps.
 
-An automation task step can target a Bot with `botId`. The step posts its instructions into the
-Bot's thread (message source `automation`) and waits for **that message's own turn**:
+An automation task step can target a Bot with `botId`. New jobs create an isolated worker with that
+Bot's settings. The worker receives `data.objective` and reports its result to the Bot. The
+coordinator stays available for conversation. A paused Bot fails the step before work starts.
 
-- The step completes when that turn completes. Other work in the Bot thread does not delay it or
-  decide it: your own messages, other routines and child agents can continue.
-- The step fails when that turn fails or is stopped. A later successful turn does not change this.
-- A completed turn ends the step. Child agents that the turn started can still be working, and the
-  Bot's ongoing responsibilities are not "done". Later work in the thread is not part of the step.
-- The run's step records `messageId`, the routine message in the Bot thread. Clients link to it.
-- The step uses the Bot's current settings. The step's harness, agent, project and linked-project
-  fields are ignored, so clients can keep them for a later switch back to a normal step.
+The step completes or fails with its worker and records that worker in the run. Work already running
+keeps its saved definition when the automation changes. Retained legacy runs can still point to a
+message in the shared Bot thread. Those runs wait for that message's own turn. Later messages do not
+change the result of that turn.
 
-Each step attempt has a fixed message id. **Retry** adopts an earlier attempt's message that is
-still queued, running or already completed, so it never sends the same routine twice, also after a
-crash or a lost delivery response. While a restarted turn waits for automatic recovery, the step
-waits too. After a failed or stopped Bot turn, **Retry** sends the instructions again and continues
-the Bot's queue. A queue that you paused yourself stays paused and fails the step.
+### Legacy shared-thread runs
+
+The following behavior applies to retained runs that target a message in the shared Bot thread. Each
+step attempt has a fixed message id. **Retry** adopts an earlier attempt's message that is still
+queued, running or already completed, so it never sends the same routine twice, also after a crash
+or a lost delivery response. While a restarted turn waits for automatic recovery, the step waits
+too. After a failed or stopped Bot turn, **Retry** sends the instructions again and continues the
+Bot's queue. A queue that you paused yourself stays paused and fails the step.
 
 **Stop** on the run removes this step's message from the Bot queue if it has not started, or stops
 the turn that runs it. It never stops other Bot work. When a step fails because the Bot is paused or

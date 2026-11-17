@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from 'node:util'
+import { restorableAutomation } from '@dovo/protocol'
 import { nextQueuedMessage } from '@dovo/protocol'
 import { threadSnapshot } from './thread-snapshot.js'
 import { randomUUID, createHash } from 'node:crypto'
@@ -108,7 +110,9 @@ export function studioReadAction(part: string, action: unknown) {
         String(action),
       )) ||
     (part === 'automations' &&
-      ['list', 'read', 'validate', 'dryRun', 'runs', 'wait'].includes(String(action))) ||
+      ['list', 'read', 'definition', 'validate', 'dryRun', 'runs', 'wait'].includes(
+        String(action),
+      )) ||
     (part === 'browsers' && ['list', 'snapshot', 'screenshot', 'logs'].includes(String(action))) ||
     (part === 'ui' && ['list', 'snapshot', 'theme-read'].includes(String(action))) ||
     part === 'diagnostics'
@@ -457,6 +461,35 @@ export async function studioTool(
           enabled: enabled ?? false,
         })),
       }
+    if (command.action === 'definition' || command.action === 'restore') {
+      const run = s.jobs.detail(command.id)
+      const current = workspace.automations.find((item) => item.id === run.automationId)
+      if (!current) throw new HttpError(404, 'Automation no longer exists')
+      if (command.action === 'definition')
+        return { automation: restorableAutomation(run.flow, current), expected: current }
+      if (!isDeepStrictEqual(current, command.expected))
+        throw new HttpError(409, 'Automation changed. Keep your draft and compare again.')
+      if (command.definition.id !== current.id)
+        throw new HttpError(400, 'Restore must keep the automation ID')
+      const flow = restorableAutomation(command.definition, current)
+      const issues = validateFlow(s, flow, policy)
+      if (issues.length) throw new HttpError(400, issues.join('\n'))
+      const changes = Object.fromEntries(
+        [...new Set([...Object.keys(current), ...Object.keys(flow)])]
+          .filter((key) => key !== 'id')
+          .map((key) => [
+            key,
+            { before: Reflect.get(current, key), after: Reflect.get(flow, key) ?? null },
+          ]),
+      )
+      return patchWorkspace(
+        s,
+        { collection: 'automations', id: flow.id, changes },
+        `studio:${taskId}`,
+        undefined,
+        routineActor(taskId, policy, command.source),
+      )
+    }
     if (command.action === 'dryRun') {
       // Evaluation only, like `POST /api/jobs/dry-run`: it saves, starts and sends nothing.
       let webhookBlocked: string | undefined

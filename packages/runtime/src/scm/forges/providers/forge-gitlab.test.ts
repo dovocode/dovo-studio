@@ -164,6 +164,37 @@ it.each(['head', 'base'] as const)(
   },
 )
 
+it.each(['1', '2', '1000+'])(
+  'keeps GitLab totals honest for a reported file count of %s',
+  async (count) => {
+    const { pulls } = setup((url) => {
+      if (url.pathname === '/api/v4/user') return user
+      if (url.pathname === root) return project
+      if (url.pathname.endsWith('/notes')) return []
+      if (url.pathname.endsWith('/diffs'))
+        return [
+          {
+            old_path: 'file.ts',
+            new_path: 'file.ts',
+            new_file: false,
+            deleted_file: false,
+            renamed_file: false,
+            diff: '@@ -1 +1 @@\n-old\n+new',
+          },
+        ]
+      return { ...mergeRequest, changes_count: count }
+    })
+    const detail = await pulls.detail(42)
+    expect(detail.files[0]).toMatchObject({ additions: 1, deletions: 1 })
+    expect(detail.pull).toMatchObject({
+      additions: count === '1' ? 1 : null,
+      deletions: count === '1' ? 1 : null,
+      changedFiles: count === '1000+' ? null : Number(count),
+    })
+    expect(detail.warnings.length > 0).toBe(count !== '1')
+  },
+)
+
 it.each([
   'complete',
   'truncated',
@@ -217,7 +248,10 @@ it.each([
         : { ...mergeRequest, sha: 'd'.repeat(40) }
       : mergeRequest
   })
-  const outcome = await pulls.detail(42).then(
+  const initial = await pulls.detail(42)
+  expect(initial.files[0]?.patchOmitted).toBe(true)
+  expect(requests.some(({ url }) => url.pathname.endsWith('/raw_diffs'))).toBe(false)
+  const outcome = await pulls.detail(42, 'file.ts').then(
     (detail) => ({ detail, error: undefined }),
     (error: unknown) => ({ detail: undefined, error }),
   )

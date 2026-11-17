@@ -11,6 +11,7 @@ import {
   type SecureInputRequest,
   type SecureInputReply,
   type SecureInputStatus,
+  type SecureInputCancellation,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { HttpError } from '../errors.js'
@@ -32,6 +33,7 @@ type Entry = {
   fingerprint?: string
   deviceId?: string
   reported?: boolean
+  cancelledBy?: SecureInputCancellation
 }
 const requestId = (taskId: string, runId: string, key: string) =>
   'secure-input:' +
@@ -46,7 +48,13 @@ export class SecureInputs {
   private closed = false
   constructor(
     private changed: () => void,
-    private result: (taskId: string, runId: string, id: string, status: SecureInputStatus) => void,
+    private result: (
+      taskId: string,
+      runId: string,
+      id: string,
+      status: SecureInputStatus,
+      cancelledBy?: SecureInputCancellation,
+    ) => void,
   ) {}
   private publish() {
     try {
@@ -89,7 +97,7 @@ export class SecureInputs {
     const secret = randomBytes(32)
     const controller = new AbortController()
     const expiresAt = new Date(Date.now() + 10 * 60_000).toISOString()
-    const abort = () => this.finish(entry, 'cancelled', false)
+    const abort = () => this.finish(entry, 'cancelled', false, 'turn-ended')
     const entry: Entry = {
       request,
       runId,
@@ -127,17 +135,21 @@ export class SecureInputs {
     if (entry.info.taskId !== taskId)
       throw new HttpError(403, 'This secure input belongs to another thread.')
     if (!['pending', 'running'].includes(entry.info.status)) this.report(entry)
-    return { id, status: entry.info.status }
+    return {
+      id,
+      status: entry.info.status,
+      ...(entry.cancelledBy ? { cancelledBy: entry.cancelledBy } : {}),
+    }
   }
-  cancel(taskId: string, id: string) {
+  cancel(taskId: string, id: string, cancelledBy: SecureInputCancellation = 'agent') {
     this.status(taskId, id)
-    this.finish(this.get(id), 'cancelled')
+    this.finish(this.get(id), 'cancelled', true, cancelledBy)
     return this.status(taskId, id)
   }
   cancelTask(taskId: string) {
     // Stop must also dismiss requests from an earlier turn without resuming the task.
     for (const entry of this.entries.values())
-      if (entry.info.taskId === taskId) this.finish(entry, 'cancelled', false)
+      if (entry.info.taskId === taskId) this.finish(entry, 'cancelled', false, 'turn-ended')
   }
   private get(id: string) {
     const entry = this.entries.get(id)
@@ -147,12 +159,26 @@ export class SecureInputs {
   }
   private report(entry: Entry) {
     if (entry.reported) return
-    this.result(entry.info.taskId, entry.runId, entry.info.id, entry.info.status)
+    if (entry.cancelledBy)
+      this.result(
+        entry.info.taskId,
+        entry.runId,
+        entry.info.id,
+        entry.info.status,
+        entry.cancelledBy,
+      )
+    else this.result(entry.info.taskId, entry.runId, entry.info.id, entry.info.status)
     entry.reported = true
   }
-  private finish(entry: Entry, status: SecureInputStatus, notify = true) {
+  private finish(
+    entry: Entry,
+    status: SecureInputStatus,
+    notify = true,
+    cancelledBy?: SecureInputCancellation,
+  ) {
     if (!['pending', 'running'].includes(entry.info.status)) return
     entry.info = { ...entry.info, status }
+    entry.cancelledBy = cancelledBy
     entry.secret.fill(0)
     clearTimeout(entry.timer)
     entry.cleanup()
@@ -222,7 +248,7 @@ export class SecureInputs {
   }
   async close() {
     this.closed = true
-    for (const entry of this.entries.values()) this.finish(entry, 'cancelled', false)
+    for (const entry of this.entries.values()) this.finish(entry, 'cancelled', false, 'shutdown')
     await Promise.allSettled([...this.work])
     this.entries.clear()
   }

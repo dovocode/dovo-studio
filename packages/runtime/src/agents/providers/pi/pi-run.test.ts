@@ -4,7 +4,14 @@ import type { AgentRun } from '../../execution/types.js'
 import { runPiSession } from './pi-run.js'
 
 const mocks = vi.hoisted(() => ({
-  requests: vi.fn<(command: Record<string, unknown>) => Promise<Record<string, unknown>>>(),
+  requests:
+    vi.fn<
+      (
+        command: Record<string, unknown>,
+        signal?: AbortSignal,
+        timeout?: number,
+      ) => Promise<Record<string, unknown>>
+    >(),
   close: vi.fn<() => Promise<void>>(),
   args: [] as string[],
   listener: undefined as ((event: Record<string, unknown>) => void) | undefined,
@@ -15,8 +22,8 @@ vi.mock('./rpc.js', () => ({
     constructor(_command: string, args: string[]) {
       mocks.args = args
     }
-    request(command: Record<string, unknown>) {
-      return mocks.requests(command)
+    request(command: Record<string, unknown>, signal?: AbortSignal, timeout?: number) {
+      return mocks.requests(command, signal, timeout)
     }
     onEvent(listener: (event: Record<string, unknown>) => void) {
       mocks.listener = listener
@@ -147,12 +154,20 @@ it('applies and verifies the selected model and thinking level after switching s
     'get_state',
     'prompt',
   ])
-  expect(mocks.requests).toHaveBeenCalledWith({
-    type: 'set_model',
-    provider: 'fixture',
-    modelId: 'model',
-  })
-  expect(mocks.requests).toHaveBeenCalledWith({ type: 'set_thinking_level', level: 'high' })
+  expect(mocks.requests).toHaveBeenCalledWith(
+    {
+      type: 'set_model',
+      provider: 'fixture',
+      modelId: 'model',
+    },
+    input.signal,
+    undefined,
+  )
+  expect(mocks.requests).toHaveBeenCalledWith(
+    { type: 'set_thinking_level', level: 'high' },
+    input.signal,
+    undefined,
+  )
 })
 it('rejects an unavailable selected model instead of silently using the session model', async () => {
   const input = run()
@@ -237,4 +252,17 @@ it('refuses continuation if the selected private file was not loaded', async () 
     'switch_session',
     'get_state',
   ])
+})
+
+it('gives prompt preparation the turn deadline while ordinary RPC keeps its default', async () => {
+  const input = run()
+  await runPiSession(input)
+  expect(mocks.requests.mock.calls.find(([command]) => command.type === 'prompt')).toEqual([
+    { type: 'prompt', message: 'Continue' },
+    input.signal,
+    30 * 60_000,
+  ])
+  expect(
+    mocks.requests.mock.calls.find(([command]) => command.type === 'get_state')?.[2],
+  ).toBeUndefined()
 })

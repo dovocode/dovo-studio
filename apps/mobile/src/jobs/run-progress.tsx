@@ -12,6 +12,7 @@ import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 import { formatDateTime } from '../ui/content/format-date'
 import { automationRunSummary } from './automation-summary'
+import { RestoreDefinition } from './restore-definition'
 import { RunAudit } from './run-audit'
 import { RunRoutineSource } from './routine-provenance'
 export function RunProgress({
@@ -76,6 +77,13 @@ export function RunProgress({
         gap: 6,
       }}
     >
+      {expanded && (
+        <RestoreDefinition
+          key={`${profile?.id}:${run.id}`}
+          runId={run.id}
+          automationId={run.automationId}
+        />
+      )}
       {expanded && snapshot?.routineProvenanceSupported && (
         <RunRoutineSource
           key={`${profile?.id}:${run.id}`}
@@ -153,7 +161,13 @@ export function RunProgress({
             onPress={() => navigate('tasks', current.taskId, profile?.id)}
           />
         )}
-      {run.status === 'waiting' && (
+      {run.retryAt && (
+        <Text style={styles.muted}>
+          Waiting for provider. Startup retry {run.startupRetryCount}/3 at{' '}
+          {formatDateTime(run.retryAt)}. Cancel stops this retry.
+        </Text>
+      )}
+      {run.status === 'waiting' && !run.retryAt && (
         <View
           style={{
             gap: 6,
@@ -303,8 +317,16 @@ export function RunProgress({
                         {taskNeedsInput(step.taskId)
                           ? uiText('Needs input')
                           : step.status === 'waiting'
-                            ? uiText('Awaiting approval')
-                            : step.status}
+                            ? uiText(run.retryAt ? 'Waiting for provider' : 'Awaiting approval')
+                            : step.status === 'running' && step.queuedAt && !step.workStartedAt
+                              ? uiText('Waiting for worker')
+                              : step.status}
+                        {step.queuedAt
+                          ? ` · Queue ${Math.max(0, Math.floor((Date.parse(step.workStartedAt ?? step.finishedAt ?? new Date(now).toISOString()) - Date.parse(step.queuedAt)) / 1000))}s`
+                          : ''}
+                        {step.workStartedAt
+                          ? ` · Work ${Math.max(0, Math.floor((Date.parse(step.finishedAt ?? new Date(now).toISOString()) - Date.parse(step.workStartedAt)) / 1000))}s`
+                          : ''}
                         {step.attempt > 1
                           ? uiText(' · Attempt {value0}', { value0: step.attempt })
                           : ''}

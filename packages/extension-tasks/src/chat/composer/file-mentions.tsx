@@ -3,7 +3,8 @@ import { Schema } from 'effect'
 import { Bot, FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
   modelMentionsSchema,
-  botMentionSuggestions,
+  contextMentionSuggestions,
+  insertThreadMention,
   insertBotMention,
   runtimeComputerName,
   insertModelMention,
@@ -43,7 +44,7 @@ const sameBotMentions = (a: BotMention[], b: BotMention[]) =>
 
 const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread'
   avatar?: string
   /** Prompt suggestions: shown name, while `detail` previews the text. */
   name?: string
@@ -60,6 +61,7 @@ const icons = {
   prompt: Hash,
   model: Sparkles,
   bot: Bot,
+  thread: FileText,
 }
 type MentionKey = {
   key: string
@@ -133,7 +135,7 @@ export function useFileMentions({
   const selectBots = useCallback(
     (state: WorkspaceContextValue) =>
       trigger === '@'
-        ? botMentionSuggestions(
+        ? contextMentionSuggestions(
             [
               {
                 runtimeId: state.snapshot?.runtimeId ?? state.connection?.runtimeId ?? 'local',
@@ -223,7 +225,7 @@ export function useFileMentions({
   const searching = trigger === '@' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
     ...bots.map((bot) => ({
-      kind: 'bot' as const,
+      kind: bot.kind ?? ('bot' as const),
       value: bot.reference,
       name: bot.name,
       detail: bot.detail,
@@ -350,6 +352,16 @@ export function useFileMentions({
           name: item.name ?? 'Bot',
           reference: item.value,
         }),
+      )
+      return
+    }
+    if (item.kind === 'thread') {
+      apply(
+        insertThreadMention(source, mention.start, caret, {
+          name: item.name ?? 'Thread',
+          reference: item.value,
+        }),
+        true,
       )
       return
     }

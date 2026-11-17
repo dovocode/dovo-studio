@@ -16,6 +16,7 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
     const s = f.runtime.services
     vi.restoreAllMocks()
     const get = s.agents.get.bind(s.agents)
+    const evidence: string[] = []
     let calls = 0,
       tokens = 0,
       cost = 0
@@ -95,10 +96,14 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
       await s.tasks.send(
         id,
         randomUUID(),
-        'Use Dovo subagent_spawn to ask one read-only child to calculate 19 + 23. Keep this coordinator available. Return its result when ready. Do not use native children.',
+        `Use Dovo subagent_spawn with provider=${harness.provider} and model=${harness.model} to ask one read-only child to calculate 19 + 23. Keep this coordinator available. Return its result when ready. Do not use native children or another provider.`,
       )
       await vi.waitFor(
-        () => expect(s.store.get().tasks.some((t) => t.delegation?.parentTaskId === id)).toBe(true),
+        () => {
+          const parent = s.store.task(id)
+          if (parent.status === 'failed') throw new Error(`Provider failed: ${parent.error}`)
+          expect(s.store.get().tasks.some((t) => t.delegation?.parentTaskId === id)).toBe(true)
+        },
         { timeout: 60_000 },
       )
       await complete(id)
@@ -119,6 +124,7 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
         },
         { timeout: 60_000 },
       )
+      evidence.push('delegation arithmetic')
       const messageId = randomUUID()
       const prompt =
         'Use response_prepare once with key eval-review and a prompt action that says "Continue after review". Do not dispatch it. This is preparation only.'
@@ -129,6 +135,7 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
         s.store.task(id).threadActions?.filter((action) => action.key === 'eval-review') ?? []
       expect(prepared).toHaveLength(1)
       expect(prepared[0].state).toBe('prepared')
+      evidence.push('review action and duplicate message ID')
       await s.tasks.send(
         id,
         randomUUID(),
@@ -144,6 +151,7 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
           .map((m) => m.text)
           .join('\n'),
       ).not.toContain(privateMarker)
+      evidence.push('Dutch reply and private memory separation')
       const trigger = {
         kind: 'trigger' as const,
         label: 'Once',
@@ -186,6 +194,13 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
         { timeout: 70_000 },
       )
       expect(s.jobs.list().filter((run) => run.automationId === flow.id)).toHaveLength(1)
+      const evaluationRun = s.jobs.list().find((run) => run.automationId === flow.id)
+      expect(evaluationRun).toBeDefined()
+      if (!evaluationRun) throw new Error('Missing completed evaluation run')
+      const workerIds = s.jobs.detail(evaluationRun.id).taskIds
+      expect(workerIds.length).toBeGreaterThan(0)
+      expect(workerIds).not.toContain(id)
+      evidence.push('schedule catch-up once and isolated worker')
       const backup = await create('eval-unavailable-primary')
       s.store.update((w) => ({
         ...w,
@@ -210,8 +225,30 @@ it.runIf(process.env.DOVO_LIVE_BOT_EVAL === '1')(
       expect(
         recovered.messages.some((m) => m.role === 'assistant' && m.text.includes('BACKUP-READY')),
       ).toBe(true)
+      evidence.push('backup provider recovery')
       expect(budget.signal.aborted).toBe(false)
     } finally {
+      console.log(
+        'Live Bot evaluation evidence',
+        JSON.stringify({
+          provider: harness.provider,
+          model: harness.model,
+          evidence,
+          calls,
+          tokens,
+          estimatedUsd: cost,
+          tasks: s.store.get().tasks.map((task) => ({
+            id: task.id,
+            status: task.status,
+            error: task.error,
+            lastReply: s.store
+              .task(task.id)
+              .messages.filter((message) => message.role === 'assistant')
+              .at(-1)
+              ?.text.slice(0, 1600),
+          })),
+        }),
+      )
       clearTimeout(deadline)
       budget.abort()
     }

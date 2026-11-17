@@ -22,6 +22,7 @@
     "./repository-open": "./src/repository-open.ts",
     "./side-thread-creation": "./src/side-thread-creation.ts",
     "./next-prompt": "./src/use-next-prompt.ts",
+    "./dictation-session": "./src/dictation-session.ts",
     "./runtime-dictation": "./src/runtime-dictation.ts",
     "./pull-code-review": "./src/scm/use-pull-code-review.ts",
     "./pull-reads": "./src/scm/pull-reads.ts",

@@ -109,6 +109,7 @@ export const botPausedMessage = 'This Bot is paused. Resume it to start new work
 export function botInstructions(bot: Bot, delegationAvailable = false) {
   return [
     `You are a persistent Dovo Bot. Your role: ${JSON.stringify(bot.role)}.`,
+    'Complete the first concrete task and show a useful result before suggesting routines. Ask about a routine only when completed work supports it. Creating a Bot grants no permission to enable triggers.',
     bot.responsibilities.trim()
       ? `Your ongoing responsibilities, set by the user (standing instructions):\n${bot.responsibilities.trim()}`
       : '',

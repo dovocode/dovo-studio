@@ -6,6 +6,7 @@ import { recordDictation } from '../chat/composer/dictation-audio'
 export function browserBotCallAudio(
   bridge: DesktopDictationBridge | undefined,
   language: DictationLanguage,
+  pauseMs = 1100,
 ): BotCallAudio {
   let cleanup: Promise<unknown> = Promise.resolve()
   return {
@@ -108,7 +109,7 @@ export function browserBotCallAudio(
                 report(error)
               }
             })
-            if ((voiced >= 3200 && quiet >= 17600) || samples >= 480000) finish()
+            if ((voiced >= 3200 && quiet >= pauseMs * 16) || samples >= 480000) finish()
           },
         )
         if (stopped || signal.aborted) {

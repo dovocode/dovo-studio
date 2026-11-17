@@ -15,7 +15,7 @@ import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
 } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
-import { mcpHttpOptions } from './http-transport.js'
+import { mcpHttpOptions, mcpHttpCall } from './http-transport.js'
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import {
@@ -628,11 +628,14 @@ export class McpApps {
       if (reviewed.revision !== revision)
         throw new HttpError(409, 'MCP tool changed. Refresh the action review.')
       authorize()
+      const signal = AbortSignal.any([this.controller.signal, AbortSignal.timeout(60_000)])
       return CallToolResultSchema.parse(
-        await reviewed.session.client.callTool({ name, arguments: args }, undefined, {
-          signal: AbortSignal.any([this.controller.signal, AbortSignal.timeout(60_000)]),
-          timeout: 60_000,
-        }),
+        await mcpHttpCall(signal, () =>
+          reviewed.session.client.callTool({ name, arguments: args }, undefined, {
+            signal,
+            timeout: 60_000,
+          }),
+        ),
       )
     } finally {
       this.release(reviewed.session)
@@ -649,7 +652,9 @@ export class McpApps {
     const scope = this.current(taskId, server, directory)
     const session = await this.lease(scope)
     try {
-      const result = await session.client.readResource({ uri }, { signal, timeout: 15000 })
+      const result = await mcpHttpCall(signal, () =>
+        session.client.readResource({ uri }, { signal, timeout: 15000 }),
+      )
       if (result.contents.some((item) => !('text' in item)))
         throw new HttpError(400, 'Monitoring accepts text MCP resources only.')
       const text = result.contents.map((item) => ('text' in item ? item.text : '')).join('\n')
@@ -788,10 +793,12 @@ export class McpApps {
       authorize()
       signal.throwIfAborted()
       const result = CallToolResultSchema.parse(
-        await session.client.callTool({ name: tool.name, arguments: query.arguments }, undefined, {
-          signal,
-          timeout: 30_000,
-        }),
+        await mcpHttpCall(AbortSignal.any([signal, AbortSignal.timeout(30_000)]), () =>
+          session.client.callTool({ name: tool.name, arguments: query.arguments }, undefined, {
+            signal,
+            timeout: 30_000,
+          }),
+        ),
       )
       authorize()
       signal.throwIfAborted()
@@ -861,9 +868,8 @@ export class McpApps {
       const toolListSignal = AbortSignal.any([signal, AbortSignal.timeout(30_000)])
       let cursor: string | undefined
       do {
-        const page = await session.client.listTools(
-          { cursor },
-          { signal: toolListSignal, timeout: 30_000 },
+        const page = await mcpHttpCall(toolListSignal, () =>
+          session.client.listTools({ cursor }, { signal: toolListSignal, timeout: 30_000 }),
         )
         tools.push(...page.tools)
         cursor = page.nextCursor
@@ -875,7 +881,8 @@ export class McpApps {
       session.toolsDirty = false
     }
     const value = object(params)
-    const options = { signal, timeout: 60_000 }
+    const callSignal = AbortSignal.any([signal, AbortSignal.timeout(60_000)])
+    const options = { signal: callSignal, timeout: 60_000 }
     if (method === 'tools/list')
       return {
         tools: [
@@ -934,13 +941,15 @@ export class McpApps {
       authorize()
       signal.throwIfAborted()
       const result = CallToolResultSchema.parse(
-        await session.client.callTool(
-          { name: tool.name, arguments: input.arguments ?? {}, _meta: input._meta },
-          undefined,
-          options,
+        await mcpHttpCall(callSignal, () =>
+          session.client.callTool(
+            { name: tool.name, arguments: input.arguments ?? {}, _meta: input._meta },
+            undefined,
+            options,
+          ),
         ),
       )
-      if (!ui) await this.capture(scope, session, tool, input.arguments ?? {}, result)
+      if (!ui) await this.capture(scope, session, tool, input.arguments ?? {}, result, callSignal)
       // UI content is out-of-band, not model tokens or repeated sync payloads.
       const embeddedApps = new Set(embeddedUiResources(result))
       const content = result.content.filter(
@@ -964,33 +973,41 @@ export class McpApps {
     const capabilities = session.client.getServerCapabilities()
     if (method === 'resources/list')
       return capabilities?.resources
-        ? session.client.listResources(pagination, options)
+        ? mcpHttpCall(callSignal, () => session.client.listResources(pagination, options))
         : { resources: [] }
     if (method === 'resources/templates/list')
       return capabilities?.resources
-        ? session.client.listResourceTemplates(pagination, options)
+        ? mcpHttpCall(callSignal, () => session.client.listResourceTemplates(pagination, options))
         : { resourceTemplates: [] }
-    if (method === 'resources/read' && typeof value.uri === 'string')
-      return session.client.readResource({ uri: value.uri }, options)
+    if (method === 'resources/read' && typeof value.uri === 'string') {
+      const uri = value.uri
+      return mcpHttpCall(callSignal, () => session.client.readResource({ uri }, options))
+    }
     if (method === 'prompts/list')
       return capabilities?.prompts
-        ? session.client.listPrompts(pagination, options)
+        ? mcpHttpCall(callSignal, () => session.client.listPrompts(pagination, options))
         : { prompts: [] }
     if (method === 'prompts/get') {
       const request = GetPromptRequestSchema.safeParse({ method, params })
       if (!request.success) throw new HttpError(400, 'Invalid MCP prompts/get parameters')
-      return session.client.getPrompt(
-        { ...request.data.params, arguments: request.data.params.arguments ?? {} },
-        options,
+      return mcpHttpCall(callSignal, () =>
+        session.client.getPrompt(
+          { ...request.data.params, arguments: request.data.params.arguments ?? {} },
+          options,
+        ),
       )
     }
     throw new HttpError(400, 'Unsupported MCP bridge method')
   }
-  private async resource(session: Session, uri: string) {
+  private async resource(session: Session, uri: string, callSignal: AbortSignal) {
+    const signal = AbortSignal.any([
+      callSignal,
+      this.controller.signal,
+      AbortSignal.timeout(30_000),
+    ])
     const resource = htmlResource(
-      await session.client.readResource(
-        { uri },
-        { signal: this.controller.signal, timeout: 30_000 },
+      await mcpHttpCall(signal, () =>
+        session.client.readResource({ uri }, { signal, timeout: 30_000 }),
       ),
       uri,
     )
@@ -1000,12 +1017,12 @@ export class McpApps {
     let cursor: string | undefined,
       count = 0
     do {
-      const page = await session.client
-        .listResources({ cursor }, { signal: this.controller.signal, timeout: 30_000 })
-        .catch((error: unknown) => {
-          if (error instanceof McpError && error.code === ErrorCode.MethodNotFound) return undefined
-          throw error
-        })
+      const page = await mcpHttpCall(signal, () =>
+        session.client.listResources({ cursor }, { signal, timeout: 30_000 }),
+      ).catch((error: unknown) => {
+        if (error instanceof McpError && error.code === ErrorCode.MethodNotFound) return undefined
+        throw error
+      })
       if (!page) return resource
       const listed = page.resources.find((entry) => entry.uri === uri)
       if (listed)
@@ -1031,6 +1048,7 @@ export class McpApps {
     tool: Tool,
     input: Record<string, unknown>,
     result: CallToolResult,
+    signal: AbortSignal,
   ) {
     const resources: Array<{ resource: unknown; format: 'apps' }> = embeddedUiResources(result)
       .filter((resource) => isAppMime(resource.mimeType))
@@ -1039,10 +1057,11 @@ export class McpApps {
     if (uri) {
       try {
         resources.unshift({
-          resource: await this.resource(session, uri),
+          resource: await this.resource(session, uri, signal),
           format: 'apps',
         })
       } catch (error) {
+        signal.throwIfAborted()
         this.activity.add('error', scope.taskId, `MCP App unavailable · ${tool.name}`, {
           error: String(error),
         })

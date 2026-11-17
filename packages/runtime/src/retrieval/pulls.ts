@@ -23,6 +23,13 @@ const pullOperationSchema = Schema.Union([
     background: Schema.Boolean,
   }),
   mutableStruct({ kind: Schema.Literals(['detail', 'feedback']), number }),
+  mutableStruct({
+    kind: Schema.Literal('file'),
+    number,
+    path: maxValue(minValue(Schema.String, 1), 4096),
+    headSha: maxValue(Schema.String, 100),
+    baseSha: maxValue(Schema.String, 100),
+  }),
   mutableStruct({ kind: Schema.Literal('status'), number, background: Schema.Boolean }),
   mutableStruct({ kind: Schema.Literal('section'), number, section: pullDetailSectionSchema }),
   mutableStruct({ kind: Schema.Literal('nativeStack'), number, stackNumber: number }),

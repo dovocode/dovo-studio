@@ -1,3 +1,4 @@
+import { pullDetailSchema } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   buildPullReviewObjective,
@@ -53,14 +54,35 @@ export function PullChanges({
 }) {
   const uiText = useInterfaceText()
 
+  const revision = JSON.stringify([
+    repositoryId,
+    detail.destination,
+    detail.pull.headSha,
+    detail.pull.baseSha,
+  ])
+  const [loaded, setLoaded] = useState<{ revision: string; files: PullDetail['files'] }>({
+    revision,
+    files: [],
+  })
+  const [loadingFile, setLoadingFile] = useState('')
+  const [loadError, setLoadError] = useState('')
+  const reviewFiles = useMemo(
+    () =>
+      detail.files.map(
+        (file) =>
+          (loaded.revision === revision && loaded.files.find((item) => item.path === file.path)) ||
+          file,
+      ),
+    [detail.files, loaded, revision],
+  )
   const { hideWhitespaceChanges } = useAppPreferences()
   const [guidePath, setGuidePath] = useState('')
   const visibleFiles = useMemo(
     () =>
-      detail.files.filter(
+      reviewFiles.filter(
         (file) => file.path === guidePath || !hideWhitespaceChanges || !whitespaceOnlyPatch(file),
       ),
-    [detail.files, hideWhitespaceChanges, guidePath],
+    [reviewFiles, hideWhitespaceChanges, guidePath],
   )
   const { headSha, baseSha } = detail.pull
   const fingerprints = useMemo(
@@ -97,7 +119,7 @@ export function PullChanges({
       ),
     [files, fingerprints, fileState],
   )
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
   const commentsByPath = useMemo(
     () => pullCommentsByFile(detail.files, detail.comments),
     [detail.files, detail.comments],
@@ -302,6 +324,63 @@ export function PullChanges({
                   heights={heights}
                   pinned={selected === file.path || !!drafts.get(file.path)?.selection}
                 >
+                  {file.patchOmitted && (
+                    <div className="space-y-2 py-2 text-xs">
+                      <p>GitLab omitted this patch.</p>
+                      {snapshot?.pullFileLoadingSupported ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!connected || !!detail.stale || !!loadingFile}
+                          onClick={() => {
+                            setLoadingFile(file.path)
+                            setLoadError('')
+                            void request(
+                              '/api/scm/pulls/detail',
+                              {
+                                repositoryId,
+                                number: detail.pull.number,
+                                filePath: file.path,
+                                headSha: detail.pull.headSha,
+                                baseSha: detail.pull.baseSha,
+                                connectionId: detail.pull.connectionId,
+                                expectedDestination: detail.destination,
+                              },
+                              pullDetailSchema,
+                            )
+                              .then(
+                                (result) => {
+                                  const patch = result.files.find((item) => item.path === file.path)
+                                  if (!patch?.patch) {
+                                    setLoadError(
+                                      result.warnings.join(' ') ||
+                                        'GitLab did not return this patch. Open it on GitLab.',
+                                    )
+                                    return
+                                  }
+                                  setLoaded((current) => ({
+                                    revision,
+                                    files: [
+                                      ...(current.revision === revision
+                                        ? current.files.filter((item) => item.path !== file.path)
+                                        : []),
+                                      patch,
+                                    ],
+                                  }))
+                                },
+                                (cause: unknown) => setLoadError(String(cause)),
+                              )
+                              .finally(() => setLoadingFile(''))
+                          }}
+                        >
+                          {loadingFile === file.path ? 'Loading patch…' : 'Load this patch'}
+                        </Button>
+                      ) : (
+                        <p>Update this computer to load omitted patches.</p>
+                      )}
+                      {loadError && <p role="alert">{loadError}</p>}
+                    </div>
+                  )}
                   <PullPatch
                     key={file.path}
                     file={file}

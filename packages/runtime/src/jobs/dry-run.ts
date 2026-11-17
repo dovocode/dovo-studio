@@ -248,6 +248,11 @@ export function dryRunAutomation(
       name: 'Instructions',
       value: taskStepObjective(data.objective, { triggerPayload, ...source }),
     })
+    if (data.inputFrom?.length)
+      inputs.push({
+        name: 'Preceding step inputs',
+        value: `${data.inputFrom.join(', ')}${data.inputFiles ? ' with files' : ' as text'}. Real results are read only during a real run.`,
+      })
     return {
       nodeId: node.id,
       label: data.label,

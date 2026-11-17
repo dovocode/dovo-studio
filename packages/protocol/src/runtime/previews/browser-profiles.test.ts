@@ -131,3 +131,14 @@ it('preserves an optional per-profile Do Not Track flag and rejects invalid valu
       .success,
   ).toBe(false)
 })
+
+it('validates optional IANA profile time zones and allows removing the override', () => {
+  for (const timezone of [undefined, 'Europe/Amsterdam', 'Pacific/Auckland', 'UTC'])
+    expect(
+      decodeResult(browserProfilesSchema, [{ id: 'default', name: 'Default', timezone }]).success,
+    ).toBe(true)
+  for (const timezone of ['', 'Invalid/Zone', ' ', '+01:00', '-05:00', 'x'.repeat(101)])
+    expect(
+      decodeResult(browserProfilesSchema, [{ id: 'default', name: 'Default', timezone }]).success,
+    ).toBe(false)
+})

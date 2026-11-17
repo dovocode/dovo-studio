@@ -137,9 +137,11 @@ export function SettingsNav({
   views,
   activeId,
   onSelect,
+  initialField,
 }: {
   views: readonly StudioView[]
   activeId: string
+  initialField?: string
   onSelect: (viewId: string) => boolean | void | Promise<boolean | void>
 }) {
   const uiText = useInterfaceText()
@@ -153,6 +155,9 @@ export function SettingsNav({
   const [query, setQuery] = useApplicationState('')
   const [jump, setJump] = useState<{ viewId: string; label: string } | null>(null)
   const [searchStatus, setSearchStatus] = useState('')
+  useEffect(() => {
+    if (initialField) setJump({ viewId: activeId, label: initialField })
+  }, [initialField, activeId])
   const { target, scope, source, repository } = useSettingsTarget()
   useEffect(
     () => () => {

@@ -1,3 +1,4 @@
+import { threadReferenceLink } from './studio-links.js'
 import type { Task } from '../../workspace.js'
 import { compareBotActivity } from '../../tasks/bot-activity.js'
 import { studioReference } from '../../runtime/studio-reference.js'
@@ -5,7 +6,13 @@ import { insertPrompt } from './resource-mentions.js'
 import { messageReferences } from './composer-references.js'
 import { parseStudioReference } from '../../runtime/studio-reference.js'
 
-export type BotMention = { reference: string; name: string; detail: string; avatar?: string }
+export type BotMention = {
+  kind?: 'thread'
+  reference: string
+  name: string
+  detail: string
+  avatar?: string
+}
 
 /** Public Bot identity only. Sending a mention saves a child copy without dispatching work. */
 export function botMentionSuggestions(
@@ -57,4 +64,45 @@ export function botMentionTargets(text: string) {
     const target = match && parseStudioReference(match[1])
     return target?.kind === 'thread' ? [target] : []
   })
+}
+
+/** Search thread titles without loading or copying their private conversation history. */
+export function contextMentionSuggestions(
+  sources: Parameters<typeof botMentionSuggestions>[0],
+  query: string,
+): BotMention[] {
+  const explicit = query.toLowerCase().startsWith('thread:')
+  const needle = (explicit ? query.slice(7) : query).toLowerCase()
+  const threads: BotMention[] =
+    !explicit && !needle
+      ? []
+      : sources
+          .flatMap((source) =>
+            source.tasks
+              .filter(
+                (task) =>
+                  !task.bot &&
+                  !task.example &&
+                  !task.replica &&
+                  !task.delegation &&
+                  `${task.title} ${source.name}`.toLowerCase().includes(needle),
+              )
+              .map((task) => ({
+                kind: 'thread' as const,
+                reference: threadReferenceLink(source.runtimeId, task.id),
+                name: task.title || 'Untitled thread',
+                detail: `Thread · ${source.name}${task.archived || task.archivedAt ? ' · Archived' : ''}`,
+              })),
+          )
+          .slice(0, 8)
+  return [...(explicit ? [] : botMentionSuggestions(sources, query)), ...threads]
+}
+export function insertThreadMention(
+  text: string,
+  start: number,
+  caret: number,
+  thread: Pick<BotMention, 'name' | 'reference'>,
+) {
+  const label = thread.name.replace(/[\\[\]]/g, '\\$&').replace(/[\r\n]/g, ' ')
+  return insertPrompt(text, start, caret, `[${label}](${thread.reference}) `)
 }

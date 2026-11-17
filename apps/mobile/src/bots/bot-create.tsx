@@ -24,6 +24,7 @@ import { Icon } from '../ui/controls/icon'
 import { Text } from '../ui/content/text'
 import { useAction } from '../ui/controls/use-action'
 import { useTheme } from '../ui/theme'
+import { Field } from '../ui/controls/field'
 import { BotFields } from './bot-fields'
 
 /** A request that may have reached its runtime. Body, computer and pairing stay frozen. */
@@ -33,12 +34,13 @@ type CreateDraft = {
   name: string
   role: string
   responsibilities: string
+  firstTask: string
   runtimeId?: string
   pending?: PendingCreate
 }
 const drafts = createDetailDrafts<CreateDraft>()
 const draftKey = 'new-bot'
-const emptyDraft = (): CreateDraft => ({ name: '', role: '', responsibilities: '' })
+const emptyDraft = (): CreateDraft => ({ name: '', role: '', responsibilities: '', firstTask: '' })
 
 type BotText = Pick<CreateDraft, 'name' | 'role' | 'responsibilities'>
 /** Optional examples. A starter fills only empty fields and never replaces typed text. */
@@ -269,7 +271,7 @@ export function CreateBot({
               createdAt: new Date().toISOString(),
               messages: [],
               files: [],
-              draft: '',
+              draft: current.firstTask,
               example: false,
             },
             role: current.role.trim(),
@@ -382,7 +384,9 @@ export function CreateBot({
             <InterfaceText>{'Create your Bot'}</InterfaceText>
           </Text>
           <Text style={[styles.text, { color: colors.muted }]}>
-            <InterfaceText>{'One conversation. Its own memory. A role that lasts.'}</InterfaceText>
+            <InterfaceText>
+              {'Start with one useful task. Review the result before adding routines.'}
+            </InterfaceText>
           </Text>
         </View>
         <RunsOn
@@ -397,6 +401,20 @@ export function CreateBot({
             setChoosing(false)
           }}
         />
+        <View style={{ gap: 8 }}>
+          <Field
+            label="First task · optional"
+            multiline
+            value={draft.firstTask}
+            onChangeText={(value) => setField('firstTask', value)}
+            editable={!busy && !pending}
+            maxLength={120000}
+          />
+          <Text style={styles.muted}>
+            Opens as a draft in your Bot. Review and send it when ready. Add a routine after you
+            have a useful result.
+          </Text>
+        </View>
         <Starters
           draft={draft}
           disabled={busy || !!pending}

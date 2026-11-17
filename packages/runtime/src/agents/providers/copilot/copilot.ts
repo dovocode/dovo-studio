@@ -68,6 +68,7 @@ const stringEnvironment = (env: NodeJS.ProcessEnv) =>
     Object.entries(env).filter((entry): entry is [string, string] => typeof entry[1] === 'string'),
   )
 async function clientFor(agent: AgentDiscovery, cwd: string, sandbox?: SandboxSession) {
+  const env = processEnvironment({ ...agent.env, COPILOT_AUTO_UPDATE: 'false' })
   // The SDK owns the spawn. In a sandbox it starts the container CLI, which runs the Linux
   // Copilot CLI installed with mise.
   const wrapped =
@@ -75,7 +76,7 @@ async function clientFor(agent: AgentDiscovery, cwd: string, sandbox?: SandboxSe
     sandboxLaunch(sandbox, {
       command: 'copilot',
       args: agent.args ?? [],
-      env: processEnvironment(agent.env),
+      env,
       cwd,
     })
   const client = new CopilotClient({
@@ -83,13 +84,9 @@ async function clientFor(agent: AgentDiscovery, cwd: string, sandbox?: SandboxSe
       wrapped
         ? { path: wrapped.command, args: wrapped.args, env: stringEnvironment(wrapped.env) }
         : {
-            path: await copilotExecutable(
-              agent.endpoint || 'copilot',
-              processEnvironment(agent.env),
-              cwd,
-            ),
+            path: await copilotExecutable(agent.endpoint || 'copilot', env, cwd),
             args: agent.args,
-            env: stringEnvironment(processEnvironment(agent.env)),
+            env: stringEnvironment(env),
           },
     ),
     workingDirectory: cwd,

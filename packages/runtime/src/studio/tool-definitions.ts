@@ -48,7 +48,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Create/run workflows; automation_prepare offers review. Create/update need complete automation. Bot job: task node data.botId selects an existing Bot; data.objective runs an isolated worker with its settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run works without enabling triggers. run needs stable requestId; cancel/retry/wait need run ID, runs needs automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. Human gates stay human-only.',
+      'Create/run workflows; automation_prepare offers review. Create/update need complete automation. Bot job: task node data.botId selects an existing Bot; data.objective runs an isolated worker with its settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run works without enabling triggers. run needs stable requestId; cancel/retry/wait need run ID, runs needs automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. definition reads a retained run as a credential-safe draft; restore needs its run ID, expected current definition and edited definition, and pauses triggers. Human gates stay human-only.',
   },
   {
     part: 'browsers',

@@ -72,7 +72,7 @@ window.defaultStatus={supported:true,isDefault:false};window.defaultRequests=0;w
 const defaultBrowser={status:async()=>window.defaultStatus,request:async()=>{window.defaultRequests++;if(window.defaultFailure)throw Error('System settings unavailable')}};
 const nativeBrowser=async(command)=>{if(window.browserFailure)throw Error('Could not open tab');window.openedTabs.push(command)};
 export const useStudioHost=()=>({browser:nativeBrowser,defaultBrowser});
-const allRuntimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
+const allRuntimes=[{profile:{id:'one',name:'Mac',connection:{address:'http://one',token:'token-one'}},connected:true,snapshot:{browserTimezoneSupported:true}},{profile:{id:'two',name:'Server',connection:{address:'http://two',token:'token-two'}},connected:true}];
 let runtimes=allRuntimes;window.setRuntimeCount=count=>{runtimes=allRuntimes.slice(0,count);updateAppPreferences({})};
 window.calls=[];const profiles={one:[{id:'default',name:'Remote Default'}],two:[{id:'default',name:'Server Default'}]};
 const call=async(id,path,input)=>{window.calls.push({id,path,input});if(path.endsWith('/save'))profiles[id]=input.profiles;if(path.endsWith('/apply')){if(window.failApply)throw Error('Connection lost during retry');window.profileApplyError=undefined}return {profiles:profiles[id],applyError:window.profileApplyError}};
@@ -355,6 +355,39 @@ try {
   await remote.getByRole('textbox', { name: 'New profile name' }).fill('Remote Work')
   await remote.getByRole('button', { name: 'Add profile', exact: true }).click()
   await remote.getByRole('textbox', { name: 'Name for Remote Work' }).waitFor()
+  const timezone = remote.getByRole('textbox', { name: 'Time zone for Remote Work', exact: true })
+  const timezoneForm = remote.getByRole('form', { name: 'Browser profile Remote Work' })
+  await timezone.fill('Invalid/Zone')
+  assert.equal(await timezone.getAttribute('aria-invalid'), 'true')
+  assert.equal(
+    await timezoneForm.getByRole('button', { name: 'Save', exact: true }).isDisabled(),
+    true,
+  )
+  await timezone.fill('Pacific/Auckland')
+  await timezoneForm.getByRole('button', { name: 'Save', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls
+          .filter((call) => call.path.endsWith('/save'))
+          .at(-1)
+          .input.profiles.find((profile) => profile.name === 'Remote Work').timezone,
+    ),
+    'Pacific/Auckland',
+  )
+  await timezone.fill('')
+  await timezoneForm.getByRole('button', { name: 'Save', exact: true }).click()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls
+          .filter((call) => call.path.endsWith('/save'))
+          .at(-1)
+          .input.profiles.find((profile) => profile.name === 'Remote Work').timezone,
+    ),
+    undefined,
+  )
+
   await remote
     .getByRole('checkbox', { name: 'Keep signed in across restarts for Remote Work', exact: true })
     .check()
@@ -484,6 +517,15 @@ try {
   await remote.getByRole('button', { name: 'Computer for browser profiles' }).click()
   await page.getByRole('option', { name: 'Server', exact: true }).click()
   await remote.getByRole('textbox', { name: 'Name for Server Default' }).waitFor()
+  assert.equal(
+    await remote
+      .getByRole('textbox', { name: 'Time zone for Server Default', exact: true })
+      .isDisabled(),
+    true,
+  )
+  await remote
+    .getByText('Update this runtime to set a browser time zone.', { exact: true })
+    .waitFor()
   if (await remote.getByRole('textbox', { name: 'Name for Remote Default' }).count())
     throw new Error('Profiles leaked between runtimes')
   if (!(await local.getByRole('textbox', { name: 'Name for Local Work' }).count()))
@@ -557,7 +599,7 @@ try {
   )
   await checkRemoteProfileConcurrency(browser)
   console.log(
-    'Browser settings: profiles, domain/path rules, default-browser setup and queued local/remote external links passed.',
+    'Browser settings: profiles, time-zone save/reset and older-runtime fallback, domain/path rules, default-browser setup and queued local/remote external links passed.',
   )
 } finally {
   await browser.close()

@@ -141,6 +141,8 @@ export const createWorkspaceTerminalSchema = mutableStruct({
 })
 export type CreateWorkspaceTerminal = Schema.Schema.Type<typeof createWorkspaceTerminalSchema>
 export const jobRunStepSchema = mutableStruct({
+  queuedAt: Schema.optional(Schema.String),
+  workStartedAt: Schema.optional(Schema.String),
   nodeId: Schema.String,
   label: Schema.String,
   kind: Schema.Literals(['trigger', 'task', 'review']),
@@ -162,6 +164,8 @@ export const jobRunStepSchema = mutableStruct({
   error: Schema.optional(Schema.String),
 })
 export const jobRunSchema = mutableStruct({
+  retryAt: Schema.optional(Schema.String),
+  startupRetryCount: Schema.optional(Schema.Number),
   scheduledFor: Schema.optional(Schema.String),
   scheduleTimezone: Schema.optional(Schema.String),
   outcome: Schema.optional(Schema.Literals(['unchanged'])),
@@ -296,6 +300,14 @@ export const snapshotSchema = mutableStruct({
   routineMcpMonitoringSupported: Schema.optional(Schema.Literal(true)),
   freezeProfilesSupported: Schema.optional(Schema.Literal(true)),
   runAuditSupported: Schema.optional(Schema.Literal(true)),
+  attachmentDraftCompareSupported: Schema.optional(Schema.Boolean),
+  automationRestoreSupported: Schema.optional(Schema.Literal(true)),
+  automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
+  automationStartupRetrySupported: Schema.optional(Schema.Literal(true)),
+  browserTimezoneSupported: Schema.optional(Schema.Literal(true)),
+  sparseWorktreesSupported: Schema.optional(Schema.Literal(true)),
+  pullFileLoadingSupported: Schema.optional(Schema.Literal(true)),
+  usageRetentionSupported: Schema.optional(Schema.Literal(true)),
   /** `POST /api/jobs/dry-run` evaluates a flow with sample data and runs no external steps. */
   automationDryRunSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/jobs/provenance`, routine change sources and `routineChange` in run audits. */

@@ -1366,3 +1366,32 @@ it('prepares pending edit and answer uploads without reading bytes or changing t
   expect(store.task(task.id).draft).toBe('Keep this changed draft')
   expect(store.task(task.id).draftAttachments ?? []).toEqual([])
 })
+
+it('compares the destination text before issuing an element-image upload guard', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const { store, tasks } = runtime.services
+  store.update(() => f.workspace)
+  const task = tasks.create({
+    title: 'Element destination',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  store.updateTask(task.id, (item) => ({ ...item, draft: 'Selected browser element' }))
+  const guard = (expectedDraft: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/attachments/draft-guard`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId: task.id, expectedDraft }),
+    })
+  const ready = await guard('Selected browser element')
+  expect(ready.status).toBe(200)
+  expect(await ready.json()).toMatchObject({ guardedUploads: 1, draftCompared: true })
+  // Another window can send or replace the draft after the text commit.
+  store.updateTask(task.id, (item) => ({ ...item, draft: '' }))
+  expect((await guard('Selected browser element')).status).toBe(409)
+  expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+})

@@ -286,7 +286,7 @@ it('loads file changes without waiting for comments, checks or merge settings', 
     endpoints.push(args[3])
     if (args[3] === 'repos/team/project/pulls/7')
       return JSON.stringify({ ...pull, changed_files: 1 })
-    if (args[3] === 'repos/team/project/pulls/7/files?per_page=100')
+    if (args[3] === 'repos/team/project/pulls/7/files?per_page=30')
       return JSON.stringify([
         [
           {
@@ -305,7 +305,7 @@ it('loads file changes without waiting for comments, checks or merge settings', 
   expect(detail.warnings).toEqual([])
   expect(endpoints).toEqual([
     'repos/team/project/pulls/7',
-    'repos/team/project/pulls/7/files?per_page=100',
+    'repos/team/project/pulls/7/files?per_page=30',
     'repos/team/project/pulls/7',
   ])
 })

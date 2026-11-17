@@ -1,3 +1,4 @@
+import { BrowserTimezoneSettings } from './browser-timezone-settings'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useBrowserWorkspace } from './browser-workspace'
@@ -201,7 +202,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
   const searchProfile =
     websiteProfile ?? websiteProfiles.find((profile) => profile.id === 'default')
-  const saveSearchEngine = async (search: BrowserSearchEngine) => {
+  const saveProfileSettings = async (patch: {
+    search?: BrowserSearchEngine
+    timezone?: string
+  }) => {
     // Read the destination before saving so loading or switching computers cannot replace its profiles.
     const existing =
       active.kind === 'remote'
@@ -222,7 +226,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       (active.kind === 'local' ? existing.find((profile) => profile.id === 'default') : undefined)
     if (!target) throw new Error('This browser profile is unavailable.')
     const next = existing.map((profile) =>
-      profile.id === target.id ? { ...profile, search } : profile,
+      profile.id === target.id ? { ...profile, ...patch } : profile,
     )
     if (active.kind === 'remote') {
       if (!owner?.connected) throw new Error('This computer is offline.')
@@ -235,6 +239,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       acceptRemoteProfiles(result)
     } else updateMobilePreferences({ browserProfiles: next })
   }
+  const saveSearchEngine = (search: BrowserSearchEngine) => saveProfileSettings({ search })
   const websiteScripts = useMemo(
     () => (websiteProfile?.websites ?? []).map((site) => browserWebsiteCustomizationScript([site])),
     [websiteProfile?.websites],
@@ -1586,6 +1591,15 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   (!owner?.connected || profilesOwner !== active.runtimeId))
               }
               onSave={saveSearchEngine}
+            />
+          )}
+          {active.kind === 'remote' && !isPrivateBrowserProfile(active.profileId) && (
+            <BrowserTimezoneSettings
+              key={`${active.runtimeId}:${active.profileId}:${searchProfile?.timezone ?? ''}`}
+              value={searchProfile?.timezone}
+              supported={!!owner?.snapshot?.browserTimezoneSupported}
+              disabled={busy || !owner?.connected || profilesOwner !== active.runtimeId}
+              onSave={(timezone) => saveProfileSettings({ timezone })}
             />
           )}
           <Text style={styles.title}>

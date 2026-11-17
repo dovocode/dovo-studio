@@ -1,6 +1,12 @@
 import { expect, it } from 'vite-plus/test'
 import { secureInputToolResult } from './secure-input-result.js'
 
+it('treats a human cancellation as a decision to wait, including status replays', () => {
+  expect(
+    secureInputToolResult({ id: 'request', status: 'cancelled', cancelledBy: 'user' }),
+  ).toMatchObject({ cancelledBy: 'user', nextAction: 'wait_for_user', deliveryCompleted: false })
+})
+
 it.each(['pending', 'running'] as const)('waits for completion while %s', (status) => {
   expect(secureInputToolResult({ id: 'request', status })).toMatchObject({
     id: 'request',

@@ -5,7 +5,8 @@ import {
   parseRoutineOptions,
   type Automation,
 } from '@dovo/protocol'
-import { Button, FormField, Input } from '@dovo/studio-ui'
+import { Button, ChoicePicker, FormField, Input } from '@dovo/studio-ui'
+import { useWorkspace } from '@dovo/studio-core'
 export function RoutineOptions({
   flow,
   disabled,
@@ -23,6 +24,7 @@ export function RoutineOptions({
 }) {
   const [fields, setFields] = useState(() => routineOptionFields(flow))
   const [error, setError] = useState('')
+  const { snapshot } = useWorkspace()
   return (
     <details className="border-b px-4 py-3 text-xs">
       <summary>Monitoring and limits</summary>
@@ -32,6 +34,11 @@ export function RoutineOptions({
         Manual tests always run. Quiet hours defer successful Bot reports. Failures and approvals
         stay visible. Usage limits depend on provider reports and can overrun.
       </p>
+      {!snapshot?.automationStartupRetrySupported && (
+        <p className="my-2 text-muted-foreground">
+          Update this runtime to configure provider startup retry.
+        </p>
+      )}
       <div className="grid gap-2 sm:grid-cols-2">
         {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
           .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
@@ -39,13 +46,25 @@ export function RoutineOptions({
           .filter((key) => !['mcpServer', 'mcpUri'].includes(key) || mcpMonitoringSupported)
           .map((key) => (
             <FormField key={key} label={routineOptionLabels[key]}>
-              <Input
-                aria-label={routineOptionLabels[key]}
-                value={fields[key]}
-                disabled={disabled}
-                placeholder={key === 'start' || key === 'end' ? 'HH:mm' : undefined}
-                onChange={(e) => setFields((f) => ({ ...f, [key]: e.target.value }))}
-              />
+              {key === 'startupRetry' ? (
+                <ChoicePicker
+                  aria-label={routineOptionLabels[key]}
+                  value={fields[key]}
+                  disabled={disabled || !snapshot?.automationStartupRetrySupported}
+                  onValueChange={(value) => setFields((f) => ({ ...f, startupRetry: value }))}
+                >
+                  <option value="no">No</option>
+                  <option value="yes">Yes, before provider acceptance only</option>
+                </ChoicePicker>
+              ) : (
+                <Input
+                  aria-label={routineOptionLabels[key]}
+                  value={fields[key]}
+                  disabled={disabled}
+                  placeholder={key === 'start' || key === 'end' ? 'HH:mm' : undefined}
+                  onChange={(e) => setFields((f) => ({ ...f, [key]: e.target.value }))}
+                />
+              )}
             </FormField>
           ))}
       </div>

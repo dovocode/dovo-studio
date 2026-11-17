@@ -8,6 +8,7 @@ import {
 } from '@anthropic-ai/claude-agent-sdk/core'
 import type { AgentRun } from '../../execution/types.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
+import { nativeWait } from '../shared/native.js'
 
 export type ClaudeBinding = {
   child?: ChildProcess
@@ -139,7 +140,7 @@ export class ClaudePrewarmer {
             : {}),
         },
       })
-      await record.spare.claimed
+      await nativeWait(record.spare.claimed, signal ?? new AbortController().signal, 15_000)
       signal?.throwIfAborted()
       return stream
     } catch (error) {

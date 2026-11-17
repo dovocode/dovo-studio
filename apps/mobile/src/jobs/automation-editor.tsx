@@ -434,10 +434,12 @@ export function AutomationEditor({ flow, onClose }: { flow?: Automation; onClose
                   </View>
                   <Icon name={open ? 'down' : 'next'} size={14} color={colors.muted} />
                 </Pressable>
-                {open && (
+                {open && flow && (
                   <>
                     <StepFields
                       data={node.data}
+                      flow={flow}
+                      nodeId={node.id}
                       workspace={workspace}
                       disabled={busy}
                       onChange={(patch) => updateNode(node.id, patch)}

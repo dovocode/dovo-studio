@@ -735,3 +735,12 @@ it('restores validated optional fields that have no default', async () => {
     'zed',
   )
 })
+
+it('defaults and saves the device voice pause', async () => {
+  const local = storage()
+  vi.stubGlobal('localStorage', local)
+  const preferences = await import('./preferences')
+  expect(preferences.readAppPreferences().botVoicePause).toBe(1100)
+  preferences.updateAppPreferences({ botVoicePause: 3000 })
+  expect(JSON.parse(local.getItem('dovo.app-preferences.v1') ?? '{}').botVoicePause).toBe(3000)
+})

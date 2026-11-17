@@ -880,6 +880,9 @@ try {
   await page
     .getByLabel('Responsibilities', { exact: true })
     .fill('Investigate failed checks.\nPrepare release notes.\nAsk before publishing.')
+  await page
+    .getByLabel('First task · optional', { exact: true })
+    .fill('Compare the release blockers and recommend the next step.')
   const text = await fields(page)
   await noOverflow(page, 'filled form')
   await targetSizes(page)
@@ -905,6 +908,10 @@ try {
   await page.getByRole('radio', { name: 'Travel laptop with a long computer name, Online' }).click()
   assert.equal(await radios.count(), 0)
   assert.deepEqual(await fields(page), text)
+  assert.equal(
+    await page.getByLabel('First task · optional', { exact: true }).inputValue(),
+    'Compare the release blockers and recommend the next step.',
+  )
   assert.match(
     await runsOn.getAttribute('aria-label'),
     /^Runs on Travel laptop with a long computer name, Online/,
@@ -919,6 +926,10 @@ try {
   assert.equal(first.token, 'token-laptop-0123456789abcdef')
   assert.equal(first.input.createTask.repositoryId, 'dovo:scratch')
   assert.equal(first.input.createTask.execution, 'main')
+  assert.equal(
+    first.input.createTask.draft,
+    'Compare the release blockers and recommend the next step.',
+  )
   assert.equal(first.input.createTask.modelSelection, undefined, 'Laptop uses its own defaults')
   assert.equal(first.input.createTask.title, 'Release assistant')
   assert.equal(await runsOn.isDisabled(), true)

@@ -99,3 +99,20 @@ it('resolves each link context separately through Streamdown’s shared processo
       expect(html).not.toContain('javascript:')
   }
 })
+
+it.each([false, true])(
+  'keeps internal settings and thread links through sanitization, local files %s',
+  (localFiles) => {
+    const html = renderToStaticMarkup(
+      createElement(Streamdown, {
+        mode: 'static',
+        linkSafety: { enabled: false },
+        rehypePlugins: markdownPluginsForLinks(undefined, undefined, localFiles),
+        children:
+          '[Voice pause](dovo://settings/speech?field=Voice%20pause) [Earlier thread](dovo://thread?runtimeId=runtime&threadId=old)',
+      }),
+    )
+    expect(html.match(/href="https:\/\/dovo-navigation.invalid\//g)).toHaveLength(2)
+    expect(html).not.toContain('dovo-local-file.invalid')
+  },
+)

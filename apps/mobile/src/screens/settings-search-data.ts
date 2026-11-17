@@ -30,6 +30,7 @@ export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> =
     'Keep the screen on while a task runs',
   ],
   '/settings/speech': [
+    'Voice pause',
     'Dictation language',
     'Read aloud language',
     'Voice',

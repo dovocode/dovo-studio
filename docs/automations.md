@@ -36,9 +36,10 @@ runnable, and their connections are preserved. Edit those in the desktop/web can
 
 ## Run a step in a Bot
 
-A task step with `botId` posts its instructions into that [Bot](bots.md)'s thread instead of
-starting a new thread. It uses the Bot's own settings. A paused Bot fails the step without queueing
-work; resume the Bot and retry the run.
+A task step with `botId` creates an isolated worker with that [Bot](bots.md)'s settings. Set
+`data.objective` to the worker's instructions. The worker reports its result to the Bot and keeps
+the coordinator available. A paused Bot fails the step without queueing work. Resume the Bot and
+retry the run. Retained legacy runs can still wait for a message in the shared Bot thread.
 
 ## Delete an automation
 
@@ -194,3 +195,31 @@ permissions and instructions; it is not an operating-system sandbox.
 
 New step threads use the normal title generator with their submitted instructions. Generation runs
 independently of the task; a failure keeps the step name, and a manually edited title is preserved.
+
+## Restore a run definition
+
+Open a retained run and choose **Restore definition from this run**. Edit the JSON draft and read
+the comparison. Save restores the automation for future runs and pauses its automatic triggers. It
+preserves the automation ID and current connection and credential fields. Running jobs keep their
+saved definition. The webhook credential stays unchanged.
+
+A conflicting save keeps the draft. Choose **Compare with current definition** to load the latest
+comparison without replacing your text. Cancel discards the restore draft. A draft stays available
+when you leave and return in the same app session. Restarting the app clears it. Older runtimes show
+an update message.
+
+Agents can use `studio_automations` action `definition` with a retained run ID. It returns a safe
+`automation` draft and the `expected` current definition. Action `restore` takes the run `id`,
+`expected` and edited `definition`. It checks access and conflicts, records the agent source and
+pauses triggers. Read-only agents can inspect a definition but cannot restore it.
+
+Restore keeps the current provider identity for a matching step. If that provider changed since the
+run, restore also keeps its current model and reasoning. It does not pass one provider's connection
+credentials to another provider. Historical connection and environment fields are removed for steps
+that have no matching current step.
+
+Task steps can select connected preceding task results as inputs. File copying requires a separate
+Include files choice. Scheduled provider startup retry is off by default and only retries before
+confirmed input acceptance. Queue time and work time appear separately in run details. See
+[the appended Studio scans](studio-scan-follow-up.md#appended-scans-november-17) for setup, limits,
+recovery and verification commands.

@@ -46,6 +46,9 @@ export const dictationLanguages = [
 ] as const
 export const dictationLanguageSchema = Schema.Literals(dictationLanguages.map(([code]) => code))
 export type DictationLanguage = typeof dictationLanguageSchema.Type
+export const botVoicePauseOptions = [1100, 1500, 2000, 3000, 5000] as const
+export const botVoicePauseSchema = Schema.Literals(botVoicePauseOptions)
+export type BotVoicePause = typeof botVoicePauseSchema.Type
 export const dictationUpdateSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal('text'), text: Schema.String }),
   Schema.Struct({ type: Schema.Literal('error'), message: Schema.String }),

@@ -40,6 +40,10 @@ export const agentBrowserResultSchema = mutableStruct({
   ok: Schema.Literal(true),
   url: Schema.optional(Schema.String),
   title: Schema.optional(Schema.String),
+  timezone: Schema.optional(Schema.String),
+  downloadErrors: Schema.optional(
+    Schema.Array(mutableStruct({ message: Schema.String, at: Schema.String })),
+  ),
   snapshot: Schema.optional(Schema.String),
   snapshotTruncated: Schema.optional(Schema.Boolean),
   elements: Schema.optional(browserObservationSchema.fields.elements),

@@ -1,3 +1,5 @@
+import { DictationNotice } from './dictation-notice'
+import { parseStudioLink } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AppInterfaceLanguage } from './interface-language'
 import { PreferenceSaveNotice } from './preference-save-notice'
@@ -72,6 +74,7 @@ type WorkbenchProps = {
   popOutThread?: StudioHostApi['popOutThread']
   appInfo?: StudioHostApi['appInfo']
   extensions: readonly StudioExtension[]
+  fileDrag?: StudioHostApi['fileDrag']
   repositoryOpener?: StudioHostApi['repositoryOpener']
   pickDirectory?: StudioHostApi['pickDirectory']
   browserWindowId?: string
@@ -207,6 +210,7 @@ function WorkbenchContent({
   extensions,
   threadWindow,
   popOutThread,
+  fileDrag,
   repositoryOpener,
   pickDirectory,
   browser,
@@ -403,7 +407,7 @@ function WorkbenchContent({
   const fallbackTarget =
     browserWindowId || threadWindow ? target : visibleWorkspaceTarget(target, workspaceModes)
   useEffect(() => {
-    if (fallbackTarget !== target) navigate(fallbackTarget, { replace: true })
+    if (fallbackTarget !== target) void navigate(fallbackTarget, { replace: true })
   }, [fallbackTarget.viewId, target.viewId])
   const compact = useCompactLayout()
   const [collapsedSections, setCollapsedSections] = useApplicationState<Record<string, boolean>>({})
@@ -797,6 +801,7 @@ function WorkbenchContent({
       popOutThread,
       threadWindow: !!threadWindow,
       registerCommand,
+      fileDrag,
       repositoryOpener,
       pickDirectory,
       browser,
@@ -828,6 +833,7 @@ function WorkbenchContent({
       popOutThread,
       threadWindow,
       registerCommand,
+      fileDrag,
       repositoryOpener,
       pickDirectory,
       browser,
@@ -978,6 +984,7 @@ function WorkbenchContent({
   return (
     <StudioHostProvider api={api}>
       <RemoteDesktopSharing />
+      <DictationNotice />
       <StudioToolsBridge />
       <StudioPairedComputersBridge />
       <SidebarHeaderLayout
@@ -1119,6 +1126,34 @@ function WorkbenchContent({
                   anchor.hasAttribute('data-dovo-external')
                 )
                   return
+                const internal = parseStudioLink(anchor.href)
+                if (internal) {
+                  event.preventDefault()
+                  if (internal.kind === 'settings')
+                    void navigate({
+                      viewId: internal.viewId,
+                      entityId: internal.field ? `setting:${internal.field}` : undefined,
+                    })
+                  else {
+                    const profile = runtimeRegistry.profiles.find(
+                      (profile) =>
+                        profile.id === internal.runtimeId ||
+                        profile.connection.runtimeId === internal.runtimeId,
+                    )
+                    if (profile)
+                      void navigate({
+                        viewId: 'tasks',
+                        entityId: internal.threadId,
+                        threadConnection: {
+                          runtimeId: profile.id,
+                          threadId: internal.threadId,
+                          title: anchor.textContent ?? 'Thread',
+                        },
+                      })
+                    else setSwitchError('This thread’s computer is no longer paired.')
+                  }
+                  return
+                }
                 if (!/^https?:\/\//i.test(anchor.href)) return
                 event.preventDefault()
                 const url = anchor.href
@@ -1160,6 +1195,9 @@ function WorkbenchContent({
                   <SettingsNav
                     views={settingsViews}
                     activeId={target.viewId}
+                    initialField={
+                      target.entityId?.startsWith('setting:') ? target.entityId.slice(8) : undefined
+                    }
                     onSelect={(viewId) => navigate({ viewId })}
                   />
                 )}

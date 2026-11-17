@@ -1,3 +1,4 @@
+import { UsageStorage } from './usage-storage'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { hubPlanLimitSources } from '@dovo/protocol'
@@ -564,6 +565,7 @@ export default function UsageScreen() {
                   })}
                 </SettingsGroup>
                 <UsageSpendLimit computer={selectedComputer} />
+                <UsageStorage computer={selectedComputer} />
               </View>
             )}
             {view !== 'limits' && (

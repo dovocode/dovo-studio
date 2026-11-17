@@ -51,7 +51,7 @@ try {
         contents: `
 import {useState} from 'react'; import {createRoot} from 'react-dom/client';
 import {BrowserElementFeedback} from '${root}/packages/extension-tasks/src/browser/browser-element-feedback.tsx';
-window.workspace={tasks:[{id:'task',draft:'Existing draft'}]}; window.uploads=[];
+window.workspace={repositories:[],tasks:[{id:'task',title:'Current thread',draft:'Existing draft',messages:[],files:[]},{id:'destination',title:'Earlier discussion',draft:'Destination draft',messages:[],files:[]}]}; window.uploads=[];
 function App(){const[owner,setOwner]=useState('a');window.changeOwner=()=>setOwner('b');return <BrowserElementFeedback key={owner} taskId="task" enabled capture={()=>window.capture()} inspect={point=>window.inspect(point)}/>};
 createRoot(document.getElementById('app')).render(<App/>);`,
       },
@@ -69,7 +69,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     [
       {
         path: '@dovo/studio-core',
-        contents: `export const updateTask=(w,id,f)=>({...w,tasks:w.tasks.map(t=>t.id===id?f(t):t)});export const useWorkspace=()=>({setWorkspace:f=>{window.workspace=f(window.workspace)}});`,
+        contents: `export const updateTask=(w,id,f)=>({...w,tasks:w.tasks.map(t=>t.id===id?f(t):t)});export const useStudioHost=()=>({});export const createTask=()=>({id:'new-task'});export const resolveTaskDefaults=()=>({});export const useWorkspace=()=>({workspace:window.workspace,snapshot:{attachmentDraftCompareSupported:true},runtimes:[],activeRuntimeId:'local',connected:true,connection:null,runtimeRegistry:{profiles:[]},flush:async()=>{},request:async(path,input)=>{if(path.endsWith('draft-guard'))return {guard:'guard',guardedUploads:1,draftCompared:true};if(path.endsWith('upload')){if(window.uploadFails)throw Error('Upload unavailable');window.destinationUpload=input;return {}};throw Error(path)},setWorkspace:f=>{window.workspace=f(window.workspace)}});`,
       },
       {
         path: './screenshot-attachment',
@@ -78,7 +78,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
       },
       {
         path: '@dovo/studio-ui',
-        contents: `export * from '${root}/packages/studio-ui/src/components/ui/button.tsx';export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;`,
+        contents: `export * from '${root}/packages/studio-ui/src/components/ui/button.tsx';export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';export * from '${root}/packages/studio-ui/src/components/ui/select.tsx';export * from '${root}/packages/studio-ui/src/components/ui/input.tsx';export const IconButton=({label,children,...props})=><button aria-label={label} {...props}>{children}</button>;`,
       },
     ],
   )
@@ -164,6 +164,39 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   await select()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
   assert.equal(await page.evaluate(() => window.workspace.tasks[0].draft), beforeCancel)
+  await select()
+  await page.getByRole('textbox', { name: 'Requested change' }).fill('Reuse this exact element')
+  await page.getByRole('checkbox', { name: 'Attach a cropped screenshot' }).check()
+  await page.getByRole('button', { name: 'Add to another thread…', exact: true }).click()
+  await page.getByRole('dialog', { name: 'Add selection to a thread' }).waitFor()
+  await page.getByRole('button', { name: /Earlier discussion/ }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  const destination = await page.evaluate(() => ({
+    text: window.workspace.tasks[1].draft,
+    upload: window.destinationUpload,
+  }))
+  assert.match(destination.text, /^Destination draft/)
+  assert.match(destination.text, /Reuse this exact element/)
+  assert.match(destination.text, /#save/)
+  assert.equal(destination.upload.taskId, 'destination')
+  assert.equal(destination.upload.draftGuard, 'guard')
+  assert.ok(destination.upload.data.length > 0)
+  await select()
+  await page.getByRole('checkbox', { name: 'Attach a cropped screenshot' }).check()
+  await page.evaluate(() => {
+    window.uploadFails = true
+  })
+  await page.getByRole('button', { name: 'Add to another thread…', exact: true }).click()
+  await page.getByRole('button', { name: /Earlier discussion/ }).click()
+  await page.getByRole('status').filter({ hasText: 'Image was not attached' }).waitFor()
+  assert.equal(
+    (await page.evaluate(() => window.workspace.tasks[1].draft)).split('Selected browser element')
+      .length - 1,
+    2,
+  )
+  await page.evaluate(() => {
+    window.uploadFails = false
+  })
   await select()
   await target.evaluate(() => scrollTo(0, 50))
   const surface = page.getByRole('button', { name: /^Page snapshot:/ })

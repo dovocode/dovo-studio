@@ -109,3 +109,22 @@ it('waits for the old microphone to stop before a new call can capture', async (
   await second
   expect(started).toBe(true)
 })
+
+it('uses the selected voice pause and resets it when words arrive', async () => {
+  vi.useFakeTimers()
+  const controller = new AbortController()
+  await mobileBotCallAudio(3000).listen(controller.signal, {
+    preview: () => {},
+    finish: () => {},
+    error: () => {},
+  })
+  native.callbacks?.onResult('First words')
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(native.stop).not.toHaveBeenCalled()
+  native.callbacks?.onResult('More words')
+  await vi.advanceTimersByTimeAsync(2999)
+  expect(native.stop).not.toHaveBeenCalled()
+  await vi.advanceTimersByTimeAsync(1)
+  expect(native.stop).toHaveBeenCalledTimes(1)
+  controller.abort()
+})

@@ -13,7 +13,10 @@ export function trustedRendererUrl(source: string, rendererPath: string, devUrl?
   }
 }
 
-export function requireTrustedRenderer(event: IpcMainInvokeEvent, rendererPath: string) {
+export function requireTrustedRenderer(
+  event: Pick<IpcMainInvokeEvent, 'sender' | 'senderFrame'>,
+  rendererPath: string,
+) {
   if (
     !event.senderFrame ||
     event.senderFrame !== event.sender.mainFrame ||

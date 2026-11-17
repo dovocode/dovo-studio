@@ -27,7 +27,7 @@ const built = await bundleBrowser(
       contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import Usage from './src/screens/usage';
 window.fontScale=1;const now=Date.now();const turn=(id,reported)=>({id,assistantId:id,agentId:'agent',provider:'codex',model:'gpt-6.1-sol',status:'completed',startedAt:new Date(now-(id==='missing'?2:1)*86400000).toISOString(),finishedAt:new Date(now-(id==='missing'?2:1)*86400000+60000).toISOString(),...(reported?{tokens:12000,estimatedCostUsd:.035}:{})});
 window.paceReading={provider:'codex',updatedAt:new Date(now).toISOString(),usedPercent:92,window:'Session',durationMins:300,resetsAt:Math.floor(now/1000)+3600,account:{id:'account',label:'Personal'}};
-window.usageHost={connected:true,profile:{id:'mac',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://runtime',token:'test-token'}},snapshot:{unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks:[{id:'task',title:'Improve composer and usage visualization across computers',example:false,turns:[turn('reported',true),turn('missing',false)]}],planLimits:[]}}};window.missingTurn=turn('unreported',false);
+window.usageHost={connected:true,profile:{id:'mac',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://runtime',token:'test-token'}},snapshot:{usageRetentionSupported:true,unattendedSpendLimitSupported:true,unattendedSpendLimitUsd:null,workspace:{tasks:[{id:'task',title:'Improve composer and usage visualization across computers',example:false,turns:[turn('reported',true),turn('missing',false)]}],planLimits:[]}}};window.missingTurn=turn('unreported',false);
 function App(){const[,render]=useState(0);window.refreshLayout=scale=>{window.fontScale=scale;render(value=>value+1)};return <Usage/>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -46,6 +46,12 @@ function App(){const[,render]=useState(0);window.refreshLayout=scale=>{window.fo
     ...['./settings-theme', './settings-controls', './settings-group', '../ui/content/text'].map(
       (path) => ({ path, importer: screen, contents: native }),
     ),
+    {
+      path: '../ui/content/clipboard',
+      importer: screen,
+      contents:
+        "export const copyText=async text=>{(window.copiedPages??=[]).push(JSON.parse(text));return window.shareExport?'shared':'copied'};",
+    },
     { path: './usage-prices', importer: screen, contents: 'export const UsagePrices=()=>null;' },
     { path: './reset-credits', importer: screen, contents: 'export const ResetCredits=()=>null;' },
     {
@@ -74,7 +80,7 @@ const hubRead=(path,input)=>{
   window.hubEntries=[...window.hubEntries.filter(h=>h.id!==value.id),value];return window.hubEntries;
  }
 };
-const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{...window.usageHost.snapshot,workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:scenario==='limits'?[window.paceReading]:[]}}}]);listeners.forEach(callback=>callback())};window.reportSpendLimit=value=>{overviews=current().map(entry=>({...entry,snapshot:{...entry.snapshot,unattendedSpendLimitUsd:value}}));listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
+window.storedUsage={days:null,count:300,oldest:'2025-01-01T00:00:00.000Z',newest:new Date().toISOString()};window.retentionWrites=[];window.exportReads=[];const cache={read:async()=>null,write:async()=>{}};const readRuntime=async(profile,path,input)=>{(window.usageReads??=[]).push(path);if(path==='/api/usage/storage/read')return window.storedUsage;if(path==='/api/usage/storage/write'){window.retentionWrites.push(input);window.storedUsage={...window.storedUsage,days:input.days,count:input.days===null?window.storedUsage.count:1};return window.storedUsage};if(path==='/api/usage/storage/export'){window.exportReads.push(input);return {sourceId:'stable',records:[{id:input.cursor?'last-record':'old-record'}],...(input.cursor?{}:{next:{at:'2025-01-01T00:00:00.000Z',id:'old-record'}})}};if(path.startsWith('/api/usage/hubs/'))return hubRead(path,input);if(path==='/api/runtime/preferences/save'){(window.limitWrites??=[]).push(input);return {unattendedSpendLimitUsd:input.unattendedSpendLimitUsd}};return path==='/api/usage/limits/read'?{checkedAt:new Date().toISOString(),accounts:[],hubs:window.hubEntries.map(hub=>window.partialHub?{...hub,error:'1 of 2 accounts could not report limits.',accounts:[{id:'good',provider:'claude',account:{id:'hub-account',label:'Hub account'},status:'ok'},{id:'bad',provider:'claude',account:{id:'unreported',label:'Failed hub account'},status:'failed'}]}:hub)}:{sourceId:profile.id,records:[],notices:[]}};let overviews;const listeners=new Set();const subscribe=callback=>{listeners.add(callback);return ()=>listeners.delete(callback)};const current=()=>overviews??=[window.usageHost];window.changeUsageScenario=scenario=>{overviews=(scenario==='unpaired'?[]:[{...window.usageHost,snapshot:{...window.usageHost.snapshot,workspace:{tasks:scenario==='empty'?[]:scenario==='zero'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[{...window.missingTurn,tokens:0,estimatedCostUsd:0}]}]:scenario==='missing'?[{...window.usageHost.snapshot.workspace.tasks[0],turns:[window.missingTurn]}]:window.usageHost.snapshot.workspace.tasks,planLimits:scenario==='limits'?[window.paceReading]:[]}}}]);listeners.forEach(callback=>callback())};window.reportSpendLimit=value=>{overviews=current().map(entry=>({...entry,snapshot:{...entry.snapshot,unattendedSpendLimitUsd:value}}));listeners.forEach(callback=>callback())};export const useRuntime=()=>({overviews:useSyncExternalStore(subscribe,current),readRuntime,refreshRuntime:async()=>{},cacheForRuntime:()=>cache});`,
     },
   ],
 )
@@ -237,6 +243,53 @@ try {
   await page.getByText('Mac Studio · $7.00 per thread family', { exact: true }).waitFor()
   assert.equal(await limitField.inputValue(), '7')
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true)
+  await page.getByText(/300 records · 2025-01-01/).waitFor()
+  await page.evaluate(() => (window.shareExport = true))
+  await page
+    .getByRole('button', { name: 'Copy first export page, up to 256 records', exact: true })
+    .click()
+  await page
+    .getByText('Share sheet opened. Keep a copy before continuing. This page remains available.', {
+      exact: true,
+    })
+    .waitFor()
+  assert.equal(
+    await page
+      .getByRole('button', { name: 'Copy first export page, up to 256 records', exact: true })
+      .count(),
+    1,
+  )
+  await page.getByRole('button', { name: 'Continue to next export page', exact: true }).click()
+  await page.evaluate(() => (window.shareExport = false))
+  await page
+    .getByRole('button', { name: 'Copy next export page, up to 256 records', exact: true })
+    .click()
+  await page
+    .getByText('Last page copied as JSON. The next export starts again.', { exact: true })
+    .waitFor()
+  assert.deepEqual(await page.evaluate(() => window.exportReads), [
+    { cursor: undefined },
+    { cursor: { at: '2025-01-01T00:00:00.000Z', id: 'old-record' } },
+  ])
+  assert.deepEqual(
+    await page.evaluate(() => window.copiedPages.map((page) => page.records[0].id)),
+    ['old-record', 'last-record'],
+  )
+  const retention = page.getByLabel('Usage retention days', { exact: true })
+  await retention.fill('30')
+  await page
+    .getByRole('button', { name: 'Save retention and delete old usage records', exact: true })
+    .click()
+  await page.getByText(/1 records .*Keep 30 days/).waitFor()
+  await retention.fill('')
+  await page
+    .getByRole('button', { name: 'Save retention and delete old usage records', exact: true })
+    .click()
+  await page.getByText(/1 records .*Keep all/).waitFor()
+  assert.deepEqual(await page.evaluate(() => window.retentionWrites), [
+    { days: 30 },
+    { days: null },
+  ])
   await page.evaluate(() => window.changeUsageScenario('unpaired'))
   await page
     .getByText('Connect a computer to see recorded usage and account limits.', { exact: true })
@@ -247,7 +300,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile usage: quarterly chart, phone/tablet and large text, missing token/price reports, empty chart and account limits, and unpaired guidance passed (native boundaries adapted).',
+    'Mobile usage: quarterly chart, phone/tablet and large text, missing token/price reports, empty chart and account limits, unpaired guidance, retention, paged export and share-sheet page retention passed (native boundaries adapted).',
   )
 } finally {
   await browser.close()

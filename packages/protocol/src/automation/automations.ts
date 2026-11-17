@@ -4,6 +4,23 @@ import { resolveTaskAgent } from '../workspace.js'
 import { supportsAccess } from '../auth/access.js'
 import type { Automation, Task, Workspace } from '../workspace.js'
 
+/** Only completed ancestors may supply inputs, including across review gates. */
+export function automationInputSources(flow: Pick<Automation, 'nodes' | 'edges'>, nodeId: string) {
+  const ancestors = new Set<string>()
+  const pending = [nodeId]
+  while (pending.length) {
+    const target = pending.pop()!
+    for (const edge of flow.edges) {
+      if (edge.target !== target || ancestors.has(edge.source)) continue
+      ancestors.add(edge.source)
+      pending.push(edge.source)
+    }
+  }
+  return flow.nodes.filter(
+    (node) => node.id !== nodeId && node.data.kind === 'task' && ancestors.has(node.id),
+  )
+}
+
 /** Derive Bot job identity from the saved targets, including unavailable Bots. */
 export function automationBotJobSummary(
   flow: Pick<Automation, 'nodes'>,
@@ -98,6 +115,15 @@ export function automationIssues(
     errors.push('Connect every node to the trigger.')
   for (const node of flow.nodes) {
     const data = node.data
+    if (data.inputFrom?.length) {
+      const sources = new Set(automationInputSources(flow, node.id).map((source) => source.id))
+      if (
+        data.kind !== 'task' ||
+        new Set(data.inputFrom).size !== data.inputFrom.length ||
+        data.inputFrom.some((id) => !sources.has(id))
+      )
+        errors.push(`Choose connected preceding tasks as inputs for ${data.label}.`)
+    }
     if (!data.label.trim()) errors.push('Give every node a name.')
     if (data.kind === 'trigger' && data.trigger === 'once') {
       try {

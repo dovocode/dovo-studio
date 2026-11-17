@@ -16,7 +16,7 @@ const {writeFileSync}=require('node:fs');let bytes=Buffer.alloc(0);const message
 const send=value=>{const text=JSON.stringify({jsonrpc:'2.0',...value});process.stdout.write('Content-Length: '+Buffer.byteLength(text)+'\r\n\r\n'+text)};
 const reply=(id,result)=>send({id,result});let sid='';let count=0;
 const event=(type,data={},extra={})=>send({method:'session.event',params:{sessionId:sid,event:{id:'event-'+(++count),timestamp:new Date().toISOString(),type,data,...extra}}});
-function handle(v){messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));const p=v.params||{};
+function handle(v){if(process.env.COPILOT_AUTO_UPDATE!=='false')throw Error('Automatic updates must be disabled');messages.push(v);writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));const p=v.params||{};
  if(!v.method&&v.id==='question'){event('session.idle');return}
  if(v.method==='connect'||v.method==='ping')return reply(v.id,{protocolVersion:3});
  if(v.method==='models.list')return reply(v.id,{models:[{id:'a',name:'A',supportedReasoningEfforts:['low','high']}]});

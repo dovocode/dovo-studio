@@ -1,4 +1,5 @@
 import { turnAnnouncementsSchema } from '@dovo/protocol'
+import { botVoicePauseOptions, botVoicePauseSchema } from '@dovo/protocol'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { interfaceLanguages, decode, interfaceLanguageSchema } from '@dovo/protocol'
@@ -569,6 +570,17 @@ export function SpeechSettingsScreen() {
             })),
           ]}
           onChange={(dictationLanguage) => updateMobilePreferences({ dictationLanguage })}
+        />
+        <Choice
+          label={uiText('Voice pause')}
+          value={String(preferences.botVoicePause)}
+          items={botVoicePauseOptions.map((ms) => ({
+            id: String(ms),
+            name: `${ms / 1000} seconds`,
+          }))}
+          onChange={(value) =>
+            updateMobilePreferences({ botVoicePause: decode(botVoicePauseSchema, Number(value)) })
+          }
         />
         <Choice
           label={uiText('Read aloud language')}

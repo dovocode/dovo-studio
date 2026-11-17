@@ -33,6 +33,7 @@ interface Window {
     >
     browserExtensions: import('@dovo/protocol').BrowserExtensionBridge
     updates: import('@dovo/protocol').DesktopUpdateBridge
+    fileDrag: import('@dovo/protocol').FileDragBridge
     repositoryOpener: import('@dovo/protocol').RepositoryOpenerBridge
     pickDirectory(this: void, runtimeAddress: string): Promise<string | null>
     extensions(): Promise<import('@dovo/client-runtime').ExtensionInfo[]>

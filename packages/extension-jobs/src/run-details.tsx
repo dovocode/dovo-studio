@@ -1,5 +1,6 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
+import { RestoreDefinition } from './restore-definition'
 import { RunAudit } from './run-audit'
 import { RunRoutineSource, type RoutineProvenanceState } from './routine-provenance'
 import {
@@ -42,7 +43,7 @@ export function StepStatus({
   step,
   needsInput = false,
 }: {
-  step: Pick<RunStep, 'status'>
+  step: Pick<RunStep, 'status'> & Partial<Pick<RunStep, 'kind' | 'queuedAt' | 'workStartedAt'>>
   needsInput?: boolean
 }) {
   const Icon = needsInput ? Clock3 : stepIcons[step.status]
@@ -63,7 +64,13 @@ export function StepStatus({
         className={cn('size-3.5', step.status === 'running' && !needsInput && 'animate-spin')}
         aria-hidden="true"
       />
-      {needsInput ? 'Needs input' : stepLabels[step.status]}
+      {needsInput
+        ? 'Needs input'
+        : step.status === 'running' && step.queuedAt && !step.workStartedAt
+          ? 'Waiting for worker'
+          : step.status === 'waiting' && step.kind === 'task'
+            ? 'Waiting for provider'
+            : stepLabels[step.status]}
     </span>
   )
 }
@@ -132,6 +139,7 @@ export function RunDetails({
     })
   return (
     <div className="min-h-0 flex-1 overflow-y-auto">
+      <RestoreDefinition key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
       <RunRoutineSource state={provenance} runCreatedAt={run.createdAt} />
       {snapshot?.runAuditSupported && (
         <RunAudit key={`${activeRuntimeId}:${run.id}`} runId={run.id} />
@@ -158,7 +166,8 @@ export function RunDetails({
         >
           {runs.map((item) => (
             <option key={item.id} value={item.id}>
-              {formatDateTime(item.createdAt)} · {runLabels[item.status]}
+              {formatDateTime(item.createdAt)} ·{' '}
+              {item.retryAt ? 'Waiting for provider' : runLabels[item.status]}
             </option>
           ))}
         </ChoicePicker>
@@ -170,7 +179,11 @@ export function RunDetails({
               run.status === 'waiting' && 'text-status-warning',
             )}
           >
-            {inputStep ? 'Needs input' : runLabels[run.status]}
+            {run.retryAt
+              ? 'Waiting for provider'
+              : inputStep
+                ? 'Needs input'
+                : runLabels[run.status]}
           </strong>
           <span className="text-muted-foreground">
             {completed}/{steps.length} steps
@@ -226,7 +239,13 @@ export function RunDetails({
             </Button>
           </div>
         )}
-        {run.status === 'waiting' && (
+        {run.retryAt && (
+          <p className="text-xs">
+            Provider startup retry {run.startupRetryCount}/3 at {formatDateTime(run.retryAt)}. No
+            input was accepted. Cancel stops this retry.
+          </p>
+        )}
+        {run.status === 'waiting' && !run.retryAt && (
           <div className="rounded-lg border border-status-warning/25 bg-status-warning/5 p-3">
             <p className="text-xs font-medium">{waiting?.label ?? 'Review needed'}</p>
             <p className="mt-1 text-xs leading-relaxed text-muted-foreground">
@@ -288,7 +307,7 @@ export function RunDetails({
           const task = workspace.tasks.find((task) => task.id === step.taskId)
           const duration =
             step.finishedAt || step.status === 'running' || step.status === 'waiting'
-              ? elapsed(step.startedAt, step.finishedAt, now)
+              ? elapsed(step.queuedAt ? step.workStartedAt : step.startedAt, step.finishedAt, now)
               : null
           const present = flow.nodes.some((node) => node.id === step.nodeId)
           return (
@@ -326,8 +345,15 @@ export function RunDetails({
                         step.status === 'running' && !!pendingTaskInput(snapshot, step.taskId)
                       }
                     />
+                    {step.queuedAt && (
+                      <span className="text-[0.6875rem] text-muted-foreground">
+                        Queue {elapsed(step.queuedAt, step.workStartedAt ?? step.finishedAt, now)}
+                      </span>
+                    )}
                     {duration && (
-                      <span className="text-[0.6875rem] text-muted-foreground">{duration}</span>
+                      <span className="text-[0.6875rem] text-muted-foreground">
+                        Work {duration}
+                      </span>
                     )}
                     {step.attempt > 1 && (
                       <span className="text-[0.6875rem] text-muted-foreground">

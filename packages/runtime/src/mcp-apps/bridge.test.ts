@@ -283,6 +283,71 @@ it('captures MCP Apps and rejects legacy resources without putting HTML in sync'
   expect(() => bridge.read('another-thread', refs[0].id)).toThrow('Task')
   await expect(bridge.proxy('wrong-token', 'tools/list', {})).rejects.toThrow('credential')
 })
+it('cancels a pending app resource after its tool has completed and keeps the client reusable', async () => {
+  const f = await setup()
+  const bridge = f.runtime.services.mcpApps
+  let release!: () => void
+  let started!: () => void
+  const waiting = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  const ready = new Promise<void>((resolve) => {
+    started = resolve
+  })
+  f.upstream.setRequestHandler(ReadResourceRequestSchema, async ({ params }) => {
+    started()
+    await waiting
+    return {
+      contents: [
+        {
+          uri: params.uri,
+          mimeType: 'text/html;profile=mcp-app',
+          text: '<h1>Chart</h1>',
+          _meta: { ui: { csp: {} } },
+        },
+      ],
+    }
+  })
+  const controller = new AbortController()
+  bridge.proxies(
+    f.task.id,
+    [f.server],
+    f.f.directory,
+    'ask',
+    { port: f.runtime.port, host: '127.0.0.1' },
+    controller.signal,
+  )
+  let settled = false
+  const result = bridge.proxy(f.token, 'tools/call', { name: 'chart' }).then(
+    () => {
+      settled = true
+      return undefined
+    },
+    (error: unknown) => {
+      settled = true
+      return error
+    },
+  )
+  try {
+    await ready
+    controller.abort()
+    await vi.waitFor(() => expect(settled).toBe(true), { timeout: 1000 })
+    expect(await result).toBeDefined()
+    expect(f.calls()).toBe(1)
+    release()
+    bridge.proxies(f.task.id, [f.server], f.f.directory, 'ask', {
+      port: f.runtime.port,
+      host: '127.0.0.1',
+    })
+    await expect(bridge.proxy(f.token, 'tools/call', { name: 'chart' })).resolves.toMatchObject({
+      content: [{ text: 'Chart ready' }],
+    })
+    expect(f.calls()).toBe(2)
+  } finally {
+    release()
+    await result
+  }
+})
 it('rejects saved legacy cards without changing history or saved content', async () => {
   const s = await setup(),
     bridge = s.runtime.services.mcpApps

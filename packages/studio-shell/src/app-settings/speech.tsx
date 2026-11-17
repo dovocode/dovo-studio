@@ -8,6 +8,8 @@ import {
   dictationLanguageSchema,
   dictationModel,
   dictationStatusSchema,
+  botVoicePauseOptions,
+  botVoicePauseSchema,
   randomUUID,
   type DictationStatus,
 } from '@dovo/protocol'
@@ -49,7 +51,30 @@ export function SpeechSettings() {
     }
   }, [bridge])
 
-  if (!bridge) return <RuntimeSpeechSettings />
+  const pause = (
+    <SettingsGroup
+      title="Bot voice calls"
+      description="Saved on this device. Choose how long you can pause before sending a spoken message."
+    >
+      <SettingRow label="Voice pause">
+        <SettingsSelect
+          label="Voice pause"
+          value={String(preferences.botVoicePause)}
+          options={botVoicePauseOptions.map((ms) => [String(ms), `${ms / 1000} seconds`] as const)}
+          onChange={(value) =>
+            updateAppPreferences({ botVoicePause: decode(botVoicePauseSchema, Number(value)) })
+          }
+        />
+      </SettingRow>
+    </SettingsGroup>
+  )
+  if (!bridge)
+    return (
+      <>
+        {pause}
+        <RuntimeSpeechSettings />
+      </>
+    )
   const downloading = installing || status?.downloading
   const install = async () => {
     setError('')
@@ -68,6 +93,7 @@ export function SpeechSettings() {
   }
   return (
     <>
+      {pause}
       <RuntimeSpeechSettings />
       <SettingsGroup
         title={uiText('Speech')}

@@ -28,14 +28,19 @@ import type { AutomationData, Workspace } from '@dovo/protocol'
 import { SettingsChoice as Choice } from '../screens/settings-controls'
 import { SettingsField as Field } from '../screens/settings-controls'
 import { useTheme } from '../ui/theme'
+import { automationInputSources, type Automation } from '@dovo/protocol'
 
 export function StepFields({
   data,
+  flow,
+  nodeId,
   workspace,
   disabled,
   onChange,
 }: {
   data: AutomationData
+  flow: Automation
+  nodeId: string
   workspace: Pick<Workspace, 'agents' | 'repositories'>
   disabled: boolean
   onChange: (patch: Partial<AutomationData>) => void
@@ -96,6 +101,39 @@ export function StepFields({
             placeholder={uiText('What should the agent do and verify?')}
             multiline
             style={{ minHeight: 96, textAlignVertical: 'top' }}
+          />
+          {!snapshot?.automationStepInputsSupported && (
+            <Text style={styles.muted}>Update this runtime to pass step results and files.</Text>
+          )}
+          {automationInputSources(flow, nodeId).map((source) => (
+            <Choice
+              key={source.id}
+              label={`Use result from ${source.data.label}`}
+              value={data.inputFrom?.includes(source.id) ? 'yes' : 'no'}
+              items={[
+                { id: 'no', name: 'No' },
+                { id: 'yes', name: 'Yes' },
+              ]}
+              disabled={disabled || !snapshot?.automationStepInputsSupported}
+              onChange={(value) =>
+                onChange({
+                  inputFrom:
+                    value === 'yes'
+                      ? [...(data.inputFrom ?? []).filter((id) => id !== source.id), source.id]
+                      : data.inputFrom?.filter((id) => id !== source.id),
+                })
+              }
+            />
+          ))}
+          <Choice
+            label="Include result files"
+            value={data.inputFiles ? 'yes' : 'no'}
+            items={[
+              { id: 'no', name: 'No' },
+              { id: 'yes', name: 'Yes' },
+            ]}
+            disabled={disabled || !snapshot?.automationStepInputsSupported}
+            onChange={(value) => onChange({ inputFiles: value === 'yes' })}
           />
           {(snapshot?.botsSupported || data.botId) && (
             <Choice

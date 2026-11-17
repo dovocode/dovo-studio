@@ -1093,6 +1093,10 @@ export const taskSchema = mutableStruct({
       resume: Schema.Boolean,
     }),
   ),
+  /** Runtime-owned timestamps for the current worker's queue and admission. */
+  workerAdmission: Schema.optional(
+    mutableStruct({ queuedAt: Schema.String, admittedAt: Schema.optional(Schema.String) }),
+  ),
   /** Runtime-owned: new unattended work waits because the spend limit was reached. */
   spendPause: Schema.optional(spendPauseSchema),
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
@@ -1124,6 +1128,9 @@ export const taskSchema = mutableStruct({
   consumedMessageIds: Schema.optional(mutableArray(Schema.String)),
 })
 export const nodeDataSchema = mutableStruct({
+  /** Selected upstream task results. Omission preserves independent step prompts. */
+  inputFrom: Schema.optional(maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 200)), 32)),
+  inputFiles: Schema.optional(Schema.Boolean),
   kind: Schema.Literals(['trigger', 'task', 'review']),
   label: Schema.String,
   trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github']),

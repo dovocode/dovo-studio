@@ -100,14 +100,17 @@ export async function executeCodeTool(options: {
           )
         }
         if (args.source === 'mcp' && args.server) {
-          found.push(
-            ...catalogSchema.parse(
-              await options.remote(
-                { source: 'mcp', name: '__catalog', server: args.server },
-                signal,
-              ),
-            ).tools,
+          const catalog = await options.remote(
+            { source: 'mcp', name: '__catalog', server: args.server },
+            signal,
           )
+          // Catalogs can also exceed the transport limit. Keep their recovery details visible.
+          const retained = z
+            .object({ toolCompleted: z.literal(true), retained: z.boolean() })
+            .passthrough()
+            .safeParse(catalog)
+          if (retained.success) return { ...retained.data, tools: [] }
+          found.push(...catalogSchema.parse(catalog).tools)
         }
         const query = args.query?.toLowerCase()
         return {

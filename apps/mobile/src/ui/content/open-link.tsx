@@ -9,8 +9,9 @@ import {
   type LinkTarget,
 } from '@dovo/studio-core/links'
 import * as Clipboard from 'expo-clipboard'
-import { previewUrl } from '@dovo/protocol'
+import { parseStudioLink, previewUrl } from '@dovo/protocol'
 import { useLinkOrigin, type LinkOrigin } from './link-origin'
+import { taskHref } from '../../shell/task-route'
 import { router, usePathname } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, useSheetNavigation, type SheetHandle } from '../layout/sheet'
@@ -24,6 +25,7 @@ import { useTheme } from '../theme'
 
 export type LinkAction = Omit<RouterAction, 'id' | 'kind'>
 const PipelinePreview = lazy(() => import('../../scm/work/pipeline-preview'))
+let openInternalLink: ((url: string) => void) | undefined
 let showLink: ((url: string, origin?: LinkOrigin, actions?: LinkAction[]) => void) | undefined
 
 export async function openAppLink(
@@ -32,6 +34,11 @@ export async function openAppLink(
   origin?: LinkOrigin,
   actions?: LinkAction[],
 ): Promise<void> {
+  if (parseStudioLink(url)) {
+    if (!openInternalLink) throw new Error('Studio navigation is unavailable')
+    openInternalLink(url)
+    return
+  }
   if (!/^https?:\/\//i.test(url)) {
     if (!/^(mailto|tel|sms|dovo):/i.test(url)) throw new Error('Unsupported link address')
     return Linking.openURL(url)
@@ -107,9 +114,33 @@ export function LinkBrowser() {
         ),
       })
     }
+    const internal = (value: string) => {
+      const target = parseStudioLink(value)
+      if (!target) return
+      if (target.kind === 'settings') {
+        router.push({
+          pathname: '/settings/[section]',
+          params: {
+            section: target.mobilePath.split('/').at(-1)!,
+            ...(target.field ? { setting: target.field } : {}),
+          },
+        })
+      } else {
+        const entry = owner.current.find(
+          (entry) =>
+            entry.profile.id === target.runtimeId ||
+            entry.snapshot?.runtimeId === target.runtimeId ||
+            entry.profile.connection.runtimeId === target.runtimeId,
+        )
+        if (!entry) throw new Error('This thread’s computer is no longer paired.')
+        router.push(taskHref(entry.profile.id, target.threadId))
+      }
+    }
+    openInternalLink = internal
     showLink = show
     return () => {
       if (showLink === show) showLink = undefined
+      if (openInternalLink === internal) openInternalLink = undefined
     }
   }, [controller, pipeline])
   useEffect(() => {

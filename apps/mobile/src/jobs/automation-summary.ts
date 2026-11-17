@@ -18,17 +18,21 @@ export function automationRunSummary(run: JobRun, inputTasks: ReadonlySet<string
   const needsInput = !!current?.taskId && inputTasks.has(current.taskId)
   const status = needsInput
     ? 'Needs input'
-    : run.status === 'waiting'
-      ? 'Needs review'
-      : run.status === 'running'
-        ? 'Running'
-        : run.status === 'completed'
-          ? 'Completed'
-          : run.status === 'cancelled'
-            ? 'Cancelled'
-            : run.interrupted
-              ? 'Interrupted'
-              : 'Failed'
+    : run.retryAt
+      ? 'Waiting for provider'
+      : current?.status === 'running' && current.queuedAt && !current.workStartedAt
+        ? 'Waiting for worker'
+        : run.status === 'waiting'
+          ? 'Needs review'
+          : run.status === 'running'
+            ? 'Running'
+            : run.status === 'completed'
+              ? 'Completed'
+              : run.status === 'cancelled'
+                ? 'Cancelled'
+                : run.interrupted
+                  ? 'Interrupted'
+                  : 'Failed'
   return {
     steps,
     current,

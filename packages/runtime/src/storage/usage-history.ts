@@ -7,6 +7,9 @@ import {
   mutableArray,
   mutableStruct,
   usageRecordSchema,
+  usageRetentionSchema,
+  usageStorageSchema,
+  type usageExportCursorSchema,
   type Task,
   type UsageRecord,
 } from '@dovo/protocol'
@@ -14,6 +17,7 @@ const rowSchema = mutableStruct({ value: Schema.String })
 /** Independent of thread retention, and never carried in streaming workspace snapshots. */
 export class UsageHistory {
   readonly sourceId: string
+  private days: number | null = null
   constructor(private readonly db: Database.Database) {
     db.exec(
       'CREATE TABLE IF NOT EXISTS usage_records (id TEXT PRIMARY KEY, started_at TEXT NOT NULL, value TEXT NOT NULL); CREATE INDEX IF NOT EXISTS usage_records_started_id ON usage_records(started_at,id);',
@@ -22,6 +26,64 @@ export class UsageHistory {
     this.sourceId = row ? decode(rowSchema, row).value : randomUUID()
     if (!row)
       db.prepare('INSERT INTO documents VALUES (?, ?)').run('usage-source-id', this.sourceId)
+    const setting = db.prepare('SELECT value FROM documents WHERE id=?').get('usage-retention')
+    if (setting)
+      this.days = decode(usageRetentionSchema, JSON.parse(decode(rowSchema, setting).value)).days
+    this.cleanup()
+  }
+  private cutoff() {
+    return this.days === null ? '' : new Date(Date.now() - this.days * 86400000).toISOString()
+  }
+  private cleanup() {
+    if (this.days !== null)
+      this.db.prepare('DELETE FROM usage_records WHERE started_at < ?').run(this.cutoff())
+  }
+  storage() {
+    const row = this.db
+      .prepare(
+        'SELECT COUNT(*) AS count, MIN(started_at) AS oldest, MAX(started_at) AS newest FROM usage_records',
+      )
+      .get()
+    const stats = decode(
+      mutableStruct({
+        count: Schema.Number,
+        oldest: Schema.NullOr(Schema.String),
+        newest: Schema.NullOr(Schema.String),
+      }),
+      row,
+    )
+    return decode(usageStorageSchema, { ...stats, days: this.days })
+  }
+  setRetention(days: number | null) {
+    const value = decode(usageRetentionSchema, { days })
+    this.db.transaction(() => {
+      this.db
+        .prepare('INSERT OR REPLACE INTO documents VALUES (?,?)')
+        .run('usage-retention', JSON.stringify(value))
+      this.days = value.days
+      this.cleanup()
+    })()
+    return this.storage()
+  }
+  exportPage(cursor?: typeof usageExportCursorSchema.Type) {
+    const rows = this.db
+      .prepare(
+        'SELECT id, started_at, value FROM usage_records WHERE (started_at,id) > (?,?) ORDER BY started_at,id LIMIT 257',
+      )
+      .all(cursor?.at ?? '', cursor?.id ?? '')
+      .map((row) =>
+        decode(
+          mutableStruct({ id: Schema.String, started_at: Schema.String, value: Schema.String }),
+          row,
+        ),
+      )
+    const page = rows.slice(0, 256),
+      last = page.at(-1)
+    return {
+      sourceId: this.sourceId,
+      records: page.map((row) => decode(usageRecordSchema, JSON.parse(row.value))),
+      next: rows.length > 256 && last ? { at: last.started_at, id: last.id } : undefined,
+    }
   }
   record(tasks: readonly Task[], previous: ReadonlyMap<string, Task>) {
     const write = this.db.prepare(
@@ -39,6 +101,7 @@ export class UsageHistory {
       const old = new Map((previousTask?.turns ?? []).map((turn) => [turn.id, turn]))
       for (const turn of task.turns ?? []) {
         if (turn.status === 'running') continue
+        if (turn.startedAt < this.cutoff()) continue
         const prior = old.get(turn.id)
         // Change capture and file viewing do not change consumption.
         if (
@@ -63,6 +126,7 @@ export class UsageHistory {
         write.run(JSON.stringify([task.id, turn.id]), turn.startedAt, JSON.stringify(record))
       }
     }
+    this.cleanup()
   }
   /** Tasks with a recorded turn on this provider account, without reading their histories. */
   taskIds(accountId: string) {
@@ -95,12 +159,15 @@ export class UsageHistory {
       'INSERT INTO usage_records VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET value = excluded.value WHERE value != excluded.value',
     )
     this.db.transaction(() => {
-      for (const record of records)
+      for (const record of records) {
+        if (record.turn.startedAt < this.cutoff()) continue
         write.run(
           `external:${record.turn.provider}:${record.turn.id}`,
           record.turn.startedAt,
           JSON.stringify(record),
         )
+      }
+      this.cleanup()
     })()
   }
   /** CLI exclusion needs identities, not decoding every durable turn a second time. */

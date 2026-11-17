@@ -9,6 +9,7 @@ it.each([
   ['reasoning start before end', 'configuration'],
   ['MODEL_CAPACITY_EXHAUSTED 429', 'capacity'],
   ['No capacity available for model', 'capacity'],
+  ['API Error: 529', 'capacity'],
   ['429 rate_limit_exceeded', 'quota'],
   ['quota exhausted', 'quota'],
   ['503 Provider unavailable', 'unavailable'],
