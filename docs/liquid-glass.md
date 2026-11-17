@@ -40,12 +40,12 @@ mounted when appearance or accessibility preferences change. Android and unsuppo
 use solid palette fills. These are expected platform fallbacks. Web SVG refraction does not run
 inside native React Native.
 
-Settings use grouped rows and platform pickers or switches. Native changed-file summaries, tool
-activity, thread info, review findings and plan approval use the shared Glass wrapper. Selected
-threads and change categories use a tinted glass layer behind the existing controls. Native iOS
-navigation retains its system glass. The floating settings save bar uses the shared glass wrapper.
-Scope labels, search, pending edits and save rules keep their existing behavior. Form text uses the
-larger shared settings text size.
+Settings use grouped rows and platform pickers or switches. Tool calls appear inline without a glass
+panel. Native changed-file summaries, thread info, review findings and plan approval use the shared
+Glass wrapper. Selected threads and change categories use a tinted glass layer behind the existing
+controls. Native iOS navigation retains its system glass. The floating settings save bar uses the
+shared glass wrapper. Scope labels, search, pending edits and save rules keep their existing
+behavior. Form text uses the larger shared settings text size.
 
 ## Local checks
 
