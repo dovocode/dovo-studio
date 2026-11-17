@@ -585,3 +585,23 @@ shared-browser check passed with rebuilt desktop styles. The native layout check
 during its streaming fixture. Desktop and catalog builds, browser-shard scheduling tests, repository
 checks and changelog validation passed. Native browser calls in these checks use a scripted bridge.
 Physical native-browser rendering still needs device verification.
+
+### Shared composer radius check
+
+Check `44114947719` failed because the composer browser fixture still required a 28px corner radius.
+The shared glass design token sets the composer radius to 22px. The same failure reproduced locally
+against the current desktop build. The assertion now reads `designTokens.radius.composer` and still
+compares the computed radius exactly. Production styles stay unchanged. Stop-button motion,
+reduced-motion, focus, contrast and layout checks remain enabled.
+
+Run the affected browser suite against a current desktop build:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:composer-unification:browser
+pnpm check
+```
+
+Both browser scripts passed locally against the existing current desktop build. They covered shared
+composer behavior and desktop, phone and 320px layouts. The repository check passed. This change
+corrects the test expectation and does not establish a production regression proof.

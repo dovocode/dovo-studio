@@ -3,6 +3,7 @@ import { build } from 'esbuild'
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { designTokens } from '../packages/design/src/tokens.ts'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const screenshots = process.env.DOVO_COMPOSER_SCREENSHOTS
@@ -649,8 +650,8 @@ try {
           await page
             .locator('.studio-composer')
             .evaluate((element) => getComputedStyle(element).borderBottomLeftRadius),
-          '28px',
-          'Composer retains its rounded frame',
+          `${designTokens.radius.composer}px`,
+          'Composer uses the shared frame radius',
         )
         for (const selector of ['[data-composer-stop]', '[data-composer-stop] svg'])
           assert.equal(
