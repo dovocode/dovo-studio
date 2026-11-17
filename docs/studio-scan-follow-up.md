@@ -725,3 +725,27 @@ fixtures were inspected for the same missing adapters. The rendering fixture alr
 other fixtures replace the row or UI controls. The repository check passed with zero errors and 36
 existing warnings. This change updates only the browser fixture. It does not verify physical iOS
 glass rendering or establish a production regression proof.
+
+### Detail-transition header fixture
+
+Check `44133022429` passed all jobs except browser shard 2. The detail-transition fixture measured a
+removed `::before` divider, which returned `NaN` for its position. The failure reproduced locally.
+The real shell now renders `.studio-header-corner`. The fixture now includes that element and checks
+its bounds, bottom border and window drag-region CSS. It also verifies that the corner does not
+cover navigation and hides with the fallback header. Existing theme rail clearances and
+brand-position checks stay enabled.
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:detail-transitions:browser
+pnpm check
+```
+
+The script compiles current source CSS. It covers Linux and macOS shell fixtures, light and dark
+themes, and thread and pull-request sidebars. Opening, switching, closing, rapid selection, retained
+drafts, immediate unmount, reduced motion and the unsupported-browser fallback remain in the same
+script. This change updates only the test fixture. It does not establish a production regression
+proof or verify native window dragging.
+
+The full script passed locally, including all eight shell layout variants. The repository check
+passed with zero errors and 36 existing warnings.

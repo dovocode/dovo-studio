@@ -143,23 +143,27 @@ try {
     for (const platform of ['linux', 'darwin']) {
       for (const collection of ['Thread sidebar', 'Pull request sidebar']) {
         await page.setContent(
-          `<html class="${mode === 'dark' ? 'dark' : ''}" data-theme="${mode}"><body style="margin:0"><div class="studio-header-layout" data-inline-header="true" data-compact="false"><div class="studio" data-platform="${platform}"><div class="studio-body"><nav class="studio-navigation" aria-label="Main navigation"><button class="studio-navigation-item">T</button></nav><main class="studio-main"><div style="display:flex;flex:1;min-height:0"><aside class="studio-task-sidebar" aria-label="${collection}" style="display:flex;flex-direction:column;width:320px"><header class="studio-titlebar" data-sidebar-brand="true"><span id="brand">Dovo Studio</span></header><div class="studio-overview-pane" style="flex:1">${collection}</div></aside><div style="display:flex;flex:1;flex-direction:column"><header class="studio-titlebar">Thread</header><div style="display:flex;flex:1"><section style="flex:1">Conversation</section><aside class="studio-thread-tools-panel" style="width:240px">Project</aside><nav class="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button class="studio-navigation-item">F</button></nav></div></div></div></main></div></div></div></body></html>`,
+          `<html class="${mode === 'dark' ? 'dark' : ''}" data-theme="${mode}"><body style="margin:0"><div class="studio-header-layout" data-inline-header="true" data-compact="false"><div class="studio" data-platform="${platform}"><div class="studio-header-corner" aria-hidden="true"></div><div class="studio-body"><nav class="studio-navigation" aria-label="Main navigation"><button class="studio-navigation-item">T</button></nav><main class="studio-main"><div style="display:flex;flex:1;min-height:0"><aside class="studio-task-sidebar" aria-label="${collection}" style="display:flex;flex-direction:column;width:320px"><header class="studio-titlebar" data-sidebar-brand="true"><span id="brand">Dovo Studio</span></header><div class="studio-overview-pane" style="flex:1">${collection}</div></aside><div style="display:flex;flex:1;flex-direction:column"><header class="studio-titlebar">Thread</header><div style="display:flex;flex:1"><section style="flex:1">Conversation</section><aside class="studio-thread-tools-panel" style="width:240px">Project</aside><nav class="studio-navigation studio-tools-navigation" aria-label="Thread tools"><button class="studio-navigation-item">F</button></nav></div></div></div></main></div></div></div></body></html>`,
         )
         await page.addStyleTag({ content: css })
         const layout = await page.locator('.studio').evaluate((element) => {
-          const rule = getComputedStyle(element, '::before'),
+          const corner = element.querySelector('.studio-header-corner'),
+            rule = getComputedStyle(corner),
+            bounds = corner.getBoundingClientRect(),
             header = document.querySelector('.studio-titlebar'),
             rect = (selector) => document.querySelector(selector).getBoundingClientRect()
           return {
-            top: parseFloat(rule.top),
-            width: parseFloat(rule.width),
-            height: parseFloat(rule.height),
-            color: rule.backgroundColor,
+            top: bounds.top,
+            width: bounds.width,
+            height: bounds.height,
+            color: rule.borderBottomColor,
+            border: rule.borderBottomWidth,
             headerColor: getComputedStyle(header).borderBottomColor,
             headerTop: header.getBoundingClientRect().top,
             headerHeight: header.getBoundingClientRect().height,
             headerLeft: header.getBoundingClientRect().left,
-            pointerEvents: rule.pointerEvents,
+            appRegion: rule.getPropertyValue('-webkit-app-region'),
+            navigationTop: rect('[aria-label="Main navigation"]').top,
             leftGap:
               rect('.studio-overview-pane').left - rect('[aria-label="Main navigation"]').right,
             rightGap:
@@ -167,11 +171,16 @@ try {
             brandLeft: rect('#brand').left,
           }
         })
-        assert.equal(layout.top, layout.headerTop + layout.headerHeight - 1)
-        assert.equal(layout.width, layout.headerLeft, 'Divider must meet the inline header')
-        assert.equal(layout.height, 1)
+        assert.equal(layout.top, layout.headerTop)
+        assert.equal(layout.width, layout.headerLeft, 'Header corner must meet the inline header')
+        assert.equal(layout.height, layout.headerHeight)
+        assert.equal(layout.border, '1px')
         assert.equal(layout.color, layout.headerColor)
-        assert.equal(layout.pointerEvents, 'none')
+        assert.equal(layout.appRegion, 'drag', 'The header corner retains native window dragging')
+        assert.ok(
+          layout.top + layout.height <= layout.navigationTop,
+          'The header corner must not cover navigation controls',
+        )
         assert.equal(layout.leftGap, 6)
         assert.equal(
           layout.rightGap,
@@ -191,11 +200,18 @@ try {
           return document.getElementById('fallback-brand').getBoundingClientRect().left
         })
         assert.equal(layout.brandLeft, fallbackBrand, 'Brand must not shift on sidebar collapse')
+        assert.equal(
+          await page
+            .locator('.studio-header-corner')
+            .evaluate((element) => getComputedStyle(element).display),
+          'none',
+          'The fallback header hides the separate corner',
+        )
       }
     }
   }
   console.log(
-    'Detail transitions: opening, switching, closing, rapid selection, retained drafts, immediate unmount, reduced motion, unsupported-browser fallback and full-width light/dark header dividers, theme rail clearances and fixed header brands passed.',
+    'Detail transitions: opening, switching, closing, rapid selection, retained drafts, immediate unmount, reduced motion, unsupported-browser fallback, light/dark header corners, theme rail clearances and fixed header brands passed.',
   )
 } finally {
   await browser.close()
