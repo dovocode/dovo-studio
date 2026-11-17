@@ -102,6 +102,50 @@ index 398a93403811ad41681af7113ffc4c146d18cece..e55cc9a48ac8d38691cc028c0b4077c3
      /**
       * Array of paths to additional binaries that will be signed along with built-ins of Electron.
       *
+diff --git a/dist/cjs/util.js b/dist/cjs/util.js
+index 77e64b56872bc65bcb0f60ecfbec84eb3da02c6f..b7e55f0de649c84ed73067017cf5d3a8f7d079e6 100644
+--- a/dist/cjs/util.js
++++ b/dist/cjs/util.js
+@@ -149,6 +149,30 @@ exports.validateOptsPlatform = validateOptsPlatform;
+  */
+ async function walkAsync(dirPath) {
+     (0, exports.debugLog)('Walking... ' + dirPath);
++    // Share the probe limit across the whole tree, not each directory. Binary
++    // detection opens files, so unbounded probes can exhaust the process limit.
++    let activeProbes = 0;
++    const waitingProbes = [];
++    async function probeBinary(filePath) {
++        if (activeProbes < 32) {
++            activeProbes++;
++        }
++        else {
++            await new Promise((resolve) => waitingProbes.push(resolve));
++        }
++        try {
++            return await getFilePathIfBinary(filePath);
++        }
++        finally {
++            const next = waitingProbes.shift();
++            if (next) {
++                next();
++            }
++            else {
++                activeProbes--;
++            }
++        }
++    }
+     async function _walkAsync(dirPath) {
+         const children = await fs.readdir(dirPath);
+         return await Promise.all(children.map(async (child) => {
+@@ -161,7 +185,7 @@ async function walkAsync(dirPath) {
+                         await fs.remove(filePath);
+                         return null;
+                     default:
+-                        return await getFilePathIfBinary(filePath);
++                        return await probeBinary(filePath);
+                 }
+             }
+             else if (stat.isDirectory() && !stat.isSymbolicLink()) {
 diff --git a/dist/esm/sign.js b/dist/esm/sign.js
 index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..3cf28695ce0c0fc2380db9b80d73682758f6f678 100644
 --- a/dist/esm/sign.js
@@ -206,3 +250,47 @@ index 398a93403811ad41681af7113ffc4c146d18cece..e55cc9a48ac8d38691cc028c0b4077c3
      /**
       * Array of paths to additional binaries that will be signed along with built-ins of Electron.
       *
+diff --git a/dist/esm/util.js b/dist/esm/util.js
+index d3f66d54b1a88e7410d78affe17de87302db02a3..fe4cabd62348a045230045004f958af99132a505 100644
+--- a/dist/esm/util.js
++++ b/dist/esm/util.js
+@@ -113,6 +113,30 @@ export async function validateOptsPlatform(opts) {
+  */
+ export async function walkAsync(dirPath) {
+     debugLog('Walking... ' + dirPath);
++    // Share the probe limit across the whole tree, not each directory. Binary
++    // detection opens files, so unbounded probes can exhaust the process limit.
++    let activeProbes = 0;
++    const waitingProbes = [];
++    async function probeBinary(filePath) {
++        if (activeProbes < 32) {
++            activeProbes++;
++        }
++        else {
++            await new Promise((resolve) => waitingProbes.push(resolve));
++        }
++        try {
++            return await getFilePathIfBinary(filePath);
++        }
++        finally {
++            const next = waitingProbes.shift();
++            if (next) {
++                next();
++            }
++            else {
++                activeProbes--;
++            }
++        }
++    }
+     async function _walkAsync(dirPath) {
+         const children = await fs.readdir(dirPath);
+         return await Promise.all(children.map(async (child) => {
+@@ -125,7 +149,7 @@ export async function walkAsync(dirPath) {
+                         await fs.remove(filePath);
+                         return null;
+                     default:
+-                        return await getFilePathIfBinary(filePath);
++                        return await probeBinary(filePath);
+                 }
+             }
+             else if (stat.isDirectory() && !stat.isSymbolicLink()) {

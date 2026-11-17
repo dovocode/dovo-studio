@@ -4,7 +4,7 @@ import { createRequire } from 'node:module'
 import { cp, mkdir, mkdtemp, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join, sep } from 'node:path'
 import { tmpdir } from 'node:os'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { setImmediate } from 'node:timers/promises'
 import { configureMacSigning } from './mac-parallel-signing.mjs'
 
@@ -71,6 +71,46 @@ function options(f) {
     }),
   }
 }
+
+await test(
+  'installed scanner handles a wide runtime tree with a low file descriptor limit',
+  { skip: process.platform === 'win32' },
+  async (t) => {
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-sign-scan-'))
+    t.after(() => rm(directory, { recursive: true, force: true }))
+    const expected = []
+    for (let group = 0; group < 8; group++) {
+      const folder = join(directory, `package-${group}`)
+      await mkdir(folder)
+      for (let file = 0; file < 128; file++)
+        await writeFile(join(folder, `chunk-${file}.js`), 'export const value = 42;\n')
+      const binary = join(folder, 'native.node')
+      await writeFile(binary, Buffer.from([0, 1, 2, 3]))
+      expected.push(binary)
+      await writeFile(join(folder, 'stale.cstemp'), 'unfinished signature')
+    }
+    const result = spawnSync(
+      'sh',
+      [
+        '-c',
+        'ulimit -n 64 && exec "$@"',
+        'sign-scan',
+        process.execPath,
+        '-e',
+        `require(process.argv[1]).walkAsync(process.argv[2]).then(
+          paths => console.log(JSON.stringify(paths.sort())),
+          error => { console.error(error); process.exitCode = 1 },
+        )`,
+        signer.resolve('./util.js'),
+        directory,
+      ],
+      { encoding: 'utf8', timeout: 30000 },
+    )
+    assert.ifError(result.error)
+    assert.equal(result.status, 0, result.stderr)
+    assert.deepEqual(JSON.parse(result.stdout), expected.sort())
+  },
+)
 
 await test('installed signer bounds concurrency, isolates bundle executables and signs children before parents', async (t) => {
   const f = await fixture(t)

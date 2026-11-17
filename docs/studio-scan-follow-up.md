@@ -476,3 +476,25 @@ Run the affected browser suite with `pnpm test:ui-visuals:browser`. The narrower
 The focused check reproduced the failure before the fix and passed after it. All six browser checks
 in the affected suite then passed locally. The repository check passed with zero errors. These
 checks use browser fixtures for native controls and transport. They do not verify physical devices.
+
+### Mac signing file limit
+
+Release `44096244096` failed with `EMFILE` while the Mac signer scanned bundled runtime files. The
+signer already limited code signing to four concurrent tasks. Its binary scan still opened files
+without a limit. The dependency patch now limits binary probes to 32 across the full scan, including
+nested directories. Signing order, signature checks and notarization stay the same.
+
+Run the scanner regression and signing checks:
+
+```sh
+node --test scripts/packaging/mac-parallel-signing.test.mjs scripts/packaging/mac-signing.test.mjs scripts/packaging/mac-notarization.test.mjs
+pnpm prove -- --base be152ecc scripts/packaging/mac-parallel-signing.test.mjs
+pnpm install --frozen-lockfile
+pnpm test:ci:scripts
+pnpm check
+pnpm changelog:check
+```
+
+The regression scans 1,024 text files and eight binaries under a 64-file process limit. It fails
+with `EMFILE` before the patch and returns all eight binaries after the patch. Local checks run on
+Linux. Real macOS signing and notarization need the hosted Mac release job.
