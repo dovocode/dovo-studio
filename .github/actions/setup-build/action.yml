@@ -39,7 +39,12 @@ runs:
       shell: bash
       run: |
         node "$GITHUB_WORKSPACE/scripts/ci/build-cache.mjs"
-        echo "store=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
+        store_path=$(pnpm store path)
+        if [[ -z "$store_path" ]]; then
+          echo "::error::pnpm store path returned no path"
+          exit 1
+        fi
+        printf 'store=%s\n' "$store_path" >> "$GITHUB_OUTPUT"
     # Store entries are content-addressed: a changed lockfile can reuse unchanged packages.
     # Save explicitly after install so release jobs can avoid a duplicate archive at cleanup.
     - name: Restore pnpm store

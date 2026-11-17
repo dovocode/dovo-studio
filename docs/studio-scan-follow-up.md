@@ -498,3 +498,19 @@ pnpm changelog:check
 The regression scans 1,024 text files and eight binaries under a 64-file process limit. It fails
 with `EMFILE` before the patch and returns all eight binaries after the patch. Local checks run on
 Linux. Real macOS signing and notarization need the hosted Mac release job.
+
+### Build cache path diagnostics
+
+Browser shard 1 in Check `44099032003` stopped before dependency installation. Cache restore
+received no pnpm store path. The setup step used `echo` around command substitution, which can hide
+a failed pnpm command. The command also used `--silent`, so the log does not show why pnpm returned
+no path.
+
+Setup now captures the path in a separate assignment. A failed pnpm command stops setup with its
+diagnostic output. An empty path also stops setup with a clear error before cache restore. Valid
+paths, including paths with spaces, pass through unchanged. No retry or cache bypass is added.
+
+Run `node --test scripts/ci/build-cache.test.mjs` and
+`pnpm prove -- --base 0f916044 scripts/ci/build-cache.test.mjs`. The tests execute the action's Bash
+step with controlled pnpm results. They verify successful output, command failure and empty output.
+The original runner's pnpm failure cause still needs hosted evidence if it occurs again.
