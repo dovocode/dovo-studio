@@ -10,7 +10,7 @@ const built = await bundleBrowser(
 import React,{useEffect} from 'react';
 import {createRoot} from 'react-dom/client';
 import {Schema} from 'effect';
-import {decode,runtimeProfile,snapshotSchema,removeRuntime,upsertRuntime} from '@dovo/protocol';
+import {decode,runtimeProfile,runtimeSyncOnline,snapshotSchema,removeRuntime,upsertRuntime} from '@dovo/protocol';
 import {TooltipProvider} from '@dovo/studio-ui';
 import DeviceHostsView from './packages/extension-runtime/src/device-hosts-view.tsx';
 import {PairingClient} from './packages/extension-runtime/src/pairing-client.tsx';
@@ -29,6 +29,7 @@ window.dovo={runtimeSync:{subscribe:(input,listener)=>{const entry={input,listen
 window.streamStatus=online=>{for(const {input,listener} of window.liveListeners){if(input.connection.address!==window.profiles[0].connection.address)continue;if(online)listener({type:'snapshot',snapshot:window.server,epoch:'live',sequence:1});listener({type:'status',status:online?'live':'reconnecting',online})}};
 
 window.profiles=Array.from({length:6},(_,i)=>runtimeProfile({address:'http://host'+i+'.lan:8787',token:'test-token-for-host-'+i},'Computer '+i));
+window.streamOnline=()=>runtimeSyncOnline(window.profiles[0].connection);
 localStorage.setItem('dovo.runtimes.v1',JSON.stringify({version:1,activeId:window.profiles[0].id,profiles:window.profiles}));
 const workspace={version:1,runtimeAddress:'',agents:[{id:'agent',name:'Before',instructions:'',provider:'codex',model:'',permission:'ask',endpoint:''}],tasks:[],repositories:[],automations:[]};
 window.server=decode(snapshotSchema,{revision:1,runtimeInstanceId:'test-instance',owner:false,workspace,approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[],settingsScopesSupported:true,defaults:{scopedSettings:{environment:{},shared:[]}}});
@@ -142,24 +143,19 @@ window.readDeviceHub=()=>window.workspaceContext.request('/api/device-hosts',und
       root + 'packages/studio-ui/node_modules',
     ],
   },
-  [
-    {
-      path: '@dovo/protocol',
-      contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=()=>({online:()=>false,refresh:()=>{},stop:()=>{}});`,
-    },
-  ],
+  [{ path: '@dovo/protocol', contents: `export * from '${root}packages/protocol/src/index.ts';` }],
 )
 const browser = await chromium.launch()
 try {
   const context = await browser.newContext()
-  await context.route('http://recovery.lan/**', (route) =>
+  await context.route('http://localhost/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   const page = await context.newPage()
   page.setDefaultTimeout(15000)
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto('http://recovery.lan/')
+  await page.goto('http://localhost/')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.waitForFunction(() => window.workspaceContext?.connected)
   await page.waitForFunction(() => window.workspaceContext.runtimes.length === 6)
@@ -231,7 +227,11 @@ try {
   await page.getByRole('button', { name: 'Retry connection', exact: true }).click()
   await page.getByRole('switch', { name: 'Enable Device Hub', exact: true }).waitFor()
   await page.evaluate(() => window.streamStatus(true))
-  await page.waitForFunction(() => window.workspaceContext.connected)
+  assert.equal(
+    await page.evaluate(() => window.streamOnline()),
+    true,
+    'Stream must be live before the failed read',
+  )
   const liveBefore = await page.evaluate(() => ({
     active: window.workspaceContext.activeRuntimeId,
     revision: window.workspaceContext.snapshot.revision,
