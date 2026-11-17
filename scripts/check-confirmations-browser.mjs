@@ -72,6 +72,16 @@ try {
     await trigger.click()
     const prompt = dialog('Delete selected threads?')
     await prompt.waitFor()
+    const scrim = await page.locator('.dovo-dialog-overlay').evaluate((element) => {
+      const style = getComputedStyle(element)
+      return { color: style.backgroundColor, blur: style.backdropFilter }
+    })
+    assert.equal(
+      scrim.color,
+      mode === 'dark' ? 'rgba(0, 0, 0, 0.32)' : 'rgba(0, 0, 0, 0.18)',
+      `${mode} theme keeps context visible behind the glass dialog`,
+    )
+    assert.equal(scrim.blur, 'none', 'The overlay leaves backdrop blur to the dialog surface')
     assert.equal(
       await prompt
         .getByRole('button', { name: 'Cancel', exact: true })
@@ -140,8 +150,13 @@ try {
     })),
   )
   assert.equal(scrims[0].color, 'rgba(0, 0, 0, 0)', 'Underlying scrim must not compound dimming')
-  assert.equal(scrims[0].blur, 'none', 'Only the front modal blurs the backdrop')
-  assert.equal(scrims[1].color, 'rgba(0, 0, 0, 0.28)', 'Light theme keeps context visible')
+  assert.equal(scrims[0].blur, 'none', 'The underlying overlay adds no backdrop blur')
+  assert.equal(scrims[1].color, 'rgba(0, 0, 0, 0.18)', 'Light theme keeps context visible')
+  assert.equal(
+    scrims[1].blur,
+    'none',
+    'The front overlay leaves backdrop blur to the dialog surface',
+  )
   await dialog('Discard draft?').getByRole('button', { name: 'Cancel', exact: true }).click()
   await dialog('Discard draft?').waitFor({ state: 'hidden' })
   assert.equal(

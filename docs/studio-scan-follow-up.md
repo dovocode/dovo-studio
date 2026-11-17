@@ -682,3 +682,25 @@ saved widths, reset, narrow windows, viewer expansion, fixed icon bars, and diff
 These checks use managed Chromium. Native desktop window rendering remains unverified.
 
 The repository check passed with zero errors and 36 existing warnings. Changelog validation passed.
+
+### Confirmation overlay checks
+
+Check `44126484676` failed because the confirmation fixture still expected 28% black on the light
+overlay. The glass update sets light overlays to 18% and dark overlays to 32%. The old assertion
+failed locally with the same values. The fixture now checks both theme values exactly. It also
+requires overlays to leave backdrop blur to the dialog surface. Nested overlays must still avoid
+extra dimming, preserve the draft and return focus to the editor's action.
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/desktop build
+pnpm test:confirmations:browser
+pnpm check
+```
+
+This change corrects browser test expectations. It does not change production styles or establish a
+production regression proof. The confirmation suites use real dialog and confirmation components
+with browser fixtures for runtime requests.
+
+The desktop build and both confirmation browser scripts passed locally. The repository check passed
+with zero errors and 36 existing warnings. Native desktop window rendering remains unverified.
