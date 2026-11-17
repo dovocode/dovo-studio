@@ -1165,7 +1165,18 @@ it('hides isolated scheduled Bot workers and their descendants from overview roo
 })
 
 it('keeps mention copies under the Bot on its computer and preserves their source routing', () => {
-  const owner = source('owner-profile', [task('bot')])
+  const owner = source('owner-profile', [
+    task('bot', {
+      bot: {
+        role: 'Coordinator',
+        responsibilities: '',
+        state: 'active',
+        revision: randomUUID(),
+        createdAt: '2026-11-15T08:00:00Z',
+        updatedAt: '2026-11-15T08:00:00Z',
+      },
+    }),
+  ])
   owner.snapshot = decode(snapshotSchema, {
     runtimeId: 'owner-identity',
     revision: 1,
@@ -1193,9 +1204,69 @@ it('keeps mention copies under the Bot on its computer and preserves their sourc
   )
   expect(tree.nodes.get(key('sender', 'bot'))!.children).toEqual([])
   expect(tree.nodes.get(key('owner-profile', 'bot'))!.children).toMatchObject([
-    { threadId: 'copy', runtimeId: 'sender' },
+    { threadId: 'copy', runtimeId: 'sender', mentionSourceTitle: 'source' },
   ])
   expect(buildThreadTree(collectTasks([sender])).roots.map((entry) => entry.task.id)).not.toContain(
     'copy',
   )
+})
+
+it('leaves Bot work visible when its exact parent is a known ordinary thread', () => {
+  const owner = source('owner', [
+    task('parent'),
+    task('worker', { botJob: { botId: 'parent', runId: 'run' } }),
+    task('conversation', { botConversation: { botId: 'parent', requestRevision: '1' } }),
+  ])
+  const copy = task('copy', {
+    botMention: {
+      botId: 'parent',
+      runtimeId: 'owner',
+      sourceTaskId: 'original',
+      sourceMessageId: 'message',
+    },
+  })
+  const tree = buildThreadTree(collectTasks([owner, source('sender', [copy])]))
+  expect(tree.nodes.get(key('owner', 'parent'))?.children).toEqual([])
+  expect(tree.roots.map((entry) => entry.task.id)).toEqual([
+    'parent',
+    'worker',
+    'conversation',
+    'copy',
+  ])
+})
+
+it('keeps unresolved saved spawn ownership instead of attaching a child to a stale watch', () => {
+  const entries = collectTasks([
+    source('desktop', [task('wrong-parent', { threadWatches: [watch()] })]),
+    source('server', [
+      task('child', { spawnParent: { runtimeId: 'offline-owner', threadId: 'parent' } }),
+    ]),
+  ])
+  const tree = buildThreadTree(entries)
+  expect(tree.nodes.get(key('desktop', 'wrong-parent'))?.children).toEqual([])
+  expect(tree.rootKeys.get(key('server', 'child'))).toBe(key('server', 'child'))
+})
+
+it('keeps an offline spawned watch separate from a live row whose profile ID matches its identity', () => {
+  const remote = source('server', [task('child')])
+  const watched = watch({
+    offline: true,
+    snapshot: { ...watch().snapshot!, runtimeId: 'server' },
+  })
+  const entries = collectTasks([
+    source('desktop', [task('parent', { threadWatches: [watched] })]),
+    remote,
+  ])
+  const options = { runtimeIds: new Map([['actual-server-runtime', 'server']]) }
+  const tree = buildThreadTree(entries, undefined, undefined, options)
+  expect(tree.rootKeys.get(key('server', 'child'))).toBe(key('server', 'child'))
+  expect(tree.nodes.get(key('desktop', 'parent'))?.children).toMatchObject([
+    { threadId: 'child', runtimeIdentity: 'server', title: 'Remote work', online: false },
+  ])
+  const reconnected = buildThreadTree(entries, tree.nodes, undefined, {
+    runtimeIds: new Map([['server', 'server']]),
+  })
+  expect(reconnected.nodes.get(key('desktop', 'parent'))?.children).toMatchObject([
+    { key: key('server', 'child'), title: 'child', online: true },
+  ])
 })

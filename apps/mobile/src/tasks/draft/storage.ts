@@ -3,6 +3,7 @@ import { turnSettingsSchema, decode, mutableStruct, mutableArray } from '@dovo/p
 import { runClientEffect } from '@dovo/client-runtime'
 import { nativeEffect } from '../../runtime/state/native-effect'
 import type { SendAttempt } from '../composer/send-attempts'
+import { queueEditSchema, type QueueEdit } from './queue-edit'
 type Storage = {
   getItem: (key: string) => Promise<string | null>
   setItem: (key: string, value: string) => Promise<void>
@@ -11,6 +12,7 @@ type Storage = {
 const prefix = 'dovo-draft-record-v1:'
 const recordSchema = mutableStruct({
   text: Schema.String,
+  queueEdit: Schema.optional(queueEditSchema),
   restored: Schema.optional(Schema.String),
   forked: Schema.optional(Schema.String),
   handoffReceipts: Schema.optional(mutableArray(Schema.String)),
@@ -67,6 +69,7 @@ function decodeRecord(raw: string | null): DraftRecord | null {
 }
 const encodeRecord = (record: DraftRecord) =>
   record.submission ||
+  record.queueEdit ||
   record.restore ||
   record.restored ||
   record.fork ||
@@ -80,6 +83,7 @@ const encodeRecord = (record: DraftRecord) =>
 export function createDraftStorage(storage: Storage) {
   const locks = new Map<string, { semaphore: Semaphore.Semaphore; users: number }>()
   const listeners = new Map<string, Set<(value: string) => void>>()
+  const queueEditListeners = new Map<string, Set<(edit: QueueEdit | undefined) => void>>()
   const records = new Map<string, DraftRecord | null>()
   // Text already published to the composer may be ahead of serialized disk writes.
   const publishedText = new Map<string, string>()
@@ -91,6 +95,7 @@ export function createDraftStorage(storage: Storage) {
     const record = records.get(key)
     if (
       listeners.has(key) ||
+      queueEditListeners.has(key) ||
       dirty.has(key) ||
       pendingWrites.has(key) ||
       locks.has(key) ||
@@ -144,10 +149,11 @@ export function createDraftStorage(storage: Storage) {
       records.set(key, record)
       return record
     })
-  const save = (key: string, record: DraftRecord) =>
+  const save = (key: string, record: DraftRecord, publish?: () => void) =>
     Effect.gen(function* () {
       records.set(key, record)
       dirty.add(key)
+      publish?.()
       yield* nativeEffect(() => storage.setItem(key, encodeRecord(record)))
       dirty.delete(key)
     })
@@ -185,6 +191,25 @@ export function createDraftStorage(storage: Storage) {
     )
   const readEffect = (key: string, legacyKey?: string) =>
     readRecordEffect(key, legacyKey).pipe(Effect.map((record) => record?.text ?? null))
+  const updateQueueEditEffect = (
+    key: string,
+    update: (current: QueueEdit | undefined) => QueueEdit | undefined,
+  ) =>
+    serialize(
+      key,
+      Effect.gen(function* () {
+        const previous = yield* load(key)
+        const current = previous?.queueEdit
+        const next = update(current)
+        if (current !== next) {
+          const record = { ...previous, text: previous?.text ?? '', queueEdit: next }
+          yield* save(key, record, () =>
+            queueEditListeners.get(key)?.forEach((listener) => listener(next)),
+          )
+        } else if (previous && dirty.has(key)) yield* save(key, previous)
+        return next
+      }),
+    )
   const writeEffect = (key: string, value: string, origin?: (value: string) => void) =>
     Effect.suspend(() => {
       const writing = ++revision
@@ -480,6 +505,17 @@ export function createDraftStorage(storage: Storage) {
       }
     },
     readRecordEffect,
+    updateQueueEditEffect,
+    subscribeQueueEdit(key: string, listener: (edit: QueueEdit | undefined) => void) {
+      const subscribers = queueEditListeners.get(key) ?? new Set()
+      subscribers.add(listener)
+      queueEditListeners.set(key, subscribers)
+      return () => {
+        subscribers.delete(listener)
+        if (!subscribers.size) queueEditListeners.delete(key)
+        releaseInactive(key)
+      }
+    },
     readEffect,
     writeEffect,
     appendEffect,

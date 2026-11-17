@@ -906,6 +906,9 @@ deadline, with presets of 1 hour, 4 hours, 24 hours, 2 days, 3 days and 7 days. 
 available at any time. Snoozing does not stop a running agent. Hover or focus a row for project,
 branch, host, model, queue, and terminal-session details.
 
+When you load earlier messages, history stays in conversation order. If an older page and a retained
+conversation window contain the same message, Dovo shows it once and keeps the newer copy.
+
 New task opens an empty chat. The first message defines the task and generates its title. Settings →
 Agents → Task title generation selects the harness, model and reasoning used for titles. This runs
 separately from the task harness, in a temporary directory with read-only permissions and approval

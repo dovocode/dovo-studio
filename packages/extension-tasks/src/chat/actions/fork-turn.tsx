@@ -75,10 +75,14 @@ export function ForkTurn({ taskId, turnId }: { taskId: string; turnId: string })
         className="size-6 text-muted-foreground"
         disabled={!connected || busy}
         onClick={() => {
+          const navigationCurrent = host.taskNavigationGuard?.()
           setBusy(true)
           setError('')
           void request('/api/tasks/fork', { id: taskId, turnId }, forkSchema)
-            .then((fork) => host.navigate({ viewId: 'tasks', entityId: fork.id }))
+            .then((fork) => {
+              if (!navigationCurrent || navigationCurrent())
+                host.navigate({ viewId: 'tasks', entityId: fork.id })
+            })
             .catch((cause: unknown) =>
               setError(cause instanceof Error ? cause.message : String(cause)),
             )

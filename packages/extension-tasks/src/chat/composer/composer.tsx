@@ -1116,6 +1116,7 @@ export function Composer({
       (!text && !attachmentIds.length)
     )
       return
+    const navigationCurrent = host.taskNavigationGuard?.()
     sendingRequest.current = true
     setSending(true)
     setSubmittedText(text)
@@ -1143,7 +1144,8 @@ export function Composer({
       )
       composerDraft.accept(text, draftRevision)
       forkAttempt.current = null
-      host.navigate({ viewId: 'tasks', entityId: fork.id })
+      if (!navigationCurrent || navigationCurrent())
+        host.navigate({ viewId: 'tasks', entityId: fork.id })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {

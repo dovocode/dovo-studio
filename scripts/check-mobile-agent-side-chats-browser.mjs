@@ -385,6 +385,7 @@ try {
                 title: 'Remote saved mention',
                 status: 'review',
                 createdAt: '2026-11-15T08:00:00Z',
+                forkedFrom: { taskId: 'source', title: 'Saved Linux source title' },
                 botMention: {
                   runtimeId: 'runtime-mac',
                   botId: 'parent',
@@ -418,6 +419,7 @@ try {
     0,
   )
   assert.equal(await page.getByRole('button', { name: /Unrelated mention/ }).count(), 0)
+  await page.getByText('Saved from Saved Linux source title', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Remote saved mention · review', exact: true }).click()
   assert.equal(await page.evaluate(() => window.routes.at(-1).params.runtimeId), 'linux')
   assert.equal(await page.evaluate(() => window.routes.at(-1).params.taskId), 'remote-copy')

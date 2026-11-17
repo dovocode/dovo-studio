@@ -49,7 +49,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
     {
       path: '../conversation/state/provider',
-      contents: `export const useTaskConversation=()=>({actions:{pendingMessages:window.pending,dictation:{active:false}}});`,
+      contents: `export const useTaskConversation=()=>({actions:{pendingMessages:window.pending,draft:{ready:true},dictation:{active:false}}});`,
     },
     { path: '../../ui/theme', contents: `export const useTheme=()=>({colors:{},styles:{}});` },
     {

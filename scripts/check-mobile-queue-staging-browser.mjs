@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { mobileDraftStorage, waitForMobileDraft } from './browser/mobile-draft-storage.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const actions = root + 'apps/mobile/src/tasks/conversation/state/'
@@ -30,6 +31,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   [
+    mobileDraftStorage,
     {
       path: 'react-native',
       contents:
@@ -81,6 +83,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await waitForMobileDraft(page)
   const input = page.getByRole('textbox', { name: 'Message' })
   await input.fill('Stage this')
   // Same-tick admission must reject a second request before React publishes busy.

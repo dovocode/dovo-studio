@@ -144,8 +144,7 @@ export function AgentSideChats({
           <InterfaceText>{'Your agent side chats will appear here.'}</InterfaceText>
         </Text>
       )}
-      {children.map(({ task: child, runtimeId, runtimeIdentity }) => {
-        const mention = child.botMention
+      {children.map(({ task: child, runtimeId, runtimeIdentity, mention, mentionSourceTitle }) => {
         const local = runtimeId === profile?.id
         const attention = local ? sideThreadAttention(snapshot, child.id) : undefined
         const label =
@@ -184,11 +183,18 @@ export function AgentSideChats({
               <Text style={styles.muted}>{uiText('Saved Bot conversation')}</Text>
             )}
             {mention && (
-              <Action
-                secondary
-                label={uiText('Open source thread')}
-                onPress={() => open(mention.sourceTaskId, runtimeId ?? undefined)}
-              />
+              <>
+                <Text style={styles.muted}>
+                  {mentionSourceTitle
+                    ? uiText('Saved from {value0}', { value0: mentionSourceTitle })
+                    : uiText('Bot mention copy')}
+                </Text>
+                <Action
+                  secondary
+                  label={uiText('Open source thread')}
+                  onPress={() => open(mention.sourceTaskId, runtimeId ?? undefined)}
+                />
+              </>
             )}
             {unused && !child.archivedAt && (
               <Action

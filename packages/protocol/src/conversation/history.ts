@@ -83,13 +83,49 @@ export async function readConversationHistory<
   }
   return mergeConversationHistory(task, pages.reverse())
 }
-/** Retain each message/turn once per revision, with the newest captured version winning. */
+type HistoryMessage = ConversationPage['messages'][number]
+
+function mergePageMessages(
+  messages: Map<string, HistoryMessage>,
+  incoming: readonly HistoryMessage[],
+) {
+  if (!messages.size) {
+    for (const message of incoming) messages.set(message.id, message)
+    return messages
+  }
+  const insertBefore = new Map<string, HistoryMessage[]>()
+  let pending: HistoryMessage[] = []
+  for (const message of incoming) {
+    if (!messages.has(message.id)) {
+      pending.push(message)
+      continue
+    }
+    messages.set(message.id, message)
+    if (pending.length) {
+      insertBefore.set(message.id, pending)
+      pending = []
+    }
+  }
+  if (insertBefore.size) {
+    const ordered = new Map<string, HistoryMessage>()
+    for (const [id, message] of messages) {
+      const prefix = insertBefore.get(id)
+      if (prefix) for (const item of prefix) ordered.set(item.id, item)
+      ordered.set(id, message)
+    }
+    messages = ordered
+  }
+  for (const message of pending) messages.set(message.id, message)
+  return messages
+}
+
+/** Keep messages in order and retain the newest captured version of each message and turn. */
 export function compactConversationPages(pages: readonly ConversationPage[]): ConversationPage[] {
   const revisions = new Map<
     number,
     {
       page: ConversationPage
-      messages: Map<string, Task['messages'][number]>
+      messages: Map<string, HistoryMessage>
       turns: Map<string, NonNullable<Task['turns']>[number]>
     }
   >()
@@ -100,7 +136,7 @@ export function compactConversationPages(pages: readonly ConversationPage[]): Co
       group = { page, messages: new Map(), turns: new Map() }
       revisions.set(revision, group)
     }
-    for (const message of page.messages) group.messages.set(message.id, message)
+    group.messages = mergePageMessages(group.messages, page.messages)
     for (const turn of page.turns) group.turns.set(turn.id, turn)
   }
   return [...revisions.values()].map(({ page, messages, turns }) => ({
@@ -208,9 +244,8 @@ export function mergeConversationHistory<
   // A complete host window owns all membership. Offline mobile restores may have
   // no live window yet, so those explicitly retain their saved replica.
   if (authoritative && !live.historyBefore) return live
-  const messages = new Map(
-    pages.flatMap((page) => page.messages.map((message) => [message.id, message] as const)),
-  )
+  let messages = new Map<string, HistoryMessage>()
+  for (const page of pages) messages = mergePageMessages(messages, page.messages)
   const cached = [...messages.values()]
   const boundary = cached.findIndex((message) => message.id === live.messages[0]?.id)
   if (authoritative && boundary < 0 && live.messages.some((message) => messages.has(message.id)))

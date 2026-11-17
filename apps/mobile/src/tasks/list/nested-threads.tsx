@@ -103,6 +103,11 @@ export const NestedThreads = memo(function NestedThreads({
             .filter(Boolean)
             .join(' · ')}
         </Text>
+        {!!child.mentionSourceTitle && (
+          <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+            {uiText('Saved from {value0}', { value0: child.mentionSourceTitle })}
+          </Text>
+        )}
         {threadNeedsInput(child) && child.phase !== 'needs-input' && (
           <Text style={[styles.muted, { fontSize: 11 }]}>
             <InterfaceText>{'Needs input in child work'}</InterfaceText>

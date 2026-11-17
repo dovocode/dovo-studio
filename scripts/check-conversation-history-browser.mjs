@@ -1,4 +1,5 @@
 import { build } from 'esbuild'
+import assert from 'node:assert/strict'
 import { createRequire } from 'node:module'
 import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -6,6 +7,61 @@ import { chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const environment = `export const AppState={addEventListener:(_event,handler)=>{window.background=handler;return {remove:()=>{}}}};export const useWorkspaceSelector=select=>select(useWorkspace());export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useWorkspace=()=>window.connection;export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>({...window.connection,profile:{connection:window.connection.connection},read:window.connection.request,readCache:window.cache});`
+async function checkOverlappingPages(page) {
+  await page.evaluate(() => {
+    const messages = (ids, version) =>
+      Array.from(ids, (id) => ({ id, role: 'assistant', text: `${version} ${id}` }))
+    const historyRevision = 1
+    window.overlapRequests = []
+    window.connection = {
+      ...window.connection,
+      connected: true,
+      request: async (_path, { before }) => {
+        window.overlapRequests.push(before)
+        if (before === 'F')
+          return { messages: messages('DE', 'Page'), turns: [], historyRevision, before: 'D' }
+        if (before === 'D') return { messages: messages('ABC', 'Page'), turns: [], historyRevision }
+        throw new Error(`Unexpected overlap cursor: ${before}`)
+      },
+    }
+    window.setPrefetchReady(false)
+    window.setOverlapWindow = (ids, version) =>
+      window.setLive({
+        id: 'overlap',
+        messages: messages(ids, version),
+        turns: [],
+        historyBefore: ids[0],
+        historyRevision,
+      })
+    window.setOverlapWindow('F', 'Initial')
+  })
+  await page.waitForFunction(() => window.historyState.task.id === 'overlap')
+  await page.evaluate(() => window.historyState.load())
+  await page.waitForFunction(
+    () => !window.historyState.busy && window.historyState.task.messages[0]?.text === 'Page D',
+  )
+  await page.evaluate(() => window.setOverlapWindow('BCDEF', 'Expanded'))
+  await page.waitForFunction(() => window.historyState.task.historyBefore === 'B')
+  await page.evaluate(() => window.setOverlapWindow('CDEF', 'Current'))
+  await page.waitForFunction(
+    () =>
+      window.historyState.task.historyBefore === 'C' &&
+      window.historyState.task.messages.some((message) => message.text === 'Expanded B'),
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.historyState.task.messages.map((message) => message.id).join(''),
+    ),
+    'BCDEF',
+  )
+  await page.evaluate(() => window.historyState.load())
+  await page.waitForFunction(() => !window.historyState.busy && !window.historyState.hasMore)
+  assert.deepEqual(
+    await page.evaluate(() => window.historyState.task.messages.map((message) => message.text)),
+    ['Page A', 'Expanded B', ...Array.from('CDEF', (id) => `Current ${id}`)],
+  )
+  assert.deepEqual(await page.evaluate(() => window.overlapRequests), ['F', 'D'])
+}
 async function checkFirstLayout(page) {
   await page.evaluate(() => {
     window.prefetchRequests = 0
@@ -884,6 +940,7 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
       await checkExpandedRevision(page)
       await checkWindowGap(page)
       await checkMobileRestoreRace(page)
+      await checkOverlappingPages(page)
       await page.close()
       continue
     }
@@ -1110,12 +1167,13 @@ const root=createRoot(document.getElementById('app'));let restart=0;window.resta
         throw new Error('Trimmed history refilled itself')
     }
     await checkFirstLayout(page)
+    await checkOverlappingPages(page)
     await page.close()
   }
   await checkProductionPaging(browser)
   await checkConversationScroll(browser)
   console.log(
-    'History checks passed: desktop recent-window fill, one-page mobile opening and reader-requested expansion, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
+    'History checks passed: desktop recent-window fill, one-page mobile opening and reader-requested expansion, overlapping pages, offline restoration, background saves, reconnect gaps, rewinds, live and older deletions, revision invalidation, cursor errors and host isolation.',
   )
 } finally {
   await browser.close()

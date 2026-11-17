@@ -26,9 +26,12 @@ Deleting a child does not make a retried submission recreate it.
 
 The child stays on the sending computer, including when the Bot is on another computer. The client
 shows remote children when it has snapshots for both paired computers. Opening one uses its owning
-computer. This association sends no conversation to the Bot's runtime and grants no access. Update
-the source runtime and both clients to use this behavior. Older runtimes still send the source
-message but do not create the copy. Existing messages are not copied retroactively.
+computer. Copy rows show the source thread title when available. If the source is absent, Dovo uses
+the title saved with the copy. A thread that is known not to be a Bot cannot group Bot work. If the
+Bot is missing from the available snapshots, Dovo keeps the saved reference for reconnect. This
+association sends no conversation to the Bot's runtime and grants no access. Update the source
+runtime and both clients to use this behavior. Older runtimes still send the source message but do
+not create the copy. Existing messages are not copied retroactively.
 
 Routine workers also appear in their Bot's Side threads list. They retain their saved job context
 and stay out of the normal thread overview. Their rows open the worker conversation. They do not

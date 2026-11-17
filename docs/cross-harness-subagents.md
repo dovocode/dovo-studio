@@ -244,6 +244,10 @@ Targeted children persist a navigation-only parent reference before starting. Di
 notifications can therefore return to their parent without relying on the originating overview.
 Existing pairing and permission checks still apply.
 
+For older children without a saved parent, Dovo uses the parent's saved spawned watch. If the watch
+records a runtime identity, it must match the child's identity. A matching profile ID does not
+override a different runtime identity. Offline watch rows keep their last known state.
+
 With **Hide finished**, failures remain visible until **Acknowledge failure** is selected in the
 Subagents panel. Acknowledgements persist on the viewing parent and apply to that specific failed
 execution, for both native agents and monitored threads. A new failed attempt becomes visible again.

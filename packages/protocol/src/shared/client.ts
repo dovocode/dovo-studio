@@ -1,4 +1,9 @@
-import { resolveRuntimeEndpoint, invalidateRuntimeRoute } from '../runtime/connection/routes.js'
+import {
+  failRuntimeStreamingRoute,
+  invalidateRuntimeRoute,
+  resolveRuntimeEndpoint,
+  runtimeTransportAddress,
+} from '../runtime/connection/routes.js'
 import {
   isPeerAddress,
   resolvePeerTransport,
@@ -311,6 +316,17 @@ function runtimeRequestTransportEffect<T extends Schema.Codec<unknown, unknown>>
               }),
             )
         }
+        if (
+          response.status === 502 &&
+          method === 'POST' &&
+          options?.route === 'stream' &&
+          target.pathname === '/api/sync/ticket' &&
+          connection &&
+          typeof endpoint !== 'string' &&
+          !controller.signal.aborted &&
+          runtimeTransportAddress(connection, 'stream') === transportTarget.origin
+        )
+          failRuntimeStreamingRoute(connection, transportTarget.origin)
         if (response.status === 401 || response.status === 403) conditional?.remove()
         const text = yield* Effect.tryPromise({
           try: () => response.text(),

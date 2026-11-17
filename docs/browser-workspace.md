@@ -333,7 +333,8 @@ native/session-storage isolation from main-window tabs. Native `createdTabs`/`cl
 verify adoption without opening a duplicate view, retained profiles and session-only extension URLs.
 Thread cases cover stale cross-computer links, owner activation, profile retention and real composer
 draft persistence through panel close/reopen. `node scripts/check-remote-browser-sessions.mjs` uses
-real managed Chromium for unavailable-server recovery, crash cleanup and dialog reattachment.
+real managed Chromium for unavailable-server recovery, crash cleanup and dialog reattachment. If
+every renderer exits before the test can signal it, the check reports that no crash was injected.
 `node scripts/check-browser-viewer-ui-browser.mjs` checks dialog dismissal/reconnect and
 Control/Meta workspace shortcut forwarding from the viewer. Screenshots are written to
 `work/shared-browser/desktop.png`, `work/shared-browser/narrow.png` and

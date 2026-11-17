@@ -33,6 +33,42 @@ it('compacts overlapping rolling windows without losing history or its oldest cu
   expect(pages[0]?.messages.find((message) => message.id === 'm99')?.text).toBe('version-99')
 })
 
+it('keeps earlier messages ahead of a retained overlap when compacting history', () => {
+  const page = (ids: string, version: string): ConversationPage => ({
+    messages: Array.from(ids, (id) => ({ id, role: 'assistant', text: `${version} ${id}` })),
+    turns: [],
+    before: ids[0],
+    historyRevision: 1,
+  })
+  const loaded = compactConversationPages([page('DE', 'page'), page('F', 'initial')])
+  const expanded = page('BCDEF', 'expanded')
+  const pages = compactConversationPages([...loaded, expanded])
+  expect(pages).toEqual([{ ...expanded, before: 'D' }])
+  const live = { ...page('CDEF', 'current'), historyBefore: 'C' }
+  expect(mergeConversationHistory(live, pages).messages).toEqual([
+    ...expanded.messages.slice(0, 1),
+    ...live.messages,
+  ])
+  expect(compactConversationPages([page('ABC', 'fetched'), ...pages])).toEqual([
+    {
+      ...expanded,
+      messages: [...page('A', 'fetched').messages, ...expanded.messages],
+      before: 'A',
+    },
+  ])
+})
+
+it('keeps message order when merging pages with shared message IDs', () => {
+  const messages = (ids: string): ConversationPage['messages'] =>
+    Array.from(ids, (id) => ({ id, role: 'assistant', text: id }))
+  const live = { messages: messages('GH'), turns: [], historyBefore: 'G' }
+  const pages = [
+    { messages: messages('ACE'), turns: [] },
+    { messages: messages('BCDEFG'), turns: [] },
+  ]
+  expect(mergeConversationHistory(live, pages).messages).toEqual(messages('ABCDEFGH'))
+})
+
 it('keeps different history revisions separate when compacting offline pages', () => {
   const pages = compactConversationPages([
     { messages: [{ id: 'removed', role: 'user', text: 'Old' }], turns: [], historyRevision: 0 },

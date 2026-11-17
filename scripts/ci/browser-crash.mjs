@@ -10,12 +10,15 @@ export function terminateBrowserRenderers(
     ({ type, id }) => type === 'renderer' && Number.isSafeInteger(id) && id > 1,
   )
   assert.ok(renderers.length, 'Chromium must have a live renderer to terminate')
+  let signaled = false
   for (const { id } of renderers) {
     try {
       kill(id, 'SIGKILL')
+      signaled = true
     } catch (error) {
       // Spare renderers can exit between the process snapshot and fault injection.
       if (error.code !== 'ESRCH') throw error
     }
   }
+  assert.ok(signaled, 'Every renderer exited before crash injection')
 }

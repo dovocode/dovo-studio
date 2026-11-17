@@ -4,17 +4,27 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const actions = root + 'apps/mobile/src/tasks/conversation/state/'
 const draft = root + 'apps/mobile/src/tasks/draft/'
-const runtime = `import {useSyncExternalStore} from 'react';const listeners=new Set();window.host={connected:true,id:'computer-a',token:'original-token',supported:true};window.switchHost=next=>{window.host={...window.host,...next};listeners.forEach(fn=>fn())};export function useRuntime(){const host=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>window.host);return {connected:host.connected,activeId:host.id,profile:{connection:{address:'http://'+host.id+'.lan',token:host.token}},snapshot:{queueRestoreReceiptsSupported:host.supported,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request}}`
+const runtime = `import {useSyncExternalStore} from 'react';const listeners=new Set();window.host={connected:true,id:'computer-a',token:'original-token',supported:true};window.switchHost=next=>{window.host={...window.host,...next};listeners.forEach(fn=>fn())};export function useRuntime(){const host=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>window.host);return {connected:host.connected,activeId:host.id,profile:{connection:{address:'http://'+host.id+'.lan',token:host.token}},snapshot:{queueRestoreReceiptsSupported:host.supported,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request}}`
 const built = await bundleBrowser(
   {
     stdin: {
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
-window.requests=[];window.receipts=new Map();window.mode='hold';
-window.request=(path,input)=>Effect.tryPromise({try:async()=>{
+window.requests=[];window.receipts=new Map();window.editReads=[];window.mode='hold';
+window.request=(path,input,_schema,method)=>Effect.tryPromise({try:async()=>{
+ if(path.startsWith('/api/snapshot?')){
+   window.editReads.push({path,method});
+   if(window.mode==='lost-edit')throw new Error('Snapshot unavailable after reply was lost');
+   await new Promise(resolve=>{window.finishRead=resolve});
+   return {workspace:{tasks:[window.savedEditTask]}};
+ }
  if(path!='/api/tasks/queue')return {revision:1};
  const host=window.host.id;window.requests.push({host,input});
+ if(input.action==='edit'){
+   window.savedEditTask={...window.task,queue:window.task.queue.map(message=>message.id===input.messageId?{...message,text:input.text}:message)};
+   throw new Error('Edit reply lost after commit');
+ }
  if(window.mode==='hold')await new Promise((resolve,reject)=>{window.finish=resolve;window.reject=()=>reject(new Error('Connection lost before commit'))});
  const receipt=host+':'+input.restoreRequestId;
  if(!window.receipts.has(receipt)){
@@ -25,8 +35,20 @@ window.request=(path,input)=>Effect.tryPromise({try:async()=>{
  if(window.mode==='lost')throw new Error('Response lost after commit');
  return {ok:true}
 },catch:error=>error});
-function Thread(){const[task,setTask]=useState({id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',draft:'',messages:[],files:[],example:false,queue:[{id:'queued',role:'user',text:'Queued text'}]});window.setTask=setTask;const actions=useConversationActions(task);window.actions=actions;return <><textarea aria-label="Draft" value={actions.draft.text} onChange={e=>actions.draft.update(e.target.value,'keyboard')}/><button onClick={()=>actions.restoreQueuedMessage(task.queue[0])}>Restore</button><button onClick={actions.retryRestore}>Retry</button><p role="status">{actions.error}</p><p data-pending>{actions.pendingRestore?.requestId}</p></>}
-function App(){const[key,setKey]=useState(0);window.remount=()=>setKey(key=>key+1);return <Thread key={key}/>}
+function Thread({mount}){
+  const [task,setTask]=useState({id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',draft:'',messages:[],files:[],example:false,queue:[{id:'queued',role:'user',text:'Queued text'}]});
+  const actions=useConversationActions(task);
+  Object.assign(window,{task,setTask,actions,threadMount:mount});
+  return <>
+    <textarea aria-label="Draft" value={actions.draft.text} onChange={e=>actions.draft.update(e.target.value,'keyboard')}/>
+    <button onClick={()=>actions.restoreQueuedMessage(task.queue[0])}>Restore</button>
+    <button onClick={actions.retryRestore}>Retry</button>
+    <button disabled={!actions.draft.ready||!!actions.editing} onClick={()=>actions.beginEdit(task.queue[0])}>Edit</button>
+    <button disabled={!actions.editing||!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Save edit</button>
+    <p role="status">{actions.error}</p><p data-pending>{actions.pendingRestore?.requestId}</p>
+  </>;
+}
+function App(){const[key,setKey]=useState(0);window.remount=()=>setKey(key=>key+1);return <Thread key={key} mount={key}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
       loader: 'tsx',
@@ -102,6 +124,8 @@ createRoot(document.getElementById('app')).render(<App/>);`,
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
   await page.route('http://fixture.local/**', (route) =>
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
@@ -212,6 +236,80 @@ try {
   assert.equal(await page.evaluate(() => window.requests.length), requests)
   console.log(
     'Mobile queue restore checks passed: durable intent, lost response, remount, exactly once, newer typing, original computer, replaced credentials and old runtimes',
+  )
+
+  const remount = async () => {
+    const previous = await page.evaluate(() => {
+      const mount = window.threadMount
+      window.remount()
+      return mount
+    })
+    await page.waitForFunction(
+      (previous) => window.threadMount !== previous && window.actions.draft.ready,
+      previous,
+    )
+  }
+  await remount()
+  await input.fill('Ordinary draft')
+  await page.getByRole('button', { name: 'Edit', exact: true }).click()
+  await page.waitForFunction(() => window.actions.editing?.draft.text === 'Queued text')
+  await input.fill('Edited queued message')
+  const editKey = 'dovo.queue-edit.computer-a.task'
+  await page.waitForFunction(
+    (key) => localStorage.getItem(key)?.includes('Edited queued message'),
+    editKey,
+  )
+  await remount()
+  assert.equal(await input.inputValue(), 'Edited queued message')
+  assert.equal(await page.evaluate(() => window.actions.editing?.original.text), 'Queued text')
+
+  await page.evaluate(() => {
+    window.mode = 'lost-edit'
+  })
+  await page.getByRole('button', { name: 'Save edit', exact: true }).click()
+  await page.waitForFunction(
+    () => !window.actions.busy && window.actions.error.includes('Snapshot unavailable'),
+  )
+  assert.equal(await input.inputValue(), 'Edited queued message')
+  assert.equal(await page.evaluate(() => window.task.queue[0].text), 'Queued text')
+  assert.ok(await page.evaluate(() => window.actions.editing?.attempt?.id))
+  assert.deepEqual(await page.evaluate(() => window.requests.at(-1).input), {
+    id: 'task',
+    action: 'edit',
+    messageId: 'queued',
+    text: 'Edited queued message',
+    expectedText: 'Queued text',
+  })
+
+  await page.evaluate(() => {
+    window.mode = 'read-edit'
+  })
+  await remount()
+  await page.waitForFunction(() => !!window.finishRead)
+  assert.equal(await input.inputValue(), 'Edited queued message')
+  await page.evaluate(() => window.finishRead())
+  await page.waitForFunction(() => !window.actions.busy && !window.actions.editing)
+  assert.equal(await input.inputValue(), 'Ordinary draft')
+  assert.equal(await page.evaluate((key) => localStorage.getItem(key), editKey), '')
+  await remount()
+  assert.equal(await input.inputValue(), 'Ordinary draft')
+  assert.equal(await page.evaluate(() => window.actions.editing), undefined)
+  assert.equal(
+    await page.evaluate(
+      () => window.requests.filter(({ input }) => input.action === 'edit').length,
+    ),
+    1,
+  )
+  assert.deepEqual(
+    await page.evaluate(() => window.editReads),
+    Array.from({ length: 2 }, () => ({
+      path: '/api/snapshot?scope=threads&history=paged&task=task',
+      method: 'GET',
+    })),
+  )
+  assert.deepEqual(errors, [])
+  console.log(
+    'Mobile queued edit checks passed: remount, lost reply, fresh queue confirmation and ordinary draft preservation',
   )
 } finally {
   await browser.close()

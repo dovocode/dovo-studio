@@ -576,8 +576,8 @@ export function SideThreadsPanel({
             </div>
           )}
           <ul className="space-y-2">
-            {children.map(({ task: child, runtimeId, runtimeIdentity }) => {
-              const mention = child.botMention
+            {children.map((row) => {
+              const { task: child, runtimeId, runtimeIdentity, mention, mentionSourceTitle } = row
               const local = runtimeId === activeRuntimeId
               const open = () =>
                 local
@@ -631,8 +631,9 @@ export function SideThreadsPanel({
                   {child.sideThread && <SideThreadProvenance link={child.sideThread} />}
                   {mention && (
                     <p className="text-xs text-muted-foreground">
-                      Saved from {child.forkedFrom?.title ?? 'a thread'} when the Bot was mentioned.
-                      The message runs in the source thread.
+                      {mentionSourceTitle
+                        ? uiText('Saved from {value0}', { value0: mentionSourceTitle })
+                        : uiText('Bot mention copy')}
                     </p>
                   )}
                   <div className="flex flex-wrap items-center gap-1">
@@ -651,7 +652,7 @@ export function SideThreadsPanel({
                                 runtimeId,
                                 runtimeIdentity,
                                 threadId: mention.sourceTaskId,
-                                title: child.forkedFrom?.title ?? 'Source thread',
+                                title: mentionSourceTitle ?? 'Source thread',
                               })
                         }
                       >

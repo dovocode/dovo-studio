@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { mobileDraftStorage, waitForMobileDraft } from './browser/mobile-draft-storage.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const actions = root + 'apps/mobile/src/tasks/conversation/state/'
@@ -12,7 +13,7 @@ import {createRoot} from 'react-dom/client';import {useState} from 'react';impor
 import {useConversationActions} from './apps/mobile/src/tasks/conversation/state/use-actions';
 import {NativeComposerInput} from './apps/mobile/src/tasks/composer/native-composer-input.native';
 window.requests=[];window.historyRequests=[];window.fail=true;window.finish=null;
-window.request=(path,input,_schema,_method,options)=>path==='/api/tasks/composer-history'?Effect.tryPromise({try:async()=>{window.historyRequests.push(input);if(window.historyPage)return window.historyPage(input);return {messages:[{id:'previous',role:'user',text:'Earlier request'}],hasMore:false}},catch:error=>error}):window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
+window.request=(path,input,_schema,_method,options)=>path.startsWith('/api/snapshot?')?Effect.sync(()=>({workspace:{tasks:[window.task]}})):path==='/api/tasks/composer-history'?Effect.tryPromise({try:async()=>{window.historyRequests.push(input);if(window.historyPage)return window.historyPage(input);return {messages:[{id:'previous',role:'user',text:'Earlier request'}],hasMore:false}},catch:error=>error}):window.offline?Effect.sync(()=>{window.requests.push({path,input,defer:options?.defer});return {ok:true,pending:true}}):path==='/api/workspace'?Effect.sync(()=>{window.setTask(task=>({...task,...Object.fromEntries(Object.entries(input.changes).map(([key,value])=>[key,value.after]))}));return {revision:1}}):Effect.tryPromise({try:()=>new Promise((resolve,reject)=>{window.requests.push({path,input});window.finish=()=>window.fail?reject(new Error('Send failed')):resolve({ok:true})}),catch:error=>error});
 function App(){const[task,setTask]=useState({id:'settled',title:'Settled',repositoryId:'repo',agentId:'agent',status:'review',archived:true,draft:'',messages:[{id:'previous',role:'user',text:'Earlier request'}],turns:[],files:[],example:false});const actions=useConversationActions(task);window.task=task;window.setTask=setTask;window.actions=actions;return <>{window.nativeComposer?<NativeComposerInput inputRef={actions.composerInput} value={actions.draft.text} revision={actions.draft.revision} resources={{skills:[],mcpServers:[]}} expanded={false} editable={!actions.busy} onChangeText={text=>actions.draft.update(text,'keyboard')} onSelectionChange={()=>{}}/>:<textarea aria-label="Message" value={actions.draft.text} disabled={!!task.archivedAt||actions.busy} onChange={event=>actions.draft.update(event.target.value,'keyboard')}/>}<button disabled={!actions.canSend} onClick={()=>actions.run(()=>actions.submit())}>Send</button><p role="status">{actions.error}</p></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
       resolveDir: root,
@@ -31,6 +32,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   [
+    mobileDraftStorage,
     {
       path: 'react-native',
       contents:
@@ -96,6 +98,7 @@ try {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await waitForMobileDraft(page)
   const input = page.getByRole('textbox', { name: 'Message' })
   const send = page.getByRole('button', { name: 'Send', exact: true })
   await input.fill('Unsent history draft')
@@ -246,10 +249,10 @@ try {
   )
   await page.waitForFunction(() => window.task.queue?.[0]?.id === 'edit-me')
   await page.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
-  await page.waitForFunction(() => window.actions.editing?.text === 'Queued original')
+  await page.waitForFunction(() => window.actions.editing?.draft.text === 'Queued original')
   assert.equal(await input.inputValue(), 'Queued original')
   await input.fill('Queued edit')
-  await page.waitForFunction(() => window.actions.editing?.text === 'Queued edit')
+  await page.waitForFunction(() => window.actions.editing?.draft.text === 'Queued edit')
   const beforeSettings = await page.evaluate(() => window.requests.length)
   await page.evaluate(() =>
     window.actions.setTurnSettings({
@@ -301,6 +304,8 @@ try {
   })
   await page.waitForFunction(() => !window.actions.busy)
   assert.equal(await input.inputValue(), 'Queued edit')
+  assert.equal(await page.evaluate(() => window.actions.error), 'Send failed')
+  assert.equal(await page.evaluate(() => window.actions.editing.attempt), undefined)
   await send.click()
   await page.waitForFunction(() => window.finish !== null)
   await page.evaluate(() => {
@@ -312,9 +317,9 @@ try {
   assert.equal(await input.inputValue(), 'Draft kept while editing')
   assert.equal(await page.evaluate(() => window.task.queuePaused), true)
   await page.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
-  await page.waitForFunction(() => window.actions.editing?.text === 'Queued original')
+  await page.waitForFunction(() => window.actions.editing?.draft.text === 'Queued original')
   await input.fill('Unsaved edit')
-  await page.waitForFunction(() => window.actions.editing?.text === 'Unsaved edit')
+  await page.waitForFunction(() => window.actions.editing?.draft.text === 'Unsaved edit')
   await page.evaluate(() => window.setTask((task) => ({ ...task, queue: [] })))
   await page.waitForFunction(() => !window.actions.canSend)
   assert.equal(await input.inputValue(), 'Unsaved edit')

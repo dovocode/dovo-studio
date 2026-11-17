@@ -75,6 +75,14 @@ While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop**
   queued and paused with an explanation. Check the conversation before explicitly resuming it; a
   lost harness acknowledgement cannot establish whether it received the input.
 
+On mobile, an edit to a queued message keeps its own draft, including attached files and turn
+settings. Leave the thread and reopen it to continue editing. The ordinary composer draft stays
+separate. If the save reply is lost, Dovo checks the current queue. It clears the edit only after
+the computer confirms the save and you have made no newer changes. If the original message is
+unchanged, you can try Save again. If the message changed, started or was removed, your edit stays
+in the composer. Copy the text if you still need it, then select **Cancel edit** to return to the
+ordinary draft. Dovo does not send these edits again on reconnect without your action.
+
 Changing the model or reasoning while a turn runs applies to the queued message and all following
 turns. The active turn keeps its original model. The new model becomes this thread's default when
 that queued turn starts, so removing, pausing or reordering messages cannot change earlier turns.

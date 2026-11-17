@@ -270,7 +270,7 @@ export function Composer({
   const [messageActions, setMessageActions] = useState<MenuAnchor | null>(null)
   useEffect(
     () => setMessageActions(null),
-    [task.id, task.status, editing?.message.id, stashRuntimeId],
+    [task.id, task.status, editing?.messageId, stashRuntimeId],
   )
   useEffect(() => {
     setDraftTools(undefined)
@@ -1117,7 +1117,7 @@ export function Composer({
       {editing && (
         <View style={{ flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, gap: 8 }}>
           <Text style={[styles.muted, { flex: 1 }]}>
-            {task.queue?.some((message) => message.id === editing.message.id)
+            {task.queue?.some((message) => message.id === editing.messageId)
               ? uiText('Edit queued message')
               : uiText(
                   'This message already started or was removed. Your edit is kept in the composer.',
@@ -1291,8 +1291,8 @@ export function Composer({
                 <ComposerField
                   inputRef={actions.composerInput}
                   resources={chipResources}
-                  focusKey={editing?.message.id ?? draftFocus}
-                  key={draft.key}
+                  focusKey={editing?.session ?? draftFocus}
+                  key={editing?.session ?? draft.key}
                   onFocus={focus}
                   onBlur={blur}
                   onSelectionChange={select}
@@ -1458,7 +1458,7 @@ export function Composer({
                         turn={{
                           value: turnSettings,
                           onChange: setTurnSettings,
-                          beforeMessageId: editing?.message.id,
+                          beforeMessageId: editing?.messageId,
                         }}
                       />
                     ) : (

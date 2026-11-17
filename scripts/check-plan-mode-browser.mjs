@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { mobileDraftStorage, waitForMobileDraft } from './browser/mobile-draft-storage.mjs'
 const extension = fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url))
 const mocks = {
   './harness-catalog': `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[],reasoning:[]}});`,
@@ -88,6 +89,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   [
+    mobileDraftStorage,
     {
       path: 'react-native',
       contents: 'export const Alert={alert(){}};export const Keyboard={dismiss(){}};',
@@ -263,6 +265,7 @@ try {
   )
   await phone.goto('https://dovo.test/')
   await phone.addScriptTag({ content: mobileBuilt.outputFiles[0].text })
+  await waitForMobileDraft(phone)
   const message = phone.getByRole('textbox', { name: 'Message' })
   const plan = phone.getByRole('button', { name: 'Plan', exact: true })
   const send = phone.getByRole('button', { name: 'Send', exact: true })
@@ -310,9 +313,9 @@ try {
   )
   await phone.waitForFunction(() => window.task.queue?.length === 1)
   await phone.evaluate(() => window.actions.beginEdit(window.task.queue[0]))
-  await phone.waitForFunction(() => window.actions.editing?.text === 'Queued')
+  await phone.waitForFunction(() => window.actions.draft.text === 'Queued')
   await plan.click()
-  await phone.waitForFunction(() => window.actions.editing?.plan === true)
+  await phone.waitForFunction(() => window.actions.plan === true)
   await send.click()
   await phone.waitForFunction(() => window.finish)
   const phoneEdit = await phone.evaluate(() => window.requests.at(-1))

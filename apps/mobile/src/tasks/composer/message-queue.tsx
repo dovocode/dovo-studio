@@ -187,6 +187,7 @@ export function MessageQueue({
     !task.archivedAt &&
     !message.steering &&
     !actions.editing &&
+    actions.draft.ready &&
     !actions.busy &&
     !actions.attaching &&
     !actions.dictation.active &&

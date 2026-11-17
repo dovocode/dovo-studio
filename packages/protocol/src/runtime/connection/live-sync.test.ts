@@ -92,7 +92,14 @@ async function stalledSocketFixture(address: string, format?: number) {
   return { clock, Socket, receive, wake, status, live, frame }
 }
 
-async function routedSocketFixture(id: string, constructorFailure = false) {
+async function routedSocketFixture(
+  id: string,
+  options: {
+    constructorFailure?: boolean
+    proxyFirstTicketStatus?: number
+    vpnMismatch?: boolean
+  } = {},
+) {
   vi.useFakeTimers()
   vi.setSystemTime(100000)
   vi.spyOn(Math, 'random').mockReturnValue(0.5)
@@ -112,7 +119,8 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
     onclose?: () => void
     constructor(readonly url: string) {
       Socket.instances.push(this)
-      if (constructorFailure && Socket.instances.length === 1) throw new Error('Upgrade refused')
+      if (options.constructorFailure && Socket.instances.length === 1)
+        throw new Error('Upgrade refused')
     }
     send(value: string) {
       this.sent.push(value)
@@ -122,21 +130,30 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
     }
   }
   const tickets: { origin: string; ticket: string }[] = []
-  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, options) => {
+  const ticketOrigins: string[] = []
+  const fetcher = vi.fn<typeof fetch>().mockImplementation(async (input, init) => {
     const url = requestUrl(input)
-    expect(new Headers(options?.headers).get('Authorization')).toBe(
+    expect(new Headers(init?.headers).get('Authorization')).toBe(
       url.pathname === '/health' ? null : `Bearer ${connection.token}`,
     )
-    expect(url.hostname === `${id}-wrong.local` && url.pathname !== '/health').toBe(false)
+    const identityMismatch =
+      url.hostname === `${id}-wrong.local` ||
+      (options.vpnMismatch && url.hostname === `${id}-vpn.local`)
     if (url.pathname === '/health') {
       return Response.json({
         service: 'dovo-runtime',
-        runtimeId: url.hostname.endsWith('-wrong.local')
-          ? 'unpaired-runtime'
-          : connection.runtimeId,
+        runtimeId: identityMismatch ? 'unpaired-runtime' : connection.runtimeId,
       })
     }
+    expect(identityMismatch).toBeFalsy()
     if (url.pathname === '/api/sync/ticket') {
+      ticketOrigins.push(url.origin)
+      if (
+        options.proxyFirstTicketStatus &&
+        url.origin === connection.address &&
+        ticketOrigins.length === 1
+      )
+        return new Response('Gateway error', { status: options.proxyFirstTicketStatus })
       const ticket = `fresh-${tickets.length + 1}`
       tickets.push({ origin: url.origin, ticket })
       return Response.json({ ticket, format: 5 })
@@ -146,9 +163,14 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
   vi.stubGlobal('fetch', fetcher)
   vi.stubGlobal('WebSocket', Socket)
   const receive = vi.fn<(value: RuntimeSnapshot) => void>()
-  const live = startRuntimeSync(connection, { onSnapshot: receive })
+  const onStatus = vi.fn<(value: RuntimeSyncStatus) => void>()
+  const live = startRuntimeSync(connection, { onSnapshot: receive, onStatus })
   stopped.push(live.stop)
-  await vi.waitFor(() => expect(Socket.instances).toHaveLength(1))
+  await vi.waitFor(() =>
+    expect({ sockets: Socket.instances.length, status: onStatus.mock.lastCall?.[0] }).toMatchObject(
+      options.proxyFirstTicketStatus ? { sockets: 0, status: 'reconnecting' } : { sockets: 1 },
+    ),
+  )
   const baseline = decode(snapshotSchema, {
     revision: 1,
     runtimeId: connection.runtimeId,
@@ -175,7 +197,7 @@ async function routedSocketFixture(id: string, constructorFailure = false) {
     tag: 'baseline',
     snapshot: baseline,
   })
-  return { connection, Socket, tickets, fetcher, receive, live, frame }
+  return { connection, Socket, tickets, ticketOrigins, fetcher, receive, live, frame }
 }
 it.each([6, 7])(
   'reopens a remote thread from its retained selection cursor (format %s)',
@@ -350,7 +372,7 @@ it.each(['error', 'close', 'timeout', 'silent-open', 'constructor'])(
   async (failure) => {
     const { connection, Socket, tickets, fetcher, live, frame } = await routedSocketFixture(
       `route-${failure}`,
-      failure === 'constructor',
+      { constructorFailure: failure === 'constructor' },
     )
     const first = Socket.instances[0]!
     if (failure === 'error') first.onerror?.()
@@ -394,6 +416,61 @@ it.each(['error', 'close', 'timeout', 'silent-open', 'constructor'])(
     expect(runtimeTransportAddress(connection)).toBe(connection.address)
     expect(runtimeTransportAddress(connection, 'stream')).toBe(connection.alternateAddresses[1])
     expect(connection.address).toBe(`http://route-${failure}-proxy.local`)
+  },
+)
+
+it('uses a verified VPN ticket after the stream ticket proxy returns 502 and keeps HTTP on the proxy', async () => {
+  const { connection, Socket, ticketOrigins, fetcher, live, frame } = await routedSocketFixture(
+    'route-ticket-502',
+    { proxyFirstTicketStatus: 502 },
+  )
+  expect(Socket.instances).toHaveLength(0)
+  await vi.advanceTimersByTimeAsync(500)
+  expect(ticketOrigins).toEqual([connection.address, connection.alternateAddresses[1]])
+  expect(Socket.instances).toHaveLength(1)
+  const socket = Socket.instances[0]!
+  expect(new URL(socket.url).origin).toBe(connection.alternateAddresses[1]!.replace('http:', 'ws:'))
+  expect(new URL(socket.url).searchParams.get('ticket')).toBe('fresh-1')
+  socket.readyState = 1
+  socket.onopen?.()
+  socket.onmessage?.({ data: frame })
+  expect(live.online()).toBe(true)
+
+  await runtimeRequest(connection, connection.address, '/api/scm/pulls/action', {}, Schema.Unknown)
+  const writes = fetcher.mock.calls.filter(
+    ([url]) => requestUrl(url).pathname === '/api/scm/pulls/action',
+  )
+  expect(writes.map(([url]) => requestUrl(url).origin)).toEqual([connection.address])
+  expect(runtimeTransportAddress(connection)).toBe(connection.address)
+})
+
+it('waits for the ticket route cooldown to expire when no alternate has the paired identity', async () => {
+  const { connection, Socket, ticketOrigins } = await routedSocketFixture('route-ticket-recovery', {
+    proxyFirstTicketStatus: 502,
+    vpnMismatch: true,
+  })
+  await vi.advanceTimersByTimeAsync(29900)
+  expect(ticketOrigins).toEqual([connection.address])
+  expect(Socket.instances).toHaveLength(0)
+
+  await vi.advanceTimersByTimeAsync(2000)
+  expect(ticketOrigins).toEqual([connection.address, connection.address])
+  expect(Socket.instances).toHaveLength(1)
+  expect(new URL(Socket.instances[0]!.url).origin).toBe(connection.address.replace('http:', 'ws:'))
+})
+
+it.each([403, 503, 504])(
+  'retries a stream ticket %s on the same route without a cooldown',
+  async (status) => {
+    const { connection, Socket, ticketOrigins } = await routedSocketFixture(
+      `route-ticket-${status}`,
+      {
+        proxyFirstTicketStatus: status,
+      },
+    )
+    await vi.advanceTimersByTimeAsync(500)
+    expect(ticketOrigins).toEqual([connection.address, connection.address])
+    expect(Socket.instances).toHaveLength(1)
   },
 )
 

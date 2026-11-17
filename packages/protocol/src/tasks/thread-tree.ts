@@ -8,6 +8,7 @@ import {
 import type { TaskMetadata } from './task-summary.js'
 import { taskFailureVersion, threadFailureKey, threadNativeAgents } from './subagent-failures.js'
 import type { RuntimeSnapshot } from '../runtime/connection/runtime.js'
+import { botParentLink, mentionSourceTitle } from './thread-parent.js'
 
 export type ThreadTreeEntry = {
   key: string
@@ -31,6 +32,7 @@ export type NestedThread = {
   runtimeIdentity?: string
   threadId: string
   title: string
+  mentionSourceTitle?: string
   projectName?: string
   repositoryId?: string
   projectIdentity?: string
@@ -130,16 +132,22 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     ),
   )
   for (const [identity, id] of options.runtimeIds ?? []) identities.set(identity, id)
+  const identityByRuntime = new Map([...identities].map(([identity, id]) => [id, identity]))
   const resolveIdentity = (identity: string) =>
     identities.has(identity) ? identities.get(identity)! : identity
   // Parent links use logical identities. The selected copies may live on different computers.
   const copies = new Map<string, string>()
+  const logicalCopies = new Map<string, string>()
+  const entryByKey = new Map(entries.map((entry) => [entry.key, entry]))
+  const knownIdentity = (entry: Entry) =>
+    entry.task.replica?.ownerRuntimeId ??
+    entry.source.snapshot?.runtimeId ??
+    identityByRuntime.get(entry.source.runtimeId)
   for (const entry of entries) {
-    const identity =
-      entry.task.replica?.ownerRuntimeId ??
-      entry.source.snapshot?.runtimeId ??
-      entry.source.runtimeId
+    const portable = knownIdentity(entry)
+    const identity = portable ?? entry.source.runtimeId
     const threadId = entry.task.replica?.threadId ?? entry.task.id
+    if (portable) logicalCopies.set(taskCollectionKey(portable, threadId), entry.key)
     copies.set(taskCollectionKey(identity, threadId), entry.key)
     copies.set(
       taskCollectionKey(identity === null ? null : resolveIdentity(identity), threadId),
@@ -149,6 +157,14 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   const resolveThreadKey = (identity: string | null, threadId: string) =>
     copies.get(taskCollectionKey(identity, threadId)) ??
     taskCollectionKey(identity === null ? null : resolveIdentity(identity), threadId)
+  const resolvePortableKey = (identity: string, threadId: string) => {
+    const exact = logicalCopies.get(taskCollectionKey(identity, threadId))
+    if (exact) return exact
+    const fallback = resolveThreadKey(identity, threadId)
+    const entry = entryByKey.get(fallback)
+    const known = entry && knownIdentity(entry)
+    return known && known !== identity ? JSON.stringify([identity, threadId, 'portable']) : fallback
+  }
   const snapshotSources = new Map<string, ThreadWatchSummary>()
   const acceptSnapshot = (
     key: string,
@@ -166,7 +182,6 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     snapshotSources.set(key, watch)
     return true
   }
-  const entryByKey = new Map(entries.map((entry) => [entry.key, entry]))
   const attach = (parentKey: string, childKey: string) => {
     if (parents.has(childKey)) return
     // A linked peer can report a cycle or self-reference. Keep every thread navigable.
@@ -181,22 +196,36 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     parents.set(childKey, parentKey)
     parent.children.push(child)
   }
+  const contradictsSpawnParent = (parentKey: string, childKey: string) => {
+    const saved = entryByKey.get(childKey)?.task.spawnParent
+    return saved && resolvePortableKey(saved.runtimeId, saved.threadId) !== parentKey
+  }
+  const botChildren = new Set<string>()
   // Local delegation is authoritative when a remote monitor also refers to the same child.
   for (const entry of entries) {
-    const parentTaskId =
-      entry.task.botConversation?.botId ??
-      entry.task.botMention?.botId ??
-      entry.task.botJob?.botId ??
-      entry.task.sideThread?.parentTaskId ??
-      entry.task.delegation?.parentTaskId
+    const identity = knownIdentity(entry) ?? entry.source.runtimeId
+    const botLink = botParentLink(entry.task)
+    if (botLink) {
+      const botKey = botLink.runtimeIdentity
+        ? resolvePortableKey(botLink.runtimeIdentity, botLink.botId)
+        : resolveThreadKey(identity, botLink.botId)
+      const parentEntry = entryByKey.get(botKey)
+      if (!parentEntry || parentEntry.task.bot) {
+        botChildren.add(entry.key)
+        if (parentEntry) {
+          if (botLink.runtimeIdentity !== undefined)
+            nodes.get(entry.key)!.mentionSourceTitle = mentionSourceTitle(
+              entry.task,
+              (id) => entryByKey.get(taskCollectionKey(entry.source.runtimeId, id))?.task.title,
+            )
+          attach(botKey, entry.key)
+        }
+        continue
+      }
+    }
+    const parentTaskId = entry.task.sideThread?.parentTaskId ?? entry.task.delegation?.parentTaskId
     if (parentTaskId) {
-      const parentKey = resolveThreadKey(
-        entry.task.botMention?.runtimeId ??
-          entry.task.replica?.ownerRuntimeId ??
-          entry.source.snapshot?.runtimeId ??
-          entry.source.runtimeId,
-        parentTaskId,
-      )
+      const parentKey = resolveThreadKey(identity, parentTaskId)
       const record = entryByKey
         .get(parentKey)
         ?.task.subagents?.find(
@@ -208,7 +237,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   }
   for (const entry of entries) {
     const parent = entry.task.spawnParent
-    if (parent) attach(resolveThreadKey(parent.runtimeId, parent.threadId), entry.key)
+    if (parent) attach(resolvePortableKey(parent.runtimeId, parent.threadId), entry.key)
   }
   for (const entry of entries) {
     for (const watch of entry.task.threadWatches ?? []) {
@@ -217,7 +246,10 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
       const runtimeId = watch.snapshot?.runtimeId
         ? resolveIdentity(watch.snapshot.runtimeId)
         : fallback
-      const key = resolveThreadKey(watch.snapshot?.runtimeId ?? fallback, watch.threadId)
+      const key = watch.snapshot?.runtimeId
+        ? resolvePortableKey(watch.snapshot.runtimeId, watch.threadId)
+        : resolveThreadKey(fallback, watch.threadId)
+      if (contradictsSpawnParent(entry.key, key)) continue
       // Archiving stops observation, but known children still belong behind the parent icon.
       if (entry.task.archivedAt) {
         attach(entry.key, key)
@@ -265,7 +297,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         watch.snapshot?.runtimeId ?? watch.runtimeId,
         watch.threadId,
       )
-      const factKey = resolveThreadKey
+      const factKey = resolvePortableKey
       const admitted = new Set<string>()
       for (const fact of facts) {
         if (fact.threadId === watch.threadId && fact.runtimeId === watch.snapshot?.runtimeId)
@@ -335,11 +367,12 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
         }
       }
       for (const fact of facts)
-        if (fact.parent && admitted.has(factKey(fact.runtimeId, fact.threadId)))
-          attach(
-            factKey(fact.parent.runtimeId, fact.parent.threadId),
-            factKey(fact.runtimeId, fact.threadId),
-          )
+        if (fact.parent) {
+          const childKey = factKey(fact.runtimeId, fact.threadId)
+          const parentKey = factKey(fact.parent.runtimeId, fact.parent.threadId)
+          if (admitted.has(childKey) && !contradictsSpawnParent(parentKey, childKey))
+            attach(parentKey, childKey)
+        }
       attach(entry.key, key)
       if (watch.stopRequested && watch.status === 'watching' && parents.get(key) === entry.key)
         nodes.get(key)!.phase = 'stopping'
@@ -415,14 +448,8 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
   return {
     contextKeys,
     roots: entries
-      // Routine workers stay addressable in nodes and Bot history, never as overview roots.
-      .filter(
-        (entry) =>
-          !entry.task.botJob &&
-          !entry.task.botMention &&
-          !entry.task.botConversation &&
-          !parents.has(entry.key),
-      )
+      // Bot children with valid or unresolved parents stay out of the overview roots.
+      .filter((entry) => !botChildren.has(entry.key) && !parents.has(entry.key))
       .map((entry) =>
         !entry.needsInput &&
         threadDescendants(nodes.get(entry.key)?.children ?? []).some(

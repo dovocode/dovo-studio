@@ -47,6 +47,12 @@ return format 7. Older runtimes ignore extra options and keep their format-4/5/6
 clients keep their existing format. HTTP remains supported for LAN and VPN connections. Pairing
 tokens and device revocation checks remain required. Accounts and HTTPS remain optional.
 
+If a verified LAN or VPN route returns `502` for a sync ticket, live sync skips that route for 30
+seconds. On reconnect it can request a new ticket from an alternate address whose unauthenticated
+`/health` response matches the paired runtime identity. If no alternate matches, live sync waits for
+the cooldown to expire before using the route again. The socket uses the address that issued its
+ticket. HTTP requests keep their own route. Authentication failures do not trigger this cooldown.
+
 Format 6 patches changed runtime fields and individual turn fields. A token count change does not
 send the other turns or their checkpoints again. Removed optional fields and reordered turns have
 explicit updates. Reconciliation retains unchanged objects, and a runtime-only update retains the

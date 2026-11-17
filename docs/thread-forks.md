@@ -12,6 +12,10 @@ unchanged.
 
 Dovo opens the new thread. Its title starts with "Fork:". Type the next message to start it.
 
+On desktop and web, if another thread or view is open when a fork finishes, Dovo keeps it open. Open
+the saved fork from the thread list. This also applies when you select **Fork** in the composer's
+**More message actions** menu to send a draft in a new thread.
+
 Agent replies also have **Fork with files from this turn**. **Fork conversation** copies only the
 conversation and does not rewind files. **Fork with files from this turn** copies the conversation
 up to that reply. If that turn saved a file snapshot, the new thread gets its own worktree with the
@@ -80,7 +84,7 @@ The runtime endpoint is `POST /api/tasks/fork-message` with `id`, `messageId` an
 Run the focused checks:
 
 ```sh
-pnpm exec vp test packages/runtime/src/http/message-fork.test.ts packages/protocol/src/tasks/task-fork.test.ts
+pnpm exec vp test packages/runtime/src/http/message-fork.test.ts packages/protocol/src/tasks/task-fork.test.ts packages/extension-tasks/src/chat/actions/fork-navigation.test.ts
 pnpm --filter @dovo/protocol --filter @dovo/runtime --filter @dovo/extension-tasks --filter @dovo/mobile typecheck
 ```
 
@@ -90,8 +94,10 @@ Run the client controls in managed Chromium:
 pnpm exec playwright install chromium
 pnpm --filter @dovo/protocol build
 pnpm test:message-fork:browser
+node --test scripts/browser/composer-fork-navigation.test.mjs
 ```
 
 The runtime test uses a real local HTTP runtime, SQLite, Git and attachment storage. Provider
 execution uses a test adapter. The browser check renders the desktop and mobile message actions with
-native view stubs. These checks do not establish physical iPhone behavior or a real provider login.
+native view stubs. The composer test delays a stub runtime reply until after the selection changes.
+These checks do not establish physical iPhone behavior or a real provider login.

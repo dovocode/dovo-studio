@@ -126,6 +126,17 @@ it('infers legacy ownership only from explicit spawned relationships on the righ
     taskParentReference(task, 'unrelated-profile', [], 'unrelated-identity', [source]),
   ).toBeUndefined()
   expect(
+    taskParentReference(task, 'foreign-profile', [], 'unrelated-identity', [source]),
+  ).toBeUndefined()
+  expect(
+    taskParentReference(task, 'foreign-profile', [], 'child-identity', [
+      {
+        ...source,
+        tasks: [{ ...source.tasks[0], threadWatches: [{ ...watch, snapshot: undefined }] }],
+      },
+    ]),
+  ).toMatchObject({ threadId: 'owner' })
+  expect(
     taskParentReference(task, 'child-profile', [], 'child-identity', [
       {
         ...source,

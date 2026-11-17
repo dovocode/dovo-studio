@@ -310,16 +310,15 @@ try {
       .finally(() => browserCdp.detach())
     const signal = AbortSignal.timeout(10000)
     // Observe both events before injection: production closes the page on a real crash.
-    const crashedAndClosed = Promise.all([
-      once(session.page, 'crash', { signal }),
-      once(session.page, 'close', { signal }),
-    ])
     // Page.crash can stall inside Chromium's deliberate-crash/reporting path on CI.
     // SIGKILL exercises actual renderer loss without waiting for a crash report.
     // This browser belongs to this profile; include spare renderers, never other browsers.
     console.log('Remote browsers: crash injection process snapshot', processInfo)
-    terminateBrowserRenderers(processInfo)
-    await crashedAndClosed
+    await Promise.all([
+      once(session.page, 'crash', { signal }),
+      once(session.page, 'close', { signal }),
+      Promise.resolve().then(() => terminateBrowserRenderers(processInfo)),
+    ])
     assert.equal(browsers.sessions.has('unavailable'), false, 'Crashed sessions are released')
     console.log('Remote browsers: crashed page closed; reopening its profile')
     await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)

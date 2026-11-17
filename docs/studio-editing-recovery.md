@@ -95,12 +95,16 @@ pnpm exec vp test apps/mobile/src/tasks/draft apps/mobile/src/tasks/composer/pen
 node scripts/check-mobile-background-start-browser.mjs
 node scripts/check-mobile-settled-send-browser.mjs
 node scripts/check-mobile-queue-restore-browser.mjs
+pnpm test:prompt-queue:browser
 node scripts/check-mobile-fork-browser.mjs
 ```
 
-The browser checks use native storage and input adapters. They verify the saved-state transition,
-new typing, failed storage, retry identity and fast, stalled and offline transport. They do not
-verify a physical iOS or Android keyboard or native storage latency.
+The browser checks use fake adapters for native storage and input. They verify the saved-state
+transition, new typing, failed storage, retry identity and fast, stalled and offline transport. The
+queue restore check also uses the real draft store to verify that a queued edit survives a remount.
+If the save reply is lost, the client confirms the edit from fresh queue data without another write.
+The ordinary draft stays intact. These checks do not verify native storage latency or a physical iOS
+or Android keyboard.
 
 ## Terminal clipboard
 

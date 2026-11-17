@@ -13,13 +13,13 @@ import { Schema, Effect } from 'effect'
 import {
   conversationPageSchema,
   type TurnSettings,
-  type Attachment,
   sameTurnSettings,
   applyTurnSettings,
   queuedModelAgent,
   planModeIssue,
   responses,
   generatedTitleSchema,
+  snapshotSchema,
   taskSchema,
   cleanedDictationSchema,
   resolveTaskAgent,
@@ -32,12 +32,28 @@ import { useRuntime } from '../../../runtime/connection/provider'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { useAction } from '../../../ui/controls/use-action'
 import { useDraft } from '../../draft/use-draft'
+import { useQueueEdit } from '../../draft/use-queue-edit'
+import {
+  observeQueueEdit,
+  prepareQueueEdit,
+  settleQueueEdit,
+  startQueueEdit,
+  type QueueEdit,
+} from '../../draft/queue-edit'
 import { useAttachmentPicker } from '../../composer/attachment-picker'
 import { useComposerDictation } from '../../composer/use-composer-dictation'
 import { useComposerHistory } from '../../composer/use-composer-history'
 import { createSendAttempts, type SendAttempt } from '../../composer/send-attempts'
 import type { ComposerInputHandle } from '../../composer/native-composer-input.types'
 const sendAttempts = createSendAttempts(randomUUID)
+const queueEditsInFlight = new Set<string>()
+const queueEditOperation = <A, E>(key: string, operation: Effect.Effect<A, E>) =>
+  Effect.suspend<A, E | Error, never>(() => {
+    if (queueEditsInFlight.has(key))
+      return Effect.fail(new Error('A queued message save is already in progress.'))
+    queueEditsInFlight.add(key)
+    return operation.pipe(Effect.ensuring(Effect.sync(() => queueEditsInFlight.delete(key))))
+  })
 export type BackgroundStart = {
   /** The message is durably saved locally or acknowledged by its computer. */
   confirmed: () => void
@@ -75,27 +91,28 @@ export function useConversationActions(task: Task) {
   useEffect(() => {
     setDraftPlan(task.draftPlan === true)
   }, [task.draftPlan, setDraftPlan])
-  const [editing, setEditing] = useApplicationState<{
-    message: Task['messages'][number]
-    text: string
-    revision: number
-    settings: TurnSettings | null
-    files: Attachment[]
-    session: string
-    plan: boolean
-  } | null>(null)
-  const editSession = useRef<string | null>(null)
-  const currentEditing = useRef(editing)
-  currentEditing.current = editing
-  useEffect(
-    () => () => {
-      editSession.current = null
-    },
-    [],
-  )
-  const turnSettings = task.bot ? null : editing ? editing.settings : draftTurnSettings
+  const queueEdit = useQueueEdit(activeId ?? '', task.id)
+  const editing = queueEdit.edit
+  const updateEdit = (
+    session: string,
+    update: (draft: QueueEdit['draft']) => QueueEdit['draft'],
+    refreshText = false,
+  ) =>
+    queueEdit.update((current) => {
+      if (current?.session !== session) return current
+      const draft = update(current.draft)
+      return draft === current.draft
+        ? current
+        : {
+            ...current,
+            draft,
+            version: current.version + 1,
+            revision: current.revision + (refreshText ? 1 : 0),
+          }
+    })
+  const turnSettings = task.bot ? null : editing ? editing.draft.settings : draftTurnSettings
   // One-message plan mode: kept with the draft until a plan send is accepted.
-  const plan = !task.bot && (editing ? editing.plan : draftPlan)
+  const plan = !task.bot && (editing ? editing.draft.plan : draftPlan)
   const planSupported = !task.bot && snapshot?.planModeSupported === true
   const latestDraftText = useRef(storedDraft.text)
   latestDraftText.current = storedDraft.text
@@ -197,6 +214,7 @@ export function useConversationActions(task: Task) {
     // The composer controls already prevent starting history while busy.
     enabled:
       storedDraft.ready &&
+      queueEdit.ready &&
       !editing &&
       !submitting &&
       !storedDraft.pendingFork &&
@@ -208,14 +226,10 @@ export function useConversationActions(task: Task) {
   const updateDraft = (text: string, source?: 'keyboard') => {
     if (backgroundLocked.current) return
     if (editing) {
-      setEditing((current) =>
-        current
-          ? {
-              ...current,
-              text,
-              revision: source === 'keyboard' ? current.revision : current.revision + 1,
-            }
-          : current,
+      updateEdit(
+        editing.session,
+        (draft) => (draft.text === text ? draft : { ...draft, text }),
+        source !== 'keyboard',
       )
       return
     }
@@ -228,7 +242,7 @@ export function useConversationActions(task: Task) {
     taskId: task.id,
     draft: {
       ...storedDraft,
-      text: editing?.text ?? composerHistory.text,
+      text: editing?.draft.text ?? composerHistory.text,
       update: updateDraft,
     },
     connected,
@@ -246,18 +260,20 @@ export function useConversationActions(task: Task) {
   })
   const draft = {
     ...storedDraft,
-    revision: JSON.stringify([
-      editing?.message.id,
-      editing?.revision,
-      storedDraft.revision,
-      composerHistory.index,
-      pendingMessage?.taskId === task.id &&
-      (pendingMessage.state === 'sending' || (pendingMessage.state === 'saved' && submitting))
-        ? pendingMessage.message.id
-        : null,
-    ]),
+    ready: storedDraft.ready && queueEdit.ready,
+    error: queueEdit.error || storedDraft.error,
+    revision: editing
+      ? JSON.stringify([editing.session, editing.revision])
+      : JSON.stringify([
+          storedDraft.revision,
+          composerHistory.index,
+          pendingMessage?.taskId === task.id &&
+          (pendingMessage.state === 'sending' || (pendingMessage.state === 'saved' && submitting))
+            ? pendingMessage.message.id
+            : null,
+        ]),
     text: editing
-      ? editing.text
+      ? editing.draft.text
       : sendingDraft(
           composerHistory.text,
           pendingMessage?.taskId === task.id ? pendingMessage : null,
@@ -269,20 +285,20 @@ export function useConversationActions(task: Task) {
     task.id,
     editing && snapshot?.fullTurnSettingsSupported
       ? {
-          messageId: editing.message.id,
-          files: editing.files,
+          messageId: editing.messageId,
+          files: editing.draft.files,
           uploaded: (file, replaceId) => {
-            if (editSession.current !== editing.session) return false
-            if (replaceId && !currentEditing.current?.files.some((item) => item.id === replaceId))
+            const current = queueEdit.current()
+            if (current?.session !== editing.session) return false
+            if (replaceId && !current.draft.files.some((item) => item.id === replaceId))
               return false
-            setEditing((current) =>
-              current?.session === editing.session &&
-              (!replaceId || current.files.some((item) => item.id === replaceId))
-                ? {
-                    ...current,
-                    files: [...current.files.filter((item) => item.id !== replaceId), file],
-                  }
-                : current,
+            updateEdit(editing.session, (draft) =>
+              replaceId && !draft.files.some((item) => item.id === replaceId)
+                ? draft
+                : {
+                    ...draft,
+                    files: [...draft.files.filter((item) => item.id !== replaceId), file],
+                  },
             )
             return true
           },
@@ -390,7 +406,7 @@ export function useConversationActions(task: Task) {
   const threadAgent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
   const agent =
     threadAgent && snapshot?.persistentTurnModelsSupported
-      ? queuedModelAgent(threadAgent, task.queue, editing?.message.id)
+      ? queuedModelAgent(threadAgent, task.queue, editing?.messageId)
       : threadAgent
   const policyIssue = agent
     ? permissionPolicyUIIssue(
@@ -406,7 +422,7 @@ export function useConversationActions(task: Task) {
   const firstMessage = !task.messages.length && !task.queue?.length && !task.turns?.length
   const checkoutEditable = !task.bot && canChangeTaskCheckout(task)
   const hasInput =
-    !!draft.text.trim() || !!(editing ? editing.files.length : submissionFiles.length)
+    !!draft.text.trim() || !!(editing ? editing.draft.files.length : submissionFiles.length)
   const canSend =
     !policyIssue &&
     !planIssue &&
@@ -418,7 +434,7 @@ export function useConversationActions(task: Task) {
     !storedDraft.pendingFork &&
     draft.ready &&
     hasInput &&
-    (!editing || !!task.queue?.some((message) => message.id === editing.message.id)) &&
+    (!editing || !!task.queue?.some((message) => message.id === editing.messageId)) &&
     (!attaching || (!attachmentPreviewBusy && attachmentPicker.canSubmitWhileUploading)) &&
     !attachmentPicker.failedUploads.length &&
     !dictation.active &&
@@ -478,7 +494,89 @@ export function useConversationActions(task: Task) {
       ? 'stage'
       : 'queue'
   const canStartInBackground =
-    firstMessage && defaultSendMode === 'queue' && (!retryAttempt || retryAttempt.mode === 'queue')
+    !editing &&
+    firstMessage &&
+    defaultSendMode === 'queue' &&
+    (!retryAttempt || retryAttempt.mode === 'queue')
+  const confirmQueueEdit = (edit: QueueEdit, attempt: NonNullable<QueueEdit['attempt']>) =>
+    mobileWorkflow(function* () {
+      let cleared = false
+      yield* queueEdit.updateEffect((current) => {
+        const next = settleQueueEdit(current, edit.session, attempt, true)
+        cleared = !!current && !next
+        return next
+      })
+      if (cleared && queueEdit.active() && !queueEdit.current()) dictation.reset()
+      if (profile) {
+        const ids = new Set(attempt.intended.files.map((file) => file.id))
+        yield* Effect.forEach(
+          attachmentUploads(profile).filter((item) => ids.has(item.id)),
+          (item) =>
+            finishAttachmentEffect(profile, item.id).pipe(
+              Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
+            ),
+        )
+      }
+    })
+  const reconcileQueueEdit = (edit: QueueEdit, attempt: NonNullable<QueueEdit['attempt']>) =>
+    mobileWorkflow(function* () {
+      const query = new URLSearchParams({ scope: 'threads', history: 'paged', task: task.id })
+      const fresh = yield* readEffect(`/api/snapshot?${query}`, undefined, snapshotSchema, 'GET')
+      const message = fresh.workspace.tasks
+        .find((thread) => thread.id === task.id)
+        ?.queue?.find((item) => item.id === edit.messageId)
+      const observed = observeQueueEdit(edit, attempt, message)
+      if (observed === 'saved') yield* confirmQueueEdit(edit, attempt)
+      else if (observed === 'original')
+        yield* queueEdit.updateEffect((current) =>
+          settleQueueEdit(current, edit.session, attempt, false),
+        )
+      else if (observed === 'removed')
+        throw new Error('This message already started or was removed. Your edit was kept.')
+      else throw new Error('This queued message changed on the computer. Your edit was kept.')
+      return observed
+    })
+  useEffect(() => {
+    const attempt = editing?.attempt
+    if (!connected || !editing || !attempt || queueEditsInFlight.has(queueEdit.key)) return
+    act(() => queueEditOperation(queueEdit.key, reconcileQueueEdit(editing, attempt)))
+  }, [connected, editing?.attempt?.id, queueEdit.key])
+  const saveQueueEdit = (editing: QueueEdit, text: string) =>
+    queueEditOperation(
+      queueEdit.key,
+      mobileWorkflow(function* () {
+        let edit = editing
+        if (edit.attempt) {
+          if ((yield* reconcileQueueEdit(edit, edit.attempt)) === 'saved') return
+          const current = queueEdit.current()
+          if (current?.session !== edit.session || current.version !== edit.version)
+            throw new Error('The queued message edit changed. Review it and try again.')
+          edit = current
+        }
+        const { input, attempt } = prepareQueueEdit(edit, task.id, text, randomUUID(), {
+          attachments: snapshot?.fullTurnSettingsSupported === true,
+          settings: snapshot?.queuedTurnSettingsSupported === true,
+          plan: planSupported,
+        })
+        const staged = yield* queueEdit.updateEffect((current) =>
+          current?.session === edit.session && current.version === edit.version && !current.attempt
+            ? { ...current, draft: attempt.intended, attempt }
+            : current,
+        )
+        if (staged?.attempt?.id !== attempt.id)
+          throw new Error('The queued message edit changed. Review it and try again.')
+        const result = yield* Effect.result(
+          callEffect('/api/tasks/queue', input, responses.queueAction),
+        )
+        if (result._tag === 'Success' && result.success.ok) yield* confirmQueueEdit(edit, attempt)
+        else if ((yield* reconcileQueueEdit(edit, attempt)) === 'original')
+          return yield* Effect.fail(
+            result._tag === 'Failure'
+              ? result.failure
+              : new Error('The queued edit was not saved.'),
+          )
+      }),
+    )
   const submit = (
     mode: 'queue' | 'steer' | 'stage' | 'direct' = defaultSendMode,
     providedInput?: string,
@@ -535,7 +633,7 @@ export function useConversationActions(task: Task) {
           new Error('Queue this message to plan before the agent changes anything.'),
         )
       const draftKey = storedDraft.key
-      const editId = editSession.current
+      if (!queueEdit.ready) throw new Error('Wait for the queued message edit to load.')
       // A pending older page must not replace the selected text during the native read.
       composerHistory.cancelLoad()
       const input =
@@ -543,57 +641,17 @@ export function useConversationActions(task: Task) {
         (yield* nativeEffect(() =>
           composerInput.current ? composerInput.current.readText() : Promise.resolve(draft.text),
         ))
-      if (currentDraftKey.current !== draftKey || editSession.current !== editId)
+      if (currentDraftKey.current !== draftKey || queueEdit.current()?.session !== editing?.session)
         return yield* Effect.fail(new Error('The thread changed before sending. Try Send again.'))
       const deferSend =
         (mode === 'queue' || mode === 'stage') &&
         (snapshot?.messageSetupSupported === true || !connected)
       if (editing) {
-        yield* nativeEffect(() => attachmentPicker.waitForUploads(editing.files))
-        if (
-          currentDraftKey.current !== draftKey ||
-          currentEditing.current?.text !== editing.text ||
-          currentEditing.current?.session !== editing.session
-        )
-          throw new Error('The draft changed while preparing attachments. Review it and try again.')
-        yield* callEffect(
-          '/api/tasks/queue',
-          {
-            id: task.id,
-            action: 'edit',
-            messageId: editing.message.id,
-            text: input,
-            expectedText: editing.message.text,
-            ...(snapshot?.fullTurnSettingsSupported
-              ? {
-                  attachmentIds: editing.files.map((file) => file.id),
-                  expectedAttachmentIds: editing.message.attachments?.map((file) => file.id) ?? [],
-                }
-              : {}),
-            ...(snapshot?.queuedTurnSettingsSupported
-              ? {
-                  turnSettings: editing.settings,
-                  expectedTurnSettings: editing.message.turnSettings ?? null,
-                }
-              : {}),
-            ...(planSupported ? { plan: editing.plan, expectedPlan: !!editing.message.plan } : {}),
-          },
-          responses.queueAction,
-        )
-        if (profile) {
-          const ids = new Set(editing.files.map((file) => file.id))
-          yield* Effect.forEach(
-            attachmentUploads(profile).filter((item) => ids.has(item.id)),
-            (item) =>
-              finishAttachmentEffect(profile, item.id).pipe(
-                Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
-              ),
-          )
-        }
-        dictation.reset()
-        editSession.current = null
-        setEditing(null)
-        return
+        yield* nativeEffect(() => attachmentPicker.waitForUploads(editing.draft.files))
+        const current = queueEdit.current()
+        if (current?.session !== editing.session || current.version !== editing.version)
+          throw new Error('The queued message edit changed. Review it and try again.')
+        return yield* saveQueueEdit(current, input)
       }
       if (composerHistory.active) {
         // Commit only after validation; cancelled browsing never overwrites the durable draft.
@@ -639,11 +697,7 @@ export function useConversationActions(task: Task) {
         submissionFiles.length && composerInput.current
           ? yield* nativeEffect(() => composerInput.current!.readText())
           : latestDraftText.current
-      if (
-        currentDraftKey.current !== draftKey ||
-        editSession.current !== editId ||
-        preparedInput !== input
-      )
+      if (currentDraftKey.current !== draftKey || queueEdit.current() || preparedInput !== input)
         throw new Error('The draft changed while preparing attachments. Review it and try again.')
       // Pending messages hide the input. Validate attachment preparation before clearing it.
       setPendingMessage({
@@ -930,33 +984,31 @@ export function useConversationActions(task: Task) {
       )
     },
     beginEdit: (message: Task['messages'][number]) => {
-      if (busy || attaching || editing || dictation.active) return
-      const session = randomUUID()
-      editSession.current = session
-      setEditing({
-        message,
-        text: message.text,
-        revision: 0,
-        settings: message.turnSettings ?? null,
-        files: message.attachments ?? [],
-        session,
-        plan: message.plan === true,
-      })
+      if (busy || attaching || !queueEdit.ready || editing || dictation.active) return
+      const next = startQueueEdit(message, randomUUID())
+      queueEdit.update((current) => current ?? next)
     },
-    removeEditAttachment: (id: string) =>
-      setEditing((current) =>
-        current ? { ...current, files: current.files.filter((file) => file.id !== id) } : current,
-      ),
+    removeEditAttachment: (id: string) => {
+      if (editing)
+        updateEdit(editing.session, (draft) => ({
+          ...draft,
+          files: draft.files.filter((file) => file.id !== id),
+        }))
+    },
     cancelEdit: () => {
+      if (!editing) return
       dictation.reset()
-      editSession.current = null
-      setEditing(null)
+      act(() =>
+        queueEdit.updateEffect((current) =>
+          current?.session === editing.session ? undefined : current,
+        ),
+      )
       if (profile) reviewAttachments(profile)
     },
     turnSettings,
     setTurnSettings: (value: TurnSettings | null) => {
       if (editing) {
-        setEditing({ ...editing, settings: value })
+        updateEdit(editing.session, (draft) => ({ ...draft, settings: value }))
         return
       }
       setTurnSettings(value)
@@ -971,7 +1023,7 @@ export function useConversationActions(task: Task) {
     planIssue,
     setPlan: (value: boolean) => {
       if (editing) {
-        setEditing({ ...editing, plan: value })
+        updateEdit(editing.session, (draft) => ({ ...draft, plan: value }))
         return
       }
       setDraftPlan(value)
@@ -981,7 +1033,7 @@ export function useConversationActions(task: Task) {
     pendingMessage,
     pendingMessages,
     draftAttachments: editing
-      ? editing.files
+      ? editing.draft.files
       : pendingMessage?.taskId === task.id && pendingMessage.state === 'sending'
         ? task.draftAttachments?.filter(
             (file) => !pendingMessage.message.attachments?.some((sent) => sent.id === file.id),

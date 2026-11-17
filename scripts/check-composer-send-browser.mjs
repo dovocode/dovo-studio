@@ -10,7 +10,9 @@ const mocks = {
   './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,sandboxNotes:[],refresh:()=>{}});`,
   './agent-avatar': `export const AgentAvatar=()=>null;`,
   './harness-icon': `export const HarnessIcon=()=>null;`,
-  '@dovo/studio-core': `export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
+  '@dovo/studio-core': `export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;import {createContext,useContext} from 'react';export * from '@dovo/protocol';export {providers} from '../studio-core/src/providers';const Context=createContext(null);export const WorkspaceHarness=Context.Provider;export const useWorkspace=()=>useContext(Context);
+export const useStudioHost=()=>({navigate:target=>window.navigations.push(target),taskNavigationGuard:()=>{const selected=window.selectedThread;return ()=>window.selectedThread===selected}});
+export const updateTask=(workspace,id,update)=>({...workspace,tasks:workspace.tasks.map(task=>task.id===id?update(task):task)});export const resolveTaskAgent=()=>({id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''});export const useResolvedTheme=()=> 'dark'; export {studioSyntaxTheme} from '../studio-core/src/themes'; const preferences={showPlanButton:true,showSendOptions:true,followUp:'queue',confirmStop:false};window.setComposerPreferences=value=>Object.assign(preferences,value);export const useAppPreferences=()=>preferences;export const readAppPreferences=()=>preferences;export const updateAppPreferences=value=>Object.assign(preferences,value);export const useWorkspaceSelector=select=>select(useContext(Context));export const sameWorkspaceFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},prepare:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',...window.attachmentState,upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
@@ -31,6 +33,7 @@ mocks['./composer-harness-controls'] =
   `export const ComposerHarnessControls=({renderControls})=>renderControls?.({model:null,access:null});`
 mocks['./composer-workspace'] =
   `export const ComposerWorkspace=({children})=><div>{children}</div>;`
+const forkNavigationOnly = process.argv.includes('--fork-navigation-only')
 const built = await build({
   stdin: {
     contents: `
@@ -61,6 +64,14 @@ function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[
   ],
   nodePaths: [fileURLToPath(new URL('../packages/studio-ui/node_modules', import.meta.url))],
   bundle: true,
+  ...(forkNavigationOnly
+    ? {
+        conditions: ['development'],
+        alias: {
+          '@dovo/web-ui': fileURLToPath(new URL('../packages/web-ui/src', import.meta.url)),
+        },
+      }
+    : {}),
   write: false,
   format: 'iife',
   platform: 'browser',
@@ -69,6 +80,13 @@ function App(){const[full,setFull]=useState(false);window.setFull=setFull;const[
 })
 const browser = await chromium.launch({ headless: true })
 try {
+  await checkLateForkSelection()
+  if (!forkNavigationOnly) await checkComposerSend()
+} finally {
+  await browser.close()
+}
+
+async function openComposerPage(withStyles) {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
@@ -76,13 +94,60 @@ try {
     route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
   await page.goto('https://dovo.test/')
-  await page.addStyleTag({
-    content: readdirSync(assets)
-      .filter((file) => file.endsWith('.css'))
-      .map((file) => readFileSync(assets + file, 'utf8'))
-      .join('\n'),
-  })
+  if (withStyles)
+    await page.addStyleTag({
+      content: readdirSync(assets)
+        .filter((file) => file.endsWith('.css'))
+        .map((file) => readFileSync(assets + file, 'utf8'))
+        .join('\n'),
+    })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  return { page, errors }
+}
+
+async function checkLateForkSelection() {
+  const { page, errors } = await openComposerPage(false)
+  page.setDefaultTimeout(8_000)
+  const input = page.getByRole('textbox', { name: 'Message' })
+  await input.waitFor()
+  await page.evaluate(() => {
+    window.selectedThread = 'task'
+    window.setTask((task) => ({
+      ...task,
+      status: 'running',
+      draftAttachments: [{ id: 'submitted-file', name: 'notes.txt', mime: 'text/plain', size: 1 }],
+    }))
+  })
+  await input.fill('Continue in a new fork')
+  await page.getByRole('button', { name: 'More message actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Fork', exact: true }).click()
+  await page.waitForFunction(() => typeof window.response === 'function')
+  const request = await page.evaluate(() => window.requests.at(-1))
+  assert.equal(request.path, '/api/tasks/start-fork')
+  assert.equal(request.input.id, 'task')
+  assert.equal(request.input.text, 'Continue in a new fork')
+  assert.deepEqual(request.input.attachmentIds, ['submitted-file'])
+  await page.evaluate(() => {
+    window.selectedThread = 'another-thread'
+    window.response()
+  })
+  await page.waitForFunction(
+    () => document.querySelector('textarea').closest('form').getAttribute('aria-busy') !== 'true',
+  )
+  assert.equal(await input.inputValue(), '', 'The accepted fork clears the submitted draft')
+  assert.deepEqual(await page.evaluate(() => window.current.draftAttachments), [])
+  assert.deepEqual(
+    await page.evaluate(() => window.navigations),
+    [],
+    'A late composer fork must not replace the new selection',
+  )
+  assert.deepEqual(errors, [])
+  await page.close()
+  console.log('Late composer fork preserves selection and clears the submitted draft and files.')
+}
+
+async function checkComposerSend() {
+  const { page, errors } = await openComposerPage(true)
   const input = page.getByRole('textbox', { name: 'Message' })
   const dropFiles = async () =>
     page.evaluate(() => {
@@ -1396,6 +1461,4 @@ try {
   console.log(
     'Desktop single-use code references across remount/delete/send, send, queue, steer, response-before-snapshot, snapshot-before-response, failed-send draft recovery, stable retry IDs and queued-message removal and in-place queue editing, desktop drag sorting, fork dispatch, draft agent side chats with stable retry ids, hover/focus queue actions, readable previews and fixed Steer geometry at 320/480/900px passed.',
   )
-} finally {
-  await browser.close()
 }

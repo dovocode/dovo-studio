@@ -609,6 +609,7 @@ try {
             agents: [],
             automations: [],
             tasks: [
+              { ...base, id: 'remote-source', title: 'Linux source thread' },
               {
                 ...base,
                 id: 'remote-copy',
@@ -634,6 +635,18 @@ try {
     assert.equal(await row.getByRole('button', { name: /^Bring back/ }).count(), 0)
     assert.equal(await row.getByRole('button', { name: /^Discard/ }).count(), 0)
   }
+  await panel.getByText('Saved from Linux source thread', { exact: true }).waitFor()
+  await panel
+    .locator('li')
+    .filter({ hasText: 'Saved from Linux source thread' })
+    .getByRole('button', { name: 'Open source thread', exact: true })
+    .click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+    runtimeId: 'linux',
+    runtimeIdentity: 'runtime-linux',
+    threadId: 'remote-source',
+    title: 'Linux source thread',
+  })
   await panel.getByRole('button', { name: 'Remote saved mention', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
     runtimeId: 'linux',

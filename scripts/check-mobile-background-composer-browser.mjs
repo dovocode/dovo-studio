@@ -13,8 +13,8 @@ const setup = source
     'return <Composer task={task} onStartInBackground={window.backgroundCallback===false?undefined:(configuration,attemptId)=>{(window.backgroundStarts??=[]).push({configuration,attemptId});return {confirmed(){},settled(){}}}}',
   )
   .replace(
-    'canSend:connected&&!!draft.text,',
-    'canSend:connected&&!!draft.text,canStartInBackground:window.backgroundAllowed!==false,backgroundSubmitting:!!window.backgroundSubmitting,',
+    'window.conversation.actions.stageSupported=',
+    'window.conversation.actions.canStartInBackground=window.backgroundAllowed!==false;window.conversation.actions.backgroundSubmitting=!!window.backgroundSubmitting;window.conversation.actions.stageSupported=',
   )
   .replace(
     'send:mode=>{if(editing)',

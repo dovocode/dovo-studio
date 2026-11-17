@@ -33,6 +33,7 @@ export function ForkMessage({
   const fork = async () => {
     const blocker = threadForkBlocker(task)
     if (blocker) return setError(blocker)
+    const navigationCurrent = host.taskNavigationGuard?.()
     if (
       !(await confirm({
         title: 'Fork conversation?',
@@ -51,7 +52,8 @@ export function ForkMessage({
         taskForkResultSchema,
       )
       forkId.current = undefined
-      host.navigate({ viewId: 'tasks', entityId: result.id })
+      if (!navigationCurrent || navigationCurrent())
+        host.navigate({ viewId: 'tasks', entityId: result.id })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {

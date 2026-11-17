@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
+import { mobileDraftStorage, waitForMobileDraft } from './browser/mobile-draft-storage.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
 const actions = root + 'apps/mobile/src/tasks/conversation/state/'
@@ -36,6 +37,7 @@ const appRoot=createRoot(document.getElementById('app'));let epoch=0;window.remo
   define: { 'process.env.NODE_ENV': '"production"' },
 }
 const actionStubs = [
+  mobileDraftStorage,
   {
     path: 'react-native',
     contents:
@@ -220,6 +222,7 @@ async function fixture(bundle) {
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setContent('<div id="app"></div>')
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
+  if (bundle === built) await waitForMobileDraft(page)
   return page
 }
 async function backgroundSend(page) {
@@ -360,7 +363,10 @@ try {
     assert.equal(await retry.evaluate(() => window.actions.canStartInBackground), mode === 'queue')
     await retry.evaluate(() => window.remount())
     await retry.waitForFunction(
-      () => window.actions.draft.text === 'Unresolved normal send' && !window.actions.busy,
+      () =>
+        window.actions.draft.ready &&
+        window.actions.draft.text === 'Unresolved normal send' &&
+        !window.actions.busy,
     )
     assert.equal(await retry.evaluate(() => window.actions.canStartInBackground), mode === 'queue')
     await backgroundSend(retry)

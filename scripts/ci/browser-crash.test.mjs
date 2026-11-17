@@ -39,6 +39,13 @@ await test('crash injection tolerates exited spare renderers and propagates othe
     if (id === 102) throw Object.assign(new Error('Exited'), { code: 'ESRCH' })
   })
   assert.deepEqual(signals, [102, 103])
+  assert.throws(
+    () =>
+      terminateBrowserRenderers(processes, () => {
+        throw Object.assign(new Error('Exited'), { code: 'ESRCH' })
+      }),
+    /Every renderer exited/,
+  )
   const denied = Object.assign(new Error('Denied'), { code: 'EPERM' })
   assert.throws(
     () =>
