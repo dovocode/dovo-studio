@@ -633,3 +633,25 @@ The rebuilt web app, desktop and compact panel checks passed locally. The panel 
 archive settings, editor actions, branch reuse, related links and watcher removal. The repository
 check passed with zero errors and 36 existing warnings. This is a test correction, so it does not
 establish a production regression proof.
+
+### Mobile task-list Glass fixture
+
+The mobile task-list fixture in Check `44119918581` stopped before it could launch Chromium. The
+task-list fixture used the real Glass component, but its theme import loaded the real native theme
+outside the fixture's theme adapter. That theme required a `StyleSheet` export absent from the
+browser adapter. The same bundle error reproduced locally. Glass now uses the fixture's theme
+adapter and an Expo GlassView adapter backed by its existing View adapter. The real Glass component,
+task rows, runtime provider and selectors remain in the check. Production code stays unchanged.
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-mobile-task-list-rendering-browser.mjs
+pnpm check
+```
+
+The full browser script includes history search, row-render counts, lifecycle actions, navigation,
+reload persistence and density checks at phone and iPad widths with 1x, 1.5x and 2x text. It uses
+native control and storage adapters. It does not verify physical iOS glass rendering.
+
+The full script passed locally. The repository check passed with zero errors and 36 existing
+warnings. This fixture correction does not establish a production regression proof.

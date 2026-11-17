@@ -67,6 +67,10 @@ const stubs = [
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
   {
+    path: 'expo-glass-effect',
+    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
+  },
+  {
     path: 'lucide-react-native',
     contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as Pause,Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
   },
@@ -204,6 +208,7 @@ for (const [path, importer] of [
   ['../../ui/theme', 'tasks/detail/lifecycle-actions.tsx'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
   ['../theme', 'ui/content/empty-state.tsx'],
+  ['../theme', 'ui/layout/glass.tsx'],
   ['./text', 'ui/content/empty-state.tsx'],
   ['../controls/icon', 'ui/content/empty-state.tsx'],
 ])
