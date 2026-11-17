@@ -79,7 +79,7 @@ async function bundle(isMobile) {
         '../connections/source-picker': `export const SourcePicker=()=>null;`,
       }
   mocks['../saved-filter-views'] =
-    `export const SavedFilterViews=({onApply})=>{window.applySavedView=onApply;return null};`
+    `export const SavedFilterViews=({onApply,sources})=>{window.applySavedView=onApply;window.savedViewSources=sources.map(source=>source.key);return null};`
   return build({
     stdin: {
       resolveDir: root,
@@ -463,6 +463,8 @@ try {
           })
           window.render()
         })
+        // The saved-view handler must come from the render that includes the new source.
+        await page.waitForFunction(() => window.savedViewSources?.includes('repo-b'))
         await page.evaluate(() =>
           window.applySavedView({
             source: 'repo-b',

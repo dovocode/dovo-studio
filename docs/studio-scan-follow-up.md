@@ -461,3 +461,18 @@ All four local shards passed after the fix. They covered 1,144 story/theme/viewp
 hosted-page checks with accessibility checks enabled. The catalog build, repository check and
 changelog validation also passed. Hosted checks and nightly publication still need to pass for the
 fix commit.
+
+### Saved-view browser fixture timing
+
+Hosted browser shard 0 in Check `44096226338` called the saved-view handler before React rendered a
+newly added source. The handler still used the previous source list. The fixture now waits for the
+handler's rendered source list to include the new source before applying its view. The check keeps
+its existing timeout and still verifies source-specific drafts and account isolation. No application
+behavior changed.
+
+Run the affected browser suite with `pnpm test:ui-visuals:browser`. The narrower reproduction is
+`node scripts/check-pipeline-list-browser.mjs`.
+
+The focused check reproduced the failure before the fix and passed after it. All six browser checks
+in the affected suite then passed locally. The repository check passed with zero errors. These
+checks use browser fixtures for native controls and transport. They do not verify physical devices.
