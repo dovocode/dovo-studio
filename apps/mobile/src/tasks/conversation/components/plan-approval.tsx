@@ -1,5 +1,4 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { IMPLEMENT_PLAN_PROMPT, planAwaitingApproval, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -7,6 +6,8 @@ import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
+import { Glass } from '../../../ui/layout/glass'
+import { designTokens } from '@dovo/design'
 
 /** After a plan-mode reply: approve with one tap, or reply with changes. */
 export function PlanApproval({ task }: { task: Task }) {
@@ -18,11 +19,15 @@ export function PlanApproval({ task }: { task: Task }) {
   const { act, busy, error } = useAction()
   if (!planAwaitingApproval(task)) return null
   return (
-    <View
-      style={[
-        styles.card,
-        { marginHorizontal: 16, marginBottom: 6, borderColor: colors.accent, gap: 8 },
-      ]}
+    <Glass
+      style={{
+        borderRadius: designTokens.radius.overlay,
+        padding: 12,
+        marginHorizontal: 16,
+        marginBottom: 6,
+        borderColor: colors.accent,
+        gap: 8,
+      }}
     >
       <Text style={styles.text}>
         <InterfaceText>
@@ -43,6 +48,6 @@ export function PlanApproval({ task }: { task: Task }) {
         }
       />
       {!!error && <Text style={styles.error}>{error}</Text>}
-    </View>
+    </Glass>
   )
 }

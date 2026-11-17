@@ -1,5 +1,4 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { Glass } from '../ui/layout/glass'
 import { designTokens } from '@dovo/design'
 import { SettingsAnchor, SettingsSearchContext } from './settings-search'
 import {
@@ -36,7 +35,7 @@ export function SettingsGroup({
   children: ReactNode
 }) {
   const uiText = useInterfaceText()
-  const { colors, styles } = useTheme()
+  const { colors, styles, highContrast } = useTheme()
   const target = useContext(SettingsSearchContext)
   const searchMatch =
     !!target &&
@@ -89,10 +88,13 @@ export function SettingsGroup({
         )}
         {description && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{description}</Text>}
         {open && (
-          <Glass
-            testID="Settings group glass"
+          <View
+            testID="Settings group"
             style={{
               borderRadius: designTokens.radius.card,
+              backgroundColor: colors.surface,
+              borderWidth: highContrast ? 1 : StyleSheet.hairlineWidth,
+              borderColor: colors.border,
               overflow: 'hidden',
             }}
           >
@@ -102,8 +104,8 @@ export function SettingsGroup({
                   {index > 0 && (
                     <View
                       style={{
-                        marginLeft: 12,
-                        marginRight: 12,
+                        marginLeft: 16,
+                        marginRight: 0,
                         height: StyleSheet.hairlineWidth,
                         backgroundColor: colors.border,
                       }}
@@ -113,7 +115,7 @@ export function SettingsGroup({
                 </View>
               ))}
             </GroupContext.Provider>
-          </Glass>
+          </View>
         )}
         {footer && <Text style={[styles.muted, { paddingHorizontal: 2 }]}>{footer}</Text>}
       </View>

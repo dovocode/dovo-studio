@@ -219,9 +219,7 @@ function QueuedActivity({ task, attached = false }: { task: Task; attached?: boo
           ...(attached ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : {}),
           backgroundColor: attached ? colors.surface : undefined,
           overflow: 'hidden',
-          borderWidth: 1,
-          borderBottomWidth: attached ? 0 : 1,
-          borderColor: colors.border,
+          ...(attached ? { borderWidth: 1, borderBottomWidth: 0, borderColor: colors.border } : {}),
         }}
       >
         {hasQueue ? (

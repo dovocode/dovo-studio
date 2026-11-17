@@ -16,6 +16,8 @@ import {
 import type { ReactNode } from 'react'
 import { Pressable, View } from 'react-native'
 import { Icon } from '../controls/icon'
+import { Glass } from '../layout/glass'
+import { designTokens } from '@dovo/design'
 import { useTheme } from '../theme'
 import { changeCategories, ChangeTypeFilters } from './change-types'
 import { Text } from './text'
@@ -106,12 +108,9 @@ export function ChangeSummary({
     </View>
   )
   return (
-    <View
+    <Glass
       style={{
-        backgroundColor: colors.background,
-        borderWidth: 1,
-        borderColor: colors.border,
-        borderRadius: 14,
+        borderRadius: designTokens.radius.overlay,
         padding: 10,
         gap: 8,
       }}
@@ -238,18 +237,21 @@ export function ChangeSummary({
                 }}
               >
                 {value === category.kind && (
-                  <View
+                  <Glass
                     pointerEvents="none"
+                    tinted
                     style={{
                       position: 'absolute',
                       top: 0,
                       bottom: 0,
                       left: 0,
                       right: 0,
-                      backgroundColor: colors.accent,
-                      opacity: 0.04,
+                      borderRadius: 10,
+                      shadowOpacity: 0,
                     }}
-                  />
+                  >
+                    {null}
+                  </Glass>
                 )}
                 {content}
               </Pressable>
@@ -291,6 +293,6 @@ export function ChangeSummary({
           {children}
         </View>
       )}
-    </View>
+    </Glass>
   )
 }

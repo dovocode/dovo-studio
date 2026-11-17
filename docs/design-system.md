@@ -80,60 +80,45 @@ activity slots do not reserve space. Regular tab titles use the full row until h
 focus shows actions. Touch devices keep those actions visible. The desktop activity bar has a 6px
 left inset, which matches the gap to the sidebar.
 
-`packages/web-ui/src/theme.css` owns the shared surface finish. Use it for settings, navigation and
-controls. Desktop navigation uses one translucent surface per pane with a 28px backdrop blur. Keep
-rows, fields and code surfaces free of backdrop filters. Browsers without backdrop blur use opaque
-surfaces. High contrast and reduced transparency use opaque surfaces without decorative highlights.
-The Gradients and Glow preferences still control their respective effects. Native mobile uses the
-same geometry and palette with platform controls. No refraction engine or pointer tracking runs on
-thread rows. Hosted service chrome keeps its plain presentation.
+`packages/web-ui/src/theme.css` owns the shared Opaline material. Use glass for navigation, thread
+headers, the composer, content panes, cards, change summaries and floating menus or dialogs. Keep
+code and inner controls solid. Selected navigation items and thread rows use tinted glass with a
+location marker. Keep buttons, fields, badges, switches and unselected rows flat.
 
-Floating surfaces use a 24px blur, richer color and layered edge highlights. Desktop navigation uses
-a transparent fill over a soft palette tint inside the app. It does not show the desktop wallpaper.
-The background tint fades across the window and follows the Glow intensity. It has no fixed-width
-edge. Page headers, sticky settings headers and full-page lists paint the same tint at the same
-window position. Headers retain an opaque base when content scrolls below them. Threads, Browser,
-Terminals, Settings and Unified workspace share the pane fill and blur. Desktop sidebar controls use
-12px top and side insets and an 8px bottom inset. Resource lists use 6px side insets. Settings
-search uses the same 12px side inset. Browser tabs use the thread selection fill, gradient and glow
-in both Browser and Unified workspace. Idle tabs stay transparent and borderless. Pinned tabs keep
-their 56px size and centered favicon. The Browser address uses the shared inset fill without a
-separate gradient or blur. Do not stack bevels or shadows on its header and controls. Keep the
-Gradients, Glow, high-contrast and reduced-transparency preferences active.
+Desktop and web use the same material in light and dark mode. Light mode uses a pearl edge. Dark
+mode uses a darker neutral tint and a lighter edge. Both retain the selected palette. Supported
+Chromium browsers refract the backdrop through Opaline's optical maps. Safari and Firefox use an 8px
+frosted fallback. Browsers without backdrop filters use opaque surfaces. This is an in-app effect.
+It does not show the desktop wallpaper.
 
-Desktop sidebars have a floating glass toggle over their brand row. The toggle stays available in
-the window header when the sidebar is hidden. Keyboard focus follows it during collapse and restore.
-The button uses the shared opaque fallback and leaves thread rows unchanged. Compact layouts retain
-their existing navigation.
+`designTokens.glass` supplies one optical recipe. `startLiquidGlass` owns the SVG maps and observers
+through the appearance hook. It processes surface mounts and size changes. Streaming message text
+does not rebuild maps. Teardown removes filters, pending updates and observers. Theme changes
+preserve input elements, focus and drafts. See [Liquid glass](liquid-glass.md) for the source
+license, platform limits and checks.
 
-The active main sidebar icon has a small glass tile and keeps its accent marker. Inactive icons and
-thread tool icons stay flat. Light-mode switches use a clean filled track and a neutral thumb. Do
-not add a gradient or glow to their track.
+Keep the Gradients and Glow preferences. Gradients controls the painted reflection. Glow controls
+accent glow and the background tint. Flat controls do not gain gradients when effects are enabled.
+Higher contrast, system Reduce Transparency and forced colors use opaque surfaces and release
+optical maps. Turning these preferences off restores glass without a reload.
 
-Desktop sidebar actions use flat controls. Only the search field has a quiet inset edge. Keep the
-composer edge visible when its input has focus. Page settings use an inset, rounded save bar above
-the bottom edge. Embedded save actions stay flat inside their parent card. These permanent surfaces
-use no backdrop blur. Keep their geometry stable when effects or themes change.
+Keep existing navigation geometry and 44px touch targets. Sidebar panes use the same material across
+Threads, Browser, Terminals, Settings and Unified workspace. Browser addresses and sidebar controls
+remain flat. The composer uses the shared 22px corner radius. Cards use 16px corners, controls use
+10px corners, and dialogs use the shared 20px overlay radius. Sticky settings headers retain an
+opaque base so scrolling form text cannot show through.
 
-Grouped choices use a recessed capsule track and a raised selected capsule. Settings and composer
-tabs share this finish. Selection does not move or resize the control. Keep keyboard focus on the
-chosen option and use arrows, Home and End where the component supports them. Wrap settings choices
-at narrow widths and retain 44px touch targets. Browser addresses use the same recessed fill.
-Toolbars use painted highlights without backdrop blur. Native status pills use `Glass` with the
-existing opaque fallback. Native iOS pickers and switches keep their platform appearance. The
-catalog's **Selection / Inset Glass Controls** story uses these production controls.
+Mobile uses native iOS liquid glass for the composer, new-item input, browser toolbar, status
+capsules, floating dialogs, content panes, change summaries and settings save bar. Keep one glass
+container around each group of controls. UIKit draws the navigation bar when accessibility settings
+permit transparency. Settings use solid grouped rows, native pickers and switches, inset separators
+and readable text. Preserve scope labels, search, explicit save actions and unsaved-navigation
+guards.
 
-Mobile uses native liquid glass for the composer, new-item input, browser toolbar, status capsules
-and inset settings save bar. Settings groups and workspace mode controls also use native glass. On
-iOS, UIKit draws the navigation bar without a forced opaque background when accessibility settings
-permit transparency. Keep the checklist and queue above the composer. The browser toolbar shares one
-glass surface across its address and actions. Do not nest glass effects. Keep opaque fills off
-native glass and keep its React parent stable when accessibility settings change. Reduce
-Transparency, high contrast and devices without native glass use an opaque palette surface without a
-shadow. Read system glass preferences in the appearance provider above navigation. New controls must
-use the known values on their first render. iOS Increase Contrast also enables the accessible
-palette. Caller styles must not override the opaque fallback. Thread rows and scrolling content keep
-their existing solid surfaces.
+Keep the native glass parent stable when appearance or accessibility settings change. Reduce
+Transparency, higher contrast and unsupported devices use an opaque palette surface without a
+shadow. Caller styles must not override that fallback. Android keeps the same grouping and control
+sizes with solid surfaces. Native iOS uses its system renderer, not the web SVG implementation.
 
 Mobile workspace modes share one rounded glass pill. Keep each target at least 44px. Unified stays
 available when separate modes are hidden. Tap it again to return to Threads.

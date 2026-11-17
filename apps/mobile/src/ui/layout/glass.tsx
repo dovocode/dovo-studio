@@ -8,12 +8,20 @@ export function Glass({
   interactive = false,
   tinted = false,
   testID,
+  accessibilityLabel,
+  accessibilityViewIsModal,
+  role,
+  pointerEvents,
 }: {
   children: ReactNode
   style?: StyleProp<ViewStyle>
   interactive?: boolean
   tinted?: boolean
   testID?: string
+  accessibilityLabel?: string
+  accessibilityViewIsModal?: boolean
+  role?: 'dialog'
+  pointerEvents?: 'none'
 }) {
   const { colors, mode: appearanceMode, highContrast, reduceTransparency } = useTheme()
   const nativeGlass =
@@ -21,11 +29,11 @@ export function Glass({
   const opaque = reduceTransparency || highContrast || !nativeGlass
   const surfaceStyle = {
     borderWidth: 1,
-    borderColor: opaque ? colors.border : appearanceMode === 'dark' ? '#ffffff2e' : '#ffffffb3',
+    borderColor: opaque ? colors.border : appearanceMode === 'dark' ? '#d7e8ff50' : '#ffffffb8',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 3 },
-    shadowRadius: 10,
-    shadowOpacity: opaque ? 0 : appearanceMode === 'dark' ? 0.18 : 0.08,
+    shadowOffset: { width: 0, height: 7 },
+    shadowRadius: 16,
+    shadowOpacity: opaque ? 0 : appearanceMode === 'dark' ? 0.25 : 0.12,
   }
   const opaqueStyle = {
     backgroundColor: tinted ? colors.selection : colors.surface,
@@ -37,6 +45,10 @@ export function Glass({
     return (
       <GlassView
         testID={testID}
+        pointerEvents={pointerEvents}
+        accessibilityLabel={accessibilityLabel}
+        accessibilityViewIsModal={accessibilityViewIsModal}
+        role={role}
         colorScheme={appearanceMode}
         glassEffectStyle={opaque ? 'none' : 'regular'}
         isInteractive={interactive}
@@ -47,7 +59,14 @@ export function Glass({
       </GlassView>
     )
   return (
-    <View testID={testID} style={[surfaceStyle, style, opaqueStyle]}>
+    <View
+      testID={testID}
+      pointerEvents={pointerEvents}
+      accessibilityLabel={accessibilityLabel}
+      accessibilityViewIsModal={accessibilityViewIsModal}
+      role={role}
+      style={[surfaceStyle, style, opaqueStyle]}
+    >
       {children}
     </View>
   )

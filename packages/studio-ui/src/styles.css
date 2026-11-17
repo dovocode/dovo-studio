@@ -806,20 +806,24 @@ textarea {
 .studio-header-layout[data-inline-header='true'] .studio-navigation[aria-label='Main navigation'] {
   margin-top: calc(var(--studio-header-height, 52px) + 6px);
 }
-/* Inline headers begin beside the activity rail. Continue their divider across it. */
+/* Continue the inline header material above the activity rail. */
 .studio-header-layout[data-inline-header='true'] .studio {
   position: relative;
 }
+.studio-header-corner {
+  display: none;
+}
 .studio-header-layout[data-inline-header='true']
-  .studio:has(.studio-navigation[aria-label='Main navigation'])::before {
-  content: '';
+  .studio:has(.studio-navigation[aria-label='Main navigation'])
+  > .studio-header-corner {
+  display: block;
   position: absolute;
-  top: calc(var(--studio-header-height) - 1px);
+  top: 0;
   left: 0;
   width: var(--studio-navigation-width);
-  height: 1px;
-  background: var(--border);
-  pointer-events: none;
+  height: var(--studio-header-height);
+  border-bottom: 1px solid var(--border);
+  -webkit-app-region: drag;
   z-index: 20;
 }
 
@@ -1291,9 +1295,9 @@ textarea {
 .project-transfer-icon {
   border: 1px solid color-mix(in srgb, var(--primary) 20%, transparent);
   background-color: var(--secondary);
-  background-image: linear-gradient(145deg, var(--secondary), var(--card));
+  background-image: none;
   color: var(--primary);
-  box-shadow: inset 0 1px color-mix(in srgb, var(--primary) 8%, transparent);
+  box-shadow: none;
 }
 .project-transfer-dialog .project-transfer {
   padding: 0;
@@ -1304,12 +1308,8 @@ textarea {
   border: 1px solid var(--dialog-edge);
   border-radius: 12px;
   background-color: var(--dialog-inset);
-  background-image: linear-gradient(
-    145deg,
-    var(--dialog-inset),
-    color-mix(in srgb, var(--card) 94%, var(--foreground) 6%)
-  );
-  box-shadow: inset 0 1px color-mix(in srgb, var(--foreground) 3%, transparent);
+  background-image: none;
+  box-shadow: none;
 }
 .project-transfer-dialog .project-transfer-header {
   margin-bottom: 18px;
@@ -2073,12 +2073,8 @@ textarea {
   border: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
   border-radius: 16px;
   background-color: color-mix(in srgb, var(--card) 70%, var(--background));
-  background-image: linear-gradient(
-    135deg,
-    color-mix(in srgb, var(--primary) 4%, transparent),
-    transparent 70%
-  );
-  box-shadow: var(--studio-glow);
+  background-image: none;
+  box-shadow: none;
 }
 :root[data-theme-gradients='false'] .studio-change-summary {
   background-image: none;
@@ -2952,21 +2948,13 @@ a.studio-project-row:hover {
 /* Flat surfaces retain their accent fills, selection borders and keyboard focus. */
 :root:root[data-theme-glow='0']
   :is(
-    .task-composer .studio-composer,
     .task-composer :is(button[type='submit'], [data-composer-stop]),
     .startup-draft .startup-project-selector,
     .startup-draft .startup-no-project,
-    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item,
-    .studio-tools-navigation .studio-navigation-item,
-    .studio-browser-tab,
     .studio-browser-options,
     .studio-browser-settings-icon,
-    .studio-thread-card,
-    .studio-thread-child,
     .studio-selected-surface,
-    .studio-nav-selected,
     .project-transfer-icon,
-    .dovo-dialog-content,
     .dovo-dialog-content [data-slot='button'][data-variant='default']
   ) {
   box-shadow: none;
@@ -3924,4 +3912,161 @@ a.studio-project-row:hover {
 .studio-thread-card[data-read] .studio-thread-card-context [data-thread-copy]:not([data-tone]) {
   color: var(--muted-foreground);
   opacity: 1;
+}
+
+/* Opaline glass belongs to the frame and floating surfaces, not their controls. */
+.studio-composer,
+.task-composer .studio-composer,
+.dark .task-composer .studio-composer {
+  border-radius: var(--dovo-radius-composer);
+  border-color: var(--studio-glass-edge);
+  background-color: var(--studio-glass-fill);
+  background-image: var(--studio-glass-sheen);
+  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
+.studio-composer:focus-within,
+.task-composer .studio-composer:focus-within,
+.dark .task-composer .studio-composer:focus-within {
+  border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
+.studio-header-corner,
+.studio-sidebar-brand-row,
+.studio-task-thread-header {
+  background-color: var(--studio-glass-fill);
+  background-image: var(--studio-glass-sheen);
+  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
+@media (min-width: 768px) {
+  .studio-overview-pane,
+  .studio-navigation[aria-label='Main navigation'] {
+    border-color: var(--studio-glass-edge);
+    background-color: var(--studio-navigation-fill);
+    background-image: var(--studio-glass-sheen);
+    -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+    backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  }
+  .studio-task-thread-header {
+    background: var(--studio-glass-sheen), var(--studio-glass-fill);
+    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  }
+}
+.studio-selected-surface,
+.studio-filter-selected,
+.studio-nav-selected,
+.studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+.studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+.studio-browser-tab[data-active],
+.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+.studio-task-sidebar .studio-thread-child[aria-current='true'],
+.studio
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'] {
+  background-image: none;
+  box-shadow: none;
+}
+
+/* A composer inside a glass dialog is a flat inset, not another glass layer. */
+.dovo-dialog-content .studio-composer,
+.dovo-dialog-content .studio-composer:focus-within,
+.dark .dovo-dialog-content .studio-composer,
+.dark .dovo-dialog-content .studio-composer:focus-within {
+  background-color: var(--card);
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* The brand and sidebar toggle share one header material. */
+.studio-sidebar-brand-row .studio-sidebar-toggle[data-slot='button'] {
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+/* Selected destinations share a tinted glass material and retain their location marker. */
+:root
+  :is(
+    .studio-nav-selected,
+    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+    .studio-browser-tab[data-active],
+    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+    .studio-task-sidebar .studio-thread-child[aria-current='true']
+  ) {
+  border-color: var(--studio-glass-edge);
+  background-color: color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill));
+  background-image: var(--studio-glass-sheen);
+  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  box-shadow: var(--studio-surface-rim);
+}
+
+@media (forced-colors: active) {
+  :root
+    :is(
+      .studio-nav-selected,
+      .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+      .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+      .studio-browser-tab[data-active],
+      .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+      .studio-task-sidebar .studio-thread-child[aria-current='true']
+    ) {
+    border-color: Highlight;
+    background: Canvas;
+    color: CanvasText;
+    box-shadow: none;
+  }
+}
+
+/* Content panes use the same optical material as the shell. */
+.studio-tools-navigation,
+.studio-glass-pane,
+.studio-change-summary,
+.studio-project-card:not(.studio-menu-surface *),
+.studio-side-panel:not(
+  :has(.studio-overview-pane, .studio-thread-tools-panel, .studio-menu-surface)
+),
+.studio-thread-tools-panel:not(.studio-thread-tools-panel *),
+.studio-browser-header:not(
+  .studio-overview-pane *,
+  .studio-thread-tools-panel *,
+  .studio-side-panel *
+),
+.studio-page-header:not(
+  .studio-overview-pane *,
+  .studio-thread-tools-panel *,
+  .studio-side-panel *
+) {
+  border-color: var(--studio-glass-edge);
+  background-color: var(--studio-glass-fill);
+  background-image: var(--studio-glass-sheen);
+  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+}
+/* Dense review content keeps the pane visible without adding another optical layer. */
+.studio-change-summary .studio-change-file-tree {
+  background: color-mix(in srgb, var(--background) 35%, transparent);
+}
+.studio-change-summary .studio-change-category-card {
+  background: color-mix(in srgb, currentColor 5%, transparent);
+  box-shadow: var(--studio-surface-rim);
+}
+.studio-change-summary .studio-change-category-card:is(:hover, [aria-pressed='true']) {
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+/* Pane headers expose their parent's material instead of painting an opaque inset. */
+:root .studio-browser-header .studio-browser-toolbar,
+.studio-thread-tools-panel .studio-thread-tools-header,
+.studio-thread-tools-panel .studio-browser-header {
+  background: transparent;
+  box-shadow: none;
 }

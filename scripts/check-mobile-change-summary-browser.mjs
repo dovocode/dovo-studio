@@ -10,6 +10,7 @@ const flat=style=>{const value=Array.isArray(style)?Object.assign({},...style.fl
 export const View=({children,style,accessibilityLabel,accessibilityRole,pointerEvents,accessibilityHint})=><div aria-description={accessibilityHint} role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',position:'relative',flexShrink:0,boxSizing:'border-box',...flat(style),...(pointerEvents==='none'?{pointerEvents:'none'}:{})}}>{children}</div>;
 export const Pressable=({children,style,onPress,disabled,accessibilityLabel,accessibilityState,accessibilityHint})=><button aria-description={accessibilityHint} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={onPress} style={{display:'flex',flexDirection:'column',position:'relative',boxSizing:'border-box',border:0,padding:0,textAlign:'left',background:'transparent',font:'inherit',...flat(typeof style==='function'?style({pressed:false}):style)}}>{children}</button>;
 export const SectionList=()=>null;
+export const Platform={OS:'ios'};
 `
 const theme = `export const useTheme=()=>({mode:'dark',colors:{background:'#0b0b0f',surface:'#141419',border:'#30303a',text:'#ededf3',muted:'#a0a0b0',accent:'#a78bfa',selection:'#29203e',success:'#34d399',error:'#fb7185',warning:'#fbbf24',syntaxKeyword:'#38bdf8'},styles:{muted:{color:'#a0a0b0'}}});`
 const bundle = await bundleBrowser(
@@ -41,6 +42,11 @@ function App(){const [expanded,setExpanded]=useState(false),[kind,setKind]=useSt
       contents: `export {Box,CodeXml,FileText,FlaskConical,Settings} from 'lucide-react';`,
     },
     { path: '../theme', importer: `${mobile}/ui/content`, contents: theme },
+    { path: '../theme', importer: `${mobile}/ui/layout`, contents: theme },
+    {
+      path: 'expo-glass-effect',
+      contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
+    },
     {
       path: './text',
       importer: `${mobile}/ui/content`,

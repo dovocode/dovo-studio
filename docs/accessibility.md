@@ -18,3 +18,8 @@ device.
 Desktop text size and fonts are in Appearance. Mobile follows the phone’s system text size; settings
 stack controls vertically for larger text. Keyboard focus has a visible outline, including in
 Windows contrast themes.
+
+Liquid glass also follows the system Reduce Transparency preference on desktop, web and iOS. Higher
+contrast and forced colors use opaque fills. Web optical maps are released while these modes are
+active. Turn the preference off to restore glass without a reload. Appearance changes keep active
+inputs and drafts mounted. Android and devices without native glass use solid surfaces.

@@ -124,7 +124,17 @@ export const designTokens = {
     meta: { size: 12, line: 16, weight: 400 },
     machine: { size: 12, line: 16, weight: 400 },
   },
-  radius: { control: 10, card: 16, composer: 16 },
+  radius: { control: 10, card: 16, composer: 22, overlay: 20 },
+  /** One optical recipe for the workspace frame. Native iOS uses its system material. */
+  glass: {
+    ior: 1.5,
+    thickness: 1.4,
+    blur: 1.2,
+    saturation: 1.6,
+    dispersion: 0.12,
+    specular: 0.2,
+    bezel: 32,
+  },
   spacing: { xs: 4, sm: 8, md: 12, lg: 16, xl: 24, section: 32 },
   touchTarget: 44,
   focusWidth: 2,

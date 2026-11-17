@@ -11,7 +11,10 @@ export function Card({
   return (
     <Comp
       data-slot="card"
-      className={cn('rounded-xl border border-border bg-card text-card-foreground p-6', className)}
+      className={cn(
+        'studio-glass-pane rounded-xl border border-border bg-card text-card-foreground p-6',
+        className,
+      )}
       {...props}
     />
   )

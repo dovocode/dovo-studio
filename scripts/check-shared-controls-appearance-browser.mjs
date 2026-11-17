@@ -120,13 +120,12 @@ try {
       const css = getComputedStyle(node)
       return { image: css.backgroundImage, shadow: css.boxShadow, outline: css.outlineWidth }
     })
-    assert.equal(selection.image === 'none', !effects || highContrast)
-    if (highContrast || !effects)
-      assert.equal(selection.shadow, 'none', `${palette} ${mode}: flat selection shadow`)
+    assert.equal(selection.image, 'none', `${palette} ${mode}: flat selection`)
+    assert.equal(selection.shadow, 'none', `${palette} ${mode}: flat selection shadow`)
     assert.equal(
       await compact.evaluate((node) => getComputedStyle(node).backdropFilter),
       'none',
-      'Permanent controls use painted glass',
+      'Permanent controls do not blur',
     )
     const style = (selector, property) =>
       page
@@ -210,20 +209,22 @@ try {
     )
     assert.equal(
       await style('[data-test="window-browser"]', 'boxShadow'),
-      'none',
-      'The collapsed Browser header stays continuous with its window titlebar',
+      await style('[data-slot="card"]', 'boxShadow'),
+      'The Browser header shares the pane material',
     )
     assert.equal(
       await style('[data-test="window-browser"]', 'backgroundImage'),
-      await style('[data-test="navigation"]', 'backgroundImage'),
-      'Browser header continues the page tint',
+      await style('[data-slot="card"]', 'backgroundImage'),
+      'Browser header shares the pane sheen',
     )
-    for (const property of ['backgroundColor', 'backgroundImage', 'boxShadow'])
-      assert.equal(
-        await style('[data-test="window-browser"] .studio-browser-toolbar', property),
-        await style('[data-test="window-browser"]', property),
-        `Browser toolbar shares its header's ${property}`,
-      )
+    assert.equal(
+      await style('[data-test="window-browser"] .studio-browser-toolbar', 'backgroundColor'),
+      'rgba(0, 0, 0, 0)',
+    )
+    assert.equal(
+      await style('[data-test="window-browser"] .studio-browser-toolbar', 'boxShadow'),
+      'none',
+    )
     const viewport = page.viewportSize()
     assert.equal(
       await style('[data-test="navigation"]', 'backgroundSize'),
@@ -231,11 +232,8 @@ try {
     )
     for (const selector of [
       '.studio-page-surface',
-      '.studio-page-header',
-      '.studio-task-thread-header',
       '.studio-settings-toolbar',
       '.studio-agent-profile-header',
-      '.studio-thread-tools-header',
     ])
       for (const property of [
         'backgroundImage',
@@ -248,6 +246,12 @@ try {
           await style('[data-test="navigation"]', property),
           `${selector} continues page ${property}`,
         )
+    for (const property of ['backgroundColor', 'backgroundImage', 'boxShadow'])
+      assert.equal(
+        await style('.studio-thread-tools-header', property),
+        property === 'backgroundColor' ? 'rgba(0, 0, 0, 0)' : 'none',
+        `Thread tools header exposes its pane: ${property}`,
+      )
     for (const selector of ['.studio-sidebar-controls']) {
       assert.equal(await style(selector, 'paddingTop'), '12px')
       assert.equal(await style(selector, 'paddingInline'), '12px')
@@ -293,7 +297,7 @@ try {
 
     assert.equal(await style('[data-variant="ghost"]', 'backgroundImage'), 'none')
     assert.equal(await style('[data-size="icon"]', 'backgroundImage'), 'none')
-    assert.equal((await style('[data-variant="default"]', 'backgroundImage')) === 'none', !effects)
+    assert.equal(await style('[data-variant="default"]', 'backgroundImage'), 'none')
     assert.equal((await page.getByRole('button', { name: 'Save' }).boundingBox()).height, 32)
     assert.notEqual(
       await style('[aria-label="Native"] option', 'backgroundColor'),
@@ -301,10 +305,7 @@ try {
     )
     for (const control of ['Check', 'Switch']) {
       assert.equal(await page.getByLabel(control).getAttribute('data-state'), 'checked')
-      assert.equal(
-        (await style(`[aria-label="${control}"]`, 'boxShadow')).includes('0px 0px 14px'),
-        effects && (control !== 'Switch' || mode !== 'light'),
-      )
+      assert.equal(await style(`[aria-label="${control}"]`, 'boxShadow'), 'none')
     }
     const toggle = page.getByRole('switch', { name: 'Switch' })
     const checkedFill = await toggle.evaluate((el) => getComputedStyle(el).backgroundColor)
@@ -383,14 +384,21 @@ try {
         .evaluate((el) => el.classList.contains('studio-menu-surface')),
       true,
     )
+    if (highContrast) {
+      const edge = await page.locator('[data-slot="select-content"]').evaluate((node) => {
+        const probe = document.createElement('span')
+        probe.style.color = 'var(--border)'
+        document.body.append(probe)
+        const paletteEdge = getComputedStyle(probe).color
+        probe.remove()
+        return { actual: getComputedStyle(node).borderTopColor, paletteEdge }
+      })
+      assert.equal(edge.actual, edge.paletteEdge, `${mode}: high contrast menu uses palette edge`)
+    }
     assert.equal(
-      (await style('[data-slot="select-content"]', 'boxShadow')).includes('36px'),
-      effects,
-    )
-    assert.equal(
-      (await style('[data-slot="select-item"][data-state="checked"]', 'backgroundImage')) ===
-        'none',
-      !effects,
+      await style('[data-slot="select-item"][data-state="checked"]', 'backgroundImage'),
+      'none',
+      'Selected menu items stay flat',
     )
     await page.screenshot({
       path: `${output}/${palette}-${mode}-${highContrast ? 'contrast' : effects ? 'effects' : 'flat'}-select.png`,
@@ -424,6 +432,17 @@ try {
       return { filter: style.backdropFilter, image: style.backgroundImage }
     })
     assert.deepEqual(surface, { filter: 'none', image: 'none' }, `${mode}: reduced transparency`)
+    await page.keyboard.press('Escape')
+    await page.getByRole('combobox', { name: 'Choice' }).click()
+    const menuEdge = await page.locator('[data-slot="select-content"]').evaluate((node) => {
+      const probe = document.createElement('span')
+      probe.style.color = 'var(--border)'
+      document.body.append(probe)
+      const paletteEdge = getComputedStyle(probe).color
+      probe.remove()
+      return { actual: getComputedStyle(node).borderTopColor, paletteEdge }
+    })
+    assert.equal(menuEdge.actual, menuEdge.paletteEdge, `${mode}: reduced transparency menu edge`)
     await page.keyboard.press('Escape')
     for (const pane of ['threads', 'browser', 'unified', 'terminal', 'settings']) {
       assert.equal(
@@ -464,6 +483,15 @@ try {
   await page.screenshot({ path: `${output}/forced-colors-dialog.png` })
   await page.keyboard.press('Escape')
   await page.getByRole('combobox', { name: 'Choice' }).click()
+  const forcedMenuEdge = await page.locator('[data-slot="select-content"]').evaluate((node) => {
+    const probe = document.createElement('span')
+    probe.style.color = 'CanvasText'
+    document.body.append(probe)
+    const systemEdge = getComputedStyle(probe).color
+    probe.remove()
+    return { actual: getComputedStyle(node).borderTopColor, systemEdge }
+  })
+  assert.equal(forcedMenuEdge.actual, forcedMenuEdge.systemEdge, 'Forced colors use a system edge')
   assert.equal(
     await page
       .locator('[data-slot="select-item"][data-state="checked"]')

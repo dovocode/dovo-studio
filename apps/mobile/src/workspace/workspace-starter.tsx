@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
@@ -676,9 +677,8 @@ export function WorkspaceStarter({
         <Glass
           testID="Workspace input surface"
           style={{
-            borderRadius: 26,
-            borderWidth: 1,
-            borderColor: editorFocused ? colors.accent : colors.border,
+            borderRadius: designTokens.radius.composer,
+            ...(editorFocused ? { borderColor: colors.accent } : {}),
             padding: 3,
             gap: 0,
           }}

@@ -42,7 +42,7 @@ export function Pill({
 }) {
   const uiText = useInterfaceText()
 
-  const { colors, highContrast } = useTheme()
+  const { colors } = useTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
       <Glass
@@ -50,10 +50,6 @@ export function Pill({
         style={{
           flexShrink: 1,
           borderRadius: designTokens.touchTarget / 2,
-          shadowColor: '#000',
-          shadowOpacity: highContrast ? 0 : 0.12,
-          shadowRadius: 8,
-          shadowOffset: { width: 0, height: 3 },
         }}
       >
         <Pressable

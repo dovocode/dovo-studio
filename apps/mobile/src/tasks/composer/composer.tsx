@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
@@ -1135,11 +1136,10 @@ export function Composer({
         <Glass
           testID="Composer input surface"
           style={{
-            borderRadius: 26,
+            borderRadius: designTokens.radius.composer,
             padding: 3,
             gap: 0,
-            borderWidth: 1,
-            borderColor: focused ? colors.accent : colors.border,
+            ...(focused ? { borderColor: colors.accent } : {}),
           }}
         >
           <MessageAttachments

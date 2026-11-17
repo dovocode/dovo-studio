@@ -1,3 +1,4 @@
+import { designTokens } from '@dovo/design'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from '../ui/layout/content-column'
 import {
@@ -100,7 +101,10 @@ export function SettingsSaveBar({
           paddingVertical: 8,
         }}
       >
-        <Glass testID="Settings save surface" style={{ borderRadius: 24, padding: 12, gap: 8 }}>
+        <Glass
+          testID="Settings save surface"
+          style={{ borderRadius: designTokens.radius.overlay, padding: 12, gap: 8 }}
+        >
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
             <Pressable
               accessibilityRole="button"

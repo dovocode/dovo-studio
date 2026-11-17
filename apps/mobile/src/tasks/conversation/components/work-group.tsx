@@ -11,6 +11,8 @@ import { useConversationTurn } from '../state/provider'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
+import { Glass } from '../../../ui/layout/glass'
+import { designTokens } from '@dovo/design'
 import { activityOutcome } from '../state/tool-events'
 import { artifactReferences } from '@dovo/protocol'
 import { ArtifactCard } from '../../../ui/content/artifacts'
@@ -82,11 +84,7 @@ export function ConversationWorkGroup({
       </>
     )
   return (
-    <View
-      style={
-        open ? { borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 10 } : undefined
-      }
-    >
+    <Glass style={{ borderRadius: designTokens.radius.overlay, paddingHorizontal: 10 }}>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={summary}
@@ -118,6 +116,6 @@ export function ConversationWorkGroup({
       {open && <View style={{ paddingBottom: 6 }}>{children}</View>}
       {!open && cards}
       {!open && images}
-    </View>
+    </Glass>
   )
 }

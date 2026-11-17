@@ -97,6 +97,7 @@ export function DesktopScreen({
             onCollapsedChange={setCollapsed}
           >
             <div className="studio" style={{ height: '100%', position: 'relative' }}>
+              <div className="studio-header-corner" aria-hidden="true" />
               <HeaderFallback>{title()}</HeaderFallback>
               <div className="studio-body">
                 <ActivityBar

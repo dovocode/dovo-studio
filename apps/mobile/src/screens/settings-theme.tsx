@@ -49,10 +49,11 @@ export function useSettingsTheme() {
           borderRadius: designTokens.radius.card,
           padding: 12,
           gap: 10,
+          boxShadow: 'none',
         },
         title: { ...theme.styles.title, fontSize: 16, letterSpacing: 0 },
-        text: { ...theme.styles.text, fontSize: 14, lineHeight: 20 },
-        muted: { ...theme.styles.muted, fontSize: 12, lineHeight: 17 },
+        text: { ...theme.styles.text, fontSize: 16, lineHeight: 22 },
+        muted: { ...theme.styles.muted, fontSize: 13, lineHeight: 18 },
         input: {
           ...theme.styles.input,
           backgroundColor: colors.background,

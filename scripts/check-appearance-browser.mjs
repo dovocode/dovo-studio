@@ -11,7 +11,7 @@ const vite = await createServer({
   configFile: false,
   root,
   logLevel: 'error',
-  server: { host: '127.0.0.1', port: 0 },
+  server: { host: '127.0.0.1', port: 0, watch: null },
 })
 await vite.listen()
 const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
@@ -136,7 +136,7 @@ async connect(url,signal,opened){await this.ready;const channel=new MessageChann
     },
   ],
 })
-const assets = root + '/apps/web/dist/client/assets'
+const assets = root + '/apps/desktop/dist/assets'
 const css = (
   await Promise.all(
     (await readdir(assets))
@@ -172,10 +172,14 @@ try {
       return route.fulfill({ contentType: 'text/javascript', body: built.outputFiles[0].text })
     if (path === '/packages/terminal/src/browser/terminal.worker.ts')
       return route.continue({ url: route.request().url() + '?worker_file&type=module' })
-    if (path.startsWith('/assets/') && path.endsWith('.woff2'))
+    if (path.endsWith('.woff2'))
       return route.fulfill({
         contentType: 'font/woff2',
-        body: await readFile(assets + '/' + path.split('/').at(-1)),
+        body: await readFile(
+          path.startsWith('/packages/studio-ui/src/assets/fonts/')
+            ? root + path
+            : assets + '/' + path.split('/').at(-1),
+        ),
       })
     if (path === '/assets/dovo-logo.png')
       return route.fulfill({ contentType: 'image/png', body: logo })
@@ -335,28 +339,23 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
-      // Navigation uses the palette's selection fill; filter-like choices keep
-      // the neutral fill. Both retain the selected effects when enabled.
+      // Navigation destinations use the same palette-tinted glass. Filter choices stay flat.
       await page.waitForFunction(() => {
         const probe = document.createElement('span')
-        probe.style.backgroundColor = 'var(--studio-selected-fill)'
-        probe.style.backgroundImage = 'var(--studio-selected-gradient)'
-        probe.style.boxShadow = 'var(--studio-surface-rim), var(--studio-glow)'
+        probe.style.backgroundColor =
+          'color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill))'
+        probe.style.backgroundImage = 'var(--studio-glass-sheen)'
+        probe.style.boxShadow = 'var(--studio-surface-rim)'
         document.body.append(probe)
         const expected = getComputedStyle(probe)
-        const neutralFill = expected.backgroundColor
-        probe.style.backgroundColor = 'var(--selection)'
-        const navigationFill = getComputedStyle(probe).backgroundColor
         const settled = [
           ...document.querySelectorAll(
-            '[data-testid=effects] .studio-selected-surface, [data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
+            '[data-testid=effects] .studio-nav-selected, [data-testid=effects] .studio-browser-tab[data-active], [data-testid=effects] .studio-thread-card, [data-testid=effects] .studio-thread-child',
           ),
         ].every((el) => {
           const selected = getComputedStyle(el)
-          return (
-            selected.backgroundColor ===
-              (el.classList.contains('studio-selected-surface') ? neutralFill : navigationFill) &&
-            ['backgroundImage', 'boxShadow'].every((key) => selected[key] === expected[key])
+          return ['backgroundColor', 'backgroundImage', 'boxShadow'].every(
+            (key) => selected[key] === expected[key],
           )
         })
         probe.remove()
@@ -367,6 +366,8 @@ try {
         probe.style.color = 'color-mix(in srgb, ' + primary + ' 8%, transparent)'
         document.body.append(probe)
         const glow = getComputedStyle(probe).color
+        probe.style.boxShadow = 'var(--studio-glow)'
+        const glowShadow = getComputedStyle(probe).boxShadow
         probe.remove()
         const style = (selector) =>
           getComputedStyle(document.querySelector('[data-testid=effects] ' + selector))
@@ -432,6 +433,7 @@ try {
           dialog: style('.dovo-dialog-content').backgroundImage,
           dialogAction: style('.dovo-dialog-content button').color,
           glow,
+          glowShadow,
         }
       }, expected.primary)
       assert.equal(
@@ -442,22 +444,19 @@ try {
       assert.equal(effects.intensity, '0.5')
       assert.equal(effects.gradients, 'true')
       assert.equal(effects.primary, expected.primary)
-      assert.match(effects.tab, /linear-gradient/)
+      assert.match(effects.tab, /linear-gradient/, 'Selected tabs use the glass highlight')
+      assert.notEqual(effects.tabShadow, 'none', 'Selected tabs use the glass rim')
       assert.ok(
-        effects.tabShadow.includes(effects.glow),
-        id + ' ' + scheme + ' glow uses the theme accent',
+        effects.glowShadow.includes('7px') && effects.glowShadow.includes(effects.glow),
+        id + ' ' + scheme + ' glow intensity and color follow the palette',
       )
       assert.ok(
         effects.rails.length === 2 &&
           effects.rails.every(
             (rail) =>
-              (rail.main
-                ? rail.background !== 'rgba(0, 0, 0, 0)' &&
-                  /gradient/.test(rail.image) &&
-                  rail.shadow !== 'none'
-                : rail.background === 'rgba(0, 0, 0, 0)' &&
-                  rail.image === 'none' &&
-                  rail.shadow === 'none') &&
+              rail.background !== 'rgba(0, 0, 0, 0)' &&
+              /gradient/.test(rail.image) &&
+              rail.shadow !== 'none' &&
               rail.marker === effects.accent &&
               rail.markerWidth === '2px' &&
               rail.markerHeight === '16px' &&
@@ -466,7 +465,7 @@ try {
         id +
           ' ' +
           scheme +
-          ' active workspace uses glass; tool icons keep flat accent markers: ' +
+          ' selected navigation keeps glass and accent markers: ' +
           JSON.stringify(effects.rails),
       )
       assert.equal(effects.threadEdgeWidth, '2px')
@@ -657,21 +656,17 @@ try {
   await page.waitForFunction(() => document.documentElement.dataset.theme === 'light')
   await mode('Dark')
   await setGlow(0.5)
-  await page.waitForFunction(() =>
-    getComputedStyle(
-      document.querySelector('[data-testid=effects] .studio-browser-tab'),
-    ).boxShadow.includes('7px'),
-  )
+  await page.waitForFunction(() => document.documentElement.dataset.themeGlow === '0.5')
   await page.reload()
   await ready()
   assert.equal(await glow.inputValue(), '0.5', 'Intermediate glow intensity survives reload')
   await setGlow(0)
   assert.match(
     await page
-      .locator('[data-testid=effects] .studio-browser-tab')
+      .locator('[data-testid=effects] .dovo-dialog-content')
       .evaluate((el) => getComputedStyle(el).backgroundImage),
     /linear-gradient/,
-    'Glow can be disabled independently of gradients',
+    'Glass highlight remains when glow is disabled',
   )
   await gradients.click()
   const checkFlatEffects = async () => {
@@ -679,12 +674,6 @@ try {
       () =>
         document.documentElement.dataset.themeGradients === 'false' &&
         document.documentElement.dataset.themeGlow === '0',
-    )
-    // Filled buttons animate their shadow; wait for the rendered endpoint.
-    await page.waitForFunction(() =>
-      [...document.querySelectorAll('[data-testid=effects] button')].every(
-        (el) => getComputedStyle(el).boxShadow === 'none',
-      ),
     )
     const surfaces = await page.locator('[data-testid=effects]').evaluate((preview) =>
       [
@@ -705,10 +694,18 @@ try {
     const selectedTab = surfaces.find((surface) => surface.element === 'studio-browser-tab')
     assert.ok(selectedTab, 'Fixture includes a selected browser tab')
     assert.notEqual(selectedTab.fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
-    assert.ok(
-      surfaces.every((surface) => surface.shadow === 'none'),
-      'Zero glow removes all decorative surface shadows: ' + JSON.stringify(surfaces),
-    )
+    const selected = await page
+      .locator('[data-testid=effects] .studio-browser-tab')
+      .evaluate((el) => {
+        const style = getComputedStyle(el)
+        const probe = document.createElement('span')
+        probe.style.boxShadow = 'var(--studio-surface-rim)'
+        document.body.append(probe)
+        const rim = getComputedStyle(probe).boxShadow
+        probe.remove()
+        return { shadow: style.boxShadow, rim }
+      })
+    assert.equal(selected.shadow, selected.rim, 'Zero glow retains only the selected glass rim')
   }
   await checkFlatEffects()
   await choose('Nord')
@@ -738,7 +735,7 @@ try {
       document.documentElement.dataset.themeGradients === 'true' &&
       document.documentElement.dataset.themeGlow === '1' &&
       getComputedStyle(
-        document.querySelector('[data-testid=effects] .studio-browser-tab'),
+        document.querySelector('[data-testid=effects] .dovo-dialog-content'),
       ).backgroundImage.includes('linear-gradient'),
   )
   for (const scheme of ['light', 'dark']) {

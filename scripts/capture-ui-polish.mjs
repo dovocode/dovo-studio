@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { dovoColors } from '../packages/design/src/tokens.ts'
 import { captureFollowUpDialogs } from './ui-polish-dialogs.mjs'
 import { build } from 'esbuild'
 import { createServer } from 'vite-plus'
@@ -22,7 +23,7 @@ const server = await createServer({
   root,
   plugins: [tailwindcss()],
   logLevel: 'error',
-  server: { host: '127.0.0.1', port: 0 },
+  server: { host: '127.0.0.1', port: 0, watch: null },
 })
 await server.listen()
 const origin = `http://127.0.0.1:${server.httpServer.address().port}`
@@ -489,7 +490,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
           await page.evaluate(() =>
             getComputedStyle(document.documentElement).getPropertyValue('--background').trim(),
           ),
-          '#080808',
+          dovoColors.dark.background,
         )
       if (route === 'tasks' && name !== 'busy-long-draft') {
         const placeholder = await page

@@ -1023,6 +1023,7 @@ function WorkbenchContent({
         }
       >
         <div className="studio" data-platform={desktopPlatform} data-thread-window={!!threadWindow}>
+          <div className="studio-header-corner" aria-hidden="true" />
           <TaskNotificationNotice
             notice={taskNotice.notice}
             pendingCount={taskNotice.pendingCount}

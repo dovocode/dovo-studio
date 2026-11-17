@@ -20,8 +20,9 @@ export const Language: StoryObj = {
         Quiet surfaces. Clear controls.
       </h1>
       <p>
-        Opaline surface highlights, frosted menus and rounded actions. Thread rows stay compact.
-        Keep the selected palette, clear state colors and visible keyboard focus.
+        Opaline glass marks the frame, navigation, toolbar, composer and floating surfaces.
+        Messages, cards, controls and selected rows stay flat. Keep the selected palette, clear
+        state colors and visible keyboard focus.
       </p>
       <h2>One source of truth</h2>
       <p>
@@ -47,7 +48,7 @@ export const Language: StoryObj = {
       <h2>Geometry and spacing</h2>
       <p>
         Controls {designTokens.radius.control}px · cards {designTokens.radius.card}px · composer{' '}
-        {designTokens.radius.composer}px
+        {designTokens.radius.composer}px · overlays {designTokens.radius.overlay}px
       </p>
       <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap' }}>
         {Object.entries(designTokens.spacing).map(([name, size]) => (

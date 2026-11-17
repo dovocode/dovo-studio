@@ -107,10 +107,10 @@ try {
     document.documentElement.dataset.themeGradients = 'false'
   })
   assert.equal(await summary.evaluate((node) => getComputedStyle(node).backgroundImage), 'none')
-  const flatShadow = await summary.evaluate((node) => getComputedStyle(node).boxShadow)
-  assert.ok(
-    flatShadow === 'none' || flatShadow.includes('rgba(0, 0, 0, 0)'),
-    'Glow zero removes decorative shadow',
+  assert.notEqual(
+    await summary.evaluate((node) => getComputedStyle(node).backdropFilter),
+    'none',
+    'The shared glass material remains when decorative glow is off',
   )
   await page.evaluate(() => {
     document.documentElement.classList.remove('dark')

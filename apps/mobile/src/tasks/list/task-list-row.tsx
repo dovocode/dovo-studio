@@ -35,6 +35,7 @@ import {
   type LucideIcon,
 } from 'lucide-react-native'
 import { Icon } from '../../ui/controls/icon'
+import { Glass } from '../../ui/layout/glass'
 import { Image, View, useWindowDimensions } from 'react-native'
 // Keep row presses in the pan recognizer's native gesture system so swipes cancel taps.
 import { Pressable } from 'react-native-gesture-handler'
@@ -447,9 +448,18 @@ function TaskListRowView({
       style={{
         marginVertical: dense ? 2 : 3,
         borderRadius: 12,
-        backgroundColor: selected || current ? colors.selection : colors.background,
+        backgroundColor: selected || current ? 'transparent' : colors.background,
       }}
     >
+      {(selected || current) && (
+        <Glass
+          pointerEvents="none"
+          tinted
+          style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 12 }}
+        >
+          {null}
+        </Glass>
+      )}
       {(selected || current) && (
         <View
           pointerEvents="none"

@@ -58,32 +58,30 @@
 }
 :root {
   --studio-glow-strength: 0.5;
-  /* Opaline surface finish. Keep colors in the selected Studio palette. */
-  --studio-surface-sheen:
-    radial-gradient(ellipse at 0% 0%, #ffffff1c, transparent 58%),
-    radial-gradient(ellipse at 100% 100%, #ffffff08, transparent 60%),
-    linear-gradient(155deg, #ffffff0d, transparent 48%, #ffffff05);
-  --studio-surface-rim:
-    inset 0.5px 1px 0 #ffffff38, inset -0.5px -0.5px 0 #ffffff18, inset 0 -2px 5px #00000010;
-  --studio-surface-shadow: 0 3px 6px #00000024, 0 18px 44px -12px #00000080;
+  /* Glass is reserved for the frame and floating surfaces. */
+  --studio-surface-sheen: none;
+  --studio-glass-sheen: linear-gradient(145deg, #ffffff12, transparent 55%, #ffffff08);
+  --studio-surface-rim: inset 0 1px 0 #ffffff50;
+  --studio-surface-shadow: 0 14px 40px -14px #00000070;
   --studio-floating-fill: var(--popover);
   --studio-navigation-fill: var(--sidebar);
-  --studio-navigation-filter: none;
+  --studio-glass-fill: var(--card);
+  --studio-dialog-fill: var(--card);
+  --studio-glass-edge: #d7e8ff45;
+  --studio-navigation-filter: var(--studio-surface-filter);
   --studio-navigation-light: radial-gradient(
-    ellipse 900px 780px at 0 0,
-    color-mix(in srgb, var(--primary) calc(18% * var(--studio-glow-strength)), transparent) 0%,
-    color-mix(in srgb, var(--primary) calc(6% * var(--studio-glow-strength)), transparent) 45%,
-    transparent 100%
+    ellipse at 12% 0%,
+    color-mix(in srgb, var(--primary) calc(12% * var(--studio-glow-strength)), transparent),
+    transparent 60%
   );
-  /* Reuse viewport coordinates so opaque headers and pages continue the same tint. */
   --studio-page-background: var(--studio-navigation-light) 0 0 / 100vw 100vh no-repeat fixed
     var(--background);
-  --studio-surface-filter: blur(24px) saturate(1.4);
-  --studio-control-rim: inset 0 1px 0 #ffffff24, inset 0 -1px 3px #00000020;
+  --studio-surface-filter: blur(8px) saturate(1.6);
+  --studio-control-rim: none;
   --studio-inset-fill: color-mix(in srgb, var(--background) 70%, var(--card));
-  --studio-inset-shadow: inset 0 1px 3px #00000024, inset 0 -1px 0 #ffffff0d;
+  --studio-inset-shadow: none;
   --studio-capsule-fill: color-mix(in srgb, var(--primary) 8%, var(--card));
-  --studio-capsule-shadow: var(--studio-control-rim), 0 1px 3px #00000024;
+  --studio-capsule-shadow: none;
   color-scheme: dark;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -117,16 +115,10 @@
 }
 /* Dovo fallback before React mounts; Appearance applies the selected palette before paint. */
 :root[data-theme='light'] {
-  --studio-surface-sheen:
-    radial-gradient(ellipse at 0% 0%, #ffffffcc, transparent 62%),
-    radial-gradient(ellipse at 100% 100%, #ffffff33, transparent 60%),
-    linear-gradient(155deg, #ffffff66, transparent 55%, #ffffff40);
-  --studio-surface-rim:
-    inset 0.5px 1px 0 #fffffff0, inset -0.5px -0.5px 0 #ffffff80, inset 0 -2px 5px #00000006;
-  --studio-surface-shadow: 0 3px 6px #0000000a, 0 18px 44px -12px #00000030;
-  --studio-control-rim: inset 0 1px 0 #ffffffcc, inset 0 -1px 2px #00000008;
-  --studio-inset-shadow: inset 0 1px 3px #0000000d, inset 0 -1px 0 #ffffffb3;
-  --studio-capsule-shadow: var(--studio-control-rim), 0 1px 3px #00000012;
+  --studio-glass-sheen: linear-gradient(145deg, #ffffff55, transparent 55%, #ffffff22);
+  --studio-surface-rim: inset 0 1px 0 #ffffffd0;
+  --studio-surface-shadow: 0 14px 40px -14px #35446440;
+  --studio-glass-edge: #ffffffb8;
   color-scheme: light;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -163,12 +155,7 @@
 :root,
 .studio-destructive-accent {
   --studio-selected-fill: color-mix(in srgb, var(--primary) 14%, var(--sidebar));
-  --studio-selected-gradient: linear-gradient(
-    140deg,
-    color-mix(in srgb, var(--primary) 14%, var(--sidebar)),
-    color-mix(in srgb, var(--primary) 8%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--primary) 11%, var(--sidebar))
-  );
+  --studio-selected-gradient: none;
   --studio-glow: 0 0 calc(14px * var(--studio-glow-strength))
     color-mix(in srgb, var(--primary) calc(16% * var(--studio-glow-strength)), transparent);
   --studio-glow-strong: 0 0 calc(20px * var(--studio-glow-strength))
@@ -184,17 +171,13 @@
 :root[data-theme='light'],
 :root[data-theme='light'] .studio-destructive-accent {
   --studio-selected-fill: color-mix(in srgb, var(--primary) 8%, var(--sidebar));
-  --studio-selected-gradient: linear-gradient(
-    140deg,
-    color-mix(in srgb, var(--primary) 8%, var(--sidebar)),
-    color-mix(in srgb, var(--primary) 4%, var(--sidebar)) 68%,
-    color-mix(in srgb, var(--primary) 6%, var(--sidebar))
-  );
+  --studio-selected-gradient: none;
 }
 :root[data-theme-gradients='false'],
 :root[data-theme-gradients='false'] .studio-destructive-accent {
   --studio-selected-gradient: none;
   --studio-surface-sheen: none;
+  --studio-glass-sheen: none;
   --studio-navigation-light: none;
 }
 :root[data-theme-glow='0'],
@@ -210,9 +193,10 @@
 /* Navigation blurs once per surface. Dense rows and their controls do not blur. */
 @supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
   :root {
-    --studio-floating-fill: color-mix(in srgb, var(--popover) 84%, transparent);
-    --studio-navigation-fill: color-mix(in srgb, var(--sidebar) 76%, transparent);
-    --studio-navigation-filter: blur(28px) saturate(1.25);
+    --studio-floating-fill: color-mix(in srgb, var(--popover) 72%, transparent);
+    --studio-navigation-fill: color-mix(in srgb, var(--sidebar) 65%, transparent);
+    --studio-glass-fill: color-mix(in srgb, var(--card) 68%, transparent);
+    --studio-dialog-fill: color-mix(in srgb, var(--card) 56%, transparent);
   }
 }
 :root[data-high-contrast='true'] {
@@ -220,6 +204,10 @@
   --studio-surface-rim: 0 0 0 transparent;
   --studio-floating-fill: var(--popover);
   --studio-navigation-fill: var(--sidebar);
+  --studio-glass-fill: var(--card);
+  --studio-dialog-fill: var(--card);
+  --studio-glass-edge: var(--border);
+  --studio-glass-sheen: none;
   --studio-navigation-filter: none;
   --studio-navigation-light: none;
   --studio-surface-filter: none;
@@ -233,6 +221,10 @@
     --studio-surface-rim: 0 0 0 transparent;
     --studio-floating-fill: var(--popover);
     --studio-navigation-fill: var(--sidebar);
+    --studio-glass-fill: var(--card);
+    --studio-dialog-fill: var(--card);
+    --studio-glass-edge: var(--border);
+    --studio-glass-sheen: none;
     --studio-navigation-filter: none;
     --studio-navigation-light: none;
     --studio-surface-filter: none;
@@ -244,10 +236,11 @@
 
 /* Keep a single scrim when a confirmation opens above an existing editor. */
 .dovo-dialog-overlay {
-  background-color: rgb(0 0 0 / 0.28);
+  background-color: rgb(0 0 0 / 0.18);
+  backdrop-filter: none;
 }
 :is(.dark, [data-theme='dark']) .dovo-dialog-overlay {
-  background-color: rgb(0 0 0 / 0.55);
+  background-color: rgb(0 0 0 / 0.32);
 }
 .dovo-dialog-overlay:has(~ .dovo-dialog-overlay[data-state='open']) {
   background-color: transparent;
@@ -256,19 +249,15 @@
 
 /* Shared modal surfaces keep the app's compact type and control sizes. */
 .dovo-dialog-content {
-  --dialog-edge: color-mix(in srgb, var(--border) 75%, var(--foreground) 10%);
   --dialog-field: var(--card);
   --dialog-inset: color-mix(in srgb, var(--card) 95%, var(--foreground) 5%);
-  border-color: var(--dialog-edge);
-  border-radius: 20px;
-  background-color: var(--studio-floating-fill);
-  background-image: var(--studio-surface-sheen);
-  -webkit-backdrop-filter: var(--studio-surface-filter);
-  backdrop-filter: var(--studio-surface-filter);
-  box-shadow:
-    var(--studio-surface-rim),
-    0 24px 80px #0004,
-    var(--studio-glow-wide);
+  border-color: var(--studio-glass-edge);
+  border-radius: var(--dovo-radius-overlay);
+  background-color: var(--studio-dialog-fill);
+  background-image: var(--studio-glass-sheen);
+  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
 .dovo-dialog-content [data-slot='dialog-title']:not(.sr-only) {
   font-size: 1rem;
@@ -320,17 +309,13 @@
 .dovo-dialog-content [data-slot='button'][data-variant='default'] {
   border: 1px solid color-mix(in srgb, var(--action) 65%, var(--primary));
   background-color: var(--action);
-  background-image: linear-gradient(160deg, transparent, #0000000a);
+  background-image: none;
   color: var(--action-foreground);
-  box-shadow:
-    inset 0 1px 0 #ffffff30,
-    var(--studio-glow);
+  box-shadow: none;
 }
 .dovo-dialog-content [data-slot='button'][data-variant='default']:hover:not(:disabled) {
   background-color: color-mix(in srgb, var(--action) 96%, #000);
-  box-shadow:
-    inset 0 1px 0 #ffffff40,
-    var(--studio-glow-strong);
+  box-shadow: none;
 }
 :is(
   [data-slot='button'][data-variant='default']:disabled,
@@ -388,76 +373,29 @@
     box-shadow: var(--studio-control-rim);
   }
   :where([data-slot='card']) {
-    background-image: var(--studio-surface-sheen);
-    box-shadow:
-      var(--studio-surface-rim),
-      0 2px 8px -4px #00000020;
+    background-image: none;
+    box-shadow: none;
   }
   :where(.studio-menu-surface) {
-    border-color: var(--border);
+    border-color: var(--studio-glass-edge);
+    border-radius: var(--dovo-radius-overlay);
     background-color: var(--studio-floating-fill);
-    background-image: var(--studio-surface-sheen);
-    -webkit-backdrop-filter: var(--studio-surface-filter);
-    backdrop-filter: var(--studio-surface-filter);
+    background-image: var(--studio-glass-sheen);
+    -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+    backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
     color: var(--foreground);
-    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow), var(--studio-glow-wide);
+    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
   }
   :where(
     [data-slot='select-item'][data-highlighted],
     [data-slot='select-item'][data-state='checked']
   ) {
     background-color: var(--studio-selected-fill);
-    background-image: var(--studio-selected-gradient);
     color: var(--foreground);
   }
   :where(select option, select optgroup) {
     background-color: var(--popover);
     color: var(--foreground);
-  }
-  :where([data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled)) {
-    background-image: linear-gradient(160deg, #ffffff12, #0000000a);
-    box-shadow:
-      inset 0 1px 0 #ffffff24,
-      var(--studio-glow);
-  }
-  :where(
-    [data-slot='button'][data-variant='default']:not([data-size='icon']):not(:disabled):hover
-  ) {
-    box-shadow:
-      inset 0 1px 0 #ffffff30,
-      var(--studio-glow-strong);
-  }
-  :where(
-    [data-slot='button']:is([data-variant='outline'], [data-variant='secondary']),
-    [data-slot='badge']
-  ) {
-    background-image: var(--studio-surface-sheen);
-    box-shadow: var(--studio-control-rim);
-  }
-  :where([data-slot='switch-thumb']) {
-    background-image: var(--studio-surface-sheen);
-    box-shadow:
-      var(--studio-control-rim),
-      0 1px 3px #00000030;
-  }
-  :where([data-slot='switch'], [data-slot='checkbox']) {
-    background-image: var(--studio-surface-sheen);
-    box-shadow: var(--studio-control-rim);
-  }
-  :where(
-    [data-slot='checkbox'][data-state='checked'],
-    [data-slot='checkbox'][data-state='indeterminate'],
-    [data-slot='switch'][data-state='checked']
-  ) {
-    box-shadow: var(--studio-control-rim), var(--studio-glow);
-  }
-  /* Light switches use a clean track and a raised thumb, without a second glass layer. */
-  :root[data-theme='light'] :where([data-slot='switch'], [data-slot='switch-thumb']) {
-    background-image: none;
-    box-shadow: none;
-  }
-  :root[data-theme-gradients='false'] :where([data-slot='button'][data-variant='default']) {
-    background-image: none;
   }
   @media (forced-colors: active) {
     :where(
@@ -525,4 +463,91 @@
   [data-slot='select-trigger']
 ):not([aria-invalid='true']) {
   border-color: var(--control-edge);
+}
+
+/* An inline refraction URL must not override opaque accessibility modes. */
+:root[data-high-contrast='true']
+  :is(
+    .dovo-dialog-content,
+    .studio-menu-surface,
+    .studio-overview-pane,
+    .studio-navigation[aria-label='Main navigation'],
+    .studio-composer,
+    .studio-tools-navigation,
+    .studio-glass-pane,
+    .studio-change-summary,
+    .studio-project-card,
+    .studio-side-panel,
+    .studio-thread-tools-panel,
+    .studio-browser-header,
+    .studio-page-header,
+    .studio-header-corner,
+    .studio-nav-selected,
+    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+    .studio-browser-tab[data-active],
+    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+    .studio-task-sidebar .studio-thread-child[aria-current='true'],
+    .studio-sidebar-brand-row,
+    .studio-task-thread-header
+  ) {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  :is(
+    .dovo-dialog-content,
+    .studio-menu-surface,
+    .studio-overview-pane,
+    .studio-navigation[aria-label='Main navigation'],
+    .studio-composer,
+    .studio-tools-navigation,
+    .studio-glass-pane,
+    .studio-change-summary,
+    .studio-project-card,
+    .studio-side-panel,
+    .studio-thread-tools-panel,
+    .studio-browser-header,
+    .studio-page-header,
+    .studio-header-corner,
+    .studio-nav-selected,
+    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+    .studio-browser-tab[data-active],
+    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+    .studio-task-sidebar .studio-thread-child[aria-current='true'],
+    .studio-sidebar-brand-row,
+    .studio-task-thread-header
+  ) {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* Each surface owns its fallback while its optical map loads. */
+:is(
+  .studio-overview-pane,
+  .studio-navigation[aria-label='Main navigation'],
+  .studio-composer,
+  .studio-menu-surface,
+  .dovo-dialog-content,
+  .studio-tools-navigation,
+  .studio-glass-pane,
+  .studio-change-summary,
+  .studio-project-card,
+  .studio-side-panel,
+  .studio-thread-tools-panel,
+  .studio-browser-header,
+  .studio-page-header,
+  .studio-header-corner,
+  .studio-nav-selected,
+  .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+  .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+  .studio-browser-tab[data-active],
+  .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+  .studio-task-sidebar .studio-thread-child[aria-current='true'],
+  .studio-sidebar-brand-row,
+  .studio-task-thread-header
+) {
+  --studio-glass-refraction: var(--studio-surface-filter);
 }
