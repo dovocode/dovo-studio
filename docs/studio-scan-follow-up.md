@@ -605,3 +605,31 @@ pnpm check
 Both browser scripts passed locally against the existing current desktop build. They covered shared
 composer behavior and desktop, phone and 320px layouts. The repository check passed. This change
 corrects the test expectation and does not establish a production regression proof.
+
+### Thread tools and project menu material checks
+
+Check `44116995035` failed because the thread tools browser fixture still required a transparent
+selected tool with no shadow. The glass design uses a tinted fill, a sheen and a neutral rim. The
+fixture now compares those computed values with the shared material variables. It waits for the
+selected tool's CSS transitions to finish before reading them. Disabling glow must retain only the
+neutral rim. Disabling gradients must remove the sheen. The selection marker checks stay enabled.
+
+The same fixture also expected a gradient on each menu choice and a colored menu shadow. Menu
+choices now use a flat highlight inside the glass menu. The check requires focus and the shared
+highlight fill. The menu must keep exactly its neutral rim and depth shadow with glow enabled or
+disabled. This change updates test expectations and does not change production styles.
+
+Rebuild web assets before running this fixture. The first local run used stale assets and passed.
+The rebuilt assets reproduced the hosted failure.
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/web build
+node scripts/check-task-project-panel-browser.mjs
+pnpm check
+```
+
+The rebuilt web app, desktop and compact panel checks passed locally. The panel checks include
+archive settings, editor actions, branch reuse, related links and watcher removal. The repository
+check passed with zero errors and 36 existing warnings. This is a test correction, so it does not
+establish a production regression proof.
