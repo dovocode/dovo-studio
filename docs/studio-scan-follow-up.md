@@ -435,4 +435,29 @@ pnpm check
 ```
 
 The older full live Bot evaluation, physical file delivery and microphone timing checks remain open.
-This change does not push a commit or start another nightly release.
+The release follow-up below tracks the later nightly fix.
+
+### Nightly shortcut contrast correction
+
+Hosted Check `44092919320` found insufficient contrast in the title-bar command shortcut hint. All
+four design-system shards reported the same issue. The hint applied 70% opacity over the normal
+muted text color. Removing that opacity keeps the existing theme color and gives the hint the same
+contrast as the other title-bar controls. Accessibility checks remain unchanged.
+
+Verify the catalog with Playwright's managed Chromium:
+
+```sh
+pnpm exec playwright install chromium
+pnpm --filter @dovo/design-system build
+node scripts/check-design-system-browser.mjs 0 4
+node scripts/check-design-system-browser.mjs 1 4
+node scripts/check-design-system-browser.mjs 2 4
+node scripts/check-design-system-browser.mjs 3 4
+pnpm changelog:check
+pnpm check
+```
+
+All four local shards passed after the fix. They covered 1,144 story/theme/viewport cases and 168
+hosted-page checks with accessibility checks enabled. The catalog build, repository check and
+changelog validation also passed. Hosted checks and nightly publication still need to pass for the
+fix commit.
