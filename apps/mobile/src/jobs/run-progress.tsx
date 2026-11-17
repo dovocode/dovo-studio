@@ -163,8 +163,10 @@ export function RunProgress({
         )}
       {run.retryAt && (
         <Text style={styles.muted}>
-          Waiting for provider. Startup retry {run.startupRetryCount}/3 at{' '}
-          {formatDateTime(run.retryAt)}. Cancel stops this retry.
+          {uiText(
+            'Waiting for provider. Startup retry {count}/3 at {time}. Cancel stops this retry.',
+            { count: run.startupRetryCount, time: formatDateTime(run.retryAt) },
+          )}
         </Text>
       )}
       {run.status === 'waiting' && !run.retryAt && (

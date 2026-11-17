@@ -46,7 +46,9 @@ export function RoutineOptions({
         </InterfaceText>
       </Text>
       {!snapshot?.automationStartupRetrySupported && (
-        <Text style={styles.muted}>Update this runtime to configure provider startup retry.</Text>
+        <Text style={styles.muted}>
+          {uiText('Update this runtime to configure provider startup retry.')}
+        </Text>
       )}
       {(Object.keys(routineOptionLabels) as Array<keyof typeof routineOptionLabels>)
         .filter((key) => key !== 'jsonPointer' || jsonMonitoringSupported)
@@ -56,11 +58,11 @@ export function RoutineOptions({
           key === 'startupRetry' ? (
             <SettingsChoice
               key={key}
-              label={routineOptionLabels[key]}
+              label={uiText('Retry provider startup')}
               value={fields[key]}
               items={[
-                { id: 'no', name: 'No' },
-                { id: 'yes', name: 'Yes, before provider acceptance only' },
+                { id: 'no', name: uiText('No') },
+                { id: 'yes', name: uiText('Yes, before provider acceptance only') },
               ]}
               disabled={disabled || !snapshot?.automationStartupRetrySupported}
               onChange={(value) => setFields((f) => ({ ...f, startupRetry: value }))}

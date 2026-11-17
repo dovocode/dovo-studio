@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { createDetailDrafts, useDetailDraft, detailDraftKey } from '../runtime/state/detail-drafts'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
@@ -27,6 +28,7 @@ export function RestoreDefinition({
   runId: string
   automationId: string
 }) {
+  const uiText = useInterfaceText()
   const { call, connected, snapshot, profile } = useRuntime()
   const { styles } = useTheme()
   const retained = useDetailDraft(
@@ -79,14 +81,14 @@ export function RestoreDefinition({
   return (
     <View style={{ gap: 8 }}>
       <Action
-        label="Restore definition from this run"
+        label={uiText('Restore definition from this run')}
         secondary
         disabled={!connected || busy || !snapshot?.automationRestoreSupported}
         onPress={() =>
           void act(async (version) => {
             if (version !== generation.current) return
             const current = snapshot?.workspace.automations.find((flow) => flow.id === automationId)
-            if (!current) throw new Error('Automation no longer exists')
+            if (!current) throw new Error(uiText('Automation no longer exists'))
             const result = await call(
               '/api/jobs/definition',
               { id: runId },
@@ -100,13 +102,15 @@ export function RestoreDefinition({
         }
       />
       {!snapshot?.automationRestoreSupported && (
-        <Text style={styles.muted}>Update this computer to restore a run definition.</Text>
+        <Text style={styles.muted}>
+          {uiText('Update this computer to restore a run definition.')}
+        </Text>
       )}
       {!!notice && <Text>{notice}</Text>}
       {!!error && !draft && <Text accessibilityRole="alert">{error}</Text>}
       {!!draft && (
         <Sheet
-          title="Restore automation definition"
+          title={uiText('Restore automation definition')}
           busy={busy}
           onClose={() => {
             if (!busy) {
@@ -117,11 +121,12 @@ export function RestoreDefinition({
         >
           <View style={{ gap: 12 }}>
             <Text style={styles.muted}>
-              Edit and compare before saving. Current credentials stay in place. Automatic triggers
-              will be paused. Running jobs keep their definitions.
+              {uiText(
+                'Edit and compare before saving. Current credentials stay in place. Automatic triggers will be paused. Running jobs keep their definitions.',
+              )}
             </Text>
             <Field
-              label="Restored automation definition"
+              label={uiText('Restored automation definition')}
               multiline
               value={draft}
               onChangeText={setDraft}
@@ -129,13 +134,17 @@ export function RestoreDefinition({
             />
             {changes.map((change) => (
               <Text key={change.label}>
-                {change.label}: {change.before ?? 'None'} → {change.after ?? 'None'}
+                {change.label}: {change.before ?? uiText('None')} → {change.after ?? uiText('None')}
               </Text>
             ))}
-            {!valid && <Text accessibilityRole="alert">Enter a valid automation definition.</Text>}
+            {!valid && (
+              <Text accessibilityRole="alert">
+                {uiText('Enter a valid automation definition.')}
+              </Text>
+            )}
             {!!error && <Text accessibilityRole="alert">{error}</Text>}
             <Action
-              label="Compare with current definition"
+              label={uiText('Compare with current definition')}
               secondary
               disabled={busy || !connected}
               onPress={() =>
@@ -150,7 +159,7 @@ export function RestoreDefinition({
               }
             />
             <Action
-              label="Save restored definition"
+              label={uiText('Save restored definition')}
               disabled={!valid || !expected || busy || !connected}
               onPress={() =>
                 void act(async (version) => {
@@ -164,7 +173,7 @@ export function RestoreDefinition({
                   if (version !== generation.current) return
                   setDraft('')
                   setExpected(undefined)
-                  setNotice('Definition restored. Automatic triggers are paused.')
+                  setNotice(uiText('Definition restored. Automatic triggers are paused.'))
                 })
               }
             />

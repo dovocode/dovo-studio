@@ -103,16 +103,18 @@ export function StepFields({
             style={{ minHeight: 96, textAlignVertical: 'top' }}
           />
           {!snapshot?.automationStepInputsSupported && (
-            <Text style={styles.muted}>Update this runtime to pass step results and files.</Text>
+            <Text style={styles.muted}>
+              {uiText('Update this runtime to pass step results and files.')}
+            </Text>
           )}
           {automationInputSources(flow, nodeId).map((source) => (
             <Choice
               key={source.id}
-              label={`Use result from ${source.data.label}`}
+              label={uiText('Use result from {label}', { label: source.data.label })}
               value={data.inputFrom?.includes(source.id) ? 'yes' : 'no'}
               items={[
-                { id: 'no', name: 'No' },
-                { id: 'yes', name: 'Yes' },
+                { id: 'no', name: uiText('No') },
+                { id: 'yes', name: uiText('Yes') },
               ]}
               disabled={disabled || !snapshot?.automationStepInputsSupported}
               onChange={(value) =>
@@ -126,11 +128,11 @@ export function StepFields({
             />
           ))}
           <Choice
-            label="Include result files"
+            label={uiText('Include result files')}
             value={data.inputFiles ? 'yes' : 'no'}
             items={[
-              { id: 'no', name: 'No' },
-              { id: 'yes', name: 'Yes' },
+              { id: 'no', name: uiText('No') },
+              { id: 'yes', name: uiText('Yes') },
             ]}
             disabled={disabled || !snapshot?.automationStepInputsSupported}
             onChange={(value) => onChange({ inputFiles: value === 'yes' })}

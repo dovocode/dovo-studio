@@ -48,7 +48,7 @@ const definitions = [
     part: 'automations',
     schema: studioAutomationsCommandSchema,
     description:
-      'Create/run workflows; automation_prepare offers review. Create/update need complete automation. Bot job: task node data.botId selects an existing Bot; data.objective runs an isolated worker with its settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run works without enabling triggers. run needs stable requestId; cancel/retry/wait need run ID, runs needs automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. definition reads a retained run as a credential-safe draft; restore needs its run ID, expected current definition and edited definition, and pauses triggers. Human gates stay human-only.',
+      'Create/run workflows; automation_prepare offers review. Create/update need full automation. Bot task: data.botId selects an existing Bot; data.objective runs its isolated worker with Bot settings/reporting. monitor.url skips unchanged checks; policy sets budgets/quietHours. Manual run never enables triggers. run: stable requestId; cancel/retry/wait: run ID; runs: automation ID. source: exact owner words. dryRun tests automation with sample input; changes nothing. definition: credential-safe run draft; restore: run ID, expected/edited definitions; pauses triggers. Human gates stay human-only.',
   },
   {
     part: 'browsers',
@@ -71,6 +71,20 @@ const definitions = [
 ] as const
 type StudioTool = Omit<Tool, 'inputSchema'> & {
   inputSchema: JSONSchema.JSONSchema & { type: 'object' }
+}
+
+// JSON Schema allows additional properties by default. Omit that repeated default
+// from generated objects, while keeping false and schema-valued constraints.
+function omitObjectDefaults(value: unknown): void {
+  if (!value || typeof value !== 'object') return
+  if (
+    'type' in value &&
+    value.type === 'object' &&
+    'additionalProperties' in value &&
+    value.additionalProperties === true
+  )
+    delete value.additionalProperties
+  for (const child of Object.values(value)) omitObjectDefaults(child)
 }
 
 /** Accept encoded command metadata without changing the target computer or
@@ -123,13 +137,15 @@ export function studioToolDefinitions(enabled: StudioTools): StudioTool[] {
           ...(definition.part === 'ui' ? {} : { runtimeId: Schema.optional(Schema.String) }),
         }),
       )
+      omitObjectDefaults(document.schema)
+      omitObjectDefaults(document.definitions)
       tools.push({
         name: 'studio_' + definition.part,
         description:
           definition.description +
           (definition.part === 'ui'
             ? ''
-            : ' Put runtimeId beside command (object or JSON), never inside. Default local; IDs/cursors are computer-scoped.'),
+            : ' runtimeId belongs beside command (object/JSON). Default local; computer-scoped IDs/cursors.'),
         inputSchema: { ...document.schema, type: 'object', $defs: document.definitions },
       })
     }

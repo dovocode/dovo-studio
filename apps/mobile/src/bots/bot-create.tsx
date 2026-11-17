@@ -403,7 +403,7 @@ export function CreateBot({
         />
         <View style={{ gap: 8 }}>
           <Field
-            label="First task · optional"
+            label={uiText('First task · optional')}
             multiline
             value={draft.firstTask}
             onChangeText={(value) => setField('firstTask', value)}
@@ -411,8 +411,9 @@ export function CreateBot({
             maxLength={120000}
           />
           <Text style={styles.muted}>
-            Opens as a draft in your Bot. Review and send it when ready. Add a routine after you
-            have a useful result.
+            {uiText(
+              'Opens as a draft in your Bot. Review and send it when ready. Add a routine after you have a useful result.',
+            )}
           </Text>
         </View>
         <Starters

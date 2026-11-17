@@ -1,5 +1,27 @@
 import { expect, it } from 'vite-plus/test'
-import { studioToolCommand } from './tool-definitions.js'
+import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv-provider.js'
+import { ToolSchema } from '@modelcontextprotocol/sdk/types.js'
+import { noStudioTools } from '@dovo/protocol'
+import { studioToolCommand, studioToolDefinitions } from './tool-definitions.js'
+
+it('validates both restore definitions through the advertised automation schema', () => {
+  const tool = studioToolDefinitions({ ...noStudioTools(), automations: true }).find(
+    (entry) => entry.name === 'studio_automations',
+  )
+  if (!tool) throw new Error('Missing automation tool')
+  const validate = new AjvJsonSchemaValidator().getValidator(ToolSchema.parse(tool).inputSchema)
+  const definition = { id: 'flow', name: 'Flow', nodes: [], edges: [] }
+  const command = { action: 'restore', id: 'run', expected: definition, definition }
+  expect(validate({ command }).valid).toBe(true)
+  expect(
+    validate({ command: { ...command, definition: { ...definition, future: true } } }).valid,
+  ).toBe(true)
+  for (const field of ['expected', 'definition']) {
+    for (const invalid of [null, { id: 'flow' }, { ...definition, nodes: 'invalid' }]) {
+      expect(validate({ command: { ...command, [field]: invalid } }).valid).toBe(false)
+    }
+  }
+})
 
 const commands = [
   { name: 'studio_threads', command: { action: 'read', id: 'thread-42' } },

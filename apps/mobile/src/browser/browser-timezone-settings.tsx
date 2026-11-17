@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { browserProfilesSchema, decodeResult } from '@dovo/protocol'
@@ -16,6 +17,7 @@ export function BrowserTimezoneSettings({
   disabled: boolean
   onSave: (timezone?: string) => Promise<void>
 }) {
+  const uiText = useInterfaceText()
   const [text, setText] = useState(value ?? '')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -27,26 +29,29 @@ export function BrowserTimezoneSettings({
   return (
     <View style={{ gap: 8 }}>
       <Text style={styles.muted}>
-        Profile time zone: {value ?? 'Computer default'}. A blank value restores the computer time
-        zone.
+        {uiText('Profile time zone: {value}. A blank value restores the computer time zone.', {
+          value: value ?? uiText('Computer default'),
+        })}
       </Text>
       {!supported ? (
-        <Text style={styles.muted}>Update this computer to set a browser time zone.</Text>
+        <Text style={styles.muted}>
+          {uiText('Update this computer to set a browser time zone.')}
+        </Text>
       ) : (
         <>
           <Field
-            label="Profile time zone"
+            label={uiText('Profile time zone')}
             value={text}
             onChangeText={setText}
             editable={!disabled && !busy}
-            placeholder="Europe/Amsterdam"
+            placeholder={uiText('Europe/Amsterdam')}
             autoCapitalize="none"
             autoCorrect={false}
           />
-          {!valid && <Text style={styles.error}>Enter a valid IANA time zone.</Text>}
+          {!valid && <Text style={styles.error}>{uiText('Enter a valid IANA time zone.')}</Text>}
           {timezone !== value && (
             <Action
-              label="Save time zone"
+              label={uiText('Save time zone')}
               disabled={disabled || busy || !valid}
               onPress={() => {
                 setBusy(true)

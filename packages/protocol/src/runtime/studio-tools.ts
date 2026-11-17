@@ -137,6 +137,8 @@ export const studioThreadsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literals(['stop', 'archive', 'unarchive']), id }),
   mutableStruct({ action: Schema.Literal('wait'), id, timeoutMs: timeout }),
 ])
+// Reuse the full definition in JSON Schema instead of advertising three copies.
+const automationDefinition = automationSchema.annotate({ identifier: 'Automation' })
 export const studioAutomationsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('list') }),
   mutableStruct({ action: Schema.Literal('read'), id }),
@@ -144,13 +146,13 @@ export const studioAutomationsCommandSchema = Schema.Union([
   mutableStruct({
     action: Schema.Literal('restore'),
     id,
-    expected: automationSchema,
-    definition: automationSchema,
+    expected: automationDefinition,
+    definition: automationDefinition,
     source: Schema.optional(routineSourceInputSchema),
   }),
   mutableStruct({
     action: Schema.Literals(['create', 'update', 'validate', 'dryRun']),
-    automation: automationSchema,
+    automation: automationDefinition,
     source: Schema.optional(routineSourceInputSchema),
     /** dryRun only: sample trigger data and a simulated failure or rejection. */
     input: Schema.optional(automationDryRunInputSchema),

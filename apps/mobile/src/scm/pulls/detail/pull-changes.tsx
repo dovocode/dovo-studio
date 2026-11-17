@@ -298,11 +298,13 @@ export function PullChanges({
         </View>
       ) : (
         <View style={{ gap: 8 }}>
-          <Text style={styles.muted}>No text patch available. Open this PR on its server.</Text>
+          <Text style={styles.muted}>
+            {uiText('No text patch available. Open this PR on its server.')}
+          </Text>
           {file.patchOmitted &&
             (snapshot?.pullFileLoadingSupported ? (
               <Action
-                label={loadingFile ? 'Loading patch…' : 'Load this patch'}
+                label={loadingFile ? uiText('Loading patch…') : uiText('Load this patch')}
                 disabled={loadingFile || !!detail.stale}
                 onPress={() => {
                   setLoadingFile(true)
@@ -346,7 +348,9 @@ export function PullChanges({
                 }}
               />
             ) : (
-              <Text style={styles.muted}>Update this computer to load omitted patches.</Text>
+              <Text style={styles.muted}>
+                {uiText('Update this computer to load omitted patches.')}
+              </Text>
             ))}
           {!!loadError && <Text style={styles.error}>{loadError}</Text>}
         </View>

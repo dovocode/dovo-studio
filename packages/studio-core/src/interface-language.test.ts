@@ -34,6 +34,12 @@ it('preserves all message placeholders in every language', () => {
   }
 })
 
+it('keeps the time zone example as an IANA identifier in every language', () => {
+  for (const translations of Object.values(catalog)) {
+    expect(translations['Europe/Amsterdam']).toBe('Europe/Amsterdam')
+  }
+})
+
 it('keeps command examples and layout separators unchanged', () => {
   const tokens = (text: string) =>
     text.match(

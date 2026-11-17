@@ -290,3 +290,37 @@ The broader local test run passed 163 tests. Three existing agent-browser tests 
 Chromium because this host disallows its sandbox. Their production launch setting remains intact.
 The separate Chromium integration fixture uses a test-only sandbox override. The full live Bot
 suite, Finder or Explorer file delivery, and physical microphone timing remain open as stated above.
+
+### Release check follow-up
+
+The full local test run completed with 8,583 passing tests and 15 skipped tests. It found two
+failures in the scan changes. The mobile copy check found missing translation entries. The tool
+catalog exceeded its description and schema limits. Both checks now pass. The follow-up adds 52
+messages in all 29 interface languages. It also keeps `Europe/Amsterdam` unchanged as an IANA
+identifier in every language.
+
+The automation command now references one complete definition schema for creation and restore.
+Generated tool schemas omit the redundant `additionalProperties: true` default. Schema-valued
+constraints stay in place. An advertised-schema test checks valid and invalid restore definitions.
+The existing catalog size limits remain unchanged.
+
+Six tests in `agent-browser.test.ts`, `browser-do-not-track.test.ts` and
+`browser-session-cookies.test.ts` could not start Chromium because this host does not support its
+sandbox. The full local suite is therefore not green. Production sandbox settings remain enabled.
+The separate browser fixtures passed for usage retention, paged export, share-sheet page retention,
+time-zone save and reset, and older-runtime fallbacks. These fixtures adapt native boundaries.
+
+The runtime build and the mobile, protocol and runtime typechecks passed. The repository check
+passed with zero errors and 34 existing warnings. Targeted tests passed for copy coverage,
+translations, advertised schemas, provider schema compatibility and automation restore. Regression
+proofs passed against `136c185fd0` for the copy check, tool catalog and IANA identifier. Run them
+with:
+
+```sh
+pnpm prove -- --base 136c185fd0 apps/mobile/src/interface-copy.test.ts
+pnpm prove -- --base 136c185fd0 --build packages/runtime/src/agent-tools/context-budget.test.ts
+pnpm prove -- --base 136c185fd0 packages/studio-core/src/interface-language.test.ts
+```
+
+The full live Bot evaluation and the physical-device checks remain open. This release check did not
+resume them.
