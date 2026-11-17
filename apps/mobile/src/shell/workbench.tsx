@@ -1,3 +1,4 @@
+import { recordClientAction } from '@dovo/protocol'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSoftwareKeyboard } from './use-software-keyboard'
@@ -484,6 +485,7 @@ export function Workbench() {
   )
   const navigate = useCallback(
     (view: string, id?: string, runtimeId?: string) => {
+      recordClientAction('navigation', 'app')
       Keyboard.dismiss()
       if (view === 'tasks' && id) {
         const host = runtimeId

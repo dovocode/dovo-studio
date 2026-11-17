@@ -88,7 +88,12 @@ export function RunAudit({ runId }: { runId: string }) {
       {audit && (
         <>
           <p>
-            {audit.tokens} reported tokens · ${audit.estimatedCostUsd.toFixed(4)} estimated
+            {audit.tokens} reported tokens ·{' '}
+            {audit.threads.some((thread) =>
+              thread.turns.some((turn) => turn.estimatedCostUsd === undefined),
+            )
+              ? `Cost unknown · $${audit.estimatedCostUsd.toFixed(4)} priced usage`
+              : `$${audit.estimatedCostUsd.toFixed(4)} estimated`}
             {audit.usageIncomplete ? ' · Some usage is unavailable' : ''}
           </p>
           <p>

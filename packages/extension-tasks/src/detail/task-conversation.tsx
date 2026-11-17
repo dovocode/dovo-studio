@@ -8,6 +8,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
 import {
+  randomUUID,
+  runtimeRecoveryScope,
   taskBudgetUsage,
   taskPreparation,
   mergePendingMessages,
@@ -102,10 +104,18 @@ export function TaskConversation({
     taskId: string
   } | null>(null)
   const pendingTemplate = templateInsert?.taskId === task.id ? templateInsert : null
+  const [recoveryInsert, setRecoveryInsert] = useState<{
+    id: string
+    text: string
+    taskId: string
+    scope: string
+    once: true
+    done: () => void
+  } | null>(null)
   const useTemplate = useCallback(
     (text: string) => {
       setComposerCollapsed(false)
-      setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+      setTemplateInsert({ id: randomUUID(), text, taskId: task.id })
     },
     [task.id],
   )
@@ -124,6 +134,10 @@ export function TaskConversation({
   const [managePullTask, setManagePullTask] = useState<string | null>(null)
   const [pending, setPending] = useApplicationState<(PendingMessage & { scope: string })[]>([])
   const { pendingMessages: savedMessages, connection, workspace } = useWorkspace()
+  const pendingRecovery =
+    recoveryInsert?.taskId === task.id && recoveryInsert.scope === runtimeRecoveryScope(connection)
+      ? recoveryInsert
+      : null
   const project = workspace.repositories.find((repository) => repository.id === task.repositoryId)
   const pendingScope = JSON.stringify([connection?.address, connection?.token, task.id])
   const onPending = useCallback(
@@ -314,7 +328,7 @@ export function TaskConversation({
                         taskId={task.id}
                         active={visible}
                         onUseSuggestion={(text) => {
-                          setTemplateInsert({ id: crypto.randomUUID(), text, taskId: task.id })
+                          setTemplateInsert({ id: randomUUID(), text, taskId: task.id })
                           setComposerCollapsed(false)
                         }}
                       />
@@ -403,7 +417,20 @@ export function TaskConversation({
             </div>
           )}
           <SpendPauseNotice task={task} />
-          <TaskQuestions taskId={task.id} />
+          <TaskQuestions
+            taskId={task.id}
+            onUseDraft={(text, done) => {
+              setComposerCollapsed(false)
+              setRecoveryInsert({
+                id: randomUUID(),
+                taskId: task.id,
+                scope: runtimeRecoveryScope(connection),
+                text,
+                once: true,
+                done,
+              })
+            }}
+          />
           {visible && <TaskSecureInputs taskId={task.id} />}
           <RunControls task={task} />
           <PlanApproval task={task} />
@@ -434,9 +461,16 @@ export function TaskConversation({
                 }
                 onPending={onPending}
                 onAside={onAside}
-                composerInsert={pendingTemplate ?? composerInsert}
+                composerInsert={pendingRecovery ?? pendingTemplate ?? composerInsert}
                 onComposerInsertApplied={
-                  pendingTemplate ? () => setTemplateInsert(null) : onComposerInsertApplied
+                  pendingRecovery
+                    ? () => {
+                        pendingRecovery.done()
+                        setRecoveryInsert(null)
+                      }
+                    : pendingTemplate
+                      ? () => setTemplateInsert(null)
+                      : onComposerInsertApplied
                 }
               />
             )}

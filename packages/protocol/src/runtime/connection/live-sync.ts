@@ -1,4 +1,5 @@
 import { createRuntimeClient } from '../../shared/runtime-client.js'
+import { recordClientAction } from '../../shared/client-diagnostics.js'
 import { desktopRuntimeSyncBridge } from './desktop-sync.js'
 import { failRuntimeStreamingRoute, invalidateRuntimeRoute } from './routes.js'
 import { decode } from '../../shared/schema.js'
@@ -284,6 +285,14 @@ export function startRuntimeSync(
     const unsubscribe = bridge.subscribe(initialInput, (event) => {
       if (stopped) return
       if (event.type === 'status') {
+        recordClientAction(
+          event.status === 'live'
+            ? 'connected'
+            : event.status === 'forbidden'
+              ? 'unauthorized'
+              : event.status,
+          'connection',
+        )
         online = event.online
         status = event.status
         options.onStatus?.(status)
@@ -363,6 +372,10 @@ export function startRuntimeSync(
     replacingSince !== undefined && Date.now() - replacingSince < replacementGrace
   const setStatus = (next: RuntimeSyncStatus) => {
     if (status === next) return
+    recordClientAction(
+      next === 'live' ? 'connected' : next === 'forbidden' ? 'unauthorized' : next,
+      'connection',
+    )
     status = next
     options.onStatus?.(next)
   }

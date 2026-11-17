@@ -1,7 +1,9 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useQuestionRecovery } from '../composer/question-recovery'
 import { useState } from 'react'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
+import { mutableStruct, questionRecoveryDraft } from '@dovo/protocol'
+import { appendRuntimeDraft } from '../draft/runtime-drafts'
 import { QuestionAttachments } from '../composer/question-attachments'
 import {
   questionAllowsAttachments,
@@ -249,6 +251,9 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
 
   const { scope, store } = useQuestionRecovery()
   const { styles } = useTheme()
+  const { profile, connected, snapshot, callEffect, legacyDraftRuntimeId } = useRuntime()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const entries = store
     .entries(scope)
     .filter(
@@ -260,6 +265,11 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
     )
   return (
     <View style={{ gap: 8 }}>
+      {!!error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {error}
+        </Text>
+      )}
       {!!store.error(scope) && (
         <View style={{ gap: 8 }}>
           <Text accessibilityRole="alert" style={styles.error}>
@@ -303,6 +313,62 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
                 ))}
               </View>
             ))}
+          <Action
+            label={uiText('Use in draft')}
+            secondary
+            disabled={
+              busy ||
+              !connected ||
+              !profile ||
+              (!!questionRecoveryDraft(entry).ids.length && !snapshot?.questionDraftReuseSupported)
+            }
+            onPress={async () => {
+              if (!profile) return
+              setBusy(true)
+              setError('')
+              try {
+                const { text, ids } = questionRecoveryDraft(entry)
+                if (ids.length) {
+                  const { guard } = await runClientEffect(
+                    callEffect(
+                      '/api/attachments/draft-guard',
+                      { taskId },
+                      mutableStruct({ guard: Schema.String }),
+                      undefined,
+                      { defer: false },
+                    ),
+                  )
+                  await runClientEffect(
+                    callEffect(
+                      '/api/attachments/reuse-draft',
+                      { taskId, ids, guard },
+                      responses.ok,
+                      undefined,
+                      { defer: false },
+                    ),
+                  )
+                }
+                if (!store.entries(scope).includes(entry))
+                  throw new Error('Saved answers changed. Review them and try again.')
+                await appendRuntimeDraft(
+                  profile.id,
+                  taskId,
+                  text,
+                  snapshot?.workspace.tasks.find((task) => task.id === taskId)?.draft ?? '',
+                  `question:${entry.request.id}:${store.revision(entry)}`,
+                  legacyDraftRuntimeId,
+                )
+                store.remove(scope, taskId, entry.request.id, entry)
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : String(cause))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          />
+          {!!questionRecoveryDraft(entry).ids.length && !snapshot?.questionDraftReuseSupported && (
+            <Text style={styles.muted}>{uiText('Update this computer to reuse saved files.')}</Text>
+          )}
           <Action
             destructive
             label={uiText('Discard saved answers')}

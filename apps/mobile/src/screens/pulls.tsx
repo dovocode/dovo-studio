@@ -1,4 +1,7 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
+import { savedFilterScope } from '@dovo/protocol'
+import { SavedFilterViews } from '../scm/saved-filter-views'
+import { projectContentIdentity } from '../runtime/state/collection-sources'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { EmptyState } from '../ui/content/empty-state'
 import { contentColumn } from '../ui/layout/content-column'
@@ -256,6 +259,26 @@ export default function PullsScreen() {
               paddingBottom: 4,
             }}
           >
+            <SavedFilterViews
+              kind="pulls"
+              scope={savedFilterScope(
+                overviews.map(({ profile }) => JSON.stringify([profile.id, profile.connection])),
+              )}
+              sources={collectionSources(overviews).map((source) => ({
+                key: source.key,
+                identity: projectContentIdentity(source),
+              }))}
+              value={{ source: repositoryId, state, search, draft, attention, sort }}
+              onApply={(value) => {
+                setRepository(value.source)
+                setState(value.state)
+                setSearch(value.search)
+                setDraft(value.draft ?? 'all')
+                setField('attention', value.attention ?? false)
+                setField('sort', value.sort)
+                setMarked([])
+              }}
+            />
             <SearchField
               label={uiText('Search PRs')}
               clearButtonMode="while-editing"

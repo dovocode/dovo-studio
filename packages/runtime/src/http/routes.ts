@@ -1,7 +1,7 @@
 import { checkCodeAccess } from '../agent-tools/code-access.js'
 import { visionTool } from '../vision/tool.js'
 import { attachmentOcr } from '../vision/attachment-ocr.js'
-import { attachmentOcrRequestSchema } from '@dovo/protocol'
+import { attachmentOcrRequestSchema, attachmentIdsSchema } from '@dovo/protocol'
 import { databaseSpace } from '../storage/database-space.js'
 import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
@@ -1324,6 +1324,13 @@ export function route(
       }
       if (method === 'POST' && path === '/api/attachments/prepare')
         return s.attachments.prepare(yield* serviceResult(body(request, 8192)))
+      if (method === 'POST' && path === '/api/attachments/reuse-draft') {
+        const input = decode(
+          mutableStruct({ taskId: idSchema, ids: attachmentIdsSchema, guard: Schema.String }),
+          yield* serviceResult(body(request, 8192)),
+        )
+        return s.attachments.reuseInDraft(input.taskId, input.ids, input.guard)
+      }
       if (method === 'POST' && path === '/api/attachments/replace')
         return yield* serviceResult(s.attachments.replace(yield* serviceResult(body(request))))
       if (method === 'POST' && path === '/api/attachments/upload')

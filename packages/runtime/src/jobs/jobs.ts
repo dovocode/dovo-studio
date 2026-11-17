@@ -680,6 +680,18 @@ export class Jobs {
         return yield* Effect.fail(
           new HttpError(409, 'The Bot for this step is no longer available'),
         )
+      const budget = run.flow.policy
+      const agent = resolveTaskAgent(target, this.store.get().agents)
+      if (
+        budget?.costUsd &&
+        !budget.minutes &&
+        !budget.tokens &&
+        (!agent || !this.store.usagePricing.canPrice(agent.provider, agent.model))
+      )
+        throw new HttpError(
+          409,
+          'This model has no usable price. Set its price in Usage & limits, or add a time or token limit before running this automation. Missing prices do not mean zero cost.',
+        )
       const step = runSteps(run).find((item) => item.nodeId === node.id)
       if (step?.taskId !== botId || step.messageId !== messageId) {
         const next: StoredRun = {
@@ -1128,6 +1140,19 @@ export class Jobs {
                 'The Bot access limit changed. Review this worker before retrying.',
               )
           }
+          const budget = run.flow.policy
+          const pricedAgent = resolveTaskAgent(task, this.store.get().agents)
+          if (
+            budget?.costUsd &&
+            !budget.minutes &&
+            !budget.tokens &&
+            (!pricedAgent ||
+              !this.store.usagePricing.canPrice(pricedAgent.provider, pricedAgent.model))
+          )
+            throw new HttpError(
+              409,
+              'This model has no usable price. Set its price in Usage & limits, or add a time or token limit before running this automation. Missing prices do not mean zero cost.',
+            )
           if (this.stopping || this.runs.get(id)?.status !== 'running') return
           if (
             !['review', 'done'].includes(task.status) ||
@@ -1332,13 +1357,16 @@ export class Jobs {
           }
       }
       let tokens = 0,
-        cost = 0
+        cost = 0,
+        unpriced = false
       for (const id of ids) {
         const task = this.store.get().tasks.find((t) => t.id === id)
         if (!task) continue
         for (const turn of this.store.task(id).turns ?? []) {
           tokens += turn.tokens ?? 0
-          cost += turn.estimatedCostUsd ?? 0
+          const priced = this.store.usagePricing.price({ taskId: id, title: task.title, turn }).turn
+          if (priced.estimatedCostUsd === undefined && turn.status !== 'running') unpriced = true
+          else cost += priced.estimatedCostUsd ?? 0
         }
       }
       const reason =
@@ -1348,12 +1376,16 @@ export class Jobs {
             ? 'token'
             : policy.costUsd && cost >= policy.costUsd
               ? 'estimated cost'
-              : undefined
+              : policy.costUsd && !policy.minutes && !policy.tokens && unpriced
+                ? 'unknown cost; set a model price or a time/token limit'
+                : undefined
       if (!reason) continue
       this.finish(
         run.id,
         'failed',
-        'Routine stopped: ' + reason + ' budget reached. Completed work is preserved.',
+        reason.startsWith('unknown cost')
+          ? 'Routine stopped because usage has no usable price. Set a model price or a time/token limit. Completed work is preserved.'
+          : 'Routine stopped: ' + reason + ' budget reached. Completed work is preserved.',
       )
       void this.stopTask(run).catch((error) =>
         this.activity?.add('job', run.id, 'Could not stop budget-limited worker', {

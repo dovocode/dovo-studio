@@ -21,7 +21,7 @@ Update an older runtime to use the feature.
 3. Choose the computer. Only connected computers with a supported runtime are available.
 4. Choose the agent and model. The default is the default agent for threads without a project on
    that computer.
-5. Choose what to include. All three options are on by default.
+5. Choose what to include. All available options are on by default.
 6. Select **Preview**. The runtime builds the redacted message and file, and the app shows them.
 7. Read the preview. You cannot edit it. Select **Edit report** to change the form, or **Start
    triage thread** to start.
@@ -54,7 +54,13 @@ The attached file, `dovo-diagnostics.md`, contains only the sections you include
   most 16 KB and 150 lines from each log. Thread titles, conversations and file contents are not
   included.
 - **Recent app errors:** up to 20 errors that this app window recorded since it opened. On iPhone,
-  the list also includes the last crash that the app saved.
+  the list also includes the last crash that the app saved. New runtimes also accept the error name
+  and a bounded, redacted stack.
+- **Recent app actions:** up to 100 entries from the last 30 minutes. Entries contain the time,
+  action category, request duration and HTTP status when available. They record navigation, requests
+  and reconnects. They do not record addresses, thread IDs, request bodies or input text. The app
+  keeps this list in memory. Turn the option off to omit it from the report. This option requires a
+  runtime with `problemReportTimelineSupported`.
 
 The runtime limits the file to 64 KB. It keeps the newest log lines that fit and shortens the file
 if necessary. If you include nothing, the thread starts without a file. If you leave out versions,

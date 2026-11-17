@@ -78,6 +78,40 @@ Sources: [Cursor TypeScript SDK](https://cursor.com/docs/sdk/typescript),
 [Grok headless and ACP integration](https://docs.x.ai/build/cli/headless-scripting),
 [Muse SDK documentation](https://meta-models.github.io/muse-code-sdk/next/).
 
+## Claude through a proxy
+
+Dovo uses the Claude Agent SDK and the Claude CLI on the selected runtime computer. Create a
+separate Claude agent in Agent settings on desktop, web or mobile. Keep its existing executable path
+or select the installed Claude CLI. The executable field is not the model API URL. Choose a separate
+configuration directory for each account. Dovo maps it to `CLAUDE_CONFIG_DIR`.
+
+Set these environment entries on that agent:
+
+| Entry                  | Value                                                                              |
+| ---------------------- | ---------------------------------------------------------------------------------- |
+| `ANTHROPIC_BASE_URL`   | The proxy's Anthropic-compatible base URL, such as `http://proxy.lan:8317`.        |
+| `ANTHROPIC_AUTH_TOKEN` | The proxy credential. Prefer a secret reference.                                   |
+| `ANTHROPIC_API_KEY`    | An empty value when the proxy uses an auth token. This overrides an inherited key. |
+
+Select the exact model ID accepted by the proxy. Do not put the URL in the executable field. Claude
+settings can override environment entries. Check user, project and local settings if Claude uses
+another endpoint or credential. These settings sources remain enabled for normal sessions. Start a
+new turn after changing the agent configuration. Remove the entries or select the original agent to
+return to the previous connection. Existing pairings stay unchanged.
+
+The proxy handles model traffic. Dovo supplies its local, thread-scoped MCP connection separately.
+Claude can call `dovo_task code`, direct MCP tools and its native file and shell tools under the
+current access policy. The code runner keeps per-call approval and access checks. A proxy does not
+need to implement UTCP. It must support Claude's model request and tool-call formats.
+
+Leave `ENABLE_TOOL_SEARCH` unset to use Claude's default. If a proxy cannot handle tool search, set
+it to `false` on that agent. Dovo preserves an explicit value, including `auto:15`.
+
+Adapter tests verify separate proxy environments, exact model selection, local MCP configuration,
+cleanup and retained native tool checks. They mock the Agent SDK. A live Claude CLI and an
+Anthropic-compatible proxy are still required to verify a complete model reply and code-mode call.
+See [code mode](code-mode.md) for discovery, chained calls and limits.
+
 ## Tool context budgets
 
 Enabled skills advertise their names and descriptions (up to 320 description characters per skill).

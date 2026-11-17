@@ -1,4 +1,9 @@
-import { useStudioHost } from '@dovo/studio-core'
+import {
+  applicationShortcutLabel,
+  shortcutBinding,
+  useAppPreferences,
+  useStudioHost,
+} from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect } from 'react'
 import { Monitor, Search } from 'lucide-react'
@@ -22,6 +27,7 @@ export function TitleBar({
   onSearch: () => void
 }) {
   const { appInfo } = useStudioHost()
+  const { shortcutOverrides } = useAppPreferences()
   const [focused, setFocused] = useApplicationState(
     () => typeof document === 'undefined' || document.hasFocus(),
   )
@@ -88,7 +94,9 @@ export function TitleBar({
                 >
                   <Search size={14} aria-hidden="true" />
                   <span className="sr-only">Search commands</span>
-                  {platform && <kbd>{platform === 'darwin' ? '⌘ K' : 'Ctrl K'}</kbd>}
+                  {shortcutBinding('palette', shortcutOverrides) && (
+                    <kbd>{applicationShortcutLabel('palette', shortcutOverrides)}</kbd>
+                  )}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Search commands</TooltipContent>

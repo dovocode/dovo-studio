@@ -40,6 +40,9 @@ export const routineChangeSourceSchema = Schema.Union([
   mutableStruct({
     kind: Schema.Literal('agent'),
     taskId: Schema.optional(reference),
+    runId: Schema.optional(reference),
+    runCreatedAt: Schema.optional(Schema.String),
+    runAvailable: Schema.optional(Schema.Boolean),
   }),
 ])
 export type RoutineChangeSource = Schema.Schema.Type<typeof routineChangeSourceSchema>
@@ -250,4 +253,18 @@ export function routineFieldChangeText(change: RoutineFieldChange): string {
   if (change.after !== undefined) return `${change.label}: ${change.after}`
   if (change.before !== undefined) return `${change.label}: was ${change.before}`
   return change.label
+}
+
+/** Later edits or resuming clear the current pause attribution. History stays available. */
+export function routineAutomaticPause(
+  flow: Pick<Automation, 'enabled'>,
+  changes: readonly RoutineChange[],
+) {
+  if (flow.enabled !== false) return undefined
+  const latest = changes[0]
+  return latest?.source.kind === 'agent' &&
+    latest.source.runId &&
+    latest.changes.some((field) => field.label === 'Triggers' && field.after === 'Paused')
+    ? latest
+    : undefined
 }

@@ -10,7 +10,7 @@ import { existsSync } from 'node:fs'
 import type Database from 'better-sqlite3'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { AjvJsonSchemaValidator } from '@modelcontextprotocol/sdk/validation/ajv'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { DiagnosticStdioTransport } from './stdio-transport.js'
 import {
   StreamableHTTPClientTransport,
   StreamableHTTPError,
@@ -284,7 +284,7 @@ export class McpApps {
     const config = scope.server
     let transport: Transport =
       config.transport === 'stdio'
-        ? new StdioClientTransport({
+        ? new DiagnosticStdioTransport({
             command: config.command,
             args: config.args,
             env: {
@@ -296,10 +296,8 @@ export class McpApps {
               ...mcpServerEnvironment(config),
             },
             cwd: scope.cwd,
-            stderr: 'pipe',
           })
         : new StreamableHTTPClientTransport(new URL(config.url), mcpHttpOptions(mcpHeaders(config)))
-    if (transport instanceof StdioClientTransport) transport.stderr?.on('data', () => {})
     const timeout = AbortSignal.any([this.controller.signal, AbortSignal.timeout(30_000)])
     try {
       try {
@@ -357,7 +355,7 @@ export class McpApps {
       return session
     } catch (error) {
       await this.close(client, transport)
-      throw error
+      throw transport instanceof DiagnosticStdioTransport ? await transport.explain(error) : error
     }
   }
   /** Leases count from reservation, so retirement cannot slip between connect and use. */

@@ -1,4 +1,5 @@
 import { botVoicePauseSchema } from '@dovo/protocol'
+import { savedFilterViewsSchema } from '@dovo/protocol'
 import { turnAnnouncementsSchema } from '@dovo/protocol'
 import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
@@ -30,6 +31,7 @@ import {
 
 /** Local preferences for this phone. Never synced to computers. */
 const schema = mutableStruct({
+  savedFilterViews: savedFilterViewsSchema,
   turnAnnouncements: turnAnnouncementsSchema,
   interfaceLanguage: interfaceLanguageSchema,
   ...serviceUrlsSchema.fields,
@@ -97,6 +99,7 @@ const schema = mutableStruct({
 })
 export type MobilePreferences = Schema.Schema.Type<typeof schema>
 const defaults: MobilePreferences = {
+  savedFilterViews: [],
   connectOrigin: '',
   artifactsOrigin: '',
   motion: 'system',

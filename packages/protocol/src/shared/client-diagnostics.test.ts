@@ -1,5 +1,58 @@
-import { expect, it } from 'vite-plus/test'
-import { clientDiagnostic, diagnosticMessage, redactCredentialText } from './client-diagnostics'
+import { expect, it, vi } from 'vite-plus/test'
+import {
+  clientDiagnostic,
+  diagnosticMessage,
+  redactCredentialText,
+  recordClientAction,
+  recentClientActions,
+  recordClientError,
+  recentClientErrors,
+  clientRequestCategory,
+} from './client-diagnostics'
+
+it('keeps a bounded category-only timeline and expires it after thirty minutes', () => {
+  vi.useFakeTimers()
+  try {
+    vi.setSystemTime(new Date('2030-01-01T12:00:00Z'))
+    for (let i = 0; i < 110; i++) recordClientAction('navigation', 'app', { durationMs: i })
+    expect(recentClientActions()).toHaveLength(100)
+    expect(recentClientActions()[0].durationMs).toBe(10)
+    const details = {
+      durationMs: Infinity,
+      status: 700,
+      body: 'private input',
+      address: 'http://private',
+    }
+    recordClientAction('request-failed', 'scm', details)
+    expect(recentClientActions().at(-1)).toEqual({
+      at: '2030-01-01T12:00:00.000Z',
+      action: 'request-failed',
+      category: 'scm',
+    })
+    recordClientAction('request-complete', 'files', { durationMs: -4, status: 200 })
+    expect(recentClientActions().at(-1)).toMatchObject({ durationMs: 0, status: 200 })
+    const copy = recentClientActions()
+    copy[0].category = 'other'
+    expect(recentClientActions()[0].category).toBe('app')
+    vi.advanceTimersByTime(30 * 60000 + 1)
+    expect(recentClientActions()).toEqual([])
+    expect(clientRequestCategory('/api/tasks/private-thread?secret=value')).toBe('threads')
+  } finally {
+    vi.useRealTimers()
+  }
+})
+
+it('redacts structured error stacks before retaining them in memory', () => {
+  const error = new TypeError('request failed token=message-secret')
+  error.stack =
+    'TypeError: token=message-secret\n at request (https://user:pass@host/app?token=query-secret#private)\n api_key=stack-secret'
+  recordClientError(error, 'request')
+  const saved = recentClientErrors().at(-1)
+  expect(saved?.name).toBe('TypeError')
+  expect(saved?.stack).toContain('https://host/app')
+  for (const value of ['message-secret', 'query-secret', 'stack-secret', 'user:pass'])
+    expect(JSON.stringify(saved)).not.toContain(value)
+})
 it('removes credentials and URL query/fragment from copyable diagnostics', () => {
   const value = diagnosticMessage(
     new Error(

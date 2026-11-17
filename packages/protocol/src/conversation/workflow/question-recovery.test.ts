@@ -1,5 +1,9 @@
 import { expect, test, vi } from 'vite-plus/test'
-import { createQuestionRecovery, runtimeRecoveryScope } from './question-recovery'
+import {
+  createQuestionRecovery,
+  runtimeRecoveryScope,
+  questionRecoveryDraft,
+} from './question-recovery'
 import type { PendingQuestion } from './questions'
 const request: PendingQuestion = {
   id: 'request',
@@ -37,6 +41,16 @@ const drafts = {
   ordinary: { selected: ['a', 'b'], text: 'Keep exact\norder' },
   secret: { selected: [], text: 'NEVER STORE THIS' },
 }
+test('reuses ordinary answers and unique files while excluding secrets', () => {
+  const file = { id: 'file', name: 'notes.txt', mime: 'text/plain', size: 4 }
+  const result = questionRecoveryDraft({
+    request,
+    drafts,
+    files: { ordinary: [file, file], secret: [{ ...file, id: 'secret-file' }] },
+  })
+  expect(result).toEqual({ text: 'Choose\na\nb\nKeep exact\norder', ids: ['file'] })
+  expect(questionRecoveryDraft({ request, drafts: {}, files: {} })).toEqual({ text: '', ids: [] })
+})
 function storage() {
   const data = new Map<string, string>()
   return {

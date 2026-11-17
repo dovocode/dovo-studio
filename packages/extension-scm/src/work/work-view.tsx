@@ -1,4 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { savedFilterScope } from '@dovo/protocol'
+import { SavedFilterViews } from '../saved-filter-views'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -509,6 +511,37 @@ function WorkView({
               </Button>
             </PageHeader>
             <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              {mode === 'issues' && (
+                <SavedFilterViews
+                  kind={isJira ? 'jira' : 'issues'}
+                  scope={savedFilterScope(
+                    runtimes.map(({ profile }) => JSON.stringify([profile.id, profile.connection])),
+                  )}
+                  sources={sources.map((source) => ({ key: source.key, identity: source.scope }))}
+                  requestedId={entityId}
+                  value={{
+                    source: project,
+                    search,
+                    state,
+                    jiraFilters,
+                    layout: jiraLayout,
+                    sort,
+                    linked,
+                  }}
+                  onApply={(value) =>
+                    setPreferences((current) => ({
+                      ...current,
+                      project: value.source,
+                      search: value.search,
+                      state: value.state,
+                      jiraFilters: value.jiraFilters ?? {},
+                      jiraLayout: value.layout === 'board' ? 'board' : 'list',
+                      sort: value.sort,
+                      linked: value.linked ?? 'all',
+                    }))
+                  }
+                />
+              )}
               <SearchField
                 containerClassName="w-full min-w-0"
                 aria-label={`Search ${mode}`}

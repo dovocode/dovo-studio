@@ -164,6 +164,14 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
     await call({ action: 'key', selector: '#name', key: 'Space' })
     expect(await page.locator('#name').inputValue()).toBe('Dominic ')
     await call({ action: 'key', selector: '#name', key: 'Backspace' })
+    await call({ action: 'key', selector: '#name', key: 'Control+a' })
+    await call({ action: 'key', selector: '#name', key: 'Backspace' })
+    expect(await page.locator('#name').inputValue()).toBe('')
+    await call({ action: 'key', selector: '#name', key: 'Control+z' })
+    expect(await page.locator('#name').inputValue()).toBe('Dominic')
+    await call({ action: 'key', selector: '#name', key: 'ArrowRight' })
+    await call({ action: 'key', selector: '#name', key: 'x' })
+    expect(await page.locator('#name').inputValue()).toBe('Dominicx')
     await page.evaluate(() => {
       const region = document.createElement('div')
       region.id = 'scroll'

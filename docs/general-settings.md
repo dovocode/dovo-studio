@@ -5,6 +5,17 @@ activity. Task list & projects contains project grouping/order, task sorting, th
 and task confirmations. Changes save automatically on this device. General links to task
 organization, Conversation, Agents and Task defaults.
 
+## Application shortcuts
+
+On desktop and web, open **Keyboard shortcuts** in Settings or through the command palette. Select a
+shortcut field, then press a key with Ctrl, Command or Alt. Use **Unassign** to remove the binding,
+**Reset** to restore one default, or **Reset all application shortcuts** to restore all defaults.
+Changes stay on this device. The app rejects duplicate bindings and common reserved browser or
+operating system bindings. Editors, terminals and open dialogs keep their keys.
+
+The desktop thread launcher remains in General. Composer send and formatting keys remain in
+Conversation and the composer. Mobile keeps its existing native keyboard controls.
+
 The desktop settings navigation groups **This app**, **Agents & tools**, **Tasks & projects**,
 **Computers** and **History**. Categories expand and collapse to keep the sidebar compact; the
 active page’s category opens automatically after navigation. Search reveals matching pages in every

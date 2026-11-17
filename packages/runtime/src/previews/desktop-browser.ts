@@ -277,6 +277,49 @@ const keys: Record<string, { key: string; code: string; keyCode: number; text?: 
   ' ': { key: ' ', code: 'Space', keyCode: 32, text: ' ' },
 }
 
+/** Match the managed browser's key spelling. Chords use CDP's native editing events. */
+export function desktopKeyInput(value: string) {
+  const match = /^((?:(?:Control|Meta|Alt|Shift)\+)*)(.+)$/u.exec(value)
+  if (!match) throw new HttpError(400, `Desktop browser tabs do not support the key: ${value}`)
+  const prefix = match[1]!
+  const key = match[2]!
+  const modifiers = prefix
+    .split('+')
+    .filter(Boolean)
+    .reduce(
+      (mask, modifier) => mask | ({ Alt: 1, Control: 2, Meta: 4, Shift: 8 }[modifier] ?? 0),
+      0,
+    )
+  const named = keys[key]
+  if (!named && !prefix && [...key].length === 1) return { text: key }
+  const letter = /^[a-z]$/i.test(key)
+  const digit = /^[0-9]$/.test(key)
+  const punctuation: Record<string, [string, number]> = {
+    '+': ['Equal', 187],
+    '=': ['Equal', 187],
+    '-': ['Minus', 189],
+    '/': ['Slash', 191],
+    '.': ['Period', 190],
+    ',': ['Comma', 188],
+    '[': ['BracketLeft', 219],
+    ']': ['BracketRight', 221],
+    ';': ['Semicolon', 186],
+    "'": ['Quote', 222],
+    '`': ['Backquote', 192],
+    '\\': ['Backslash', 220],
+  }
+  const symbol = punctuation[key]
+  if (!named && !letter && !digit && !symbol)
+    throw new HttpError(400, `Desktop browser tabs do not support the key: ${value}`)
+  return {
+    key: named?.key ?? key,
+    code: named?.code ?? (letter ? `Key${key.toUpperCase()}` : digit ? `Digit${key}` : symbol![0]),
+    windowsVirtualKeyCode: named?.keyCode ?? symbol?.[1] ?? key.toUpperCase().charCodeAt(0),
+    modifiers: modifiers | (key === '+' ? 8 : 0),
+    ...(!modifiers && named?.text ? { text: named.text } : {}),
+  }
+}
+
 type ElementCommand =
   | { action: 'click' }
   | { action: 'focus' }
@@ -442,29 +485,14 @@ async function runDesktopBrowserCommand(
       }
       case 'key': {
         decode(remoteBrowserInputSchema, { type: 'key', key: command.key })
-        const named = keys[command.key]
-        if (!named && command.key.length !== 1)
-          throw new HttpError(400, `Desktop browser tabs do not support the key: ${command.key}`)
+        const input = desktopKeyInput(command.key)
         if (command.selector)
           await actOnElement(cdp, target.endpoint, command.selector, { action: 'focus' }, authorize)
-        if (!named && command.key.length === 1)
-          await cdp.send('Input.insertText', { text: command.key })
-        else if (named) {
-          await cdp.send('Input.dispatchKeyEvent', {
-            type: 'keyDown',
-            key: named.key,
-            code: named.code,
-            windowsVirtualKeyCode: named.keyCode,
-            ...(named.text ? { text: named.text } : {}),
-          })
-          await cdp.send('Input.dispatchKeyEvent', {
-            type: 'keyUp',
-            key: named.key,
-            code: named.code,
-            windowsVirtualKeyCode: named.keyCode,
-          })
-        } else
-          throw new HttpError(400, `Desktop browser tabs do not support the key: ${command.key}`)
+        if (!('code' in input)) await cdp.send('Input.insertText', input)
+        else {
+          await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...input })
+          await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...input, text: undefined })
+        }
         break
       }
       case 'scroll':

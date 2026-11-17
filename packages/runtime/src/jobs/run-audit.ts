@@ -35,6 +35,7 @@ export function runAudit(
       title: String(redact(task.title)),
       turns: (store.task(task.id).turns ?? [])
         .filter((turn) => turn.startedAt >= run.createdAt && turn.startedAt <= through)
+        .map((turn) => store.usagePricing.price({ taskId: task.id, title: task.title, turn }).turn)
         .map((turn) => ({
           id: turn.id,
           provider: turn.provider,

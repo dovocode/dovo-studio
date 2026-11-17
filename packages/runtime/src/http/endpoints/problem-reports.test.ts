@@ -94,6 +94,51 @@ const draft = (): Task => ({
   example: false,
 })
 
+it('previews redacted client stacks and bounded category-only actions only when included', async () => {
+  const f = await setup()
+  const input: ProblemReportRequest = {
+    ...report(),
+    include: { versions: false, diagnostics: false, clientErrors: true, clientTimeline: true },
+    clientErrors: [
+      {
+        at: '2026-11-17T12:00:00Z',
+        message: 'Network failure',
+        name: 'TypeError',
+        stack: `TypeError: token=${environmentSecret}\n at request (/home/dominic/app.ts:12)`,
+      },
+    ],
+    clientTimeline: [
+      {
+        at: '2026-11-17T12:00:00Z',
+        action: 'request-failed',
+        category: 'threads',
+        status: 503,
+        durationMs: 50,
+      },
+    ],
+  }
+  const response = await f.request('/api/problem-reports/preview', input)
+  expect(response.status).toBe(200)
+  const included = decode(problemReportPreviewSchema, await response.json()).attachment?.text ?? ''
+  expect(included).toContain('## Recent client actions')
+  expect(included).toContain('request-failed')
+  expect(included).toContain('app.ts:12')
+  expect(included).not.toContain(environmentSecret)
+  expect(included).not.toContain('/home/dominic/')
+  const excludedResponse = await f.request('/api/problem-reports/preview', {
+    ...input,
+    include: { ...input.include, clientErrors: false, clientTimeline: false },
+  })
+  expect(
+    decode(problemReportPreviewSchema, await excludedResponse.json()).attachment,
+  ).toBeUndefined()
+  const invalid = await f.request('/api/problem-reports/preview', {
+    ...input,
+    clientTimeline: [{ ...input.clientTimeline?.[0], action: 'private text' }],
+  })
+  expect(invalid.status).toBe(400)
+})
+
 it('advertises problem reports and previews a bounded, redacted bundle with the source commit', async () => {
   const f = await setup()
   const snapshot = decode(

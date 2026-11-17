@@ -15,7 +15,7 @@ import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { startRuntime } from '../index'
 import { fixture } from '../testing/fixture'
-import { responses, type Automation, type AutomationData } from '@dovo/protocol'
+import { responses, runAuditSchema, type Automation, type AutomationData } from '@dovo/protocol'
 import { Jobs } from './jobs.js'
 import { ManagedPolicy } from '../policy/managed-policy.js'
 // These integration tests run real Git checkout/checkpoint subprocesses.
@@ -219,6 +219,107 @@ function createFlow(): Automation {
   }
   return flow
 }
+
+async function pricingRun(mode: 'missing' | 'free' | 'time' | 'tokens' | 'rerouted' | 'repriced') {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'pricing-test-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const flow = createFlow()
+  flow.policy = {
+    costUsd: 1,
+    ...(mode === 'time' ? { minutes: 5 } : mode === 'tokens' ? { tokens: 1000 } : {}),
+  }
+  s.store.update(() => ({
+    ...f.workspace,
+    agents: f.workspace.agents.map((agent) => ({ ...agent, model: 'unknown-private-model' })),
+    automations: [flow],
+  }))
+  if (mode === 'free' || mode === 'rerouted' || mode === 'repriced')
+    s.store.usagePricing.setOverride('unknown-private-model', {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    })
+  const run = vi.fn<AgentAdapter['run']>().mockImplementation(async (input) => {
+    input.onSession('provider-session')
+    if (mode === 'rerouted') input.onEvent?.('model/rerouted', { toModel: 'unpriced-reroute' })
+    input.onEvent?.('thread/tokenUsage/updated', {
+      threadId: 'provider-session',
+      tokenUsage: {
+        total: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 0, totalTokens: 12 },
+        last: { inputTokens: 10, outputTokens: 2, cachedInputTokens: 0, totalTokens: 12 },
+      },
+    })
+    input.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const id = s.jobs.start('flow')
+  await waitForJob(() =>
+    expect(s.jobs.detail(id).status).toBe(
+      mode === 'missing' || mode === 'rerouted' ? 'failed' : 'waiting',
+    ),
+  )
+  return { s, id, run }
+}
+
+it('refuses an unpriced model before launching a cost-only worker', async () => {
+  const { s, id, run } = await pricingRun('missing')
+  expect(run).not.toHaveBeenCalled()
+  expect(s.jobs.detail(id).error).toContain('no usable price')
+})
+it.each(['time', 'tokens'] as const)(
+  'allows unpriced usage with a separate %s limit',
+  async (mode) => {
+    const { s, id, run } = await pricingRun(mode)
+    expect(run).toHaveBeenCalledTimes(1)
+    s.jobs.approve(id, true)
+    await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+    const audit = decode(runAuditSchema, s.jobs.audit(id))
+    expect(audit.tokens).toBe(12)
+    expect(audit.usageIncomplete).toBe(true)
+  },
+)
+it('accepts explicit free pricing and reprices the saved audit after a price change', async () => {
+  const { s, id, run } = await pricingRun('free')
+  expect(run).toHaveBeenCalledTimes(1)
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+  const audit = decode(runAuditSchema, s.jobs.audit(id))
+  expect(audit.tokens).toBe(12)
+  expect(audit.usageIncomplete).toBe(false)
+  expect(audit.estimatedCostUsd).toBe(0)
+  s.store.usagePricing.setOverride('unknown-private-model', {
+    input: 100,
+    output: 100,
+    cacheRead: 0,
+    cacheWrite: 0,
+  })
+  expect(s.jobs.audit(id).estimatedCostUsd).toBeCloseTo(0.0012)
+})
+it('stops cost-only work after the provider reroutes to an unpriced model', async () => {
+  const { s, id, run } = await pricingRun('rerouted')
+  expect(run).toHaveBeenCalledTimes(1)
+  expect(s.jobs.detail(id).error).toContain('usage has no usable price')
+})
+it('enforces a cost budget with current prices', async () => {
+  const { s, id } = await pricingRun('repriced')
+  s.store.usagePricing.setOverride('unknown-private-model', {
+    input: 1000000,
+    output: 1000000,
+    cacheRead: 0,
+    cacheWrite: 0,
+  })
+  s.jobs.enforceBudgets()
+  expect(s.jobs.detail(id).status).toBe('failed')
+  expect(s.jobs.detail(id).error).toContain('estimated cost budget reached')
+})
 it('fires due schedules and authenticates webhook payload delivery', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -589,6 +690,8 @@ it('cancels during checkout preparation and retries the same unfinished task', a
     taskId,
     finishedAt: expect.any(String),
   })
+  // Cancellation marks the task before the preparation fiber has finished cleanup.
+  await waitForJob(() => expect(() => s.jobs.requireIdle('flow')).not.toThrow())
   s.jobs.retry(id)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('waiting'))
   expect(s.jobs.list()[0].taskIds).toEqual([taskId])

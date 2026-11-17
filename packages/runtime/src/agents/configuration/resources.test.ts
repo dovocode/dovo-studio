@@ -218,6 +218,26 @@ it('tests a real stdio handshake and lists tools without invoking them', async (
   })
 })
 
+it('explains a failed MCP startup with bounded redacted stderr from a real child', async () => {
+  const secret = 'mcp-private-split-credential-0123456789'
+  const error = await testMcpServer({
+    name: 'broken',
+    enabled: true,
+    transport: 'stdio',
+    command: process.execPath,
+    envValues: { MCP_DIAGNOSTIC_SECRET: secret },
+    args: [
+      '-e',
+      `process.stderr.write('x'.repeat(100000)+'\\n');process.stderr.write('token='+process.env.MCP_DIAGNOSTIC_SECRET.slice(0,10));setTimeout(()=>{process.stderr.write(process.env.MCP_DIAGNOSTIC_SECRET.slice(10)+'\\nMissing configuration\\n');process.exit(1)},20)`,
+    ],
+  }).catch((error: unknown) => error)
+  expect(error).toBeInstanceOf(Error)
+  expect(String(error)).toContain('Missing configuration')
+  expect(String(error)).toContain('[redacted]')
+  expect(String(error)).not.toContain(secret)
+  expect(String(error).length).toBeLessThan(2300)
+})
+
 it.each(['complete', 'repeated'] as const)(
   'follows MCP tool pages and rejects %s cursor responses appropriately',
   async (mode) => {

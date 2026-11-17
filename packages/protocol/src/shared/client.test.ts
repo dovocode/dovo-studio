@@ -6,6 +6,48 @@ import { runtimeRequest, clearRuntimeRequestCache, getRuntimeSnapshotTag } from 
 import { resolveRuntimeEndpoint } from '../runtime/connection/routes.js'
 import { REPOSITORY_CLONE_TIMEOUT_MS } from '../scm/repositories/repositories.js'
 import { cleanedDictationSchema, cleanupDictationSchema } from '../tasks/title-generation.js'
+import { recentClientActions } from './client-diagnostics.js'
+
+it('records category-only request outcomes, including failure before network dispatch', async () => {
+  vi.stubGlobal('fetch', vi.fn<typeof fetch>().mockResolvedValue(Response.json({ revision: 1 })))
+  await runtimeRequest(
+    connection,
+    connection.address,
+    '/api/scm/issues',
+    { query: 'private query' },
+    dataSchema,
+  )
+  expect(
+    recentClientActions()
+      .slice(-2)
+      .map(({ action, category }) => ({ action, category })),
+  ).toEqual([
+    { action: 'request-start', category: 'scm' },
+    { action: 'request-complete', category: 'scm' },
+  ])
+  await expect(
+    runtimeRequest(null, 'invalid-address', '/api/tasks/private-id', undefined, dataSchema),
+  ).rejects.toThrow('Invalid runtime address')
+  expect(recentClientActions().at(-1)).toMatchObject({
+    action: 'request-failed',
+    category: 'threads',
+  })
+  vi.stubGlobal(
+    'fetch',
+    vi
+      .fn<typeof fetch>()
+      .mockResolvedValue(Response.json({ error: 'unavailable' }, { status: 503 })),
+  )
+  await expect(
+    runtimeRequest(connection, connection.address, '/api/scm/issues', {}, dataSchema),
+  ).rejects.toThrow()
+  expect(recentClientActions().at(-1)).toMatchObject({
+    action: 'request-failed',
+    category: 'scm',
+    status: 503,
+  })
+  expect(JSON.stringify(recentClientActions())).not.toContain('private')
+})
 afterEach(() => {
   clearRuntimeRequestCache()
   vi.unstubAllGlobals()

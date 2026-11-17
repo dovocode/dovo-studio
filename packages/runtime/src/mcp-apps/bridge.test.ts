@@ -992,6 +992,42 @@ async function stdioSetup() {
   }
   return { ...s, token: token(s.task.id), thread }
 }
+
+it('reports redacted stderr when a bridge child exits without retaining a failed session', async () => {
+  const s = await setup()
+  const secret = 'bridge-private-credential-0123456789'
+  const broken = decode(mcpServerSchema, {
+    name: 'broken',
+    enabled: true,
+    transport: 'stdio',
+    command: process.execPath,
+    envValues: { BRIDGE_TEST_SECRET: secret },
+    args: [
+      '-e',
+      "process.stderr.write('token='+process.env.BRIDGE_TEST_SECRET+'\\nFix the configuration\\n');process.exit(1)",
+    ],
+  })
+  s.runtime.services.store.update((workspace) => ({
+    ...workspace,
+    agents: workspace.agents.map((agent) => ({
+      ...agent,
+      resources: { ...agent.resources!, mcpServers: [broken] },
+    })),
+  }))
+  const proxy = s.runtime.services.mcpApps.proxies(s.task.id, [broken], s.f.directory, 'ask', {
+    port: s.runtime.port,
+    host: '127.0.0.1',
+  })[0]
+  const token = proxy.envValues?.DOVO_MCP_BRIDGE_TOKEN ?? ''
+  for (let i = 0; i < 2; i++) {
+    const error = await s.runtime.services.mcpApps
+      .proxy(token, 'tools/list', {})
+      .catch((error: unknown) => error)
+    expect(String(error)).toContain('Fix the configuration')
+    expect(String(error)).not.toContain(secret)
+    expect(String(error)).toContain('[redacted]')
+  }
+})
 const ageSessions = (bridge: McpApps, idle = MCP_SESSION_IDLE_MS) => {
   for (const session of upstreamSessions(bridge)) session.lastUsed = Date.now() - idle
 }

@@ -3,6 +3,20 @@
 Jobs run on the selected computer. The runtime must stay running for schedules, webhooks and task
 execution; closing the phone or desktop client does not stop a run.
 
+## Cost limits and automatic pauses
+
+A cost-only limit needs a known model price before an unattended worker starts. Set the price in
+**Usage & limits**, or add a time or token limit. An explicit price of zero is valid. A missing
+price means unknown cost. Runtime budget checks and run audits use the same price rules as Usage.
+Audits label incomplete cost as **Cost unknown** and show only the priced subtotal. If a provider
+switches to an unpriced model, a cost-only run stops when that completed usage arrives. Limits are
+best effort because providers can report usage late.
+
+When an agent pauses its own automation, **Paused by an automation run** links to the responsible
+run and its saved result. The runtime checks that the worker and run belong to that automation.
+Deleted runs show **Responsible run unavailable**. Resume or a later edit removes the current pause
+label. Change history keeps the source. Older runtimes keep their existing source display.
+
 ## Create and edit on mobile
 
 Open **Settings → Coding → Automations**, select the computer, then **New automation**. Give it a

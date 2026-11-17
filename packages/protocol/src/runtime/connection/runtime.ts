@@ -312,6 +312,9 @@ export const snapshotSchema = mutableStruct({
   automationDryRunSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/jobs/provenance`, routine change sources and `routineChange` in run audits. */
   routineProvenanceSupported: Schema.optional(Schema.Literal(true)),
+  routineRunProvenanceSupported: Schema.optional(Schema.Literal(true)),
+  questionDraftReuseSupported: Schema.optional(Schema.Literal(true)),
+  problemReportTimelineSupported: Schema.optional(Schema.Literal(true)),
   routineFindingGroupsSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.bot.resources` and `/api/bots/update` `resources`. */
   botResourcesSupported: Schema.optional(Schema.Literal(true)),

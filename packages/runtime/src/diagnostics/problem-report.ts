@@ -47,6 +47,14 @@ export async function problemReportPreview(
   if (input.include.versions) sections.push(versionSection(input, build))
   if (input.include.diagnostics) sections.push(await healthSection(s, sources.now))
   if (input.include.clientErrors) sections.push(clientErrorSection(input))
+  if (input.include.clientTimeline)
+    sections.push(
+      [
+        '## Recent client actions',
+        '',
+        fence(JSON.stringify(input.clientTimeline ?? [], null, 2), 'json'),
+      ].join('\n'),
+    )
   const header = [
     '# Dovo problem report',
     '',
@@ -214,7 +222,7 @@ function clientErrorSection(input: ProblemReportRequest) {
     (error) =>
       `- ${error.at}${error.source ? ` (${error.source})` : ''}: ${error.message
         .replace(/\s+/g, ' ')
-        .slice(0, CLIENT_ERROR_CHARS)}`,
+        .slice(0, CLIENT_ERROR_CHARS)}${error.stack ? '\n' + fence(error.stack, 'text') : ''}`,
   )
   return ['## Recent client errors', '', ...(lines.length ? lines : ['None recorded.'])].join('\n')
 }

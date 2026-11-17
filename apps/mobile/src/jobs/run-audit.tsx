@@ -63,11 +63,15 @@ export function RunAudit({ runId }: { runId: string }) {
             <InterfaceText
               values={{
                 value0: audit.tokens,
-                value1: audit.estimatedCostUsd.toFixed(4),
+                value1: audit.threads.some((thread) =>
+                  thread.turns.some((turn) => turn.estimatedCostUsd === undefined),
+                )
+                  ? `${uiText('Cost unknown')} · $${audit.estimatedCostUsd.toFixed(4)} ${uiText('priced usage')}`
+                  : `$${audit.estimatedCostUsd.toFixed(4)} ${uiText('estimated')}`,
                 value2: audit.usageIncomplete ? uiText(' · Some usage is unavailable') : '',
               }}
             >
-              {'{value0} reported tokens · ${value1} estimated{value2}'}
+              {'{value0} reported tokens · {value1}{value2}'}
             </InterfaceText>
           </Text>
           <Action

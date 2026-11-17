@@ -7,6 +7,17 @@ uses that computer’s accounts. Pipelines are part of **PRs → select a PR →
 scoped to the PR’s exact head commit. They no longer have a main-menu item or a project shortcut.
 Existing run links from investigation tasks still open their details.
 
+## Saved views
+
+Open **Saved views** in PRs, Issues or Jira. Set the search, source, filters and sort, enter a name,
+then select **Save new view**. Select a view to apply it. Use **Update filters**, **Rename** or
+**Delete view** to change it. Desktop and web also list saved views in the command palette.
+
+Views stay on the current device. They survive offline use and reconnect. A view for one source
+appears only while that source still has the same account and connection. Adding another project
+does not hide it. A view for all sources includes projects added later. Removing a view leaves the
+current list filters in place.
+
 ## From source to task
 
 Open an issue and choose **Start task from issue**, or open a run and choose **Investigate run**.

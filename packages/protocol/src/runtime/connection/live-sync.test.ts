@@ -17,6 +17,7 @@ import { decode } from '../../shared/schema.js'
 import { runtimeRequest } from '../../shared/client.js'
 import { runtimeTransportAddress } from './routes.js'
 import { Schema } from 'effect'
+import { recentClientActions } from '../../shared/client-diagnostics.js'
 const stopped: Array<() => void> = []
 const requestUrl = (input: RequestInfo | URL) =>
   new URL(input instanceof Request ? input.url : input instanceof URL ? input.href : input)
@@ -1097,6 +1098,10 @@ it('uses the desktop connection owner for snapshots, activity, watches and retry
   await Promise.resolve()
   expect(update.mock.calls.at(-1)?.[0].tasks).toEqual(['author', 'reviewer'])
   receive?.({ type: 'status', status: 'live', online: true })
+  expect(recentClientActions().at(-1)).toMatchObject({
+    action: 'connected',
+    category: 'connection',
+  })
   expect(runtimeSyncOnline(connection, 'author')).toBe(true)
   receive?.({ type: 'activity', scope: 'author', events: [] })
   expect(activity).toHaveBeenCalledWith([])

@@ -18,7 +18,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export function useApplicationState(initial){const [value,setValue]=useState(initial);const ref=useRef(value);ref.current=value;return [value,setValue,ref]}`,
-  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  '@dovo/studio-core': `export * from '../studio-core/src/shortcuts';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
     export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
@@ -30,7 +30,7 @@ const mocks = {
     export const useStudioHost=()=>window.host;
     export {WorkspaceScope} from '../studio-core/src/workspace/scope';
     export {WorkspaceRuntimeScope} from '../studio-core/src/workspace/runtime-scope';
-    export const readAppPreferences=()=>({projectPanelOpen:false,runtimeDictationIds:[],taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
+    export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],projectPanelOpen:false,runtimeDictationIds:[],taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const resolveTaskAgent=()=>({provider:'codex',model:'model',args:[],endpoint:'',skills:[],mcpServers:[]});

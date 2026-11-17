@@ -1,7 +1,13 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
-import { botResultSchema, decode, type Automation, type AutomationData } from '@dovo/protocol'
+import {
+  botResultSchema,
+  decode,
+  defaultTaskHarness,
+  type Automation,
+  type AutomationData,
+} from '@dovo/protocol'
 import { waitForRuntime } from '../../testing/integration'
 import { setupBotRuntime, type BotRunInput } from '../../testing/bots'
 
@@ -504,6 +510,18 @@ it.each(['tokens', 'costUsd'] as const)(
     const b = await bot()
     b.g.hold('ROUTINE-A')
     await configure(b)
+    if (kind === 'costUsd') {
+      b.s().store.updateTask(b.id, (task) => ({
+        ...task,
+        harness: { ...(task.harness ?? defaultTaskHarness('codex')), model: 'budget-test-model' },
+      }))
+      b.s().store.usagePricing.setOverride('budget-test-model', {
+        input: 1,
+        output: 1,
+        cacheRead: 1,
+        cacheWrite: 1,
+      })
+    }
     b.s().store.update((w) => ({
       ...w,
       automations: w.automations.map((flow) => ({ ...flow, policy: { [kind]: 1 } })),

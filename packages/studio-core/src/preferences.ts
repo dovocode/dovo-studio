@@ -1,4 +1,6 @@
 import { turnAnnouncementsSchema } from '@dovo/protocol'
+import { savedFilterViewsSchema } from '@dovo/protocol'
+import { shortcutOverridesSchema } from './shortcuts'
 import { interfaceLanguageSchema } from '@dovo/protocol'
 import { botLayoutSchema, mcpRegistrySourceSchema } from '@dovo/protocol'
 import {
@@ -32,6 +34,8 @@ import {
 /** Preferences for this app window only (like Codex and T3 Code "General" and "Appearance").
  * They never sync to computers; each device keeps its own. */
 const schema = mutableStruct({
+  savedFilterViews: savedFilterViewsSchema,
+  shortcutOverrides: shortcutOverridesSchema,
   turnAnnouncements: turnAnnouncementsSchema,
   interfaceLanguage: interfaceLanguageSchema,
   preferredRepositoryOpenTarget: Schema.optional(repositoryOpenTargetSchema),
@@ -166,6 +170,8 @@ const schema = mutableStruct({
 })
 export type AppPreferences = Schema.Schema.Type<typeof schema>
 export const defaultAppPreferences: AppPreferences = {
+  savedFilterViews: [],
+  shortcutOverrides: {},
   connectOrigin: '',
   artifactsOrigin: '',
   sharedScopedSettings: [],

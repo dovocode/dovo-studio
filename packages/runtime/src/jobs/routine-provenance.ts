@@ -20,6 +20,7 @@ import {
 } from '@dovo/protocol'
 import type { WorkspaceStore } from '../storage/workspace.js'
 import { HttpError } from '../errors.js'
+import { storedRunSchema } from './run-state.js'
 
 /** Who asked the runtime to change a routine. Only the runtime builds this value. */
 export type RoutineActor =
@@ -96,7 +97,18 @@ export function routineChangeSource(
   const message = [...store.task(actor.taskId).messages]
     .reverse()
     .find((item) => item.turnId === actor.runId && isOwnerMessage(item))
-  if (!message) return { kind: 'agent', taskId: actor.taskId }
+  if (!message) {
+    const origin = [...store.task(actor.taskId).messages]
+      .reverse()
+      .filter((item) => item.turnId === actor.runId)
+      .map(messageSourceFor)
+      .find((source) => source?.kind === 'automation')
+    return {
+      kind: 'agent',
+      taskId: actor.taskId,
+      ...(origin?.kind === 'automation' ? { runId: origin.runId } : {}),
+    }
+  }
   return {
     kind: 'owner',
     taskId: actor.taskId,
@@ -113,6 +125,19 @@ export function recordRoutineChange(
   source: RoutineChangeSource,
   at = new Date().toISOString(),
 ) {
+  if (source.kind === 'agent' && source.runId) {
+    const row = db.prepare('SELECT value FROM job_runs WHERE id=?').get(source.runId)
+    const run = row
+      ? decode(
+          storedRunSchema,
+          JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
+        )
+      : undefined
+    source =
+      run && run.automationId === after.id && source.taskId && run.taskIds.includes(source.taskId)
+        ? { ...source, runCreatedAt: run.createdAt }
+        : { kind: 'agent', taskId: source.taskId }
+  }
   const changes = routineChangeSummary(before, after)
   if (before && !changes.length) return undefined
   const change: RoutineChange = decode(routineChangeSchema, {
@@ -154,6 +179,14 @@ export function routineChanges(
   return rows.map(({ value }) => {
     const change = decode(routineChangeSchema, JSON.parse(value))
     const source = change.source
+    if (source.kind === 'agent' && source.runId)
+      return {
+        ...change,
+        source: {
+          ...source,
+          runAvailable: !!db.prepare('SELECT 1 FROM job_runs WHERE id=?').get(source.runId),
+        },
+      }
     if (source.kind !== 'owner') return change
     const linkAvailable =
       tasks.has(source.taskId) && !!store.taskMessage(source.taskId, source.messageId)

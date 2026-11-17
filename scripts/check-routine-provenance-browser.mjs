@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
-const controls = `export const View=({children,testID})=><div data-testid={testID}>{children}</div>;export const Text=({children})=><span>{children}</span>;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const useTheme=()=>({styles:{muted:{},text:{},error:{}},colors:{border:'#ccc'}});`
+const controls = `export const Keyboard={dismiss(){}};export const View=({children,testID})=><div data-testid={testID}>{children}</div>;export const Text=({children})=><span>{children}</span>;export const Button=({children,variant,size,...props})=><button {...props}>{children}</button>;export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;export const useTheme=()=>({styles:{muted:{},text:{},error:{}},colors:{border:'#ccc'}});`
 const built = await bundleBrowser(
   {
     stdin: {
@@ -11,7 +11,7 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import{createRoot}from'react-dom/client';import{useState}from'react';import{Effect}from'effect';
-import{RoutineHistory as DesktopHistory,RunRoutineSource as DesktopRun,useRoutineProvenance}from'./packages/extension-jobs/src/routine-provenance';
+import{RoutineHistory as DesktopHistory,RunRoutineSource as DesktopRun,AutomaticPauseSource,useRoutineProvenance}from'./packages/extension-jobs/src/routine-provenance';
 import{RoutineHistory as MobileHistory,RunRoutineSource as MobileRun}from'./apps/mobile/src/jobs/routine-provenance';
 window.calls=[];window.navigations=[];window.reveals=[];window.supported=true;
 window.changes=[
@@ -20,12 +20,12 @@ window.changes=[
   {id:'c1',automationId:'flow',at:'2026-11-16T08:00:00.000Z',action:'created',source:{kind:'owner',taskId:'bot',messageId:'m1',quote:'Check releases every Monday.',truncated:true,cited:true,linkAvailable:true},changes:[{label:'Name',after:'Release check'}]},
 ];
 const request=async(path,input)=>{window.calls.push({path,input});return{automationId:input.id,changes:window.changes}};
-const flow={id:'flow',name:'Release check',nodes:[],edges:[]};
-function Desktop({run}){const state=useRoutineProvenance('flow');return <><DesktopRun state={state} runCreatedAt={run}/><DesktopHistory state={state}/></>}
+
+function Desktop({run}){const state=useRoutineProvenance('flow');return <><AutomaticPauseSource state={state} enabled={window.enabled}/><DesktopRun state={state} runCreatedAt={run}/><DesktopHistory state={state}/></>}
 function App(){const[mode,setMode]=useState('desktop'),[run,setRun]=useState('2026-11-16T09:00:00.000Z'),[version,setVersion]=useState(0);
 window.mode=setMode;window.run=setRun;window.reload=()=>setVersion(v=>v+1);
-const snapshot={routineProvenanceSupported:window.supported||undefined,workspace:{automations:[flow]}};
-window.store={connected:true,connection:'a',request,snapshot,workspace:{tasks:[{id:'bot',bot:{}}]}};
+const flow={id:'flow',name:'Release check',enabled:window.enabled,nodes:[],edges:[]};const snapshot={routineProvenanceSupported:window.supported||undefined,routineRunProvenanceSupported:window.runSupported!==false||undefined,workspace:{automations:[flow]}};
+window.store={activeRuntimeId:'profile',connected:true,connection:'a',request,snapshot,workspace:{tasks:[{id:'bot',bot:{}}]}};
 window.runtime={connected:true,snapshot,profile:{id:'profile',connection:{address:'http://lan:4000',token:'t'}},callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};
 return <main key={mode+version}>{mode==='desktop'?<Desktop run={run}/>:<><MobileRun automationId="flow" runCreatedAt={run}/><MobileHistory automationId="flow"/></>}</main>};
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -57,6 +57,10 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     },
     { path: '@dovo/studio-ui', contents: controls },
     { path: 'react-native', contents: controls },
+    {
+      path: 'expo-router',
+      contents: 'export const router={push:target=>window.navigations.push(target)};',
+    },
     {
       path: '../runtime/connection/provider',
       importer: mobile + 'jobs/',
@@ -134,6 +138,84 @@ try {
         (path) => path === '/api/jobs/provenance',
       ),
     )
+  }
+  for (const mode of ['desktop', 'mobile']) {
+    await page.evaluate((mode) => {
+      window.enabled = false
+      window.mode(mode)
+      window.changes = [
+        {
+          id: 'pause',
+          automationId: 'flow',
+          at: '2026-11-16T12:00:00.000Z',
+          action: 'updated',
+          source: {
+            kind: 'agent',
+            taskId: 'worker',
+            runId: 'run-42',
+            runCreatedAt: '2026-11-16T11:30:00.000Z',
+            runAvailable: true,
+          },
+          changes: [{ label: 'Triggers', before: 'Enabled', after: 'Paused' }],
+        },
+      ]
+      window.navigations = []
+      window.reload()
+    }, mode)
+    await text('Paused by an automation run').waitFor()
+    await page.getByRole('button', { name: 'Open responsible run', exact: true }).first().click()
+    const navigation = await page.evaluate(() => window.navigations[0])
+    if (mode === 'desktop')
+      assert.deepEqual(navigation, {
+        viewId: 'jobs',
+        entityId: 'run-42',
+        automationTarget: { runtimeId: 'profile', automationId: 'flow', runId: 'run-42' },
+      })
+    else
+      assert.deepEqual(navigation, {
+        pathname: '/settings/automations/[runtimeId]/[automationId]',
+        params: { runtimeId: 'profile', automationId: 'flow', runId: 'run-42' },
+      })
+    await page.evaluate(() => {
+      window.changes[0].source.runAvailable = false
+      window.reload()
+    })
+    await text('Responsible run unavailable').first().waitFor()
+    assert.equal(
+      await page.getByRole('button', { name: 'Open responsible run', exact: true }).count(),
+      0,
+    )
+    await page.evaluate(() => {
+      window.enabled = true
+      window.reload()
+    })
+    await page.waitForFunction(
+      () => !document.body.textContent.includes('Paused by an automation run'),
+    )
+    await page.evaluate(() => {
+      window.enabled = false
+      window.changes.unshift({
+        id: 'later',
+        automationId: 'flow',
+        at: '2026-11-16T13:00:00.000Z',
+        action: 'updated',
+        source: { kind: 'person' },
+        changes: [{ label: 'Name', after: 'New name' }],
+      })
+      window.reload()
+    })
+    await text('Changed by you in the editor').first().waitFor()
+    assert.equal(await text('Paused by an automation run').count(), 0)
+    await page.evaluate(() => {
+      window.changes.shift()
+      window.runSupported = false
+      window.reload()
+    })
+    await text('Responsible run unavailable').first().waitFor()
+    assert.equal(await text('Paused by an automation run').count(), 0)
+    await page.evaluate(() => {
+      window.runSupported = true
+    })
   }
   // Existing routines without history, and older computers without the capability.
   await page.evaluate(() => {

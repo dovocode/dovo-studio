@@ -45,6 +45,25 @@ export type QuestionRecovery = {
   drafts: Record<string, QuestionDraft>
   files: QuestionAttachments
 }
+
+/** Only ordinary question values can become draft content. Secret fields stay excluded. */
+export function questionRecoveryDraft(entry: QuestionRecovery) {
+  const questions = entry.request.prompt.questions.filter((question) => !question.secret)
+  return {
+    text: questions
+      .flatMap((question) => {
+        const draft = entry.drafts[question.id]
+        const answer = [...(draft?.selected ?? []), draft?.text ?? ''].filter(Boolean).join('\n')
+        return answer ? [`${question.question}\n${answer}`] : []
+      })
+      .join('\n\n'),
+    ids: [
+      ...new Set(
+        questions.flatMap((question) => (entry.files[question.id] ?? []).map((file) => file.id)),
+      ),
+    ],
+  }
+}
 type Storage = {
   getAllKeys(): readonly string[] | Promise<readonly string[]>
   getItem(key: string): string | null | Promise<string | null>
@@ -260,6 +279,7 @@ export function createQuestionRecovery(storage: Storage) {
       }
     },
     version: (scope: string) => state(scope).version,
+    revision: (entry: QuestionRecovery) => versions.get(entry) ?? legacyRevision(entry),
     entries: (scope: string) => state(scope).entries,
     error: (scope: string) => state(scope).error,
     load,

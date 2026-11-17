@@ -21,8 +21,9 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
     export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
-    export const useAppPreferences=()=>({interfaceLanguage:'en-US',botsOverviewEnabled:true,lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
-    export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
+    export * from '${root}packages/studio-core/src/shortcuts.ts';
+export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],interfaceLanguage:'en-US',botsOverviewEnabled:true,lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
+    export const useAppPreferences=readAppPreferences;export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
     export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
     const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
     export function WorkspaceProvider({children}) {
@@ -130,7 +131,9 @@ try {
       .getByRole('button', { name, exact: true })
       .click()
   await selected('fresh')
-  for (const modifier of ['Control', 'Meta']) {
+  for (const modifier of [
+    await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform) ? 'Meta' : 'Control')),
+  ]) {
     await page.getByRole('button', { name: 'Close terminal tab' }).click()
     const dialog = page.getByRole('dialog', { name: 'Close terminal?' })
     await dialog.waitFor()

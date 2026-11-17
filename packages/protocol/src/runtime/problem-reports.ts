@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 import { maxValue, minValue, mutableArray, mutableStruct, refine } from '../shared/schema.js'
 import { taskSchema, type Task } from '../workspace.js'
 import type { RuntimeOverview } from './connection/runtime-fleet.js'
+import { recentClientActions } from '../shared/client-diagnostics.js'
 
 /** The public repository a triage agent reads for the running commit. */
 export const PROBLEM_REPORT_REPOSITORY = 'dovocode/dovo-studio'
@@ -19,6 +20,7 @@ export const problemReportIncludeSchema = mutableStruct({
   diagnostics: Schema.Boolean,
   /** Recent errors recorded by this client app. */
   clientErrors: Schema.Boolean,
+  clientTimeline: Schema.optional(Schema.Boolean),
 })
 export const problemReportClientSchema = mutableStruct({
   surface: Schema.Literals(['desktop', 'web', 'mobile']),
@@ -32,6 +34,45 @@ export const problemReportClientErrorSchema = mutableStruct({
   at: bounded(64),
   message: bounded(2000),
   source: Schema.optional(bounded(64)),
+  name: Schema.optional(bounded(64)),
+  stack: Schema.optional(bounded(2000)),
+})
+export const problemReportClientActionSchema = mutableStruct({
+  at: bounded(64),
+  action: Schema.Literals([
+    'navigation',
+    'request-start',
+    'request-complete',
+    'request-failed',
+    'connecting',
+    'connected',
+    'reconnecting',
+    'offline',
+    'unauthorized',
+    'unsupported',
+  ]),
+  category: Schema.Literals([
+    'app',
+    'threads',
+    'files',
+    'scm',
+    'automations',
+    'settings',
+    'connection',
+    'other',
+  ]),
+  durationMs: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isFinite()),
+      Schema.check(Schema.isBetween({ minimum: 0, maximum: 3600000 })),
+    ),
+  ),
+  status: Schema.optional(
+    Schema.Number.pipe(
+      Schema.check(Schema.isInt()),
+      Schema.check(Schema.isBetween({ minimum: 100, maximum: 599 })),
+    ),
+  ),
 })
 const problemReportFields = {
   description: maxValue(minValue(Schema.String, 1), MAX_PROBLEM_REPORT_TEXT),
@@ -42,6 +83,7 @@ const problemReportFields = {
     mutableArray(problemReportClientErrorSchema),
     MAX_PROBLEM_REPORT_CLIENT_ERRORS,
   ),
+  clientTimeline: Schema.optional(maxValue(mutableArray(problemReportClientActionSchema), 100)),
 }
 const described = (input: { description: string }) => !!input.description.trim()
 /** `POST /api/problem-reports/preview` on runtimes with `problemReportsSupported`. */
@@ -83,6 +125,7 @@ export const defaultProblemReportInclude: ProblemReportInclude = {
   versions: true,
   diagnostics: true,
   clientErrors: true,
+  clientTimeline: true,
 }
 export type ProblemReportForm = {
   description: string
@@ -105,6 +148,7 @@ export function problemReportRequest(
     clientErrors: form.include.clientErrors
       ? clientErrors.slice(-MAX_PROBLEM_REPORT_CLIENT_ERRORS)
       : [],
+    ...(form.include.clientTimeline ? { clientTimeline: recentClientActions() } : {}),
   }
 }
 

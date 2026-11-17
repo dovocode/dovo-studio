@@ -106,9 +106,16 @@ export const notificationTestTaskId = 'dovo-notification-test'
 
 /** Recent errors in this client process, newest last. They stay in memory on this device and
  * leave it only when a person includes them in a problem report. */
-const recentErrors: { at: string; message: string; source?: string }[] = []
+const recentErrors: {
+  at: string
+  message: string
+  source?: string
+  stack?: string
+  name?: string
+}[] = []
 const RECENT_CLIENT_ERRORS = 20
 export function recordClientError(error: unknown, source?: string) {
+  source = source ? diagnosticMessage(source).slice(0, 64) : undefined
   const message = diagnosticMessage(
     error instanceof Error && error.name !== 'Error' ? `${error.name}: ${error.message}` : error,
   )
@@ -119,10 +126,114 @@ export function recordClientError(error: unknown, source?: string) {
     previous.at = new Date().toISOString()
     return
   }
-  recentErrors.push({ at: new Date().toISOString(), message, ...(source ? { source } : {}) })
+  recentErrors.push({
+    at: new Date().toISOString(),
+    message,
+    ...(source ? { source } : {}),
+    ...(error instanceof Error
+      ? {
+          name: diagnosticMessage(error.name).slice(0, 64),
+          ...(error.stack ? { stack: diagnosticMessage(error.stack) } : {}),
+        }
+      : {}),
+  })
   if (recentErrors.length > RECENT_CLIENT_ERRORS)
     recentErrors.splice(0, recentErrors.length - RECENT_CLIENT_ERRORS)
 }
 export function recentClientErrors() {
   return recentErrors.map((entry) => ({ ...entry }))
+}
+
+/** Category-only process history. Never pass addresses, IDs, input text or request bodies. */
+export type ClientAction =
+  | 'navigation'
+  | 'request-start'
+  | 'request-complete'
+  | 'request-failed'
+  | 'connecting'
+  | 'connected'
+  | 'reconnecting'
+  | 'offline'
+  | 'unauthorized'
+  | 'unsupported'
+export type ClientActionCategory =
+  | 'app'
+  | 'threads'
+  | 'files'
+  | 'scm'
+  | 'automations'
+  | 'settings'
+  | 'connection'
+  | 'other'
+export type ClientActionEntry = {
+  at: string
+  action: ClientAction
+  category: ClientActionCategory
+  durationMs?: number
+  status?: number
+}
+const actions: ClientActionEntry[] = []
+const actionNames = new Set<ClientAction>([
+  'navigation',
+  'request-start',
+  'request-complete',
+  'request-failed',
+  'connecting',
+  'connected',
+  'reconnecting',
+  'offline',
+  'unauthorized',
+  'unsupported',
+])
+const categoryNames = new Set<ClientActionCategory>([
+  'app',
+  'threads',
+  'files',
+  'scm',
+  'automations',
+  'settings',
+  'connection',
+  'other',
+])
+export function recordClientAction(
+  action: ClientAction,
+  category: ClientActionCategory,
+  details: { durationMs?: number; status?: number } = {},
+) {
+  if (!actionNames.has(action) || !categoryNames.has(category)) return
+  const durationMs = details.durationMs
+  const status = details.status
+  actions.push({
+    at: new Date().toISOString(),
+    action,
+    category,
+    ...(durationMs !== undefined && Number.isFinite(durationMs)
+      ? { durationMs: Math.max(0, Math.min(3600000, Math.round(durationMs))) }
+      : {}),
+    ...(status !== undefined && Number.isInteger(status) && status >= 100 && status <= 599
+      ? { status }
+      : {}),
+  })
+  if (actions.length > 100) actions.splice(0, actions.length - 100)
+}
+export function recentClientActions(): ClientActionEntry[] {
+  const since = Date.now() - 30 * 60000
+  return actions.filter((entry) => Date.parse(entry.at) >= since).map((entry) => ({ ...entry }))
+}
+
+export function clientRequestCategory(path: string): ClientActionCategory {
+  const section = /^\/api\/([a-z-]+)(?:\/|$)/.exec(path)?.[1]
+  return section === 'tasks'
+    ? 'threads'
+    : section === 'attachments'
+      ? 'files'
+      : section === 'scm'
+        ? 'scm'
+        : section === 'jobs'
+          ? 'automations'
+          : section === 'preferences'
+            ? 'settings'
+            : section === 'snapshot' || section === 'sync'
+              ? 'connection'
+              : 'other'
 }

@@ -10,7 +10,7 @@ import { homedir } from 'node:os'
 import { Schema } from 'effect'
 import { parseDocument } from 'yaml'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { DiagnosticStdioTransport } from '../../mcp-apps/stdio-transport.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
 import { managedSkillSchema, mcpServerSchema, mcpTestResultSchema } from '@dovo/protocol'
 import { processEnvironment } from '../../process.js'
@@ -79,7 +79,7 @@ export async function testMcpServer(input: unknown) {
   })
   const transport =
     server.transport === 'stdio'
-      ? new StdioClientTransport({
+      ? new DiagnosticStdioTransport({
           command: server.command,
           args: server.args,
           env: {
@@ -90,7 +90,6 @@ export async function testMcpServer(input: unknown) {
             ),
             ...mcpServerEnvironment(server),
           },
-          stderr: 'ignore',
         })
       : new StreamableHTTPClientTransport(new URL(server.url), mcpHttpOptions(mcpHeaders(server)))
   const signal = AbortSignal.timeout(15000)
@@ -120,6 +119,8 @@ export async function testMcpServer(input: unknown) {
       server: client.getServerVersion()?.name ?? server.name,
       tools,
     })
+  } catch (error) {
+    throw transport instanceof DiagnosticStdioTransport ? await transport.explain(error) : error
   } finally {
     await client.close()
     await transport.close()

@@ -4,7 +4,7 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
-const core = `import {createContext,useContext} from 'react';
+const core = `export * from '${root}/packages/studio-core/src/shortcuts.ts';import {createContext,useContext} from 'react';
 export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';
 export {useAppPreferences,updateAppPreferences,readAppPreferences,useStudioTheme,useResolvedTheme,useDiffOptions} from '${root}/packages/studio-core/src/preferences.ts';
 export {importCodeTheme,maxCodeThemeBytes} from '${root}/packages/studio-core/src/code-themes.ts';
@@ -1128,7 +1128,7 @@ try {
   await openLocal('Keyboard shortcuts')
   assert.equal(await page.getByRole('table').count(), 4)
   assert.equal(
-    await page.getByRole('rowheader', { name: 'Cycle tool activity views', exact: true }).count(),
+    await page.getByRole('textbox', { name: 'Cycle tool activity views', exact: true }).count(),
     1,
   )
   await openLocal('Browser')

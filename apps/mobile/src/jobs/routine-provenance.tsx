@@ -1,8 +1,11 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
+import { router } from 'expo-router'
+import { automationHref } from '../shell/source-route'
 import {
   routineChangeForRun,
+  routineAutomaticPause,
   routineFieldChangeText,
   routineProvenanceSchema,
   type RoutineChange,
@@ -75,6 +78,21 @@ function RoutineSource({ change }: { change: RoutineChange | undefined }) {
               : uiText('Changed by you in the editor')
             : uiText('Changed by an agent without an owner message')}
       </Text>
+      {source.kind === 'agent' &&
+        source.runId &&
+        (source.runAvailable ? (
+          <Action
+            label={uiText('Open responsible run')}
+            secondary
+            disabled={!focused || !connected || !profile}
+            onPress={() => {
+              if (profile)
+                router.push(automationHref(profile.id, change.automationId, source.runId))
+            }}
+          />
+        ) : (
+          <Text style={styles.muted}>{uiText('Responsible run unavailable')}</Text>
+        ))}
       {source.kind === 'owner' &&
         (source.linkAvailable ? (
           <Action
@@ -124,11 +142,23 @@ export function RoutineHistory({ automationId }: { automationId: string }) {
   const { styles, colors } = useTheme()
   const { focused } = useNavigation()
   const state = useRoutineProvenance(automationId)
+  const { snapshot } = useRuntime()
+  const flow = snapshot?.workspace.automations.find((flow) => flow.id === automationId)
+  const paused =
+    flow &&
+    snapshot?.routineRunProvenanceSupported &&
+    routineAutomaticPause(flow, state.changes ?? [])
   const [open, setOpen] = useState(false)
   if (!state.supported) return null
   const changes = state.changes ?? []
   return (
     <View testID="Routine change history" style={{ gap: 6 }}>
+      {!!paused && (
+        <View style={{ gap: 4 }}>
+          <Text style={{ fontWeight: '600' }}>{uiText('Paused by an automation run')}</Text>
+          <RoutineSource change={paused} />
+        </View>
+      )}
       <Text style={{ fontWeight: '600' }}>{uiText('Change history')}</Text>
       {state.error ? <Text style={styles.error}>{state.error}</Text> : null}
       {state.changes && !open && <RoutineSource change={changes[0]} />}

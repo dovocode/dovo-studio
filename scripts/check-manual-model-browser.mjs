@@ -15,7 +15,7 @@ const mocks = {
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
   '@dovo/protocol': `export * from '../protocol/src/index';export const watchRuntimeTask=()=>()=>{};`,
   '@dovo/studio-core/state': `export * from '../studio-core/src/runtime/application-state';`,
-  '@dovo/studio-core': `export const reducedMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
+  '@dovo/studio-core': `export * from '../studio-core/src/shortcuts';export const reducedMotion=()=>window.matchMedia('(prefers-reduced-motion: reduce)').matches;export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
     export {DiscoveryCache} from '../client-runtime/src/effects/discovery-cache';
     export {browserModelCatalogCache} from '../studio-core/src/workspace/model-catalog-cache';
@@ -29,7 +29,7 @@ const mocks = {
     export {useCodexSessionImport} from '../studio-core/src/use-codex-session-import';
     export const WorkspaceScope=({children})=>children;
     export const useStudioHost=()=>window.host;
-    export const readAppPreferences=()=>({taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
+    export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],taskSort:'priority',taskGrouping:'status',workingSection:true,collapsedThreadSections:['working','waiting','snoozed','settled'],threadInfoSections:{},followUp:'queue'});
     export const useAppPreferences=readAppPreferences;
     export const updateAppPreferences=()=>{};
     export const useResolvedTheme=()=> 'dark';

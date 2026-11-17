@@ -90,7 +90,18 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
 
   const preview = async () => {
     if (!target?.available || busy) return
-    const request = problemReportRequest(form, clientInfo(appInfo), errors)
+    const request = problemReportRequest(
+      {
+        ...form,
+        include: {
+          ...form.include,
+          clientTimeline:
+            form.include.clientTimeline && target.snapshot?.problemReportTimelineSupported === true,
+        },
+      },
+      clientInfo(appInfo),
+      errors,
+    )
     if (!request.description) return
     setBusy(true)
     setError('')
@@ -187,6 +198,7 @@ export function ReportProblemDialog({ onClose }: { onClose: () => void }) {
             onChange={setForm}
             disabled={locked}
             clientErrors={errors.length}
+            timelineSupported={snapshot?.problemReportTimelineSupported === true}
           >
             <FormField label="Computer">
               <span className="relative">

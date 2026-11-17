@@ -1,4 +1,14 @@
-import { useAppPreferences } from '@dovo/studio-core'
+import { useState } from 'react'
+import {
+  applicationShortcuts,
+  applicationShortcutLabel,
+  captureApplicationShortcut,
+  shortcutConflict,
+  updateAppPreferences,
+  useAppPreferences,
+  type ApplicationShortcut,
+} from '@dovo/studio-core'
+import { Button, Input } from '@dovo/studio-ui'
 import { SettingsGroup, SettingsPage } from './layout'
 
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
@@ -22,13 +32,18 @@ function Keys({ keys }: { keys: string }) {
 }
 
 export default function KeyboardShortcuts() {
-  const { sendWith, taskLauncherShortcut } = useAppPreferences()
+  const { sendWith, taskLauncherShortcut, shortcutOverrides } = useAppPreferences()
+  const [error, setError] = useState('')
+  const save = (value: typeof shortcutOverrides) =>
+    setError(
+      updateAppPreferences({ shortcutOverrides: value })
+        ? ''
+        : 'Could not save shortcuts on this device. Retry in Settings.',
+    )
   const groups: [string, [string, string][]][] = [
     [
       'Everywhere',
       [
-        ['Open the command palette', `${mod}+K`],
-        ['Show keyboard shortcuts', `${mod}+/`],
         ...(taskLauncherShortcut
           ? ([
               [
@@ -53,10 +68,6 @@ export default function KeyboardShortcuts() {
     [
       'Threads',
       [
-        ['New thread', `${mod}+N`],
-        ['Go to a thread', `${mod}+P`],
-        ['Search this thread', `${mod}+F`],
-        ['Search all conversations', `${mod}+Shift+F`],
         ['Next thread', 'Ctrl+Tab'],
         ['Previous thread', 'Ctrl+Shift+Tab'],
         ...(mac
@@ -66,11 +77,6 @@ export default function KeyboardShortcuts() {
             ] as [string, string][])
           : []),
         ['Stop the running agent', 'Esc'],
-        ['Ask a side question', `${mod}+;`],
-        ['Close the side-by-side thread', `${mod}+\\`],
-        ['Show or hide changes', `${mod}+Shift+D`],
-        ['Cycle tool activity views', 'Ctrl+O'],
-        ['Show or hide the terminal', 'Ctrl+`'],
       ],
     ],
     [
@@ -86,6 +92,91 @@ export default function KeyboardShortcuts() {
       title="Keyboard shortcuts"
       description="Shortcuts for this device. Message shortcuts follow your Conversation settings; the desktop thread launcher follows General."
     >
+      <SettingsGroup title="Application shortcuts">
+        <p className="px-4 py-2 text-xs text-muted-foreground">
+          Select a shortcut field and press a key with Ctrl, Command or Alt. Changes apply on this
+          device. Editors, terminals and open dialogs keep their keys.
+        </p>
+        {error && (
+          <p role="alert" className="px-4 text-xs text-destructive">
+            {error}
+          </p>
+        )}
+        <div className="divide-y">
+          {(Object.keys(applicationShortcuts) as ApplicationShortcut[]).map((id) => (
+            <div key={id} className="flex flex-wrap items-center gap-2 px-4 py-3 text-xs">
+              <label className="min-w-48 flex-1" htmlFor={`shortcut-${id}`}>
+                {applicationShortcuts[id].label}
+              </label>
+              <Input
+                id={`shortcut-${id}`}
+                className="h-8 w-40"
+                readOnly
+                value={applicationShortcutLabel(id, shortcutOverrides)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Tab') return
+                  event.preventDefault()
+                  event.stopPropagation()
+                  if (event.nativeEvent.isComposing || event.repeat) return
+                  const binding = captureApplicationShortcut(event)
+                  if (!binding) {
+                    setError(
+                      'Press a key with Ctrl, Command or Alt. Use Unassign to remove a shortcut.',
+                    )
+                    return
+                  }
+                  const conflict = shortcutConflict(id, binding, shortcutOverrides)
+                  if (conflict) {
+                    setError(conflict)
+                    return
+                  }
+                  save({ ...shortcutOverrides, [id]: binding })
+                }}
+              />
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => {
+                  save({ ...shortcutOverrides, [id]: null })
+                }}
+              >
+                Unassign
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                disabled={shortcutOverrides[id] === undefined}
+                onClick={() => {
+                  const conflict = shortcutConflict(
+                    id,
+                    applicationShortcuts[id].binding,
+                    shortcutOverrides,
+                  )
+                  if (conflict) {
+                    setError(conflict)
+                    return
+                  }
+                  const next = { ...shortcutOverrides }
+                  delete next[id]
+                  save(next)
+                }}
+              >
+                Reset
+              </Button>
+            </div>
+          ))}
+        </div>
+        <Button
+          className="m-4"
+          size="sm"
+          variant="outline"
+          onClick={() => {
+            save({})
+          }}
+        >
+          Reset all application shortcuts
+        </Button>
+      </SettingsGroup>
       {groups.map(([title, rows]) => (
         <SettingsGroup key={title} title={title}>
           <table className="w-full text-xs">

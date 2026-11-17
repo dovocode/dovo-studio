@@ -27,6 +27,12 @@ const includeOptions: readonly {
     label: 'Recent app errors',
     detail: 'Errors this window recorded since it opened.',
   },
+  {
+    key: 'clientTimeline',
+    label: 'Recent app actions',
+    detail:
+      'Up to 100 action, request and reconnect categories from the last 30 minutes. No input text or request bodies.',
+  },
 ]
 
 export function ReportProblemFields({
@@ -34,6 +40,7 @@ export function ReportProblemFields({
   onChange,
   disabled,
   clientErrors,
+  timelineSupported = false,
   children,
 }: {
   form: ProblemReportForm
@@ -41,6 +48,7 @@ export function ReportProblemFields({
   disabled: boolean
   /** Number of app errors that would be included. */
   clientErrors: number
+  timelineSupported?: boolean
   /** Computer and agent controls. */
   children?: ReactNode
 }) {
@@ -70,25 +78,30 @@ export function ReportProblemFields({
       {children}
       <fieldset className="grid gap-2">
         <legend className="mb-2 text-xs font-medium text-muted-foreground">Include</legend>
-        {includeOptions.map((option) => (
-          <label key={option.key} className="flex items-start gap-2 text-sm">
-            <Checkbox
-              className="mt-0.5"
-              checked={form.include[option.key]}
-              disabled={disabled}
-              onCheckedChange={(checked) =>
-                onChange({ ...form, include: { ...form.include, [option.key]: checked === true } })
-              }
-            />
-            <span className="grid gap-0.5">
-              <span>
-                {option.label}
-                {option.key === 'clientErrors' ? ` (${clientErrors})` : ''}
+        {includeOptions
+          .filter((option) => option.key !== 'clientTimeline' || timelineSupported)
+          .map((option) => (
+            <label key={option.key} className="flex items-start gap-2 text-sm">
+              <Checkbox
+                className="mt-0.5"
+                checked={form.include[option.key]}
+                disabled={disabled}
+                onCheckedChange={(checked) =>
+                  onChange({
+                    ...form,
+                    include: { ...form.include, [option.key]: checked === true },
+                  })
+                }
+              />
+              <span className="grid gap-0.5">
+                <span>
+                  {option.label}
+                  {option.key === 'clientErrors' ? ` (${clientErrors})` : ''}
+                </span>
+                <span className="text-xs text-muted-foreground">{option.detail}</span>
               </span>
-              <span className="text-xs text-muted-foreground">{option.detail}</span>
-            </span>
-          </label>
-        ))}
+            </label>
+          ))}
       </fieldset>
     </div>
   )

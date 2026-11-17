@@ -1,5 +1,6 @@
 import { DictationNotice } from './dictation-notice'
-import { parseStudioLink } from '@dovo/protocol'
+import { matchesApplicationShortcut, readAppPreferences } from '@dovo/studio-core'
+import { parseStudioLink, recordClientAction } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AppInterfaceLanguage } from './interface-language'
 import { PreferenceSaveNotice } from './preference-save-notice'
@@ -329,6 +330,7 @@ function WorkbenchContent({
   const commitNavigation = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
       if (browserWindowId && next.viewId !== 'browser') return false
+      recordClientAction('navigation', 'app')
       // Keep existing links to the former device-only PR page working.
       if (next.viewId === 'pull-request-settings')
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
@@ -881,6 +883,12 @@ function WorkbenchContent({
   }, [catalog])
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
+      const overrides = readAppPreferences().shortcutOverrides
+      if (
+        event.target instanceof Element &&
+        event.target.closest('.xterm, [data-terminal], .cm-editor, .monaco-editor')
+      )
+        return
       if (
         event.altKey &&
         !event.ctrlKey &&
@@ -902,9 +910,7 @@ function WorkbenchContent({
         return
       }
       if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.altKey &&
-        event.key.toLowerCase() === 'k' &&
+        matchesApplicationShortcut(event, 'palette', overrides) &&
         !event.defaultPrevented &&
         !event.isComposing &&
         !event.repeat &&
@@ -921,9 +927,7 @@ function WorkbenchContent({
         return
       }
       if (
-        (event.metaKey || event.ctrlKey) &&
-        !event.altKey &&
-        event.key === '/' &&
+        matchesApplicationShortcut(event, 'shortcuts', overrides) &&
         !event.defaultPrevented &&
         !event.isComposing &&
         !event.repeat &&
@@ -1297,10 +1301,15 @@ function WorkbenchContent({
             onOpenChange={setPalette}
             commands={[
               ...new Map(
-                [...navigationCommands, ...commands.current.values()].map((command) => [
-                  command.id,
-                  command,
-                ]),
+                [
+                  ...navigationCommands,
+                  ...readAppPreferences().savedFilterViews.map((view) => ({
+                    id: `saved-view.${view.id}`,
+                    title: `Open saved ${view.kind} view: ${view.name}`,
+                    run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
+                  })),
+                  ...commands.current.values(),
+                ].map((command) => [command.id, command]),
               ).values(),
             ]}
           />

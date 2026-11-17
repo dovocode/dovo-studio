@@ -9,11 +9,25 @@ import {
 import { taskInputVisible } from '@dovo/protocol'
 import { responses, useWorkspace } from '@dovo/studio-core'
 import { QuestionForm } from '@dovo/studio-ui'
-export function TaskQuestions({ taskId }: { taskId: string }) {
+import { Schema } from 'effect'
+import { mutableStruct, questionRecoveryDraft } from '@dovo/protocol'
+export function TaskQuestions({
+  taskId,
+  onUseDraft,
+}: {
+  taskId: string
+  onUseDraft: (text: string, done: () => void) => void
+}) {
   const { snapshot, connection } = useWorkspace()
   const questions =
     snapshot?.questions.filter((q) => taskInputVisible(snapshot.workspace.tasks, taskId, q)) ?? []
-  const recovery = <RecoveredAnswers taskId={taskId} pendingIds={questions.map((q) => q.id)} />
+  const recovery = (
+    <RecoveredAnswers
+      taskId={taskId}
+      pendingIds={questions.map((q) => q.id)}
+      onUseDraft={onUseDraft}
+    />
+  )
   if (!questions.length) return recovery
   const pending = questions.find((q) => q.prompt.blocking !== false) ?? questions[0]
   return (
@@ -157,8 +171,19 @@ function QuestionCard({ pending }: { pending: PendingQuestion }) {
   )
 }
 
-function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: string[] }) {
+function RecoveredAnswers({
+  taskId,
+  pendingIds,
+  onUseDraft,
+}: {
+  taskId: string
+  pendingIds: string[]
+  onUseDraft: (text: string, done: () => void) => void
+}) {
   const { scope, store } = useQuestionRecovery()
+  const { request, connected, snapshot } = useWorkspace()
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState('')
   const entries = store
     .entries(scope)
     .filter(
@@ -170,6 +195,11 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
     )
   return (
     <div className="mx-auto w-full max-w-[var(--chat-max)] space-y-2 px-5 pb-2">
+      {error && (
+        <p role="alert" className="text-xs text-destructive">
+          {error}
+        </p>
+      )}
       {store.error(scope) && (
         <p role="alert" className="text-xs text-destructive">
           {store.error(scope)}{' '}
@@ -182,7 +212,8 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
         <details key={entry.request.id} className="rounded-xl border p-3">
           <summary>Saved answers · {entry.request.prompt.title}</summary>
           <p className="py-2 text-xs text-muted-foreground">
-            This request is no longer pending. Select and copy the answers you want to keep.
+            This request is no longer pending. Use in draft appends these answers and available
+            files to your saved draft.
           </p>
           {entry.request.prompt.questions
             .filter((q) => !q.secret)
@@ -204,6 +235,48 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
                 ))}
               </div>
             ))}
+          <button
+            type="button"
+            className="mr-3 text-xs underline"
+            disabled={
+              busy ||
+              !connected ||
+              (!!questionRecoveryDraft(entry).ids.length && !snapshot?.questionDraftReuseSupported)
+            }
+            onClick={async () => {
+              setBusy(true)
+              setError('')
+              try {
+                const { text, ids } = questionRecoveryDraft(entry)
+                if (ids.length) {
+                  const { guard } = await request(
+                    '/api/attachments/draft-guard',
+                    { taskId },
+                    mutableStruct({ guard: Schema.String }),
+                  )
+                  await request(
+                    '/api/attachments/reuse-draft',
+                    { taskId, ids, guard },
+                    responses.ok,
+                  )
+                }
+                if (!store.entries(scope).includes(entry))
+                  throw new Error('Saved answers changed. Review them and try again.')
+                onUseDraft(text, () => store.remove(scope, taskId, entry.request.id, entry))
+              } catch (cause) {
+                setError(cause instanceof Error ? cause.message : String(cause))
+              } finally {
+                setBusy(false)
+              }
+            }}
+          >
+            Use in draft
+          </button>
+          {!!questionRecoveryDraft(entry).ids.length && !snapshot?.questionDraftReuseSupported && (
+            <p className="text-xs text-muted-foreground">
+              Update this computer to reuse saved files.
+            </p>
+          )}
           <button
             type="button"
             className="text-xs underline"

@@ -10,6 +10,7 @@ import {
   snapshotSchema,
   routineProvenanceSchema,
   routineSourceText,
+  routineAutomaticPause,
   runAuditSchema,
   type Automation,
   type ChatMessage,
@@ -18,13 +19,65 @@ import { startRuntime } from '../index.js'
 import { fixture } from '../testing/fixture.js'
 import { runtimeIntegration, waitForRuntime } from '../testing/integration.js'
 import type { AgentAdapter } from '../agents/execution/types.js'
-import { recordRoutineChange, routineChanges } from './routine-provenance.js'
+import { recordRoutineChange, routineChanges, routineChangeSource } from './routine-provenance.js'
 
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
   for (const close of cleanups.splice(0).reverse()) await close()
+})
+
+it('links automatic pauses only to a run owned by the same routine and clears current attribution on later edits', async () => {
+  const r = await runtimeFor()
+  const s = r.s()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Done'),
+  })
+  s.store.update((workspace) => ({ ...workspace, automations: [{ ...routine(), enabled: true }] }))
+  const runId = s.jobs.startManual('routine', 'pause-provenance-test')
+  await waitForRuntime(() => expect(s.jobs.detail(runId).status).toBe('completed'))
+  const taskId = s.jobs.detail(runId).taskIds[0]
+  const turn = s.store.task(taskId).turns?.[0]
+  if (!turn) throw new Error('The worker did not save a turn')
+  expect(routineChangeSource(s.store, { kind: 'agent', taskId, runId: turn.id })).toEqual({
+    kind: 'agent',
+    taskId,
+    runId,
+  })
+  const before = { ...routine(), enabled: true }
+  const paused = { ...routine(), enabled: false }
+  recordRoutineChange(s.db, before, paused, { kind: 'agent', taskId, runId })
+  const changes = routineChanges(s.db, s.store, 'routine')
+  expect(changes[0].source).toMatchObject({
+    kind: 'agent',
+    runId,
+    runCreatedAt: expect.any(String),
+    runAvailable: true,
+  })
+  expect(routineAutomaticPause(paused, changes)?.id).toBe(changes[0].id)
+  expect(routineAutomaticPause(before, changes)).toBeUndefined()
+  recordRoutineChange(
+    s.db,
+    paused,
+    { ...paused, name: 'Renamed' },
+    { kind: 'person' },
+    new Date(Date.now() + 1000).toISOString(),
+  )
+  expect(routineAutomaticPause(paused, routineChanges(s.db, s.store, 'routine'))).toBeUndefined()
+  recordRoutineChange(
+    s.db,
+    { ...before, id: 'other' },
+    { ...paused, id: 'other' },
+    { kind: 'agent', taskId, runId },
+  )
+  expect(routineChanges(s.db, s.store, 'other')[0].source).toEqual({ kind: 'agent', taskId })
+  s.db.prepare('DELETE FROM job_runs WHERE id=?').run(runId)
+  expect(
+    routineChanges(s.db, s.store, 'routine').find((change) => change.source.kind === 'agent')
+      ?.source,
+  ).toMatchObject({ runId, runAvailable: false })
 })
 const ownerToken = 'routine-provenance-owner-token-at-least-32-chars'
 const phoneToken = 'routine-provenance-phone-token-at-least-32-chars'

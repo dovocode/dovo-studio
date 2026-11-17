@@ -37,14 +37,14 @@ function Composer({task}) {
   const input = useRef(null);
   const draft = useComposerDraft(task);
   window.draft = draft; window.caret = () => composerSelection(input.current, 0);
-  return <><ComposerDraftRecovery text={draft.recoveryText} onDiscard={draft.discardRecovery}/><ComposerModeToggle input={input}/><ComposerEditor controller={draft.controller} input={input} taskId={task.id} historyScope={'runtime-' + window.identity} resources={{skills:[],mcpServers:[],agents:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message"/>{draft.error && <p role="alert">{draft.error}</p>}</>;
+  return <><ComposerDraftRecovery text={draft.recoveryText} onDiscard={draft.discardRecovery}/><ComposerModeToggle input={input}/><ComposerEditor controller={draft.controller} input={input} taskId={task.id} historyScope={'runtime-' + window.identity} resources={{skills:[],mcpServers:[],agents:[]}} autoFocus={false} hidden={false} disabled={false} submitBusy={false} submittedText={null} placeholder="Message"/>{draft.error && <p role="alert">{draft.error}</p>}<TaskQuestions taskId="thread" onUseDraft={(text,done)=>{if(draft.appendOnce(text))done()}}/></>;
 }
 function App() {
   const context = useWorkspace();
   const [visible,setVisible] = useState(true); const [mount,setMount] = useState(0);
   const {scope} = useQuestionRecovery(); window.scope = scope;
   window.navigate = () => setVisible(value=>!value); window.remount = () => setMount(value=>value+1);
-  return visible ? <><Composer key={JSON.stringify([context.connection?.runtimeId, JSON.stringify([context.connection?.address, context.connection?.token, context.workspace.tasks[0].id]), mount])} task={context.workspace.tasks[0]}/><TaskQuestions taskId="thread"/></> : <p>Other route</p>;
+  return visible ? <><Composer key={JSON.stringify([context.connection?.runtimeId, JSON.stringify([context.connection?.address, context.connection?.token, context.workspace.tasks[0].id]), mount])} task={context.workspace.tasks[0]}/></> : <p>Other route</p>;
 }
 createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);
 `,
@@ -386,7 +386,14 @@ try {
     'first\nKeep this answer exactly',
   )
   assert.equal(await source.inputValue(), 'Same text typed again')
-  await page.getByRole('button', { name: 'Discard saved answers' }).click()
+  await page.getByRole('button', { name: 'Use in draft', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.draft.controller.text.includes('Keep this answer exactly'),
+  )
+  const reused = 'Same text typed again\n\nYour answer\nfirst\nKeep this answer exactly'
+  assert.equal(await source.inputValue(), reused)
+  await remountComposer()
+  assert.equal(await source.inputValue(), reused)
   assert.equal(await page.getByText('Saved answers · Review request').count(), 0)
   // A failed local write must leave the text editable and recoverable when storage returns.
   await page.evaluate(() => {

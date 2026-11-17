@@ -354,6 +354,24 @@ export class Attachments {
       )
       .digest('hex')
   }
+  reuseInDraft(taskId: string, ids: string[], guard: string) {
+    return this.store.transaction(() => {
+      if (this.draftUploadGuard(taskId) !== guard)
+        throw new HttpError(
+          409,
+          'The draft changed. Review it and try again. Saved answers are unchanged.',
+        )
+      const added = this.metadata(taskId, ids)
+      const task = this.store.taskSummary(taskId)
+      const files = [...(task.draftAttachments ?? [])]
+      for (const file of added)
+        if (!files.some((current) => current.id === file.id)) files.push(file)
+      if (files.length > MAX_ATTACHMENTS)
+        throw new HttpError(409, 'Attach up to 5 files per message')
+      this.store.updateTask(taskId, (current) => ({ ...current, draftAttachments: files }))
+      return { ok: true as const }
+    })
+  }
   commitUploadToDraft(device: string, id: string, guard: string) {
     return this.store.transaction(() => {
       const result = this.uploadReceipt(device, id)

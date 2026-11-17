@@ -277,3 +277,4 @@ export * from './workspace/question-recovery'
 export { useTurnAnnouncements } from './use-turn-announcements'
 
 export { useSecretReferenceCheck } from './use-secret-reference-check'
+export * from './shortcuts'

@@ -80,6 +80,101 @@ it('checks native goal support before sending the command and renders local outp
   mocks.query.mockReset()
 })
 
+it('keeps Claude proxy instances separate from local MCP and native tools', async () => {
+  const observed: Options[] = []
+  const mcpConfigs: unknown[] = []
+  const paths: string[] = []
+  mocks.query.mockClear()
+  mocks.query.mockImplementation(({ options }) => {
+    observed.push(options)
+    const path = options.extraArgs?.['mcp-config']
+    if (typeof path !== 'string') throw new Error('Expected a private MCP config path')
+    paths.push(path)
+    mcpConfigs.push(JSON.parse(readFileSync(path, 'utf8')))
+    return {
+      async *[Symbol.asyncIterator]() {
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'proxy' }
+      },
+      close: vi.fn<() => void>(),
+    }
+  })
+  const inheritedUrl = process.env.ANTHROPIC_BASE_URL
+  const inheritedToken = process.env.ANTHROPIC_AUTH_TOKEN
+  const run: AgentRun = {
+    agent: {
+      id: 'proxy-a',
+      name: 'Claude proxy',
+      provider: 'claude',
+      endpoint: '',
+      model: 'custom/claude-a',
+      instructions: '',
+      permission: 'ask',
+      env: {
+        ANTHROPIC_BASE_URL: 'http://proxy-a.lan:8317',
+        ANTHROPIC_AUTH_TOKEN: 'fixture-proxy-a',
+        ANTHROPIC_API_KEY: '',
+        CLAUDE_CONFIG_DIR: '/tmp/claude-proxy-a',
+        ENABLE_TOOL_SEARCH: 'false',
+      },
+      resources: decode(resourceSettingsSchema, {
+        mcpServers: [taskToolsServer('proxy-thread', 1234, 'fixture-local', '127.0.0.1')],
+      }),
+    },
+    cwd: '/tmp',
+    prompt: 'Use code mode or a direct tool for this task',
+    signal: new AbortController().signal,
+    onSession: () => {},
+    onActivity: () => {},
+    onText: () => {},
+    approve: async () => 'deny',
+    ask: async () => null,
+  }
+  await claudeAdapter.run(run)
+  await claudeAdapter.run({
+    ...run,
+    agent: {
+      ...run.agent,
+      id: 'proxy-b',
+      model: 'custom/claude-b',
+      env: {
+        ...run.agent.env,
+        ANTHROPIC_BASE_URL: 'http://proxy-b.lan:8317',
+        ANTHROPIC_AUTH_TOKEN: 'fixture-proxy-b',
+        CLAUDE_CONFIG_DIR: '/tmp/claude-proxy-b',
+      },
+    },
+  })
+  expect(observed).toHaveLength(2)
+  expect(observed[0]).toMatchObject({
+    model: 'custom/claude-a',
+    pathToClaudeCodeExecutable: '/bin/claude',
+    env: run.agent.env,
+    settingSources: ['user', 'project', 'local'],
+  })
+  expect(observed[1]).toMatchObject({
+    model: 'custom/claude-b',
+    env: {
+      ANTHROPIC_BASE_URL: 'http://proxy-b.lan:8317',
+      ANTHROPIC_AUTH_TOKEN: 'fixture-proxy-b',
+      ANTHROPIC_API_KEY: '',
+      CLAUDE_CONFIG_DIR: '/tmp/claude-proxy-b',
+    },
+  })
+  for (const options of observed) {
+    expect(options.tools).toBeUndefined()
+    expect(options.canUseTool).toBeTypeOf('function')
+    expect(options.hooks?.PreToolUse).toBeDefined()
+    expect(options.extraArgs).not.toHaveProperty('ANTHROPIC_AUTH_TOKEN')
+  }
+  expect(mcpConfigs[0]).toEqual(mcpConfigs[1])
+  expect(JSON.stringify(mcpConfigs)).toContain('fixture-local')
+  expect(JSON.stringify(mcpConfigs)).not.toContain('fixture-proxy-')
+  expect(paths.every((path) => !existsSync(path))).toBe(true)
+  expect(process.env.ANTHROPIC_BASE_URL).toBe(inheritedUrl)
+  expect(process.env.ANTHROPIC_AUTH_TOKEN).toBe(inheritedToken)
+  mocks.query.mockReset()
+})
+
 it('runs the Claude compact command and reports its boundary', async () => {
   mocks.query.mockImplementation(() => ({
     async *[Symbol.asyncIterator]() {

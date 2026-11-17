@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
   routineChangeForRun,
+  routineAutomaticPause,
   routineFieldChangeText,
   routineProvenanceSchema,
   routineSourceText,
@@ -51,12 +52,40 @@ export function useRoutineProvenance(id: string | undefined): RoutineProvenanceS
 /** The owner's words with a link back to their message when it still exists. */
 function RoutineSource({ change }: { change: RoutineChange | undefined }) {
   const host = useStudioHost()
-  const { workspace } = useWorkspace()
+  const { workspace, activeRuntimeId } = useWorkspace()
   if (!change) return <p className="text-xs text-muted-foreground">Source not recorded</p>
   const source = change.source
   return (
     <div className="grid justify-items-start gap-1 text-xs">
       <p className="whitespace-pre-wrap break-words">{routineSourceText(source)}</p>
+      {source.kind === 'agent' &&
+        source.runId &&
+        (source.runAvailable ? (
+          <Button
+            size="sm"
+            variant="link"
+            className="h-auto p-0 text-xs"
+            onClick={() =>
+              host.navigate({
+                viewId: 'jobs',
+                entityId: source.runId,
+                ...(activeRuntimeId
+                  ? {
+                      automationTarget: {
+                        runtimeId: activeRuntimeId,
+                        automationId: change.automationId,
+                        runId: source.runId,
+                      },
+                    }
+                  : {}),
+              })
+            }
+          >
+            Open responsible run
+          </Button>
+        ) : (
+          <span className="text-muted-foreground">Responsible run unavailable</span>
+        ))}
       {source.kind === 'owner' &&
         (source.linkAvailable ? (
           <Button
@@ -143,6 +172,24 @@ export function RoutineHistory({ state }: { state: RoutineProvenanceState }) {
           ))}
         </ol>
       )}
+    </section>
+  )
+}
+
+export function AutomaticPauseSource({
+  state,
+  enabled,
+}: {
+  state: RoutineProvenanceState
+  enabled: boolean | undefined
+}) {
+  const { snapshot } = useWorkspace()
+  const change = routineAutomaticPause({ enabled }, state.changes ?? [])
+  if (!snapshot?.routineRunProvenanceSupported || !change) return null
+  return (
+    <section className="grid gap-1 border-b px-4 py-3" aria-label="Automatic pause">
+      <p className="text-xs font-medium">Paused by an automation run</p>
+      <RoutineSource change={change} />
     </section>
   )
 }

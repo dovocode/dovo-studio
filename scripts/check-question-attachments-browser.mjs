@@ -48,15 +48,17 @@ try {
         resolveDir: root,
         loader: 'tsx',
         contents: `
-import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,questionPromptSchema} from '@dovo/protocol';
+import {useState} from 'react';import {createRoot} from 'react-dom/client';import {Effect} from 'effect';import {decode,questionPromptSchema,runtimeRecoveryScope} from '@dovo/protocol';
+import {questionRecovery} from '${root}${mobile ? 'apps/mobile/src/tasks/composer' : 'packages/studio-core/src/workspace'}/question-recovery';
+${mobile ? `import {saveRuntimeDraft,drafts} from '${root}apps/mobile/src/tasks/draft/runtime-drafts';window.prepareLocalDraft=()=>saveRuntimeDraft('computer','task','Local unsynced draft');window.readLocalDraft=()=>drafts.read('dovo.draft.computer.task');` : ''}
 import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/context.ts';
 import {TaskQuestions} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/chat/thread'}/task-questions.tsx';
 const prompt=decode(questionPromptSchema,{title:'Answer with references',questions:[{id:'design',header:'Design',question:'Attach design'},{id:'notes',header:'Notes',question:'Attach notes',required:false},{id:'secret',header:'Secret',question:'Private',secret:true,required:false},{id:'number',header:'Number',question:'Count',inputType:'number',required:false}]});
 window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];window.fail=false;window.hold=false;window.expired=[];window.preparations=[];
-const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
-window.request=async(path,input)=>{if(path==='/api/attachments/prepare'){window.preparations.push(input);return {missing:input.ids.filter(id=>window.expired.includes(id))}}if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);window.expired=window.expired.filter(id=>id!==input.id);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
-const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion({...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{attachmentPreparationSupported:true,revision:1,questions:[question],workspace:{tasks:[task],repositories:[]}},request:window.request,readEffect:read,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task"/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.reuseSupported=true;window.reuseFiles=[];const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
+window.request=async(path,input)=>{if(path==='/api/attachments/draft-guard')return {guard:'guard'};if(path==='/api/attachments/reuse-draft'){if(window.reuseFail)throw Error('Attachment not found');window.reuseFiles=[...new Set([...window.reuseFiles,...input.ids])];return {ok:true}}if(path==='/api/attachments/prepare'){window.preparations.push(input);return {missing:input.ids.filter(id=>window.expired.includes(id))}}if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);window.expired=window.expired.filter(id=>id!==input.id);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
+window.seedRecovery=async()=>{const scope=runtimeRecoveryScope({address:'http://runtime.local',token:'original'});await questionRecovery.load(scope);questionRecovery.update(scope,{...pending,id:'recover-me'},{design:{selected:[],text:'Reuse exact answer'},secret:{selected:[],text:'Do not copy this secret'}},{design:[{id:window.uploads[0].id,name:'answer.txt',mime:'text/plain',size:3}]})};const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
+function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion(mode==='none'?null:{...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{questionDraftReuseSupported:window.reuseSupported,attachmentPreparationSupported:true,revision:1,questions:[question].filter(Boolean),workspace:{tasks:[task],repositories:[]}},request:window.request,readEffect:read,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task" onUseDraft={(text,done)=>{const input=document.querySelector('[aria-label="Normal message"]');input.value=[input.value,text].filter(Boolean).join("\\n\\n");done()}}/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -293,6 +295,72 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
       await page.keyboard.press('Enter')
       await page.waitForFunction(() => window.answers.at(-1)?.id === 'empty-composer-enter-new')
     }
+    if (!mobile)
+      await page
+        .getByRole('textbox', { name: 'Normal message', exact: true })
+        .fill('Local unsynced draft')
+    // The actual recovery card validates files before it requests draft insertion.
+    await page.evaluate(async () => {
+      window.setQuestion('none')
+      await window.seedRecovery()
+      if (window.prepareLocalDraft) await window.prepareLocalDraft()
+    })
+    if (!mobile)
+      await page
+        .locator('summary')
+        .filter({ hasText: 'Saved answers · Answer with references' })
+        .click()
+    const useDraft = page.getByRole('button', { name: 'Use in draft', exact: true }).last()
+    await useDraft.waitFor()
+    await page.evaluate(() => window.connect(false))
+    await page.waitForFunction(
+      () =>
+        [...document.querySelectorAll('button')]
+          .filter((b) => b.textContent === 'Use in draft')
+          .at(-1)?.disabled,
+    )
+    await page.evaluate(() => {
+      window.reuseSupported = false
+      window.connect(true)
+      window.remount()
+    })
+    if (!mobile)
+      await page
+        .locator('summary')
+        .filter({ hasText: 'Saved answers · Answer with references' })
+        .click()
+    assert.equal(await useDraft.isDisabled(), true)
+    await page
+      .getByText('Update this computer to reuse saved files.', { exact: true })
+      .last()
+      .waitFor()
+    await page.evaluate(() => {
+      window.reuseSupported = true
+      window.reuseFail = true
+      window.remount()
+    })
+    if (!mobile)
+      await page
+        .locator('summary')
+        .filter({ hasText: 'Saved answers · Answer with references' })
+        .click()
+    await useDraft.click()
+    await page.getByRole('alert').filter({ hasText: 'Attachment not found' }).waitFor()
+    assert.equal(await useDraft.count(), 1)
+    assert.deepEqual(await page.evaluate(() => window.reuseFiles), [])
+    await page.evaluate(() => (window.reuseFail = false))
+    await useDraft.click()
+    await page.waitForFunction(
+      () => ![...document.querySelectorAll('button')].some((b) => b.textContent === 'Use in draft'),
+    )
+    assert.equal((await page.evaluate(() => window.reuseFiles)).length, 1)
+    const recoveredDraft = mobile
+      ? await page.evaluate(() => window.readLocalDraft())
+      : await page.getByRole('textbox', { name: 'Normal message', exact: true }).inputValue()
+    assert.ok(recoveredDraft.includes('Local unsynced draft'))
+    assert.ok(recoveredDraft.includes('Reuse exact answer'))
+    assert.ok(!recoveredDraft.includes('Do not copy this secret'))
+    assert.equal(recoveredDraft.split('Reuse exact answer').length, 2)
     assert.deepEqual(errors, [])
     await page.close()
   }

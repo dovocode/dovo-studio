@@ -20,6 +20,58 @@ const token = 'attachment-test-owner-token-with-32-characters'
 const png =
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aL1kAAAAASUVORK5CYII='
 
+it('reuses available answer files without replacing the draft and rejects stale or foreign files atomically', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const { store, attachments } = runtime.services
+  store.update(() => f.workspace)
+  const makeTask = () =>
+    runtime.services.tasks.create({
+      title: 'Reuse answers',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: '',
+    })
+  const task = makeTask()
+  const other = makeTask()
+  const upload = (taskId: string) =>
+    attachments.upload({
+      taskId,
+      id: randomUUID(),
+      name: 'notes.txt',
+      data: Buffer.from('notes').toString('base64'),
+      detached: true,
+    })
+  const first = (await upload(task.id)).attachment
+  const foreign = (await upload(other.id)).attachment
+  store.updateTask(task.id, (task) => ({ ...task, draft: 'Keep this unsent text' }))
+  const oldGuard = attachments.draftUploadGuard(task.id)
+  store.updateTask(task.id, (task) => ({ ...task, draft: 'Keep this newer unsent text' }))
+  expect(() => attachments.reuseInDraft(task.id, [first.id], oldGuard)).toThrow('draft changed')
+  const guard = attachments.draftUploadGuard(task.id)
+  expect(() => attachments.reuseInDraft(task.id, [first.id, foreign.id], guard)).toThrow(
+    'another task',
+  )
+  expect(() => attachments.reuseInDraft(task.id, [first.id, randomUUID()], guard)).toThrow(
+    'not found',
+  )
+  expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+  const response = await fetch(`http://127.0.0.1:${runtime.port}/api/attachments/reuse-draft`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ taskId: task.id, ids: [first.id], guard }),
+  })
+  expect(response.status).toBe(200)
+  expect(store.task(task.id).draft).toBe('Keep this newer unsent text')
+  expect(store.task(task.id).draftAttachments).toEqual([first])
+  attachments.reuseInDraft(task.id, [first.id], attachments.draftUploadGuard(task.id))
+  expect(store.task(task.id).draftAttachments).toEqual([first])
+  store.updateTask(task.id, (task) => ({ ...task, archivedAt: new Date().toISOString() }))
+  expect(() => attachments.reuseInDraft(task.id, [first.id], guard)).toThrow('Restore the task')
+})
+
 it('commits recoverable uploads and bound receipts together, including concurrent replay', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)

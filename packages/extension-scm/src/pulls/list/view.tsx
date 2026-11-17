@@ -1,4 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { savedFilterScope } from '@dovo/protocol'
+import { SavedFilterViews } from '../../saved-filter-views'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
 import {
@@ -199,6 +201,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const handledLink = useRef('')
   const previousTarget = useRef({ entityId, pullTarget })
   useEffect(() => {
+    if (entityId?.startsWith('saved-view:')) return
     const previous = previousTarget.current
     previousTarget.current = { entityId, pullTarget }
     const navigation = JSON.stringify([entityId, pullTarget, navigationKey])
@@ -389,6 +392,25 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </Button>
             </PageHeader>
             <div className="shrink-0 border-b border-border/70 px-3 py-2">
+              <SavedFilterViews
+                kind="pulls"
+                scope={savedFilterScope(
+                  runtimes.map(({ profile }) => JSON.stringify([profile.id, profile.connection])),
+                )}
+                sources={sources.map((source) => ({ key: source.key, identity: source.scope }))}
+                requestedId={entityId}
+                value={{ source: repositoryId, state, search, draft, attention, sort, personal }}
+                onApply={(value) => {
+                  setRepository(value.source)
+                  setState(value.state)
+                  setSearch(value.search)
+                  setDraft(value.draft ?? 'all')
+                  setAttention(value.attention ?? false)
+                  setSort(value.sort)
+                  setPersonal(value.personal ?? 'all')
+                  setMarked([])
+                }}
+              />
               <SearchField
                 inputRef={searchInput}
                 aria-label="Search pull requests"

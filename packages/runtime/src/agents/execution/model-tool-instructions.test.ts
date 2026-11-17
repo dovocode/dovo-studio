@@ -123,6 +123,8 @@ it('selects one PR policy and preserves opt-outs, manual merge and remaining wor
   // Bound functional guidance below the original 9233-character full profile. Not a token estimate.
   const code = automatic.split('\n\n').find((line) => line.startsWith('Code mode:')) ?? ''
   expect(code).toContain('Every call keeps access and approval checks.')
+  expect(code).toContain('prefer dovo_task code')
+  expect(code).toContain('Direct tool calls and native file/shell tools are also allowed')
   expect(code.length).toBeLessThan(700)
   const vision = automatic.split('\n\n').find((line) => line.startsWith('Local vision:')) ?? ''
   expect(vision.length).toBeLessThan(600)

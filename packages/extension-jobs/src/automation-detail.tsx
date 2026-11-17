@@ -25,7 +25,7 @@ import { newNode, validateGraph } from './graph'
 import { useAutomation } from './use-automation'
 import { useJobActions } from './use-job-actions'
 import { RunDetails } from './run-details'
-import { RoutineHistory, useRoutineProvenance } from './routine-provenance'
+import { AutomaticPauseSource, RoutineHistory, useRoutineProvenance } from './routine-provenance'
 export function AutomationDetail({
   automationId,
   onBack,
@@ -111,6 +111,7 @@ export function AutomationDetail({
   )
   return (
     <section className="flex h-full min-h-0 min-w-0 flex-col">
+      <AutomaticPauseSource state={provenance} enabled={flow?.enabled} />
       <PageHeader
         title={flow?.name ?? 'Automation unavailable'}
         description={

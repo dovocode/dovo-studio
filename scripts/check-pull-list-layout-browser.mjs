@@ -10,13 +10,14 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const ui = root + 'packages/studio-ui/src/'
 const mobile = root + 'apps/mobile/src/'
 const data = `
-window.prPreferences={pullProjectVisibility:{}};window.sources=['mac','backup'].map(id=>({key:id,scope:id,runtimeId:id,runtimeName:id==='mac'?'Mac Studio':'MacBook',computerName:id==='mac'?'Mac Studio':'MacBook',connected:true,repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id,connection:{address:'http://'+id,token:'paired'}}}));
+window.prPreferences={pullProjectVisibility:{},savedFilterViews:[]};window.sources=['mac','backup'].map(id=>({key:id,scope:id,runtimeId:id,runtimeName:id==='mac'?'Mac Studio':'MacBook',computerName:id==='mac'?'Mac Studio':'MacBook',connected:true,repository:{id:'repo',name:'Dovo Studio',path:'/repo'},profile:{id,connection:{address:'http://'+id,token:'paired'}}}));
 const base={state:'open',draft:false,author:'Dominic',updatedAt:'2026-10-23T12:00:00Z',head:'feature',base:'main',labels:['ui'],additions:24,deletions:8,commentCount:3,viewerIsAuthor:true};
 window.pulls=[{...base,number:1,title:'Fix connection',head:'fix/runtime-reconnection-and-queued-thread-continuity-with-a-long-qualified-branch',base:'feature/preserve-active-thread-context',checksState:'FAILURE',reviewDecision:'CHANGES_REQUESTED',viewerReviewRequested:true,labels:['runtime','needs-review','ui'],stack:{position:2,size:3,rootNumber:6,parentNumber:6,complete:true}},{...base,number:2,title:'Ready to ship',head:'patch/focus',checksState:'SUCCESS',reviewDecision:'APPROVED'},{...base,number:3,title:'Draft feature',draft:true,head:'feature/long-project-selection-state-when-the-runtime-reconnects'},{...base,number:4,title:'Waiting for checks',checksState:'PENDING'},{...base,number:5,title:'Shipped change',state:'merged'}].map(pull=>({...pull,url:'https://github.com/team/studio/pull/'+pull.number}));
 window.pages=()=>window.sources.map((source,index)=>({source,reader:source,error:window.sourceErrors?.[source.key],pulls:window.emptySources?.includes(source.key)?[]:index?window.pulls.slice(0,2).map(pull=>({...pull,url:pull.url+'/'})):window.pulls,runtimeId:source.runtimeId,runtimeName:source.runtimeName,sourceKey:source.key,connected:source.connected,readConnected:source.connected,repositoryId:'repo',name:source.repository.name}));
 window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied.push(value)}});
 `
 const native = `
+export const Field=({label,value,onChangeText,...props})=><label>{label}<input value={value} onChange={e=>onChangeText(e.target.value)} {...props}/></label>;
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
 const nativeStyle=style=>{const result={...flat(style)};for(const[key,axes]of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};return Object.fromEntries(Object.entries(result).filter(([,value])=>value!==undefined))};
 export const View=({children,style,accessibilityLabel})=><div aria-label={accessibilityLabel} style={{display:'flex',flexDirection:'column',minWidth:0,...nativeStyle(style)}}>{children}</div>;
@@ -36,7 +37,7 @@ async function bundle(isMobile) {
   const mocks = isMobile
     ? {
         'react-native': native,
-        '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>window.prPreferences;export const updateMobilePreferences=changes=>{window.prPreferences={...window.prPreferences,...changes};window.render()};`,
+        '../runtime/preferences/app-preferences': `export const readMobilePreferences=()=>window.prPreferences;export const useMobilePreferences=readMobilePreferences;export const retryMobilePreferences=()=>true;export const updateMobilePreferences=changes=>{window.prPreferences={...window.prPreferences,...changes};window.render()};`,
         'expo-router': `export const router={push:href=>window.opened=href};`,
         '../../../ui/content/markdown': `export const Markdown=()=>null;`,
         '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
@@ -44,7 +45,7 @@ async function bundle(isMobile) {
         '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../shell/source-route': `export const pullHref=(runtime,repo,number)=>'/'+runtime+'/pull/'+number;`,
         '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key},chooseSource:async()=>{}});`,
-        '../runtime/state/collection-sources': `export const collectionSources=()=>window.sources;`,
+        '../runtime/state/collection-sources': `export {projectContentIdentity} from '${mobile}runtime/state/collection-sources.ts';export const collectionSources=()=>window.sources;`,
         '../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../scm/pulls/list/add-to-thread': `export const AddPullsToThread=()=>null;`,
         '../scm/pulls/list/create-pull': `export const CreatePull=()=>null;`,
@@ -75,7 +76,7 @@ async function bundle(isMobile) {
       }
     : {
         '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-        '@dovo/studio-core': `export const useAppPreferences=()=>window.prPreferences;export const updateAppPreferences=changes=>{window.prPreferences={...window.prPreferences,...changes};window.render()};export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:target=>window.opened=target});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:window.sources.map(source=>({profile:source.profile})),workspace:{repositories:[],tasks:[]}});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';export const formatDateTime=value=>'Oct 23';`,
+        '@dovo/studio-core': `export const readAppPreferences=()=>window.prPreferences;export const useAppPreferences=readAppPreferences;export const updateAppPreferences=changes=>{window.prPreferences={...window.prPreferences,...changes};window.render()};export * from '@dovo/protocol';export const useStudioHost=()=>({navigate:target=>window.opened=target});export const useWorkspace=()=>({activeRuntimeId:'mac',runtimes:window.sources.map(source=>({profile:source.profile})),workspace:{repositories:[],tasks:[]}});export const WorkspaceRuntimeScope=({children})=>children;export const repositorySourceKey=()=>'';export const formatDateTime=value=>'Oct 23';`,
         '@dovo/studio-ui': `export const MessageResponse=()=>null;export {PageHeader} from '${ui}page-header';export * from '${ui}sidebar-header';export {Button} from '${ui}components/ui/button';export {Input} from '${ui}components/ui/input';export {Badge} from '${ui}components/ui/badge';export {Disclosure} from '${ui}disclosure';export * from '${ui}components/ui/dialog';export {ChoicePicker} from '${ui}choice-picker';export * as ContextMenu from '@radix-ui/react-context-menu';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';`,
         './use-pulls': `export const usePulls=()=>({sources:window.sources,pages:window.pages(),busy:!!window.refreshing,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key}});`,
         './add-to-thread': `export const AddPullsToThread=()=>null;`,

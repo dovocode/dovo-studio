@@ -1,3 +1,4 @@
+import { matchesApplicationShortcut } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botScope } from './bots/bot-scope'
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
@@ -965,21 +966,27 @@ export default function TasksView({
       if (e.defaultPrevented || e.isComposing || e.repeat) return
       if (
         e.target instanceof Element &&
+        e.target.closest('.xterm, [data-terminal], .cm-editor, .monaco-editor')
+      )
+        return
+      if (
+        e.target instanceof Element &&
         e.target.closest('[role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"]')
       )
         return
       const current = shortcuts.current
       const mod = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.metaKey
-      const key = e.key.toLowerCase()
+      const match = (id: Parameters<typeof matchesApplicationShortcut>[1]) =>
+        matchesApplicationShortcut(e, id, readAppPreferences().shortcutOverrides, mac)
       const run = (action: () => void) => {
         e.preventDefault()
         action()
       }
-      if (e.ctrlKey && !e.altKey && !e.metaKey && e.key === '`') return run(current.toggleTerminal)
+      if (match('terminal')) return run(current.toggleTerminal)
       // ⌘P jumps to a task; ⌘⇧F searches every conversation.
-      if (mod && !e.altKey && !e.shiftKey && key === 'p') return run(() => setSearching('tasks'))
-      if (mod && !e.altKey && e.shiftKey && key === 'f') return run(() => setSearching('messages'))
-      if (mod && !e.altKey && !e.shiftKey && key === 'f' && current.task)
+      if (match('goToThread')) return run(() => setSearching('tasks'))
+      if (match('searchAll')) return run(() => setSearching('messages'))
+      if (match('searchThread') && current.task)
         return run(() => {
           const focusedThread =
             e.target instanceof Element
@@ -990,10 +997,9 @@ export default function TasksView({
           window.dispatchEvent(new CustomEvent('dovo:search-thread', { detail: id }))
         })
       // ⌘\ (Ctrl+\ elsewhere) closes the side-by-side task.
-      if (mod && !e.altKey && !e.shiftKey && e.key === '\\' && current.split)
-        return run(() => current.closeSplit())
+      if (match('closeSplit') && current.split) return run(() => current.closeSplit())
       // ⌘; (Ctrl+; elsewhere) asks a side question about the open task.
-      if (mod && !e.altKey && !e.shiftKey && e.key === ';' && current.task)
+      if (match('sideQuestion') && current.task)
         return run(() => {
           const focusedThread =
             e.target instanceof Element
@@ -1005,9 +1011,9 @@ export default function TasksView({
           })
           if (window.dispatchEvent(event)) current.selectSurface('side-chats', true)
         })
-      if (mod && !e.altKey && !e.shiftKey && key === 'n') return run(() => current.newThread())
+      if (match('newThread')) return run(() => current.newThread())
       // Ctrl+O cycles how much of each turn shows: folded steps, every step, replies only.
-      if (e.ctrlKey && !e.metaKey && !e.altKey && !e.shiftKey && key === 'o')
+      if (match('toolActivity'))
         return run(() => {
           const next = (
             { collapsed: 'expanded', expanded: 'hidden', hidden: 'collapsed' } as const
@@ -1021,7 +1027,7 @@ export default function TasksView({
                 : 'Showing folded steps',
           )
         })
-      if (mod && !e.altKey && e.shiftKey && key === 'd')
+      if (match('changes'))
         return run(() =>
           current.selectSurface(current.surface === 'changes' ? 'chat' : 'changes', true),
         )

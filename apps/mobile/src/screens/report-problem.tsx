@@ -109,7 +109,18 @@ export default function ReportProblemScreen() {
 
   const preview = async () => {
     if (!target || busy) return
-    const request = problemReportRequest(form, client, errors)
+    const request = problemReportRequest(
+      {
+        ...form,
+        include: {
+          ...form.include,
+          clientTimeline:
+            form.include.clientTimeline && target.snapshot?.problemReportTimelineSupported === true,
+        },
+      },
+      client,
+      errors,
+    )
     if (!request.description) return
     setBusy(true)
     setError('')
@@ -303,6 +314,16 @@ export default function ReportProblemScreen() {
                   setForm({ ...form, include: { ...form.include, clientErrors } })
                 }
               />
+              {snapshot?.problemReportTimelineSupported && (
+                <SettingsSwitchRow
+                  label={uiText('Recent app actions')}
+                  value={form.include.clientTimeline === true}
+                  disabled={locked}
+                  onValueChange={(clientTimeline) =>
+                    setForm({ ...form, include: { ...form.include, clientTimeline } })
+                  }
+                />
+              )}
             </SettingsGroup>
           </>
         )}

@@ -113,6 +113,7 @@ import {createContext,createElement,useContext,useState,useSyncExternalStore} fr
 import {resolveSettingsTarget,decode,browserCommandSchema} from '@dovo/protocol';
 import {Effect} from 'effect';
 export * from '@dovo/protocol';
+export * from '${root}packages/studio-core/src/shortcuts.ts';
 export {ConfirmationContext,useConfirmation} from '${root}packages/studio-core/src/confirmation.tsx';
 export {useSecretReferenceCheck} from '${root}packages/studio-core/src/use-secret-reference-check';
 export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '${root}packages/studio-core/src/workspace/composer-recovery.ts';
@@ -157,11 +158,11 @@ const frameListeners=new Map();window.frameSubscriptions=()=>[...frameListeners.
 window.studioCommands=new Map();const registerCommand=command=>{window.studioCommands.set(command.id,command);return ()=>window.studioCommands.delete(command.id)};
 const HostContext=createContext(null);export const StudioHostProvider=({api,children})=>createElement(HostContext.Provider,{value:api},children);
 export const useStudioHost=()=>useContext(HostContext)||({registerCommand,browser,browserFrames,browserExtensions,onBrowserWorkspaceFocus,onBrowserContextAction:listener=>{window.contextListeners.add(listener);return ()=>window.contextListeners.delete(listener)},browserPageOnly:!!window.fixturePageOnly,browserWindowId:window.fixtureThreadWindow||window.testMainDraft||window.fixtureGate||(window.fixtureHeader&&!window.fixtureDetached)?undefined:'main',threadWindow:!!window.fixtureThreadWindow,navigate:(target,options)=>{window.calls.push({navigate:target,options});if(window.unmountOnDetach&&target.viewId==='tasks'){window.fixtureNavigatedAway=true;window.renderBrowser()}},openBrowserWindow:async()=>{window.calls.push({openBrowserWindow:true})},openThread:target=>window.calls.push({openThread:target})});
-const preferenceListeners=new Set();let appPreferences={browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
+const preferenceListeners=new Set();let appPreferences={shortcutOverrides:{},savedFilterViews:[],browserWorkspaceEnabled:false,browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{},browserAutoSettleMinutes:0,browserCloseSettledMinutes:0};window.setCleanup=change=>{appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};
 window.setExperimental=enabled=>{appPreferences={...appPreferences,browserWorkspaceEnabled:enabled};for(const listener of preferenceListeners)listener()};
 export const useAppPreferences=()=>useSyncExternalStore(listener=>{preferenceListeners.add(listener);return ()=>preferenceListeners.delete(listener)},()=>appPreferences);
 export {useRemoteBrowserProfiles} from '${root}packages/studio-core/src/browser-profiles.ts';
-export const defaultAppPreferences={browserSidebarWidth:224,toolsSidebarWidth:440};export const readAppPreferences=()=>({browserViewport:'fill',browserSidebarWidth:224,toolsSidebarWidth:440});
+export const defaultAppPreferences={browserSidebarWidth:224,toolsSidebarWidth:440};export const readAppPreferences=()=>({...appPreferences,browserViewport:'fill',browserSidebarWidth:224,toolsSidebarWidth:440});
 window.preferences=[];export const updateAppPreferences=change=>{window.preferences.push(change);appPreferences={...appPreferences,...change};for(const listener of preferenceListeners)listener()};const polls=new Set();window.pollBrowser=async()=>{for(const poll of [...polls])await Effect.runPromise(poll)};export const startPolling=poll=>{polls.add(poll);return {refresh:()=>{void Effect.runPromise(poll)},stop:async()=>{polls.delete(poll)}}};
 `,
         }))

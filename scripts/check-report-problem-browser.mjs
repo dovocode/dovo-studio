@@ -126,7 +126,7 @@ try {
   )
   assert.equal(await page.locator('[data-agent]').textContent(), 'codex')
   const checkboxes = page.getByRole('checkbox')
-  assert.equal(await checkboxes.count(), 3)
+  assert.equal(await checkboxes.count(), 4)
   for (const box of await checkboxes.all())
     assert.equal(await box.getAttribute('aria-checked'), 'true')
 
@@ -155,8 +155,10 @@ try {
     versions: true,
     diagnostics: true,
     clientErrors: false,
+    clientTimeline: true,
   })
   assert.deepEqual(previewCall.input.clientErrors, [])
+  assert.match(file, /Recent client actions/)
 
   // Edit keeps the form, and a new preview reflects the change.
   await page.getByRole('button', { name: 'Edit report', exact: true }).click()

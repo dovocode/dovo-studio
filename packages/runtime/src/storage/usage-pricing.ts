@@ -6,6 +6,7 @@ import {
   usagePriceSchema,
   type UsagePrice,
   type UsageRecord,
+  type Agent,
 } from '@dovo/protocol'
 import { estimatedTurnCost } from '../agents/tasks/estimated-cost.js'
 const documentSchema = mutableStruct({
@@ -102,6 +103,19 @@ export class UsagePricing {
     } finally {
       this.pending = undefined
     }
+  }
+  /** Explicit zero prices count as known. Missing prices never mean free usage. */
+  canPrice(provider: Agent['provider'], model: string) {
+    const prefix = provider === 'codex' ? 'openai' : provider === 'claude' ? 'anthropic' : undefined
+    return (
+      !!(
+        this.overrides[model] ??
+        this.rates[model] ??
+        (prefix ? this.rates[`${prefix}/${model}`] : undefined)
+      ) ||
+      estimatedTurnCost(provider, model, { input: 1, output: 1, cacheRead: 1, cacheWrite: 1 }) !==
+        undefined
+    )
   }
   price(record: UsageRecord): UsageRecord {
     const turn = record.turn

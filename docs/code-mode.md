@@ -4,6 +4,10 @@ Studio exposes `dovo_task code` to providers that support its MCP tools. It runs
 a fresh QuickJS heap. Scripts can discover schemas, combine calls, filter results and return
 selected output.
 
+Agents should prefer code mode for batches and large results. Direct tool calls and native file or
+shell tools remain allowed when the provider offers them. Code mode is a choice for each task. It
+does not change access or approval rules.
+
 ```js
 const catalog = await tools.search({ source: 'harness', query: 'file' })
 print(catalog)
@@ -83,3 +87,13 @@ current state before retrying a mutation. Await calls whose results matter.
 pnpm --filter @dovo/runtime build
 pnpm exec vp test packages/runtime/src/agent-tools/code-runtime.test.ts packages/runtime/src/agent-tools/code-dispatch.test.ts packages/runtime/src/agent-tools/code-mode.test.ts packages/runtime/src/mcp-apps/bridge.test.ts --maxWorkers=3
 ```
+
+## Claude proxies and UTCP
+
+Claude uses the same Dovo runner through its local MCP connection when its model requests go through
+a proxy. The proxy does not execute the script or receive local MCP credentials. See
+[Claude proxy setup](agent-providers.md#claude-through-a-proxy).
+
+[UTCP code-mode](https://github.com/universal-tool-calling-protocol/code-mode) also supports typed
+tool discovery and composed JavaScript calls. Dovo keeps its existing QuickJS runner and checked
+tool namespaces. No UTCP dependency is required. Native tools remain available alongside code mode.

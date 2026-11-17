@@ -37,11 +37,11 @@ async function bundle(isMobile) {
         '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
         '../../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
         '../../../runtime/state/app-active': `export const useForegroundInterval=()=>{};`,
-        '../../runtime/connection/provider': `export const RuntimeScope=({children})=>children;export const useRuntime=()=>({activeId:'mac',overviews:[{connected:true}]});`,
+        '../../runtime/connection/provider': `export const RuntimeScope=({children})=>children;export const useRuntime=()=>({activeId:'mac',overviews:window.sources.map(source=>({profile:source.profile,connected:source.connected}))});`,
         '../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../../../shell/navigation': `export const useNavigation=()=>({focused:true});`,
         '../../shell/source-route': `export const backToCollection=()=>{};export const issueHref=()=>'/issue';export const jiraIssueHref=()=>'/jira';export const pipelineHref=(runtime,repo,id)=>'/pipeline/'+id;`,
-        './work-sources': `export const jiraSourceKey=()=>'';export const workSources=()=>window.sources;export const workSourceName=source=>source.name;export const workSourceContentIdentity=source=>source.key;export const workSourceInput=()=>({});`,
+        './work-sources': `export const jiraSourceKey=()=>'';export const workSources=()=>window.sources;export const workSourceName=source=>source.name;export const workSourceContentIdentity=source=>JSON.stringify([source.key,source.profile.connection]);export const workSourceInput=()=>({});`,
         './use-work-collection': `export const useWorkCollection=(mode,id,state,query,filters,sha)=>{window.readStates.push(state);window.readCommits.push(sha);window.lastFilters=filters;return {pages:window.sources.map(source=>({source,items:window.runs,stale:!source.connected,options:{provider:'github'},next:'page2'})),busy:window.refreshing,refresh:window.refreshWork,more:async()=>{window.runs.push({...window.runs[3],id:'more',title:'Earlier release'});window.render()}}};`,
         '../../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
         '../connections/jira-binding': `export const JiraProjectForm=()=>null;`,
@@ -78,11 +78,13 @@ async function bundle(isMobile) {
         '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
         '../connections/source-picker': `export const SourcePicker=()=>null;`,
       }
+  mocks['../saved-filter-views'] =
+    `export const SavedFilterViews=({onApply})=>{window.applySavedView=onApply;return null};`
   return build({
     stdin: {
       resolveDir: root,
       loader: 'tsx',
-      contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';${isMobile ? `import {WorkScreen} from '${mobile}scm/work/work';` : `import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/work-view';`} ${data} const root=createRoot(document.getElementById('app'));function App(){const[revision,setRevision]=useState(0);window.render=()=>setRevision(value=>value+1);return ${isMobile ? '<WorkScreen mode={window.mode??"pipelines"} repositoryId="repo" commitSha="head"/>' : 'window.mode==="issues"?<IssuesView/>:<PipelinesView/>'}}root.render(<App/>);`,
+      contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';${isMobile ? `import {WorkScreen} from '${mobile}scm/work/work';` : `import IssuesView,{PipelinesView} from '${root}packages/extension-scm/src/work/work-view';`} ${data} const root=createRoot(document.getElementById('app'));function App(){const[revision,setRevision]=useState(0);const[repositoryId,setRepository]=useState('repo');window.chooseSource=setRepository;window.render=()=>setRevision(value=>value+1);return ${isMobile ? '<WorkScreen mode={window.mode??"pipelines"} repositoryId={repositoryId} onRepositoryChange={id=>{if(!window.deferSourceChange)setRepository(id)}} commitSha="head"/>' : 'window.mode==="issues"?<IssuesView/>:<PipelinesView/>'}}root.render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -446,6 +448,68 @@ try {
         assert.deepEqual(
           await rows.evaluateAll((nodes) => nodes.map((node) => node.dataset.testid)),
           ['Work item TEAM-1', 'Work item TEAM-8', 'Work item TEAM-3', 'Work item TEAM-4'],
+        )
+        await page.evaluate(() => {
+          const first = window.sources[0]
+          window.sources.push({
+            ...first,
+            key: 'repo-b',
+            kind: 'repository',
+            repository: { ...first.repository, id: 'repo-b' },
+            profile: {
+              ...first.profile,
+              connection: { address: 'http://second', token: 'second-account' },
+            },
+          })
+          window.render()
+        })
+        await page.evaluate(() =>
+          window.applySavedView({
+            source: 'repo-b',
+            search: 'Saved second source',
+            state: 'closed',
+            sort: 'title',
+          }),
+        )
+        await page.waitForFunction(
+          () =>
+            document.querySelector('input[aria-label="Search issues"]')?.value ===
+            'Saved second source',
+        )
+        assert.equal(await page.evaluate(() => window.readStates.at(-1)), 'closed')
+        await page.evaluate(() => window.chooseSource('repo'))
+        await page.waitForFunction(
+          () => document.querySelector('input[aria-label="Search issues"]')?.value === '',
+        )
+        await page.evaluate(() => window.chooseSource('repo-b'))
+        await page.waitForFunction(
+          () =>
+            document.querySelector('input[aria-label="Search issues"]')?.value ===
+            'Saved second source',
+        )
+        await page.evaluate(() => window.chooseSource('repo'))
+        await page.waitForFunction(
+          () => document.querySelector('input[aria-label="Search issues"]')?.value === '',
+        )
+        await page.evaluate(() => {
+          window.deferSourceChange = true
+          window.applySavedView({
+            source: 'repo-b',
+            search: 'Must not cross accounts',
+            state: 'closed',
+            sort: 'title',
+          })
+          window.sources[1].profile = {
+            ...window.sources[1].profile,
+            connection: { address: 'http://second', token: 'replacement-account' },
+          }
+          window.chooseSource('repo-b')
+          window.render()
+        })
+        await page.waitForFunction(() => window.readStates.at(-1) === 'all')
+        assert.equal(
+          await page.getByRole('textbox', { name: 'Search issues', exact: true }).inputValue(),
+          '',
         )
         assert.deepEqual(errors, [])
       }

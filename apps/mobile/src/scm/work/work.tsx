@@ -1,4 +1,6 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
+import { savedFilterScope, savedFilterSourceScope, type SavedFilterValues } from '@dovo/protocol'
+import { SavedFilterViews } from '../saved-filter-views'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pipelineSignal,
@@ -121,6 +123,43 @@ export function WorkScreen({
   const setSort = (value: string) => setField('sort', value)
   const state = jiraOnly ? jiraState : nativeState
   const setState = jiraOnly ? setJiraState : setNativeState
+  const savedViewScope = savedFilterScope(
+    overviews.map(({ profile }) => JSON.stringify([profile.id, profile.connection])),
+  )
+  const savedViewSources = sources.map((source) => ({
+    key: source.key,
+    identity: workSourceContentIdentity(source),
+  }))
+  const viewScope = (source: string) =>
+    source ? savedFilterSourceScope(source, savedViewSources) : savedViewScope
+  const currentViewScope = viewScope(repositoryId)
+  const pendingView = useRef<{ filters: SavedFilterValues; scope: string } | null>(null)
+  useEffect(() => {
+    const pending = pendingView.current
+    if (!pending || pending.filters.source !== repositoryId) return
+    pendingView.current = null
+    if (pending.scope !== currentViewScope) return
+    const value = pending.filters
+    setSearch(value.search)
+    setState(value.state)
+    setSort(value.sort)
+    setJiraFilters(value.jiraFilters ?? {})
+    setLayout(value.layout === 'status' ? 'status' : 'list')
+  }, [repositoryId, currentViewScope])
+  const applySavedView = (value: SavedFilterValues) => {
+    if (value.source !== repositoryId) {
+      const scope = viewScope(value.source)
+      if (!scope) return
+      pendingView.current = { filters: value, scope }
+      onRepositoryChange?.(value.source)
+      return
+    }
+    setSearch(value.search)
+    setState(value.state)
+    setSort(value.sort)
+    setJiraFilters(value.jiraFilters ?? {})
+    setLayout(value.layout === 'status' ? 'status' : 'list')
+  }
   const query = useDeferredValue(search)
   const [serverQuery, setServerQuery] = useApplicationState('')
   useEffect(() => {
@@ -336,6 +375,15 @@ export function WorkScreen({
               paddingBottom: 4,
             }}
           >
+            {mode === 'issues' && (
+              <SavedFilterViews
+                kind="issues"
+                scope={savedViewScope}
+                sources={savedViewSources}
+                value={{ source: repositoryId, search, state, sort, jiraFilters, layout }}
+                onApply={applySavedView}
+              />
+            )}
             <SearchField
               label={uiText('Search {value0}', { value0: mode })}
               value={search}

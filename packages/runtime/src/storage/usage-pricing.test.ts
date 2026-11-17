@@ -62,3 +62,31 @@ it('accepts explicit zero prices, decimal commas and blank cache fallback', () =
     usagePriceInput({ input: '-1', output: '0', cacheRead: '', cacheWrite: '' }),
   ).toBeUndefined()
 })
+
+it('distinguishes a missing model price from an explicit free price, including after restart', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const pricing = new UsagePricing(db)
+    expect(pricing.canPrice('codex', 'unknown-private-model')).toBe(false)
+    expect(
+      pricing.price({ ...record, turn: { ...record.turn, model: 'unknown-private-model' } }).turn
+        .estimatedCostUsd,
+    ).toBeUndefined()
+    pricing.setOverride('unknown-private-model', {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    })
+    const reopened = new UsagePricing(db)
+    expect(reopened.canPrice('codex', 'unknown-private-model')).toBe(true)
+    expect(
+      reopened.price({ ...record, turn: { ...record.turn, model: 'unknown-private-model' } }).turn
+        .estimatedCostUsd,
+    ).toBe(0)
+    reopened.setOverride('unknown-private-model', undefined)
+    expect(reopened.canPrice('codex', 'unknown-private-model')).toBe(false)
+  } finally {
+    db.close()
+  }
+})

@@ -9,6 +9,7 @@ import { decodeResult, ValidationError } from './schema.js'
 import type { RuntimeConnection } from '../runtime/connection/runtime.js'
 import { runtimeRequestTimeout } from './request-timeout.js'
 import { runtimeUrl } from './runtime-url.js'
+import { clientRequestCategory, recordClientAction } from './client-diagnostics.js'
 export { runtimeRequestTimeout } from './request-timeout.js'
 import { snapshotResponseCache } from '../runtime/cache/snapshot-memory-cache.js'
 export { clearRuntimeRequestCache } from '../runtime/cache/snapshot-memory-cache.js'
@@ -111,6 +112,47 @@ export const runtimeResponseAddress = (value: object) => responseAddresses.get(v
  * GET and allowlisted POST reads and ID-deduplicated sends retry within the same deadline;
  * other mutations never retry. */
 export function runtimeRequestEffect<T extends Schema.Codec<unknown, unknown>>(
+  connection: RuntimeConnection | null,
+  address: string,
+  path: string,
+  input: unknown,
+  schema: T,
+  method = 'POST',
+  timeoutMs?: number,
+  options?: RuntimeRequestOptions,
+): Effect.Effect<T['Type'], RuntimeRequestError | ValidationError> {
+  return Effect.suspend(() => {
+    const started = Date.now()
+    const category = clientRequestCategory(path)
+    recordClientAction('request-start', category)
+    return runtimeRequestTransportEffect(
+      connection,
+      address,
+      path,
+      input,
+      schema,
+      method,
+      timeoutMs,
+      options,
+    ).pipe(
+      Effect.tap(() =>
+        Effect.sync(() =>
+          recordClientAction('request-complete', category, { durationMs: Date.now() - started }),
+        ),
+      ),
+      Effect.tapError((error) =>
+        Effect.sync(() =>
+          recordClientAction('request-failed', category, {
+            durationMs: Date.now() - started,
+            ...(error instanceof RuntimeRequestError ? { status: error.status } : {}),
+          }),
+        ),
+      ),
+    )
+  })
+}
+
+function runtimeRequestTransportEffect<T extends Schema.Codec<unknown, unknown>>(
   connection: RuntimeConnection | null,
   address: string,
   path: string,

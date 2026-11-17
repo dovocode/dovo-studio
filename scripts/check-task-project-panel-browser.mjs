@@ -11,7 +11,7 @@ const mocks = {
   // Snapshot previews have their own browser suite; this fixture exercises thread navigation.
   '../../detail/side-thread-changes': 'export const ReviewSideThreadChangesButton=()=>null;',
   '@dovo/studio-core/state': `import {useState,useRef} from 'react';export const useApplicationState=useState;`,
-  '@dovo/studio-core': `export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
+  '@dovo/studio-core': `export * from '../studio-core/src/shortcuts';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;
     export * from '@dovo/protocol';
     export {useTaskWaiting} from '../studio-core/src/use-task-waiting';
     export const updateTask=async()=>{};
@@ -81,7 +81,7 @@ const built = await build({
     import {Popover} from '@dovo/studio-ui';
     import {TaskTools} from '../extension-tasks/src/detail/task-tools';
     import {TaskLinkedPullPanel} from '../extension-tasks/src/detail/task-linked-pull-panel';
-    window.gitState={branch:'fix/reconnection',dirty:true,ahead:0,behind:0,tracking:true,canPush:true};window.setGitState=state=>{window.gitState={branch:'fix/reconnection',...state};document.dispatchEvent(new Event('visibilitychange'))};window.preferences={confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
+    window.gitState={branch:'fix/reconnection',dirty:true,ahead:0,behind:0,tracking:true,canPush:true};window.setGitState=state=>{window.gitState={branch:'fix/reconnection',...state};document.dispatchEvent(new Event('visibilitychange'))};window.preferences={shortcutOverrides:{},savedFilterViews:[],confirmDelete:true,confirmUnpin:false,threadInfoSections:{}};window.calls=[];window.clientOpens=[];window.host={repositoryOpener:{open:async input=>window.clientOpens.push(input)},appInfo:{version:'0.0.9',channel:'nightly'},navigate:target=>window.navigation=target,openExternalLink:url=>window.opened=url,openThread:target=>window.openedThread=target};
     const repo={id:'repo',name:'Project',path:'/project',branch:'main'};
     const root=createRoot(document.getElementById('app'));
     let initial={id:'thread',title:'Fix reconnection',repositoryId:'repo',agentId:'',status:'done',createdAt:'2026-10-14',messages:[],files:[{path:'connection.ts',before:'old connection\\nremove timeout\\n',after:'new connection\\nrestore session\\nhandle network switch\\n'}],draft:'',example:false,harness:{provider:'codex',model:'gpt-6.1-sol',reasoning:'medium',permission:'full-access',instructions:'',endpoint:''},execution:'worktree',checkoutBranch:'fix/reconnection',turns:[],linkedPullRequests:[{number:7,url:'https://github.com/test/project/pull/7',repositoryUrl:'https://github.com/test/project',title:'Fix iOS reconnection across Wi-Fi switches'},{number:9,url:'https://github.com/test/project/pull/9',repositoryUrl:'https://github.com/test/project',title:'Preserve the runtime session'}],pullStatus:{number:7,url:'https://github.com/test/project/pull/7',state:'open',checks:'passed',checkedAt:''}};

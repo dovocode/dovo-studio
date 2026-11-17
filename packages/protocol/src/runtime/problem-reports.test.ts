@@ -30,7 +30,12 @@ it('builds a trimmed request and sends client errors only when included', () => 
   )
   expect(request.description).toBe('Threads stop loading')
   expect(request).not.toHaveProperty('expected')
-  expect(request.include).toEqual({ versions: true, diagnostics: true, clientErrors: true })
+  expect(request.include).toEqual({
+    versions: true,
+    diagnostics: true,
+    clientErrors: true,
+    clientTimeline: true,
+  })
   expect(request.clientErrors).toHaveLength(MAX_PROBLEM_REPORT_CLIENT_ERRORS)
   expect(request.clientErrors.at(-1)?.message).toBe('Error 24')
   expect(decodeResult(problemReportRequestSchema, request).success).toBe(true)

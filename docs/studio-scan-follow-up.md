@@ -347,3 +347,92 @@ pnpm check
 
 The browser fixtures still use scripted transport and native controls where stated by each check.
 They do not complete the open live Bot evaluation or physical-device checks.
+
+## Latest scan implementation
+
+The next scan changes add named PR and issue views, device shortcut overrides, browser modifier
+keys, saved-answer draft reuse, automatic-pause run links and reviewed client action timelines.
+Automation cost checks distinguish unknown prices from explicit free prices. MCP startup errors
+include bounded, redacted stderr. Linear is excluded from this change. A future connection must use
+a suitable CLI or existing integration, as requested.
+
+**Use in draft** appends ordinary saved answers and available files. It preserves existing draft
+text and files. Missing or foreign files stop the action. Saved answers remain until the draft save
+succeeds. Secret questions stay excluded. File reuse needs `questionDraftReuseSupported`. Older
+runtimes can still reuse text and show an update message for files. Local storage failures keep
+recovery data available for retry.
+
+MCP connection tests and bridge startup continuously drain stderr. They retain a bounded tail,
+redact known credentials and terminal control sequences, and show at most 2,000 output characters on
+failure. Successful startup does not add stderr to the conversation. Cleanup still closes the client
+and transport.
+
+Desktop Browser `key` commands accept chords such as `Control+a` and `Meta+Shift+z`. The command
+focuses the selected element before dispatch. It preserves access checks and returns fresh element
+references after input.
+
+### UTCP code-mode review
+
+Reviewed [UTCP code-mode](https://github.com/universal-tool-calling-protocol/code-mode) at
+`e5fdc319bfae1ceec57e7bce37048337635ffb51`. The TypeScript client exposes generated tool interfaces,
+manual namespaces, chained calls and captured logs. Its current source uses `isolated-vm` and a host
+timeout. Tests cover hung tool calls, memory exhaustion and use after failures. The repository has
+an MPL-2.0 license. No source or dependency was copied.
+
+Dovo already has schema discovery, namespaces, parallel calls and filtered results. Keep its QuickJS
+worker, bounded output, cancellation and per-call access checks. Prefer code mode for batching and
+large results. Allow direct tools and native file or shell tools when available. See
+[Code mode](code-mode.md), [saved views](issues-pipelines-jira.md#saved-views),
+[shortcut settings](general-settings.md#application-shortcuts) and
+[cost limits](automations.md#cost-limits-and-automatic-pauses).
+
+### Claude proxy follow-up
+
+The existing Claude Agent SDK adapter already keeps per-agent model proxy settings separate from
+Dovo's local MCP connection. This matches the reviewed T3 arrangement. The follow-up documents
+[Claude proxy setup](agent-providers.md#claude-through-a-proxy) and tests separate endpoints,
+credentials, configuration directories and exact model IDs. Native tools and Dovo code mode remain
+available under the same access checks. Explicit tool-search settings stay unchanged.
+
+UTCP does not need to run at the proxy. Dovo's current runner already handles discovery, composed
+calls and failure recovery. The new checks verify these boundaries without adding another runner.
+The Claude checks mock the SDK. No Claude executable is available on this host, so a live model
+reply through a proxy remains unverified.
+
+### Verification of the latest scan changes
+
+The full local suite reported 8,610 passing tests, 15 skipped tests and seven failures. Six failures
+came from this host's Chromium sandbox in the managed-browser unit tests. The remaining failure used
+an unpriced Bot fixture. It now sets an explicit model price, and all 20 tests in that file pass.
+The pricing, MCP transport and saved-view follow-up batch passed 38 tests. Regression proofs passed
+for resource diagnostics, desktop browser input and automation pricing.
+
+Claude proxy and access checks passed 88 tests. Code-mode checks passed 37 tests. They cover real
+stdio tool calls, contained file access, approval, cancellation, tool failures and later executions.
+Browser checks use Playwright's managed Chromium and mocked app transport or native controls where
+stated by each script. They verify desktop and mobile layouts, saved-view changes and source
+switching, draft preservation, exact pause-run navigation, report controls, shortcut changes and
+older-runtime fallbacks. They do not establish native device behavior or live model-provider
+compatibility.
+
+Run the focused checks from the repository root:
+
+```sh
+pnpm exec playwright install chromium
+pnpm exec vp test packages/runtime/src/agents/providers/claude/claude.test.ts packages/runtime/src/agents/providers/shared/access.test.ts packages/runtime/src/agents/configuration/claude-settings.test.ts packages/runtime/src/agents/configuration/registry.test.ts
+pnpm exec vp test packages/runtime/src/agent-tools/code-runtime.test.ts packages/runtime/src/agent-tools/code-dispatch.test.ts packages/runtime/src/agent-tools/code-mode.test.ts packages/runtime/src/agents/execution/model-tool-instructions.test.ts packages/runtime/src/agents/configuration/resources.test.ts
+node scripts/check-scan-follow-up-browser.mjs
+node scripts/check-composer-recovery-browser.mjs
+node scripts/check-question-attachments-browser.mjs
+node scripts/check-routine-provenance-browser.mjs
+node scripts/check-pipeline-list-browser.mjs
+node scripts/check-report-problem-browser.mjs
+pnpm prove -- packages/runtime/src/agents/configuration/resources.test.ts packages/runtime/src/previews/desktop-browser.test.ts packages/runtime/src/jobs/jobs.test.ts
+pnpm --filter @dovo/runtime typecheck
+pnpm --filter @dovo/extension-tasks typecheck
+pnpm --filter @dovo/desktop build
+pnpm check
+```
+
+The older full live Bot evaluation, physical file delivery and microphone timing checks remain open.
+This change does not push a commit or start another nightly release.
