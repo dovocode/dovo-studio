@@ -1626,6 +1626,9 @@ textarea {
   box-shadow: none;
 }
 .studio-browser-header {
+  /* Glass creates a stacking context. Keep address suggestions above the page. */
+  position: relative;
+  z-index: 1;
   min-width: 0;
   flex: none;
 }

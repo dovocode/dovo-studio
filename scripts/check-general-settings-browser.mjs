@@ -24,6 +24,7 @@ export const useStudioHost=()=>({appInfo:{version:'0.0.7',channel:window.headerS
 const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;
 export const WorkspaceScope=({profile,children})=>{const source=window.sources.find(source=>source.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,...source,snapshot:source.snapshot,workspace:source.snapshot.workspace}}>{children}</Scope.Provider>};`
 const ui = `
+export {startLiquidGlass} from '${root}/packages/studio-ui/src/liquid-glass/controller.ts';
 export * as Popover from '@radix-ui/react-popover';
 export * from '${root}/packages/studio-ui/src/sidebar-header.tsx';
 export * from '${root}/packages/studio-ui/src/components/ui/dialog.tsx';

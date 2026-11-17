@@ -1645,6 +1645,13 @@ try {
   await url.fill('localhost')
   const suggestions = page.getByRole('listbox', { name: 'Address suggestions' })
   await suggestions.waitFor()
+  assert.ok(
+    await suggestions.evaluate((element) => {
+      const rect = element.getBoundingClientRect()
+      return element.contains(document.elementFromPoint(rect.x + rect.width / 2, rect.y + 10))
+    }),
+    'Address suggestions must receive pointer input above the browser page',
+  )
   await nativeAction('hide')
   await page.setViewportSize({ width: 480, height: 800 })
   await page.waitForFunction(

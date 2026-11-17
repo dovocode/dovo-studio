@@ -17,7 +17,7 @@ const stubs = [
   },
   {
     path: 'react-native',
-    contents: `import {useEffect} from 'react';export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};export const View=({children,style,testID,onLayout,accessibilityRole,accessibilityLabel,pointerEvents})=>{useEffect(()=>{if(testID==='PR file controls')onLayout?.({nativeEvent:{layout:{height:88}}})},[testID]);return <div role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel} data-testid={testID} style={{...style,pointerEvents:pointerEvents==='none'?'none':undefined}}>{children}</div>};export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,style})=><button style={{position:'relative',...(typeof style==='function'?style({pressed:false}):style)}} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;export const SectionList=()=>null;export const useWindowDimensions=()=>({height:800});`,
+    contents: `import {useEffect} from 'react';const flat=style=>Array.isArray(style)?Object.assign({},...style.flat(Infinity).filter(Boolean)):style;export const Platform={OS:'ios'};export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};export const View=({children,style,testID,onLayout,accessibilityRole,accessibilityLabel,pointerEvents})=>{useEffect(()=>{if(testID==='PR file controls')onLayout?.({nativeEvent:{layout:{height:88}}})},[testID]);return <div role={accessibilityRole==='image'?'img':undefined} aria-label={accessibilityLabel} data-testid={testID} style={{...flat(style),pointerEvents:pointerEvents==='none'?'none':undefined}}>{children}</div>};export const Pressable=({children,onPress,accessibilityLabel,accessibilityState,style})=><button style={{position:'relative',...flat(typeof style==='function'?style({pressed:false}):style)}} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} onClick={onPress}>{children}</button>;export const SectionList=()=>null;export const useWindowDimensions=()=>({height:800});`,
   },
   {
     path: '../../../ui/content/text',
@@ -66,6 +66,15 @@ const stubs = [
   { path: '../../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null;' },
 ]
 stubs.push(
+  {
+    path: '../theme',
+    importer: `${mobile}/ui/layout`,
+    contents: stubs.find((stub) => stub.path === '../../../ui/theme').contents,
+  },
+  {
+    path: 'expo-glass-effect',
+    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
+  },
   {
     path: 'lucide-react-native',
     contents:

@@ -541,3 +541,47 @@ browser integration tests failed because Chromium reported `No usable sandbox!` 
 failures were in `agent-browser.test.ts`, `browser-do-not-track.test.ts` and
 `browser-session-cookies.test.ts`. Playwright's managed Chromium was installed. The repository check
 passed with zero errors and 36 existing warnings. Hosted checks must confirm the fix.
+
+### Glass release checks and browser popup layering
+
+Release `44106824441` could not acquire a hosted macOS ARM runner. Its Mac job ran no steps. GitHub
+reported capacity constraints. Its Check and Mobile integration runs were cancelled when the later
+glass commit `f77026b1` reached main. That commit already had Release `44109386221`. The redundant
+retry of the older release was cancelled, and its watch was stopped.
+
+The newer Check found missing exports in the settings and mobile PR browser fixtures. The settings
+fixture now uses the real glass controller. The mobile fixture now adapts Platform, GlassView and
+nested style arrays, and supplies its existing theme to the glass layout. The catalog composer check
+permits the neutral glass shadow while rejecting any added focus glow. Its keyboard focus and
+accessibility checks stay enabled.
+
+The glass header also created a stacking context below the browser page. Address suggestions looked
+open, but hit testing reached the page. The native view therefore stayed visible. The header now has
+a local stacking level above its page. The popup remains below global overlays. The shared-browser
+integration check now verifies that suggestions receive pointer input.
+
+Run the focused regression, then the affected browser checks:
+
+```sh
+pnpm exec playwright install chromium
+node --test scripts/browser/native-header-layer.test.mjs
+pnpm prove -- --base f77026b1 scripts/browser/native-header-layer.test.mjs
+pnpm --filter @dovo/desktop build
+node scripts/check-general-settings-browser.mjs
+node scripts/check-mobile-pull-attributes-browser.mjs
+node scripts/check-native-browser-layout-browser.mjs
+node scripts/check-shared-browser-browser.mjs
+pnpm --filter @dovo/design-system build
+node scripts/check-design-system-browser.mjs 0 4
+node scripts/check-design-system-browser.mjs 2 4
+pnpm check
+pnpm changelog:check
+```
+
+The focused regression fails on `f77026b1` and passes with the fix. Both affected catalog shards
+passed 572 story/theme/viewport cases and 84 hosted-page checks with accessibility checks enabled.
+The settings and mobile PR fixtures passed after their build failures reproduced locally. The full
+shared-browser check passed with rebuilt desktop styles. The native layout check retained zero scans
+during its streaming fixture. Desktop and catalog builds, browser-shard scheduling tests, repository
+checks and changelog validation passed. Native browser calls in these checks use a scripted bridge.
+Physical native-browser rendering still needs device verification.
