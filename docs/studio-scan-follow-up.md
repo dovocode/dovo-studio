@@ -655,3 +655,30 @@ native control and storage adapters. It does not verify physical iOS glass rende
 
 The full script passed locally. The repository check passed with zero errors and 36 existing
 warnings. This fixture correction does not establish a production regression proof.
+
+### Glass sidebar resize handles
+
+Check `44122519155` timed out while dragging the thread sidebar. The failure reproduced locally
+against the current web build. Pointer tracing showed that the chat pane received the drag at the
+center of the resize handle. The glass backdrop creates a stacking context, which put part of the
+handle below the adjacent pane.
+
+Resizable sidebars now use a local stacking level of 1. This keeps the full edge handle above
+adjacent content. The shared component and CSS apply to desktop and web. Width limits, saved widths,
+keyboard actions and runtime connections stay unchanged.
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:sidebar-resizing:browser
+pnpm prove -- --base c1a3d260 scripts/browser/sidebar-resize-layer.test.mjs
+pnpm check
+pnpm changelog:check
+```
+
+The source-CSS regression checks pointer input across the full width of left and right resize
+handles. It fails on `c1a3d260` and passes with the fix. The rebuilt web app and full resize browser
+script passed locally. That script covers both drag directions, iframe crossing, keyboard actions,
+saved widths, reset, narrow windows, viewer expansion, fixed icon bars, and diff/project file panes.
+These checks use managed Chromium. Native desktop window rendering remains unverified.
+
+The repository check passed with zero errors and 36 existing warnings. Changelog validation passed.

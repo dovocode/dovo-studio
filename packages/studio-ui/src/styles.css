@@ -4054,6 +4054,11 @@ a.studio-project-row:hover {
   backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
   box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
+/* Glass contains the edge handle's stacking context. Keep it above the adjacent pane. */
+.studio-resizable-sidebar {
+  z-index: 1;
+}
+
 /* Dense review content keeps the pane visible without adding another optical layer. */
 .studio-change-summary .studio-change-file-tree {
   background: color-mix(in srgb, var(--background) 35%, transparent);

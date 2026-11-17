@@ -188,7 +188,7 @@
     "test:composer-measurements:browser": "node scripts/check-composer-measurements-browser.mjs",
     "test:mobile-server-images:browser": "node scripts/check-mobile-server-images-browser.mjs",
     "test:pull-stack:browser": "node scripts/check-pull-stack-browser.mjs",
-    "test:sidebar-resizing:browser": "pnpm --filter @dovo/web build && node scripts/check-sidebar-resizing-browser.mjs",
+    "test:sidebar-resizing:browser": "pnpm --filter @dovo/web build && node --test scripts/browser/sidebar-resize-layer.test.mjs && node scripts/check-sidebar-resizing-browser.mjs",
     "test:sidebar-rendering:browser": "node scripts/check-sidebar-rendering-browser.mjs",
     "test:task-search:browser": "node scripts/check-task-search-browser.mjs && node scripts/check-mobile-task-search-browser.mjs && node scripts/check-mobile-message-reveal-browser.mjs",
     "test:automation-restore:browser": "node scripts/check-automation-restore-browser.mjs",
