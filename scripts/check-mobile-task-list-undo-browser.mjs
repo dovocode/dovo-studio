@@ -5,6 +5,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const native = `
+export const Platform={OS:'ios'};
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const Image=()=>null;
@@ -23,6 +24,10 @@ const stubs = [
   { path: '../ui/theme', importer: mobile + 'bots/bot-avatar.tsx', contents: controls },
   { path: 'react-native', contents: native },
   { path: 'react-native-gesture-handler', contents: native },
+  {
+    path: 'expo-glass-effect',
+    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
+  },
   {
     path: 'lucide-react-native',
     contents: `const Icon=()=>null;export {Icon as Pause,Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Network,Icon as Save,Icon as SquareTerminal};`,
@@ -58,6 +63,7 @@ const stubs = [
     importer: mobile + 'ui/content/pull-request-icon.tsx',
     contents: controls,
   },
+  { path: '../theme', importer: mobile + 'ui/layout/glass.tsx', contents: controls },
   {
     path: './device-label',
     importer: mobile + 'tasks/list/task-list-row.tsx',

@@ -704,3 +704,24 @@ with browser fixtures for runtime requests.
 
 The desktop build and both confirmation browser scripts passed locally. The repository check passed
 with zero errors and 36 existing warnings. Native desktop window rendering remains unverified.
+
+### Mobile task-list Undo fixture
+
+Check `44129559553` failed while bundling the Undo browser fixture. Its native adapter lacked
+`Platform`, and Glass loaded the real native theme instead of the fixture's theme adapter. The same
+bundle errors reproduced locally. The fixture now supplies Platform and a GlassView adapter, and
+routes the Glass theme import to its existing theme adapter. The real Glass, task row and Undo
+provider stay in the check.
+
+```sh
+pnpm exec playwright install chromium
+node scripts/check-mobile-task-list-undo-browser.mjs
+pnpm check
+```
+
+The full Undo browser script passed locally. It verifies swipe and menu actions, row removal, owner
+routing, conflict handling, expiry, dismissal and the older-runtime fallback. Related task-row
+fixtures were inspected for the same missing adapters. The rendering fixture already supports Glass;
+other fixtures replace the row or UI controls. The repository check passed with zero errors and 36
+existing warnings. This change updates only the browser fixture. It does not verify physical iOS
+glass rendering or establish a production regression proof.
