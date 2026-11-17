@@ -147,7 +147,7 @@ const task={...trigger,id:'task',data:{...data,kind:'task',harness:defaultTaskHa
 const flow={id:'reminder',name:'Deployment reminder',enabled:false,nodes:[trigger,task],edges:[{id:'edge',source:'trigger',target:'task'}]};
 const workspace={agents:[],tasks:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
 window.runtime={connected:true,snapshot:{workspace},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};
-function App(){const[node,setNode]=useState(trigger);return <><div data-testid="desktop-editor"><NodeInspector node={node} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
+function App(){const[node,setNode]=useState(trigger);return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,

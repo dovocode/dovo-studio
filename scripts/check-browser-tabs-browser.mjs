@@ -86,7 +86,7 @@ const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runti
 const snapshot={workspace:{tasks:[],repositories:[]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot}];
 export const useRuntimeSources=()=>sources;
-const workspace={activeRuntimeId:profile.id,connection:profile.connection,request,connected:true,snapshot,runtimes:sources};
+const workspace={activeRuntimeId:profile.id,runtimeRegistry:{activeId:profile.id,profiles:[profile]},workspace:snapshot.workspace,connection:profile.connection,request,connected:true,snapshot,runtimes:sources};
 const WorkspaceContext=createContext(null);
 export const useWorkspace=()=>useContext(WorkspaceContext)||workspace;
 export const WorkspaceScope=({profile,children})=>{
@@ -115,7 +115,7 @@ try {
   const errors = []
   page.on('pageerror', (error) => {
     errors.push(error.message)
-    console.error(error.message)
+    console.error(error.stack)
   })
   page.setDefaultTimeout(10000)
   await page.route('http://localhost/**', (route) =>

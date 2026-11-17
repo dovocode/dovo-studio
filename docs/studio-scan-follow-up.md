@@ -324,3 +324,26 @@ pnpm prove -- --base 136c185fd0 packages/studio-core/src/interface-language.test
 
 The full live Bot evaluation and the physical-device checks remain open. This release check did not
 resume them.
+
+### Hosted CI follow-up
+
+Check run `44044794839` passed the full unit suite, builds, typechecks, and macOS and Windows jobs.
+The six local sandbox failures did not occur on the hosted runner. Two browser shards failed because
+their fixtures did not include new component inputs. The follow-up supplies runtime registries,
+automation definitions and the mobile runtime adapter. It also tests the provider startup retry
+control with and without runtime support.
+
+The affected checks passed locally with Playwright's managed Chromium:
+
+```sh
+pnpm exec playwright install chromium
+pnpm test:browser-tabs:browser
+pnpm test:bots:browser
+node scripts/check-bot-learning-browser.mjs
+node scripts/check-inline-previews-browser.mjs
+node scripts/check-mobile-automations-browser.mjs
+pnpm check
+```
+
+The browser fixtures still use scripted transport and native controls where stated by each check.
+They do not complete the open live Bot evaluation or physical-device checks.

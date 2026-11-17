@@ -80,6 +80,8 @@ try {
       request,
       connected: true,
       activeRuntimeId: 'first',
+      runtimeRegistry: { activeId: 'first', profiles: [] },
+      workspace: { tasks: [], repositories: [] },
       connection: { address: 'http://runtime.test', token: 'paired' },
       snapshot: { artifactsEnabled: true, workspace: { tasks: [] } },
       runtimes: [],

@@ -9,9 +9,11 @@ export const Text=({children,accessibilityRole})=><span role={accessibilityRole}
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;
 export const Input=props=><input {...props}/>;
+export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
 export const FormField=({label,children})=>{const id=useId();return <label htmlFor={id}>{label}{cloneElement(children,{id})}</label>};
 export const SettingsField=({label,value,onChangeText,editable,placeholder})=><label>{label}<input aria-label={label} value={value} placeholder={placeholder} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const SettingsAction=Action;
+export const SettingsChoice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
 export const useTheme=()=>({styles:{muted:{},error:{}}});`
 const built = await bundleBrowser(
   {
@@ -30,7 +32,7 @@ window.calls=[];window.memoryState={enabled:true,revision:'revision-a',running:f
 window.task={id:'bot-a',title:'Assistant',bot:{revision:'revision-a',updatedAt:'2026-11-13T00:00:00Z',skillProposals:[{id:'proposal-a',skill:{name:'review',description:'Review builds',content:'Check status'},patch:'+Check status',status:'pending'}]}};
 const request=async(path,input)=>{window.calls.push({path,input});if(window.fail){window.fail=false;throw Error('Connection lost; retry safely')}if(path.endsWith('/read'))return window.memoryState;if(path.endsWith('/save'))return window.memoryState={...window.memoryState,enabled:input.enabled,revision:'revision-b'};if(path.endsWith('/run'))return window.memoryState={...window.memoryState,lastReviewedAt:'2026-11-13T01:00:00Z'};if(path.endsWith('/clear'))return window.memoryState={...window.memoryState,revision:'revision-c'};if(path.endsWith('/decide'))return {id:window.task.id,bot:{...window.task.bot,updatedAt:'2026-11-13T01:00:00Z',revision:'revision-b',skillProposals:window.task.bot.skillProposals.map(p=>({...p,status:input.accept?'applied':'rejected'}))}};throw Error(path)};
 window.store={request,connected:true,snapshot:{botMemoryReviewSupported:true}};window.runtime={...window.store,callEffect:(path,input)=>Effect.tryPromise(()=>request(path,input))};
-function App(){const [mode,setMode]=useState('desktop-memory');const [monitorSupport,setMonitorSupport]=useState(false);window.mode=mode=>{setMode(mode);setMonitorSupport(false)};window.enableMonitor=()=>setMonitorSupport(true);const props={taskId:'bot-a',onChanged:()=>window.changes++};return <main key={mode}>{mode==='desktop-memory'?<DesktopMemory {...props}/>:mode==='mobile-memory'?<MobileMemory {...props}/>:mode==='desktop-skills'?<DesktopSkills task={window.task}/>:mode==='mobile-skills'?<MobileSkills task={window.task}/>:mode==='desktop-options'?<DesktopOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>:<MobileOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>}</main>}
+function App(){const [mode,setMode]=useState('desktop-memory');const [monitorSupport,setMonitorSupport]=useState(false);window.mode=mode=>{window.store.snapshot.automationStartupRetrySupported=false;setMode(mode);setMonitorSupport(false)};window.enableMonitor=()=>setMonitorSupport(true);const props={taskId:'bot-a',onChanged:()=>window.changes++};return <main key={mode}>{mode==='desktop-memory'?<DesktopMemory {...props}/>:mode==='mobile-memory'?<MobileMemory {...props}/>:mode==='desktop-skills'?<DesktopSkills task={window.task}/>:mode==='mobile-skills'?<MobileSkills task={window.task}/>:mode==='desktop-options'?<DesktopOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>:<MobileOptions flow={{id:'routine'}} jsonMonitoringSupported={monitorSupport} disabled={false} onSave={value=>window.saved=value}/>}</main>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -56,7 +58,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
     { path: 'react-native', contents: controls },
     {
       path: '../runtime/connection/provider',
-      importer: mobile + 'bots/',
+      importer: mobile,
       contents: 'export const useRuntime=()=>window.runtime;',
     },
     { path: '../ui/content/text', importer: mobile, contents: controls },
@@ -115,7 +117,16 @@ try {
         .count(),
       0,
     )
-    await page.evaluate(() => window.enableMonitor())
+    await page.getByLabel('Retry provider startup', { exact: true }).waitFor()
+    assert.equal(
+      await page.getByLabel('Retry provider startup', { exact: true }).isDisabled(),
+      true,
+    )
+    await page.evaluate(() => {
+      window.store.snapshot.automationStartupRetrySupported = true
+      window.enableMonitor()
+    })
+    await page.getByLabel('Retry provider startup', { exact: true }).selectOption('yes')
     await page
       .getByLabel('JSON pointer (optional, e.g. /release/version)', { exact: true })
       .fill('/release/version')
@@ -126,6 +137,7 @@ try {
     await page.getByLabel('Quiet hours time zone', { exact: true }).fill('Europe/Amsterdam')
     await page.getByRole('button', { name: 'Save monitoring and limits', exact: true }).click()
     await page.waitForFunction(() => window.saved?.policy?.costUsd === 0.25)
+    assert.equal(await page.evaluate(() => window.saved.policy.startupRetry), true)
     assert.equal(await page.evaluate(() => window.saved.monitor.url), 'http://computer.lan/status')
     assert.equal(await page.evaluate(() => window.saved.monitor.jsonPointer), '/release/version')
     await page
