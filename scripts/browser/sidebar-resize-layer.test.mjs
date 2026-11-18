@@ -9,25 +9,21 @@ const css = await readFile(
 )
 
 for (const side of ['left', 'right'])
-  await test(`glass ${side} sidebar keeps its resize handle above adjacent content`, async () => {
+  await test(`${side} sidebar keeps its resize handle above adjacent content`, async () => {
     const browser = await chromium.launch()
     try {
       const page = await browser.newPage({ viewport: { width: 800, height: 600 } })
+      // Give the pane a stacking context regardless of its material.
       await page.setContent(`
         <style>${css}</style>
-        <div style="display:flex;flex-direction:${side === 'left' ? 'row' : 'row-reverse'};height:500px;--studio-surface-filter:blur(8px)">
-          <aside class="studio-side-panel studio-resizable-sidebar" style="position:relative;width:280px;flex-shrink:0">
+        <div style="display:flex;flex-direction:${side === 'left' ? 'row' : 'row-reverse'};height:500px">
+          <aside class="studio-side-panel studio-resizable-sidebar" style="position:relative;width:280px;flex-shrink:0;isolation:isolate">
             Sidebar
             <div role="separator" aria-label="Resize sidebar" style="position:absolute;top:0;bottom:0;${side === 'left' ? 'right' : 'left'}:-4px;width:8px;z-index:40"></div>
           </aside>
           <main style="position:relative;flex:1;background:gray">Chat</main>
         </div>
       `)
-      assert.notEqual(
-        await page.locator('aside').evaluate((element) => getComputedStyle(element).backdropFilter),
-        'none',
-        'The regression fixture must create the glass stacking context',
-      )
       const handle = page.getByRole('separator', { name: 'Resize sidebar' })
       assert.equal(
         await handle.evaluate((element) => {

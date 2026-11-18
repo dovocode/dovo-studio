@@ -102,16 +102,26 @@ try {
       await summary.screenshot({ path: '/tmp/dovo-diff-summary-desktop-narrow.png' })
     await toggle.click()
   }
+  const assertSolidSummary = async () => {
+    const surface = await summary.evaluate((node) => {
+      const sample = document.createElement('span')
+      sample.style.color = 'var(--card)'
+      node.append(sample)
+      const { backgroundColor, backgroundImage, backdropFilter } = getComputedStyle(node)
+      const cardColor = getComputedStyle(sample).color
+      sample.remove()
+      return { backgroundColor, backgroundImage, backdropFilter, cardColor }
+    })
+    assert.equal(surface.backgroundColor, surface.cardColor)
+    assert.equal(surface.backgroundImage, 'none')
+    assert.equal(surface.backdropFilter, 'none')
+  }
+  await assertSolidSummary()
   await page.evaluate(() => {
     document.documentElement.dataset.themeGlow = '0'
     document.documentElement.dataset.themeGradients = 'false'
   })
-  assert.equal(await summary.evaluate((node) => getComputedStyle(node).backgroundImage), 'none')
-  assert.notEqual(
-    await summary.evaluate((node) => getComputedStyle(node).backdropFilter),
-    'none',
-    'The shared glass material remains when decorative glow is off',
-  )
+  await assertSolidSummary()
   await page.evaluate(() => {
     document.documentElement.classList.remove('dark')
     document.documentElement.dataset.theme = 'light'
@@ -121,6 +131,7 @@ try {
     await page.evaluate(() => getComputedStyle(document.documentElement).colorScheme),
     'light',
   )
+  await assertSolidSummary()
   await summary.screenshot({ path: '/tmp/dovo-diff-summary-desktop-light.png' })
   await page.emulateMedia({ forcedColors: 'active' })
   assert.equal(await summary.evaluate((node) => getComputedStyle(node).borderTopStyle), 'solid')
@@ -154,7 +165,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Diff summary: collapsed default, keyboard expansion, real category totals, filters, folder/file navigation, narrow layouts, effects off, light/forced colors and binary fallback passed.',
+    'Diff summary: collapsed default, keyboard expansion, real category totals, filters, folder/file navigation, narrow layouts, solid fill, light/forced colors and binary fallback passed.',
   )
 } finally {
   await browser.close()
