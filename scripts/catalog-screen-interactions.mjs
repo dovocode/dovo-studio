@@ -150,6 +150,16 @@ export async function checkScreenInteractions(page, origin) {
     )
     await input.fill('')
     checks++
+
+    await open('dovo-screens-mobile--automations')
+    const attention = page.getByRole('switch', { name: 'Needs attention', exact: true })
+    assert.equal(await attention.isChecked(), false)
+    await attention.press('Space')
+    assert.equal(await attention.isChecked(), true)
+    await attention.press('Space')
+    assert.equal(await attention.isChecked(), false)
+    checks++
+
     assert.deepEqual(errors, [], 'Screen compositions must not throw browser errors')
     assert.deepEqual(requests, [], 'Catalog screen interactions must not contact live services')
     return checks

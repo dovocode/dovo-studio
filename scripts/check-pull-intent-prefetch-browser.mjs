@@ -92,7 +92,7 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App
     },
     {
       path: '@dovo/studio-ui',
-      contents: `const Pass=({children})=><>{children}</>;const None=()=>null;const menu={Root:Pass,Trigger:Pass,Portal:None,Content:None,Item:None,Label:None,Separator:None};export const ContextMenu=menu;export const DropdownMenu=menu;export const Badge=({children})=><span>{children}</span>;`,
+      contents: `const Pass=({children})=><>{children}</>;const None=()=>null;const menu={Root:Pass,Trigger:Pass,Portal:None,Content:None,Item:None,Label:None,Separator:None};export const ContextMenu=menu;export const DropdownMenu=menu;export const Badge=({children})=><span>{children}</span>;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;`,
     },
     {
       path: '../detail/status',

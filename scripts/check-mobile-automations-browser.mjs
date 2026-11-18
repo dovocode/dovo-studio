@@ -7,7 +7,7 @@ const importer = root + 'apps/mobile/src/screens/jobs.tsx'
 const controls = `
 export const View=({children})=><div>{children}</div>;
 export const Keyboard={dismiss:()=>{}};
-export const Pressable=({onPress,accessibilityState,children})=><button aria-pressed={accessibilityState?.checked} onClick={onPress}>{children}</button>;
+export const Switch=({accessibilityLabel,value,onValueChange})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} onChange={(event)=>onValueChange(event.target.checked)}/>;
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,refreshing,onRefresh})=><section aria-busy={refreshing}>{ListHeaderComponent}<button onClick={onRefresh}>Refresh</button>{data.map((item,index)=><div key={item.key}>{renderItem({item,index})}</div>)}{!data.length&&ListEmptyComponent}</section>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const SettingsPage=View;
@@ -97,9 +97,10 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Connection interrupted' }).waitFor()
   assert.equal(await page.locator('section').getAttribute('aria-busy'), 'false')
   assert.equal(await page.getByText('Saved automation', { exact: true }).count(), 1)
-  const attention = page.getByRole('button', { name: 'Needs attention', exact: true })
-  await attention.click()
-  assert.equal(await attention.getAttribute('aria-pressed'), 'true')
+  const attention = page.getByRole('switch', { name: 'Needs attention', exact: true })
+  assert.equal(await attention.isChecked(), false)
+  await attention.press('Space')
+  assert.equal(await attention.isChecked(), true)
   await page.getByRole('heading', { name: 'No matching automations.' }).waitFor()
   await page.evaluate(() => {
     const source = window.source
@@ -124,6 +125,7 @@ try {
   await page.getByRole('button', { name: 'View run', exact: true }).click()
   assert.equal(await page.evaluate(() => window.navigated.params.runId), 'failed-run')
   await attention.click()
+  assert.equal(await attention.isChecked(), false)
   await page.evaluate(() => (window.mode = 'stored'))
   await page.getByRole('button', { name: 'Retry loading automations', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: 'Mac Studio refresh failed' }).waitFor()

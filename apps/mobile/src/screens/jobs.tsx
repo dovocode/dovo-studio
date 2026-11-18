@@ -7,7 +7,7 @@ import { useApplicationState } from '../runtime/state/application-state'
 import { AutomationRow } from '../jobs/automation-row'
 import { automationRowState } from '../jobs/automation-summary'
 import { useRef } from 'react'
-import { FlatList, Keyboard, Pressable, View } from 'react-native'
+import { FlatList, Keyboard, Switch, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
@@ -162,21 +162,15 @@ export default function JobsScreen() {
               value={query}
               onChangeText={setQuery}
             />
-            <Pressable
-              accessibilityRole="togglebutton"
-              accessibilityState={{ checked: attentionOnly }}
-              onPress={() => setAttentionOnly((active) => !active)}
-              style={{
-                minHeight: 44,
-                alignSelf: 'flex-start',
-                justifyContent: 'center',
-                borderRadius: 8,
-                paddingHorizontal: 10,
-                backgroundColor: attentionOnly ? colors.selection : undefined,
-              }}
-            >
+            <View style={{ minHeight: 44, flexDirection: 'row', alignItems: 'center', gap: 8 }}>
               <Text style={styles.text}>{uiText('Needs attention')}</Text>
-            </Pressable>
+              <Switch
+                accessibilityLabel={uiText('Needs attention')}
+                value={attentionOnly}
+                onValueChange={setAttentionOnly}
+                hitSlop={8}
+              />
+            </View>
           </View>
         }
         renderItem={({ item, index }) => (
