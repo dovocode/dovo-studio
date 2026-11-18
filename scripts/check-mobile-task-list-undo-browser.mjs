@@ -9,6 +9,8 @@ export const Platform={OS:'ios'};
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const Image=()=>null;
+export const Keyboard={dismiss:()=>{}};
+export const Linking={openURL:()=>{}};
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:1});
 export const Pressable=({children,onPress,disabled,accessibilityLabel,testID})=><button data-testid={testID} aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Alert={alert:(title,message)=>window.alerts.push({title,message})};
@@ -20,8 +22,14 @@ export const Icon=()=>null;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 `
 const stubs = [
-  { path: '../ui/controls/icon', importer: mobile + 'bots/bot-avatar.tsx', contents: controls },
-  { path: '../ui/theme', importer: mobile + 'bots/bot-avatar.tsx', contents: controls },
+  { path: 'expo-router', contents: `export const router={push:()=>{}};` },
+  ...['bots/bot-avatar.tsx', 'workspace/type-badge.tsx'].flatMap((file) =>
+    ['../ui/controls/icon', '../ui/theme'].map((path) => ({
+      path,
+      importer: mobile + file,
+      contents: controls,
+    })),
+  ),
   { path: 'react-native', contents: native },
   { path: 'react-native-gesture-handler', contents: native },
   {
@@ -54,6 +62,11 @@ const stubs = [
     contents: controls,
   },
   { path: '../../ui/content/text', importer: mobile + 'tasks/list/', contents: controls },
+  {
+    path: '../../ui/layout/sheet',
+    importer: mobile + 'tasks/list/task-list-row.tsx',
+    contents: `export const Sheet=()=>null;`,
+  },
   {
     path: '../theme',
     importer: mobile + 'ui/content/pull-request-icon.tsx',
