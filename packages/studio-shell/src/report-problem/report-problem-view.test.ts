@@ -4,13 +4,14 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { defaultProblemReportInclude } from '@dovo/protocol'
 import { ReportProblemFields, ReportProblemPreviewView } from './report-problem-view'
 
-it('asks what happened first and includes every diagnostics section by default', () => {
+it('asks what happened first and includes only versions by default', () => {
   const html = renderToStaticMarkup(
     createElement(ReportProblemFields, {
       form: { description: '', expected: '', include: defaultProblemReportInclude },
       onChange: () => {},
       disabled: false,
       clientErrors: 3,
+      timelineSupported: true,
     }),
   )
   expect(html.indexOf('What happened? (required)')).toBeLessThan(
@@ -21,23 +22,25 @@ it('asks what happened first and includes every diagnostics section by default',
     'App and runtime versions',
     'Runtime diagnostics and logs',
     'Recent app errors (3)',
+    'Recent app actions',
   ])
     expect(html).toContain(label)
-  expect(html.match(/role="checkbox"[^>]*aria-checked="true"/g)).toHaveLength(3)
+  expect(html.match(/role="checkbox"[^>]*aria-checked="true"/g)).toHaveLength(1)
+  expect(html.match(/role="checkbox"[^>]*aria-checked="false"/g)).toHaveLength(3)
 
-  const unchecked = renderToStaticMarkup(
+  const optedIn = renderToStaticMarkup(
     createElement(ReportProblemFields, {
       form: {
         description: 'Sync stops',
         expected: '',
-        include: { ...defaultProblemReportInclude, diagnostics: false },
+        include: { ...defaultProblemReportInclude, diagnostics: true },
       },
       onChange: () => {},
       disabled: false,
       clientErrors: 0,
     }),
   )
-  expect(unchecked.match(/aria-checked="false"/g)).toHaveLength(1)
+  expect(optedIn.match(/aria-checked="true"/g)).toHaveLength(2)
 })
 
 it('previews the exact message and attached file with its size and hidden values', () => {

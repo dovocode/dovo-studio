@@ -1448,7 +1448,13 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
         { runId: '8', status: 'watching' },
       ],
     })
-    expect(read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true }, false)
+    for (const id of ['7', '8'])
+      expect(read).toHaveBeenCalledWith(
+        'repo',
+        'pipelines/detail',
+        { id, refresh: true, section: 'jobs' },
+        false,
+      )
     expect(s.db.prepare('SELECT DISTINCT task_id FROM task_pipeline_watches').all()).toEqual([
       { task_id: task.id },
     ])
@@ -1499,7 +1505,7 @@ it('offers pipeline watches beside PR watches, scopes IDs and enforces runtime o
     expect(read).toHaveBeenLastCalledWith(
       'linked',
       'pipelines/detail',
-      { id: '7', refresh: true },
+      { id: '7', refresh: true, section: 'jobs' },
       false,
     )
     expect(
