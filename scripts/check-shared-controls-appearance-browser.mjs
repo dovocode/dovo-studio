@@ -283,7 +283,7 @@ try {
       assert.equal(await style(`[data-row="${row}"]`, 'backgroundImage'), 'none')
       assert.equal(await style(`[data-row="${row}"]`, 'boxShadow'), 'none')
     }
-    assert.equal(await style('[data-row="pin"]', 'height'), '56px')
+    assert.equal(await style('[data-row="pin"]', 'height'), '40px')
     assert.equal(await style('.studio-browser-address', 'backgroundImage'), 'none')
     assert.equal(await style('.studio-browser-address', 'backdropFilter'), 'none')
     const address = page.getByRole('textbox', { name: 'Browser address', exact: true })
