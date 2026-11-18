@@ -167,7 +167,11 @@ try {
       })
       await page.evaluate((value) => (window.firstUse = value), firstUse)
       await page.addScriptTag({ content: built.outputFiles[0].text })
-      await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
+      const entry = page.getByRole('button', {
+        name: mobile ? 'Open agent review' : 'Start agent review',
+        exact: true,
+      })
+      await entry.waitFor()
 
       assert.ok(
         await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
@@ -187,9 +191,9 @@ try {
           await page.getByRole('button', { name: 'Review on computer', exact: true }).click()
           await page.getByRole('option', { name: 'remote', exact: true }).click()
         }
-        await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
+        await entry.waitFor()
         if (mobile)
-          await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+          await page.getByRole('button', { name: 'Configure agent review', exact: true }).click()
         if (mobile)
           await page
             .getByRole('combobox', { name: 'Reviewer provider', exact: true })
@@ -200,7 +204,7 @@ try {
         }
         await page.getByRole('combobox', { name: 'Reviewer model', exact: true }).waitFor()
         const start = page.getByRole('button', {
-          name: mobile ? 'Start review' : 'Review with agent',
+          name: 'Start agent review',
           exact: true,
         })
         assert.equal(await start.isDisabled(), true)
@@ -242,7 +246,7 @@ try {
         )
       } else {
         if (mobile)
-          await page.getByRole('button', { name: 'Review with agent', exact: true }).click()
+          await page.getByRole('button', { name: 'Configure agent review', exact: true }).click()
         if (mobile) {
           await page
             .getByRole('combobox', { name: 'Review depth', exact: true })
@@ -251,6 +255,7 @@ try {
             .getByRole('combobox', { name: 'Run project checks', exact: true })
             .selectOption('yes')
         } else {
+          await page.getByRole('button', { name: 'Review model', exact: true }).click()
           await page.getByRole('button', { name: 'Review depth', exact: true }).click()
           await page.getByRole('option', { name: 'Deep', exact: true }).click()
           await page.getByRole('checkbox', { name: 'Run project checks', exact: true }).check()
@@ -258,9 +263,7 @@ try {
         await page.evaluate(() => {
           window.delayStart = true
         })
-        await page
-          .getByRole('button', { name: mobile ? 'Start review' : 'Review with agent', exact: true })
-          .click()
+        await page.getByRole('button', { name: 'Start agent review', exact: true }).click()
         await page.getByText('Preparing review…', { exact: true }).waitFor()
         await page.screenshot({
           path: screenshots + '/' + (mobile ? 'mobile' : 'desktop') + '-review-preparing.png',
@@ -405,7 +408,7 @@ try {
           }
         }
         await chooseComputer('runtime')
-        await page.getByRole('button', { name: 'Review with agent', exact: true }).waitFor()
+        await entry.waitFor()
         assert.equal(
           await page.getByRole('button', { name: 'Add to draft', exact: true }).count(),
           0,
