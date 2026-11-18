@@ -6,7 +6,7 @@ import { test } from 'node:test'
 import { spawnSync } from 'node:child_process'
 import { configureApt, usePrimaryUbuntuMirror } from './linux-apt.mjs'
 
-await test('bounds apt downloads and changes only the Azure Ubuntu mirror in both source formats', async () => {
+await test('bounds apt downloads and changes Azure and regional EC2 Ubuntu mirrors in both source formats', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-apt-'))
   try {
     await mkdir(join(directory, 'apt.conf.d'))
@@ -20,7 +20,10 @@ await test('bounds apt downloads and changes only the Azure Ubuntu mirror in bot
     await writeFile(join(directory, 'sources.list.d/ubuntu.sources'), modern)
     await writeFile(join(directory, 'sources.list.d/ports.list'), ports)
     await writeFile(join(directory, 'sources.list.d/ubuntu.sources.backup'), modern)
-    await writeFile(join(directory, 'apt-mirrors.txt'), 'http://azure.archive.ubuntu.com/ubuntu/\n')
+    await writeFile(
+      join(directory, 'apt-mirrors.txt'),
+      'http://us-east-2.ec2.archive.ubuntu.com/ubuntu/\n',
+    )
     await configureApt(directory)
     assert.match(
       await readFile(join(directory, 'apt.conf.d/99dovo-ci'), 'utf8'),

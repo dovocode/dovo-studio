@@ -49,14 +49,14 @@ license notices are checked before reuse. Signing, notarization and signature ve
 run for a release. Packaging stage durations, including separate Mac signing and notarization, are
 written to the job summary.
 
-Linux CI bounds apt download retries and timeouts. Chromium setup has a four-minute attempt budget;
-if setup fails or stalls on Ubuntu's Azure mirror, it switches only that mirror to Ubuntu's primary
-archive and makes one final bounded attempt. The dependency installer runs in a root-owned systemd
-service with a four-minute runtime limit and a ten-second shutdown budget. Control-group cleanup
-stops detached apt/dpkg descendants and waits for them before repairing dpkg; a process-group
-timeout alone can leave the database locked. Fallback updates both conventional source files and
-hosted Ubuntu's mirror-list files. Browser downloads run as the runner user, preserving cache
-ownership. Package signatures and Chromium's sandbox stay enabled.
+Linux CI bounds apt download retries and timeouts. Chromium setup has a four-minute attempt budget.
+If setup stalls on an Azure or regional EC2 Ubuntu mirror, the installer switches to Ubuntu's
+primary archive for the final attempt. The dependency installer runs in a root-owned systemd service
+with a four-minute runtime limit and a ten-second shutdown budget. Control-group cleanup stops
+detached apt/dpkg descendants and waits for them before repairing dpkg; a process-group timeout
+alone can leave the database locked. Fallback updates both conventional source files and hosted
+Ubuntu's mirror-list files. Browser downloads run as the runner user, preserving cache ownership.
+Package signatures and Chromium's sandbox stay enabled.
 
 The baseline Check run
 [40553363177](https://github.com/dovocode/dovo-studio/actions/runs/40553363177) spent 19 minutes in

@@ -31,7 +31,7 @@ export async function usePrimaryUbuntuMirror(directory = '/etc/apt') {
       throw error
     }
     const after = before.replace(
-      /\b(https?:\/\/)azure\.archive\.ubuntu\.com(?=\/ubuntu(?:\/|\s|$))/g,
+      /\b(https?:\/\/)(?:azure|[a-z0-9-]+\.ec2)\.archive\.ubuntu\.com(?=\/ubuntu(?:\/|\s|$))/g,
       '$1archive.ubuntu.com',
     )
     if (after !== before) {
