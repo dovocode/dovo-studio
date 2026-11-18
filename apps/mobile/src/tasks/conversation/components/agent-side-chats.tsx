@@ -72,11 +72,7 @@ export function AgentSideChats({
     ],
     { id: task.id, runtimeId: profile?.id ?? null, runtimeIdentity: snapshot?.runtimeId },
   )
-  const open = (
-    id: string,
-    runtimeId: string | null | undefined,
-    runtimeIdentity?: string,
-  ) => {
+  const open = (id: string, runtimeId: string | null | undefined, runtimeIdentity?: string) => {
     if (!runtimeId || !current()) return
     sheet.current?.dismiss(() => {
       if (current()) router.push(taskHref(runtimeId, id, undefined, undefined, runtimeIdentity))

@@ -490,7 +490,9 @@ function LocalMobilePullCodeReview({
                     <Text style={styles.muted}>
                       {review.report.oneRunSettingsSupported
                         ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
-                        : uiText('This runtime saves reviewer settings as defaults when you start a run.')}
+                        : uiText(
+                            'This runtime saves reviewer settings as defaults when you start a run.',
+                          )}
                     </Text>
                   )}
                   {reviewers.map((reviewer, index) => (

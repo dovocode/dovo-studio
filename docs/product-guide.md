@@ -90,9 +90,9 @@ guide before creating a separate workspace.
   Usage shows Codex and Claude plan windows when those providers report them.
 - Desktop and mobile support bulk archive, snooze, pin and delete. If a desktop bulk action stops
   mid-selection, Dovo reports confirmed and unattempted changes and keeps the remaining selection.
-  Check an unconfirmed thread before trying its action again. Car mode can read completed
-  replies aloud, and the iPhone widget shows the last known running and waiting tasks. Speech and
-  widgets require a new native iPhone build.
+  Check an unconfirmed thread before trying its action again. Car mode can read completed replies
+  aloud, and the iPhone widget shows the last known running and waiting tasks. Speech and widgets
+  require a new native iPhone build.
 - Reusable agent configurations own provider, model, instructions and permissions. Changing the
   configuration starts a fresh session. Agents expose live model discovery and provider-supported
   reasoning choices (OpenCode variants and ACP thought-level configuration). Custom model IDs remain
@@ -837,10 +837,10 @@ retain their commit reference, not their internal working-tree edits. Text previ
 2 MB per side and 8 MB total per turn; binary/symlink/submodule and overflow paths are listed
 without text previews. Snapshot trees retain file contents independently of preview limits. Runtime
 interruption preserves the starting snapshot and marks the unfinished checkpoint explicitly.
-External file changes during a turn also appear in its diff. Desktop and web can revert a file
-from its turn checkpoint or undo a supported turn's recorded file changes. File restoration does
-not rewind the provider conversation. See [Source control](source-control.md) for linked checkouts
-and recovery snapshots.
+External file changes during a turn also appear in its diff. Desktop and web can revert a file from
+its turn checkpoint or undo a supported turn's recorded file changes. File restoration does not
+rewind the provider conversation. See [Source control](source-control.md) for linked checkouts and
+recovery snapshots.
 
 Desktop/web thread rows show the task title, repository, checkout branch, agent/provider icon,
 runtime host and agent icons, and working/input status or relative finish time in three compact

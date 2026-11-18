@@ -281,7 +281,10 @@ export function pullChangesSnapshot(
   return { ...previous, stale: true }
 }
 
-export function pullChangesRevisionPending(current: PullDetail | null, previous: PullDetail | null) {
+export function pullChangesRevisionPending(
+  current: PullDetail | null,
+  previous: PullDetail | null,
+) {
   return !!(
     current &&
     previous &&

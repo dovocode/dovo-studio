@@ -2,19 +2,18 @@
 
 ## Continue after a push
 
-If a new revision arrives while you have the PR open, **Changes** keeps the previous diff
-read-only. Select **Switch revision** after the new files load. Dovo keeps the selected file
-if it is still part of the diff. Viewed marks stay for files with the same review fingerprint.
-Line drafts do not move to new lines or revisions automatically.
+If a new revision arrives while you have the PR open, **Changes** keeps the previous diff read-only.
+Select **Switch revision** after the new files load. Dovo keeps the selected file if it is still
+part of the diff. Viewed marks stay for files with the same review fingerprint. Line drafts do not
+move to new lines or revisions automatically.
 
 ## Start a review
 
-Enable **Experimental code reviews** in the connected computer's settings.
-On desktop and web, use the PR row menu. On mobile, touch and hold a PR row and choose
-**Open agent review**, or open the PR and use the **Agent review** card.
-Choose **Open agent review** to see the review, or **Configure agent review** to open the reviewer
-settings. On mobile, **View review run** opens a running review. None of these actions starts the
-agent or publishes a review.
+Enable **Experimental code reviews** in the connected computer's settings. On desktop and web, use
+the PR row menu. On mobile, touch and hold a PR row and choose **Open agent review**, or open the PR
+and use the **Agent review** card. Choose **Open agent review** to see the review, or **Configure
+agent review** to open the reviewer settings. On mobile, **View review run** opens a running review.
+None of these actions starts the agent or publishes a review.
 
 Choose a provider, model, depth, and optional project checks. The computer remembers the reviewer
 choice separately from its title model. Select **Start agent review** to run the review. Publishing
