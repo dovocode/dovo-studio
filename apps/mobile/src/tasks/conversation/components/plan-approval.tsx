@@ -20,6 +20,7 @@ export function PlanApproval({ task }: { task: Task }) {
   if (!planAwaitingApproval(task)) return null
   return (
     <Glass
+      solid
       style={{
         borderRadius: designTokens.radius.overlay,
         padding: 12,

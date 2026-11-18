@@ -86,7 +86,10 @@ export function useImageEditor() {
           if (!open) finish(null)
         }}
       >
-        <DialogContent className="flex flex-col h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&_[data-dialog-close]]:hidden">
+        <DialogContent
+          data-fixed-material=""
+          className="flex flex-col h-[min(850px,90dvh)] w-[min(1100px,95vw)] max-w-none overflow-hidden p-0 gap-0 [&_[data-dialog-close]]:hidden"
+        >
           <DialogTitle className="sr-only">Edit image attachment</DialogTitle>
           {document && (
             <iframe

@@ -11,7 +11,7 @@ import {
   type ModelCatalog,
   type TaskHarness,
 } from '@dovo/protocol'
-import { Check, CircleHelp, Zap } from 'lucide-react'
+import { Check, CircleHelp, Rocket, Zap } from 'lucide-react'
 import { cn } from './lib/utils'
 import { Schema } from 'effect'
 import { ChoicePicker } from './choice-picker'
@@ -65,6 +65,7 @@ export function ComposerEffortColumn({
         {choices.length > 6 ? (
           <ChoicePicker
             aria-label={automatic ? 'Difficulty' : 'Reasoning level'}
+            icons={automatic ? undefined : { ultra: <Rocket className="size-3.5" /> }}
             value={current}
             disabled={disabled || (automatic && !onSelectDifficulty)}
             onValueChange={(reasoning) =>
@@ -124,6 +125,9 @@ export function ComposerEffortColumn({
                     : onChange(changeModelSettings(value, { reasoning: effort.id }, catalog)))
                 }
               >
+                {!automatic && effort.id === 'ultra' && (
+                  <Rocket className="size-3.5 shrink-0" aria-hidden="true" />
+                )}
                 <span className="min-w-0 flex-1 truncate">{effort.name}</span>
                 {effort.id === current ? (
                   <Check className="size-3.5 shrink-0" />

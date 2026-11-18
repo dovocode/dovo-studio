@@ -291,6 +291,8 @@ export const remoteBrowserMessageSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('error'),
     message: Schema.String,
+    /** Older hosts omit this and the viewer shows their error as supplied. */
+    operation: Schema.optional(Schema.Literal('navigation')),
   }),
   mutableStruct({
     type: Schema.Literal('closed'),

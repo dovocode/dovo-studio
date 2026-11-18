@@ -1,7 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ReviewActivity } from './review-activity'
 import { PullPatch } from './patch'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
 import { Check, ChevronDown, FileSearch, ShieldCheck } from 'lucide-react'
 import { prReviewIllustration } from '@dovo/studio-core/pull-code-review'
 import {
@@ -54,6 +54,8 @@ function LocalPullCodeReviewPanel({
   detail,
   sourceReady = true,
   configurationRequest = 0,
+  runAction,
+  rowReviewRun,
   onAsk,
   onStatus,
   onRefresh,
@@ -62,9 +64,17 @@ function LocalPullCodeReviewPanel({
   repositoryId: string
   sourceReady?: boolean
   configurationRequest?: number
+  runAction?: RefObject<(() => void) | null>
+  rowReviewRun?: () => boolean
   detail: PullDetail
   onAsk: (selection: PullReviewSelection) => void
-  onStatus?: (status: { running: boolean; findings: number; stale: boolean }) => void
+  onStatus?: (status: {
+    running: boolean
+    findings: number
+    stale: boolean
+    hasReport: boolean
+    canRun: boolean
+  }) => void
   onRefresh?: () => void
   onOpenStackReview?: (member: PullReviewStack['members'][number], runtimeId: string) => void
 }) {
@@ -99,12 +109,21 @@ function LocalPullCodeReviewPanel({
       setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
   }
   const [settings, setSettings] = useState(false)
+  const settingsId = useId()
   useEffect(() => {
     if (configurationRequest) setSettings(true)
   }, [configurationRequest])
   const [fullStack, setFullStack] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
+  const previewTrigger = useRef<HTMLButtonElement>(null)
+  const draftHeading = useRef<HTMLHeadingElement>(null)
   const [patch, setPatch] = useState<string>()
+  const [findingPatch, setFindingPatch] = useState<{
+    finding: PullCodeReview['findings'][number]
+    commit: string
+    patch?: string
+  }>()
+  const findingTrigger = useRef<HTMLButtonElement>(null)
   const loadModels = useCallback(
     (input: AgentDiscovery) => request('/api/agents/models', input, modelCatalogSchema),
     [request],
@@ -125,6 +144,9 @@ function LocalPullCodeReviewPanel({
     )
   }, [additional, review.report, workspace.agents])
   const current = review.review
+  const completed = current?.status === 'completed'
+  const showReviewerFields =
+    settings || (!completed && reviewers.some((reviewer) => !reviewer?.model))
   const draft = review.draft
   const stale =
     !!current &&
@@ -143,9 +165,6 @@ function LocalPullCodeReviewPanel({
   const latest = review.report?.reviews[0]
   const latestStale =
     !!latest && (latest.headSha !== detail.pull.headSha || latest.baseSha !== detail.pull.baseSha)
-  useEffect(() => {
-    onStatus?.({ running: !!running, findings: latest?.findings.length ?? 0, stale: latestStale })
-  }, [onStatus, running, latest?.findings.length, latestStale])
   const selectedPatch =
     current?.coverage.find((file) => file.path === patch) ??
     current?.coverage.find((file) => file.state === 'supplied')
@@ -155,23 +174,94 @@ function LocalPullCodeReviewPanel({
     reviewers.every(
       (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
     )
-  const start = (remaining = false) => {
-    if (agent && ready)
-      void review.start(
-        titleSettingsForHarness(agent),
-        detail.pull.headSha,
-        detail.pull.baseSha,
-        remaining,
-        {
-          depth: review.depth,
-          runChecks: review.depth !== 'quick' && review.runChecks,
-          reviewers: (additional ?? []).map(titleSettingsForHarness),
-          images: review.images,
-          fullStack: !remaining && fullStack,
-        },
-      )
-    else setSettings(true)
-  }
+  const start = useCallback(
+    (remaining = false) => {
+      if (agent && ready) {
+        setSettings(false)
+        void review.start(
+          titleSettingsForHarness(agent),
+          detail.pull.headSha,
+          detail.pull.baseSha,
+          remaining,
+          {
+            depth: review.depth,
+            runChecks: review.depth !== 'quick' && review.runChecks,
+            reviewers: (additional ?? []).map(titleSettingsForHarness),
+            images: review.images,
+            fullStack: !remaining && fullStack,
+          },
+        )
+      } else setSettings(true)
+    },
+    [agent, ready, review, detail.pull.headSha, detail.pull.baseSha, additional, fullStack],
+  )
+  const canRun = !blocked && ready
+  const hasReport = !!latest
+  const savedReviewer =
+    review.report?.selection && resolveTitleHarness(review.report.selection, workspace.agents)
+  useEffect(() => {
+    if (!rowReviewRun) return
+    if (!connected || detail.refreshError || review.error || hasReport || running) {
+      rowReviewRun()
+    } else if (review.report && !detail.stale) {
+      if (
+        !savedReviewer ||
+        !review.report.selection?.model ||
+        !supportsPullReview(savedReviewer.provider, review.depth)
+      ) {
+        if (rowReviewRun()) setSettings(true)
+      } else if (canRun && rowReviewRun()) {
+        start()
+      }
+    }
+  }, [
+    rowReviewRun,
+    connected,
+    detail.stale,
+    detail.refreshError,
+    review.error,
+    hasReport,
+    running,
+    review.report,
+    savedReviewer,
+    review.depth,
+    canRun,
+    start,
+  ])
+  useEffect(() => {
+    onStatus?.({
+      running: !!running,
+      findings: latest?.findings.length ?? 0,
+      stale: latestStale,
+      hasReport,
+      canRun,
+    })
+  }, [onStatus, running, latest?.findings.length, latestStale, hasReport, canRun])
+  useEffect(() => {
+    if (!runAction || !canRun) return
+    runAction.current = () => start()
+    return () => {
+      runAction.current = null
+    }
+  }, [runAction, canRun, start])
+  const historyPicker = current && (
+    <ChoicePicker
+      aria-label={uiText('Review history')}
+      value={current.id}
+      onValueChange={review.select}
+    >
+      {review.report?.reviews.map((pass) => (
+        <option key={pass.id} value={pass.id}>
+          {pass.headSha.slice(0, 7)} · {pass.status} · {new Date(pass.createdAt).toLocaleString()}
+        </option>
+      ))}
+    </ChoicePicker>
+  )
+  const reviewAgain = (
+    <Button size="sm" variant="outline" disabled={!!blocked || !ready} onClick={() => start()}>
+      {stale ? uiText('Review latest revision') : uiText('Review again')}
+    </Button>
+  )
   return (
     <section
       aria-label={uiText('Agent PR review')}
@@ -182,14 +272,22 @@ function LocalPullCodeReviewPanel({
           <ShieldCheck className="size-4 text-emerald-500" />
           {uiText('Agent review')}
         </div>
-        <Button variant="ghost" size="sm" onClick={() => setSettings(!settings)}>
-          {reviewers.length > 1
-            ? uiText('{value0} reviewers', { value0: reviewers.length })
-            : agent?.model || uiText('Choose reviewer')}
-          <ChevronDown className="size-3" />
+        <Button
+          variant="ghost"
+          size="sm"
+          aria-controls={settingsId}
+          aria-expanded={completed ? settings : showReviewerFields}
+          onClick={() => setSettings((open) => !open)}
+        >
+          {completed
+            ? uiText('Configure agent review')
+            : reviewers.length > 1
+              ? uiText('{value0} reviewers', { value0: reviewers.length })
+              : agent?.model || uiText('Choose reviewer')}
+          <ChevronDown aria-hidden className="size-3 shrink-0" />
         </Button>
       </div>
-      {review.busy && (
+      {(review.busy || (rowReviewRun && connected && !review.report && !review.error)) && (
         <div className="p-4">
           <ReviewActivity reviewers={reviewers.length} />
         </div>
@@ -211,283 +309,287 @@ function LocalPullCodeReviewPanel({
           </div>
         </div>
       )}
-      {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
-        <div className="space-y-3 border-b p-4">
-          {review.report && (
-            <p className="text-xs text-muted-foreground">
-              {review.report.oneRunSettingsSupported
-                ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
-                : uiText('This runtime saves reviewer settings as defaults when you start a run.')}
-            </p>
-          )}
-          {reviewers.map((reviewer, index) => (
-            <div key={index} className="space-y-3 rounded-lg border p-3">
-              <div className="flex items-center justify-between text-xs">
-                <span>{uiText('Reviewer {value0}', { value0: index + 1 })}</span>
-                {index > 0 && (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() =>
-                      setAdditional((items) => items?.filter((_, at) => at !== index - 1))
+      <div id={settingsId} hidden={completed && !settings}>
+        {showReviewerFields && (
+          <div className="space-y-3 border-b p-4">
+            {review.report && (
+              <p className="text-xs text-muted-foreground">
+                {review.report.oneRunSettingsSupported
+                  ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
+                  : uiText(
+                      'This runtime saves reviewer settings as defaults when you start a run.',
+                    )}
+              </p>
+            )}
+            {reviewers.map((reviewer, index) => (
+              <div key={index} className="space-y-3 rounded-lg border p-3">
+                <div className="flex items-center justify-between text-xs">
+                  <span>{uiText('Reviewer {value0}', { value0: index + 1 })}</span>
+                  {index > 0 && (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() =>
+                        setAdditional((items) => items?.filter((_, at) => at !== index - 1))
+                      }
+                    >
+                      {uiText('Remove')}
+                    </Button>
+                  )}
+                </div>
+                <label className="block text-xs text-muted-foreground">
+                  {uiText('Reviewer provider')}
+                </label>
+                <ChoicePicker
+                  aria-label={uiText('Reviewer provider')}
+                  value={
+                    reviewer?.id.startsWith('saved:')
+                      ? reviewer.id
+                      : reviewer?.provider === 'acp' && reviewer.acpInstallationId
+                        ? acpHarnessChoiceId(reviewer.acpInstallationId)
+                        : (reviewer?.provider ?? '')
+                  }
+                  onValueChange={(value) => {
+                    const installation = snapshot?.acpInstallations?.find(
+                      (item) => acpHarnessChoiceId(item.id) === value,
+                    )
+                    if (installation) {
+                      setReviewer(index, {
+                        ...acpInstallationHarness(installation, 'read-only'),
+                        id: 'pr-review',
+                        name: installation.name,
+                      })
+                      return
                     }
-                  >
-                    {uiText('Remove')}
-                  </Button>
+                    const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
+                    if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
+                    else {
+                      const provider = providerSchema.literals.find((item) => item === value)
+                      if (provider)
+                        setReviewer(index, {
+                          ...defaultTaskHarness(provider),
+                          id: 'pr-review',
+                          name: providers[provider].short,
+                        })
+                    }
+                  }}
+                >
+                  <option value="" disabled>
+                    {uiText('Choose a provider')}
+                  </option>
+                  {providerSchema.literals
+                    .filter((provider) => provider !== 'acp')
+                    .map((provider) => (
+                      <option
+                        key={provider}
+                        value={provider}
+                        disabled={!supportsPullReview(provider, review.depth)}
+                      >
+                        {providers[provider].short}
+                        {!supportsPullReview(provider, review.depth)
+                          ? ` · ${uiText('Unavailable for this review depth')}`
+                          : ''}
+                      </option>
+                    ))}
+                  {(snapshot?.acpInstallations ?? []).map((installation) => (
+                    <option
+                      key={acpHarnessChoiceId(installation.id)}
+                      value={acpHarnessChoiceId(installation.id)}
+                    >
+                      {installation.name} · ACP
+                    </option>
+                  ))}
+                  {workspace.agents
+                    .filter((item) => supportsPullReview(item.provider, review.depth))
+                    .map((item) => (
+                      <option key={item.id} value={`saved:${item.id}`}>
+                        {item.name}
+                      </option>
+                    ))}
+                </ChoicePicker>
+                {reviewer && (
+                  <ModelSettings
+                    agent={reviewer}
+                    onChange={(value) => setReviewer(index, value)}
+                    loadModels={loadModels}
+                    connected={connected}
+                    modes={false}
+                    preferences={snapshot?.defaults?.modelPreferences}
+                  />
                 )}
               </div>
-              <label className="block text-xs text-muted-foreground">
-                {uiText('Reviewer provider')}
-              </label>
+            ))}
+
+            <p className="text-xs text-muted-foreground">
+              {uiText(
+                'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
+              )}
+            </p>
+          </div>
+        )}
+        <div className="border-b px-4 py-2">
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!!blocked || reviewers.length >= MAX_PULL_REVIEWERS}
+            onClick={() =>
+              setAdditional((items) => [
+                ...(items ?? []),
+                { ...defaultTaskHarness('claude'), id: 'pr-review', name: 'Claude' },
+              ])
+            }
+          >
+            {uiText('Add reviewer')}
+          </Button>
+        </div>
+        <div className="space-y-3 border-b px-4 py-3">
+          {detail.stack && (
+            <label className="flex flex-wrap items-center gap-3 text-xs">
+              {uiText('Review scope')}
               <ChoicePicker
-                aria-label={uiText('Reviewer provider')}
-                value={
-                  reviewer?.id.startsWith('saved:')
-                    ? reviewer.id
-                    : reviewer?.provider === 'acp' && reviewer.acpInstallationId
-                      ? acpHarnessChoiceId(reviewer.acpInstallationId)
-                      : (reviewer?.provider ?? '')
-                }
+                aria-label={uiText('Review scope')}
+                value={fullStack ? 'stack' : 'pull'}
+                disabled={!!blocked}
+                onValueChange={(value) => setFullStack(value === 'stack')}
+              >
+                <option value="pull">{uiText('This PR')}</option>
+                <option value="stack" disabled={!detail.stack.complete}>
+                  {uiText('Full stack · {value0} PRs', { value0: detail.stack.size })}
+                </option>
+              </ChoicePicker>
+            </label>
+          )}
+          {fullStack && (
+            <p className="text-xs text-muted-foreground">
+              {uiText(
+                'Review each PR in dependency order. Findings and drafts stay with their source PR.',
+              )}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
+              {uiText('Review depth')}
+              <ChoicePicker
+                className="w-36 flex-none"
+                aria-label={uiText('Review depth')}
+                value={review.depth}
+                disabled={!!blocked}
                 onValueChange={(value) => {
-                  const installation = snapshot?.acpInstallations?.find(
-                    (item) => acpHarnessChoiceId(item.id) === value,
-                  )
-                  if (installation) {
-                    setReviewer(index, {
-                      ...acpInstallationHarness(installation, 'read-only'),
-                      id: 'pr-review',
-                      name: installation.name,
-                    })
-                    return
-                  }
-                  const saved = workspace.agents.find((item) => `saved:${item.id}` === value)
-                  if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
-                  else {
-                    const provider = providerSchema.literals.find((item) => item === value)
-                    if (provider)
-                      setReviewer(index, {
-                        ...defaultTaskHarness(provider),
-                        id: 'pr-review',
-                        name: providers[provider].short,
-                      })
+                  const depth = pullReviewDepthSchema.literals.find((item) => item === value)
+                  if (depth) {
+                    review.setDepth(depth)
+                    if (depth === 'quick') review.setRunChecks(false)
                   }
                 }}
               >
-                <option value="" disabled>
-                  {uiText('Choose a provider')}
-                </option>
-                {providerSchema.literals
-                  .filter((provider) => provider !== 'acp')
-                  .map((provider) => (
-                    <option
-                      key={provider}
-                      value={provider}
-                      disabled={!supportsPullReview(provider, review.depth)}
-                    >
-                      {providers[provider].short}
-                      {!supportsPullReview(provider, review.depth)
-                        ? ` · ${uiText('Unavailable for this review depth')}`
-                        : ''}
-                    </option>
-                  ))}
-                {(snapshot?.acpInstallations ?? []).map((installation) => (
-                  <option
-                    key={acpHarnessChoiceId(installation.id)}
-                    value={acpHarnessChoiceId(installation.id)}
-                  >
-                    {installation.name} · ACP
+                {pullReviewDepthSchema.literals.map((depth) => (
+                  <option key={depth} value={depth}>
+                    {uiText(pullReviewDepths[depth].label)}
                   </option>
                 ))}
-                {workspace.agents
-                  .filter((item) => supportsPullReview(item.provider, review.depth))
-                  .map((item) => (
-                    <option key={item.id} value={`saved:${item.id}`}>
-                      {item.name}
-                    </option>
-                  ))}
               </ChoicePicker>
-              {reviewer && (
-                <ModelSettings
-                  agent={reviewer}
-                  onChange={(value) => setReviewer(index, value)}
-                  loadModels={loadModels}
-                  connected={connected}
-                  modes={false}
-                  preferences={snapshot?.defaults?.modelPreferences}
-                />
+            </label>
+            <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
+              <input
+                type="checkbox"
+                checked={review.depth !== 'quick' && review.runChecks}
+                disabled={!!blocked || review.depth === 'quick'}
+                onChange={(event) => review.setRunChecks(event.target.checked)}
+              />
+              {uiText('Run project checks')}
+            </label>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            {uiText(pullReviewDepths[review.depth].description)}
+          </p>
+          {review.runChecks && (
+            <p className="text-xs text-muted-foreground">
+              {uiText(
+                'Installs dependencies and runs project scripts. Use only for code you trust. This runs on your computer without a security sandbox.',
               )}
+            </p>
+          )}
+        </div>
+        <div className="space-y-2 border-b px-4 py-3">
+          <input
+            ref={imageInput}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            hidden
+            aria-label={uiText('Review images')}
+            onChange={(event) => {
+              const files = Array.from(event.target.files ?? [])
+              event.target.value = ''
+              setImageError('')
+              setImageBusy(true)
+              void Promise.all(
+                files.map(async (file) => {
+                  if (file.size > MAX_ATTACHMENT_BYTES)
+                    throw new Error('Use images up to 5 MB each.')
+                  const data = await new Promise<string>((resolve, reject) => {
+                    const reader = new FileReader()
+                    reader.onload = () =>
+                      typeof reader.result === 'string'
+                        ? resolve(reader.result.slice(reader.result.indexOf(',') + 1))
+                        : reject(new Error('Could not read image.'))
+                    reader.onerror = () => reject(new Error('Could not read image.'))
+                    reader.readAsDataURL(file)
+                  })
+                  return {
+                    name: file.name,
+                    data,
+                    mime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].find(
+                      (mime): mime is 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' =>
+                        mime === file.type,
+                    ),
+                  }
+                }),
+              )
+                .then(review.addImages)
+                .catch((error) =>
+                  setImageError(error instanceof Error ? error.message : String(error)),
+                )
+                .finally(() => setImageBusy(false))
+            }}
+          />
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={!!blocked || imageBusy || review.images.length >= 3}
+            onClick={() => imageInput.current?.click()}
+          >
+            {uiText(imageBusy ? 'Loading images…' : 'Add images')}
+          </Button>
+          <p className="text-xs text-muted-foreground">
+            {uiText(
+              'Optional screenshots or designs. Each reviewer must support image input. Up to three images.',
+            )}
+          </p>
+          {review.images.map((image, index) => (
+            <div key={index} className="flex items-center justify-between gap-2 text-xs">
+              <img
+                alt={image.name}
+                src={`data:${image.mime ?? 'image/png'};base64,${image.data}`}
+                className="size-14 shrink-0 rounded border object-contain"
+              />
+              <span className="min-w-0 flex-1 truncate">{image.name}</span>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={!!blocked}
+                onClick={() => review.setImages(review.images.filter((_, at) => at !== index))}
+              >
+                {uiText('Remove')}
+              </Button>
             </div>
           ))}
-
-          <p className="text-xs text-muted-foreground">
-            {uiText(
-              'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
-            )}
-          </p>
-        </div>
-      )}
-      <div className="border-b px-4 py-2">
-        {' '}
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!!blocked || reviewers.length >= MAX_PULL_REVIEWERS}
-          onClick={() =>
-            setAdditional((items) => [
-              ...(items ?? []),
-              { ...defaultTaskHarness('claude'), id: 'pr-review', name: 'Claude' },
-            ])
-          }
-        >
-          {uiText('Add reviewer')}
-        </Button>
-      </div>
-      <div className="space-y-3 border-b px-4 py-3">
-        {detail.stack && (
-          <label className="flex flex-wrap items-center gap-3 text-xs">
-            {uiText('Review scope')}
-            <ChoicePicker
-              aria-label={uiText('Review scope')}
-              value={fullStack ? 'stack' : 'pull'}
-              disabled={!!blocked}
-              onValueChange={(value) => setFullStack(value === 'stack')}
-            >
-              <option value="pull">{uiText('This PR')}</option>
-              <option value="stack" disabled={!detail.stack.complete}>
-                {uiText('Full stack · {value0} PRs', { value0: detail.stack.size })}
-              </option>
-            </ChoicePicker>
-          </label>
-        )}
-        {fullStack && (
-          <p className="text-xs text-muted-foreground">
-            {uiText(
-              'Review each PR in dependency order. Findings and drafts stay with their source PR.',
-            )}
-          </p>
-        )}
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
-            {uiText('Review depth')}
-            <ChoicePicker
-              className="w-36 flex-none"
-              aria-label={uiText('Review depth')}
-              value={review.depth}
-              disabled={!!blocked}
-              onValueChange={(value) => {
-                const depth = pullReviewDepthSchema.literals.find((item) => item === value)
-                if (depth) {
-                  review.setDepth(depth)
-                  if (depth === 'quick') review.setRunChecks(false)
-                }
-              }}
-            >
-              {pullReviewDepthSchema.literals.map((depth) => (
-                <option key={depth} value={depth}>
-                  {uiText(pullReviewDepths[depth].label)}
-                </option>
-              ))}
-            </ChoicePicker>
-          </label>
-          <label className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap text-xs">
-            <input
-              type="checkbox"
-              checked={review.depth !== 'quick' && review.runChecks}
-              disabled={!!blocked || review.depth === 'quick'}
-              onChange={(event) => review.setRunChecks(event.target.checked)}
-            />
-            {uiText('Run project checks')}
-          </label>
-        </div>
-        <p className="text-xs text-muted-foreground">
-          {uiText(pullReviewDepths[review.depth].description)}
-        </p>
-        {review.runChecks && (
-          <p className="text-xs text-muted-foreground">
-            {uiText(
-              'Installs dependencies and runs project scripts. Use only for code you trust. This runs on your computer without a security sandbox.',
-            )}
-          </p>
-        )}
-      </div>
-      <div className="space-y-2 border-b px-4 py-3">
-        <input
-          ref={imageInput}
-          type="file"
-          accept="image/png,image/jpeg,image/webp,image/gif"
-          multiple
-          hidden
-          aria-label={uiText('Review images')}
-          onChange={(event) => {
-            const files = Array.from(event.target.files ?? [])
-            event.target.value = ''
-            setImageError('')
-            setImageBusy(true)
-            void Promise.all(
-              files.map(async (file) => {
-                if (file.size > MAX_ATTACHMENT_BYTES) throw new Error('Use images up to 5 MB each.')
-                const data = await new Promise<string>((resolve, reject) => {
-                  const reader = new FileReader()
-                  reader.onload = () =>
-                    typeof reader.result === 'string'
-                      ? resolve(reader.result.slice(reader.result.indexOf(',') + 1))
-                      : reject(new Error('Could not read image.'))
-                  reader.onerror = () => reject(new Error('Could not read image.'))
-                  reader.readAsDataURL(file)
-                })
-                return {
-                  name: file.name,
-                  data,
-                  mime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].find(
-                    (mime): mime is 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' =>
-                      mime === file.type,
-                  ),
-                }
-              }),
-            )
-              .then(review.addImages)
-              .catch((error) =>
-                setImageError(error instanceof Error ? error.message : String(error)),
-              )
-              .finally(() => setImageBusy(false))
-          }}
-        />
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={!!blocked || imageBusy || review.images.length >= 3}
-          onClick={() => imageInput.current?.click()}
-        >
-          {uiText(imageBusy ? 'Loading images…' : 'Add images')}
-        </Button>
-        <p className="text-xs text-muted-foreground">
-          {uiText(
-            'Optional screenshots or designs. Each reviewer must support image input. Up to three images.',
+          {imageError && (
+            <p role="alert" className="text-xs text-destructive">
+              {imageError}
+            </p>
           )}
-        </p>
-        {review.images.map((image, index) => (
-          <div key={index} className="flex items-center justify-between gap-2 text-xs">
-            <img
-              alt={image.name}
-              src={`data:${image.mime ?? 'image/png'};base64,${image.data}`}
-              className="size-14 shrink-0 rounded border object-contain"
-            />
-            <span className="min-w-0 flex-1 truncate">{image.name}</span>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={!!blocked}
-              onClick={() => review.setImages(review.images.filter((_, at) => at !== index))}
-            >
-              {uiText('Remove')}
-            </Button>
-          </div>
-        ))}
-        {imageError && (
-          <p role="alert" className="text-xs text-destructive">
-            {imageError}
-          </p>
-        )}
+        </div>
       </div>
       {!current && (
         <div className="space-y-2 border-b p-4">
@@ -614,17 +716,52 @@ function LocalPullCodeReviewPanel({
           {review.notice}
         </p>
       )}
+      {completed && (
+        <header className="space-y-2 px-4 pt-4">
+          <div className="flex flex-wrap items-baseline justify-between gap-2">
+            <h3 className="text-lg font-semibold">
+              {current.findings.length === 1
+                ? uiText('1 finding')
+                : uiText('{value0} findings', { value0: current.findings.length })}
+            </h3>
+            {reviewAgain}
+          </div>
+          {current.summary && <p className="leading-relaxed">{current.summary}</p>}
+          <p className="text-xs text-muted-foreground">
+            {uiText('Commit {value0}', { value0: current.headSha.slice(0, 7) })}
+          </p>
+        </header>
+      )}
       {current && (
         <div className="space-y-2 border-b p-4 text-xs">
-          <p className="text-muted-foreground">
-            {uiText('Review depth')} · {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
-          </p>
+          {completed ? (
+            <p className="text-muted-foreground">
+              {uiText('{value0} of {value1} file patches supplied in this pass', {
+                value0: supplied,
+                value1: current.coverage.length + current.missingFiles,
+              })}
+            </p>
+          ) : (
+            <p className="text-muted-foreground">
+              {uiText('Review depth')} ·{' '}
+              {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
+            </p>
+          )}
+          {completed && !current.checks?.length && (
+            <p className="text-muted-foreground">{uiText('No project check results')}</p>
+          )}
           {!!current.checks?.length && (
             <details open={current.status === 'running'}>
               <summary className="cursor-pointer">
                 {uiText('Project check results')} ·{' '}
                 {current.checks.filter((check) => check.status === 'passed').length}/
                 {current.checks.length}
+                {current.checks.some((check) => check.status === 'failed') && (
+                  <span className="text-status-error">
+                    {' · '}
+                    {uiText(pullReviewCheckLabels.failed)}
+                  </span>
+                )}
               </summary>
               <p className="py-2 text-muted-foreground">
                 {uiText(
@@ -651,96 +788,13 @@ function LocalPullCodeReviewPanel({
       )}
       {current && (
         <div className="grid min-w-0 @3xl/review:grid-cols-[minmax(0,1fr)_minmax(320px,0.85fr)]">
-          <div className="min-w-0 border-b bg-muted/10 @3xl/review:border-b-0 @3xl/review:border-r">
-            <div className="flex items-center gap-2 border-b p-3">
-              <FileSearch className="size-4 shrink-0 text-muted-foreground" />
-              <ChoicePicker
-                aria-label={uiText('Captured review file')}
-                value={selectedPatch?.path ?? ''}
-                onValueChange={setPatch}
-              >
-                {current.coverage
-                  .filter((file) => file.state === 'supplied')
-                  .map((file) => (
-                    <option key={file.path} value={file.path}>
-                      {file.path}
-                    </option>
-                  ))}
-              </ChoicePicker>
-            </div>
-            <p className="border-b px-4 py-2 text-[11px] text-muted-foreground">
-              {uiText('Captured evidence · {value0} · {value1}', {
-                value0: current.headSha.slice(0, 7),
-                value1: selectedPatch?.path,
-              })}
-            </p>
-            <div className="max-h-[75vh] overflow-auto">
-              {selectedPatch?.patch ? (
-                <PullPatch
-                  key={current.id + selectedPatch.path}
-                  file={{
-                    path: selectedPatch.path,
-                    patch: selectedPatch.patch,
-                    status: 'modified',
-                    additions: 0,
-                    deletions: 0,
-                  }}
-                  split={false}
-                  allowAgent={false}
-                  allowInlineComment={false}
-                />
-              ) : (
-                <p className="p-5 text-xs text-muted-foreground">
-                  {uiText('No patch available in this pass.')}
-                </p>
-              )}
-            </div>
-          </div>
           <div className="min-w-0 space-y-4 p-4">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <ChoicePicker
-                aria-label={uiText('Review history')}
-                value={current.id}
-                onValueChange={review.select}
-              >
-                {review.report?.reviews.map((pass) => (
-                  <option key={pass.id} value={pass.id}>
-                    {pass.headSha.slice(0, 7)} · {pass.status} ·{' '}
-                    {new Date(pass.createdAt).toLocaleString()}
-                  </option>
-                ))}
-              </ChoicePicker>
-              <Button
-                size="sm"
-                variant="outline"
-                disabled={!!blocked || !ready}
-                onClick={() => start()}
-              >
-                {stale ? uiText('Review latest revision') : uiText('Review again')}
-              </Button>
-            </div>
-            <div className="space-y-1 text-xs text-muted-foreground">
-              {current.reviewerResults?.map((reviewer) => (
-                <p key={reviewer.id}>
-                  {reviewer.selection.harness?.provider ?? reviewer.selection.agentId} ·{' '}
-                  {reviewer.selection.model} · {uiText(pullReviewerStatusLabels[reviewer.status])} ·{' '}
-                  {uiText('{value0}/{value1} batches', {
-                    value0: reviewer.completedBatches,
-                    value1: reviewer.batches,
-                  })}
-                  {reviewer.error ? ` · ${reviewer.error}` : ''}
-                </p>
-              ))}
-              {current.images?.map((image) => (
-                <p key={image.id}>
-                  {image.name} · {image.mime}
-                </p>
-              ))}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              {current.selection.model} · {current.baseSha.slice(0, 7)} →{' '}
-              {current.headSha.slice(0, 7)}
-            </p>
+            {!completed && (
+              <div className="flex flex-wrap items-center gap-2">
+                {historyPicker}
+                {reviewAgain}
+              </div>
+            )}
             {stale && (
               <p
                 role="status"
@@ -762,7 +816,7 @@ function LocalPullCodeReviewPanel({
                   {uiText('Cancel review')}
                 </Button>
               </div>
-            ) : (
+            ) : !completed ? (
               <p className="leading-6">
                 {current.summary ||
                   current.error ||
@@ -770,78 +824,42 @@ function LocalPullCodeReviewPanel({
                     value0: current.status,
                   })}
               </p>
-            )}
-            <details className="rounded-lg border p-3 text-xs">
-              <summary className="cursor-pointer">
-                {uiText('{value0} of {value1} file patches supplied in this pass', {
-                  value0: supplied,
-                  value1: current.coverage.length + current.missingFiles,
-                })}
-              </summary>
-              <p className="my-2 text-muted-foreground">
-                {uiText(
-                  'Supplying a patch does not prove the model checked every line. Separate passes can miss issues across files.',
-                )}
-              </p>
-              <ul className="space-y-1">
-                {current.coverage.map((file) => (
-                  <li key={file.path} className="flex justify-between gap-3">
-                    <span className="break-all">{file.path}</span>
-                    <span className="shrink-0 text-muted-foreground">
-                      {uiText(pullReviewCoverageLabels[file.state])}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-              {current.missingFiles > 0 && (
-                <p>
-                  {uiText('{value0} files were not returned by the forge.', {
-                    value0: current.missingFiles,
-                  })}
-                </p>
-              )}
-            </details>
-            {!stale &&
-              current.status === 'completed' &&
-              current.coverage.some(
-                (file) => file.state === 'budget' || file.state === 'failed',
-              ) && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled={!!blocked || !ready}
-                  onClick={() => start(true)}
-                >
-                  {uiText('Review remaining files')}
-                </Button>
-              )}
-            <div className="space-y-3">
+            ) : null}
+            <div className="divide-y">
               {current.findings.map((finding) => {
                 const dismissed = draft?.dismissed.includes(finding.id)
                 const added = draft?.selected.includes(finding.id)
                 return (
                   <article
                     key={finding.id}
-                    className={`rounded-lg border p-4 ${dismissed ? 'opacity-60' : ''}`}
+                    className={`space-y-2 py-4 first:pt-0 last:pb-0 ${dismissed ? 'opacity-60' : ''}`}
                   >
-                    <div className="mb-2 flex items-start gap-2">
+                    <h4 className="text-base font-semibold">{finding.title}</h4>
+                    <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                       <span
-                        className={`rounded px-1.5 py-0.5 text-[10px] uppercase ${finding.severity === 'high' ? 'bg-red-500/10 text-red-500' : 'bg-amber-500/10 text-amber-600'}`}
+                        className={`text-xs capitalize ${finding.severity === 'high' ? 'text-status-error' : 'text-status-warning'}`}
                       >
                         {finding.severity}
                       </span>
-                      <h4 className="font-medium">{finding.title}</h4>
+                      <button
+                        type="button"
+                        className="break-all text-left font-mono text-xs text-muted-foreground underline underline-offset-4 focus-visible:outline-2 focus-visible:outline-primary"
+                        onClick={(event) => {
+                          findingTrigger.current = event.currentTarget
+                          setFindingPatch({
+                            finding,
+                            commit: current.headSha,
+                            patch: current.coverage.find((file) => file.path === finding.path)
+                              ?.patch,
+                          })
+                        }}
+                      >
+                        {finding.path}
+                        {finding.anchored
+                          ? `:${finding.line} · ${finding.side}`
+                          : uiText(' · location not verified')}
+                      </button>
                     </div>
-                    <button
-                      type="button"
-                      className="mb-2 break-all text-xs text-muted-foreground underline underline-offset-4"
-                      onClick={() => setPatch(finding.path)}
-                    >
-                      {finding.path}
-                      {finding.anchored
-                        ? `:${finding.line} · ${finding.side}`
-                        : uiText(' · location not verified')}
-                    </button>
                     {finding.reviewerIds?.length ? (
                       <p className="mb-2 text-xs text-muted-foreground">
                         {uiText('Found by {value0}', {
@@ -855,9 +873,9 @@ function LocalPullCodeReviewPanel({
                         })}
                       </p>
                     ) : null}
-                    <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.trigger}</p>
-                    <p className="mb-2 whitespace-pre-wrap text-xs leading-5">{finding.impact}</p>
-                    <p className="whitespace-pre-wrap text-xs leading-5 text-muted-foreground">
+                    <p className="whitespace-pre-wrap leading-relaxed">{finding.trigger}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed">{finding.impact}</p>
+                    <p className="whitespace-pre-wrap leading-relaxed text-muted-foreground">
                       {finding.suggestion}
                     </p>
                     {finding.evidence && (
@@ -935,6 +953,78 @@ function LocalPullCodeReviewPanel({
               </div>
             )}
             <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">{uiText('File coverage')}</summary>
+              <p className="my-2 text-muted-foreground">
+                {uiText(
+                  'Supplying a patch does not prove the model checked every line. Separate passes can miss issues across files.',
+                )}
+              </p>
+              <ul className="space-y-1">
+                {current.coverage.map((file) => (
+                  <li key={file.path} className="flex justify-between gap-3">
+                    <span className="break-all">{file.path}</span>
+                    <span className="shrink-0 text-muted-foreground">
+                      {uiText(pullReviewCoverageLabels[file.state])}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+              {current.missingFiles > 0 && (
+                <p>
+                  {uiText('{value0} files were not returned by the forge.', {
+                    value0: current.missingFiles,
+                  })}
+                </p>
+              )}
+            </details>
+            {!stale &&
+              current.status === 'completed' &&
+              current.coverage.some(
+                (file) => file.state === 'budget' || file.state === 'failed',
+              ) && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={!!blocked || !ready}
+                  onClick={() => start(true)}
+                >
+                  {uiText('Review remaining files')}
+                </Button>
+              )}
+            <details className="text-xs text-muted-foreground">
+              <summary className="cursor-pointer">{uiText('Review details')}</summary>
+              <div className="mt-2 space-y-2">
+                {completed && historyPicker}
+                <p>
+                  {uiText('Review depth')} ·{' '}
+                  {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
+                </p>
+                <div className="space-y-1 text-xs text-muted-foreground">
+                  {current.reviewerResults?.map((reviewer) => (
+                    <p key={reviewer.id}>
+                      {reviewer.selection.harness?.provider ?? reviewer.selection.agentId} ·{' '}
+                      {reviewer.selection.model} ·{' '}
+                      {uiText(pullReviewerStatusLabels[reviewer.status])} ·{' '}
+                      {uiText('{value0}/{value1} batches', {
+                        value0: reviewer.completedBatches,
+                        value1: reviewer.batches,
+                      })}
+                      {reviewer.error ? ` · ${reviewer.error}` : ''}
+                    </p>
+                  ))}
+                  {current.images?.map((image) => (
+                    <p key={image.id}>
+                      {image.name} · {image.mime}
+                    </p>
+                  ))}
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  {current.selection.model} · {current.baseSha.slice(0, 7)} →{' '}
+                  {current.headSha.slice(0, 7)}
+                </p>
+              </div>
+            </details>
+            <details className="text-xs text-muted-foreground">
               <summary className="cursor-pointer">{uiText('Review limits')}</summary>
               <ul className="mt-2 list-inside list-disc space-y-1">
                 {current.notVerified.map((text, index) => (
@@ -975,7 +1065,9 @@ function LocalPullCodeReviewPanel({
             {draft && current.status === 'completed' && (
               <div className="space-y-3 border-t pt-4">
                 <div className="flex items-center justify-between">
-                  <h4 className="font-medium">{uiText('Your review draft')}</h4>
+                  <h4 ref={draftHeading} tabIndex={-1} className="font-medium">
+                    {uiText('Your review draft')}
+                  </h4>
                   <span role="status" className="text-xs text-muted-foreground">
                     {review.dirty ? uiText('Unsaved changes') : uiText('Saved on computer')}
                   </span>
@@ -1037,6 +1129,7 @@ function LocalPullCodeReviewPanel({
                 </ChoicePicker>
                 <div className="flex flex-wrap gap-2">
                   <Button
+                    ref={previewTrigger}
                     size="sm"
                     disabled={
                       !connected ||
@@ -1099,7 +1192,101 @@ function LocalPullCodeReviewPanel({
               </div>
             )}
           </div>
+          <div className="min-w-0 border-t bg-background @3xl/review:-order-1 @3xl/review:border-t-0 @3xl/review:border-r">
+            <div className="flex items-center gap-2 border-b p-3">
+              <FileSearch className="size-4 shrink-0 text-muted-foreground" />
+              <ChoicePicker
+                className="min-w-0 flex-1"
+                aria-label={uiText('Captured review file')}
+                value={selectedPatch?.path ?? ''}
+                onValueChange={setPatch}
+              >
+                {current.coverage
+                  .filter((file) => file.state === 'supplied')
+                  .map((file) => (
+                    <option key={file.path} value={file.path}>
+                      {file.path}
+                    </option>
+                  ))}
+              </ChoicePicker>
+            </div>
+            <p className="border-b px-4 py-2 text-[11px] text-muted-foreground">
+              {uiText('Captured evidence · {value0} · {value1}', {
+                value0: current.headSha.slice(0, 7),
+                value1: selectedPatch?.path,
+              })}
+            </p>
+            <div className="max-h-[75vh] overflow-auto">
+              {selectedPatch?.patch ? (
+                <PullPatch
+                  key={current.id + selectedPatch.path}
+                  file={{
+                    path: selectedPatch.path,
+                    patch: selectedPatch.patch,
+                    status: 'modified',
+                    additions: 0,
+                    deletions: 0,
+                  }}
+                  split={false}
+                  allowAgent={false}
+                  allowInlineComment={false}
+                />
+              ) : (
+                <p className="p-5 text-xs text-muted-foreground">
+                  {uiText('No patch available in this pass.')}
+                </p>
+              )}
+            </div>
+          </div>
         </div>
+      )}
+      {findingPatch && (
+        <Dialog open onOpenChange={(open) => !open && setFindingPatch(undefined)}>
+          <DialogContent
+            className="max-w-4xl"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              findingTrigger.current?.focus({ preventScroll: true })
+            }}
+          >
+            <DialogTitle className="break-all">{findingPatch.finding.path}</DialogTitle>
+            <DialogDescription>
+              {uiText('Captured patch at {value0}', {
+                value0: findingPatch.commit.slice(0, 7),
+              })}
+              {findingPatch.finding.anchored &&
+                ` · ${findingPatch.finding.line} · ${findingPatch.finding.side}`}
+            </DialogDescription>
+            <div className="max-h-[65vh] min-w-0 overflow-auto">
+              {findingPatch.patch ? (
+                <PullPatch
+                  file={{
+                    path: findingPatch.finding.path,
+                    patch: findingPatch.patch,
+                    status: 'modified',
+                    additions: 0,
+                    deletions: 0,
+                  }}
+                  split={false}
+                  allowAgent={false}
+                  allowInlineComment={false}
+                  focusedLine={
+                    findingPatch.finding.anchored
+                      ? {
+                          number: findingPatch.finding.line,
+                          side: findingPatch.finding.side === 'before' ? 'deletions' : 'additions',
+                        }
+                      : undefined
+                  }
+                />
+              ) : (
+                <p className="text-xs text-muted-foreground">
+                  {uiText('No patch available in this pass.')}
+                </p>
+              )}
+            </div>
+          </DialogContent>
+        </Dialog>
       )}
       {preview !== undefined && current && (
         <Dialog
@@ -1108,7 +1295,16 @@ function LocalPullCodeReviewPanel({
             if (!open && !review.publishing) setPreview(undefined)
           }}
         >
-          <DialogContent className="max-h-[85vh] overflow-y-auto sm:max-w-2xl">
+          <DialogContent
+            data-surface="solid"
+            className="max-h-[85vh] overflow-y-auto break-words sm:max-w-2xl"
+            onCloseAutoFocus={(event) => {
+              event.preventDefault()
+              const trigger = previewTrigger.current
+              if (trigger && !trigger.disabled) trigger.focus()
+              else draftHeading.current?.focus()
+            }}
+          >
             <DialogTitle>{uiText('Publish your review')}</DialogTitle>
             {(current.id !== preview.id || current.version !== preview.version) && (
               <p role="alert" className="text-xs text-destructive">
@@ -1143,6 +1339,7 @@ function LocalPullCodeReviewPanel({
               </p>
             )}
             <Button
+              data-dialog-cancel
               variant="outline"
               disabled={review.publishing}
               onClick={() => setPreview(undefined)}
@@ -1195,7 +1392,10 @@ export function PullCodeReviewPanel(props: PanelProps) {
             className="w-60 max-w-full flex-none"
             aria-label={uiText('Review on computer')}
             value={runtimeId}
-            onValueChange={setChosen}
+            onValueChange={(value) => {
+              props.rowReviewRun?.()
+              setChosen(value)
+            }}
           >
             {computers.map((computer) => (
               <option key={computer.profile.id} value={computer.profile.id}>
@@ -1207,10 +1407,14 @@ export function PullCodeReviewPanel(props: PanelProps) {
         </label>
       )}
       {runtimeId === activeRuntimeId || !runtimeId ? (
-        <LocalPullCodeReviewPanel key={runtimeId} {...props} />
+        <LocalPullCodeReviewPanel
+          key={runtimeId}
+          {...props}
+          rowReviewRun={chosen ? undefined : props.rowReviewRun}
+        />
       ) : (
         <WorkspaceRuntimeScope runtimeId={runtimeId}>
-          <RemotePullCodeReviewPanel key={runtimeId} {...props} />
+          <RemotePullCodeReviewPanel key={runtimeId} {...props} rowReviewRun={undefined} />
         </WorkspaceRuntimeScope>
       )}
     </div>

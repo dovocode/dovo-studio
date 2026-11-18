@@ -14,7 +14,7 @@ export function WatchMessageCard({ update }: { update: WatchMessage }) {
         <span
           className={
             tone === 'danger'
-              ? 'text-destructive'
+              ? 'font-semibold text-destructive'
               : tone === 'warning'
                 ? 'text-status-warning'
                 : undefined
@@ -28,7 +28,7 @@ export function WatchMessageCard({ update }: { update: WatchMessage }) {
         href={update.url}
         target="_blank"
         rel="noreferrer"
-        className="mt-2 flex min-w-0 items-start gap-2 font-medium hover:underline"
+        className={`mt-2 flex min-w-0 items-start gap-2 hover:underline ${update.failedStep ? 'text-muted-foreground' : 'font-medium'}`}
       >
         <span className="min-w-0 break-words">{update.title}</span>
         <ExternalLink size={13} className="mt-1 shrink-0" aria-hidden="true" />
@@ -49,7 +49,7 @@ export function WatchMessageCard({ update }: { update: WatchMessage }) {
           href={update.failedStep.url}
           target="_blank"
           rel="noreferrer"
-          className="mt-2 flex min-w-0 items-start gap-2 text-xs underline"
+          className="mt-2 flex min-w-0 items-start gap-2 font-medium underline underline-offset-2"
         >
           <span className="min-w-0 break-words">Open failed step: {update.failedStep.name}</span>
           <ExternalLink size={13} className="shrink-0" aria-hidden="true" />

@@ -1,3 +1,4 @@
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotCall } from '../bots/bot-call'
 import { useThreadChildren } from './use-thread-children'
 import { sideThreadAttentionTarget } from '@dovo/protocol'
@@ -9,6 +10,7 @@ import {
   taskDisplayProject,
   projectDisplayName,
   taskParentReference,
+  taskThreadInputSummary,
 } from '@dovo/protocol'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
@@ -178,10 +180,13 @@ export function TaskHeader({
     workspace,
     snapshot,
   })
-  const needsInput =
-    !!snapshot?.questions.some((request) => request.taskId === task.id) ||
-    !!snapshot?.approvals.some((request) => request.taskId === task.id)
-  const presentation = taskPresentation(task, needsInput, now)
+  const uiText = useInterfaceText()
+  const inputLabel =
+    connected && !task.archived && !task.archivedAt
+      ? threadInputLabel(taskThreadInputSummary(snapshot, task.id), uiText)
+      : ''
+  const presentation = taskPresentation(task, !!inputLabel, now)
+  const status = inputLabel || presentation.label
   const terminals =
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
@@ -303,12 +308,12 @@ export function TaskHeader({
           variant="ghost"
           size="sm"
           aria-label={projectPanelOpen ? 'Hide thread info' : 'Show thread info'}
-          aria-description={`${branch} · ${presentation.label}`}
+          aria-description={`${branch} · ${status}`}
           aria-pressed={projectPanelOpen}
           aria-expanded={projectPanelOpen}
           aria-controls={threadInfo?.panelId}
           onClick={onProjectPanel}
-          title={`${branch} · ${presentation.label} · Thread info`}
+          title={`${branch} · ${status} · Thread info`}
           data-thread-info-trigger
           className={cn(
             'h-7 min-w-0 shrink-0 gap-2 px-2 text-xs font-normal text-muted-foreground',
@@ -325,9 +330,9 @@ export function TaskHeader({
           <span
             data-thread-info-state
             data-tone={presentation.tone}
-            className="studio-thread-status whitespace-nowrap text-xs"
+            className="studio-thread-status max-w-36 truncate text-xs"
           >
-            {presentation.state}
+            {inputLabel || presentation.state}
           </span>
           <ChevronDown size={12} className="shrink-0" aria-hidden="true" />
         </Button>
@@ -389,7 +394,7 @@ export function TaskHeader({
             )}
             {presentation.state !== 'Review' && (
               <span className="studio-thread-status truncate" data-tone={presentation.tone}>
-                {presentation.label}
+                {status}
               </span>
             )}
             {!task.bot && !projectPanelOpen && (

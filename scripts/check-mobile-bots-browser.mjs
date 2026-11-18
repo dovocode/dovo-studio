@@ -320,11 +320,11 @@ try {
     .getByRole('dialog', { name: 'Routines', exact: true })
     .getByRole('button', { name: 'Close sheet', exact: true })
     .click()
-  await page.getByRole('button', { name: 'Pause Bot', exact: true }).click()
+  await page.getByRole('button', { name: 'Pause new work', exact: true }).click()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).waitFor()
   await page.getByText(/New work paused/).waitFor()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
-  await page.getByRole('button', { name: 'Pause Bot', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Pause new work', exact: true }).waitFor()
   await page.getByLabel('Role', { exact: true }).fill('Senior reviewer')
   await page.getByRole('button', { name: 'Skills', exact: true }).click()
   await page
@@ -430,7 +430,7 @@ try {
   await page.evaluate(() => {
     window.lifecycleNoopExternal = true
   })
-  await page.getByRole('button', { name: 'Pause Bot', exact: true }).click()
+  await page.getByRole('button', { name: 'Pause new work', exact: true }).click()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Save Bot', exact: true }).click()
   await page

@@ -24,7 +24,9 @@ Each page in the settings navigation shows where it saves: a layers mark for pag
 through the four levels, a monitor mark for pages saved on one computer, and no mark for device
 preferences, which ignore the target. Mobile keeps both choices visible above its scoped pages. Its
 compact summary stays visible while the scoped page scrolls; the choices scroll with the content.
-The Settings list shows the current target with matching marks on its rows.
+The Settings list shows the current target with matching marks on its rows. The save controls show
+the scope again when you make an edit. While offline, Settings identifies saved values. If the
+editor has unsaved changes, the save controls confirm that the device keeps the draft.
 
 Task defaults and lifecycle settings also have a **View inheritance** control. It shows values at
 each scope, grouped by computer, with the winning value checked. Matching projects use their

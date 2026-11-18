@@ -56,7 +56,7 @@ export function ThreadInfoCustomization() {
             minHeight: bounds.minHeight,
             maxHeight: bounds.maxHeight,
           }}
-          className="studio-menu-surface z-50 flex flex-col overflow-hidden rounded-2xl border bg-[var(--studio-floating-fill)] text-xs text-popover-foreground"
+          className="z-50 flex flex-col overflow-hidden rounded-2xl border bg-popover text-xs text-popover-foreground shadow-lg"
         >
           <div className="z-10 flex h-10 shrink-0 items-center justify-between gap-2 border-b bg-popover px-4">
             <DropdownMenu.Label className="text-sm font-semibold">

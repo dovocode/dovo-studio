@@ -245,6 +245,8 @@ try {
   )
   await page.getByRole('button', { name: 'More jobs', exact: true }).click()
   await page.getByText('Upload artifact', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'View first failed job', exact: true }).click()
+  await page.waitForFunction(() => document.activeElement?.id === 'pipeline-job-job-2')
   await page.screenshot({ path: screenshots + '/desktop-dark.png', fullPage: true })
   await page.setViewportSize({ width: 390, height: 844 })
   assert.equal(
@@ -326,6 +328,12 @@ try {
   await page.evaluate(() => window.release('graph'))
   await page.getByRole('button', { name: 'More jobs', exact: true }).click()
   await page.getByText('1. Upload artifact', { exact: true }).waitFor()
+  const failedHeading = page.getByText('Failed jobs', { exact: true })
+  const graph = page.getByLabel('Pipeline graph', { exact: true })
+  assert.ok(
+    (await failedHeading.boundingBox()).y < (await graph.boundingBox()).y,
+    'Mobile should show failed jobs before the workflow graph',
+  )
   await page.getByRole('button', { name: 'View job Build job', exact: true }).click()
   assert.equal(
     await page.getByRole('button', { name: 'Job Build job', exact: true }).count(),

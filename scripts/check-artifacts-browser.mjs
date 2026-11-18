@@ -146,7 +146,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   'expo-router': `export const router={canGoBack:()=>!!window.artifactHistory,back:()=>window.artifactBackRoute=window.artifactHistory,replace:href=>window.artifactBackRoute=href};`,
   // Keep account/feed hooks real; these local-artifact scenarios have no account host.
-  '@dovo/studio-core': `export {imageEditorFont as offlineEditorFont} from '${root}packages/client-runtime/src/images/image-editor-script.ts';export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target,taskNavigationGuard:()=>{const epoch=window.navigationEpoch;return ()=>epoch===window.navigationEpoch}});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
+  '@dovo/studio-core': `export {imageEditorFont as offlineEditorFont} from '${root}packages/client-runtime/src/images/image-editor-script.ts';export {useAccount} from '${root}packages/studio-core/src/use-account.ts';export {useArtifactFeed} from '${root}packages/studio-core/src/use-artifact-feed.ts';export {studioSyntaxTheme} from '${root}packages/studio-core/src/themes.ts';export const useAppPreferences=()=>({themePalette:'dovo',codeTheme:'app',importedCodeThemes:[]});import React,{createContext,useContext} from 'react';const Context=createContext(null);export const useResolvedTheme=()=> 'dark';export const useStudioHost=()=>({navigate:target=>window.artifactNavigation=target,openThread:window.openArtifactThread,taskNavigationGuard:()=>{const epoch=window.navigationEpoch;return ()=>epoch===window.navigationEpoch}});export const useWorkspace=()=>useContext(Context)??window.artifactWorkspace??({workspace:{tasks:[]},request:window.artifactRequest,connected:true,activeRuntimeId:'runtime',snapshot:{artifactsEnabled:window.artifactsEnabled}});export const WorkspaceScope=({profile,children})=><Context.Provider value={{...useWorkspace(),activeRuntimeId:profile.id,snapshot:{artifactsEnabled:true},request:(path,input)=>window.artifactRequest(path,input,profile.id)}}>{children}</Context.Provider>;`,
   '@dovo/studio-ui': `
 import React from 'react';import {Button} from '${uiRoot}components/ui/button.tsx';
 export {Button};export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {cn} from '${uiRoot}lib/utils.ts';
@@ -1726,8 +1726,17 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await library.getByRole('button', { name: 'Back to artifacts', exact: true }).click()
       await library.getByLabel('Search artifacts').waitFor()
       await library.setViewportSize({ width: 1280, height: 800 })
-    } else
-      await library.getByRole('button', { name: 'Close artifact preview', exact: true }).click()
+    } else {
+      await library
+        .getByRole('dialog')
+        .getByRole('button', { name: 'Open source thread', exact: true })
+        .click()
+      assert.deepEqual(await library.evaluate(() => window.artifactNavigation), {
+        view: 'tasks',
+        entityId: 'thread',
+        runtimeId: '1',
+      })
+    }
     assert.deepEqual(
       await library.evaluate(() => window.libraryCalls),
       ['0', '1'],
@@ -2042,7 +2051,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
           id,
           name,
           nameIsCustom: true,
-          connection: { address: `http://${id}.lan`, token },
+          connection: { address: `http://${id}.lan`, token, runtimeId: `${id}-identity` },
         },
         connected: true,
         snapshot: {
@@ -2089,12 +2098,24 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         )
         window.updateLibrary()
       }
+      window.openArtifactThread = (target) => (window.directArtifactSource = target)
       window.resolveB = (index, title) =>
         window.pendingB[index]({ artifacts: [artifact(`b${index}`, title)] })
     })
     await owners.addScriptTag({ content: interfaces.find((ui) => ui.platform === 'library').code })
     const row = (title) => owners.getByRole('button', { name: `Open artifact ${title}` })
     await row('Alpha notes').waitFor()
+    await owners.getByRole('status').filter({ hasText: 'Loading artifacts from Host B…' }).waitFor()
+    await row('Alpha notes')
+      .locator('..')
+      .getByRole('button', { name: 'Open source thread', exact: true })
+      .click()
+    assert.deepEqual(await owners.evaluate(() => window.directArtifactSource), {
+      runtimeId: 'a',
+      runtimeIdentity: 'a-identity',
+      threadId: 'thread',
+      title: 'Research',
+    })
     // Host B is still loading; a newer read must win over the slower older reply.
     await owners.evaluate(() => window.setRuntime('b', { connected: false, error: 'Offline' }))
     await owners.getByText('Host B is offline.', { exact: false }).waitFor()
@@ -2235,6 +2256,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     const card = (title) =>
       mobile.getByRole('button', { name: 'Open artifact ' + title, exact: true })
     await card('Fast notes').waitFor()
+    await mobile.getByText('Loading artifacts from Slow…', { exact: true }).waitFor()
     assert.deepEqual(await mobile.evaluate(() => window.mobileReads), ['Fast', 'Slow'])
     await mobile.evaluate(() => window.changeMobile('Slow', { connected: false, error: 'Offline' }))
     await mobile.getByText(/Slow is offline/).waitFor()

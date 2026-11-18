@@ -1,3 +1,4 @@
+import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { savedFilterScope } from '@dovo/protocol'
 import { SavedFilterViews } from '../../saved-filter-views'
@@ -12,13 +13,14 @@ import {
 } from '@dovo/protocol'
 import { AddPullsToThread } from './add-to-thread'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { Plug, Plus, RefreshCw, SlidersHorizontal } from 'lucide-react'
 import {
   comparePulls,
   matchesPull,
   pullNeedsAttention,
   useWorkspace,
+  pullChecks,
   useAppPreferences,
   updateAppPreferences,
   useStudioHost,
@@ -50,6 +52,7 @@ import { SourcePicker } from '../../connections/source-picker'
 import { createPullStateCache, useRetainedPullState } from '../retained-state'
 type SavedSelection = { source: Pick<RepositorySource, 'key' | 'scope'>; number: number } | null
 const filterCache = createPullStateCache<string>(100)
+const listScrollCache = createPullStateCache<number>(30)
 const flagCache = createPullStateCache<boolean>(40)
 const selectionCache = createPullStateCache<SavedSelection>(20)
 const urlCache = createPullStateCache<string | null>(60)
@@ -90,7 +93,8 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const [urlSelection, setUrlSelection] = useRetainedPullState(urlCache, listKey + ':url', null)
   const [reviewSelection, setReviewSelection] = useApplicationState<{
     key: string
-    configure: boolean
+    intent: 'open' | 'configure' | 'run'
+    claim?: () => boolean
   } | null>(null)
   const [urlOwnerId, setUrlOwnerId] = useRetainedPullState(urlCache, listKey + ':owner', null)
   const [selectedNavigation, setSelectedNavigation] = useRetainedPullState(
@@ -104,6 +108,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   const [adding, setAdding] = useApplicationState<PullSummary[] | null>(null)
   const selectionAnchor = useRef<string | null>(null)
   const searchInput = useRef<HTMLInputElement>(null)
+  const list = useRef<HTMLDivElement>(null)
   const {
     sources,
     pages: allPages,
@@ -131,10 +136,27 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     number: number,
     url?: string,
     replace = false,
-    review?: { configure: boolean },
+    destination?:
+      | { tab: 'changes' | 'checks' }
+      | { tab: 'review'; intent: 'open' | 'configure' | 'run' },
   ) =>
     transition(() => {
-      setReviewSelection(review ? { key: JSON.stringify([source.scope, number]), ...review } : null)
+      let pending = destination?.tab === 'review' && destination.intent === 'run'
+      setReviewSelection(
+        destination?.tab === 'review'
+          ? {
+              key: JSON.stringify([source.scope, number]),
+              intent: destination.intent,
+              claim: pending
+                ? () => {
+                    if (!pending) return false
+                    pending = false
+                    return true
+                  }
+                : undefined,
+            }
+          : null,
+      )
       const pull = pages
         .find((page) => page.source.key === source.key)
         ?.pulls.find((pull) => pull.number === number)
@@ -154,7 +176,12 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
             repositoryId: source.repository.id,
             number,
             url: navigationUrl,
-            tab: target && (target.tab !== 'overview' || target.fragment) ? target.tab : undefined,
+            tab:
+              destination && destination.tab !== 'review'
+                ? destination.tab
+                : target && (target.tab !== 'overview' || target.fragment)
+                  ? target.tab
+                  : undefined,
             fragment: target?.fragment,
           },
         },
@@ -300,8 +327,28 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     }, 'close')
   }
   const hasDetail = !!selected || !!urlSelection
+  const listScrollKey = JSON.stringify([
+    repositoryId,
+    state,
+    search,
+    draft,
+    attention,
+    sort,
+    personal,
+  ])
+  const rowCount = pulls.length
+  useLayoutEffect(() => {
+    if (!rowCount || !list.current?.clientHeight) return
+    list.current.scrollTop = listScrollCache.read(listScrollKey) ?? 0
+  }, [listScrollKey, rowCount, hasDetail, sidebarVisible])
   const urlRuntimeId = urlOwnerId
   const rowKey = (pull: (typeof pulls)[number]) => JSON.stringify([pull.source.key, pull.number])
+  const requestedReviews = new Set(
+    pulls
+      .filter((pull) => pull.state === 'open' && !pull.draft && pull.viewerReviewRequested)
+      .map(rowKey),
+  )
+  const hasFailedChecks = pulls.some((pull) => pullChecks(pull).tone === 'danger')
   const selectRow = (pull: (typeof pulls)[number], event: React.MouseEvent<HTMLButtonElement>) => {
     const key = rowKey(pull)
     if (event.metaKey || event.ctrlKey) {
@@ -469,15 +516,15 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                         },
                       ] as const
                     ).map((item) => (
-                      <Button
+                      <ToggleButton
                         key={item.id}
                         size="sm"
                         variant="ghost"
                         aria-label={item.label}
-                        aria-pressed={personal === item.id}
+                        pressed={personal === item.id}
                         title={`${item.count} in loaded, filtered results`}
                         className="studio-list-quick-filter shrink-0"
-                        onClick={() => {
+                        onPressedChange={() => {
                           setPersonal(item.id)
                           setMarked([])
                         }}
@@ -486,7 +533,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                         <span aria-hidden className="studio-list-filter-count">
                           {item.count}
                         </span>
-                      </Button>
+                      </ToggleButton>
                     ))}
                   </div>
                   <Button
@@ -651,19 +698,19 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                         <option value="draft">Drafts</option>
                         <option value="ready">Ready</option>
                       </ChoicePicker>
-                      <Button
+                      <ToggleButton
                         size="sm"
                         variant="ghost"
                         className="studio-list-quick-filter"
-                        aria-pressed={attention}
+                        pressed={attention}
                         title="Your review requests, blocked PRs, and your approved PRs with passing checks"
-                        onClick={() => {
+                        onPressedChange={() => {
                           setMarked([])
                           setAttention((value) => !value)
                         }}
                       >
                         Needs attention
-                      </Button>
+                      </ToggleButton>
                       {!!activeFilters && (
                         <Button
                           size="sm"
@@ -687,6 +734,11 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
               </div>
               <div
                 aria-label="Pull request rows"
+                ref={list}
+                onScroll={(event) => {
+                  if (event.currentTarget.clientHeight)
+                    listScrollCache.write(listScrollKey, event.currentTarget.scrollTop)
+                }}
                 className="relative min-h-0 flex-1 overflow-y-auto overscroll-contain p-2"
               >
                 {filtersOpen && personal !== 'all' && (
@@ -798,13 +850,28 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
                       onClick={(event) => selectRow(p, event)}
                       onSelect={() => open(p.source, p.number)}
+                      showReviewActionColumn={requestedReviews.size > 0 || hasFailedChecks}
+                      onReviewChanges={
+                        requestedReviews.has(rowKey(p))
+                          ? () => open(p.source, p.number, undefined, false, { tab: 'changes' })
+                          : undefined
+                      }
+                      onFailedChecks={
+                        pullChecks(p).tone === 'danger'
+                          ? () => open(p.source, p.number, undefined, false, { tab: 'checks' })
+                          : undefined
+                      }
                       onOpenAgentReview={
                         runtimes.some(
                           (runtime) =>
                             runtime.profile.id === p.source.runtimeId &&
                             runtime.snapshot?.codeReviewsEnabled,
                         )
-                          ? (configure) => open(p.source, p.number, undefined, false, { configure })
+                          ? (intent) =>
+                              open(p.source, p.number, undefined, false, {
+                                tab: 'review',
+                                intent,
+                              })
                           : undefined
                       }
                       onIntent={(resting) =>
@@ -882,7 +949,12 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   configureInitialReview={
                     reviewSelection?.key ===
                       JSON.stringify([selectedSource.scope, selected.number]) &&
-                    reviewSelection.configure
+                    reviewSelection.intent === 'configure'
+                  }
+                  initialReviewRun={
+                    reviewSelection?.key === JSON.stringify([selectedSource.scope, selected.number])
+                      ? reviewSelection.claim
+                      : undefined
                   }
                   onInitialReviewOpened={() => setReviewSelection(null)}
                   initialFragment={pullTarget?.fragment ?? detailTarget?.fragment}

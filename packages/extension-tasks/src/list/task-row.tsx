@@ -1,4 +1,4 @@
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadWatchSummary } from './thread-watch-summary'
 import { MiddleTruncate } from './middle-truncate'
 import { NestedThreads } from './nested-threads'
@@ -9,6 +9,7 @@ import {
   matchingThreadChildren,
   type ThreadSearchFilter,
   threadChildRows,
+  threadInputSummary,
   threadNativeAgents,
   pullStackLabel,
   taskPullStatusFor,
@@ -224,18 +225,27 @@ function TaskRowView({
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const presentation = taskPresentation(task, needsInput, now)
   const unread = hasUnreadTaskActivity(task)
-  const status = !owner.online && owner.runtimeId ? 'Offline · Cached' : presentation.label
+  const inputLabel =
+    owner.online && !compact
+      ? threadInputLabel(thread && threadInputSummary(thread), uiText) ||
+        (needsInput ? uiText('Needs input') : '')
+      : ''
+  const status =
+    !owner.online && owner.runtimeId ? 'Offline · Cached' : inputLabel || presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const hideReviewStatus = !offline && presentation.state === 'Review'
+  const hideReviewStatus = !offline && !inputLabel && presentation.state === 'Review'
   const statusTime = presentation.time.replace(' ago', '')
-  const StatusIcon = hideReviewStatus
-    ? undefined
-    : offline
-      ? CloudOff
-      : (statusIcons[presentation.state] ?? CircleDashed)
-  const statusTone = offline ? 'neutral' : presentation.tone
+  const StatusIcon = inputLabel
+    ? MessageCircleQuestion
+    : hideReviewStatus
+      ? undefined
+      : offline
+        ? CloudOff
+        : (statusIcons[presentation.state] ?? CircleDashed)
+  const statusTone = offline ? 'neutral' : inputLabel ? 'attention' : presentation.tone
   const statusDetail = [
     status,
+    unread ? uiText('Unread') : '',
     Number.isFinite(finished) ? `Finished ${formatDateTime(finished)}` : '',
     queue ? `${queue} queued` : '',
     task.spendPause ? uiText('Paused: spend limit') : '',
@@ -307,6 +317,7 @@ function TaskRowView({
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
+              aria-description={unread ? uiText('Unread') : undefined}
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
               data-read={(!highlighted && !unread) || undefined}
@@ -356,10 +367,12 @@ function TaskRowView({
                     {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
                     {!hideReviewStatus && (
                       <span
-                        className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                        className="studio-thread-status flex min-w-0 max-w-[65%] shrink-0 items-center gap-1 text-xs"
                         data-thread-copy=""
                         data-tone={statusTone}
-                        data-thread-state={offline ? 'Offline' : presentation.state}
+                        data-thread-state={
+                          offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
+                        }
                         aria-label={status}
                         title={status}
                       >
@@ -369,7 +382,11 @@ function TaskRowView({
                             aria-hidden="true"
                           />
                         )}
-                        {statusTime && <span className="tabular-nums">{statusTime}</span>}
+                        {inputLabel ? (
+                          <span className="truncate">{inputLabel}</span>
+                        ) : (
+                          statusTime && <span className="tabular-nums">{statusTime}</span>
+                        )}
                       </span>
                     )}
                   </span>
@@ -391,9 +408,11 @@ function TaskRowView({
                 </span>
                 {compact && StatusIcon && (
                   <span
-                    className="studio-thread-status flex shrink-0 items-center gap-1 text-xs"
+                    className="studio-thread-status flex min-w-0 max-w-[65%] shrink-0 items-center gap-1 text-xs"
                     data-tone={statusTone}
-                    data-thread-state={offline ? 'Offline' : presentation.state}
+                    data-thread-state={
+                      offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
+                    }
                     aria-label={status}
                     title={status}
                   >

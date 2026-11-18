@@ -362,9 +362,16 @@ export function attachBrowserSocket(
                 authorize,
               )
       void operation.catch((error) => {
+        const navigation =
+          !simulatorId &&
+          (input.type === 'navigate' ||
+            input.type === 'back' ||
+            input.type === 'forward' ||
+            input.type === 'reload')
         send({
           type: 'error',
           message: errorMessage(error),
+          ...(navigation ? { operation: 'navigation' } : {}),
         })
       })
     } catch {

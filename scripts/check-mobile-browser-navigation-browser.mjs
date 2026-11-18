@@ -10,7 +10,7 @@ const built = await bundleBrowser(
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {View} from 'react-native';import {BrowserNavigation} from './src/browser/browser-navigation';function App(){const [address,setAddress]=useState('http://100.64.0.2:3000/'+ 'long-path/'.repeat(60));const [disabled,setDisabled]=useState(false);window.setDisabled=setDisabled;return <View style={{height:'100%',justifyContent:'flex-end'}}><BrowserNavigation address={address} onAddress={setAddress} onEditing={value=>window.editing=value} onNavigate={()=>window.sent=address} changed back forward disabled={disabled} tabs={12} onTabs={()=>window.tabs=true} onOptions={()=>window.options=true} onBack={()=>window.back=true} onForward={()=>window.forward=true}/></View>}createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {View,useWindowDimensions} from 'react-native';import {BrowserNavigation} from './src/browser/browser-navigation';function App(){const {width}=useWindowDimensions();const [address,setAddress]=useState('http://100.64.0.2:3000/'+ 'long-path/'.repeat(60));const [disabled,setDisabled]=useState(false);window.setDisabled=setDisabled;return <View style={{height:'100%',justifyContent:'flex-end'}}><BrowserNavigation address={address} onAddress={setAddress} onEditing={value=>window.editing=value} onNavigate={()=>window.sent=address} changed back forward compact={width<420} disabled={disabled} tabs={12} onTabs={()=>window.tabs=true} onOptions={()=>window.options=true} onBack={()=>window.back=true} onForward={()=>window.forward=true}/></View>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -62,12 +62,16 @@ try {
     assert.ok(before.height <= 66)
     assert.equal(await page.evaluate(() => document.documentElement.scrollWidth), width)
     await page.getByRole('button', { name: 'Back', exact: true }).click()
-    await page.getByRole('button', { name: 'Forward', exact: true }).click()
+    const forward = page.getByRole('button', { name: 'Forward', exact: true })
+    if (width < 420) {
+      assert.equal(await forward.count(), 0)
+      assert.ok((await input.boundingBox()).width >= width - 208)
+    } else await forward.click()
     await page.getByRole('button', { name: 'Tabs (12)', exact: true }).click()
     await page.getByRole('button', { name: 'Browser options', exact: true }).click()
     assert.deepEqual(
       await page.evaluate(() => [window.back, window.forward, window.tabs, window.options]),
-      [true, true, true, true],
+      [true, width >= 420 ? true : undefined, true, true],
     )
     const full = await input.inputValue()
     assert.ok(full.length > 500)

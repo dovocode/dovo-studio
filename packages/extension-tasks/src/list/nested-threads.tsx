@@ -1,6 +1,6 @@
 import { memo, useId, useState } from 'react'
 import { useStudioHost, type StudioHostApi } from '@dovo/studio-core'
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ChevronRight, Monitor } from 'lucide-react'
 import { cn } from '@dovo/studio-ui'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
@@ -8,6 +8,7 @@ import { threadDescendants, type NestedThread } from './thread-tree'
 import {
   modelDisplayName,
   threadTreeSummary,
+  threadInputSummary,
   threadChildRows,
   visibleThreadChildren,
   nativeOverflowFailures,
@@ -93,6 +94,7 @@ function NestedThreadsView({
       <button
         type="button"
         aria-label={`Open child thread ${child.title}`}
+        aria-description={threadInputLabel(threadInputSummary(child, false), uiText) || undefined}
         aria-current={child.key === selectedKey ? 'true' : undefined}
         disabled={!host.openThread}
         className={cn(
@@ -123,7 +125,9 @@ function NestedThreadsView({
             {child.computerName}
             {child.projectName ? ` · ${child.projectName}` : ''} ·{' '}
             {child.executedModel ? `${modelDisplayName(child.executedModel)} · ` : ''}
-            {child.nativeAgentKey && child.activity ? child.activity : phases[child.phase]}
+            {child.nativeAgentKey && child.activity
+              ? child.activity
+              : threadInputLabel(threadInputSummary(child, false), uiText) || phases[child.phase]}
             {child.nativeAgentKey ? ' · Read only' : ''}
           </span>
           {!child.online ? (

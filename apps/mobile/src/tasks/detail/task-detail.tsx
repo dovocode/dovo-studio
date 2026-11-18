@@ -1,5 +1,5 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotCall } from '../../bots/bot-call'
 import { BotWorkSummary } from '../../bots/bot-work-summary'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
@@ -18,6 +18,7 @@ import {
   checkpointFileCount,
   projectDisplayName,
   taskDisplayProject,
+  taskThreadInputSummary,
   runtimeComputerName,
   conversationPageSchema,
   readConversationHistory,
@@ -747,10 +748,9 @@ function TaskDetailContent({
           },
         ]
       : []
-  const needsInput =
-    snapshot?.secureInputs?.some((q) => q.taskId === task.id) ||
-    snapshot?.questions.some((q) => q.taskId === task.id) ||
-    snapshot?.approvals.some((a) => a.taskId === task.id)
+  const inputLabel = connected
+    ? threadInputLabel(taskThreadInputSummary(snapshot, task.id), uiText)
+    : ''
   const latestTurn = task.turns?.at(-1)
   const runtimeHost = runtimeComputerName({
     profile,
@@ -767,8 +767,8 @@ function TaskDetailContent({
     ? 'Archived'
     : task.archived
       ? 'Settled'
-      : needsInput
-        ? 'Needs input'
+      : inputLabel
+        ? inputLabel
         : task.status === 'running'
           ? 'Working'
           : task.status === 'failed'

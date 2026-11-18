@@ -387,16 +387,28 @@
         font-size: 12px;
         font-variant-numeric: tabular-nums;
       }
+      #browserNotice {
+        position: absolute;
+        inset: 0 0 auto;
+        z-index: 1;
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 4px 12px;
+        max-height: 100%;
+        overflow: auto;
+        padding: 8px 14px;
+        background: var(--bar);
+        border-bottom: 1px solid var(--border);
+      }
       #status {
+        flex: 1 1 180px;
+        min-width: 0;
         font-size: 12px;
-        padding: 10px 14px;
         color: var(--muted);
         max-height: 90px;
-        flex-shrink: 0;
         overflow: auto;
         overflow-wrap: anywhere;
-        background: var(--bar);
-        border-top: 1px solid var(--border);
       }
       #status.error {
         color: var(--error);
@@ -426,12 +438,16 @@
         font-size: 12px;
       }
       #reconnect {
-        align-self: center;
-        margin: 8px;
-        height: 36px;
+        min-height: 36px;
+        max-width: 100%;
+        height: auto;
+        padding: 6px 10px;
         color: var(--accent);
         border: 1px solid var(--border);
         background: var(--panel);
+      }
+      body.mobile #reconnect {
+        min-height: 44px;
       }
       #editor {
         position: fixed;
@@ -512,9 +528,6 @@
         background: var(--bg);
       }
       body.expanded #browserBar {
-        display: none;
-      }
-      body.expanded #status:not(.error) {
         display: none;
       }
       body.mobile #browserBar {
@@ -761,6 +774,10 @@
           ><button type="button" data-url="http://localhost:5173">localhost:5173</button>
         </div>
       </div>
+      <div id="browserNotice">
+        <div id="status" role="status">Connecting to host browser…</div>
+        <button id="reconnect" type="button" hidden>Reconnect</button>
+      </div>
     </div>
     <textarea
       id="editor"
@@ -771,8 +788,6 @@
       spellcheck="false"
     ></textarea>
     <div id="downloads" aria-label="Browser downloads" aria-live="polite" hidden></div>
-    <div id="status" role="status">Connecting to host browser…</div>
-    <button id="reconnect" type="button" hidden>Reconnect</button>
     <dialog id="dialog" aria-labelledby="dialogText">
       <form method="dialog">
         <p id="dialogText"></p>

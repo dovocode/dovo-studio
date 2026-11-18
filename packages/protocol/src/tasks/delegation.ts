@@ -81,6 +81,8 @@ export function taskRemoteHumanInputs(task: Pick<TaskMetadata, 'threadWatches'>)
     watch.delegated && watch.status === 'watching' && !watch.paused && !watch.offline
       ? (watch.snapshot?.humanInputs ?? []).map((input) => ({
           ...input,
+          ownerRuntimeIdentity: input.runtimeId,
+          ownerTaskId: input.taskId,
           runtimeId: watch.runtimeId,
           // Review through the directly paired child; deeper computers may not be paired to this client.
           taskId: watch.threadId,

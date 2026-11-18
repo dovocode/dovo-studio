@@ -311,6 +311,8 @@ it('routes remote human review through a directly paired child and excludes paus
       taskId: 'direct-child',
       runtimeId: 'paired-computer',
       runtimeIdentity: 'desktop-identity',
+      ownerRuntimeIdentity: 'deeper-computer-identity',
+      ownerTaskId: 'nested-child',
       threadTitle: 'Nested worker',
     }),
   ])

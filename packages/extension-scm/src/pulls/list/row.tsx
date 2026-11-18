@@ -1,7 +1,8 @@
 import { pullStackLabel } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
-import { Badge, ContextMenu, DropdownMenu } from '@dovo/studio-ui'
+import { Badge, Button, ContextMenu, DropdownMenu } from '@dovo/studio-ui'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   pullChecks,
   pullReview,
@@ -29,6 +30,9 @@ export function PullRow({
   compact = false,
   onClick,
   onAddToThread,
+  showReviewActionColumn = false,
+  onReviewChanges,
+  onFailedChecks,
   onOpenAgentReview,
   onIntent,
   selectionCount = 1,
@@ -40,11 +44,15 @@ export function PullRow({
   onSelect: () => void
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onAddToThread?: () => void
-  onOpenAgentReview?: (configure: boolean) => void
+  showReviewActionColumn?: boolean
+  onReviewChanges?: () => void
+  onFailedChecks?: () => void
+  onOpenAgentReview?: (intent: 'open' | 'configure' | 'run') => void
   /** True while the pointer or focus rests on the row; false when both leave it. */
   onIntent?: (resting: boolean) => void
   selectionCount?: number
 }) {
+  const uiText = useInterfaceText()
   const [error, setError] = useApplicationState('')
   const ci = pullChecks(pull)
   const hasStatus =
@@ -69,13 +77,26 @@ export function PullRow({
       <Menu.Item className={menuItem} onSelect={onSelect}>
         Open PR details
       </Menu.Item>
+      {onFailedChecks && (
+        <Menu.Item className={menuItem} onSelect={onFailedChecks}>
+          {uiText('View failed checks')}
+        </Menu.Item>
+      )}
+      {onReviewChanges && (
+        <Menu.Item className={menuItem} onSelect={onReviewChanges}>
+          {uiText('Review changes')}
+        </Menu.Item>
+      )}
       {onOpenAgentReview && (
         <>
-          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview(false)}>
+          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview('open')}>
             Open agent review
           </Menu.Item>
-          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview(true)}>
-            Configure agent review
+          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview('configure')}>
+            {uiText('Configure this run')}
+          </Menu.Item>
+          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview('run')}>
+            {uiText('Run agent review')}
           </Menu.Item>
         </>
       )}
@@ -321,6 +342,22 @@ export function PullRow({
             </ContextMenu.Content>
           </ContextMenu.Portal>
         </ContextMenu.Root>
+        {showReviewActionColumn && !compact && (
+          <div className="mr-2 hidden w-32 shrink-0 justify-end @2xl/pr-row:flex">
+            {(onReviewChanges || onFailedChecks) && selectionCount === 1 && (
+              <Button
+                size="sm"
+                variant="outline"
+                className="max-w-full"
+                onClick={onReviewChanges ?? onFailedChecks}
+              >
+                <span className="truncate">
+                  {onReviewChanges ? uiText('Review changes') : uiText('View failed checks')}
+                </span>
+              </Button>
+            )}
+          </div>
+        )}
         <DropdownMenu.Root>
           <DropdownMenu.Trigger asChild>
             <button

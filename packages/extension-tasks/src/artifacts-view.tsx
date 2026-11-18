@@ -1,3 +1,4 @@
+import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useDetailTransition } from '@dovo/studio-ui/detail-transition'
 import { SearchField } from '@dovo/studio-ui/search-field'
@@ -183,7 +184,17 @@ export default function ArtifactsView() {
     [guard],
   )
   const stateOf = (source: Source) => states.get(source.owner)
-  const loading = sources.some((source) => (stateOf(source)?.status ?? 'loading') === 'loading')
+  const loadingSources = sources.filter(
+    (source) => (stateOf(source)?.status ?? 'loading') === 'loading',
+  )
+  const loading = loadingSources.length > 0
+  const openSource = ({ source, artifact }: Entry) =>
+    host.openThread?.({
+      runtimeId: source.profile.id,
+      runtimeIdentity: source.profile.connection.runtimeId,
+      threadId: artifact.taskId,
+      title: artifact.threadTitle,
+    })
   const offline = sources.flatMap((source) => {
     const current = stateOf(source)
     return current?.status === 'offline' ? [{ source, saved: current.saved }] : []
@@ -318,13 +329,13 @@ export default function ArtifactsView() {
                 <div className="studio-list-toolbar">
                   <div className="studio-list-quick-views" aria-label="Artifact formats">
                     {formats.map((value) => (
-                      <Button
+                      <ToggleButton
                         key={value}
                         aria-label={value === 'all' ? 'All formats' : artifactFormatLabels[value]}
                         variant="ghost"
                         size="sm"
-                        aria-pressed={format === value}
-                        onClick={() => setFormat(value)}
+                        pressed={format === value}
+                        onPressedChange={() => setFormat(value)}
                         className="studio-list-quick-filter"
                       >
                         {value === 'all' ? 'All' : artifactFormatLabels[value]}
@@ -335,7 +346,7 @@ export default function ArtifactsView() {
                             ).length
                           }
                         </span>
-                      </Button>
+                      </ToggleButton>
                     ))}
                   </div>
                   <Button
@@ -403,7 +414,17 @@ export default function ArtifactsView() {
                   </span>
                 </p>
               ))}
-              {loading && !entries.length && (
+              {loading && !!visible.length && (
+                <p
+                  role="status"
+                  className="mx-3 mb-3 break-words px-2 text-xs text-muted-foreground"
+                >
+                  {uiText('Loading artifacts from {value0}…', {
+                    value0: loadingSources.map((source) => source.computerName).join(', '),
+                  })}
+                </p>
+              )}
+              {loading && !visible.length && (
                 <div
                   role="status"
                   className="flex flex-1 items-center justify-center gap-2 py-8 text-sm text-muted-foreground"
@@ -412,7 +433,7 @@ export default function ArtifactsView() {
                   Loading artifacts…
                 </div>
               )}
-              {!(loading && !entries.length) && !visible.length && (
+              {!loading && !visible.length && (
                 <EmptyState
                   icon={<Layers />}
                   title={
@@ -550,15 +571,15 @@ export default function ArtifactsView() {
                         )}
                       >
                         <span className="studio-collection-body">
+                          <span className="studio-collection-title line-clamp-2">
+                            {artifact.title}
+                          </span>
                           <span className="studio-collection-meta">
                             <ArtifactIcon format={artifact.format} className="size-3.5 shrink-0" />
                             <span>
                               {artifactLabel(artifact)} · v{artifact.revision}
                             </span>
                             <span className="capitalize">{artifact.threadState}</span>
-                          </span>
-                          <span className="studio-collection-title line-clamp-2">
-                            {artifact.title}
                           </span>
                           <span className="studio-collection-context">
                             <span className="min-w-0 truncate">{artifact.threadTitle}</span>
@@ -608,6 +629,9 @@ export default function ArtifactsView() {
                           {layout === 'list' ? (
                             <>
                               <span className="studio-collection-body">
+                                <span className="studio-collection-title line-clamp-2">
+                                  {artifact.title}
+                                </span>
                                 <span className="studio-collection-meta">
                                   <ArtifactIcon
                                     format={artifact.format}
@@ -618,9 +642,6 @@ export default function ArtifactsView() {
                                   </span>
                                   <span className="capitalize">{artifact.threadState}</span>
                                   <ArtifactSharedBadge artifact={artifact} />
-                                </span>
-                                <span className="studio-collection-title line-clamp-2">
-                                  {artifact.title}
                                 </span>
                                 <span className="studio-collection-context">
                                   <span className="min-w-0 truncate" title={artifact.threadTitle}>
@@ -722,6 +743,7 @@ export default function ArtifactsView() {
                           profile={source.profile}
                           artifact={artifact}
                           compact={layout === 'list'}
+                          onOpenSource={host.openThread ? () => openSource(entry) : undefined}
                           onDeleted={() => removed(entry)}
                         />
                       </div>
@@ -811,6 +833,15 @@ function ArtifactDetail({
       openingAttempt === attempt.current &&
       activeSource.current === sourceKey &&
       navigationCurrent()
+    if (host.openThread) {
+      host.openThread({
+        runtimeId: source.profile.id,
+        runtimeIdentity: source.profile.connection.runtimeId,
+        threadId: artifact.taskId,
+        title: artifact.threadTitle,
+      })
+      return
+    }
     setOpening(true)
     setError('')
     try {

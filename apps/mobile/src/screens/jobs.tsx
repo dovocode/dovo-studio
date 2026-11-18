@@ -1,12 +1,13 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { runtimeComputerName, runtimeResourceKey } from '@dovo/protocol'
+import { runtimeComputerName, runtimeReachability, runtimeResourceKey } from '@dovo/protocol'
 import { nativeEffect } from '../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { AutomationRow } from '../jobs/automation-row'
+import { automationRowState } from '../jobs/automation-summary'
 import { useRef } from 'react'
-import { FlatList, Keyboard, View } from 'react-native'
+import { FlatList, Keyboard, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
 import { Text } from '../ui/content/text'
 import { useRuntime } from '../runtime/connection/provider'
@@ -16,7 +17,7 @@ import { SettingsSearchField as SearchField } from './settings-controls'
 import { AutomationEditor } from '../jobs/automation-editor'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Action } from '../ui/controls/action'
-import { Icon } from '../ui/controls/icon'
+import { EmptyState } from '../ui/content/empty-state'
 import { useListScroll } from '../ui/layout/use-list-scroll'
 import { automationHref } from '../shell/source-route'
 import { useNavigation } from '../shell/navigation'
@@ -44,27 +45,37 @@ export default function JobsScreen() {
       ),
     )
   }
-  const failedSources = overviews.filter((entry) => entry.error || !entry.connected)
+  const incompleteSources = overviews.filter(
+    (entry) => !entry.connected || entry.error || !entry.snapshot,
+  )
+  const loading = refreshing || overviews.some((entry) => !entry.snapshot && !entry.error)
+  const available = overviews.some((entry) => entry.connected && !entry.error && entry.snapshot)
   const { focused } = useNavigation()
   const [creating, setCreating] = useApplicationState(false)
   const [query, setQuery] = useApplicationState('')
+  const [attentionOnly, setAttentionOnly] = useApplicationState(false)
   const flows = overviews.flatMap((entry) =>
     entry.snapshot
       ? entry.snapshot.workspace.automations.map((flow) => ({
           flow,
           snapshot: entry.snapshot!,
+          state: automationRowState(flow.id, entry.snapshot!),
           runtimeId: entry.profile.id,
           runtimeName: runtimeComputerName(entry),
-          connected: entry.connected,
+          reachability: runtimeReachability(entry),
           key: runtimeResourceKey(entry.profile.id, flow.id),
         }))
       : [],
   )
-  const visible = flows.filter((item) =>
-    [item.flow.name, item.runtimeName].some((value) =>
-      value.toLowerCase().includes(query.trim().toLowerCase()),
-    ),
+  const visible = flows.filter(
+    (item) =>
+      (!attentionOnly || item.state.needsAttention) &&
+      [item.flow.name, item.runtimeName].some((value) =>
+        value.toLowerCase().includes(query.trim().toLowerCase()),
+      ),
   )
+  const unavailable = overviews.length > 0 && !available && !flows.length
+  const filtering = !!query.trim() || attentionOnly
   const scrollOffset = useRef(0)
   const { retainPosition, ...listScroll } = useListScroll<(typeof flows)[number]>(
     scrollOffset,
@@ -114,17 +125,27 @@ export default function JobsScreen() {
                 {refreshError}
               </Text>
             )}
-            {failedSources.map((entry) => (
-              <Text
-                key={entry.profile.id}
-                accessibilityRole={entry.error ? 'alert' : undefined}
-                style={entry.error ? styles.error : styles.muted}
-              >
-                {runtimeComputerName(entry)} ·{' '}
-                {entry.error || uiText('Offline · Showing saved automations')}
-              </Text>
-            ))}
-            {(refreshError || failedSources.length > 0) && (
+            {incompleteSources.map((entry) => {
+              const reachability = runtimeReachability(entry)
+              const status =
+                reachability === 'offline'
+                  ? entry.snapshot
+                    ? uiText('Offline · Showing saved automations')
+                    : uiText('Offline')
+                  : reachability === 'connecting' || (!entry.snapshot && !entry.error)
+                    ? uiText('Connecting…')
+                    : undefined
+              return (
+                <Text
+                  key={entry.profile.id}
+                  accessibilityRole={entry.error ? 'alert' : undefined}
+                  style={entry.error ? styles.error : styles.muted}
+                >
+                  {[runtimeComputerName(entry), status, entry.error].filter(Boolean).join(' · ')}
+                </Text>
+              )
+            })}
+            {(refreshError || incompleteSources.some((entry) => entry.error)) && (
               <Action
                 secondary
                 label={uiText('Retry loading automations')}
@@ -141,6 +162,21 @@ export default function JobsScreen() {
               value={query}
               onChangeText={setQuery}
             />
+            <Pressable
+              accessibilityRole="togglebutton"
+              accessibilityState={{ checked: attentionOnly }}
+              onPress={() => setAttentionOnly((active) => !active)}
+              style={{
+                minHeight: 44,
+                alignSelf: 'flex-start',
+                justifyContent: 'center',
+                borderRadius: 8,
+                paddingHorizontal: 10,
+                backgroundColor: attentionOnly ? colors.selection : undefined,
+              }}
+            >
+              <Text style={styles.text}>{uiText('Needs attention')}</Text>
+            </Pressable>
           </View>
         }
         renderItem={({ item, index }) => (
@@ -159,8 +195,15 @@ export default function JobsScreen() {
               flow={item.flow}
               snapshot={item.snapshot}
               runtimeName={item.runtimeName}
-              online={item.connected}
+              reachability={item.reachability}
+              state={item.state}
               disabled={!focused}
+              onOpenRun={(runId) => {
+                if (!focused) return
+                retainPosition()
+                Keyboard.dismiss()
+                router.push(automationHref(item.runtimeId, item.flow.id, runId))
+              }}
               onOpen={() => {
                 if (!focused) return
                 retainPosition()
@@ -171,45 +214,64 @@ export default function JobsScreen() {
           </View>
         )}
         ListEmptyComponent={
-          !flows.length ? (
-            <View
-              style={[
-                styles.empty,
-                {
-                  paddingVertical: 36,
-                },
-              ]}
-            >
-              <Icon name="jobs" size={28} color={colors.muted} />
-              <Text
-                style={[
-                  styles.title,
-                  {
-                    fontSize: 18,
-                  },
-                ]}
-              >
-                {connected ? uiText('Create an automation') : uiText('Connect a computer')}
-              </Text>
-              <Text
-                style={[
-                  styles.muted,
-                  {
-                    textAlign: 'center',
-                  },
-                ]}
-              >
-                {connected
-                  ? uiText(
-                      'Run repeatable tasks manually or on a schedule, with review steps when you need them.',
-                    )
-                  : uiText('Reconnect a computer to load its automations.')}
-              </Text>
-            </View>
-          ) : (
-            <Text style={styles.muted}>
-              <InterfaceText>{'No matching automations.'}</InterfaceText>
+          loading ? (
+            <Text accessibilityLiveRegion="polite" style={styles.muted}>
+              {uiText('Loading automations…')}
             </Text>
+          ) : (
+            <EmptyState
+              icon="jobs"
+              title={
+                !overviews.length
+                  ? uiText('Connect a computer')
+                  : unavailable
+                    ? uiText('Automations unavailable')
+                    : filtering
+                      ? uiText('No matching automations.')
+                      : incompleteSources.length
+                        ? uiText('No automations on available computers')
+                        : uiText('Create an automation')
+              }
+              description={
+                !overviews.length
+                  ? uiText('Connect a computer to load its automations.')
+                  : unavailable
+                    ? uiText('Reconnect a computer to load its automations.')
+                    : incompleteSources.length
+                      ? uiText('Some computers could not be checked.')
+                      : filtering
+                        ? uiText('Search by automation or computer.')
+                        : uiText(
+                            'Run repeatable tasks manually or on a schedule, with review steps when you need them.',
+                          )
+              }
+              action={
+                !overviews.length ? (
+                  <Action
+                    label={uiText('Connect a computer')}
+                    disabled={!focused}
+                    onPress={() =>
+                      router.push({ pathname: '/settings/devices', params: { pair: '1' } })
+                    }
+                  />
+                ) : filtering && !unavailable ? (
+                  <Action
+                    secondary
+                    label={uiText('Clear search')}
+                    onPress={() => {
+                      setQuery('')
+                      setAttentionOnly(false)
+                    }}
+                  />
+                ) : !incompleteSources.length ? (
+                  <Action
+                    label={uiText('New automation')}
+                    disabled={!focused || !connected}
+                    onPress={() => setCreating(true)}
+                  />
+                ) : undefined
+              }
+            />
           )
         }
       />

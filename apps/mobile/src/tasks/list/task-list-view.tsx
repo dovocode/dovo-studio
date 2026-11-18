@@ -23,6 +23,7 @@ const Context = createContext<{
   view: TaskListView
   setView: Dispatch<SetStateAction<TaskListView>>
   scrollOffset: RefObject<number>
+  messageResultFocus: RefObject<string>
 } | null>(null)
 
 /** Aggregate list navigation survives the host-bound task screen and its editors. */
@@ -46,11 +47,13 @@ export function TaskListViewProvider({ children }: { children: ReactNode }) {
   }, [setView])
   // Scroll events don't need to rerender the list or the surrounding native tabs.
   const scrollOffset = useRef(0)
+  const messageResultFocus = useRef('')
   const value = useMemo(
     () => ({
       view,
       setView,
       scrollOffset,
+      messageResultFocus,
     }),
     [view],
   )

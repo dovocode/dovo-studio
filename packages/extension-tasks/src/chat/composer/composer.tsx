@@ -1380,7 +1380,7 @@ export function Composer({
         collapsed={collapsed}
         compact={
           preferences.minimalComposer &&
-          !editorFocused &&
+          (task.status === 'running' ? !preferences.showMarkdownSourceToggle : !editorFocused) &&
           !composerDraft.hasText &&
           !pendingQuestion
         }

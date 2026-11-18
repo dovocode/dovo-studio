@@ -424,15 +424,33 @@ export function PipelineJobs({
         ),
     ),
   )
-  const failures = jobs.filter(
+  const failedJobs = jobs.filter(
     (job) => pipelineSignal(job.status).tone === 'danger' || job.errors?.length,
-  ).length
+  )
+  const failedIds = new Set(failedJobs.map((job) => job.id))
+
   return (
     <View
       style={{
         gap: 10,
       }}
     >
+      {!!failedJobs.length && (
+        <View style={{ gap: 10 }}>
+          <Text accessibilityRole="header" style={[styles.text, { fontWeight: '600' }]}>
+            {uiText('Failed jobs')}
+          </Text>
+          {failedJobs.map((job) => (
+            <PipelineJob
+              key={job.id}
+              job={job}
+              selected={selected === job.id}
+              onOpen={onOpen}
+              now={now}
+            />
+          ))}
+        </View>
+      )}
       {!!columns.length && (
         <View accessibilityLabel={uiText('Pipeline graph')} style={{ gap: 10 }}>
           <Text style={styles.text}>
@@ -542,7 +560,9 @@ export function PipelineJobs({
           values={{
             value0: ready ? ` · ${jobs.length}` : '',
             value1: hasMore ? uiText(' loaded') : '',
-            value2: failures ? uiText(' · {value0} failed', { value0: failures }) : '',
+            value2: failedJobs.length
+              ? uiText(' · {value0} failed', { value0: failedJobs.length })
+              : '',
           }}
         >
           {'Jobs{value0}{value1}{value2}'}
@@ -553,12 +573,8 @@ export function PipelineJobs({
           <InterfaceText>{'No jobs have been returned for this run.'}</InterfaceText>
         </Text>
       )}
-      {[...jobs]
-        .sort(
-          (a, b) =>
-            Number(pipelineSignal(b.status).tone === 'danger' || !!b.errors?.length) -
-            Number(pipelineSignal(a.status).tone === 'danger' || !!a.errors?.length),
-        )
+      {jobs
+        .filter((job) => !failedIds.has(job.id))
         .map((job) => (
           <PipelineJob
             key={job.id}

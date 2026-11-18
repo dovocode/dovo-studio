@@ -7,6 +7,7 @@ export function Glass({
   style,
   interactive = false,
   tinted = false,
+  solid = false,
   testID,
   accessibilityLabel,
   accessibilityViewIsModal,
@@ -17,6 +18,7 @@ export function Glass({
   style?: StyleProp<ViewStyle>
   interactive?: boolean
   tinted?: boolean
+  solid?: boolean
   testID?: string
   accessibilityLabel?: string
   accessibilityViewIsModal?: boolean
@@ -25,7 +27,7 @@ export function Glass({
 }) {
   const { colors, mode: appearanceMode, highContrast, reduceTransparency } = useTheme()
   const nativeGlass =
-    Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
+    !solid && Platform.OS === 'ios' && isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
   const opaque = reduceTransparency || highContrast || !nativeGlass
   const surfaceStyle = {
     borderWidth: 1,

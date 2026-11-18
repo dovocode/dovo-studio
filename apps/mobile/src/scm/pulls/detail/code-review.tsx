@@ -1,10 +1,10 @@
 import { ReviewActivity } from './review-activity'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState, type ComponentRef } from 'react'
 import * as ImagePicker from 'expo-image-picker'
 import { File } from 'expo-file-system'
 import { optimizeAttachmentImage } from '../../../tasks/composer/optimize-attachment-image'
-import { Image, Linking, View } from 'react-native'
+import { Image, Linking, ScrollView, View } from 'react-native'
 import {
   prReviewIllustration,
   usePullCodeReview,
@@ -52,6 +52,8 @@ function LocalMobilePullCodeReview({
   detail,
   sourceReady = true,
   initiallyOpen = false,
+  initiallyConfigure = false,
+  rowReviewRun,
   onAsk,
   onRefresh,
   onOpenStackReview,
@@ -59,6 +61,8 @@ function LocalMobilePullCodeReview({
   repositoryId: string
   sourceReady?: boolean
   initiallyOpen?: boolean
+  initiallyConfigure?: boolean
+  rowReviewRun?: () => boolean
   detail: PullDetail
   onAsk: (finding: PullCodeReview['findings'][number]) => void
   onRefresh?: () => void
@@ -95,14 +99,24 @@ function LocalMobilePullCodeReview({
     else
       setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
   }
-  const [settings, setSettings] = useState(false)
+  const [settings, setSettings] = useState(initiallyConfigure)
   const [fullStack, setFullStack] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
   const [patch, setPatch] = useState<string>()
+  const [findingPatch, setFindingPatch] = useState<{
+    finding: PullCodeReview['findings'][number]
+    commit: string
+    patch?: string
+  }>()
+  const reportScroll = useRef<ComponentRef<typeof ScrollView>>(null)
+  const scrollOffset = useRef(0)
+  const restoreOffset = useRef<number | null>(null)
   const [linkError, setLinkError] = useState('')
   const [evidence, setEvidence] = useState<string>()
   const [contextPath, setContextPath] = useState<string>()
   const [checkOutput, setCheckOutput] = useState<string>()
+  const [showChecks, setShowChecks] = useState(false)
+  const [showReviewDetails, setShowReviewDetails] = useState(false)
   const agents = snapshot?.workspace.agents ?? []
   useEffect(() => {
     if (agent || !review.report?.selection) return
@@ -120,6 +134,7 @@ function LocalMobilePullCodeReview({
     )
   }, [additional, review.report, agents])
   const current = review.review
+  const completed = current?.status === 'completed'
   const draft = review.draft
   const stale =
     !!current &&
@@ -134,11 +149,23 @@ function LocalMobilePullCodeReview({
     !current.publication &&
     !review.busy &&
     !review.publishing
-  const selectedPatch = current?.coverage.find((file) => file.path === patch)
+  const selectedPatch = findingPatch
+    ? { path: findingPatch.finding.path, patch: findingPatch.patch }
+    : current?.coverage.find((file) => file.path === patch)
+  const patchPath = selectedPatch?.path
+  const failedChecks = current?.checks?.filter((check) => check.status === 'failed').length ?? 0
   const contextFile = current?.analysis?.contextFiles.find(
     (file) => file.ref + file.path === contextPath,
   )
   const supplied = current?.coverage.filter((file) => file.state === 'supplied').length ?? 0
+  const coverage = current && (
+    <Text style={[styles.muted, { fontSize: 12 }]}>
+      {uiText('{value0} of {value1} file patches supplied in this pass.', {
+        value0: supplied,
+        value1: current.coverage.length + current.missingFiles,
+      })}
+    </Text>
+  )
   const ready =
     !!review.report &&
     !imageBusy &&
@@ -146,7 +173,8 @@ function LocalMobilePullCodeReview({
       (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
     )
   const start = (remaining = false) => {
-    if (agent && ready)
+    if (agent && ready) {
+      setSettings(false)
       void review.start(
         titleSettingsForHarness(agent),
         detail.pull.headSha,
@@ -160,8 +188,26 @@ function LocalMobilePullCodeReview({
           fullStack: !remaining && fullStack,
         },
       )
-    else setSettings(true)
+    } else setSettings(true)
   }
+  const savedReviewer =
+    review.report?.selection && resolveTitleHarness(review.report.selection, agents)
+  useEffect(() => {
+    if (!open || !rowReviewRun) return
+    if (!connected || detail.refreshError || review.error || current || running) {
+      rowReviewRun()
+    } else if (review.report && !detail.stale) {
+      if (
+        !savedReviewer ||
+        !review.report.selection?.model ||
+        !supportsPullReview(savedReviewer.provider, review.depth)
+      ) {
+        if (rowReviewRun()) setSettings(true)
+      } else if (!blocked && ready && rowReviewRun()) {
+        start()
+      }
+    }
+  })
   return (
     <>
       <View style={[styles.card, { gap: 10 }]}>
@@ -187,18 +233,29 @@ function LocalMobilePullCodeReview({
           </View>
         </View>
         <Action
-          label={running ? uiText('View review run') : uiText('Open agent review')}
+          label={
+            running
+              ? uiText('View review run')
+              : current
+                ? uiText('Open agent review')
+                : !blocked && ready
+                  ? uiText('Run agent review')
+                  : uiText('Set up agent review')
+          }
           onPress={() => {
-            setSettings(false)
+            setSettings(!running && !current && (!!blocked || !ready))
+            restoreOffset.current = current ? scrollOffset.current : 0
             setOpen(true)
+            if (!current && !blocked && ready) start()
           }}
         />
         <Action
           secondary
-          label={uiText('Configure agent review')}
+          label={uiText('Configure this run')}
           disabled={!!blocked}
           onPress={() => {
             setSettings(true)
+            restoreOffset.current = 0
             setOpen(true)
           }}
         />
@@ -207,6 +264,21 @@ function LocalMobilePullCodeReview({
       {open && (
         <Sheet
           busy={review.publishing}
+          scrollViewProps={{
+            ref: reportScroll,
+            scrollEventThrottle: 16,
+            onScroll: (event) => {
+              if (!findingPatch) scrollOffset.current = event.nativeEvent.contentOffset.y
+            },
+            onContentSizeChange: () => {
+              if (restoreOffset.current === null) return
+              reportScroll.current?.scrollTo({
+                y: findingPatch ? 0 : restoreOffset.current,
+                animated: false,
+              })
+              if (!findingPatch) restoreOffset.current = null
+            },
+          }}
           footer={
             preview !== undefined && current ? (
               <View style={{ gap: 8 }}>
@@ -242,12 +314,13 @@ function LocalMobilePullCodeReview({
                   onPress={() => setPreview(undefined)}
                 />
               </View>
-            ) : selectedPatch || contextFile ? (
+            ) : patchPath || contextFile ? (
               <Action
                 secondary
                 label={uiText('Back to findings')}
                 onPress={() => {
                   setPatch(undefined)
+                  setFindingPatch(undefined)
                   setContextPath(undefined)
                 }}
               />
@@ -275,12 +348,15 @@ function LocalMobilePullCodeReview({
           title={
             preview !== undefined
               ? uiText('Publish your review')
-              : (contextFile?.path ?? selectedPatch?.path ?? uiText('Agent review'))
+              : (contextFile?.path ?? patchPath ?? uiText('Agent review'))
           }
           onClose={() => {
+            rowReviewRun?.()
             setOpen(false)
             setPreview(undefined)
             setPatch(undefined)
+            setFindingPatch(undefined)
+            restoreOffset.current = null
             setContextPath(undefined)
           }}
         >
@@ -450,15 +526,23 @@ function LocalMobilePullCodeReview({
                 {contextFile.text}
               </Text>
             </View>
-          ) : selectedPatch ? (
+          ) : patchPath ? (
             <View style={{ gap: 12 }}>
               <Text style={styles.muted}>
-                {uiText('Captured patch at {value0}', { value0: current?.headSha.slice(0, 7) })}
+                {uiText('Captured patch at {value0}', {
+                  value0: (findingPatch?.commit ?? current?.headSha)?.slice(0, 7),
+                })}
+                {findingPatch?.finding.anchored &&
+                  ` · ${findingPatch.finding.line} · ${findingPatch.finding.side}`}
               </Text>
-              {selectedPatch.patch ? (
+              {selectedPatch?.patch ? (
                 <View style={{ height: 420 }}>
                   <DiffView
                     path={selectedPatch.path}
+                    focusedLine={
+                      findingPatch?.finding.anchored ? findingPatch.finding.line : undefined
+                    }
+                    focusedSide={findingPatch?.finding.side}
                     patch={pullFilePatch({ patch: selectedPatch.patch, status: 'modified' })}
                   />
                 </View>
@@ -468,314 +552,347 @@ function LocalMobilePullCodeReview({
             </View>
           ) : (
             <View style={{ gap: 14 }}>
-              <Text style={styles.muted}>
-                {uiText(
-                  'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
-                )}
-              </Text>
-              <Action
-                secondary
-                label={
-                  agent
-                    ? uiText('Reviewer · {value0}', {
-                        value0: agent.model || harnessNames[agent.provider],
-                      })
-                    : uiText('Choose reviewer')
-                }
-                onPress={() => setSettings(!settings)}
-              />
-              {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
-                <View style={{ gap: 10 }}>
-                  {review.report && (
-                    <Text style={styles.muted}>
-                      {review.report.oneRunSettingsSupported
-                        ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
-                        : uiText(
-                            'This runtime saves reviewer settings as defaults when you start a run.',
-                          )}
+              {completed && (
+                <>
+                  <View style={{ gap: 6 }}>
+                    <Text
+                      accessibilityRole="header"
+                      style={[styles.text, { fontSize: 20, fontWeight: '600' }]}
+                    >
+                      {current.findings.length === 1
+                        ? uiText('1 finding')
+                        : uiText('{value0} findings', { value0: current.findings.length })}
                     </Text>
-                  )}
-                  {reviewers.map((reviewer, index) => (
-                    <View key={index} style={[styles.card, { gap: 10 }]}>
+                    {!!current.summary && <Text style={styles.text}>{current.summary}</Text>}
+                    <Text style={styles.muted}>
+                      {uiText('Commit {value0}', { value0: current.headSha.slice(0, 7) })}
+                    </Text>
+                    {coverage}
+                  </View>
+                  <Choice
+                    compact
+                    hideLabel
+                    label={uiText('More review actions')}
+                    selectedLabel={uiText('More review actions')}
+                    value=""
+                    items={[
+                      {
+                        id: 'run',
+                        name: stale ? uiText('Review latest revision') : uiText('Review again'),
+                        disabled: !!blocked || !ready,
+                      },
+                      {
+                        id: 'configure',
+                        name: settings
+                          ? uiText('Hide review settings')
+                          : uiText('Configure this run'),
+                      },
+                    ]}
+                    onChange={(action) => {
+                      if (action === 'run') start()
+                      if (action === 'configure') setSettings((open) => !open)
+                    }}
+                  />
+                </>
+              )}
+              {(!completed || settings) && (
+                <View style={{ gap: 14 }}>
+                  {!completed && (
+                    <>
                       <Text style={styles.muted}>
-                        {uiText('Reviewer {value0}', { value0: index + 1 })}
+                        {uiText(
+                          'Find concrete bugs in this PR. Read the findings, check the evidence, and choose what to share.',
+                        )}
                       </Text>
-                      <Choice
-                        label={uiText('Reviewer provider')}
-                        value={
-                          reviewer?.id.startsWith('saved:')
-                            ? reviewer.id
-                            : reviewer?.provider === 'acp' && reviewer.acpInstallationId
-                              ? acpHarnessChoiceId(reviewer.acpInstallationId)
-                              : (reviewer?.provider ?? '')
-                        }
-                        items={[
-                          { id: '', name: uiText('Choose a provider') },
-                          ...providerSchema.literals
-                            .filter((provider) => provider !== 'acp')
-                            .map((provider) => ({
-                              id: provider,
-                              name:
-                                harnessNames[provider] +
-                                (!supportsPullReview(provider, review.depth)
-                                  ? ` · ${uiText('Unavailable for this review depth')}`
-                                  : ''),
-                              disabled: !supportsPullReview(provider, review.depth),
-                            })),
-                          ...(snapshot?.acpInstallations ?? []).map((installation) => ({
-                            id: acpHarnessChoiceId(installation.id),
-                            name: installation.name + ' · ACP',
-                          })),
-                          ...agents
-                            .filter((item) => supportsPullReview(item.provider, review.depth))
-                            .map((item) => ({ id: `saved:${item.id}`, name: item.name })),
-                        ]}
-                        onChange={(value) => {
-                          const installation = snapshot?.acpInstallations?.find(
-                            (item) => acpHarnessChoiceId(item.id) === value,
-                          )
-                          if (installation) {
-                            setReviewer(index, {
-                              ...acpInstallationHarness(installation, 'read-only'),
-                              id: 'pr-review',
-                              name: installation.name,
-                            })
-                            return
-                          }
-                          const saved = agents.find((item) => `saved:${item.id}` === value)
-                          if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
-                          else {
-                            const provider = providerSchema.literals.find((item) => item === value)
-                            if (provider)
-                              setReviewer(index, {
-                                ...defaultTaskHarness(provider),
-                                id: 'pr-review',
-                                name: harnessNames[provider],
+                      <Action
+                        secondary
+                        label={
+                          agent
+                            ? uiText('Reviewer · {value0}', {
+                                value0: agent.model || harnessNames[agent.provider],
                               })
-                          }
-                        }}
+                            : uiText('Choose reviewer')
+                        }
+                        onPress={() => setSettings((open) => !open)}
                       />
-                      {reviewer && (
-                        <ModelSettings
-                          agent={reviewer}
-                          onChange={(value) => setReviewer(index, value)}
-                          serviceTier={false}
-                          disabled={!!blocked}
+                    </>
+                  )}
+                  {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
+                    <View style={{ gap: 10 }}>
+                      {review.report && (
+                        <Text style={styles.muted}>
+                          {review.report.oneRunSettingsSupported
+                            ? uiText(
+                                'These settings apply to this run. Saved defaults stay unchanged.',
+                              )
+                            : uiText(
+                                'This runtime saves reviewer settings as defaults when you start a run.',
+                              )}
+                        </Text>
+                      )}
+                      {reviewers.map((reviewer, index) => (
+                        <View key={index} style={[styles.card, { gap: 10 }]}>
+                          <Text style={styles.muted}>
+                            {uiText('Reviewer {value0}', { value0: index + 1 })}
+                          </Text>
+                          <Choice
+                            label={uiText('Reviewer provider')}
+                            value={
+                              reviewer?.id.startsWith('saved:')
+                                ? reviewer.id
+                                : reviewer?.provider === 'acp' && reviewer.acpInstallationId
+                                  ? acpHarnessChoiceId(reviewer.acpInstallationId)
+                                  : (reviewer?.provider ?? '')
+                            }
+                            items={[
+                              { id: '', name: uiText('Choose a provider') },
+                              ...providerSchema.literals
+                                .filter((provider) => provider !== 'acp')
+                                .map((provider) => ({
+                                  id: provider,
+                                  name:
+                                    harnessNames[provider] +
+                                    (!supportsPullReview(provider, review.depth)
+                                      ? ` · ${uiText('Unavailable for this review depth')}`
+                                      : ''),
+                                  disabled: !supportsPullReview(provider, review.depth),
+                                })),
+                              ...(snapshot?.acpInstallations ?? []).map((installation) => ({
+                                id: acpHarnessChoiceId(installation.id),
+                                name: installation.name + ' · ACP',
+                              })),
+                              ...agents
+                                .filter((item) => supportsPullReview(item.provider, review.depth))
+                                .map((item) => ({ id: `saved:${item.id}`, name: item.name })),
+                            ]}
+                            onChange={(value) => {
+                              const installation = snapshot?.acpInstallations?.find(
+                                (item) => acpHarnessChoiceId(item.id) === value,
+                              )
+                              if (installation) {
+                                setReviewer(index, {
+                                  ...acpInstallationHarness(installation, 'read-only'),
+                                  id: 'pr-review',
+                                  name: installation.name,
+                                })
+                                return
+                              }
+                              const saved = agents.find((item) => `saved:${item.id}` === value)
+                              if (saved) setReviewer(index, { ...saved, id: `saved:${saved.id}` })
+                              else {
+                                const provider = providerSchema.literals.find(
+                                  (item) => item === value,
+                                )
+                                if (provider)
+                                  setReviewer(index, {
+                                    ...defaultTaskHarness(provider),
+                                    id: 'pr-review',
+                                    name: harnessNames[provider],
+                                  })
+                              }
+                            }}
+                          />
+                          {reviewer && (
+                            <ModelSettings
+                              agent={reviewer}
+                              onChange={(value) => setReviewer(index, value)}
+                              serviceTier={false}
+                              disabled={!!blocked}
+                            />
+                          )}{' '}
+                          {index > 0 && (
+                            <Action
+                              secondary
+                              label={uiText('Remove')}
+                              disabled={!!blocked}
+                              onPress={() =>
+                                setAdditional((items) => items?.filter((_, at) => at !== index - 1))
+                              }
+                            />
+                          )}
+                        </View>
+                      ))}
+                    </View>
+                  )}
+                  <Action
+                    secondary
+                    label={uiText('Add reviewer')}
+                    disabled={!!blocked || reviewers.length >= MAX_PULL_REVIEWERS}
+                    onPress={() =>
+                      setAdditional((items) => [
+                        ...(items ?? []),
+                        { ...defaultTaskHarness('claude'), id: 'pr-review', name: 'Claude' },
+                      ])
+                    }
+                  />
+                  <View style={{ gap: 8 }}>
+                    <Action
+                      secondary
+                      label={imageBusy ? uiText('Loading images…') : uiText('Add images')}
+                      disabled={!!blocked || imageBusy || review.images.length >= 3}
+                      onPress={() => {
+                        setImageBusy(true)
+                        setImageError('')
+                        void (async () => {
+                          const picked = await ImagePicker.launchImageLibraryAsync({
+                            mediaTypes: ['images'],
+                            allowsMultipleSelection: true,
+                            selectionLimit: 3 - review.images.length,
+                            quality: 1,
+                          })
+                          if (picked.canceled) return
+                          const images = []
+                          for (const asset of picked.assets) {
+                            const original = {
+                              uri: asset.uri,
+                              name: asset.fileName ?? 'screenshot.jpg',
+                              mimeType: asset.mimeType,
+                            }
+                            const prepared = await optimizeAttachmentImage(original)
+                            const file = new File(prepared.uri)
+                            try {
+                              if (file.size > MAX_ATTACHMENT_BYTES)
+                                throw new Error('Use images up to 5 MB each.')
+                              images.push({
+                                name: prepared.name,
+                                data: await file.base64(),
+                                mime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].find(
+                                  (
+                                    mime,
+                                  ): mime is
+                                    | 'image/png'
+                                    | 'image/jpeg'
+                                    | 'image/webp'
+                                    | 'image/gif' => mime === prepared.mimeType,
+                                ),
+                              })
+                            } finally {
+                              if (prepared.uri !== original.uri && file.exists) file.delete()
+                            }
+                          }
+                          review.addImages(images)
+                        })()
+                          .catch((error) =>
+                            setImageError(error instanceof Error ? error.message : String(error)),
+                          )
+                          .finally(() => setImageBusy(false))
+                      }}
+                    />
+                    <Text style={styles.muted}>
+                      {uiText(
+                        'Optional screenshots or designs. Each reviewer must support image input. Up to three images.',
+                      )}
+                    </Text>
+                    {review.images.map((image, index) => (
+                      <View key={index} style={{ gap: 4 }}>
+                        <Image
+                          source={{ uri: `data:${image.mime ?? 'image/png'};base64,${image.data}` }}
+                          accessibilityLabel={image.name}
+                          accessibilityIgnoresInvertColors
+                          style={{ width: 72, height: 72, borderRadius: 6 }}
+                          resizeMode="contain"
                         />
-                      )}{' '}
-                      {index > 0 && (
+                        <Text style={styles.text}>{image.name}</Text>
                         <Action
                           secondary
                           label={uiText('Remove')}
                           disabled={!!blocked}
                           onPress={() =>
-                            setAdditional((items) => items?.filter((_, at) => at !== index - 1))
+                            review.setImages(review.images.filter((_, at) => at !== index))
                           }
                         />
+                      </View>
+                    ))}
+                    {imageError && (
+                      <Text accessibilityRole="alert" style={styles.error}>
+                        {imageError}
+                      </Text>
+                    )}
+                  </View>
+                  {(review.busy ||
+                    (rowReviewRun && connected && !review.report && !review.error)) && (
+                    <ReviewActivity reviewers={reviewers.length} />
+                  )}
+                  {!agent?.model && (
+                    <Text style={styles.muted}>{uiText('Choose a reviewer model to start.')}</Text>
+                  )}
+                  <Choice
+                    label={uiText('Review depth')}
+                    value={review.depth}
+                    disabled={!!blocked}
+                    items={pullReviewDepthSchema.literals.map((depth) => ({
+                      id: depth,
+                      name: uiText(pullReviewDepths[depth].label),
+                    }))}
+                    onChange={(value) => {
+                      const depth = pullReviewDepthSchema.literals.find((item) => item === value)
+                      if (depth) {
+                        review.setDepth(depth)
+                        if (depth === 'quick') review.setRunChecks(false)
+                      }
+                    }}
+                  />
+                  {detail.stack && (
+                    <Choice
+                      label={uiText('Review scope')}
+                      value={fullStack ? 'stack' : 'pull'}
+                      disabled={!!blocked}
+                      items={[
+                        { id: 'pull', name: uiText('This PR') },
+                        {
+                          id: 'stack',
+                          name: uiText('Full stack · {value0} PRs', { value0: detail.stack.size }),
+                          disabled: !detail.stack.complete,
+                        },
+                      ]}
+                      onChange={(value) => setFullStack(value === 'stack')}
+                    />
+                  )}
+                  {fullStack && (
+                    <Text style={styles.muted}>
+                      {uiText(
+                        'Review each PR in dependency order. Findings and drafts stay with their source PR.',
                       )}
-                    </View>
-                  ))}
+                    </Text>
+                  )}
+                  <Text style={styles.muted}>
+                    {uiText(pullReviewDepths[review.depth].description)}
+                  </Text>
+                  <Choice
+                    label={uiText('Run project checks')}
+                    value={review.depth !== 'quick' && review.runChecks ? 'yes' : 'no'}
+                    disabled={!!blocked || review.depth === 'quick'}
+                    items={[
+                      { id: 'no', name: uiText('No') },
+                      { id: 'yes', name: uiText('Yes') },
+                    ]}
+                    onChange={(value) => review.setRunChecks(value === 'yes')}
+                  />
+                  {review.runChecks && (
+                    <Text style={styles.muted}>
+                      {uiText(
+                        'Installs dependencies and runs project scripts. Use only for code you trust. This runs on your computer without a security sandbox.',
+                      )}
+                    </Text>
+                  )}
                 </View>
               )}
-              <Action
-                secondary
-                label={uiText('Add reviewer')}
-                disabled={!!blocked || reviewers.length >= MAX_PULL_REVIEWERS}
-                onPress={() =>
-                  setAdditional((items) => [
-                    ...(items ?? []),
-                    { ...defaultTaskHarness('claude'), id: 'pr-review', name: 'Claude' },
-                  ])
-                }
-              />
-              <View style={{ gap: 8 }}>
+              {(!completed || settings) && (
                 <Action
-                  secondary
-                  label={imageBusy ? uiText('Loading images…') : uiText('Add images')}
-                  disabled={!!blocked || imageBusy || review.images.length >= 3}
-                  onPress={() => {
-                    setImageBusy(true)
-                    setImageError('')
-                    void (async () => {
-                      const picked = await ImagePicker.launchImageLibraryAsync({
-                        mediaTypes: ['images'],
-                        allowsMultipleSelection: true,
-                        selectionLimit: 3 - review.images.length,
-                        quality: 1,
-                      })
-                      if (picked.canceled) return
-                      const images = []
-                      for (const asset of picked.assets) {
-                        const original = {
-                          uri: asset.uri,
-                          name: asset.fileName ?? 'screenshot.jpg',
-                          mimeType: asset.mimeType,
-                        }
-                        const prepared = await optimizeAttachmentImage(original)
-                        const file = new File(prepared.uri)
-                        try {
-                          if (file.size > MAX_ATTACHMENT_BYTES)
-                            throw new Error('Use images up to 5 MB each.')
-                          images.push({
-                            name: prepared.name,
-                            data: await file.base64(),
-                            mime: ['image/png', 'image/jpeg', 'image/webp', 'image/gif'].find(
-                              (
-                                mime,
-                              ): mime is 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif' =>
-                                mime === prepared.mimeType,
-                            ),
-                          })
-                        } finally {
-                          if (prepared.uri !== original.uri && file.exists) file.delete()
-                        }
-                      }
-                      review.addImages(images)
-                    })()
-                      .catch((error) =>
-                        setImageError(error instanceof Error ? error.message : String(error)),
-                      )
-                      .finally(() => setImageBusy(false))
-                  }}
-                />
-                <Text style={styles.muted}>
-                  {uiText(
-                    'Optional screenshots or designs. Each reviewer must support image input. Up to three images.',
-                  )}
-                </Text>
-                {review.images.map((image, index) => (
-                  <View key={index} style={{ gap: 4 }}>
-                    <Image
-                      source={{ uri: `data:${image.mime ?? 'image/png'};base64,${image.data}` }}
-                      accessibilityLabel={image.name}
-                      accessibilityIgnoresInvertColors
-                      style={{ width: 72, height: 72, borderRadius: 6 }}
-                      resizeMode="contain"
-                    />
-                    <Text style={styles.text}>{image.name}</Text>
-                    <Action
-                      secondary
-                      label={uiText('Remove')}
-                      disabled={!!blocked}
-                      onPress={() =>
-                        review.setImages(review.images.filter((_, at) => at !== index))
-                      }
-                    />
-                  </View>
-                ))}
-                {imageError && (
-                  <Text accessibilityRole="alert" style={styles.error}>
-                    {imageError}
-                  </Text>
-                )}
-              </View>
-              {review.busy && <ReviewActivity reviewers={reviewers.length} />}
-              {!agent?.model && (
-                <Text style={styles.muted}>{uiText('Choose a reviewer model to start.')}</Text>
-              )}
-              <Choice
-                label={uiText('Review depth')}
-                value={review.depth}
-                disabled={!!blocked}
-                items={pullReviewDepthSchema.literals.map((depth) => ({
-                  id: depth,
-                  name: uiText(pullReviewDepths[depth].label),
-                }))}
-                onChange={(value) => {
-                  const depth = pullReviewDepthSchema.literals.find((item) => item === value)
-                  if (depth) {
-                    review.setDepth(depth)
-                    if (depth === 'quick') review.setRunChecks(false)
+                  secondary={!!current && !stale}
+                  label={
+                    stale
+                      ? uiText('Review latest revision')
+                      : current
+                        ? uiText('Review again')
+                        : uiText('Start agent review')
                   }
-                }}
-              />
-              {detail.stack && (
-                <Choice
-                  label={uiText('Review scope')}
-                  value={fullStack ? 'stack' : 'pull'}
-                  disabled={!!blocked}
-                  items={[
-                    { id: 'pull', name: uiText('This PR') },
-                    {
-                      id: 'stack',
-                      name: uiText('Full stack · {value0} PRs', { value0: detail.stack.size }),
-                      disabled: !detail.stack.complete,
-                    },
-                  ]}
-                  onChange={(value) => setFullStack(value === 'stack')}
+                  disabled={!!blocked || !ready}
+                  onPress={() => start()}
                 />
               )}
-              {fullStack && (
-                <Text style={styles.muted}>
-                  {uiText(
-                    'Review each PR in dependency order. Findings and drafts stay with their source PR.',
-                  )}
-                </Text>
-              )}
-              <Text style={styles.muted}>{uiText(pullReviewDepths[review.depth].description)}</Text>
-              <Choice
-                label={uiText('Run project checks')}
-                value={review.depth !== 'quick' && review.runChecks ? 'yes' : 'no'}
-                disabled={!!blocked || review.depth === 'quick'}
-                items={[
-                  { id: 'no', name: uiText('No') },
-                  { id: 'yes', name: uiText('Yes') },
-                ]}
-                onChange={(value) => review.setRunChecks(value === 'yes')}
-              />
-              {review.runChecks && (
-                <Text style={styles.muted}>
-                  {uiText(
-                    'Installs dependencies and runs project scripts. Use only for code you trust. This runs on your computer without a security sandbox.',
-                  )}
-                </Text>
-              )}
-              <Action
-                secondary={!!current && !stale}
-                label={
-                  stale
-                    ? uiText('Review latest revision')
-                    : current
-                      ? uiText('Review again')
-                      : uiText('Start agent review')
-                }
-                disabled={!!blocked || !ready}
-                onPress={() => start()}
-              />
               {current && (
                 <>
-                  <Choice
-                    label={uiText('Review history')}
-                    value={current.id}
-                    items={
-                      review.report?.reviews.map((pass) => ({
-                        id: pass.id,
-                        name: `${pass.headSha.slice(0, 7)} · ${pass.status} · ${new Date(pass.createdAt).toLocaleString()}`,
-                      })) ?? []
-                    }
-                    onChange={review.select}
-                  />
-                  {current.reviewerResults?.map((reviewer) => (
-                    <Text key={reviewer.id} style={styles.muted}>
-                      {reviewer.selection.harness?.provider ?? reviewer.selection.agentId} ·{' '}
-                      {reviewer.selection.model} ·{' '}
-                      {uiText(pullReviewerStatusLabels[reviewer.status])} ·{' '}
-                      {uiText('{value0}/{value1} batches', {
-                        value0: reviewer.completedBatches,
-                        value1: reviewer.batches,
-                      })}
-                      {reviewer.error ? ` · ${reviewer.error}` : ''}
-                    </Text>
-                  ))}
-                  {current.images?.map((image) => (
-                    <Text key={image.id} style={styles.muted}>
-                      {image.name} · {image.mime}
-                    </Text>
-                  ))}
-                  <Text style={[styles.muted, { fontSize: 12 }]}>
-                    {current.selection.model} · {current.baseSha.slice(0, 7)} →{' '}
-                    {current.headSha.slice(0, 7)}
-                  </Text>
                   {stale && (
                     <Text accessibilityRole="alert" style={styles.muted}>
                       {uiText(
@@ -783,59 +900,92 @@ function LocalMobilePullCodeReview({
                       )}
                     </Text>
                   )}
-                  <Text style={styles.text}>
-                    {current.summary ||
-                      current.error ||
-                      uiText('Review {value0}.', { value0: current.status })}
-                  </Text>
-                  <Text style={styles.muted}>
-                    {uiText('Review depth')} ·{' '}
-                    {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
-                  </Text>
+                  {!completed && (
+                    <>
+                      <Text style={styles.text}>
+                        {current.summary ||
+                          current.error ||
+                          uiText('Review {value0}.', { value0: current.status })}
+                      </Text>
+                      <Text style={styles.muted}>
+                        {uiText('Review depth')} ·{' '}
+                        {uiText(pullReviewDepths[current.depth ?? 'standard'].label)}
+                      </Text>
+                    </>
+                  )}
                   {!!current.checks?.length && (
                     <View style={{ gap: 8 }}>
-                      <Text style={styles.text}>{uiText('Project check results')}</Text>
-                      <Text style={styles.muted}>
-                        {uiText(
-                          'Commands ran on this computer at commit {value0}. Results are separate from model findings.',
-                          { value0: current.headSha.slice(0, 7) },
+                      <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                        <Action
+                          secondary
+                          label={
+                            failedChecks
+                              ? uiText('View failed project checks')
+                              : uiText('Project check results')
+                          }
+                          onPress={() => setShowChecks((open) => !open)}
+                          disabled={current.status === 'running'}
+                        />
+                        <Text style={styles.muted}>
+                          {current.checks.filter((check) => check.status === 'passed').length}/
+                          {current.checks.length}
+                        </Text>
+                        {current.checks.some((check) => check.status === 'failed') && (
+                          <Text style={styles.error}>{uiText(pullReviewCheckLabels.failed)}</Text>
                         )}
-                      </Text>
-                      {current.checks.map((check, index) => (
-                        <View key={index} style={[styles.card, { gap: 6 }]}>
-                          <Text selectable style={styles.text}>
-                            {check.command || check.name} ·{' '}
-                            {uiText(pullReviewCheckLabels[check.status])}
+                      </View>
+                      {(showChecks || current.status === 'running') && (
+                        <View style={{ gap: 8 }}>
+                          <Text style={styles.muted}>
+                            {uiText(
+                              'Commands ran on this computer at commit {value0}. Results are separate from model findings.',
+                              { value0: current.headSha.slice(0, 7) },
+                            )}
                           </Text>
-                          {!!check.output && (
-                            <Action
-                              secondary
-                              label={
-                                checkOutput === current.id + index
-                                  ? uiText('Hide output')
-                                  : uiText('Show output')
-                              }
-                              onPress={() =>
-                                setCheckOutput(
-                                  checkOutput === current.id + index
-                                    ? undefined
-                                    : current.id + index,
-                                )
-                              }
-                            />
-                          )}
-                          {checkOutput === current.id + index && (
-                            <Text selectable style={[styles.muted, { fontSize: 12 }]}>
-                              {check.output}
-                            </Text>
-                          )}
-                          {check.exitCode !== undefined && (
-                            <Text style={styles.muted}>
-                              {uiText('Exit code: {value0}', { value0: check.exitCode })}
-                            </Text>
-                          )}
+                          {current.checks
+                            .map((check, index) => ({ check, index }))
+                            .sort(
+                              (a, b) =>
+                                Number(b.check.status === 'failed') -
+                                Number(a.check.status === 'failed'),
+                            )
+                            .map(({ check, index }) => (
+                              <View key={index} style={[styles.card, { gap: 6 }]}>
+                                <Text selectable style={styles.text}>
+                                  {check.command || check.name} ·{' '}
+                                  {uiText(pullReviewCheckLabels[check.status])}
+                                </Text>
+                                {!!check.output && (
+                                  <Action
+                                    secondary
+                                    label={
+                                      checkOutput === current.id + index
+                                        ? uiText('Hide output')
+                                        : uiText('Show output')
+                                    }
+                                    onPress={() =>
+                                      setCheckOutput(
+                                        checkOutput === current.id + index
+                                          ? undefined
+                                          : current.id + index,
+                                      )
+                                    }
+                                  />
+                                )}
+                                {checkOutput === current.id + index && (
+                                  <Text selectable style={[styles.muted, { fontSize: 12 }]}>
+                                    {check.output}
+                                  </Text>
+                                )}
+                                {check.exitCode !== undefined && (
+                                  <Text style={styles.muted}>
+                                    {uiText('Exit code: {value0}', { value0: check.exitCode })}
+                                  </Text>
+                                )}
+                              </View>
+                            ))}
                         </View>
-                      ))}
+                      )}
                     </View>
                   )}
                   {current.status === 'running' && (
@@ -850,68 +1000,51 @@ function LocalMobilePullCodeReview({
                       />
                     </View>
                   )}
-                  <Text style={[styles.muted, { fontSize: 12 }]}>
-                    {uiText('{value0} of {value1} file patches supplied in this pass.', {
-                      value0: supplied,
-                      value1: current.coverage.length + current.missingFiles,
-                    })}
-                  </Text>
-                  <Choice
-                    label={uiText('File coverage and captured patches')}
-                    value={patch ?? ''}
-                    items={[
-                      { id: '', name: uiText('Inspect coverage') },
-                      ...current.coverage.map((file) => ({
-                        id: file.path,
-                        name: `${file.path} · ${uiText(pullReviewCoverageLabels[file.state])}`,
-                      })),
-                    ]}
-                    onChange={(path) => setPatch(path || undefined)}
-                  />
-                  {current.missingFiles > 0 && (
-                    <Text style={styles.muted}>
-                      {uiText('{value0} files were not returned by the forge.', {
-                        value0: current.missingFiles,
-                      })}
-                    </Text>
-                  )}
-                  {!stale &&
-                    current.status === 'completed' &&
-                    current.coverage.some(
-                      (file) => file.state === 'budget' || file.state === 'failed',
-                    ) && (
-                      <Action
-                        secondary
-                        label={uiText('Review remaining files')}
-                        disabled={!!blocked || !ready}
-                        onPress={() => start(true)}
-                      />
-                    )}
+                  {!completed && coverage}
                   {current.findings.map((finding) => {
                     const dismissed = draft?.dismissed.includes(finding.id)
                     const added = draft?.selected.includes(finding.id)
                     return (
                       <View
                         key={finding.id}
-                        style={[styles.card, { gap: 8, opacity: dismissed ? 0.6 : 1 }]}
+                        style={{
+                          gap: 8,
+                          paddingVertical: 12,
+                          borderTopWidth: 1,
+                          borderTopColor: colors.border,
+                          opacity: dismissed ? 0.6 : 1,
+                        }}
                       >
+                        <Text
+                          accessibilityRole="header"
+                          style={[styles.text, { fontSize: 16, fontWeight: '600' }]}
+                        >
+                          {finding.title}
+                        </Text>
                         <Text
                           style={[
                             styles.muted,
                             {
-                              fontSize: 11,
-                              textTransform: 'uppercase',
+                              fontSize: 12,
+                              textTransform: 'capitalize',
                               color: finding.severity === 'high' ? colors.error : colors.muted,
                             },
                           ]}
                         >
                           {finding.severity}
                         </Text>
-                        <Text style={[styles.text, { fontWeight: '600' }]}>{finding.title}</Text>
                         <Action
                           secondary
                           label={`${finding.path}${finding.anchored ? `:${finding.line} · ${finding.side}` : uiText(' · location not verified')}`}
-                          onPress={() => setPatch(finding.path)}
+                          onPress={() => {
+                            restoreOffset.current = scrollOffset.current
+                            setFindingPatch({
+                              finding,
+                              commit: current.headSha,
+                              patch: current.coverage.find((file) => file.path === finding.path)
+                                ?.patch,
+                            })
+                          }}
                         />
                         {finding.reviewerIds?.length ? (
                           <Text style={styles.muted}>
@@ -993,6 +1126,80 @@ function LocalMobilePullCodeReview({
                       </View>
                     )
                   })}
+                  <Choice
+                    label={uiText('File coverage and captured patches')}
+                    value={patch ?? ''}
+                    items={[
+                      { id: '', name: uiText('Inspect coverage') },
+                      ...current.coverage.map((file) => ({
+                        id: file.path,
+                        name: `${file.path} · ${uiText(pullReviewCoverageLabels[file.state])}`,
+                      })),
+                    ]}
+                    onChange={(path) => setPatch(path || undefined)}
+                  />
+                  {current.missingFiles > 0 && (
+                    <Text style={styles.muted}>
+                      {uiText('{value0} files were not returned by the forge.', {
+                        value0: current.missingFiles,
+                      })}
+                    </Text>
+                  )}
+                  {!stale &&
+                    current.status === 'completed' &&
+                    current.coverage.some(
+                      (file) => file.state === 'budget' || file.state === 'failed',
+                    ) && (
+                      <Action
+                        secondary
+                        label={uiText('Review remaining files')}
+                        disabled={!!blocked || !ready}
+                        onPress={() => start(true)}
+                      />
+                    )}
+                  {completed && (
+                    <Action
+                      secondary
+                      label={uiText('Review details')}
+                      onPress={() => setShowReviewDetails((open) => !open)}
+                    />
+                  )}
+                  {(!completed || showReviewDetails) && (
+                    <View style={{ gap: 8 }}>
+                      <Choice
+                        label={uiText('Review history')}
+                        value={current.id}
+                        items={
+                          review.report?.reviews.map((pass) => ({
+                            id: pass.id,
+                            name: `${pass.headSha.slice(0, 7)} · ${pass.status} · ${new Date(pass.createdAt).toLocaleString()}`,
+                          })) ?? []
+                        }
+                        onChange={review.select}
+                      />
+                      {current.reviewerResults?.map((reviewer) => (
+                        <Text key={reviewer.id} style={styles.muted}>
+                          {reviewer.selection.harness?.provider ?? reviewer.selection.agentId} ·{' '}
+                          {reviewer.selection.model} ·{' '}
+                          {uiText(pullReviewerStatusLabels[reviewer.status])} ·{' '}
+                          {uiText('{value0}/{value1} batches', {
+                            value0: reviewer.completedBatches,
+                            value1: reviewer.batches,
+                          })}
+                          {reviewer.error ? ` · ${reviewer.error}` : ''}
+                        </Text>
+                      ))}
+                      {current.images?.map((image) => (
+                        <Text key={image.id} style={styles.muted}>
+                          {image.name} · {image.mime}
+                        </Text>
+                      ))}
+                      <Text style={[styles.muted, { fontSize: 12 }]}>
+                        {current.selection.model} · {current.baseSha.slice(0, 7)} →{' '}
+                        {current.headSha.slice(0, 7)}
+                      </Text>
+                    </View>
+                  )}
                   {current.status === 'completed' && !current.findings.length && (
                     <Text style={styles.muted}>
                       {uiText(
@@ -1162,7 +1369,10 @@ export function MobilePullCodeReview(props: PanelProps) {
         <Choice
           label={uiText('Review on computer')}
           value={runtimeId}
-          onChange={setChosen}
+          onChange={(id) => {
+            props.rowReviewRun?.()
+            setChosen(id)
+          }}
           items={overviews.map((computer) => ({
             id: computer.profile.id,
             name:
@@ -1175,6 +1385,7 @@ export function MobilePullCodeReview(props: PanelProps) {
           key={runtimeId}
           {...props}
           initiallyOpen={!chosen && props.initiallyOpen}
+          rowReviewRun={chosen ? undefined : props.rowReviewRun}
         />
       ) : !overviews.some((computer) => computer.profile.id === runtimeId) ? (
         <Text accessibilityRole="alert" style={styles.muted}>
@@ -1182,7 +1393,12 @@ export function MobilePullCodeReview(props: PanelProps) {
         </Text>
       ) : (
         <RuntimeScope runtimeId={runtimeId}>
-          <RemoteMobilePullCodeReview key={runtimeId} {...props} initiallyOpen={false} />
+          <RemoteMobilePullCodeReview
+            key={runtimeId}
+            {...props}
+            initiallyOpen={false}
+            rowReviewRun={undefined}
+          />
         </RuntimeScope>
       )}
     </View>

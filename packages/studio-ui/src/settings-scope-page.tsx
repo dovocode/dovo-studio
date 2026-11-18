@@ -11,7 +11,7 @@ import {
 import { useSettingsTarget, useStudioHost, WorkspaceScope } from '@dovo/studio-core'
 import { ChoicePicker } from './choice-picker'
 import { Button } from './components/ui/button'
-import { SettingsPage, SettingsStorageInfo } from './settings-layout'
+import { SettingsPage, SettingsSaveScope, SettingsStorageInfo } from './settings-layout'
 import { ProjectOrganizationSettings } from './project-organization'
 
 /** Scoped settings share a persistent project and computer target within the scrollport. */
@@ -86,7 +86,9 @@ export function SettingsScopePage({
             </SettingsStorageInfo>
             {source && !source.connected && (
               <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
-                {source.name} is offline. Reconnect to edit or save.
+                {source.snapshot
+                  ? `${source.name} offline · Viewing saved settings`
+                  : `Reconnect to load settings from ${source.name}`}
               </span>
             )}
             {offlineRecovery && source && !source.connected && (
@@ -191,8 +193,10 @@ export function SettingsScopePage({
           key={`${source.scope}:${scope}:${repository?.id ?? ''}`}
           profile={source.profile}
         >
-          {repository && <ProjectOrganizationSettings repository={repository} compact />}
-          {children({ scope, repository })}
+          <SettingsSaveScope.Provider value={{ label: summary.title, online: source.connected }}>
+            {repository && <ProjectOrganizationSettings repository={repository} compact />}
+            {children({ scope, repository })}
+          </SettingsSaveScope.Provider>
         </WorkspaceScope>
       )}
       {localChildren}

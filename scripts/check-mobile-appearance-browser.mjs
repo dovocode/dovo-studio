@@ -277,9 +277,11 @@ try {
       true,
       'Transparency changes preserve the status action',
     )
-    assert.equal(
-      await page.locator('#status-pill [data-glass-effect]').getAttribute('data-glass-effect'),
-      reduced ? 'none' : 'regular',
+    assert.equal(await page.locator('#status-pill [data-glass-effect]').count(), 0)
+    assert.notEqual(
+      await pill.evaluate((node) => getComputedStyle(node.parentElement).backgroundColor),
+      'rgba(0, 0, 0, 0)',
+      'The workbench status action stays solid',
     )
     assert.equal(
       await input.evaluate((element) => element === window.originalInput),

@@ -12,18 +12,18 @@ The **Snoozed** and **Settled** tab sections use the thread section headers, cou
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
 mobile, the tab category picker hides **Snoozed** when no tabs are snoozed.
 
-The iOS Browser has no top header. Device-local tabs use one Liquid Glass navigation row above the
-native app tabs. The address shows the host until you edit it, then shows the full URL. Back and
-Forward hide during editing to give the field more space. Go and Tabs keep their positions when
-focus changes. Use **Browser options → Page actions** for sharing and page commands, or choose
-**Bookmarks** or **History** in Browser options. Reduced Transparency, high contrast and devices
-without Liquid Glass use an opaque background.
+The iOS Browser has no top header. Device-local tabs on mobile use one solid navigation row. The
+address shows the host until you edit it, then shows the full URL. Back and Forward hide during
+editing to give the field more space. On narrow phones, **Forward** is in **Browser options** when
+the next page is available. Go and Tabs keep their positions when focus changes. Use **Browser
+options → Page actions** for sharing and page commands, or choose **Bookmarks** or **History** in
+Browser options.
 
 Run `node scripts/check-mobile-browser-navigation-browser.mjs` and
 `node scripts/check-mobile-shared-browser-browser.mjs` after installing Playwright Chromium. These
 checks cover layout and browser state through native adapters. A separate iOS simulator check
-verified the real navigation control, glass and opaque rendering, keyboard avoidance and URL
-submission. It did not verify the full native browser screen or a physical iPhone.
+verified the previous navigation control, keyboard avoidance and URL submission. The current solid
+navigation row has browser adapter coverage.
 
 Choose **Browser options → Tab & page actions → Snooze tab → Choose date and time…** to set a custom
 wake time on desktop/web. The tab context menu and the unified sidebar's Snooze menu have the same
@@ -33,8 +33,9 @@ to the active list when its wake time arrives.
 
 Pinned tabs show a compact profile badge. Choose its emoji in **Settings → Browser → Local browser
 profiles** or **Remote browser profiles**; profiles without an emoji show initials. Pinning saves
-the current URL as the tab's home. Use the address-bar home button to return there, or right-click
-the pin to edit its home URL. The pinned grid adapts to the sidebar width.
+the current URL as the tab's home. Use the home button to return there. At narrow desktop widths,
+find it in **Browser options**. Right-click the pin to edit its home URL. The pinned grid adapts to
+the sidebar width.
 
 **Thread for this tab** links only to threads on the tab's computer. On desktop, choose **Use
 {computer}** if that computer is not active before editing or creating its thread. The tab keeps its
@@ -46,9 +47,9 @@ Shared Browser sessions are separate from the thread's right-side preview. Profi
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
 
-The browser context label shows whether you are in Browser workspace or Thread preview. It also
-shows the device or computer that runs the browser and the profile when available. In a remote
-browser, `Local address on [computer]` means the address refers to that computer, not your device.
+Use **Browser options** to find the computer and profile for a workspace tab. Thread previews
+identify their separate session. In a remote browser, **Local address on [computer]** appears next
+to navigation for a loopback address. That address refers to the named computer.
 
 When Browser workspace is off, **Open in Dovo** uses a standalone preview window. In that window,
 links with `target="_blank"` and `window.open` open child previews directly. They do not ask you to
@@ -125,11 +126,14 @@ selected. Remote sessions depend on the owning computer being available and pair
 runtime currently allows eight concurrent browser sessions; saved inactive tabs do not reserve those
 sessions.
 
-Failed remote navigation retains the session and attempted address so Reload can retry when the
-server returns. Crashed remote sessions are released for reconnect. Reconnecting viewers receive any
-outstanding JavaScript dialog; disconnecting clears the viewer's old dialog. Agent inspection does
-not expire a session while a human viewer is attached. Private desktop preview profiles use
-memory-only storage, and self-closing pages release their native tab entries.
+Failed remote navigation retains the session and attempted address so **Reload page** can retry it.
+When the connection drops, the viewer retries on its own and shows **Reconnect** if it needs help.
+When the host confirms the session ended, choose **Open URL in a new session** to open the saved
+address, or **Open a new session** for a blank tab. These notices leave the streamed page at the
+same size. Reconnecting viewers receive any outstanding JavaScript dialog; disconnecting clears the
+viewer's old dialog. Agent inspection does not expire a session while a human viewer is attached.
+Private desktop preview profiles use memory-only storage, and self-closing pages release their
+native tab entries.
 
 ## Picture-in-Picture and background pages
 
@@ -431,6 +435,11 @@ iOS module's [README](../apps/mobile/modules/dovo-webkit-browser/README.md) docu
 verification commands.
 
 ## Browser usability
+
+Desktop and web keep Back, Reload, the address and Browser options in one row at narrow widths.
+Press Enter to submit the address. Browser options holds Forward, bookmarks, downloads, site
+permissions, extensions and the tab profile when they are available. The recent-tab list still shows
+tabs and their owner.
 
 Selecting a tab preserves its position; navigating moves it to the top of the recent list. Desktop
 tabs, bookmarks and history show favicons when available, with a globe fallback. Remote localhost

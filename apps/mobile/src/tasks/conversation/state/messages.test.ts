@@ -291,7 +291,7 @@ describe('Dovo conversation adapter', () => {
   })
 })
 
-it('puts provider reasoning summaries in a separate disclosure instead of counting them as tools', () => {
+it('keeps provider reasoning summaries separate from tool calls', () => {
   const result = conversationMessages(task, [
     {
       ...event('reasoning', 't2', 'running'),

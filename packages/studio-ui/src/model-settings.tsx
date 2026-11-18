@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Rocket } from 'lucide-react'
 import { Disclosure } from './disclosure'
 import { Schema } from 'effect'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -175,6 +175,7 @@ export function ModelSettings({
       >
         <ChoicePicker
           aria-label="Reasoning level"
+          icons={{ ultra: <Rocket className="size-3.5" /> }}
           className="h-9 rounded-md border bg-background px-2 text-xs"
           value={agent.reasoning ?? ''}
           onValueChange={(selection) =>

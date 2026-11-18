@@ -147,15 +147,6 @@ export default function DevicesScreen() {
         keyboardDismissMode="interactive"
         automaticallyAdjustKeyboardInsets
       >
-        <ServiceUrlSettings />
-        <AccountPanel
-          onPair={(address) => {
-            setDiscoveredAddress(address)
-            setInvitation(undefined)
-            setPairTarget(null)
-            setAdding(true)
-          }}
-        />
         {!!runtimeError && (
           <Text accessibilityRole="alert" style={styles.error}>
             {runtimeError}
@@ -206,13 +197,22 @@ export default function DevicesScreen() {
           </SettingsGroup>
         ) : (
           <Action
-            label={invitation ? uiText('Continue pairing') : uiText('Connect a computer')}
+            label={invitation ? uiText('Continue pairing') : uiText('Add computer')}
             onPress={() => {
               setDiscoveredAddress(undefined)
               setAdding(true)
             }}
           />
         )}
+        <ServiceUrlSettings />
+        <AccountPanel
+          onPair={(address) => {
+            setDiscoveredAddress(address)
+            setInvitation(undefined)
+            setPairTarget(null)
+            setAdding(true)
+          }}
+        />
         {!!profiles.length && <ComputerUpdates />}
         <SettingsGroup title={uiText('Tools')}>
           <SettingsRow

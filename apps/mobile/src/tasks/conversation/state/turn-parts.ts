@@ -49,7 +49,7 @@ export function turnPartBoundaries(content: ThreadMessage['content'], running: b
   return { finalIndex, end: footer < 0 ? content.length : footer }
 }
 
-/** Keep failures, artifacts and image results available when the turn is folded. */
+/** Keep failures, reasoning summaries, artifacts and images visible when the turn is folded. */
 export function foldedTurnPartRanges(
   content: ThreadMessage['content'],
   finalIndex: number,
@@ -71,7 +71,13 @@ export function foldedTurnPartRanges(
       )
         ranges.push({ start: index, end: last + 1 })
       index = last
-    } else if (index === finalIndex) ranges.push({ start: index, end: index + 1 })
+    } else if (index === finalIndex || isReasoningPart(content[index])) {
+      ranges.push({ start: index, end: index + 1 })
+    }
   }
   return ranges
+}
+
+export function isReasoningPart(part: ThreadMessage['content'][number] | undefined) {
+  return part?.type === 'data' && part.name === 'dovo.reasoning'
 }

@@ -707,12 +707,12 @@ try {
     await readTitle.locator('xpath=ancestor::button[1]').getAttribute('aria-current'),
     'true',
   )
-  assert.match(
+  assert.equal(
     await readTitle
       .locator('xpath=ancestor::button[1]')
       .evaluate((el) => getComputedStyle(el).backgroundImage),
-    /linear-gradient/,
-    'Selected threads retain their gradient highlight',
+    'none',
+    'Selected threads use a solid highlight',
   )
   assert.equal(
     await readTitle.evaluate((el) => getComputedStyle(el).color),

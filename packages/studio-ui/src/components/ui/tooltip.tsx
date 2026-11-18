@@ -9,7 +9,11 @@ import { cn } from '../../lib/utils'
 
 const TooltipProvider = TooltipPrimitive.Provider
 
-const OpenContext = React.createContext({ open: false, close: () => {} })
+const OpenContext = React.createContext<{
+  open: boolean
+  close: () => void
+  trigger?: React.RefObject<HTMLElement | null>
+}>({ open: false, close: () => {} })
 function Tooltip({
   open: controlled,
   defaultOpen,
@@ -17,13 +21,14 @@ function Tooltip({
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   const [value, setValue] = React.useState(defaultOpen ?? false)
+  const trigger = React.useRef<HTMLElement>(null)
   const open = controlled ?? value
   const close = React.useCallback(() => {
     setValue(false)
     onOpenChange?.(false)
   }, [onOpenChange])
   return (
-    <OpenContext.Provider value={{ open, close }}>
+    <OpenContext.Provider value={{ open, close, trigger }}>
       <TooltipPrimitive.Root
         {...props}
         open={open}
@@ -36,7 +41,22 @@ function Tooltip({
   )
 }
 
-const TooltipTrigger = TooltipPrimitive.Trigger
+const TooltipTrigger = React.forwardRef<
+  React.ElementRef<typeof TooltipPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TooltipPrimitive.Trigger>
+>((props, forwardedRef) => {
+  const { trigger } = React.useContext(OpenContext)
+  const ref = React.useCallback(
+    (node: React.ElementRef<typeof TooltipPrimitive.Trigger> | null) => {
+      if (trigger) trigger.current = node
+      if (typeof forwardedRef === 'function') return forwardedRef(node)
+      if (forwardedRef) forwardedRef.current = node
+    },
+    [trigger, forwardedRef],
+  )
+  return <TooltipPrimitive.Trigger {...props} ref={ref} />
+})
+TooltipTrigger.displayName = TooltipPrimitive.Trigger.displayName
 
 const TooltipContent = React.forwardRef<
   React.ElementRef<typeof TooltipPrimitive.Content>,
@@ -45,11 +65,15 @@ const TooltipContent = React.forwardRef<
   const context = React.useContext(OpenContext)
   const native = useNativeTooltipContainer(context.open, context.close)
   if (native.enabled && !native.container) return null
+  const fixedMaterial = context.trigger?.current?.closest(
+    ".studio-composer, .startup-draft, .studio-navigation[aria-label='Main navigation'], [data-fixed-material]",
+  )
   return (
     <TooltipPrimitive.Portal container={native.container}>
       <TooltipPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
+        data-fixed-material={fixedMaterial ? '' : undefined}
         className={cn(
           'studio-tooltip studio-menu-surface z-50 overflow-hidden rounded-full border border-border/70 bg-[var(--studio-floating-fill)] px-3 py-1.5 text-xs text-popover-foreground',
           className,

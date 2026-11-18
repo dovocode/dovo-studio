@@ -4,7 +4,7 @@ import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-t
 import { selectedPatchCode } from './selected-code'
 import { LineCommentForm } from '@dovo/studio-ui'
 import { reviewPatch } from './review-patch'
-import { useEffect, useMemo } from 'react'
+import { useCallback, useEffect, useMemo } from 'react'
 import { getFiletypeFromFileName, parsePatchFiles } from '@pierre/diffs'
 import { FileDiff } from '@pierre/diffs/react'
 import type { PullDetail } from '@dovo/studio-core'
@@ -39,6 +39,7 @@ export function PullPatch({
   file,
   split,
   reviewContext = false,
+  focusedLine,
   onComment,
   provider = 'github',
   allowAgent = true,
@@ -54,6 +55,7 @@ export function PullPatch({
   file: PullDetail['files'][number]
   split: boolean
   reviewContext?: boolean
+  focusedLine?: { number: number; side: 'additions' | 'deletions' }
   onComment?: (
     body: string,
     range: {
@@ -107,6 +109,11 @@ export function PullPatch({
   const [ready, setReady] = useApplicationState(false),
     [error, setError] = useApplicationState('')
   const [highlightAttempt, setHighlightAttempt] = useApplicationState(0)
+  const scrollToFocusedLine = useCallback((node: HTMLSpanElement | null) => {
+    if (!node) return
+    const frame = requestAnimationFrame(() => node.scrollIntoView({ block: 'center' }))
+    return () => cancelAnimationFrame(frame)
+  }, [])
   // Keep the original diff and range mounted while a push refreshes the live PR.
   const draftFile = selection?.file ?? file
   const binary = !!file.attributes?.binary && !selection
@@ -231,77 +238,92 @@ export function PullPatch({
       {ready ? (
         <FileDiff
           fileDiff={parsed.diff}
+          selectedLines={
+            focusedLine && {
+              start: focusedLine.number,
+              end: focusedLine.number,
+              side: focusedLine.side,
+            }
+          }
           lineAnnotations={
-            selection
-              ? [
-                  {
-                    lineNumber: selection.end,
-                    side: selection.side,
-                  },
-                ]
-              : []
+            focusedLine
+              ? [{ lineNumber: focusedLine.number, side: focusedLine.side }]
+              : selection
+                ? [
+                    {
+                      lineNumber: selection.end,
+                      side: selection.side,
+                    },
+                  ]
+                : []
           }
           renderAnnotation={() =>
-            selection && (
-              <LineCommentForm
-                key={`${selection.side}:${selection.start}:${selection.end}`}
-                selectedCode={
-                  selection.side === 'additions'
-                    ? selectedPatchCode(parsed.diff, selection.start, selection.end)
-                    : undefined
-                }
-                label={`${file.path}:${selection.start}–${selection.end}`}
-                draft={draft}
-                onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
-                disabled={commentDisabled || !onComment}
-                submitLabel={
-                  destination === 'github'
-                    ? `Post to ${forgeLabels[provider]}`
-                    : (agentAction?.submit ?? 'Start agent thread')
-                }
-                onCancel={() => setSelection(null)}
-                onSubmit={async (body) => {
-                  if (!onComment || commentDisabled) return
-                  if (
-                    destination === 'github' &&
-                    !allowInlineRange &&
-                    selection.start !== selection.end
-                  )
-                    throw new Error(
-                      'This provider accepts one line per comment. Select a single line or send the range to an agent thread.',
-                    )
-                  await onComment(
-                    body,
-                    { start: selection.start, end: selection.end, side: selection.side },
-                    destination,
-                    {
-                      headSha: selection.headSha,
-                      expectedDestination: selection.expectedDestination,
-                      path: selection.file.path,
-                      patch: selection.file.patch ?? '',
-                      code:
-                        selection.side === 'additions'
-                          ? selectedPatchCode(parsed.diff, selection.start, selection.end)
-                          : undefined,
-                    },
-                  )
-                  if (destination === 'github' || agentAction?.clears) setSelection(null)
-                }}
-              >
-                <ChoicePicker
-                  aria-label="Comment destination"
-                  className="rounded border bg-background p-1"
-                  value={destination}
-                  onValueChange={(selection) =>
-                    setDestination(selection === 'github' ? 'github' : 'agent')
+            focusedLine ? (
+              <span ref={scrollToFocusedLine} />
+            ) : (
+              selection && (
+                <LineCommentForm
+                  key={`${selection.side}:${selection.start}:${selection.end}`}
+                  selectedCode={
+                    selection.side === 'additions'
+                      ? selectedPatchCode(parsed.diff, selection.start, selection.end)
+                      : undefined
                   }
+                  label={`${file.path}:${selection.start}–${selection.end}`}
+                  draft={draft}
+                  onDraft={(value) => onDraft?.((current) => ({ ...current, ...value }))}
+                  disabled={commentDisabled || !onComment}
+                  submitLabel={
+                    destination === 'github'
+                      ? `Post to ${forgeLabels[provider]}`
+                      : (agentAction?.submit ?? 'Start agent thread')
+                  }
+                  onCancel={() => setSelection(null)}
+                  onSubmit={async (body) => {
+                    if (!onComment || commentDisabled) return
+                    if (
+                      destination === 'github' &&
+                      !allowInlineRange &&
+                      selection.start !== selection.end
+                    )
+                      throw new Error(
+                        'This provider accepts one line per comment. Select a single line or send the range to an agent thread.',
+                      )
+                    await onComment(
+                      body,
+                      { start: selection.start, end: selection.end, side: selection.side },
+                      destination,
+                      {
+                        headSha: selection.headSha,
+                        expectedDestination: selection.expectedDestination,
+                        path: selection.file.path,
+                        patch: selection.file.patch ?? '',
+                        code:
+                          selection.side === 'additions'
+                            ? selectedPatchCode(parsed.diff, selection.start, selection.end)
+                            : undefined,
+                      },
+                    )
+                    if (destination === 'github' || agentAction?.clears) setSelection(null)
+                  }}
                 >
-                  {allowAgent && (
-                    <option value="agent">{agentAction?.option ?? 'Agent thread'}</option>
-                  )}
-                  {allowInlineComment && <option value="github">{forgeLabels[provider]} PR</option>}
-                </ChoicePicker>
-              </LineCommentForm>
+                  <ChoicePicker
+                    aria-label="Comment destination"
+                    className="rounded border bg-background p-1"
+                    value={destination}
+                    onValueChange={(selection) =>
+                      setDestination(selection === 'github' ? 'github' : 'agent')
+                    }
+                  >
+                    {allowAgent && (
+                      <option value="agent">{agentAction?.option ?? 'Agent thread'}</option>
+                    )}
+                    {allowInlineComment && (
+                      <option value="github">{forgeLabels[provider]} PR</option>
+                    )}
+                  </ChoicePicker>
+                </LineCommentForm>
+              )
             )
           }
           options={{

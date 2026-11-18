@@ -30,13 +30,14 @@ let prefs={browserProfiles:[{id:'default',name:'Default'},{id:'device',name:'Dev
 const profiles=[{id:'lan',name:'LAN computer'},{id:'mac',name:'Mac computer'}].map(profile=>({...profile,connection:{address:'http://'+profile.id+'.fixture',token:'paired'}}));
 const scope=createContext('lan');export const RuntimeScope=({runtimeId,children})=><scope.Provider value={runtimeId}>{children}</scope.Provider>;
 const overviews=profiles.map(profile=>({profile,connected:true,snapshot:{workspace:{tasks:[{id:'target',title:'Destination',messages:[],draft:'Server fallback'}]}}}));
+window.setComputerOnline=(id,value)=>{overviews.find(entry=>entry.profile.id===id).connected=value;window.setCleanup({})};const refreshRuntime=async profile=>{window.calls.push({refreshComputer:profile.id});window.setComputerOnline(profile.id,true)};
 const websiteProfilesByOwner={};const readRuntime=async(owner,path,body)=>{window.calls.push({owner:owner.id,path,body});if(path.endsWith('profiles/read')){if(window.holdProfileReads)await new Promise(resolve=>(window.profileResumes??=[]).push(resolve));return {profiles:websiteProfilesByOwner[owner.id]??[{id:'default',name:'Default'},{id:'work',name:'Work'}]}};if(path.endsWith('profiles/save')){websiteProfilesByOwner[owner.id]=body.profiles;return {profiles:body.profiles}};if(path.endsWith('selection'))return {text:'  remote exact\\ntext ',url:'http://localhost:4000',title:'Remote page'};return {ok:true,ticket:'fixture-ticket',tabId:body.tabId,profileId:body.profileId}};
-export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});let previewActive=true;const focusListeners=new Set();window.setPreviewActive=value=>{previewActive=value;focusListeners.forEach(f=>f())};export const usePreviewActive=()=>useSyncExternalStore(f=>{focusListeners.add(f);return ()=>focusListeners.delete(f)},()=>previewActive);
+export const useRuntime=()=>{const id=useContext(scope);return {activeId:id,profile:profiles.find(profile=>profile.id===id),snapshot:overviews.find(entry=>entry.profile.id===id)?.snapshot,connection:{address:'http://'+id+'.fixture',token:'paired'},profiles,overviews,readRuntime,refreshRuntime,readEffect:(path,body)=>Effect.tryPromise(()=>readRuntime(profiles.find(p=>p.id===id),path,body))}};export const useNavigation=()=>({navigate:(...args)=>window.navigation.push(args)});let previewActive=true;const focusListeners=new Set();window.setPreviewActive=value=>{previewActive=value;focusListeners.forEach(f=>f())};export const usePreviewActive=()=>useSyncExternalStore(f=>{focusListeners.add(f);return ()=>focusListeners.delete(f)},()=>previewActive);
 export const WebView=forwardRef(({source,onMessage,onError},ref)=>{const frame=useRef();const owner=useContext(scope);useImperativeHandle(ref,()=>({reload:()=>window.calls.push({reload:true}),goBack:()=>{},goForward:()=>{},injectJavaScript:code=>frame.current.contentWindow.eval(code)}));window.webError=()=>onError?.({nativeEvent:{description:'Fixture page failed'}});return <iframe title={source.html?'Remote page':'Device page'} ref={frame} data-url={source.uri} onLoad={()=>{const w=frame.current.contentWindow;w.ReactNativeWebView={postMessage:data=>onMessage({nativeEvent:{data}})};if(source.html){let url='about:blank';const emit=m=>w.ReactNativeWebView.postMessage(JSON.stringify({channel:'dovo-browser',...m}));const state=()=>emit({type:'state',url,title:'Remote page',back:false,forward:false,loading:false,editable:false});w.addEventListener('message',e=>{const m=e.data;if(m.type==='connect'){const call=window.calls.findLast(c=>c.owner===owner&&c.path?.endsWith('/open'));url=call?.body.url||'about:blank';emit({type:'connection',online:true});state()}if(m.type==='input'&&m.input.type==='navigate'){url=m.input.url;setTimeout(state,25)}});emit({type:'ready'})}}} srcDoc={source.html?'Remote viewer fixture':'<title>Local fixture</title><pre id="selection">  Keep  spaces\\nSecond line </pre>'}/>});
-export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style,ref})=><input ref={ref} aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
+export const Glass=View;export const Icon=()=>null;export const IconButton=Action;export const TextInput=({accessibilityLabel,value,onChangeText,onSubmitEditing,onFocus,onBlur,style,ref})=><input ref={ref} aria-label={accessibilityLabel} value={value} onChange={e=>onChangeText(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')onSubmitEditing?.()}} onFocus={onFocus} onBlur={onBlur} style={css(style)}/>;export const Keyboard={dismiss:()=>{}};export const KeyboardAvoidingView=View;export const Platform={OS:'ios'};export const useWindowDimensions=()=>({width:innerWidth,height:innerHeight});export const Share={share:async value=>window.calls.push({share:value})};export const StyleSheet={hairlineWidth:1};export const AppState={currentState:'active'};export const Alert={alert:(...args)=>window.calls.push({alert:args})};export const useOpenAppLink=()=>()=>{throw Error('Unexpected external navigation')};export const remoteBrowserHtml='fixture';export const deviceHostMessage=message=>message;export const useScreenshotAttachment=()=>{throw Error('Shared browser must not create screenshot attachment')};
 window.nativeCalls=[];const nativeListeners=new Map(),nativeTabs=new Map(),nativeProfiles=new Set(['device']);let nativeEnabled=false;let nativeInstance=0;
 const emit=(name,event)=>{for(const f of nativeListeners.get(name)||[])f(event)};window.nativeEmit=(name,page)=>{if(name==='onTabCreated')nativeTabs.set(page.tabId,page);if(name==='onTabClosed'&&nativeTabs.get(page.tabId)?.instanceId===page.instanceId)nativeTabs.delete(page.tabId);emit(name,page)};
-window.updateNativeUrl=(tabId,url)=>{const tab={...nativeTabs.get(tabId),url};nativeTabs.set(tabId,tab);emit('onTabUpdated',tab)};
+window.updateNativeUrl=(tabId,url,canGoForward=false)=>{const tab={...nativeTabs.get(tabId),url,canGoForward};nativeTabs.set(tabId,tab);emit('onTabUpdated',tab)};
 const nativeStatus=()=>({enabled:nativeEnabled,browsingAvailable:window.nativeBrowsing!==false,websiteTabCaptureAvailable:false,websiteTabCaptureUnavailableReason:'No public arbitrary-tab capture API.',systemVersion:'mock',maxTabs:100,profiles:[...nativeProfiles].map(profileId=>({profileId,dataStoreIdentifier:profileId})),tabs:[...nativeTabs.values()]});
 const nativeModule={
 addListener:(name,f)=>{const listeners=nativeListeners.get(name)||new Set();nativeListeners.set(name,listeners);listeners.add(f);return {remove:()=>listeners.delete(f)}},
@@ -47,7 +48,7 @@ openTab:async options=>{window.nativeCalls.push({open:options});if(nativeTabs.ha
 activateTab:async tabId=>{window.nativeCalls.push({activate:tabId})},
 closeTab:async tabId=>{const tab=nativeTabs.get(tabId);nativeTabs.delete(tabId);if(tab)setTimeout(()=>emit('onTabClosed',{...tab,reason:'api'}),20)},
 navigate:async(tabId,url)=>{if(window.nativeFail)throw Error('Native fixture navigation failed');const tab={...nativeTabs.get(tabId),url:window.nativeRedirect||url,title:'Native page'};nativeTabs.set(tabId,tab);emit('onTabUpdated',tab)},
-reload:async tabId=>window.nativeCalls.push({reload:tabId}),goBack:async()=>{},goForward:async()=>{},getSelection:async()=>({text:'  Native exact\\nselection ',truncated:false}),
+reload:async tabId=>window.nativeCalls.push({reload:tabId}),goBack:async()=>{},goForward:async tabId=>window.nativeCalls.push({forward:tabId}),getSelection:async()=>({text:'  Native exact\\nselection ',truncated:false}),
 };export const requireOptionalNativeModule=()=>window.fixtureNative?nativeModule:null;export const requireNativeView=()=>({tabId})=><div data-native-tab={tabId}>Native view adapter</div>;
 export const useApplicationState=React.useState;
 export const runClientEffect=effect=>Effect.runPromise(effect);import {Effect} from 'effect';
@@ -152,7 +153,7 @@ try {
   assert.equal(await page.locator('iframe').count(), 0)
   await page.evaluate(() => window.setExperimental(true))
   await button('Tabs (1)').waitFor()
-  await page.getByText(/Browser workspace · This device/).waitFor()
+  await page.getByText(/Browser workspace · This device/).waitFor({ state: 'hidden' })
   const address = page.getByLabel('Search or enter address', { exact: true })
   await address.fill('http://192.168.1.7:3000/dev')
   await button('Go').click()
@@ -213,6 +214,9 @@ try {
   await page.evaluate(() => (window.failDraft = false))
   await page.evaluate(() => window.webError())
   await page.getByText('Fixture page failed').waitFor()
+  await button('Reload page').click()
+  await page.getByText('Fixture page failed').waitFor({ state: 'hidden' })
+  assert.ok(await page.evaluate(() => window.calls.some((call) => call.reload === true)))
   await address.fill('useful browser search')
   await button('Go').click()
   assert.match((await state()).tabs[0].url, /google.com\/search\?q=useful/)
@@ -239,13 +243,13 @@ try {
   await page.getByLabel('Computer for new tab').selectOption('lan')
   await page.evaluate(() => (window.holdProfileReads = true))
   await button('New tab').click()
-  await page.getByText(/Browser workspace · LAN computer/).waitFor()
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
       (button) => button.textContent === 'Keyboard' && !button.disabled,
     ),
   )
   await page.getByLabel('Preview URL', { exact: true }).fill('wait for my configured provider')
+  await page.getByText(/Browser workspace · LAN computer/).waitFor({ state: 'hidden' })
   await button('Go to address').click()
   assert.match(
     await page.evaluate(() => window.calls.filter((call) => call.alert).at(-1).alert[1]),
@@ -257,6 +261,7 @@ try {
     for (const resume of window.profileResumes ?? []) resume()
   })
   await button('Browser options').click()
+  await page.getByText('Computer · LAN computer', { exact: true }).waitFor()
   await page.getByLabel('Profile for this tab').selectOption('work')
   await page.getByLabel('Default search engine', { exact: true }).selectOption('kagi')
   await button('Save search engine').click()
@@ -289,6 +294,17 @@ try {
     const tab = s.tabs.find((t) => t.id === s.active)
     return tab.url === 'http://localhost:4000/' && tab.title === 'Remote page'
   })
+  await page.getByText('Local address on LAN computer', { exact: true }).waitFor()
+  await page.evaluate(() => window.setComputerOnline('lan', false))
+  await page.getByText('LAN computer · Offline', { exact: true }).waitFor()
+  await button('Retry').click()
+  await page.getByText('Local address on LAN computer', { exact: true }).waitFor()
+  assert.ok(await page.evaluate(() => window.calls.some((call) => call.refreshComputer === 'lan')))
+  const restoredTab = await state()
+  assert.equal(
+    restoredTab.tabs.find((tab) => tab.id === restoredTab.active).url,
+    'http://localhost:4000/',
+  )
   await page
     .locator('iframe')
     .evaluate((frame) => (frame.contentWindow.retainedViewer = 'Same viewer'))
@@ -454,7 +470,7 @@ try {
   })
   await nativeAddress.focus()
   await nativePage.evaluate(
-    (tabId) => window.updateNativeUrl(tabId, 'http://localhost:3000/spa-route'),
+    (tabId) => window.updateNativeUrl(tabId, 'http://localhost:3000/spa-route', true),
     originalTab,
   )
   assert.equal(await nativeAddress.inputValue(), 'http://localhost:3000/redirected')
@@ -463,6 +479,15 @@ try {
     await nativeAddress.inputValue(),
     'http://localhost:3000/spa-route',
     'Native address catches up after untouched focus',
+  )
+  assert.equal(await nativeButton('Forward').count(), 0)
+  await nativeButton('Browser options').click()
+  await nativeButton('Forward').click()
+  assert.ok(
+    await nativePage.evaluate(
+      (tabId) => window.nativeCalls.some((call) => call.forward === tabId),
+      originalTab,
+    ),
   )
   await nativeAddress.fill('http://localhost:3000/native')
   await nativeAddress.press('Enter')

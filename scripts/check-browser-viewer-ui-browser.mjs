@@ -11,7 +11,7 @@ const html = JSON.parse(source.slice(source.indexOf(marker) + marker.length))
 const shim = `<script>
 window.outbox=[];window.bridges=[];window.shortcuts=[];
 window.WebSocket=class {static OPEN=1;readyState=1;constructor(){window.socket=this;queueMicrotask(()=>this.onopen?.())}send(data){window.outbox.push(JSON.parse(data))}close(){this.readyState=3}};
-window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&['ready','reconnect','close','focusAddress','performance'].includes(event.data.type))window.bridges.push(event.data.type)});
+window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&['ready','reconnect','close','focusAddress','performance'].includes(event.data.type)){window.bridges.push(event.data.type);if(event.data.type==='reconnect')event.stopImmediatePropagation()}});
 window.addEventListener('message',event=>{if(event.data?.channel==='dovo-browser'&&event.data.type==='shortcut')window.shortcuts.push(event.data)});
 </script>`
 const browser = await chromium.launch()
@@ -282,6 +282,68 @@ try {
       await page.locator('#dialog button[value="accept"]').click()
       await page.waitForFunction(() => window.outbox.at(-1)?.text === 'Fresh answer')
       assert.equal(await page.evaluate(() => window.outbox.at(-1).accept), true)
+    }
+    if (width === 390) {
+      const viewerSize = await page.locator('#viewport').boundingBox()
+      await page.evaluate(() =>
+        window.socket.onmessage({
+          data: JSON.stringify({
+            type: 'error',
+            operation: 'navigation',
+            message: 'Fixture load error',
+          }),
+        }),
+      )
+      const failure = page.getByRole('alert', { name: '', exact: true }).filter({
+        hasText: 'Could not load this page.',
+      })
+      await failure.waitFor()
+      assert.deepEqual(await page.locator('#viewport').boundingBox(), viewerSize)
+      const reloadPage = page.getByRole('button', { name: 'Reload page', exact: true })
+      assert.ok((await reloadPage.boundingBox()).height >= 44)
+      await reloadPage.click()
+      await page.waitForFunction(() => window.outbox.at(-1).type === 'reload')
+      await failure.waitFor({ state: 'hidden' })
+      await page.evaluate(() => window.socket.onclose({ code: 1008 }))
+      await page.getByText('Connection lost. Reconnect to the browser session.').waitFor()
+      const reconnects = await page.evaluate(
+        () => window.bridges.filter((type) => type === 'reconnect').length,
+      )
+      await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
+      await page.waitForFunction(
+        (count) => window.bridges.filter((type) => type === 'reconnect').length > count,
+        reconnects,
+      )
+      await post({ type: 'connect', url: 'ws://fixture/reconnected' })
+      await page.waitForFunction(
+        () => document.querySelector('#sessionState').dataset.state === 'online',
+      )
+      await page.evaluate(() => {
+        window.socket.onmessage({
+          data: JSON.stringify({
+            type: 'state',
+            url: 'http://runtime.lan:4310/shared',
+            title: 'Local preview',
+            back: false,
+            forward: false,
+            loading: false,
+            editable: false,
+          }),
+        })
+        window.socket.onmessage({
+          data: JSON.stringify({ type: 'closed', message: 'Fixture ended' }),
+        })
+        window.socket.onclose({ code: 1000 })
+      })
+      await page.getByText('Browser session ended.', { exact: true }).waitFor()
+      const reopen = page.getByRole('button', { name: 'Open URL in a new session', exact: true })
+      await page.screenshot({ path: '/tmp/dovo-browser-redesign/viewer-session-ended.png' })
+      await reopen.click()
+      await page.getByText('Connecting to host browser…', { exact: true }).waitFor()
+      await post({ type: 'connect', url: 'ws://fixture/reopened' })
+      await page.waitForFunction(
+        () => document.querySelector('#sessionState').dataset.state === 'online',
+      )
     }
     // Device previews keep hardware actions, without irrelevant browser viewport settings.
     await post({ type: 'configure', device: { platform: 'ios', kind: 'physical' } })

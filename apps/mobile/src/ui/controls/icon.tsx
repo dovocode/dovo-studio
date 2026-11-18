@@ -7,6 +7,7 @@ import {
   GripVertical,
   WandSparkles,
   Zap,
+  Rocket,
   Camera,
   ScanSearch,
   ScanText,
@@ -92,6 +93,7 @@ import { useTheme } from '../theme'
 const icons = {
   magic: WandSparkles,
   fast: Zap,
+  ultra: Rocket,
   scope: ScanSearch,
   tune: SlidersHorizontal,
   maestro: WandSparkles,

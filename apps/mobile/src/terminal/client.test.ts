@@ -139,6 +139,10 @@ function fixture() {
     sockets,
     messages,
     opened,
+    replayed: (socket: Socket) => {
+      socket.onmessage?.({ data: '' })
+      writes.shift()?.()
+    },
     input: (text: string) => input(text),
     resets: () => resets,
     buffer: buffer.active,
@@ -210,6 +214,7 @@ it('applies accessible, cancellable one-shot modifiers to supported inputs', () 
   f.window.connectTerminal('ws://fixture/keys', 1)
   const socket = f.sockets[0]
   f.opened(socket)
+  f.replayed(socket)
   const ctrl = f.button('Ctrl')
   const alt = f.button('Alt')
   ctrl.click()
@@ -243,6 +248,7 @@ it('preserves paste and composition, and clears modifiers on disconnect', async 
   const f = fixture()
   f.window.connectTerminal('ws://fixture/first', 1)
   f.opened(f.sockets[0])
+  f.replayed(f.sockets[0])
   f.button('Ctrl').click()
   f.root.listeners.paste()
   f.input('c')
@@ -261,6 +267,7 @@ it('preserves paste and composition, and clears modifiers on disconnect', async 
   expect(f.button('Alt').attributes['aria-pressed']).toBe('false')
   f.window.connectTerminal('ws://fixture/second', 2)
   f.opened(f.sockets[1])
+  f.replayed(f.sockets[1])
   f.input('x')
   expect(JSON.parse(f.sockets[1].sent.at(-1) ?? '{}')).toEqual({ type: 'input', data: 'x' })
 })
@@ -271,6 +278,7 @@ it('tags socket status with its attempt and ignores obsolete disconnect commands
   f.window.connectTerminal('ws://fixture/first-ticket', 1)
   const first = f.sockets[0]
   f.opened(first)
+  f.replayed(first)
   first.onclose?.({ reason: 'Network dropped' })
   expect(f.messages.at(-1)).toEqual({ error: 'Network dropped', attempt: 1 })
   f.window.connectTerminal('ws://fixture/fresh-ticket', 2)
@@ -279,6 +287,9 @@ it('tags socket status with its attempt and ignores obsolete disconnect commands
   f.opened(f.sockets[1])
   f.window.disconnectTerminal(1)
   expect(f.sockets[1].closed).toBe(false)
+  expect(f.messages.at(-1)).toEqual({ error: 'Network dropped', attempt: 1 })
+  expect(f.resets()).toBe(1)
+  f.replayed(f.sockets[1])
   expect(f.messages.at(-1)).toEqual({ type: 'connected', attempt: 2 })
   expect(f.resets()).toBe(2)
   f.window.disconnectTerminal(2)
@@ -289,11 +300,17 @@ it('never queues or replays terminal input across a reconnect', () => {
   const f = fixture()
   f.window.connectTerminal('ws://fixture/first', 1)
   f.opened(f.sockets[0])
+  f.replayed(f.sockets[0])
   f.input('before')
   f.window.disconnectTerminal(1)
   f.input('offline')
   f.window.connectTerminal('ws://fixture/second', 2)
-  f.opened(f.sockets[1])
+  const second = f.sockets[1]
+  f.opened(second)
+  f.input('waiting for replay')
+  second.onmessage?.({ data: 'replay' })
+  f.input('rendering replay')
+  f.writes.shift()?.()
   f.input('after')
   expect(
     f.sockets[1].sent.map((text) => JSON.parse(text)).filter((item) => item.type === 'input'),
@@ -315,6 +332,7 @@ it('loads both font weights before resizing, keeping the connected terminal inta
   const f = fixture()
   f.window.connectTerminal('ws://fixture/fonts', 1)
   f.opened(f.sockets[0])
+  f.replayed(f.sockets[0])
   f.window.setTerminalFont(nerdFontFamily, 18)
   expect(f.options.fontSize).toBe(12)
   expect(f.loads.map((load) => load.font)).toEqual([

@@ -80,63 +80,41 @@ activity slots do not reserve space. Regular tab titles use the full row until h
 focus shows actions. Touch devices keep those actions visible. The desktop activity bar has a 6px
 left inset, which matches the gap to the sidebar.
 
-`packages/web-ui/src/theme.css` owns the shared Opaline material. Use glass for navigation, thread
-headers, the composer, content panes, cards, change summaries and floating menus or dialogs. Keep
-code and inner controls solid. Selected navigation items and thread rows use tinted glass with a
-location marker. Keep buttons, fields, badges, switches and unselected rows flat.
+Work areas use the palette's solid background. Give titles, body text and metadata distinct weights.
+Use spacing between groups and inset dividers within related rows. Keep icons compact and provide a
+visible keyboard focus indicator. Maintain comfortable touch targets. Use a text label for actions
+that start work or change state. Keep the title and action in the same place through loading and
+refresh. Preserve the active item and the user's position when returning from details.
 
-Desktop and web use the same material in light and dark mode. Light mode uses a pearl edge. Dark
-mode uses a darker neutral tint and a lighter edge. Both retain the selected palette. Supported
-Chromium browsers refract the backdrop through Opaline's optical maps. Safari and Firefox use an 8px
-frosted fallback. Browsers without backdrop filters use opaque surfaces. This is an in-app effect.
-It does not show the desktop wallpaper.
+On desktop and web, `packages/web-ui/src/theme.css` owns the solid dialog and menu styles.
+`packages/studio-ui/src/styles.css` owns collection and workbench layouts. Reserve the optical
+material for the existing composer and icon-only navigation, including their portalled controls.
+Keep the Gradients and Glow preferences. Higher contrast, Reduce Transparency and forced colors make
+those optical surfaces opaque. See [Liquid glass](liquid-glass.md) for the source license and
+checks.
 
-`designTokens.glass` supplies one optical recipe. `startLiquidGlass` owns the SVG maps and observers
-through the appearance hook. It processes surface mounts and size changes. Streaming message text
-does not rebuild maps. Teardown removes filters, pending updates and observers. Theme changes
-preserve input elements, focus and drafts. See [Liquid glass](liquid-glass.md) for the source
-license, platform limits and checks.
+UI SDK supplies the shared desktop and web checkbox, switch, collection filter and review tab
+behavior. Use the Dovo components so typography, focus styles and form contracts stay consistent.
+Use native controls on mobile. Keep menus and sheets small enough to reach every action with a
+keyboard or larger text.
 
-Keep the Gradients and Glow preferences. Gradients controls the painted reflection. Glow controls
-accent glow and the background tint. Flat controls do not gain gradients when effects are enabled.
-Higher contrast, system Reduce Transparency and forced colors use opaque surfaces and release
-optical maps. Turning these preferences off restores glass without a reload.
+Native iOS retains the composer material and native navigation gestures. Use solid native surfaces
+for browser controls, reading panes, change summaries and settings actions. Use the same grouping
+and control sizes on Android. Sticky settings actions name the scope and keep save and discard
+available while the form scrolls.
 
-Keep existing navigation geometry and 44px touch targets. Sidebar panes use the same material across
-Threads, Browser, Terminals, Settings and Unified workspace. Browser addresses and sidebar controls
-remain flat. The composer uses the shared 22px corner radius. Cards use 16px corners, controls use
-10px corners, and dialogs use the shared 20px overlay radius. Sticky settings headers retain an
-opaque base so scrolling form text cannot show through.
-
-Mobile uses native iOS liquid glass for the composer, new-item input, browser toolbar, status
-capsules, floating dialogs, content panes, change summaries and settings save bar. Keep one glass
-container around each group of controls. UIKit draws the navigation bar when accessibility settings
-permit transparency. Settings use solid grouped rows, native pickers and switches, inset separators
-and readable text. Preserve scope labels, search, explicit save actions and unsaved-navigation
-guards.
-
-Keep the native glass parent stable when appearance or accessibility settings change. Reduce
-Transparency, higher contrast and unsupported devices use an opaque palette surface without a
-shadow. Caller styles must not override that fallback. Android keeps the same grouping and control
-sizes with solid surfaces. Native iOS uses its system renderer, not the web SVG implementation.
-
-Mobile workspace modes share one rounded glass pill. Keep each target at least 44px. Unified stays
-available when separate modes are hidden. Tap it again to return to Threads.
-
-Collection and detail routes consume the remaining top safe area from their native screen. This
-protects fixed controls and notices under glass navigation bars. Do not add a second top inset in
-expanded previews. Collections also consume the native bottom inset while the keyboard is hidden.
-Detail routes keep their existing bottom owner: the route, composer or browser toolbar. Browser
-adapters check these edge choices and draft retention. Check native keyboard controls on a
-disposable simulator with `node scripts/verify-mobile.mjs <simulator-id> --composer-layout-only`.
-Use the selected theme for status-bar text. Verify actual inset sizes on iOS.
+Collection and detail routes consume the native safe areas once. Browser adapters check these edge
+choices and draft retention. Verify inset sizes, larger text, gestures and screen reader behavior on
+a native device.
 
 Thread info floats inside the conversation. It does not resize chat or open the tools sidebar. Keep
 it inset from the thread edges and above the composer. Its header stays fixed while sections scroll.
 Closing Info preserves composer setting drafts. Customize replaces the panel content without
-changing its bounds. Text-only icon tips must not intercept clicks on adjacent controls.
+changing its bounds. Use a solid background for Thread Info and its customization panel on desktop
+and web, and for inline Thread Info on mobile. Text-only icon tips must not intercept clicks on
+adjacent controls.
 
-Check mobile glass changes with:
+Check mobile surfaces and controls with:
 
 ```sh
 pnpm --filter @dovo/mobile typecheck

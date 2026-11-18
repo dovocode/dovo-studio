@@ -1,6 +1,7 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { forgePullTarget } from '@dovo/protocol'
 import { useLocalSearchParams } from 'expo-router'
+import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { RuntimeRoute } from '../../../shell/runtime-route'
 import { backToCollection } from '../../../shell/source-route'
@@ -9,7 +10,7 @@ import { ScreenHeader } from '../../../ui/layout/screen-header'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { PullDetail } from '../detail/pull-detail'
-import { pullRouteDestination, pullRouteNumber } from './pull-route-number'
+import { claimPullReviewRequest, pullRouteDestination, pullRouteNumber } from './pull-route-number'
 
 export function PullRouteScreen() {
   const uiText = useInterfaceText()
@@ -24,9 +25,30 @@ export function PullRouteScreen() {
     fragment?: string
     connectionId?: string
     navigationUrl?: string
+    reviewRequest?: string
   }>()
   const number = pullRouteNumber(params.number)
   const destination = pullRouteDestination(params.tab)
+  const reviewRequest =
+    params.tab === 'agent-review' && params.reviewRequest ? params.reviewRequest : undefined
+  const [reviewRun, setReviewRun] = useState<{ id: string; claim: () => boolean }>()
+  useEffect(() => {
+    if (
+      !number ||
+      !reviewRequest ||
+      !claimPullReviewRequest(reviewRequest, params.runtimeId, params.repositoryId, number)
+    )
+      return
+    let pending = true
+    setReviewRun({
+      id: reviewRequest,
+      claim: () => {
+        if (!pending) return false
+        pending = false
+        return true
+      },
+    })
+  }, [reviewRequest, params.runtimeId, params.repositoryId, number])
   const back = () => backToCollection('/pulls')
   return (
     <RuntimeRoute
@@ -43,11 +65,13 @@ export function PullRouteScreen() {
             number,
             params.connectionId,
             destination.initialAgentReview,
+            reviewRequest,
           ])}
           repositoryId={params.repositoryId}
           number={number}
           connectionId={params.connectionId}
           {...destination}
+          rowReviewRun={reviewRun?.id === reviewRequest ? reviewRun?.claim : undefined}
           initialFragment={params.fragment ?? ''}
           initialNavigationUrl={params.navigationUrl}
           onBack={back}

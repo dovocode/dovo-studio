@@ -318,6 +318,14 @@ it('creates an executable isolated snapshot and atomically brings its result bac
   expect((await setupData.call('bring-back', { id: childId, expectedDraft: 'stale' })).status).toBe(
     409,
   )
+  s.store.updateTask(childId, (task) => ({
+    ...task,
+    nativeTodos: [
+      { text: 'Compare the revised inputs', status: 'in-progress' },
+      { text: 'Run the integration checks', status: 'pending' },
+      { text: 'Read the project instructions', status: 'completed' },
+    ],
+  }))
   const first = await setupData.call('bring-back', { id: childId, expectedDraft: 'Keep my draft' })
   expect(first.status).toBe(200)
   const receipt = decode(bringBackSideThreadResultSchema, first.body)
@@ -331,6 +339,10 @@ it('creates an executable isolated snapshot and atomically brings its result bac
   expect(receipt.text).toContain(
     `HEAD: ${(await s.git.command(childCwd, ['rev-parse', 'HEAD'])).trim()}`,
   )
+  expect(receipt.text).toContain('Recorded checklist at handoff: 2 of 3 open')
+  expect(receipt.text).toContain('- In progress: Compare the revised inputs')
+  expect(receipt.text).toContain('- Pending: Run the integration checks')
+  expect(receipt.text).not.toContain('Read the project instructions')
   expect(receipt.text).toContain('No Git merge was performed')
   const draft = s.store.task(parent.id).draft
   expect(draft).toBe(`Keep my draft\n\n${receipt.text}`)
@@ -347,7 +359,11 @@ it('creates an executable isolated snapshot and atomically brings its result bac
     body: receipt,
   })
   s.store.updateTask(parent.id, (task) => ({ ...task, status: 'draft' }))
-  s.store.updateTask(childId, (task) => ({ ...task, title: 'Renamed after handoff' }))
+  s.store.updateTask(childId, (task) => ({
+    ...task,
+    title: 'Renamed after handoff',
+    nativeTodos: [{ text: 'A later checklist', status: 'pending' }],
+  }))
   const restarted = await setupData.restart()
   expect(
     await setupData.call('file-preview', {
@@ -458,6 +474,7 @@ it('omits an incomplete turn without losing the newest completed result', async 
   expect(receipt.text).toContain('Earlier conversation text omitted or truncated')
   expect(receipt.text).toContain('Assistant: [earlier text truncated] ')
   expect(receipt.text).toContain('Some non-completed or file content was omitted')
+  expect(receipt.text).not.toContain('Recorded checklist at handoff')
   expect(receipt.text).toContain('User: Newest question')
   expect(receipt.text).toContain('Assistant: Newest final result')
   expect(receipt.text).not.toContain('Failed private prompt')

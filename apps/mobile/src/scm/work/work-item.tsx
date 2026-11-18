@@ -768,7 +768,7 @@ function WorkItemContent({
           leading={
             <IconButton
               icon="back"
-              variant="glass"
+              variant="plain"
               label={mode === 'issues' ? uiText('Back to issues') : uiText('Back to PR runs')}
               onPress={onBack}
             />

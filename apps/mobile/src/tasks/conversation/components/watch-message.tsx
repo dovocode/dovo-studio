@@ -40,6 +40,7 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
             styles.muted,
             {
               fontSize: 12,
+              fontWeight: tone === 'danger' ? '600' : '400',
               color:
                 tone === 'danger'
                   ? colors.error
@@ -61,7 +62,15 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
         onPress={() => open(update.url)}
         style={{ minHeight: 44, justifyContent: 'center' }}
       >
-        <Text style={[styles.text, { fontWeight: '600', color: colors.accent }]}>
+        <Text
+          style={[
+            styles.text,
+            {
+              fontWeight: failedStep ? '400' : '600',
+              color: failedStep ? colors.muted : colors.accent,
+            },
+          ]}
+        >
           {update.title} ↗
         </Text>
       </Pressable>
@@ -88,7 +97,12 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
           onPress={() => open(failedStep.url)}
           style={{ minHeight: 44, justifyContent: 'center' }}
         >
-          <Text style={[styles.text, { color: colors.accent, textDecorationLine: 'underline' }]}>
+          <Text
+            style={[
+              styles.text,
+              { color: colors.accent, fontWeight: '600', textDecorationLine: 'underline' },
+            ]}
+          >
             {uiText('Open failed step: {value0}', { value0: failedStep.name })} ↗
           </Text>
         </Pressable>

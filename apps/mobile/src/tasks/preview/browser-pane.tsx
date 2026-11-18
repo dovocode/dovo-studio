@@ -190,7 +190,7 @@ function PreviewPane({
             <IconButton
               label={uiText('Show browser controls')}
               icon="collapse"
-              variant="glass"
+              variant="plain"
               onPress={() => onExpand(false)}
             />
           </View>
@@ -388,6 +388,7 @@ function BrowserContent({
         <BrowserToolbar
           addressRef={addressField}
           address={input}
+          changed={input !== (history.url || url) || !url}
           context={`${uiText('Thread preview')} · ${uiText('This device')}`}
           onAddress={setInput}
           onEditing={(value) => {

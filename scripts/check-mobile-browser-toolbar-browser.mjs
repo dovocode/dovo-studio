@@ -16,7 +16,6 @@ const stubs = [
     importer: mobile,
     contents: "export {View as Glass} from 'react-native'",
   },
-  { path: '../../ui/controls/icon', importer: mobile, contents: 'export const Icon=()=>null' },
   { path: './icon', importer: mobile + '/src/ui/controls', contents: 'export const Icon=()=>null' },
   {
     path: '../../ui/controls/icon-button',
@@ -47,7 +46,7 @@ const built = await bundleBrowser(
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {View} from 'react-native';import {BrowserToolbar} from './src/tasks/preview/browser-toolbar';function App(){const [url,setUrl]=useState('https://www.google.com/sorry/index?continue='+encodeURIComponent('https://www.google.com/search?q=very-long-address'.repeat(12)));window.setUrl=setUrl;const insets=window.insets;return <View style={{height:'100%',justifyContent:'flex-end',backgroundColor:'#111',paddingLeft:insets.left,paddingRight:insets.right,paddingBottom:insets.bottom}}><BrowserToolbar address={url} onAddress={setUrl} onNavigate={()=>window.navigated=url} back={false} forward={false} onBack={()=>{}} onForward={()=>{}} onReload={()=>{}} preset="fill" onPreset={()=>{}} onRotate={()=>{}} onScreenshot={()=>{}} onKeyboard={()=>{}} mode="remote" onMode={mode=>window.mode=mode} onExpand={()=>window.expanded=true} onExternal={()=>window.external=true}/></View>}createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {useState} from 'react';import {createRoot} from 'react-dom/client';import {View} from 'react-native';import {BrowserToolbar} from './src/tasks/preview/browser-toolbar';function App(){const [url,setUrl]=useState('https://www.google.com/sorry/index?continue='+encodeURIComponent('https://www.google.com/search?q=very-long-address'.repeat(12)));window.setUrl=setUrl;const insets=window.insets;return <View style={{height:'100%',justifyContent:'flex-end',backgroundColor:'#111',paddingLeft:insets.left,paddingRight:insets.right,paddingBottom:insets.bottom}}><BrowserToolbar address={url} changed onAddress={setUrl} onNavigate={()=>window.navigated=url} back={false} forward={false} onBack={()=>{}} onForward={()=>{}} onReload={()=>{}} preset="fill" onPreset={()=>{}} onRotate={()=>{}} onScreenshot={()=>{}} onKeyboard={()=>{}} mode="remote" onMode={mode=>window.mode=mode} onExpand={()=>window.expanded=true} onExternal={()=>window.external=true}/></View>}createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -87,7 +86,7 @@ try {
     const field = page.getByRole('textbox', { name: 'Preview URL', exact: true })
     await field.waitFor()
     const before = await page.getByLabel('Browser navigation').boundingBox()
-    assert.ok(before.height <= 110, 'Compact toolbar height at ' + width + ': ' + before.height)
+    assert.ok(before.height <= 60, 'Single row toolbar height at ' + width + ': ' + before.height)
     assert.equal(before.x, insets.left)
     assert.equal(before.width, width - insets.left - insets.right)
     assert.equal(before.y + before.height, height - insets.bottom)

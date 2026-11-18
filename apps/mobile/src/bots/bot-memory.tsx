@@ -392,9 +392,9 @@ function MemoryNote({
       )}
       {note && (
         <Action
-          destructive={confirmDelete ? false : true}
+          destructive={confirmDelete}
           label={confirmDelete ? uiText('Confirm delete note') : uiText('Delete memory note')}
-          secondary
+          secondary={!confirmDelete}
           disabled={!connected || busy}
           onPress={() => {
             if (!confirmDelete) {

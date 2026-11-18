@@ -15,9 +15,9 @@ import { useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
-import { WebViewTerminalSession } from './webview-terminal-session'
+import { WebViewTerminalSession, type MobileTerminalSessionProps } from './webview-terminal-session'
 
-export function TerminalSession(props: { id: string; visible?: boolean }) {
+export function TerminalSession(props: MobileTerminalSessionProps) {
   return nativeTerminalAvailable ? (
     <GhosttyTerminalSession {...props} />
   ) : (
@@ -25,10 +25,15 @@ export function TerminalSession(props: { id: string; visible?: boolean }) {
   )
 }
 
-function GhosttyTerminalSession({ id, visible = true }: { id: string; visible?: boolean }) {
-  const { styles } = useTheme()
+function GhosttyTerminalSession({
+  id,
+  visible = true,
+  readOnly = false,
+  reconnectToken,
+}: MobileTerminalSessionProps) {
+  const { styles, colors } = useTheme()
   const { terminalFontFamily, terminalFontSize } = useMobilePreferences()
-  const { call, connection } = useRuntime()
+  const { call, connection, connected } = useRuntime()
   const [state, setState] = useApplicationState<NativeTerminalStatus>({
     status: 'Loading terminal…',
     inputReady: false,
@@ -47,17 +52,34 @@ function GhosttyTerminalSession({ id, visible = true }: { id: string; visible?: 
     <View style={styles.screen}>
       <NativeTerminalSession
         id={id}
-        visible={visible && !!connection}
+        visible={visible && !!connection && connected}
+        readOnly={readOnly}
+        reconnectToken={reconnectToken}
         openSocket={openSocket}
         fontSize={terminalFontSize}
         font={terminalFontFamily === nerdFontFamily ? 'bundled-nerd' : 'system'}
         onStatusChange={setState}
       />
-      {!!state.notice && <Text style={[styles.muted, { padding: 10 }]}>{state.notice}</Text>}
-      {!!state.status && !state.error && (
-        <Text style={[styles.muted, { padding: 10 }]}>{state.status}</Text>
+      {connected && !!(state.notice || state.error || state.status) && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: colors.surface,
+            padding: 10,
+          }}
+        >
+          {!!state.notice && <Text style={styles.muted}>{state.notice}</Text>}
+          {!!(state.error || state.status) && (
+            <Text style={state.error ? styles.error : styles.muted}>
+              {state.error || state.status}
+            </Text>
+          )}
+        </View>
       )}
-      {!!state.error && <Text style={[styles.error, { padding: 10 }]}>{state.error}</Text>}
     </View>
   )
 }

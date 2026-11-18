@@ -262,7 +262,7 @@ export function ModelSettings({
                 },
               ]
             : []),
-        ]}
+        ].map((effort) => (effort.id === 'ultra' ? { ...effort, icon: 'ultra' } : effort))}
         onChange={(reasoning) => onChange(changeModelSettings(agent, { reasoning }, catalog))}
       />
       {serviceTier && agent.provider === 'acp' && catalog?.acp && (

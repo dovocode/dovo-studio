@@ -70,7 +70,7 @@ export function TerminalPane({
   useEffect(() => {
     cancelClose()
   }, [scope, callEffect, visible, connected])
-  const [generation, setGeneration] = useApplicationState(0)
+  const [reconnectTokens, setReconnectTokens] = useApplicationState<Record<string, number>>({})
   const [checkoutId, setCheckoutId] = useApplicationState('')
   const [renaming, setRenaming] = useApplicationState('')
   useEffect(() => {
@@ -208,15 +208,18 @@ export function TerminalPane({
             disabled={!connected || busy || !shellReady}
             onPress={() => openShell()}
           />
-          {active && (
-            <>
-              <Action
-                secondary
-                label={uiText('Reconnect terminal')}
-                disabled={!connected}
-                onPress={() => setGeneration((value) => value + 1)}
-              />
-            </>
+          {active && !active.exited && (
+            <Action
+              secondary
+              label={uiText('Reconnect terminal')}
+              disabled={!connected}
+              onPress={() =>
+                setReconnectTokens((tokens) => ({
+                  ...tokens,
+                  [active.id]: (tokens[active.id] ?? 0) + 1,
+                }))
+              }
+            />
           )}
         </View>
         {!!terminals.length && (
@@ -342,8 +345,10 @@ export function TerminalPane({
                     .join(' · ')}
                 </Text>
                 <TerminalSession
-                  key={`${terminal.id}:${generation}`}
+                  key={`${scope}:${terminal.id}`}
                   id={terminal.id}
+                  readOnly={!!terminal.exited}
+                  reconnectToken={reconnectTokens[terminal.id]}
                   visible={visible}
                 />
               </View>

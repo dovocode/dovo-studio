@@ -1,4 +1,4 @@
-import type { JobRun } from '@dovo/protocol'
+import type { JobRun, RuntimeSnapshot } from '@dovo/protocol'
 export function automationRuns(automationId: string, runs: readonly JobRun[]) {
   const history = runs
     .filter((run) => run.automationId === automationId)
@@ -42,5 +42,21 @@ export function automationRunSummary(run: JobRun, inputTasks: ReadonlySet<string
     progress: steps
       ? `${steps.filter((step) => step.status === 'completed').length} of ${steps.length} steps`
       : `${run.completedNodes.length} steps completed`,
+  }
+}
+
+export function automationRowState(automationId: string, snapshot: RuntimeSnapshot) {
+  const { latest } = automationRuns(automationId, snapshot.runs)
+  const summary = latest
+    ? automationRunSummary(
+        latest,
+        new Set([...snapshot.questions, ...snapshot.approvals].map((request) => request.taskId)),
+      )
+    : null
+  return {
+    latest,
+    summary,
+    needsAttention:
+      !!summary?.needsInput || latest?.status === 'waiting' || latest?.status === 'failed',
   }
 }

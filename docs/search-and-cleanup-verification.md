@@ -5,11 +5,19 @@ state stays visible until all requests finish. A failed computer does not remove
 computers. A new query, computer scope or pairing credential cancels the old reads and rejects their
 responses. Offline computers still supply saved thread details to the normal thread filter.
 
+On desktop and web, message hits show the project and computer. An archived thread stays archived
+when you open its result. Search names computers that could only supply saved messages. In **Go to
+thread**, use **Show matching subthreads** to open a child match directly. Hold Alt for a temporary
+reveal. Reopen the same search after opening a result to restore its query, subthread filter and
+active result. The search field receives focus. Closing the search returns focus to its opener when
+that control is still available.
+
 On mobile, search also shows message excerpts above the thread list. Each result identifies its
 computer and thread. Tap a result to open that message. Child threads keep their own identity. The
-conversation loads older pages through the same path as bookmarked replies. Loading, missing
-messages, failed page reads and offline computers have explicit feedback. Normal thread rows keep
-their existing navigation and filtering.
+conversation loads older pages through the same path as bookmarked replies. Returning to the thread
+list restores the search, applied filters, scroll position and selected result focus. Loading,
+missing messages, failed page reads and offline computers have explicit feedback. Normal thread rows
+keep their existing navigation and filtering.
 
 Worktree cleanup checks ordinary Git status and tracked content hidden by `assume-unchanged` or
 `skip-worktree`. It does not clear index flags or change Git settings. It uses Git clean filters and

@@ -220,11 +220,10 @@ function projectMessages(
                 content.push({ type: 'data', name: 'dovo.reasoning', data: reasoning.splice(0) })
             }
             for (const tool of block.tools) {
-              if (
-                tool.kind === 'reasoning' ||
-                toolPresentation(tool.payload, tool.summary, tool.inputPayload).kind === 'reasoning'
-              ) {
-                reasoning.push(tool)
+              const presentation = toolPresentation(tool.payload, tool.summary, tool.inputPayload)
+              if (tool.kind === 'reasoning' || presentation.kind === 'reasoning') {
+                if (presentation.kind === 'reasoning' && presentation.output.trim())
+                  reasoning.push(tool)
                 continue
               }
               flushReasoning()

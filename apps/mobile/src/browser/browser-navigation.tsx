@@ -18,6 +18,7 @@ export function BrowserNavigation({
   forward,
   onBack,
   onForward,
+  compact = false,
   disabled,
   tabs,
   onTabs,
@@ -33,6 +34,7 @@ export function BrowserNavigation({
   forward: boolean
   onBack: () => void
   onForward: () => void
+  compact?: boolean
   disabled: boolean
   tabs: number
   onTabs: () => void
@@ -54,6 +56,7 @@ export function BrowserNavigation({
       style={{ paddingHorizontal: 8, paddingVertical: 6 }}
     >
       <Glass
+        solid
         testID="Browser navigation surface"
         style={{
           borderRadius: 28,
@@ -72,12 +75,14 @@ export function BrowserNavigation({
               disabled={disabled || !back}
               onPress={onBack}
             />
-            <IconButton
-              label={uiText('Forward')}
-              icon="next"
-              disabled={disabled || !forward}
-              onPress={onForward}
-            />
+            {!compact && (
+              <IconButton
+                label={uiText('Forward')}
+                icon="next"
+                disabled={disabled || !forward}
+                onPress={onForward}
+              />
+            )}
           </>
         )}
         <View style={{ flex: 1, minWidth: 0, height: 44, justifyContent: 'center' }}>

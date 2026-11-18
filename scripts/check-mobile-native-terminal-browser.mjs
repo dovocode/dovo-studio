@@ -74,7 +74,7 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
     {
       path: '../ui/theme',
       importer,
-      contents: `export const useTheme=()=>({styles:{}});`,
+      contents: `export const useTheme=()=>({styles:{},colors:{surface:"#222"}});`,
     },
     {
       path: '../ui/content/text',
@@ -501,6 +501,18 @@ try {
     window.runtime.overviews[0].connected = true
     window.renderStandalone()
   })
+  assert.equal(await standalone.evaluate(() => window.mounts), mounts)
+  await standalone.evaluate(() => {
+    const terminal = window.runtime.overviews[0].snapshot.terminals[0]
+    terminal.exited = true
+    terminal.exitCode = 2
+    window.renderStandalone()
+  })
+  assert.equal(
+    await standalone.getByRole('button', { name: 'Reconnect terminal' }).isDisabled(),
+    true,
+  )
+  assert.equal(await standalone.getByRole('button', { name: 'New terminal' }).isEnabled(), true)
   assert.equal(await standalone.evaluate(() => window.mounts), mounts)
   // Re-pairing is a new scope and must clear the previous computer's retained output.
   await standalone.evaluate(() => {

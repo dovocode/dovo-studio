@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { pullRouteDestination, pullRouteNumber } from './pull-route-number'
+import {
+  claimPullReviewRequest,
+  createPullReviewRequest,
+  pullRouteDestination,
+  pullRouteNumber,
+} from './pull-route-number'
 
 describe('PR route number', () => {
   it('accepts positive safe-integer PR numbers', () => {
@@ -42,4 +47,14 @@ describe('PR route destination', () => {
       expect(pullRouteDestination(tab)).toEqual({})
     }
   })
+})
+
+it('requires a matching one-time in-app request before starting a review from a route', () => {
+  const request = createPullReviewRequest('mac', 'repo', 7)
+  expect(claimPullReviewRequest('unknown', 'mac', 'repo', 7)).toBe(false)
+  expect(claimPullReviewRequest(request, 'other', 'repo', 7)).toBe(false)
+  expect(claimPullReviewRequest(request, 'mac', 'other', 7)).toBe(false)
+  expect(claimPullReviewRequest(request, 'mac', 'repo', 8)).toBe(false)
+  expect(claimPullReviewRequest(request, 'mac', 'repo', 7)).toBe(true)
+  expect(claimPullReviewRequest(request, 'mac', 'repo', 7)).toBe(false)
 })

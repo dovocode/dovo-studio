@@ -118,9 +118,9 @@ function RemoteBrowserContent({
 
   const { connection, profile, profiles, readEffect } = useRuntime()
   const browserOwner = profile?.name ?? uiText('Unavailable computer')
-  const browserLocation = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
+  const loopbackHint = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
     ? uiText('Local address on {value0}', { value0: browserOwner })
-    : browserOwner
+    : undefined
   const [filePicking, setFilePicking] = useApplicationState<string | null>(null)
   const foreground = usePreviewActive()
   const active = usePreviewActive(!!filePicking)
@@ -159,6 +159,8 @@ function RemoteBrowserContent({
   }
   const pending = useRef(false)
   const ready = useRef(false)
+  const sessionEnded = useRef(false)
+  const [ended, setEnded] = useApplicationState(false)
   const presentation = useRef(expanded)
   useEffect(() => {
     presentation.current = expanded
@@ -285,7 +287,7 @@ function RemoteBrowserContent({
     resume.current = connect
   })
   useLayoutEffect(() => {
-    if (foreground && !online && ready.current) void resume.current()
+    if (foreground && !online && ready.current && !sessionEnded.current) void resume.current()
   }, [foreground, online])
   useLayoutEffect(() => {
     visible.current = active
@@ -294,7 +296,7 @@ function RemoteBrowserContent({
       current.current++
       pending.current = false
       web.current?.injectJavaScript("window.dispatchEvent(new Event('pagehide'));true;")
-    } else if (ready.current) {
+    } else if (ready.current && !sessionEnded.current) {
       // Preserve the canvas and viewport across screen switches and backgrounding.
       void resume.current()
     }
@@ -466,8 +468,13 @@ function RemoteBrowserContent({
                 return
               }
               const state = decodeResult(remoteBrowserMessageSchema, message)
-              if (state.success && state.data.type === 'closed' && state.data.byPage) {
-                closedCallback.current?.()
+              if (state.success && state.data.type === 'closed') {
+                if (!deviceId) {
+                  sessionEnded.current = true
+                  setEnded(true)
+                  setOnline(false)
+                }
+                if (state.data.byPage) closedCallback.current?.()
                 return
               }
               if (state.success && state.data.type === 'state') {
@@ -484,6 +491,10 @@ function RemoteBrowserContent({
                 typeof message.online === 'boolean'
               ) {
                 setOnline(message.online)
+                if (message.online) {
+                  sessionEnded.current = false
+                  setEnded(false)
+                }
                 return
               }
             }
@@ -537,10 +548,11 @@ function RemoteBrowserContent({
         <BrowserToolbar
           addressRef={addressField}
           address={address}
+          changed={address !== lastAddress.current || !lastAddress.current}
           context={
             tabId
-              ? undefined
-              : `${uiText('Thread preview')} · ${browserLocation} · ${uiText('Default profile')}`
+              ? loopbackHint
+              : `${uiText('Thread preview')} · ${loopbackHint ?? browserOwner} · ${uiText('Default profile')}`
           }
           mode="remote"
           onMode={onMode ? (next) => onMode(next, lastAddress.current) : undefined}
@@ -567,6 +579,7 @@ function RemoteBrowserContent({
             else if (address === addressAtFocus.current) setAddress(lastAddress.current)
           }}
           available={online}
+          reconnectLabel={ended ? uiText('Open URL in a new session') : undefined}
           back={browserState?.back ?? false}
           forward={browserState?.forward ?? false}
           onNavigate={() => {

@@ -25,7 +25,9 @@ boundary, so retrying the same result does not append it again. Mobile also reco
 local draft store, including across restarts and failed saves.
 
 Each new delivery includes the completed conversation since the previous delivery, with user and
-assistant attribution. The transfer is bounded; omitted content and attachment names are identified.
+assistant attribution. Git deliveries record the branch and HEAD at handoff. If the agent has a
+recorded checklist, the receipt gives the number of open items and shows up to five with their
+recorded status. The transfer is bounded. Dovo marks omitted text and identifies attachment names.
 Approvals and questions appear on the parent and side-chat list, with a link to the child's normal
 controls. Unused side-chat drafts stay in that list and can be discarded explicitly.
 

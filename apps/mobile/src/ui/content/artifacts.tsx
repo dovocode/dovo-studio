@@ -149,10 +149,14 @@ function ArtifactAction({
 export function ArtifactBrowser({
   taskId,
   initialId = '',
+  initialArtifact,
+  sourceThread,
   onClose,
 }: {
   taskId: string
   initialId?: string
+  initialArtifact?: ArtifactMetadata
+  sourceThread?: { title: string; computerName: string; open: () => void }
   onClose: () => void
 }) {
   const uiText = useInterfaceText()
@@ -165,7 +169,11 @@ export function ArtifactBrowser({
   const [links, setLinks] = useState<ArtifactLink[]>([])
   const [id, setId] = useState(initialId)
   const link = links.find((item) => item.url === id)
-  const metadata = items?.find((item) => item.id === id)
+  const metadata = items
+    ? items.find((item) => item.id === id)
+    : initialArtifact?.id === id
+      ? initialArtifact
+      : undefined
   const [revision, setRevision] = useState<number>()
   const [versions, setVersions] = useState<ArtifactMetadata[]>([])
   const [reload, setReload] = useState(0)
@@ -398,7 +406,19 @@ export function ArtifactBrowser({
                     value1: revision === undefined ? ' · Latest' : '',
                   })}
               </Text>
+              {sourceThread && (
+                <Text numberOfLines={1} style={styles.muted}>
+                  {sourceThread.title} · {sourceThread.computerName}
+                </Text>
+              )}
             </View>
+            {sourceThread && (
+              <IconButton
+                label={uiText('Open source thread')}
+                icon="chat"
+                onPress={sourceThread.open}
+              />
+            )}
             {canShare && (
               <IconButton
                 label={uiText('Share artifact')}

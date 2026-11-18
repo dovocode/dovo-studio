@@ -37,7 +37,7 @@ window.source={key:'repo',scope:'scope',runtimeId:'mac',runtimeName:'Mac',connec
 window.detail={pull:{...pull,body:'Review workflow description',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),repositoryUrl:'https://github.com/team/project',mergeable:true,reviewers:['reviewer'],assignees:['dominic'],additions:2,deletions:0,changedFiles:2},files:['src/first.ts','src/second.ts'].map(path=>({path,status:'modified',additions:1,deletions:0,patch:'@@ -1 +1,2 @@\\n old\\n+new'})),comments:[{id:'comment',kind:'comment',author:'reviewer',body:'Please add a test',url:pull.url,date:'2026-10-04'},{id:'review',kind:'review',author:'teammate',state:'APPROVED',body:'Looks good to me',url:pull.url,date:'2026-10-04'}],checks:[{name:'Tests',status:'SUCCESS',summary:'All tests passed',details:'2 tests completed'}],warnings:[],capabilities:{actions:['comment','review'],reviewDecisions:['comment','approve','request-changes'],mergeMethods:[]}};
 window.writes=[];window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async(value)=>window.copied.push(value)}});window.store={connected:true,activeRuntimeId:'mac',runtimes:[],workspace:{repositories:[window.source.repository],tasks:[]},switchRuntime:async()=>{},request:async(path,input)=>{window.writes.push({path,input});return {status:'updated'}}};const originalRequest = window.store.request; const marks = new Map();
 window.store.request = async (path, input, ...rest) => {
-  if (path.startsWith('/api/review/pull/')) { window.writes.push({path,input}); return {reviews:[]}; }
+  if (path.startsWith('/api/review/pull/')) { window.writes.push({path,input}); return window.prReviewReport ?? {reviews:[]}; }
   if (path === '/api/scm/pulls/action' && input.action === 'review' && window.partialReview) {
     window.writes.push({path,input});window.partialReview=false;
     return {status:'updated',pendingReviewDecision:input.event,message:'Your review comment was posted, but Bitbucket did not confirm the review decision.'};
@@ -228,7 +228,26 @@ try {
   const avatar = row('Improve pull request reviews').locator('img')
   assert.equal(await avatar.getAttribute('src'), 'https://avatars.example/dominic.png')
   await avatar.evaluate((element) => element.decode())
+  const reviewChanges = list.getByRole('button', { name: 'Review changes', exact: true })
+  await reviewChanges.waitFor()
+  await reviewChanges.click()
+  await page.waitForFunction(() => window.prNavigations?.at(-1)?.pullTarget?.tab === 'changes')
+  assert.deepEqual(await page.evaluate(() => window.prNavigations.at(-1).pullTarget), {
+    runtimeId: 'mac',
+    repositoryId: 'repo',
+    number: 7,
+    url: 'https://github.com/team/project/pull/7',
+    tab: 'changes',
+    fragment: '',
+  })
+  await page.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+  await page.getByRole('region', { name: 'Pull request details' }).waitFor({ state: 'hidden' })
   await screenshot({ path: '/tmp/dovo-pull-list-clean.png' })
+  await list.getByRole('button', { name: 'View failed checks', exact: true }).click()
+  await page.waitForFunction(() => window.prNavigations?.at(-1)?.pullTarget?.tab === 'checks')
+  assert.equal(await page.evaluate(() => window.prNavigations.at(-1).pullTarget.number), 8)
+  await page.getByRole('button', { name: 'Back to PRs', exact: true }).click()
+  await page.getByRole('region', { name: 'Pull request details' }).waitFor({ state: 'hidden' })
   // Failed profile images retain a compact author initial without breaking the row.
   await avatar.dispatchEvent('error')
   assert.equal(await row('Improve pull request reviews').locator('img').count(), 0)
@@ -365,7 +384,18 @@ try {
   await detail.getByText('Check output', { exact: true }).click()
   await detail.getByText('2 tests completed', { exact: true }).waitFor()
   await screenshot({ path: '/tmp/dovo-pull-checks.png' })
-  await detail.getByRole('tab', { name: 'Checks (1)', exact: true }).press('Home')
+  const linkedChecksTab = detail.getByRole('tab', { name: 'Checks (1)', exact: true })
+  assert.equal(await linkedChecksTab.getAttribute('id'), 'pr-tab-checks')
+  assert.equal(await linkedChecksTab.getAttribute('aria-controls'), 'pr-panel-checks')
+  assert.equal(
+    await detail.locator('#pr-panel-checks').getAttribute('aria-labelledby'),
+    'pr-tab-checks',
+  )
+  await linkedChecksTab.press('Home')
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'pr-tab-overview')
+  await page.keyboard.press('ArrowLeft')
+  assert.equal(await page.evaluate(() => document.activeElement.id), 'pr-tab-checks')
+  await page.keyboard.press('Home')
   assert.equal(
     await detail.getByRole('tab', { name: 'Overview', exact: true }).getAttribute('aria-selected'),
     'true',
@@ -1161,6 +1191,41 @@ try {
     ),
     0,
   )
+  await page.evaluate(() => {
+    window.prReviewReport = {
+      reviews: [],
+      selection: {
+        harness: { provider: 'claude', endpoint: '' },
+        agentId: '',
+        model: 'Review model',
+        reasoning: '',
+      },
+    }
+    window.showDestination('overview', 'configured-agent-review')
+  })
+  const runReview = page.getByRole('button', { name: 'Run agent review', exact: true })
+  await runReview.waitFor()
+  await page.getByRole('button', { name: 'Configure this run', exact: true }).click()
+  await agentPanel.getByRole('button', { name: 'Reviewer provider', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/review/pull/start').length,
+    ),
+    0,
+  )
+  await page.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await runReview.click()
+  await page.waitForFunction(
+    () => window.writes.filter((write) => write.path === '/api/review/pull/start').length === 1,
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.writes.find((write) => write.path === '/api/review/pull/start').input.selection
+          .model,
+    ),
+    'Review model',
+  )
   await mkdir(root + '/output/pr-review-checks', { recursive: true })
   await screenshot({ path: root + '/output/pr-review-checks/desktop-pr-workspace.png' })
   await page.evaluate(() => {
@@ -1170,6 +1235,52 @@ try {
   await agentTab.waitFor({ state: 'detached' })
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-overview')?.getAttribute('aria-selected') === 'true',
+  )
+  await page.evaluate(() => {
+    window.store.snapshot.codeReviewsEnabled = true
+    window.store.runtimes = [
+      {
+        profile: { id: 'mac', connection: { address: 'http://mac', token: 'test' } },
+        snapshot: window.store.snapshot,
+      },
+    ]
+    window.showBasicList()
+  })
+  const rowActions = list.getByRole('button', { name: 'Actions for PR #7' })
+  await rowActions.click()
+  await page.getByRole('menuitem', { name: 'Configure this run', exact: true }).click()
+  await agentPanel.getByRole('button', { name: 'Reviewer provider', exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/review/pull/start').length,
+    ),
+    1,
+  )
+  await rowActions.click()
+  await page.getByRole('menuitem', { name: 'Run agent review', exact: true }).click()
+  await page.waitForFunction(
+    () => window.writes.filter((write) => write.path === '/api/review/pull/start').length === 2,
+  )
+  assert.deepEqual(
+    await page.evaluate(
+      () =>
+        window.writes.filter((write) => write.path === '/api/review/pull/start').at(-1).input
+          .target,
+    ),
+    {
+      repositoryId: 'repo',
+      number: 7,
+      connectionId: undefined,
+      expectedDestination: 'destination',
+    },
+  )
+  await page.getByRole('tab', { name: 'Overview', exact: true }).click()
+  await agentTab.click()
+  assert.equal(
+    await page.evaluate(
+      () => window.writes.filter((write) => write.path === '/api/review/pull/start').length,
+    ),
+    2,
   )
   assert.deepEqual(errors, [])
   console.log(

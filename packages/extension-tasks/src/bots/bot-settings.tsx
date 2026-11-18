@@ -171,7 +171,7 @@ export function BotSettings({
               })
             }
           >
-            {hostBot.state === 'paused' ? 'Resume Bot' : 'Pause Bot'}
+            {hostBot.state === 'paused' ? 'Resume Bot' : 'Pause new work'}
           </Button>
         </section>
         <BotAvatarEditor

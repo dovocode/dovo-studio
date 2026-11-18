@@ -33,7 +33,8 @@ import {
 } from '@dovo/protocol'
 import { Signal } from '../scm/pulls/detail/pull-status'
 import { PullTabs } from '../scm/pulls/detail/pull-tabs'
-import { Sheet } from '../ui/layout/sheet'
+import { Sheet, type SheetHandle } from '../ui/layout/sheet'
+import { createPullReviewRequest } from '../scm/pulls/list/pull-route-number'
 import { useDeferredValue, useMemo, useRef } from 'react'
 import { Alert, Keyboard, FlatList, Pressable, View } from 'react-native'
 import { router } from 'expo-router'
@@ -130,7 +131,8 @@ export default function PullsScreen() {
     runtimeId: string,
     repositoryId: string,
     number: number,
-    agentReview = false,
+    tab?: 'agent-review' | 'configure-agent-review' | 'changes' | 'checks',
+    reviewRequest?: string,
   ) => {
     retainPosition()
     Keyboard.dismiss()
@@ -139,7 +141,7 @@ export default function PullsScreen() {
         runtimeId,
         repositoryId,
         number,
-        agentReview ? { tab: 'agent-review', fragment: '' } : undefined,
+        tab ? { tab, fragment: '', reviewRequest } : undefined,
       ),
     )
   }
@@ -170,6 +172,15 @@ export default function PullsScreen() {
   )
   const attentionCount = matchingPulls.filter(pullNeedsAttention).length
   const pulls = attention ? matchingPulls.filter(pullNeedsAttention) : matchingPulls
+  const [rowActions, setRowActions] = useApplicationState<(typeof pulls)[number] | null>(null)
+  const rowMenu = useRef<SheetHandle>(null)
+  const reviewAvailable =
+    rowActions &&
+    overviews.some(
+      (computer) =>
+        computer.profile.id === rowActions.runtimeId && computer.snapshot?.codeReviewsEnabled,
+    )
+
   const failedPages = pages.filter((page) => page.error)
   const unavailable =
     !!pages.length &&
@@ -455,261 +466,231 @@ export default function PullsScreen() {
         data={pulls}
         keyExtractor={(p) => `${p.sourceKey}-${p.number}`}
         renderItem={({ item: p }) => (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
-            accessibilityLabel={uiText(
-              '{value0}{value1}, {value2}, PR {value3}. {value4}. {value5}. {value6}{value7} {value8} into {value9}. {value10}. {value11}{value12}{value13}',
-              {
-                value0: p.runtimeName,
-                value1: p.online ? '' : ', offline',
-                value2: p.repositoryName,
-                value3: p.number,
-                value4: p.title,
-                value5: pullState(p).label,
-                value6:
-                  p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : '',
-                value7:
-                  p.reviewDecision !== undefined || p.statusError ? pullReview(p).label + '. ' : '',
-                value8: p.head,
-                value9: p.base,
-                value10: p.state === 'open' ? pullNextStep(p).label : '',
-                value11: p.additions != null ? `${p.additions} lines added. ` : '',
-                value12: p.deletions != null ? `${p.deletions} lines deleted. ` : '',
-                value13: p.commentCount != null ? `${p.commentCount} comments.` : '',
-              },
-            )}
-            onPress={() => {
-              const key = `${p.sourceKey}-${p.number}`
-              if (marked.length)
-                setMarked((current) =>
-                  current.includes(key)
-                    ? current.filter((item) => item !== key)
-                    : [...current, key],
-                )
-              else openPull(p.runtimeId, p.repositoryId, p.number)
-            }}
-            onLongPress={() =>
-              Alert.alert(p.title, `#${p.number} · ${p.repositoryName}`, [
+          <View>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: marked.includes(`${p.sourceKey}-${p.number}`) }}
+              accessibilityLabel={uiText(
+                '{value0}{value1}, {value2}, PR {value3}. {value4}. {value5}. {value6}{value7} {value8} into {value9}. {value10}. {value11}{value12}{value13}',
                 {
-                  ...(overviews.some(
-                    (computer) =>
-                      computer.profile.id === p.runtimeId && computer.snapshot?.codeReviewsEnabled,
+                  value0: p.runtimeName,
+                  value1: p.online ? '' : ', offline',
+                  value2: p.repositoryName,
+                  value3: p.number,
+                  value4: p.title,
+                  value5: pullState(p).label,
+                  value6:
+                    p.checksState !== undefined || p.statusError ? pullChecks(p).label + '. ' : '',
+                  value7:
+                    p.reviewDecision !== undefined || p.statusError
+                      ? pullReview(p).label + '. '
+                      : '',
+                  value8: p.head,
+                  value9: p.base,
+                  value10: p.state === 'open' ? pullNextStep(p).label : '',
+                  value11: p.additions != null ? `${p.additions} lines added. ` : '',
+                  value12: p.deletions != null ? `${p.deletions} lines deleted. ` : '',
+                  value13: p.commentCount != null ? `${p.commentCount} comments.` : '',
+                },
+              )}
+              onPress={() => {
+                const key = `${p.sourceKey}-${p.number}`
+                if (marked.length)
+                  setMarked((current) =>
+                    current.includes(key)
+                      ? current.filter((item) => item !== key)
+                      : [...current, key],
                   )
-                    ? {
-                        text: uiText('Open agent review'),
-                        onPress: () => openPull(p.runtimeId, p.repositoryId, p.number, true),
-                      }
-                    : {
-                        text: uiText('Open details'),
-                        onPress: () => openPull(p.runtimeId, p.repositoryId, p.number),
-                      }),
-                },
-                {
-                  text: uiText('Add to thread'),
-                  onPress: () =>
-                    setAdding(
-                      marked.includes(`${p.sourceKey}-${p.number}`)
-                        ? pulls.filter((pull) =>
-                            marked.includes(`${pull.sourceKey}-${pull.number}`),
-                          )
-                        : [p],
-                    ),
-                },
-                {
-                  text: marked.includes(`${p.sourceKey}-${p.number}`)
-                    ? uiText('Deselect PR')
-                    : uiText('Select PR'),
-                  onPress: () => {
-                    const key = `${p.sourceKey}-${p.number}`
-                    setMarked((current) =>
-                      current.includes(key)
-                        ? current.filter((item) => item !== key)
-                        : [...current, key],
-                    )
-                  },
-                },
-                {
-                  text: uiText('Open on {value0}', { value0: forgeLabels[p.provider ?? 'github'] }),
-                  onPress: () => {
-                    void runClientEffect(
-                      nativeEffect(() => openAppLink(p.url, true)).pipe(
-                        Effect.catch((error) =>
-                          nativeEffect(() =>
-                            Alert.alert(uiText('Could not open PR'), String(error)),
-                          ),
-                        ),
-                      ),
-                    )
-                  },
-                },
-                {
-                  text: uiText('Cancel'),
-                  style: 'cancel',
-                },
-              ])
-            }
-            style={({ pressed }) => ({
-              gap: 5,
-              backgroundColor: marked.includes(`${p.sourceKey}-${p.number}`)
-                ? colors.selection
-                : undefined,
-              paddingVertical: 12,
-              paddingHorizontal: 10,
-              marginVertical: 3,
-              borderRadius: 12,
-              borderWidth: 1,
-              borderColor: marked.includes(`${p.sourceKey}-${p.number}`)
-                ? colors.accent
-                : 'transparent',
-              opacity: pressed ? 0.55 : 1,
-            })}
-          >
-            <View
-              style={[
-                styles.row,
-                {
-                  flexWrap: 'nowrap',
-                },
-              ]}
+                else openPull(p.runtimeId, p.repositoryId, p.number)
+              }}
+              onLongPress={() => setRowActions(p)}
+              style={({ pressed }) => ({
+                gap: 5,
+                backgroundColor: marked.includes(`${p.sourceKey}-${p.number}`)
+                  ? colors.selection
+                  : undefined,
+                paddingVertical: 12,
+                paddingHorizontal: 10,
+                marginVertical: 3,
+                borderRadius: 12,
+                borderWidth: 1,
+                borderColor: marked.includes(`${p.sourceKey}-${p.number}`)
+                  ? colors.accent
+                  : 'transparent',
+                opacity: pressed ? 0.55 : 1,
+              })}
             >
-              <View style={[styles.row, { flexWrap: 'nowrap', gap: 5 }]}>
-                <PullRequestIcon state={p.state} draft={p.draft} size={14} />
-                <Signal signal={pullState(p)} emphasis />
-              </View>
-              <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
-                {p.repositoryName}
-              </Text>
-              <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
-            </View>
-            <View
-              style={[
-                styles.row,
-                {
-                  flexWrap: 'nowrap',
-                },
-              ]}
-            >
-              <Text
-                numberOfLines={2}
+              <View
                 style={[
-                  styles.text,
+                  styles.row,
                   {
-                    flex: 1,
-                    minWidth: 0,
-                    fontWeight: '600',
+                    flexWrap: 'nowrap',
                   },
                 ]}
               >
-                {p.title}
-              </Text>
-              <Icon name="next" size={12} color={colors.muted} />
-            </View>
-            <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
-              <AuthorAvatar author={p.author} url={p.authorAvatarUrl} />
-              <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
-                {p.author} · {p.head} → {p.base}
-              </Text>
-            </View>
-            <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
-              <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, minWidth: 0 }]}>
-                {p.runtimeName}
-                {!p.online ? uiText(' · Offline') : ''}
-              </Text>
-              {(p.additions != null || p.deletions != null || p.commentCount != null) && (
-                <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
-                  {p.additions != null && (
-                    <Text
-                      accessibilityLabel={uiText('{value0} lines added', { value0: p.additions })}
-                      style={[
-                        styles.muted,
-                        { color: colors.success, fontVariant: ['tabular-nums'] },
-                      ]}
-                    >
-                      +{p.additions.toLocaleString()}
-                    </Text>
-                  )}
-                  {p.deletions != null && (
-                    <Text
-                      accessibilityLabel={uiText('{value0} lines deleted', { value0: p.deletions })}
-                      style={[styles.muted, { color: colors.error, fontVariant: ['tabular-nums'] }]}
-                    >
-                      −{p.deletions.toLocaleString()}
-                    </Text>
-                  )}
-                  {p.commentCount != null && (
-                    <View style={[styles.row, { gap: 4 }]}>
-                      <Icon name="chat" size={12} color={colors.muted} />
+                <View style={[styles.row, { flexWrap: 'nowrap', gap: 5 }]}>
+                  <PullRequestIcon state={p.state} draft={p.draft} size={14} />
+                  <Signal signal={pullState(p)} emphasis />
+                </View>
+                <Text style={[styles.muted, { flexShrink: 0 }]}>#{p.number}</Text>
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1, minWidth: 0 }]}>
+                  {p.repositoryName}
+                </Text>
+                <Text style={styles.muted}>{formatShortDate(p.updatedAt)}</Text>
+              </View>
+              <View
+                style={[
+                  styles.row,
+                  {
+                    flexWrap: 'nowrap',
+                  },
+                ]}
+              >
+                <Text
+                  numberOfLines={2}
+                  style={[
+                    styles.text,
+                    {
+                      flex: 1,
+                      minWidth: 0,
+                      fontWeight: '600',
+                    },
+                  ]}
+                >
+                  {p.title}
+                </Text>
+                <Icon name="next" size={12} color={colors.muted} />
+              </View>
+              <View style={[styles.row, { flexWrap: 'nowrap', gap: 6 }]}>
+                <AuthorAvatar author={p.author} url={p.authorAvatarUrl} />
+                <Text numberOfLines={1} style={[styles.muted, { flex: 1 }]}>
+                  {p.author} · {p.head} → {p.base}
+                </Text>
+              </View>
+              <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                <Text numberOfLines={1} style={[styles.muted, { flexShrink: 1, minWidth: 0 }]}>
+                  {p.runtimeName}
+                  {!p.online ? uiText(' · Offline') : ''}
+                </Text>
+                {(p.additions != null || p.deletions != null || p.commentCount != null) && (
+                  <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                    {p.additions != null && (
                       <Text
-                        accessibilityLabel={uiText('{value0} comments', { value0: p.commentCount })}
-                        style={styles.muted}
+                        accessibilityLabel={uiText('{value0} lines added', { value0: p.additions })}
+                        style={[
+                          styles.muted,
+                          { color: colors.success, fontVariant: ['tabular-nums'] },
+                        ]}
                       >
-                        {p.commentCount.toLocaleString()}
+                        +{p.additions.toLocaleString()}
                       </Text>
-                    </View>
+                    )}
+                    {p.deletions != null && (
+                      <Text
+                        accessibilityLabel={uiText('{value0} lines deleted', {
+                          value0: p.deletions,
+                        })}
+                        style={[
+                          styles.muted,
+                          { color: colors.error, fontVariant: ['tabular-nums'] },
+                        ]}
+                      >
+                        −{p.deletions.toLocaleString()}
+                      </Text>
+                    )}
+                    {p.commentCount != null && (
+                      <View style={[styles.row, { gap: 4 }]}>
+                        <Icon name="chat" size={12} color={colors.muted} />
+                        <Text
+                          accessibilityLabel={uiText('{value0} comments', {
+                            value0: p.commentCount,
+                          })}
+                          style={styles.muted}
+                        >
+                          {p.commentCount.toLocaleString()}
+                        </Text>
+                      </View>
+                    )}
+                  </View>
+                )}
+              </View>
+              {p.stack && (
+                <View style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
+                  <Icon name="stack" size={14} color={colors.accent} />
+                  <Text style={[styles.muted, { color: colors.accent }]}>
+                    {pullStackLabel(p.stack)}
+                    {p.stack.nativeNumber
+                      ? uiText(' · Stack #{value0}', { value0: p.stack.nativeNumber })
+                      : p.stack.rootNumber
+                        ? ` · #${p.stack.rootNumber}`
+                        : ''}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {p.stack.parentNumber
+                      ? `#${p.stack.parentNumber} → #${p.number}`
+                      : p.stack.position === 1
+                        ? uiText('Base PR')
+                        : p.stack.baseRef
+                          ? uiText('onto {value0}', { value0: p.stack.baseRef })
+                          : ''}
+                  </Text>
+                </View>
+              )}
+              {(p.checksState !== undefined || p.reviewDecision !== undefined || p.statusError) && (
+                <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
+                  {(p.checksState !== undefined || p.statusError) && (
+                    <Signal signal={pullChecks(p)} />
+                  )}
+                  {(p.reviewDecision !== undefined || p.statusError) && (
+                    <Signal signal={pullReview(p)} />
                   )}
                 </View>
               )}
-            </View>
-            {p.stack && (
-              <View style={[styles.row, { gap: 6, paddingVertical: 4 }]}>
-                <Icon name="stack" size={14} color={colors.accent} />
-                <Text style={[styles.muted, { color: colors.accent }]}>
-                  {pullStackLabel(p.stack)}
-                  {p.stack.nativeNumber
-                    ? uiText(' · Stack #{value0}', { value0: p.stack.nativeNumber })
-                    : p.stack.rootNumber
-                      ? ` · #${p.stack.rootNumber}`
-                      : ''}
-                </Text>
-                <Text style={styles.muted}>
-                  {p.stack.parentNumber
-                    ? `#${p.stack.parentNumber} → #${p.number}`
-                    : p.stack.position === 1
-                      ? uiText('Base PR')
-                      : p.stack.baseRef
-                        ? uiText('onto {value0}', { value0: p.stack.baseRef })
-                        : ''}
-                </Text>
+              {!!p.labels.length && (
+                <View
+                  accessibilityLabel={uiText('Labels')}
+                  style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}
+                >
+                  {p.labels.slice(0, 2).map((label) => (
+                    <View
+                      key={label}
+                      style={{
+                        maxWidth: 160,
+                        borderRadius: 6,
+                        backgroundColor: colors.surface,
+                        paddingHorizontal: 7,
+                        paddingVertical: 3,
+                      }}
+                    >
+                      <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
+                        {label}
+                      </Text>
+                    </View>
+                  ))}
+                  {p.labels.length > 2 && <Text style={styles.muted}>+{p.labels.length - 2}</Text>}
+                </View>
+              )}
+              {p.state === 'open' && !p.draft && <Signal signal={pullNextStep(p)} />}
+            </Pressable>
+            {pullChecks(p).tone === 'danger' && !marked.length && (
+              <View style={{ paddingHorizontal: 10 }}>
+                <Action
+                  secondary
+                  label={uiText('View failed checks')}
+                  onPress={() => openPull(p.runtimeId, p.repositoryId, p.number, 'checks')}
+                />
               </View>
             )}
-            {(p.checksState !== undefined || p.reviewDecision !== undefined || p.statusError) && (
-              <View style={[styles.row, { flexWrap: 'wrap', gap: 8 }]}>
-                {(p.checksState !== undefined || p.statusError) && (
-                  <Signal signal={pullChecks(p)} />
-                )}
-                {(p.reviewDecision !== undefined || p.statusError) && (
-                  <Signal signal={pullReview(p)} />
-                )}
+            {p.state === 'open' && !p.draft && p.viewerReviewRequested && !marked.length && (
+              <View style={{ paddingHorizontal: 10 }}>
+                <Action
+                  secondary
+                  label={uiText('Review changes')}
+                  onPress={() => openPull(p.runtimeId, p.repositoryId, p.number, 'changes')}
+                />
               </View>
             )}
-            {!!p.labels.length && (
-              <View
-                accessibilityLabel={uiText('Labels')}
-                style={[styles.row, { flexWrap: 'wrap', gap: 6 }]}
-              >
-                {p.labels.slice(0, 2).map((label) => (
-                  <View
-                    key={label}
-                    style={{
-                      maxWidth: 160,
-                      borderRadius: 6,
-                      backgroundColor: colors.surface,
-                      paddingHorizontal: 7,
-                      paddingVertical: 3,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
-                      {label}
-                    </Text>
-                  </View>
-                ))}
-                {p.labels.length > 2 && <Text style={styles.muted}>+{p.labels.length - 2}</Text>}
-              </View>
-            )}
-            {p.state === 'open' && !p.draft && <Signal signal={pullNextStep(p)} />}
-          </Pressable>
+          </View>
         )}
         ListEmptyComponent={
           busy ? (
@@ -779,6 +760,118 @@ export default function PullsScreen() {
           </View>
         }
       />
+      {rowActions && (
+        <Sheet ref={rowMenu} title={rowActions.title} onClose={() => setRowActions(null)}>
+          <Text style={styles.muted}>
+            #{rowActions.number} · {rowActions.repositoryName}
+          </Text>
+          <Action
+            secondary
+            label={uiText('Open details')}
+            onPress={() =>
+              rowMenu.current?.dismiss(() =>
+                openPull(rowActions.runtimeId, rowActions.repositoryId, rowActions.number),
+              )
+            }
+          />
+          {reviewAvailable && (
+            <>
+              <Action
+                secondary
+                label={uiText('Open agent review')}
+                onPress={() =>
+                  rowMenu.current?.dismiss(() =>
+                    openPull(
+                      rowActions.runtimeId,
+                      rowActions.repositoryId,
+                      rowActions.number,
+                      'agent-review',
+                    ),
+                  )
+                }
+              />
+              <Action
+                secondary
+                label={uiText('Run agent review')}
+                onPress={() =>
+                  rowMenu.current?.dismiss(() => {
+                    const { runtimeId, repositoryId, number } = rowActions
+                    openPull(
+                      runtimeId,
+                      repositoryId,
+                      number,
+                      'agent-review',
+                      createPullReviewRequest(runtimeId, repositoryId, number),
+                    )
+                  })
+                }
+              />
+              <Action
+                secondary
+                label={uiText('Configure this run')}
+                onPress={() =>
+                  rowMenu.current?.dismiss(() =>
+                    openPull(
+                      rowActions.runtimeId,
+                      rowActions.repositoryId,
+                      rowActions.number,
+                      'configure-agent-review',
+                    ),
+                  )
+                }
+              />
+            </>
+          )}
+          <Action
+            secondary
+            label={uiText('Add to thread')}
+            onPress={() =>
+              rowMenu.current?.dismiss(() =>
+                setAdding(
+                  marked.includes(`${rowActions.sourceKey}-${rowActions.number}`)
+                    ? pulls.filter((pull) => marked.includes(`${pull.sourceKey}-${pull.number}`))
+                    : [rowActions],
+                ),
+              )
+            }
+          />
+          <Action
+            secondary
+            label={
+              marked.includes(`${rowActions.sourceKey}-${rowActions.number}`)
+                ? uiText('Deselect PR')
+                : uiText('Select PR')
+            }
+            onPress={() =>
+              rowMenu.current?.dismiss(() => {
+                const key = `${rowActions.sourceKey}-${rowActions.number}`
+                setMarked((current) =>
+                  current.includes(key)
+                    ? current.filter((item) => item !== key)
+                    : [...current, key],
+                )
+              })
+            }
+          />
+          <Action
+            secondary
+            label={uiText('Open on {value0}', {
+              value0: forgeLabels[rowActions.provider ?? 'github'],
+            })}
+            onPress={() =>
+              rowMenu.current?.dismiss(() => {
+                void runClientEffect(
+                  nativeEffect(() => openAppLink(rowActions.url, true)).pipe(
+                    Effect.catch((error) =>
+                      nativeEffect(() => Alert.alert(uiText('Could not open PR'), String(error))),
+                    ),
+                  ),
+                )
+              })
+            }
+          />
+        </Sheet>
+      )}
       {filters && (
         <Sheet title={uiText('PR filters')} onClose={() => setFilters(false)}>
           <Text style={styles.text}>

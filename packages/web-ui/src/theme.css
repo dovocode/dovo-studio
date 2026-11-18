@@ -58,7 +58,7 @@
 }
 :root {
   --studio-glow-strength: 0.5;
-  /* Glass is reserved for the frame and floating surfaces. */
+  /* The composer and main navigation retain their current material. */
   --studio-surface-sheen: none;
   --studio-glass-sheen: linear-gradient(145deg, #ffffff12, transparent 55%, #ffffff08);
   --studio-surface-rim: inset 0 1px 0 #ffffff50;
@@ -259,6 +259,14 @@
   backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
   box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
+.dovo-dialog-content:not([data-fixed-material]) {
+  border-color: var(--border);
+  background-color: var(--card);
+  background-image: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: var(--studio-surface-shadow);
+}
 .dovo-dialog-content [data-slot='dialog-title']:not(.sr-only) {
   font-size: 1rem;
   line-height: 1.4;
@@ -386,6 +394,14 @@
     color: var(--foreground);
     box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
   }
+  :where(.studio-menu-surface:not([data-fixed-material])) {
+    --studio-floating-fill: var(--popover);
+    border-color: var(--border);
+    background-image: none;
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    box-shadow: var(--studio-surface-shadow);
+  }
   :where(
     [data-slot='select-item'][data-highlighted],
     [data-slot='select-item'][data-state='checked']
@@ -465,89 +481,36 @@
   border-color: var(--control-edge);
 }
 
-/* An inline refraction URL must not override opaque accessibility modes. */
+/* Only these surfaces keep optical effects. Their accessibility fallbacks remain opaque. */
+:is(
+  .studio-navigation[aria-label='Main navigation'],
+  .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
+  .studio-composer,
+  .studio-header-corner,
+  [data-fixed-material]
+) {
+  --studio-glass-refraction: var(--studio-surface-filter);
+}
 :root[data-high-contrast='true']
   :is(
-    .dovo-dialog-content,
-    .studio-menu-surface,
-    .studio-overview-pane,
     .studio-navigation[aria-label='Main navigation'],
-    .studio-composer,
-    .studio-tools-navigation,
-    .studio-glass-pane,
-    .studio-change-summary,
-    .studio-project-card,
-    .studio-side-panel,
-    .studio-thread-tools-panel,
-    .studio-browser-header,
-    .studio-page-header,
-    .studio-header-corner,
-    .studio-nav-selected,
     .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-    .studio-browser-tab[data-active],
-    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-    .studio-task-sidebar .studio-thread-child[aria-current='true'],
-    .studio-sidebar-brand-row,
-    .studio-task-thread-header
+    .studio-composer,
+    .studio-header-corner,
+    [data-fixed-material]
   ) {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
 @media (prefers-reduced-transparency: reduce), (forced-colors: active) {
   :is(
-    .dovo-dialog-content,
-    .studio-menu-surface,
-    .studio-overview-pane,
     .studio-navigation[aria-label='Main navigation'],
-    .studio-composer,
-    .studio-tools-navigation,
-    .studio-glass-pane,
-    .studio-change-summary,
-    .studio-project-card,
-    .studio-side-panel,
-    .studio-thread-tools-panel,
-    .studio-browser-header,
-    .studio-page-header,
-    .studio-header-corner,
-    .studio-nav-selected,
     .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-    .studio-browser-tab[data-active],
-    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-    .studio-task-sidebar .studio-thread-child[aria-current='true'],
-    .studio-sidebar-brand-row,
-    .studio-task-thread-header
+    .studio-composer,
+    .studio-header-corner,
+    [data-fixed-material]
   ) {
     -webkit-backdrop-filter: none !important;
     backdrop-filter: none !important;
   }
-}
-
-/* Each surface owns its fallback while its optical map loads. */
-:is(
-  .studio-overview-pane,
-  .studio-navigation[aria-label='Main navigation'],
-  .studio-composer,
-  .studio-menu-surface,
-  .dovo-dialog-content,
-  .studio-tools-navigation,
-  .studio-glass-pane,
-  .studio-change-summary,
-  .studio-project-card,
-  .studio-side-panel,
-  .studio-thread-tools-panel,
-  .studio-browser-header,
-  .studio-page-header,
-  .studio-header-corner,
-  .studio-nav-selected,
-  .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-  .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-  .studio-browser-tab[data-active],
-  .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-  .studio-task-sidebar .studio-thread-child[aria-current='true'],
-  .studio-sidebar-brand-row,
-  .studio-task-thread-header
-) {
-  --studio-glass-refraction: var(--studio-surface-filter);
 }

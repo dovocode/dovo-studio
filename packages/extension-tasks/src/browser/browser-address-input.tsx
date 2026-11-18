@@ -149,7 +149,7 @@ export function BrowserAddressInput({
   return (
     <div className="flex min-w-0 flex-1 items-center self-stretch">
       <span
-        className="flex w-9 shrink-0 justify-center text-muted-foreground [@media(pointer:coarse)]:w-11"
+        className="flex w-9 shrink-0 justify-center text-muted-foreground @max-[380px]/browser:hidden [@media(pointer:coarse)]:w-11"
         aria-hidden="true"
       >
         {intent?.kind === 'search' ? (

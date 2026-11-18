@@ -63,6 +63,7 @@ export function Sheet({
   headerAction,
   presentation = 'sheet',
   validationAttempt,
+  scrollViewProps,
 }: {
   title: string
   ref?: Ref<SheetHandle>
@@ -72,6 +73,10 @@ export function Sheet({
   scrollable?: boolean
   presentation?: 'sheet' | 'dialog'
   validationAttempt?: number
+  scrollViewProps?: Pick<
+    React.ComponentPropsWithRef<typeof ScrollView>,
+    'ref' | 'onScroll' | 'scrollEventThrottle' | 'onContentSizeChange'
+  >
   footer?: ReactNode
   headerAction?: { label: string; icon: IconName; onPress: () => void; disabled?: boolean }
 }) {
@@ -148,6 +153,7 @@ export function Sheet({
             style={{ position: 'absolute', inset: 0, backgroundColor: '#00000080' }}
           />
           <Glass
+            solid
             role="dialog"
             accessibilityLabel={title}
             accessibilityViewIsModal
@@ -177,6 +183,7 @@ export function Sheet({
             </View>
             {scrollable ? (
               <ScrollView
+                {...scrollViewProps}
                 style={{ flexGrow: 0, flexShrink: 1 }}
                 keyboardShouldPersistTaps="handled"
                 contentContainerStyle={[contentColumn.form, { gap: 12 }]}
@@ -228,6 +235,7 @@ export function Sheet({
                   >
                     {scrollable ? (
                       <ScrollView
+                        {...scrollViewProps}
                         keyboardDismissMode="interactive"
                         keyboardShouldPersistTaps="handled"
                         contentContainerStyle={[
@@ -349,6 +357,7 @@ export function Sheet({
           </View>
           {scrollable ? (
             <ScrollView
+              {...scrollViewProps}
               keyboardDismissMode="on-drag"
               keyboardShouldPersistTaps="handled"
               contentContainerStyle={[

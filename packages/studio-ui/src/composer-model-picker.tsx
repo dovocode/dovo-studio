@@ -15,6 +15,7 @@ import {
   SlidersHorizontal,
   WandSparkles,
   Zap,
+  Rocket,
   X,
 } from 'lucide-react'
 import {
@@ -450,6 +451,7 @@ export function ComposerModelPicker({
           {settings && (
             <span className="flex shrink-0 items-center gap-1 text-muted-foreground">
               {fast && <Zap className="size-3 fill-current" aria-hidden="true" />}
+              {effortLabel === 'ultra' && <Rocket className="size-3" aria-hidden="true" />}
               {effortLabel
                 ? ({
                     auto: 'Auto',
@@ -485,6 +487,7 @@ export function ComposerModelPicker({
             searchRef.current?.focus()
           }}
           className="studio-menu-surface z-50 flex max-h-[min(38rem,var(--radix-popover-content-available-height))] w-[min(25rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl border bg-[var(--studio-floating-fill)] text-popover-foreground"
+          data-fixed-material=""
           data-model-picker=""
           aria-label="Choose agent and model"
         >

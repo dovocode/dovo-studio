@@ -10,13 +10,13 @@ const mocks = {
   '../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
   '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../runtime/preferences/app-preferences': `export const useMobilePreferences=()=>({terminalFontFamily:'',terminalFontSize:14});`,
-  '../ui/theme': `export const useTheme=()=>({styles:{}});`,
+  '../ui/theme': `export const useTheme=()=>({styles:{},colors:{surface:"#222"}});`,
   '../ui/content/text': `export const Text=()=>null;`,
   '@dovo/client-runtime': `export const startReconnecting=(run,onError)=>{const controller=new AbortController();void run(controller.signal,()=>{}).catch(onError);return {stop:async()=>controller.abort()}};`,
 }
 const built = await build({
   stdin: {
-    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {runtimeProfile} from '${root}/packages/protocol/src/index.ts';window.commands=[];window.mounts=0;window.tickets=0;window.runtime={connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async()=>{window.tickets++;return {ticket:'ticket'}}};const root=createRoot(document.getElementById('app'));window.renderTerminal=visible=>flushSync(()=>root.render(<TerminalSession id="terminal" visible={visible}/>));window.renderTerminal(true);`,
+    contents: `import React from 'react';import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {TerminalSession} from '${root}/apps/mobile/src/terminal/terminal-session.tsx';import {runtimeProfile} from '${root}/packages/protocol/src/index.ts';window.commands=[];window.mounts=0;window.tickets=0;window.runtime={connected:true,connection:runtimeProfile({address:'http://computer.local:51464',token:'device-token-123456789'}).connection,call:async()=>{window.tickets++;return {ticket:'ticket'}}};const root=createRoot(document.getElementById('app'));window.renderTerminal=(visible,reconnectToken=0,readOnly=false)=>flushSync(()=>root.render(<TerminalSession id="terminal" visible={visible} reconnectToken={reconnectToken} readOnly={readOnly}/>));window.renderTerminal(true);`,
     loader: 'tsx',
     resolveDir: root,
   },
@@ -63,6 +63,25 @@ try {
   assert.equal(await page.evaluate(() => window.tickets), 2)
   await page.evaluate(() => window.renderTerminal(true))
   await page.waitForFunction(() => window.tickets === 3)
+  await page.evaluate(() => window.renderTerminal(true, 1))
+  await page.waitForFunction(() => window.tickets === 4)
+  assert.equal(await page.evaluate(() => window.mounts), 1, 'Manual reconnect retains the renderer')
+  await page.evaluate(() => window.renderTerminal(true, 1, true))
+  await page.waitForFunction(() =>
+    window.commands.includes('window.setTerminalReadOnly(true);true;'),
+  )
+  assert.equal(await page.evaluate(() => window.tickets), 4, 'Exit does not require a fresh socket')
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    window.renderTerminal(true, 1, true)
+  })
+  assert.equal(await page.evaluate(() => window.mounts), 1, 'Offline keeps the retained output')
+  await page.evaluate(() => {
+    window.runtime.connected = true
+    window.renderTerminal(true, 1, true)
+  })
+  await page.waitForFunction(() => window.tickets === 5)
+  assert.equal(await page.evaluate(() => window.mounts), 1)
 } finally {
   await browser.close()
 }

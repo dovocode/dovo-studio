@@ -7,6 +7,7 @@ const importer = root + 'apps/mobile/src/screens/jobs.tsx'
 const controls = `
 export const View=({children})=><div>{children}</div>;
 export const Keyboard={dismiss:()=>{}};
+export const Pressable=({onPress,accessibilityState,children})=><button aria-pressed={accessibilityState?.checked} onClick={onPress}>{children}</button>;
 export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,refreshing,onRefresh})=><section aria-busy={refreshing}>{ListHeaderComponent}<button onClick={onRefresh}>Refresh</button>{data.map((item,index)=><div key={item.key}>{renderItem({item,index})}</div>)}{!data.length&&ListEmptyComponent}</section>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const SettingsPage=View;
@@ -15,8 +16,9 @@ export const SettingsSearchField=({label,value,onChangeText})=><input aria-label
 export const ScreenHeader=({title})=><h1>{title}</h1>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Icon=()=>null;
-export const AutomationRow=({flow})=><span>{flow.name}</span>;
+export const AutomationRow=({flow,state,onOpenRun})=><div>{flow.name}{state.needsAttention&&<button onClick={()=>onOpenRun(state.latest.id)}>View run</button>}</div>;
 export const AutomationEditor=()=>null;
+export const EmptyState=({title,description,action})=><section><h2>{title}</h2><p>{description}</p>{action}</section>;
 export const CreationTarget=()=>null;
 `
 const mocks = [
@@ -40,15 +42,15 @@ const mocks = [
     importer,
     contents: 'export const useListScroll=()=>({retainPosition:()=>{}});',
   },
-  { path: 'expo-router', contents: 'export const router={push:()=>{}};' },
+  { path: 'expo-router', contents: 'export const router={push:href=>{window.navigated=href}};' },
   ...[
     'react-native',
+    '../ui/content/empty-state',
     '../ui/content/text',
     './settings-theme',
     './settings-controls',
     '../ui/layout/screen-header',
     '../ui/controls/action',
-    '../ui/controls/icon',
     '../jobs/automation-row',
     '../jobs/automation-editor',
     '../runtime/connection/creation-target',
@@ -62,7 +64,7 @@ const built = await bundleBrowser(
       contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {flushSync} from 'react-dom';
 import JobsScreen from './apps/mobile/src/screens/jobs';
-const source={profile:{id:'owner',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://mac-studio.lan:8787',token:'token'}},connected:true,error:'',snapshot:{workspace:{automations:[{id:'job',name:'Saved automation'}]}}};
+const source={profile:{id:'owner',name:'Mac Studio',nameIsCustom:true,connection:{address:'http://mac-studio.lan:8787',token:'token'}},connected:true,error:'',snapshot:{runs:[],questions:[],approvals:[],workspace:{automations:[{id:'job',name:'Saved automation'}]}}};
 window.mode='reject';window.calls=0;
 function App(){const[overviews,setOverviews]=useState([source]);window.publish=entries=>flushSync(()=>setOverviews(entries));window.source=source;window.runtime={overviews,refreshAll:async()=>{window.calls++;if(window.mode==='reject')throw Error('Connection interrupted');setOverviews([{...source,error:window.mode==='stored'?'Mac Studio refresh failed':''}])}};return <JobsScreen/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
@@ -95,6 +97,33 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Connection interrupted' }).waitFor()
   assert.equal(await page.locator('section').getAttribute('aria-busy'), 'false')
   assert.equal(await page.getByText('Saved automation', { exact: true }).count(), 1)
+  const attention = page.getByRole('button', { name: 'Needs attention', exact: true })
+  await attention.click()
+  assert.equal(await attention.getAttribute('aria-pressed'), 'true')
+  await page.getByRole('heading', { name: 'No matching automations.' }).waitFor()
+  await page.evaluate(() => {
+    const source = window.source
+    window.publish([
+      {
+        ...source,
+        snapshot: {
+          ...source.snapshot,
+          runs: [
+            {
+              id: 'failed-run',
+              automationId: 'job',
+              status: 'failed',
+              createdAt: '2026-11-01T00:00:00Z',
+              completedNodes: [],
+            },
+          ],
+        },
+      },
+    ])
+  })
+  await page.getByRole('button', { name: 'View run', exact: true }).click()
+  assert.equal(await page.evaluate(() => window.navigated.params.runId), 'failed-run')
+  await attention.click()
   await page.evaluate(() => (window.mode = 'stored'))
   await page.getByRole('button', { name: 'Retry loading automations', exact: true }).click()
   await page.getByRole('alert').filter({ hasText: 'Mac Studio refresh failed' }).waitFor()
@@ -106,8 +135,32 @@ try {
   await page.evaluate(() =>
     window.publish([{ ...window.source, connected: false, snapshot: null }]),
   )
-  await page.getByText('Connect a computer', { exact: true }).waitFor()
-  assert.equal(await page.getByText('Create an automation', { exact: true }).count(), 0)
+  await page.getByText('Loading automations…', { exact: true }).waitFor()
+  assert.equal(await page.getByRole('heading', { name: 'Create an automation' }).count(), 0)
+  await page.evaluate(() =>
+    window.publish([
+      { ...window.source, connected: false, snapshot: null, error: 'Computer unavailable' },
+    ]),
+  )
+  await page.getByRole('heading', { name: 'Automations unavailable' }).waitFor()
+  await page.getByRole('alert').filter({ hasText: 'Mac Studio · Offline' }).waitFor()
+  assert.equal(await page.getByText('Showing saved automations', { exact: false }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'Connect a computer' }).count(), 0)
+  await page.evaluate(() => window.publish([]))
+  await page.getByRole('heading', { name: 'Connect a computer' }).waitFor()
+  await page.getByRole('button', { name: 'Connect a computer' }).click()
+  assert.equal(await page.evaluate(() => window.navigated.pathname), '/settings/devices')
+  await page.evaluate(() =>
+    window.publish([{ ...window.source, snapshot: { workspace: { automations: [] } } }]),
+  )
+  await page.getByRole('heading', { name: 'Create an automation' }).waitFor()
+  await page.getByRole('button', { name: 'New automation' }).waitFor()
+  await page.evaluate(() => window.publish([window.source]))
+  const search = page.getByRole('textbox', { name: 'Search automations' })
+  await search.fill('Missing')
+  await page.getByRole('heading', { name: 'No matching automations.' }).waitFor()
+  await page.getByRole('button', { name: 'Clear search' }).click()
+  await page.getByText('Saved automation', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
     'Mobile automations retain cached results, show rejected and stored refresh failures, retry cleanly and explain offline empty state.',

@@ -44,7 +44,7 @@ const workspace={repositories:[repo],automations:[window.flow,{...window.flow,id
 const respond=async(path,input)=>{if(path==='/api/jobs/delete'){window.deleteCalls.push(input);if(window.failDelete)throw Error('Automation is still active');return{ok:true}};if(path==='/api/scm/source/identity')return{readerIdentity:'fixture-account',destination:'fixture-destination'};if(path.endsWith('/options'))return{provider:'github',issues:true,pipelines:true,issueActions:[],pipelineActions:[],issueStates:[]};if(path.endsWith('/issues/detail'))return{issue:window.issues[0],comments:[]};if(path.endsWith('/pipelines/detail'))return window.pipeline;return{items:[],artifacts:[]}};
 const request=async(path,input,schema)=>{const value=await respond(path,input);return schema?decode(schema,value):value};
 window.sources=[window.source];window.source.request=request;window.source.requestEffect=(...args)=>Effect.tryPromise({try:()=>request(...args),catch:error=>error});window.source.readCache={readEffect:()=>Effect.succeed(null),writeEffect:()=>Effect.void,removeEffect:()=>Effect.void};
-window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true},{profile:{id:'backup',name:'Backup Mac',connection:{address:'http://backup.local',token:'paired'}},snapshot:{...snapshot,workspace:{...workspace,automations:[{...window.flow,id:'offline',name:'Offline automation'}]},runs:[]},connected:false}],request,flush:async()=>{},readRuntime:(_profile,path,input)=>request(path,input),readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
+window.store={workspace,snapshot,profile,connection:profile.connection,connected:true,activeRuntimeId:'mac',runtimes:[{profile,snapshot,connected:true},{profile:{id:'backup',name:'Backup Mac',connection:{address:'http://backup.local',token:'paired'}},snapshot:{...snapshot,workspace:{...workspace,automations:[{...window.flow,id:'offline',name:'Offline automation'}]},runs:[]},connected:false,error:'Computer unavailable'}],request,flush:async()=>{},readRuntime:(_profile,path,input)=>request(path,input),readCache:null,switchRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 function App(){const[page,setPage]=useState('issues'),[sidebar,setSidebar]=useState(true);window.show=setPage;window.toggle=()=>setSidebar(v=>!v);return <SidebarHeaderLayout collapsed={!sidebar} onCollapsedChange={value=>setSidebar(previous=>!(typeof value==='function'?value(!previous):value))} brand={<div className="studio-sidebar-brand">Dovo Studio · Nightly</div>}><HeaderFallback><div className="studio-titlebar flex items-center"><span className="px-4">Dovo Studio · Nightly</span><HeaderMainSlot/></div></HeaderFallback><div className="flex h-full min-h-0">{page==='issues'?<IssuesView/>:page==='jira'?<JiraView/>:page==='pipelines'?<PipelinesView/>:page==='jobs'?<JobsView/>:page==='artifacts'?<ArtifactsView/>:<WorkContent key={page} repositoryId="repo" repositoryName="Dovo Studio" mode={page==='pipeline'?'pipelines':'issues'} initialSelected={page==='pipeline'?'42':'1'} request={request} connected onBack={()=>setPage('issues')} collectionHeader={<PageHeader title="Collection"/>}/>}</div></SidebarHeaderLayout>};createRoot(document.getElementById('app')).render(<TooltipProvider><App/></TooltipProvider>);`,
   },
   bundle: true,
@@ -146,8 +146,8 @@ try {
         const title = await completed.getByText('Nightly automation', { exact: true }).boundingBox()
         const context = await completed.getByText('MacBook', { exact: true }).boundingBox()
         assert.ok(
-          status.y < title.y && title.y < context.y,
-          'Automation row shows status, title, then computer context',
+          title.y < status.y && status.y < context.y,
+          'Automation row shows title, status, then computer context',
         )
         assert.equal(
           await completed.locator('time').getAttribute('datetime'),
@@ -165,6 +165,14 @@ try {
           await completed.evaluate((row) => row.scrollWidth <= row.clientWidth),
           'Automation row fits the viewport',
         )
+        const attention = page.getByRole('button', { name: 'Needs attention', exact: true })
+        await attention.focus()
+        await attention.press('Space')
+        assert.equal(await attention.getAttribute('aria-pressed'), 'true')
+        assert.equal(await completed.count(), 0)
+        await attention.press('Space')
+        assert.equal(await attention.getAttribute('aria-pressed'), 'false')
+        await completed.waitFor()
         const search = page.getByRole('textbox', { name: 'Search automations', exact: true })
         await search.fill('Unrun')
         await completed.waitFor({ state: 'hidden' })
@@ -175,7 +183,14 @@ try {
           .getByRole('button', { name: /Offline automation/ })
           .getByText('Offline · Last saved state', { exact: true })
           .waitFor()
-        await search.fill('')
+        await search.fill('No matching fixture')
+        await page.getByRole('heading', { name: 'No matching automations.', exact: true }).waitFor()
+        await page.getByText('Some computers could not be checked.', { exact: true }).waitFor()
+        await page
+          .getByRole('navigation', { name: 'Automations across computers', exact: true })
+          .getByRole('button', { name: 'Clear search', exact: true })
+          .click()
+        await completed.waitFor()
       }
       if (target === 'pipeline')
         await page

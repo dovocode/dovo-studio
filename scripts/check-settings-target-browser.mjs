@@ -384,10 +384,8 @@ try {
     else {
       await environments.click()
       await page.getByRole('option', { name: 'Linux · Offline', exact: true }).click()
-      await page
-        .getByText('Linux is offline. Reconnect to edit or save.', { exact: true })
-        .waitFor()
-      await page.getByRole('status').filter({ hasText: 'Reconnect to edit or save.' }).waitFor()
+      await page.getByText('Linux offline · Viewing saved settings', { exact: true }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Viewing saved settings' }).waitFor()
       assert.equal(
         await page
           .getByRole('status')
@@ -420,8 +418,8 @@ try {
       await page.evaluate(() => window.configureSources(1, true))
       await environments.click()
       await page.getByRole('option', { name: 'Mac · Offline', exact: true }).click()
-      await page.getByText('Mac is offline. Reconnect to edit or save.', { exact: true }).waitFor()
-      await page.getByRole('status').filter({ hasText: 'Reconnect to edit or save.' }).waitFor()
+      await page.getByText('Mac offline · Viewing saved settings', { exact: true }).waitFor()
+      await page.getByRole('status').filter({ hasText: 'Viewing saved settings' }).waitFor()
       assert.equal(
         await page
           .getByRole('status')

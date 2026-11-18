@@ -1,17 +1,18 @@
 import assert from 'node:assert/strict'
 import { mkdir, readFile, readdir } from 'node:fs/promises'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
-const screenshots = root + 'output/pr-review-checks'
+const screenshots = process.env.DOVO_REVIEW_SCREENSHOTS || join(root, 'output/pr-review-checks')
 await mkdir(screenshots, { recursive: true })
 const fixture = `
 const head='a'.repeat(40),base='b'.repeat(40);
 const taskTimer=window.setTimeout.bind(window);window.setTimeout=(callback,delay,...args)=>taskTimer(callback,delay===20000?100:delay,...args);
 const selection={harness:{provider:'claude',endpoint:''},agentId:'',model:'Review model',reasoning:''};
-const finding={id:'bug',path:'src/drafts.ts',line:2,side:'after',severity:'high',title:'Restore clears a valid draft',trigger:'Reconnect while the saved draft is unavailable.',impact:'The current draft is lost.',suggestion:'Keep the current draft until restore succeeds.',anchored:true,evidence:'  clearDraft();',confidence:9,verification:'Clearing before restore loses the current draft.'};
-const patch='@@ -1,3 +1,3 @@\\n export async function restore() {\\n-  await saveDraft();\\n+  clearDraft();\\n }\\n';
+const finding={id:'bug',path:'src/drafts.ts',line:122,side:window.firstUse?'before':'after',severity:'high',title:'Restore clears a valid draft',trigger:'Reconnect while the saved draft is unavailable.',impact:'The current draft is lost.',suggestion:'Keep the current draft until restore succeeds.',anchored:true,evidence:'  clearDraft();',confidence:9,verification:'Clearing before restore loses the current draft.'};
+const patch='@@ -1,123 +1,123 @@\\n'+Array.from({length:120},(_,index)=>' // context '+(index+1)+'\\n').join('')+' export async function restore() {\\n-  await saveDraft();\\n+  clearDraft();\\n }\\n';
 let report={reviews:[],...(window.firstUse?{}:{selection})};const reports=new Map([['runtime',report]]);window.requests=[];
 window.changeSavedDecision=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.draft.event='request-changes';r.version++;r.sequence++};
 window.combineReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='combining';delete r.analysis.activeBatch;r.sequence++};window.progressReview=()=>{const r=(reports.get(window.firstUse?'remote':'runtime')??report).reviews[0];r.status='running';r.analysis.phase='checking';r.analysis.activeBatch=2;r.analysis.completedBatches=0;r.sequence++};
@@ -51,11 +52,11 @@ const mobileMocks = [
   {
     path: '../../../tasks/preview/diff-view',
     importer: mobileRoot,
-    contents: `export const DiffView=({patch})=><pre>{patch}</pre>;`,
+    contents: `export const DiffView=({patch,focusedLine,focusedSide})=><pre data-line={focusedLine} data-side={focusedSide}>{patch}</pre>;`,
   },
   {
     path: 'react-native',
-    contents: `import {useRef} from 'react';export const Easing={ease:x=>x,inOut:x=>x};class Value{constructor(value){this.value=value}setValue(value){this.value=value}interpolate({outputRange}){return outputRange[0]}};export const Animated={Value,View:({style,children})=><div>{children}</div>,loop:()=>({start(){},stop(){}}),sequence:x=>x,timing:()=>({})};const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s;export const View=({style,children})=><div style={flat(style)}>{children}</div>;export const Text=({style,children})=><span style={flat(style)}>{children}</span>;export const Linking={openURL:async url=>{window.openedURL=url}};export const Image=({source,style})=><img alt="" src={source.uri} style={style}/>;export const ScrollView=({children})=><div style={{overflow:'auto'}}>{children}</div>;`,
+    contents: `import {useRef} from 'react';export const Easing={ease:x=>x,inOut:x=>x};class Value{constructor(value){this.value=value}setValue(value){this.value=value}interpolate({outputRange}){return outputRange[0]}};export const Animated={Value,View:({style,children})=><div>{children}</div>,loop:()=>({start(){},stop(){}}),sequence:x=>x,timing:()=>({})};const flat=s=>Array.isArray(s)?Object.assign({},...s.map(flat)):s;export const View=({style,children})=><div style={{display:'flex',flexDirection:'column',minWidth:0,...flat(style)}}>{children}</div>;export const Text=({style,children})=><span style={flat(style)}>{children}</span>;export const Linking={openURL:async url=>{window.openedURL=url}};export const Image=({source,style})=><img alt="" src={source.uri} style={style}/>;export const ScrollView=({children})=><div style={{overflow:'auto'}}>{children}</div>;`,
   },
   {
     path: '../../../runtime/connection/provider',
@@ -65,7 +66,7 @@ const mobileMocks = [
   {
     path: '../../../agents/model-settings',
     importer: mobileRoot,
-    contents: `export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
+    contents: `export const LineCommentForm=()=>null;export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
   },
   {
     path: '../../../tasks/creation/harness-choices',
@@ -75,7 +76,7 @@ const mobileMocks = [
   {
     path: '../../../ui/controls/action',
     importer: mobileRoot,
-    contents: `export const Action=({label,onPress,disabled,secondary})=><button className={secondary?'mobile-secondary':'mobile-action'} disabled={disabled} onClick={onPress}>{label}</button>;`,
+    contents: `export const Action=({label,onPress,disabled,secondary,wide})=><button className={secondary?'mobile-secondary':'mobile-action'} style={{alignSelf:wide?'stretch':'flex-start'}} disabled={disabled} onClick={onPress}>{label}</button>;`,
   },
   {
     path: '../../../ui/controls/choice',
@@ -95,27 +96,32 @@ const mobileMocks = [
   {
     path: '../../../ui/layout/sheet',
     importer: mobileRoot,
-    contents: `export const Sheet=({title,children,onClose,footer})=><section role="dialog" aria-label={title} className="mobile-sheet"><header><h2>{title}</h2><button onClick={onClose}>Close</button></header><div className="mobile-sheet-body">{children}</div>{footer&&<footer>{footer}</footer>}</section>;`,
+    contents: `import { useImperativeHandle, useLayoutEffect, useRef } from 'react';
+    export function Sheet({title,children,onClose,footer,scrollViewProps}) {
+      const body=useRef(null);
+      useImperativeHandle(scrollViewProps?.ref,()=>({scrollTo:({y})=>{body.current.scrollTop=y}}),[]);
+      useLayoutEffect(()=>{scrollViewProps?.onContentSizeChange?.()},[title]);
+      return <section role="dialog" aria-label={title} className="mobile-sheet"><header><h2>{title}</h2><button onClick={onClose}>Close</button></header><div ref={body} className="mobile-sheet-body" onScroll={event=>scrollViewProps?.onScroll?.({nativeEvent:{contentOffset:{y:event.currentTarget.scrollTop}}})}>{children}</div>{footer&&<footer>{footer}</footer>}</section>;
+    }`,
   },
   {
     path: '../../../ui/theme',
     importer: mobileRoot,
-    contents: `export const useTheme=()=>({reduceMotion:false,colors:{accent:'#77b8a8',border:'#303438',text:'#e9edee',muted:'#9ba5aa',error:'#f08080'},styles:{card:{border:'1px solid #303438',borderRadius:10,padding:14,background:'#191d20'},text:{color:'#e9edee',fontSize:14,lineHeight:'22px'},muted:{color:'#9ba5aa',fontSize:13,lineHeight:'21px'},error:{color:'#f08080'}}});`,
+    contents: `export const useTheme=()=>({reduceMotion:false,colors:{accent:'#77b8a8',border:'#303438',text:'#e9edee',muted:'#9ba5aa',error:'#f08080'},styles:{row:{flexDirection:'row',alignItems:'center'},card:{border:'1px solid #303438',borderRadius:10,padding:14,background:'#191d20'},text:{color:'#e9edee',fontSize:14,lineHeight:'22px'},muted:{color:'#9ba5aa',fontSize:13,lineHeight:'21px'},error:{color:'#f08080'}}});`,
   },
 ]
 const desktopMocks = [
   {
     path: '@dovo/studio-core',
-    contents: `import {createContext,useContext} from 'react';const Scope=createContext('runtime');const computers=['runtime','remote'].map(id=>({name:id,profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true}));const requests=new Map(computers.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useAppPreferences=()=>({motion:window.reduceMotion?'reduce':'system'});export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useRuntimeSources=()=>computers;export const WorkspaceRuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;export const useWorkspace=()=>{const id=useContext(Scope);return {request:requests.get(id),connected:window.offlineHost!==id,activeRuntimeId:id,connection:computers.find(x=>x.profile.id===id).profile.connection,workspace:{agents:[],repositories:[]},snapshot:{defaults:{},acpInstallations:[{id:'review-acp',name:'Review ACP client'}]}}};`,
+    contents: `import {createContext,useContext} from 'react';export {forgeLabels,pullFilePatch} from '@dovo/protocol';const Scope=createContext('runtime');const computers=['runtime','remote'].map(id=>({name:id,profile:{id,name:id,connection:{address:'http://'+id,token:id}},connected:true}));const requests=new Map(computers.map(({profile})=>[profile.id,(path,input)=>window.transport(path,input,profile.id)]));export const useAppPreferences=()=>({motion:window.reduceMotion?'reduce':'system'});export const providers=new Proxy({},{get:(_,key)=>({short:String(key)})});export const useRuntimeSources=()=>computers;export const WorkspaceRuntimeScope=({runtimeId,children})=><Scope.Provider value={runtimeId}>{children}</Scope.Provider>;export const useWorkspace=()=>{const id=useContext(Scope);return {request:requests.get(id),connected:window.offlineHost!==id,activeRuntimeId:id,connection:computers.find(x=>x.profile.id===id).profile.connection,workspace:{agents:[],repositories:[]},snapshot:{defaults:{},acpInstallations:[{id:'review-acp',name:'Review ACP client'}]}}};`,
   },
   {
-    path: './patch',
-    importer: root + 'packages/extension-scm/src/pulls/detail',
-    contents: `export const PullPatch=({file})=><pre className="m-0 p-4 font-mono text-xs leading-7">{file.patch.split('\\n').map((line,i)=><div key={i} style={{background:line.startsWith('+')?'#16352b':line.startsWith('-')?'#3c2228':'transparent',color:line.startsWith('+')?'#a2e5c3':line.startsWith('-')?'#eba7af':'#b8c3ca'}}><span style={{display:'inline-block',width:30,opacity:0.5}}>{i}</span>{line}</div>)}</pre>;`,
+    path: '@dovo/studio-ui/code-themes',
+    contents: `export const useDiffOptions=()=>({options:{}});export const preloadStudioHighlighter=async()=>{};`,
   },
   {
     path: '@dovo/studio-ui',
-    contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker';export {Textarea} from '${root}packages/studio-ui/src/components/ui/textarea';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
+    contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button';export {ChoicePicker} from '${root}packages/studio-ui/src/choice-picker';export {Textarea} from '${root}packages/studio-ui/src/components/ui/textarea';export {Dialog,DialogContent,DialogTitle,DialogDescription} from '${root}packages/studio-ui/src/components/ui/dialog';export const LineCommentForm=()=>null;export const ModelSettings=({agent,onChange})=><label>Reviewer model<select aria-label="Reviewer model" value={agent.model} onChange={e=>onChange({...agent,model:e.target.value})}><option value="">Choose a model</option><option value="Review model">Review model</option><option value="Second model">Second model</option></select></label>;`,
   },
 ]
 const browser = await chromium.launch()
@@ -131,7 +137,7 @@ try {
           stdin: {
             resolveDir: root,
             loader: 'tsx',
-            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {${component}} from '${root}${path}';${fixture}function App(){const [headSha,setHead]=useState(head);const [,refresh]=useState(0);window.refreshComputers=()=>refresh(n=>n+1);window.push=()=>setHead('c'.repeat(40));return <${component} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value} onOpenStackReview={(member,runtimeId)=>window.stackOpened={member,runtimeId}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
+            contents: `import {createRoot} from 'react-dom/client';import {useState} from 'react';import {claimPullReviewRequest,createPullReviewRequest} from '${root}apps/mobile/src/scm/pulls/list/pull-route-number.ts';import {${component}} from '${root}${path}';${fixture}const rowToken=window.rowReview&&createPullReviewRequest('runtime','repo',184);const rowReviewRun=rowToken?()=>claimPullReviewRequest(rowToken,'runtime','repo',184):undefined;function App(){const [headSha,setHead]=useState(head);const [,refresh]=useState(0);window.refreshComputers=()=>refresh(n=>n+1);window.push=()=>setHead('c'.repeat(40));return <${component} initiallyOpen={!!rowToken} rowReviewRun={rowReviewRun} repositoryId="repo" detail={{...detail,pull:{...detail.pull,headSha}}} onAsk={value=>window.asked=value} onOpenStackReview={(member,runtimeId)=>window.stackOpened={member,runtimeId}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
           },
           bundle: true,
           write: false,
@@ -168,7 +174,11 @@ try {
       await page.evaluate((value) => (window.firstUse = value), firstUse)
       await page.addScriptTag({ content: built.outputFiles[0].text })
       const entry = page.getByRole('button', {
-        name: mobile ? 'Open agent review' : 'Start agent review',
+        name: mobile
+          ? firstUse
+            ? 'Set up agent review'
+            : 'Run agent review'
+          : 'Start agent review',
         exact: true,
       })
       await entry.waitFor()
@@ -193,7 +203,7 @@ try {
         }
         await entry.waitFor()
         if (mobile)
-          await page.getByRole('button', { name: 'Configure agent review', exact: true }).click()
+          await page.getByRole('button', { name: 'Configure this run', exact: true }).click()
         if (mobile)
           await page
             .getByRole('combobox', { name: 'Reviewer provider', exact: true })
@@ -246,7 +256,7 @@ try {
         )
       } else {
         if (mobile)
-          await page.getByRole('button', { name: 'Configure agent review', exact: true }).click()
+          await page.getByRole('button', { name: 'Configure this run', exact: true }).click()
         if (mobile) {
           await page
             .getByRole('combobox', { name: 'Review depth', exact: true })
@@ -279,6 +289,9 @@ try {
         assert.equal(started.depth, 'thorough')
         assert.equal(started.runChecks, true)
         if (mobile) {
+          await page
+            .getByRole('button', { name: 'View failed project checks', exact: true })
+            .click()
           await page.getByText('pnpm run lint · Failed', { exact: true }).waitFor()
           await page.getByRole('button', { name: 'Show output', exact: true }).click()
         } else {
@@ -288,6 +301,97 @@ try {
         await page.getByText('Actual lint output', { exact: true }).waitFor()
       }
       await page.getByRole('button', { name: 'Add to draft', exact: true }).waitFor()
+      if (mobile) {
+        const report = page.getByRole('dialog')
+        await report.getByText('1 finding', { exact: true }).waitFor()
+        assert.equal(
+          await report.getByRole('button', { name: 'Add reviewer', exact: true }).count(),
+          0,
+        )
+        if (!firstUse) {
+          await report
+            .getByRole('button', { name: 'View failed project checks', exact: true })
+            .click()
+          await page.screenshot({ path: join(screenshots, 'completed-review-mobile.png') })
+        }
+        const actions = report.getByRole('combobox', { name: 'More review actions', exact: true })
+        await actions.selectOption('configure')
+        await report.getByRole('button', { name: 'Add reviewer', exact: true }).waitFor()
+        await actions.selectOption('configure')
+      }
+      if (!mobile) {
+        const configure = page.getByRole('button', { name: 'Configure agent review', exact: true })
+        await page.getByRole('heading', { name: '1 finding', exact: true }).waitFor()
+        assert.equal(await configure.getAttribute('aria-expanded'), 'false')
+        assert.equal(
+          await page.getByRole('button', { name: 'Add reviewer', exact: true }).count(),
+          0,
+        )
+        if (!firstUse) {
+          await page.getByText('Project check results', { exact: false }).click()
+          await page.evaluate(() => window.scrollTo(0, 0))
+          await page.screenshot({ path: join(screenshots, 'completed-review-desktop.png') })
+        }
+        await configure.click()
+        await page.getByRole('button', { name: 'Add reviewer', exact: true }).waitFor()
+        await configure.click()
+        assert.equal(await configure.getAttribute('aria-expanded'), 'false')
+      }
+      const side = firstUse ? 'before' : 'after'
+      const location = page.getByRole('button', {
+        name: `src/drafts.ts:122 · ${side}`,
+        exact: true,
+      })
+      const reportBody = page.locator('.mobile-sheet-body')
+      let reportOffset
+      if (mobile) {
+        await page.setViewportSize({ width: 390, height: 580 })
+        await location.scrollIntoViewIfNeeded()
+        reportOffset = await reportBody.evaluate((body) => {
+          body.scrollTop = Math.max(body.scrollTop, 32)
+          body.dispatchEvent(new Event('scroll'))
+          return body.scrollTop
+        })
+        assert.ok(reportOffset > 0)
+      }
+      await location.click()
+      const captured = page.getByRole('dialog', { name: 'src/drafts.ts' })
+      await captured
+        .getByText(`Captured patch at aaaaaaa · 122 · ${side}`, { exact: true })
+        .waitFor()
+      if (mobile) {
+        assert.equal(await captured.locator('pre').getAttribute('data-line'), '122')
+        assert.equal(await captured.locator('pre').getAttribute('data-side'), side)
+        await captured.getByRole('button', { name: 'Back to findings', exact: true }).click()
+        assert.equal(await reportBody.evaluate((body) => body.scrollTop), reportOffset)
+        await page.setViewportSize({ width: 390, height: 844 })
+      } else {
+        const line = captured
+          .locator('[data-line="122"][data-selected-line]')
+          .filter({ hasText: firstUse ? 'await saveDraft()' : 'clearDraft()' })
+        await line.waitFor()
+        await page.waitForFunction(
+          (code) => {
+            for (const container of document.querySelectorAll('[role="dialog"] diffs-container')) {
+              const dialog = container.closest('[role="dialog"]')
+              const lines = container.shadowRoot?.querySelectorAll(
+                '[data-line="122"][data-selected-line]',
+              )
+              for (const line of lines ?? []) {
+                if (!line.textContent.includes(code)) continue
+                const bounds = line.getBoundingClientRect()
+                const viewport = dialog.getBoundingClientRect()
+                if (bounds.top >= viewport.top && bounds.bottom <= viewport.bottom) return true
+              }
+            }
+            return false
+          },
+          firstUse ? 'await saveDraft()' : 'clearDraft()',
+        )
+        await captured.getByRole('button', { name: 'Close', exact: true }).click()
+        assert.equal(await location.evaluate((node) => node === document.activeElement), true)
+      }
+      await location.waitFor()
       if (mobile) {
         await page
           .getByRole('button', { name: 'Show evidence and finding check', exact: true })
@@ -439,7 +543,11 @@ try {
           path: screenshots + (mobile ? '/mobile-findings.png' : '/desktop-findings.png'),
           fullPage: true,
         })
-      await page.getByRole('button', { name: 'Review again', exact: true }).click()
+      if (mobile)
+        await page
+          .getByRole('combobox', { name: 'More review actions', exact: true })
+          .selectOption('run')
+      else await page.getByRole('button', { name: 'Review again', exact: true }).click()
       await page
         .getByRole('button', { name: 'Copy draft from the earlier pass', exact: true })
         .click()
@@ -467,6 +575,14 @@ try {
         window.releaseSave()
       })
       await page.getByRole('button', { name: 'Publish review', exact: true }).waitFor()
+      if (!mobile) {
+        const confirmation = page.getByRole('dialog')
+        assert.equal(await confirmation.getAttribute('data-surface'), 'solid')
+        assert.equal(
+          await confirmation.evaluate((element) => getComputedStyle(element).backdropFilter),
+          'none',
+        )
+      }
       assert.ok(await page.getByText('Mentions and references:', { exact: false }).count())
       assert.ok(await page.getByText('dominic', { exact: false }).count())
       if (!firstUse)
@@ -488,6 +604,8 @@ try {
       )
       assert.ok((await page.getByRole('dialog').innerText()).includes('Comment'))
       await page.getByRole('button', { name: 'Back to draft', exact: true }).click()
+      if (!mobile)
+        await page.waitForFunction(() => document.activeElement?.textContent === 'Preview review')
       await page.getByRole('button', { name: 'Preview review', exact: true }).click()
       await page.getByRole('button', { name: 'Publish review', exact: true }).waitFor()
       assert.ok((await page.getByRole('dialog').innerText()).includes('Request changes'))
@@ -517,11 +635,16 @@ try {
       assert.ok(sent.body.startsWith('Please check restore'))
       assert.ok(sent.body.includes('<!-- dovo-review:'))
       assert.ok(sent.body.includes('Latest edit.'))
-      if (mobile)
+      if (mobile) {
+        await page
+          .getByRole('dialog')
+          .getByRole('combobox', { name: 'More review actions', exact: true })
+          .selectOption('configure')
         await page
           .getByRole('combobox', { name: 'Review scope', exact: true })
           .selectOption('stack')
-      else {
+      } else {
+        await page.getByRole('button', { name: 'Configure agent review', exact: true }).click()
         await page.getByRole('button', { name: 'Review scope', exact: true }).click()
         await page.getByRole('option', { name: 'Full stack · 2 PRs', exact: true }).click()
       }
@@ -552,15 +675,53 @@ try {
       )
       await page.evaluate(() => window.push())
       await page.getByText('This PR has new changes.', { exact: false }).waitFor()
+      await location.click()
+      await captured
+        .getByText(`Captured patch at aaaaaaa · 122 · ${side}`, { exact: true })
+        .waitFor()
+      await captured
+        .getByRole('button', { name: mobile ? 'Back to findings' : 'Close', exact: true })
+        .click()
       assert.equal(
         await editor.inputValue(),
         'Please check restore before clearing the draft. @reviewer https://github.com/acme/studio/pull/184 Latest edit.',
       )
       assert.deepEqual(errors, [])
+      if (mobile && !firstUse) {
+        await page.goto('about:blank')
+        await page.setContent('<main id="app"></main>')
+        await page.evaluate(() => {
+          window.rowReview = true
+        })
+        await page.addScriptTag({ content: built.outputFiles[0].text })
+        await page.waitForFunction(
+          () => window.requests.filter((request) => request.path.endsWith('/start')).length === 1,
+        )
+        assert.deepEqual(
+          await page.evaluate(
+            () => window.requests.find((request) => request.path.endsWith('/start')).input.target,
+          ),
+          {
+            repositoryId: 'repo',
+            number: 184,
+            connectionId: undefined,
+            expectedDestination: 'destination',
+          },
+        )
+        await page.getByRole('button', { name: 'Add to draft', exact: true }).waitFor()
+        await page.evaluate(() => window.refreshComputers())
+        await page.getByRole('button', { name: 'Add to draft', exact: true }).waitFor()
+        assert.equal(
+          await page.evaluate(
+            () => window.requests.filter((request) => request.path.endsWith('/start')).length,
+          ),
+          1,
+        )
+      }
       await page.close()
     }
   console.log(
-    'PR review desktop and mobile: multiple reviewers, image input, remote host/account routing, offline report retention, draft isolation across computers, evidence and finding checks, snapshot context navigation, active batch progress, first-use model setup, saved reviewer start, finding add/remove with edited-text preservation, copied drafts across passes, save on preview, exact preview, failed publish retention, in-flight guard, explicit publish, stale report and draft retention passed. Screenshots: output/pr-review-checks. Native controls, model and forge are mocked.',
+    `PR review desktop and mobile: multiple reviewers, image input, remote host/account routing, offline report retention, draft isolation across computers, exact captured lines and return positions, evidence and finding checks, snapshot context navigation, active batch progress, first-use model setup, saved reviewer start, finding add/remove with edited-text preservation, copied drafts across passes, save on preview, exact preview, failed publish retention, in-flight guard, explicit publish, stale report and draft retention passed. Screenshots: ${screenshots}. Native controls, model and forge are mocked.`,
   )
 } finally {
   await browser.close()

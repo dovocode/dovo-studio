@@ -1349,9 +1349,25 @@ export class Tasks {
         }
         let result = parts.join('\n\n')
         if (!result) throw new HttpError(409, 'The completed side thread has no text result.')
+        if (!location) return undefined
+        const todos = child.nativeTodos ?? []
+        const openTodos = todos.filter((todo) => todo.status !== 'completed')
+        const checklist = todos.length
+          ? [
+              '',
+              '',
+              `Recorded checklist at handoff: ${openTodos.length} of ${todos.length} open`,
+              ...openTodos.slice(0, 5).map((todo) => {
+                const text = todo.text.replace(/\s+/g, ' ')
+                const status = todo.status === 'in-progress' ? 'In progress' : 'Pending'
+                return `- ${status}: ${text.length > 200 ? `${text.slice(0, 200)}…` : text}`
+              }),
+              ...(openTodos.length > 5 ? [`[${openTodos.length - 5} more open items]`] : []),
+            ].join('\n')
+          : ''
         const omissionNotice = omitted ? '\n[Some non-completed or file content was omitted.]' : ''
         const truncationNotice = '[Earlier conversation text omitted or truncated.]\n'
-        const budget = 12000 - omissionNotice.length
+        const budget = 12000 - omissionNotice.length - checklist.length
         if (result.length > budget) {
           let remaining = budget - truncationNotice.length
           const retained: string[] = []
@@ -1371,8 +1387,7 @@ export class Tasks {
           result = `${truncationNotice}${retained.join('\n\n')}`
         }
         result += omissionNotice
-        if (!location) return undefined
-        const handoff = `[Side thread ${child.id} ${turn.id}]\n${child.title}\n${location}\nNo Git merge was performed; changes remain in the side-thread checkout.\n\n${result}`
+        const handoff = `[Side thread ${child.id} ${turn.id}]\n${child.title}\n${location}\nNo Git merge was performed; changes remain in the side-thread checkout.${checklist}\n\n${result}`
         this.store.updateTask(parent.id, (task) => ({
           ...task,
           draft: task.draft ? `${task.draft}\n\n${handoff}` : handoff,

@@ -26,6 +26,7 @@ import {
   useAppPreferences,
 } from '@dovo/studio-core'
 import { MessageResponse } from '@dovo/studio-ui'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useTurnDisclosure } from './turn-window'
 import {
   BrainCircuit,
@@ -195,6 +196,7 @@ export function TaskActivity({
 }) {
   // Settings → General → Conversation → Tool activity; Ctrl+O switches it from the task.
   const detailsId = useId()
+  const uiText = useInterfaceText()
   const { toolActivity, showToolDetails } = useAppPreferences()
   // Changing the preference resets every group, including ones outside the render window.
   const [choice, setChoice] = useTurnDisclosure(
@@ -225,16 +227,44 @@ export function TaskActivity({
       <ArtifactCard reference={reference} />
     </Suspense>
   ))
+  const toolEntries: typeof entries = []
+  const reasoningGroups: (typeof entries)[] = []
+  let group: typeof entries | undefined
+  let current: (typeof entries)[number] | undefined
+  for (const entry of entries) {
+    if (entry.presentation.kind !== 'reasoning') {
+      toolEntries.push(entry)
+      group = undefined
+      if (entry.state === 'running') current = entry
+    } else if (entry.presentation.output.trim()) {
+      if (!group) {
+        group = []
+        reasoningGroups.push(group)
+      }
+      group.push(entry)
+    }
+  }
+  const reasoning = reasoningGroups.map((group) => (
+    <div key={group[0]?.tool.id} className="space-y-1 py-1 text-muted-foreground">
+      <p className="flex items-center gap-2 font-medium">
+        <BrainCircuit aria-hidden className="size-3.5 shrink-0" />
+        {uiText('Reasoning summary')}
+      </p>
+      {group.map(({ tool, presentation, state }) => (
+        <MessageResponse key={tool.id} isStreaming={state === 'running'}>
+          {presentation.output}
+        </MessageResponse>
+      ))}
+    </div>
+  ))
   if (artifactsOnly)
     return (
       <>
+        {reasoning}
         {cards}
         <ToolResultImages tools={images} />
       </>
     )
-  const running = entries.filter((entry) => entry.state === 'running')
-  const current =
-    running.filter((entry) => entry.presentation.kind !== 'reasoning').at(-1) ?? running.at(-1)
   // Replies only: keep failures, stops and unresolved work visible.
   const hidden =
     toolActivity === 'hidden' &&
@@ -244,24 +274,30 @@ export function TaskActivity({
     !images.length &&
     !entries.some((entry) => ['failed', 'stopped', 'interrupted'].includes(entry.state))
   const workingIndicator =
-    working && (hidden || !current) ? (
+    working && !reasoning.length && (hidden || !current) ? (
       <p role="status" className="flex items-center gap-2 text-xs text-muted-foreground">
         <span aria-hidden className="size-1.5 rounded-full bg-primary" />
         Working
       </p>
     ) : null
-  if (!tools.length && !error && !turn) return workingIndicator
-  if (hidden) return workingIndicator
-  const outcome = taskActivityOutcome(
-    entries.filter((entry) => entry.presentation.kind !== 'reasoning').map((entry) => entry.state),
-  )
+  if (!toolEntries.length && !reasoning.length && !error && !turn) return workingIndicator
+  if (hidden)
+    return (
+      <>
+        {reasoning}
+        {workingIndicator}
+      </>
+    )
+  const outcome = taskActivityOutcome(toolEntries.map((entry) => entry.state))
   const headline =
     !expanded && current
       ? [activeTitle(current.presentation), outcome].filter(Boolean).join(' · ')
-      : [activitySummary(tools), outcome].filter(Boolean).join(' · ')
-  const summaryKind = (
-    ['computer', 'command', 'file', 'web', 'search', 'tool', 'reasoning'] as const
-  ).find((kind) => entries.some((entry) => entry.presentation.kind === kind))
+      : [activitySummary(toolEntries.map((entry) => entry.tool)), outcome]
+          .filter(Boolean)
+          .join(' · ')
+  const summaryKind = (['computer', 'command', 'file', 'web', 'search', 'tool'] as const).find(
+    (kind) => toolEntries.some((entry) => entry.presentation.kind === kind),
+  )
   const Icon =
     !expanded && current ? icons[current.presentation.kind] : icons[summaryKind ?? 'tool']
   return (
@@ -269,7 +305,8 @@ export function TaskActivity({
       className="min-w-0 border-l border-border/60 pl-3 text-xs"
       aria-label="Thread tool activity"
     >
-      {tools.length ? (
+      {reasoning}
+      {toolEntries.length ? (
         <div className="min-w-0">
           <button
             type="button"
@@ -298,7 +335,7 @@ export function TaskActivity({
           </button>
           {expanded && (
             <div id={detailsId} className="space-y-0.5 pb-2 pl-1">
-              {entries.map(({ tool, presentation, state }) => (
+              {toolEntries.map(({ tool, presentation, state }) => (
                 <ActivityEntry
                   key={tool.id}
                   tool={tool}
@@ -373,11 +410,8 @@ const ActivityEntry = memo(function ActivityEntry({
         : state === 'interrupted'
           ? 'Interrupted'
           : ''
-  const reasoning = presentation.kind === 'reasoning'
-  const showOutput = showDetails || reasoning
   const expandable =
     showDetails ||
-    (showOutput && !!presentation.output) ||
     (presentation.kind === 'command' && !!presentation.input) ||
     !!presentation.diff ||
     (presentation.kind === 'file' && !!presentation.input)
@@ -436,22 +470,14 @@ const ActivityEntry = memo(function ActivityEntry({
               <DiffText text={presentation.diff} />
             </div>
           )}
-          {showOutput &&
-            !!presentation.output &&
-            (reasoning ? (
-              <div className="text-xs">
-                <MessageResponse isStreaming={state === 'running'}>
-                  {presentation.output}
-                </MessageResponse>
-              </div>
-            ) : (
-              <div>
-                <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Output</p>
-                <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
-                  {presentation.output}
-                </pre>
-              </div>
-            ))}
+          {showDetails && !!presentation.output && (
+            <div>
+              <p className="mb-1 text-[0.625rem] text-muted-foreground/65">Output</p>
+              <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words font-mono text-[0.6875rem] leading-relaxed">
+                {presentation.output}
+              </pre>
+            </div>
+          )}
           {showDetails && !presentation.input && !presentation.output && !presentation.diff && (
             <p>{state === 'running' ? 'Waiting for output…' : 'No text output recorded.'}</p>
           )}

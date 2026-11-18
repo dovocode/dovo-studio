@@ -74,7 +74,7 @@ function AutomationDetail({ automationId, runId }: { automationId: string; runId
           <IconButton
             label={uiText('Back to automations')}
             icon="back"
-            variant="glass"
+            variant="plain"
             onPress={() => backToCollection('/settings/automations')}
           />
         }

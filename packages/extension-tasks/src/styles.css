@@ -7,6 +7,15 @@
   border-radius: 999px;
   padding: 0 2px;
 }
+@media (pointer: fine) {
+  .studio-browser-toolbar[data-compact='true'] > button {
+    width: 28px;
+    min-width: 28px;
+  }
+}
+.studio-browser-toolbar[data-compact='true'] .studio-browser-address input {
+  padding-inline: 4px;
+}
 /* The whole address field carries keyboard focus, including its profile switcher. */
 .studio-browser-address input:focus-visible {
   outline: none;

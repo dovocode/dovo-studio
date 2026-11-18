@@ -190,7 +190,7 @@ function BotSettingsEditor({
             )}
             {!!error && <Text accessibilityRole="alert">{error}</Text>}
             <Action
-              label={bot.state === 'paused' ? uiText('Resume Bot') : uiText('Pause Bot')}
+              label={bot.state === 'paused' ? uiText('Resume Bot') : uiText('Pause new work')}
               disabled={!connected || busy || !snapshot?.botsSupported}
               onPress={() =>
                 act(async () => {

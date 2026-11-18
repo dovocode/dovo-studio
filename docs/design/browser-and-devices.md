@@ -15,15 +15,15 @@ a configured SSH device host, independently from the computer running the thread
    Double/triple clicks, modifier clicks, page cursors and hovered link destinations are forwarded;
    tapping an editable field on mobile opens the software keyboard.
 4. Choose Fit view, Phone, Tablet or Desktop; use Rotate for fixed viewport sizes.
-5. **Reconnect** resumes the page after a connection interruption. Closing the session clears its
-   in-memory cookies and history. Without any viewers, streaming stops and the session expires after
-   five minutes. Runtime shutdown closes all browser processes.
+5. Use **Reload page** when navigation fails. Use **Reconnect** when the stream drops. When the host
+   has ended the session, use **Open URL in a new session**. Closing a session clears its in-memory
+   cookies and history. A session with no viewers expires after five minutes. Runtime shutdown
+   closes all browser processes.
 
-Built-in and host browsers share the same address bar, Back/Forward, Reload, screenshot and viewport
-controls. Desktop uses one toolbar above either kind of tab; mobile uses the same native controls
-below either preview. Host browsers also offer Keyboard, Reconnect and Connection details. Device
-previews retain their hardware controls. Ctrl/Cmd+L focuses the visible address bar, including while
-the remote canvas has focus.
+Built-in and host browsers share one navigation row. Mobile puts Forward, viewport and screenshots
+in Browser options. The Go button replaces Reload while the address has an edit. Host browsers also
+offer Keyboard and Connection details. Device previews retain their hardware controls. Ctrl/Cmd+L
+focuses the visible address bar, including while the remote canvas has focus.
 
 Mobile previews protect bottom controls and the expanded-view restore button from the home
 indicator. The route handles landscape side insets; the preview adds the bottom inset once, removing

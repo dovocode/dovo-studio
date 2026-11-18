@@ -5,9 +5,20 @@ import type { SettingsChange } from '@dovo/protocol'
 import { Card } from '@dovo/web-ui/card'
 import { Switch } from './components/ui/switch'
 import { PageHeader } from './page-header'
-import { useId, useRef, useState, useEffect, useLayoutEffect, type ReactNode } from 'react'
+import {
+  createContext,
+  useContext,
+  useId,
+  useRef,
+  useState,
+  useEffect,
+  useLayoutEffect,
+  type ReactNode,
+} from 'react'
 import { Button } from './components/ui/button'
 import { Disclosure } from './disclosure'
+
+export const SettingsSaveScope = createContext<{ label: string; online: boolean } | null>(null)
 
 export function SettingsStorageInfo({ children }: { children: ReactNode }) {
   return (
@@ -310,6 +321,8 @@ export function SettingsSaveBar({
   onDiscard: () => void
   children?: ReactNode
 }) {
+  const scope = useContext(SettingsSaveScope)
+  const uiText = useInterfaceText()
   const [review, setReview] = useState(false)
   const [latest, setLatest] = useState<SettingsChange[] | null>(null)
   const [reviewError, setReviewError] = useState('')
@@ -353,7 +366,9 @@ export function SettingsSaveBar({
   const status = saving
     ? 'Saving…'
     : dirty
-      ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
+      ? scope?.online === false
+        ? uiText('Unsaved edits kept on this device')
+        : `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
       : saved
         ? 'Changes saved.'
         : description
@@ -384,7 +399,9 @@ export function SettingsSaveBar({
             status
           )}
         </div>
-        <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/80">{description}</p>
+        <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/80">
+          {scope ? uiText('Applies to {value0}', { value0: scope.label }) : description}
+        </p>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (

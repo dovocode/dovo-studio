@@ -1449,13 +1449,15 @@ try {
   await loadStyles()
   await page.addScriptTag({ content: built.outputFiles[0].text })
   // Direct BrowserPane coverage deliberately bypasses the experimental BrowserView gate.
-  await page.getByText(/Browser workspace · This device/).waitFor()
+  await page.getByLabel('Preview URL', { exact: true }).waitFor()
+  await page.getByText(/Browser workspace · This device/).waitFor({ state: 'hidden' })
   const recent = page.getByRole('complementary', { name: 'Recent browser tabs' })
   const preview = page.getByRole('region', { name: 'Link preview', exact: true })
   if (!(await recent.isVisible())) throw new Error('Missing vertical tab list')
   const url = page.getByLabel('Preview URL', { exact: true })
   await url.fill('http://localhost:3000')
   await url.press('Enter')
+  await page.getByText(/^Local address on /).waitFor({ state: 'hidden' })
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'show'))
   if (
     (await page.evaluate(() => window.calls.find((call) => call.action === 'show'))).url !==
@@ -1549,7 +1551,22 @@ try {
   await page.screenshot({ path: root + 'work/browser-page-tools/browser-settings.png' })
   for (const width of [390, 320]) {
     await page.setViewportSize({ width, height: 800 })
+    await page.waitForFunction(
+      () => document.querySelector('.studio-browser-toolbar')?.dataset.compact === 'true',
+    )
+    const addressWidth = (await url.boundingBox()).width
+    assert.ok(
+      addressWidth >= 100,
+      `The address stays readable at ${width}px (${addressWidth}px available)`,
+    )
+    assert.ok(await recent.isVisible(), 'The tab list remains reachable')
     const settings = page.getByRole('dialog', { name: 'Browser settings', exact: true })
+    const toolbar = page.getByRole('form', { name: 'Browser navigation', exact: true })
+    assert.ok((await toolbar.boundingBox()).height <= 60, 'Browser navigation fits in one row')
+    for (const name of ['Back', 'Reload', 'Browser options'])
+      assert.ok(await toolbar.getByRole('button', { name, exact: true }).isVisible())
+    await settings.getByRole('combobox', { name: 'Profile for this tab' }).waitFor()
+    await settings.getByRole('button', { name: 'Downloads', exact: true }).waitFor()
     await page.waitForFunction(() => {
       const rect = document
         .querySelector('[aria-label="Browser settings"]')
@@ -1571,6 +1588,13 @@ try {
     await page.screenshot({
       path: root + 'work/browser-page-tools/browser-settings-' + width + '.png',
     })
+    if (width === 320) {
+      await settings.getByRole('button', { name: 'Downloads', exact: true }).click()
+      const downloads = page.getByRole('dialog', { name: 'Downloads', exact: true })
+      await downloads.waitFor()
+      await downloads.getByRole('button', { name: 'Close', exact: true }).click()
+      await downloads.waitFor({ state: 'hidden' })
+    }
   }
   await page.setViewportSize({ width: 1200, height: 800 })
   await captureStyle.evaluate((node) => node.remove())
@@ -2042,6 +2066,7 @@ try {
       (input) => input.type === 'navigate' && input.url === 'http://localhost:3000/remote-page',
     ),
   )
+  await page.getByText('Local address on Mac Studio', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Back', exact: true }).waitFor()
   const opensBeforeReselect = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
@@ -2307,6 +2332,9 @@ try {
   mkdirSync(root + 'work/shared-browser', { recursive: true })
   await page.screenshot({ path: root + 'work/shared-browser/desktop.png' })
   await page.setViewportSize({ width: 380, height: 800 })
+  await page.waitForFunction(
+    () => document.querySelector('.studio-browser-toolbar')?.dataset.compact === 'true',
+  )
   if (await page.evaluate(() => document.documentElement.scrollWidth > innerWidth))
     throw new Error(
       'Shared browser overflows phone width: ' +

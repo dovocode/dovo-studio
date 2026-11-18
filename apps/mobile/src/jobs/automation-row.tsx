@@ -1,42 +1,56 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { automationBotJobSummary, type Automation, type RuntimeSnapshot } from '@dovo/protocol'
+import {
+  automationBotJobSummary,
+  type Automation,
+  type RuntimeReachability,
+  type RuntimeSnapshot,
+} from '@dovo/protocol'
 import { Pressable, StyleSheet, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { Icon } from '../ui/controls/icon'
 import { useTheme } from '../ui/theme'
 import { triggerSummary } from './linear-flow'
-import { automationRuns, automationRunSummary } from './automation-summary'
+import type { automationRowState } from './automation-summary'
+import { Action } from '../ui/controls/action'
 
 export function AutomationRow({
   flow,
   snapshot,
   onOpen,
+  onOpenRun,
+  state,
   disabled = false,
   runtimeName,
-  online = true,
+  reachability = 'online',
 }: {
   flow: Automation
   snapshot: RuntimeSnapshot
   onOpen: () => void
+  onOpenRun: (runId: string) => void
+  state: ReturnType<typeof automationRowState>
   disabled?: boolean
   runtimeName?: string
-  online?: boolean
+  reachability?: RuntimeReachability
 }) {
   const uiText = useInterfaceText()
 
   const { colors, styles } = useTheme()
   const botJob = automationBotJobSummary(flow, snapshot.workspace.tasks)
 
-  const { latest } = automationRuns(flow.id, snapshot.runs)
-  const summary = latest
-    ? automationRunSummary(
-        latest,
-        new Set([...snapshot.questions, ...snapshot.approvals].map((request) => request.taskId)),
-      )
-    : null
+  const { latest, summary, needsAttention } = state
   const trigger = flow.nodes.find((node) => node.data.kind === 'trigger')
   const paused = trigger?.data.trigger !== 'manual' && !flow.enabled
-  const status = summary?.status ?? 'Not run yet'
+  const policy = paused ? uiText('Triggers paused') : triggerSummary(flow)
+  const status =
+    latest?.status === 'failed' && !latest.interrupted && !summary?.needsInput
+      ? uiText('Last run failed')
+      : uiText(summary?.status ?? 'Not run yet')
+  const sourceStatus =
+    reachability === 'offline'
+      ? uiText('Offline')
+      : reachability === 'connecting'
+        ? uiText('Connecting…')
+        : ''
   const color =
     summary?.needsInput || latest?.status === 'waiting'
       ? colors.accent
@@ -48,59 +62,76 @@ export function AutomationRow({
     ? [summary.current?.label, summary.progress].filter(Boolean).join(' · ')
     : `${steps} ${steps === 1 ? 'step' : 'steps'}`
   return (
-    <Pressable
-      testID={`Automation row ${flow.id}`}
-      accessibilityRole="button"
-      accessibilityLabel={`${flow.name}. ${botJob ? `${botJob}. ` : ''}${runtimeName ? `${runtimeName}${online ? '' : uiText(', offline')}. ` : ''}${status}. ${triggerSummary(flow)}${paused ? uiText(', paused') : ''}. ${progress}`}
-      accessibilityHint={uiText('Open automation runs and controls.')}
-      accessibilityState={{ disabled }}
-      disabled={disabled}
-      onPress={onOpen}
-      style={({ pressed }) => ({
+    <View
+      style={{
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 12,
-        paddingVertical: 14,
-        minHeight: 84,
         borderBottomWidth: StyleSheet.hairlineWidth,
         borderColor: colors.border,
-        opacity: pressed ? 0.6 : 1,
-      })}
+      }}
     >
-      <Icon name="jobs" size={21} color={color} />
-      <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
-        <View
-          style={{
-            flexDirection: 'row',
-            flexWrap: 'wrap',
-            alignItems: 'baseline',
-            columnGap: 8,
-            rowGap: 2,
-          }}
-        >
-          <Text
-            numberOfLines={2}
-            style={[styles.text, { flexGrow: 1, flexShrink: 1, fontWeight: '600' }]}
+      <Pressable
+        testID={`Automation row ${flow.id}`}
+        accessibilityRole="button"
+        accessibilityLabel={`${flow.name}. ${botJob ? `${botJob}. ` : ''}${runtimeName ? `${runtimeName}${sourceStatus ? `, ${sourceStatus}` : ''}. ` : ''}${status}. ${policy}. ${progress}`}
+        accessibilityHint={uiText('Open automation runs and controls.')}
+        accessibilityState={{ disabled }}
+        disabled={disabled}
+        onPress={onOpen}
+        style={({ pressed }) => ({
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 12,
+          paddingVertical: 10,
+          minHeight: 64,
+          flex: 1,
+          minWidth: 0,
+          opacity: pressed ? 0.6 : 1,
+        })}
+      >
+        <Icon name="jobs" size={21} color={color} />
+        <View style={{ flex: 1, minWidth: 0, gap: 4 }}>
+          <View
+            style={{
+              flexDirection: 'row',
+              flexWrap: 'wrap',
+              alignItems: 'baseline',
+              columnGap: 8,
+              rowGap: 2,
+            }}
           >
-            {flow.name}
+            <Text
+              numberOfLines={2}
+              style={[styles.text, { flexGrow: 1, flexShrink: 1, fontWeight: '600' }]}
+            >
+              {flow.name}
+            </Text>
+            <Text style={[styles.muted, { color, fontSize: 13 }]}>{status}</Text>
+          </View>
+          {botJob && (
+            <Text numberOfLines={2} style={styles.muted}>
+              {botJob}
+            </Text>
+          )}
+          <Text numberOfLines={1} style={styles.muted}>
+            {policy}
           </Text>
-          <Text style={[styles.muted, { color, fontSize: 13 }]}>{status}</Text>
+          <Text numberOfLines={1} style={[styles.muted, { fontSize: 13 }]}>
+            {progress}
+            {runtimeName ? ` · ${runtimeName}` : ''}
+            {sourceStatus ? ` · ${sourceStatus}` : ''}
+          </Text>
         </View>
-        {botJob && (
-          <Text numberOfLines={2} style={styles.muted}>
-            {botJob}
-          </Text>
-        )}
-        <Text numberOfLines={1} style={styles.muted}>
-          {triggerSummary(flow)}
-          {paused ? uiText(' · Paused') : ''}
-        </Text>
-        <Text numberOfLines={1} style={[styles.muted, { fontSize: 13 }]}>
-          {progress}
-          {runtimeName ? ` · ${runtimeName}${online ? '' : uiText(' · Offline')}` : ''}
-        </Text>
-      </View>
-      <Icon name="next" size={12} color={colors.muted} />
-    </Pressable>
+        {!needsAttention && <Icon name="next" size={12} color={colors.muted} />}
+      </Pressable>
+      {needsAttention && latest && (
+        <Action
+          secondary
+          disabled={disabled}
+          label={uiText('View run')}
+          onPress={() => onOpenRun(latest.id)}
+        />
+      )}
+    </View>
   )
 }

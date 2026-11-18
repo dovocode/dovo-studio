@@ -95,7 +95,7 @@ export function ThreadContextPicker({
           setOpen(next)
         }}
       >
-        <DialogContent className="max-w-lg">
+        <DialogContent data-fixed-material="" className="max-w-lg">
           <DialogTitle>Attach thread context</DialogTitle>
           <DialogDescription>
             Attach a snapshot from this computer, up to 5 MB. Review it before sending; existing

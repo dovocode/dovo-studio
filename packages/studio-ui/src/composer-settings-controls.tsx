@@ -98,6 +98,7 @@ export function ComposerSettingsControls({
         </DropdownMenu.Trigger>
         <DropdownMenu.Portal>
           <DropdownMenu.Content
+            data-fixed-material=""
             side="top"
             align="start"
             sideOffset={8}

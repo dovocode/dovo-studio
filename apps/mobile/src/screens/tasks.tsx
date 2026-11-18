@@ -56,7 +56,9 @@ import {
   type ComponentRef,
 } from 'react'
 import {
+  AccessibilityInfo,
   Alert,
+  Platform,
   FlatList,
   Pressable,
   ScrollView,
@@ -104,7 +106,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
 
   const { navigate, focused } = useNavigation(),
     { refreshAll, overviews, profiles, activeId, readRuntime, ready } = useRuntime()
-  const { view, setView, scrollOffset } = useTaskListView()
+  const { view, setView, scrollOffset, messageResultFocus } = useTaskListView()
   const car = useCarMode() && !archived
   const searchInput = useRef<ComponentRef<typeof TextInput>>(null)
   const [searchFocusRequested, setSearchFocusRequested] = useApplicationState(false)
@@ -678,10 +680,23 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     // The route owns its computer scope. Saving a global selection must not delay a tap.
     navigate('tasks', item.task.id, item.runtimeId)
   }
+  const messageResult = useRef<ComponentRef<typeof Pressable>>(null)
+  useEffect(() => {
+    if (!focused || historySearch.loading || !messageResultFocus.current) return
+    const frame = requestAnimationFrame(() => {
+      const result = messageResult.current
+      if (!result) return
+      messageResultFocus.current = ''
+      if (Platform.OS === 'web') result.focus()
+      else AccessibilityInfo.sendAccessibilityEvent(result, 'focus')
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [focused, historySearch.loading, messageResultFocus])
   const openMessage = (hit: (typeof historySearch.hits)[number]) => {
     const owner = entries.find((entry) => entry.profile.id === hit.runtimeId)
     if (!owner?.connected) return
     retainPosition()
+    messageResultFocus.current = JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])
     requestMessageReveal(owner.profile.connection, hit.taskId, hit.messageId)
     navigate('tasks', hit.taskId, hit.runtimeId)
   }
@@ -745,6 +760,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 returnKeyType="search"
                 value={search}
                 onChangeText={(search) => {
+                  messageResultFocus.current = ''
                   scrollOffset.current = 0
                   setView((current) => ({ ...current, search }))
                 }}
@@ -1036,41 +1052,45 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 <Text style={{ color: colors.text, fontWeight: '600' }}>
                   <InterfaceText>{'Messages'}</InterfaceText>
                 </Text>
-                {messageHits.map((hit) => (
-                  <Pressable
-                    key={JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])}
-                    accessibilityRole="button"
-                    accessibilityLabel={uiText('Open {value0} message in {value1} on {value2}', {
-                      value0: hit.role,
-                      value1: hit.task?.title ?? 'thread',
-                      value2: hit.owner.profile.name,
-                    })}
-                    disabled={!hit.owner.connected}
-                    onPress={() => openMessage(hit)}
-                    style={{
-                      padding: 12,
-                      gap: 4,
-                      borderWidth: 1,
-                      borderColor: colors.border,
-                      borderRadius: 10,
-                      opacity: hit.owner.connected ? 1 : 0.6,
-                    }}
-                  >
-                    <Text numberOfLines={1} style={{ color: colors.text, fontWeight: '600' }}>
-                      {hit.task?.title ?? uiText('Thread')}
-                    </Text>
-                    <Text style={styles.muted}>
-                      {hit.projectName ? `${hit.projectName} · ` : ''}
-                      {hit.owner.profile.name} · {hit.role}
-                      {hit.task?.delegation || hit.task?.spawnParent
-                        ? uiText(' · Child thread')
-                        : ''}
-                    </Text>
-                    <Text numberOfLines={3} style={{ color: colors.text }}>
-                      {hit.snippet}
-                    </Text>
-                  </Pressable>
-                ))}
+                {messageHits.map((hit) => {
+                  const key = JSON.stringify([hit.runtimeId, hit.taskId, hit.messageId])
+                  return (
+                    <Pressable
+                      key={key}
+                      ref={messageResultFocus.current === key ? messageResult : undefined}
+                      accessibilityRole="button"
+                      accessibilityLabel={uiText('Open {value0} message in {value1} on {value2}', {
+                        value0: hit.role,
+                        value1: hit.task?.title ?? 'thread',
+                        value2: hit.owner.profile.name,
+                      })}
+                      disabled={!hit.owner.connected}
+                      onPress={() => openMessage(hit)}
+                      style={{
+                        padding: 12,
+                        gap: 4,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        borderRadius: 10,
+                        opacity: hit.owner.connected ? 1 : 0.6,
+                      }}
+                    >
+                      <Text numberOfLines={1} style={{ color: colors.text, fontWeight: '600' }}>
+                        {hit.task?.title ?? uiText('Thread')}
+                      </Text>
+                      <Text style={styles.muted}>
+                        {hit.projectName ? `${hit.projectName} · ` : ''}
+                        {hit.owner.profile.name} · {hit.role}
+                        {hit.task?.delegation || hit.task?.spawnParent
+                          ? uiText(' · Child thread')
+                          : ''}
+                      </Text>
+                      <Text numberOfLines={3} style={{ color: colors.text }}>
+                        {hit.snippet}
+                      </Text>
+                    </Pressable>
+                  )
+                })}
               </View>
             )}
           </View>

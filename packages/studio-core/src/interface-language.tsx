@@ -1,5 +1,9 @@
 import { createContext, Fragment, useCallback, useContext, useMemo, type ReactNode } from 'react'
-import { resolveInterfaceLanguage, type InterfaceLanguage } from '@dovo/protocol'
+import {
+  resolveInterfaceLanguage,
+  type InterfaceLanguage,
+  type threadInputSummary,
+} from '@dovo/protocol'
 import catalogData from './interface-catalog.json'
 const catalogs: Readonly<Record<string, Readonly<Record<string, string>>>> = catalogData
 const LanguageContext = createContext<InterfaceLanguage>('en-US')
@@ -36,6 +40,29 @@ export function useInterfaceText() {
     (text: string, values?: InterfaceValues) => interfaceText(text, language, values),
     [language],
   )
+}
+export function threadInputLabel(
+  summary: Partial<ReturnType<typeof threadInputSummary>> | undefined,
+  uiText: ReturnType<typeof useInterfaceText>,
+) {
+  const { approvals = 0, questions = 0, otherInputs = 0, uncounted } = summary ?? {}
+  return [
+    approvals > 0 &&
+      (approvals === 1
+        ? uiText('{value0} approval', { value0: approvals })
+        : uiText('{value0} approvals', { value0: approvals })),
+    questions > 0 &&
+      (questions === 1
+        ? uiText('{value0} question', { value0: questions })
+        : uiText('{value0} questions', { value0: questions })),
+    otherInputs > 0 &&
+      (otherInputs === 1
+        ? uiText('{value0} other input request', { value0: otherInputs })
+        : uiText('{value0} other input requests', { value0: otherInputs })),
+    uncounted && uiText('Needs input'),
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 export function InterfaceText({
   children,

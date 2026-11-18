@@ -28,6 +28,7 @@ const viewport = element('viewport', HTMLDivElement)
 const linkPreview = element('linkPreview', HTMLDivElement)
 const address = element('address', HTMLInputElement)
 const status = element('status', HTMLDivElement)
+const browserNotice = element('browserNotice', HTMLDivElement)
 const empty = element('empty', HTMLDivElement)
 const emptyTitle = element('emptyTitle', HTMLHeadingElement)
 const emptyMessage = element('emptyMessage', HTMLParagraphElement)
@@ -193,6 +194,7 @@ address.oninput = () => {
   addressEdited = true
 }
 let intentionallyClosed = false
+let browserSessionEnded = false
 // Wi-Fi/VPN drops recover on their own; the user only acts after retries run out.
 let retryTimer: ReturnType<typeof setTimeout> | undefined
 let retryAttempt = 0
@@ -250,11 +252,24 @@ element('screenshot', HTMLButtonElement).onclick = () => {
 function send(message: RemoteBrowserInput) {
   if (socket?.readyState === WebSocket.OPEN) socket.send(JSON.stringify(message))
 }
-function notice(message: string, error = false) {
+type NoticeAction = 'reload' | 'reconnect' | 'reopen'
+let noticeAction: NoticeAction | undefined
+function notice(message: string, error = false, action?: NoticeAction) {
+  noticeAction = action
+  browserNotice.hidden = !message
   status.textContent = message
   status.setAttribute('role', error ? 'alert' : 'status')
   status.classList.toggle('error', error)
-  status.hidden = !message
+  reconnect.hidden = !action
+  const actionLabels = {
+    reload: 'Reload page',
+    reconnect: 'Reconnect',
+    reopen:
+      currentUrl && currentUrl !== 'about:blank'
+        ? 'Open URL in a new session'
+        : 'Open a new session',
+  }
+  if (action) reconnect.textContent = actionLabels[action]
 }
 function enabled(value: boolean) {
   online = value
@@ -282,7 +297,6 @@ function enabled(value: boolean) {
   rotate.disabled = !value || preset.value === 'fill'
   element('go', HTMLButtonElement).disabled = !value
   element('close', HTMLButtonElement).disabled = !value
-  reconnect.hidden = value
   if (!value) {
     downloads.disconnect()
     uploadPicker.disconnect()
@@ -417,6 +431,7 @@ function connect(url: string) {
   const target = new URL(url)
   if (!['ws:', 'wss:'].includes(target.protocol)) throw new Error('Invalid browser connection')
   intentionallyClosed = false
+  browserSessionEnded = false
   nativeTouch = false
   requestedSize = ''
   target.searchParams.set('frames', 'binary-v1')
@@ -444,18 +459,24 @@ function connect(url: string) {
   next.onclose = (event) => {
     if (socket !== next) return
     enabled(false)
+    if (browserSessionEnded) return
     // 1000: the host ended the session. 1008: invalid ticket or revoked device.
     if (event.code !== 1000 && event.code !== 1008 && scheduleReconnect()) return
     notice(
       simulator
         ? 'Device disconnected. Reconnect to continue.'
-        : 'Browser disconnected. Reconnect to continue.',
+        : 'Connection lost. Reconnect to the browser session.',
       true,
+      'reconnect',
     )
   }
   next.onerror = () => {
     if (socket === next && !retryTimer)
-      notice('Cannot reach the host browser. Check your connection and reconnect.', true)
+      notice(
+        'Cannot reach the host browser. Check your connection and reconnect.',
+        true,
+        'reconnect',
+      )
   }
   type Frame = { width: number; height: number; blob: Blob; sequence?: number; receivedAt: number }
   let pendingFrame: Frame | undefined
@@ -582,14 +603,23 @@ function connect(url: string) {
         else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
       } else if (message.type === 'error' || message.type === 'closed') {
         if (message.type === 'closed') {
-          enabled(false)
+          browserSessionEnded = !simulator
           if (window.ReactNativeWebView)
             window.ReactNativeWebView.postMessage(
               JSON.stringify({ channel: 'dovo-browser', ...message }),
             )
           else window.parent.postMessage({ channel: 'dovo-browser', ...message }, '*')
+          enabled(false)
+          notice(
+            browserSessionEnded ? 'Browser session ended.' : message.message,
+            true,
+            browserSessionEnded ? 'reopen' : 'reconnect',
+          )
+        } else if (message.operation === 'navigation') {
+          notice('Could not load this page.', true, 'reload')
+        } else {
+          notice(message.message, true)
         }
-        notice(message.message, true)
       } else if (message.type === 'dialog') {
         discardDialog?.()
         const respond = () => {
@@ -667,7 +697,18 @@ window.addEventListener('message', (event) => {
   }
   if ('type' in message && message.type === 'input' && 'input' in message) {
     try {
-      if (online) send(decode(remoteBrowserInputSchema, message.input))
+      if (online) {
+        const input = decode(remoteBrowserInputSchema, message.input)
+        if (
+          noticeAction === 'reload' &&
+          (input.type === 'navigate' ||
+            input.type === 'back' ||
+            input.type === 'forward' ||
+            input.type === 'reload')
+        )
+          notice('')
+        send(input)
+      }
     } catch {
       notice('Invalid browser input.', true)
     }
@@ -734,7 +775,7 @@ window.addEventListener('message', (event) => {
     return
   }
   if ('type' in message && message.type === 'reconnect') {
-    reconnect.click()
+    reconnectBrowser()
     return
   }
   if ('type' in message && message.type === 'close') {
@@ -742,7 +783,7 @@ window.addEventListener('message', (event) => {
     return
   }
   if ('type' in message && message.type === 'reload') {
-    if (online) send({ type: 'reload' })
+    if (online) reload.click()
     return
   }
   if ('type' in message && message.type === 'configure') {
@@ -775,15 +816,20 @@ window.addEventListener('message', (event) => {
   ) {
     enabled(false)
     // A failed ticket request during automatic recovery is retried with backoff.
-    if (!retryAttempt || !scheduleReconnect()) notice(message.message, true)
+    if (!retryAttempt || !scheduleReconnect())
+      notice(message.message, true, browserSessionEnded ? 'reopen' : 'reconnect')
   }
 })
-reconnect.onclick = () => {
+function reconnectBrowser() {
   retryAttempt = 0
   cancelReconnect()
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
   connectionStatus('connecting')
   bridge('reconnect')
+}
+reconnect.onclick = () => {
+  if (noticeAction === 'reload') reload.click()
+  else reconnectBrowser()
 }
 element('close', HTMLButtonElement).onclick = () => {
   intentionallyClosed = true
@@ -1122,7 +1168,7 @@ window.addEventListener('pagehide', () => {
 document.addEventListener('visibilitychange', () => {
   if (window.ReactNativeWebView) return
   if (document.hidden) socket?.close()
-  else if (!online && !intentionallyClosed) bridge('reconnect')
+  else if (!online && !intentionallyClosed && !browserSessionEnded) bridge('reconnect')
 })
 enabled(false)
 connectionStatus('connecting')

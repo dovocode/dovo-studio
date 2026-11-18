@@ -58,14 +58,22 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
     const controller = new AbortController()
     const timer = setTimeout(() => {
       const requests = run(controller.signal)
-      setRemote({ scope, results: [], error: '', pending: requests.length })
+      setRemote((current) => ({
+        scope,
+        results: current.scope === scope ? current.results : [],
+        error: '',
+        pending: requests.length,
+      }))
       for (const request of requests)
         void request.then(
           (result) => {
             if (controller.signal.aborted) return
             setRemote((current) => ({
               ...current,
-              results: [...current.results, result],
+              results: [
+                ...current.results.filter((item) => item.runtimeId !== result.runtimeId),
+                result,
+              ],
               pending: current.pending - 1,
             }))
           },
@@ -97,6 +105,7 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
     }),
   )
   const hits = mergeMessageResults([...remoteHits, ...local])
+  const offlineComputers = needle ? owners.filter((source) => !source.online) : []
   return {
     hits,
     keys: new Set([
@@ -107,6 +116,8 @@ export function useTaskSearch(entries: readonly TaskEntry[], query: string) {
     ]),
     error: remote.scope === scope ? remote.error : '',
     loading: !!needle && (remote.scope !== scope || remote.pending > 0),
-    offline: !!needle && owners.some((source) => !source.online),
+    offline: offlineComputers.length > 0,
+    offlineComputers: offlineComputers.map((source) => source.name),
+    savedOnly: offlineComputers.length > 0 && offlineComputers.length === owners.length,
   }
 }

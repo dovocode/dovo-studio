@@ -1,8 +1,9 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { PipelineState } from './pipeline-state'
 import { PipelineGraph } from './pipeline-graph'
 import { PipelineStepProgress } from './pipeline-step-progress'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, type ReactNode } from 'react'
+import { useEffect, useRef, type ReactNode } from 'react'
 import { ChevronDown, Clock3, ExternalLink, GitBranch } from 'lucide-react'
 import {
   pipelineDuration,
@@ -36,7 +37,9 @@ export function PipelineDetail({
   loading: boolean
   onMore: () => void
 }) {
+  const uiText = useInterfaceText()
   const { run, jobs } = detail
+  const panel = useRef<HTMLElement>(null)
   const [now, setNow] = useApplicationState(Date.now)
   const [selectedJob, setSelectedJob] = useApplicationState<string | null>(null)
   const active = pipelineSignal(run.status).phase === 'active'
@@ -55,6 +58,14 @@ export function PipelineDetail({
   const failedJobs = orderedJobs.filter(
     (job) => pipelineSignal(job.status).tone === 'danger' || !!job.errors?.length,
   ).length
+  const selectJob = (id: string) => {
+    setSelectedJob(id)
+    requestAnimationFrame(() => {
+      const target = panel.current?.querySelector<HTMLElement>(`#pipeline-job-${CSS.escape(id)}`)
+      target?.focus({ preventScroll: true })
+      target?.scrollIntoView({ block: 'nearest' })
+    })
+  }
   const metadata = [
     ['Workflow', run.workflow || run.definition],
     ['Branch', run.ref],
@@ -68,7 +79,7 @@ export function PipelineDetail({
     [active ? 'Elapsed' : 'Duration', duration],
   ]
   return (
-    <article className="mx-auto max-w-4xl space-y-5" aria-label="Pipeline details">
+    <article ref={panel} className="mx-auto max-w-4xl space-y-5" aria-label="Pipeline details">
       <header className="space-y-4 rounded-xl border bg-card p-4 sm:p-5">
         <div className="flex flex-wrap items-center gap-3">
           <PipelineState status={run.status} />
@@ -113,6 +124,11 @@ export function PipelineDetail({
             </span>
           )}
         </div>
+        {jobsReady && failedJobs > 0 && (
+          <Button variant="outline" size="sm" onClick={() => selectJob(orderedJobs[0].id)}>
+            {uiText('View first failed job')}
+          </Button>
+        )}
       </header>
       <WorkTaskLinks key={run.url} repositoryId={repositoryId} source={run} disabled={disabled} />
       {notice && (
@@ -123,19 +139,7 @@ export function PipelineDetail({
       <PipelineErrors errors={run.errors} />
       {graphStatus}
       {(graphReady || jobsReady) && (
-        <PipelineGraph
-          detail={detail}
-          now={now}
-          selectedJob={selectedJob}
-          onSelect={(id) => {
-            setSelectedJob(id)
-            requestAnimationFrame(() =>
-              document
-                .getElementById(`pipeline-job-${id}`)
-                ?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }),
-            )
-          }}
-        />
+        <PipelineGraph detail={detail} now={now} selectedJob={selectedJob} onSelect={selectJob} />
       )}
       {jobsStatus}
       {jobsReady && (
@@ -215,6 +219,7 @@ function PipelineJob({
   return (
     <section
       id={`pipeline-job-${job.id}`}
+      tabIndex={-1}
       aria-label={`Job ${job.name}`}
       className={`overflow-hidden rounded-xl border bg-card ${selected ? 'ring-2 ring-primary/40' : failed ? 'border-destructive/40' : ''}`}
     >

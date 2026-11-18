@@ -2,6 +2,7 @@ declare global {
   interface Window {
     ReactNativeWebView: { postMessage(message: string): void }
     setTerminalFont(family: string, size: number): void
+    setTerminalReadOnly(readOnly: boolean): void
     connectTerminal(url: string, attempt: number): void
     disconnectTerminal(attempt: number | undefined): void
   }
@@ -23,6 +24,7 @@ const controls = document.getElementById('keys')
 if (!root || !controls) throw new Error('Terminal document is incomplete')
 terminal.open(root)
 let socket: WebSocket | undefined
+let readOnly = false
 let heartbeat: ReturnType<typeof startSocketHeartbeat> | undefined
 const resize = () => {
   fit.fit()
@@ -82,7 +84,7 @@ const clearModifiers = () => {
   updateModifiers()
 }
 const sendInput = (data: string, allowModifiers = true) => {
-  if (socket?.readyState !== WebSocket.OPEN) return
+  if (readOnly || awaitingReplay || socket?.readyState !== WebSocket.OPEN) return
   if (allowModifiers && (ctrl || alt)) {
     let modified: string | undefined
     const arrow = data.length === 3 && data.startsWith('\x1b[') && 'ABCD'.includes(data.slice(2))
@@ -165,6 +167,13 @@ const buttons = keys.map(([label, data]) => {
   return button
 })
 terminal.textarea?.setAttribute('aria-label', 'Terminal input')
+window.setTerminalReadOnly = (value) => {
+  readOnly = value
+  terminal.options.disableStdin = value
+  if (value) clearModifiers()
+  for (const button of buttons)
+    button.disabled = value || awaitingReplay || socket?.readyState !== WebSocket.OPEN
+}
 let currentAttempt: number | undefined
 let savedViewport: { line: number; follow: boolean } | undefined
 let awaitingReplay = false
@@ -191,9 +200,6 @@ window.connectTerminal = (url, attempt) => {
   let replayReceived = false
   socket.onopen = () => {
     awaitingReplay = true
-    terminal.reset()
-    window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'connected', attempt }))
-    for (const button of buttons) button.disabled = false
     resize()
     heartbeat = startSocketHeartbeat(
       (message) => current.send(message),
@@ -209,9 +215,12 @@ window.connectTerminal = (url, attempt) => {
     if (typeof event.data === 'string') {
       const replay = !replayReceived
       replayReceived = true
+      if (replay) terminal.reset()
       terminal.write(event.data, () => {
         if (!replay || currentAttempt !== attempt || socket !== current) return
         awaitingReplay = false
+        window.ReactNativeWebView.postMessage(JSON.stringify({ type: 'connected', attempt }))
+        for (const button of buttons) button.disabled = readOnly
         if (savedViewport?.follow) terminal.scrollToBottom()
         else if (savedViewport)
           terminal.scrollToLine(Math.min(savedViewport.line, terminal.buffer.active.baseY))

@@ -1,4 +1,4 @@
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotAvatar } from '../../bots/bot-avatar'
 import { NestedThreads } from './nested-threads'
 import type { NestedThread } from '@dovo/protocol'
@@ -11,6 +11,7 @@ import {
   taskPullLinks,
   taskPullStatusFor,
   threadChildRows,
+  threadInputSummary,
   threadTreeSummary,
   matchingThreadChildren,
   type ThreadSearchFilter,
@@ -190,6 +191,11 @@ function TaskListRowView({
     task.bot?.state === 'paused' && row.online && !needsInput && !taskIsWorking(task)
       ? 'Paused'
       : taskRowStatus(task, needsInput, row.online, now)
+  const inputLabel =
+    row.online && !task.archived && !task.archivedAt
+      ? threadInputLabel(thread && threadInputSummary(thread), uiText) ||
+        (needsInput ? uiText('Needs input') : '')
+      : ''
   const done = showTaskDone(task, needsInput, now)
   const failed = !needsInput && !done && status.startsWith('Failed')
   const displayProject = owner.displayProject ?? repository
@@ -217,7 +223,7 @@ function TaskListRowView({
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
   const icon = projectIcon(displayProject)
-  const StatusIcon = statusIcons[state] ?? CircleDashed
+  const StatusIcon = inputLabel ? MessageCircleQuestion : (statusIcons[state] ?? CircleDashed)
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
   const childRows = useMemo(() => {
@@ -414,20 +420,20 @@ function TaskListRowView({
       titleText
     )
 
-  const statusIndicator = state !== 'Review' && (
+  const statusIndicator = (inputLabel || state !== 'Review') && (
     <View
       testID="Thread status"
-      accessibilityLabel={status}
+      accessibilityLabel={inputLabel || status}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         flexShrink: 0,
-        maxWidth: '45%',
+        maxWidth: inputLabel ? '60%' : '45%',
       }}
     >
       <StatusIcon size={12} color={stateColor} />
-      {!!age && (
+      {!!(inputLabel || age) && (
         <Text
           numberOfLines={1}
           style={{
@@ -437,7 +443,7 @@ function TaskListRowView({
             opacity: stateColor === colors.muted ? metadataText.opacity : 1,
           }}
         >
-          {age}
+          {inputLabel || age}
         </Text>
       )}
     </View>
@@ -453,6 +459,7 @@ function TaskListRowView({
     >
       {(selected || current) && (
         <Glass
+          solid
           pointerEvents="none"
           tinted
           style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 12 }}
@@ -519,7 +526,7 @@ function TaskListRowView({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.bot ? uiText('Bot, ') : ''}${task.pinned ? uiText('Pinned, ') : ''}${projectName}, ${task.title}, ${status}, ${task.bot ? uiText('Bot') : general ? uiText('Conversation') : `${worktree ? uiText('Worktree') : uiText('Local checkout')}, ${branch}`}, ${executionDevice}${row.online ? '' : uiText(', Offline')}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
+          accessibilityLabel={`${task.bot ? uiText('Bot, ') : ''}${task.pinned ? uiText('Pinned, ') : ''}${projectName}, ${task.title}, ${inputLabel || status}${unread ? `, ${uiText('Unread')}` : ''}, ${task.bot ? uiText('Bot') : general ? uiText('Conversation') : `${worktree ? uiText('Worktree') : uiText('Local checkout')}, ${branch}`}, ${executionDevice}${row.online ? '' : uiText(', Offline')}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
           accessibilityHint={
             car
               ? uiText('Open conversation.')

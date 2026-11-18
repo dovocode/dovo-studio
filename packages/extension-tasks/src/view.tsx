@@ -712,7 +712,7 @@ export default function TasksView({
     workspace.repositories,
     store.snapshot?.defaults,
   ])
-  const selectTask = async (entry: TaskEntry) => {
+  const selectTask = async (entry: TaskEntry, messageId?: string) => {
     if (
       busy ||
       (!storedTask &&
@@ -731,6 +731,7 @@ export default function TasksView({
       host.navigate({
         viewId: 'tasks',
         entityId: entry.task.id,
+        messageId,
       })
       setListOpen(false)
       if (compact) setSidebar(false)
@@ -2103,13 +2104,7 @@ export default function TasksView({
         entries={allEntries}
         onModeChange={setSearching}
         onClose={() => setSearching(null)}
-        onSelect={(entry, messageId) => {
-          void selectTask(entry)
-          if (messageId) {
-            selectSurface('chat')
-            setRevealMessage(`message-${entry.task.id}-${messageId}`)
-          }
-        }}
+        onSelect={(entry, messageId) => void selectTask(entry, messageId)}
       />
       <ProjectSelectionDialog
         open={choosingProject}

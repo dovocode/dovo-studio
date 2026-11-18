@@ -1,6 +1,8 @@
+import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useTaskSearch } from '../list/use-task-search'
-import { useEffect, useEffectEvent, useId, useMemo, useRef, useState } from 'react'
+import { useEffect, useEffectEvent, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { useWorkspace } from '@dovo/studio-core'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { watchRuntimeSettled } from '@dovo/protocol'
 import { MessageSquare, Search } from 'lucide-react'
 import { Dialog, DialogContent, DialogDescription, DialogTitle, Input, cn } from '@dovo/studio-ui'
@@ -25,6 +27,7 @@ export function TaskSearchDialog({
   onClose: () => void
   onSelect: (entry: TaskEntry, messageId?: string) => void
 }) {
+  const uiText = useInterfaceText()
   const { runtimeRegistry, connection } = useWorkspace()
   const openSearch = !!mode
   const connections = [
@@ -44,18 +47,56 @@ export function TaskSearchDialog({
   }, [openSearch, connectionIdentity])
   const [query, setQuery] = useState('')
   const [activeKey, setActiveKey] = useState('')
+  const [showSubthreads, setShowSubthreads] = useState(false)
+  const input = useRef<HTMLInputElement>(null)
+  const opener = useRef<HTMLElement>(null)
   const list = useRef<HTMLUListElement>(null)
   const listId = useId()
-  useEffect(() => setActiveKey(''), [query, mode])
-  useEffect(() => {
-    if (!mode) setQuery('')
+  const lastMode = useRef<TaskSearchMode | null>(null)
+  const saved = useRef<
+    Partial<
+      Record<
+        TaskSearchMode,
+        {
+          query: string
+          activeKey: string
+          showSubthreads: boolean
+          scrollTop: number
+        }
+      >
+    >
+  >({})
+  const restoring = useRef(false)
+  useLayoutEffect(() => {
+    const previous = lastMode.current
+    lastMode.current = mode
+    if (!mode) {
+      restoring.current = false
+      setQuery('')
+      setActiveKey('')
+      setShowSubthreads(false)
+      return
+    }
+    if (previous) {
+      setActiveKey('')
+      restoring.current = false
+      return
+    }
+    const state = saved.current[mode]
+    if (!state) return
+    setQuery(state.query)
+    setActiveKey(state.activeKey)
+    setShowSubthreads(state.showSubthreads)
+    restoring.current = true
   }, [mode])
   const search = useTaskSearch(entries, mode === 'messages' ? query : '')
-  const revealSubthreads = useSearchSubthreads(mode === 'tasks')
+  const altHeld = useSearchSubthreads(mode === 'tasks')
+  const revealSubthreads = showSubthreads || altHeld
   const threadGroups = useMemo(
     () => (mode === 'tasks' ? switcherThreadGroups(entries, query) : []),
     [entries, query, mode],
   )
+  const matchingSubthreads = threadGroups.some((group) => group.matches.length)
   const results = useMemo(
     () =>
       mode === 'messages'
@@ -64,7 +105,8 @@ export function TaskSearchDialog({
             entry: hit.entry,
             messageId: hit.messageId,
             title: hit.entry.task.title,
-            detail: hit.snippet,
+            detail: `${hit.entry.projectName} · ${hit.entry.source.name}${hit.entry.task.archivedAt ? ' · Archived' : ''}`,
+            snippet: hit.snippet,
             child: false,
           }))
         : threadGroups.flatMap(({ entry, matches }) => [
@@ -75,6 +117,7 @@ export function TaskSearchDialog({
               title: entry.task.title,
               child: false,
               detail: `${entry.projectName} · ${entry.source.name}${entry.task.archivedAt ? ' · Archived' : ''}${matches.length ? ` · ${matches.length} matching subthread${matches.length === 1 ? '' : 's'}` : ''}`,
+              snippet: undefined,
             },
             ...(revealSubthreads
               ? matches.map((child) => ({
@@ -84,6 +127,7 @@ export function TaskSearchDialog({
                   title: child.task.title,
                   child: true,
                   detail: `Subthread · ${child.projectName} · ${child.source.name}`,
+                  snippet: undefined,
                 }))
               : []),
           ]),
@@ -99,18 +143,51 @@ export function TaskSearchDialog({
     ),
   )
 
-  useEffect(() => {
-    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
-  }, [activeKey, results])
+  const scrolledKey = useRef('')
+  useLayoutEffect(() => {
+    if (!mode || !list.current) {
+      scrolledKey.current = ''
+      return
+    }
+    if (restoring.current) {
+      const state = saved.current[mode]
+      if (!state || query !== state.query || activeKey !== state.activeKey || search.loading) return
+      restoring.current = false
+      list.current.scrollTop = state.scrollTop
+    }
+    const key = results[active]?.key ?? ''
+    if (key === scrolledKey.current) return
+    scrolledKey.current = key
+    list.current.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
+  }, [active, activeKey, results, mode, query, search.loading])
   const open = (index: number) => {
     const result = results[index]
-    if (!result) return
+    if (!result || !mode) return
+    saved.current[mode] = {
+      query,
+      activeKey: result.key,
+      showSubthreads: showSubthreads || result.child,
+      scrollTop: list.current?.scrollTop ?? 0,
+    }
     onSelect(result.entry, result.messageId)
     onClose()
   }
   return (
     <Dialog open={!!mode} onOpenChange={(value) => !value && onClose()}>
-      <DialogContent className="top-[20%] max-w-xl translate-y-0 gap-2 p-2 [&_[data-dialog-close]]:-right-4 [&_[data-dialog-close]]:-top-4">
+      <DialogContent
+        className="top-[20%] max-w-xl translate-y-0 gap-2 p-2 [&_[data-dialog-close]]:-right-4 [&_[data-dialog-close]]:-top-4"
+        onOpenAutoFocus={(event) => {
+          const focused = document.activeElement
+          opener.current = focused instanceof HTMLElement ? focused : null
+          event.preventDefault()
+          input.current?.focus({ preventScroll: true })
+        }}
+        onCloseAutoFocus={(event) => {
+          if (!opener.current?.isConnected) return
+          event.preventDefault()
+          opener.current.focus({ preventScroll: true })
+        }}
+      >
         <DialogTitle className="sr-only">
           {mode === 'messages' ? 'Search conversations' : 'Go to thread'}
         </DialogTitle>
@@ -124,7 +201,7 @@ export function TaskSearchDialog({
             <Search className="size-4 text-muted-foreground" aria-hidden />
           )}
           <Input
-            autoFocus
+            ref={input}
             role="combobox"
             aria-expanded
             aria-controls={listId}
@@ -132,7 +209,11 @@ export function TaskSearchDialog({
             aria-label={mode === 'messages' ? 'Search conversations' : 'Go to thread'}
             placeholder={mode === 'messages' ? 'Search all conversations…' : 'Go to thread…'}
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              restoring.current = false
+              setActiveKey('')
+              setQuery(event.target.value)
+            }}
             onKeyDown={(event) => {
               if (event.nativeEvent.isComposing || event.keyCode === 229) return
               if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
@@ -148,21 +229,39 @@ export function TaskSearchDialog({
             className="h-9 border-0 shadow-none focus-visible:ring-0"
           />
         </div>
-        <div role="group" aria-label="Search scope" className="flex gap-1 px-2">
-          {(['tasks', 'messages'] as const).map((scope) => (
-            <button
-              key={scope}
-              type="button"
-              aria-pressed={mode === scope}
+        <div className="flex flex-wrap items-center justify-between gap-1 px-2">
+          <div role="group" aria-label="Search scope" className="flex gap-1">
+            {(['tasks', 'messages'] as const).map((scope) => (
+              <ToggleButton
+                key={scope}
+                variant="ghost"
+                size="sm"
+                pressed={mode === scope}
+                className={cn(
+                  'rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11',
+                  mode === scope && 'bg-accent text-foreground',
+                )}
+                onPressedChange={() => onModeChange(scope)}
+              >
+                {scope === 'tasks' ? 'Threads' : 'Messages'}
+              </ToggleButton>
+            ))}
+          </div>
+          {matchingSubthreads && (
+            <ToggleButton
+              variant="ghost"
+              size="sm"
+              aria-controls={listId}
+              pressed={showSubthreads}
               className={cn(
-                'rounded-md px-3 py-1.5 text-xs text-muted-foreground hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11',
-                mode === scope && 'bg-accent text-foreground',
+                'rounded-md px-3 py-1.5 text-left text-xs text-muted-foreground hover:bg-accent focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring max-sm:min-h-11',
+                showSubthreads && 'bg-accent text-foreground',
               )}
-              onClick={() => onModeChange(scope)}
+              onPressedChange={() => setShowSubthreads((value) => !value)}
             >
-              {scope === 'tasks' ? 'Threads' : 'Messages'}
-            </button>
-          ))}
+              {uiText('Show matching subthreads')}
+            </ToggleButton>
+          )}
         </div>
         <ul
           ref={list}
@@ -189,6 +288,7 @@ export function TaskSearchDialog({
                 )}
               >
                 <span className="truncate text-sm">{result.title}</span>
+                {result.snippet && <span className="line-clamp-2 text-xs">{result.snippet}</span>}
                 <span className="line-clamp-2 text-xs text-muted-foreground">{result.detail}</span>
               </button>
             </li>
@@ -197,9 +297,11 @@ export function TaskSearchDialog({
             <li className="px-3 py-6 text-center text-xs text-muted-foreground">
               {mode === 'messages' && !query.trim()
                 ? 'Search all conversations.'
-                : search.error
-                  ? 'No matches in available results.'
-                  : 'No matches.'}
+                : search.savedOnly
+                  ? uiText('No matches in saved messages.')
+                  : search.error || search.offline
+                    ? 'No matches in available results.'
+                    : 'No matches.'}
             </li>
           )}
         </ul>
@@ -218,12 +320,14 @@ export function TaskSearchDialog({
           ) : search.loading ? (
             'Searching conversations…'
           ) : search.offline ? (
-            'Offline computers: searching saved messages only.'
+            uiText('Offline computers · Showing saved messages for {value0}', {
+              value0: search.offlineComputers.join(', '),
+            })
           ) : mode === 'messages' && !query.trim() ? (
             'Type to search conversation history.'
           ) : mode === 'messages' && search.hits.length === 50 ? (
             'Showing up to 50 matches. Refine your search for older messages.'
-          ) : mode === 'tasks' && threadGroups.some((group) => group.matches.length) ? (
+          ) : matchingSubthreads ? (
             'Hold Alt to show matching subthreads.'
           ) : (
             '\u00a0'

@@ -340,14 +340,16 @@ try {
     false,
   )
   await page.keyboard.press('Escape')
+  const beforeOffline = await terminal.locator('canvas').first().boundingBox()
   await page.evaluate(() => {
-    window.runtime = { ...window.runtime, connected: false }
+    window.runtime = { ...window.runtime, connected: false, snapshot: null }
     window.render()
   })
   await terminal
     .getByRole('status')
     .filter({ hasText: 'Computer offline · Input unavailable' })
     .waitFor()
+  assert.deepEqual(await terminal.locator('canvas').first().boundingBox(), beforeOffline)
   await openMenu()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Paste', exact: true }).getAttribute('data-disabled'),

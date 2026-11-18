@@ -82,6 +82,7 @@ import { createNotificationViewport } from '../../notifications/viewport'
 import { NotificationViewportContext } from '../../notifications/viewport-view'
 import {
   foldedTurnPartRanges,
+  isReasoningPart,
   toolPartArtifacts,
   toolPartHasImages,
   toolPartGroupEnd,
@@ -444,7 +445,8 @@ function Message() {
   )
   const hasRichResults = useAuiState((state) =>
     state.message.content.some(
-      (part) => toolPartArtifacts(part).length > 0 || toolPartHasImages(part),
+      (part) =>
+        isReasoningPart(part) || toolPartArtifacts(part).length > 0 || toolPartHasImages(part),
     ),
   )
   const showContent =

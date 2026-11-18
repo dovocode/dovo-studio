@@ -1,4 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { Tabs, TabsList, TabsPanel, TabsTab } from '@dovo/studio-ui/tabs'
 import { PullReadinessPanel } from './readiness'
 import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
@@ -74,6 +75,7 @@ type PullDetailProps = {
   onTabChange?: (tab: Exclude<PullTab, 'review'>) => void
   initialTab?: PullTab
   configureInitialReview?: boolean
+  initialReviewRun?: () => boolean
   onInitialReviewOpened?: () => void
   initialFragment?: string
   /**
@@ -117,6 +119,7 @@ function PullDetailContent({
   embedded = false,
   initialTab,
   configureInitialReview,
+  initialReviewRun,
   onInitialReviewOpened,
   initialFragment = '',
   linkedThread,
@@ -237,13 +240,16 @@ function PullDetailContent({
   }, [tab, !!detail])
   const [changesOpened, setChangesOpened] = useApplicationState(tab === 'changes')
   const [checksOpened, setChecksOpened] = useApplicationState(tab === 'checks')
-  const [reviewOpened, setReviewOpened] = useApplicationState(tab === 'review')
   const [reviewConfigurationRequest, setReviewConfigurationRequest] = useApplicationState(0)
+  const [rowReviewRun, setRowReviewRun] = useState<(() => boolean) | undefined>()
+  const runReview = useRef<(() => void) | null>(null)
   const [reviewStatus, setReviewStatus] = useApplicationState<{
     running: boolean
     findings: number
     stale: boolean
-  }>({ running: false, findings: 0, stale: false })
+    hasReport: boolean
+    canRun: boolean
+  }>({ running: false, findings: 0, stale: false, hasReport: false, canRun: false })
   useEffect(() => {
     if (tab === 'review' && !snapshot?.codeReviewsEnabled) setTab('overview')
   }, [tab, snapshot?.codeReviewsEnabled])
@@ -263,7 +269,7 @@ function PullDetailContent({
   const discussion = detail?.comments.filter((comment) => comment.kind !== 'inline') ?? []
   const reviews = latestPullReviews(discussion)
   const selectTab = (value: typeof tab) => {
-    if (value === 'review') setReviewOpened(true)
+    if (value !== 'review') rowReviewRun?.()
     if (content.current) scrollPositions.current[tab] = content.current.scrollTop
     scrollCache.write(stateKey, { ...scrollPositions.current })
     setTab(value)
@@ -305,8 +311,11 @@ function PullDetailContent({
     if (initialTab) selectTab(initialTab)
     if (initialTab === 'review' && configureInitialReview)
       setReviewConfigurationRequest((request) => request + 1)
-    if (initialTab === 'review') onInitialReviewOpened?.()
-  }, [initialTab, initialFragment, configureInitialReview])
+    if (initialTab === 'review') {
+      setRowReviewRun(() => initialReviewRun)
+      onInitialReviewOpened?.()
+    }
+  }, [initialTab, initialFragment, configureInitialReview, initialReviewRun])
   const scrolledFragment = useRef('')
   useEffect(() => {
     if (!initialFragment || !detail || scrolledFragment.current === initialFragment) return
@@ -349,7 +358,14 @@ function PullDetailContent({
     />
   )
   return (
-    <aside
+    <Tabs
+      id="pr"
+      render={<aside />}
+      value={tab}
+      onValueChange={(value) => {
+        if (value === 'overview' || value === 'changes' || value === 'checks' || value === 'review')
+          selectTab(value)
+      }}
       aria-label="Pull request details"
       className="@container/pr-detail flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
@@ -507,8 +523,7 @@ function PullDetailContent({
               </div>
             </header>
             <div className="flex flex-wrap items-center border-b border-border/60">
-              <div
-                role="tablist"
+              <TabsList
                 aria-label="PR detail sections"
                 className="flex min-w-0 shrink-0 gap-1 overflow-x-auto px-4 py-1"
               >
@@ -544,10 +559,9 @@ function PullDetailContent({
                 )
                   .filter((item) => item.id !== 'review' || snapshot?.codeReviewsEnabled)
                   .map((item) => (
-                    <button
+                    <TabsTab
                       key={item.id}
-                      type="button"
-                      role="tab"
+                      value={item.id}
                       id={`pr-tab-${item.id}`}
                       aria-label={
                         item.id === 'overview' || item.count === undefined
@@ -567,28 +581,6 @@ function PullDetailContent({
                               .join('. ') || undefined
                           : undefined
                       }
-                      aria-selected={tab === item.id}
-                      tabIndex={tab === item.id ? 0 : -1}
-                      onKeyDown={(event) => {
-                        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return
-                        event.preventDefault()
-                        const tabs = [
-                          ...(event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>(
-                            '[role="tab"]',
-                          ) ?? []),
-                        ]
-                        const index = tabs.indexOf(event.currentTarget)
-                        const next =
-                          event.key === 'Home'
-                            ? 0
-                            : event.key === 'End'
-                              ? tabs.length - 1
-                              : (index + (event.key === 'ArrowRight' ? 1 : -1) + tabs.length) %
-                                tabs.length
-                        tabs[next]?.click()
-                        tabs[next]?.focus()
-                      }}
-                      onClick={() => selectTab(item.id)}
                       className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                     >
                       <item.icon aria-hidden className="size-3.5" />
@@ -604,9 +596,9 @@ function PullDetailContent({
                       {item.id === 'checks' && checkFailure && (
                         <CircleAlert aria-hidden className="size-3.5 text-status-error" />
                       )}
-                    </button>
+                    </TabsTab>
                   ))}
-              </div>
+              </TabsList>
             </div>
           </>
         )}
@@ -730,12 +722,13 @@ function PullDetailContent({
                 {warning}
               </p>
             ))}
-            {snapshot?.codeReviewsEnabled && reviewOpened && (
-              <section
-                role="tabpanel"
+            {snapshot?.codeReviewsEnabled && (
+              <TabsPanel
+                value="review"
+                keepMounted
+                render={<section />}
                 id="pr-panel-review"
                 aria-labelledby="pr-tab-review"
-                hidden={tab !== 'review'}
               >
                 <PullCodeReviewPanel
                   key={JSON.stringify([
@@ -749,6 +742,8 @@ function PullDetailContent({
                   onAsk={(selection) => setAsking({ selection })}
                   onStatus={setReviewStatus}
                   configurationRequest={reviewConfigurationRequest}
+                  runAction={runReview}
+                  rowReviewRun={tab === 'review' ? rowReviewRun : undefined}
                   onRefresh={changed}
                   onOpenStackReview={(member, runtimeId) => {
                     if (
@@ -760,36 +755,63 @@ function PullDetailContent({
                       selectPull(member.target.number)
                   }}
                 />
-              </section>
+              </TabsPanel>
             )}
-            <section
-              role="tabpanel"
+            <TabsPanel
+              value="overview"
+              keepMounted
+              render={<section />}
               id="pr-panel-overview"
               aria-labelledby="pr-tab-overview"
               className="space-y-5"
-              hidden={tab !== 'overview'}
             >
-              {snapshot?.codeReviewsEnabled && (
-                <button
-                  type="button"
-                  onClick={() => selectTab('review')}
-                  className="flex w-full items-center justify-between gap-4 rounded-lg border bg-card px-4 py-3 text-left text-sm hover:bg-muted/40"
-                >
-                  <span className="flex items-center gap-2 font-medium">
-                    <ShieldCheck className="size-4 text-emerald-500" />
-                    {uiText('Agent review')}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {reviewStatus.running
-                      ? uiText('Reviewing…')
-                      : reviewStatus.stale
-                        ? uiText('New changes to review')
-                        : reviewStatus.findings
-                          ? uiText('{value0} findings', { value0: reviewStatus.findings })
-                          : uiText('Review with agent →')}
-                  </span>
-                </button>
-              )}
+              <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
+                <Button size="sm" variant="outline" onClick={() => selectTab('changes')}>
+                  <FileDiff className="size-3.5" />
+                  {uiText('Review changes')}
+                </Button>
+                {snapshot?.codeReviewsEnabled && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => {
+                        selectTab('review')
+                        if (!reviewStatus.running && !reviewStatus.hasReport) {
+                          if (runReview.current) runReview.current()
+                          else setReviewConfigurationRequest((request) => request + 1)
+                        }
+                      }}
+                    >
+                      <ShieldCheck className="size-4" />
+                      {reviewStatus.running
+                        ? uiText('View review run')
+                        : reviewStatus.hasReport
+                          ? uiText('Open agent review')
+                          : reviewStatus.canRun
+                            ? uiText('Run agent review')
+                            : uiText('Set up agent review')}
+                    </Button>
+                    {reviewStatus.stale && (
+                      <span className="text-xs text-muted-foreground">
+                        {uiText('New changes to review')}
+                      </span>
+                    )}
+                    {!reviewStatus.running && (
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          selectTab('review')
+                          setReviewConfigurationRequest((request) => request + 1)
+                        }}
+                      >
+                        {uiText('Configure this run')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </section>
               {detail.stack && stackControls}
               <div className="grid items-start gap-5 @4xl/pr-detail:grid-cols-[minmax(0,1fr)_220px]">
                 <div className="min-w-0 space-y-6">
@@ -939,22 +961,16 @@ function PullDetailContent({
                   </dl>
                   <PullSectionStatus label="Stack" section={sections.stack} />
                   {!detail.stack && sections.stack.ready && stackControls}
-                  <Button size="sm" variant="outline" onClick={() => selectTab('changes')}>
-                    <FileDiff className="size-3.5" />
-                    Review{' '}
-                    {detail.pull.changedFiles === null
-                      ? 'code changes'
-                      : `${detail.pull.changedFiles} ${detail.pull.changedFiles === 1 ? 'file' : 'files'}`}
-                  </Button>
                 </aside>
               </div>
-            </section>
-            <section
-              role="tabpanel"
+            </TabsPanel>
+            <TabsPanel
+              value="checks"
+              keepMounted
+              render={<section />}
               id="pr-panel-checks"
               tabIndex={-1}
               aria-labelledby="pr-tab-checks"
-              hidden={tab !== 'checks'}
             >
               <PullStatus
                 reviewsReady={sections.discussion.ready}
@@ -990,12 +1006,13 @@ function PullDetailContent({
                 <PullSectionStatus label="Check reports" section={sections.checks} />
                 <PullSectionStatus label="Reviews" section={sections.discussion} />
               </PullStatus>
-            </section>
-            <section
-              role="tabpanel"
+            </TabsPanel>
+            <TabsPanel
+              value="changes"
+              keepMounted
+              render={<section />}
               id="pr-panel-changes"
               aria-labelledby="pr-tab-changes"
-              hidden={tab !== 'changes'}
             >
               <PullSectionStatus label={uiText('Files')} section={sections.changes} />
               <PullSectionStatus label="Code discussion" section={sections.discussion} />
@@ -1040,7 +1057,7 @@ function PullDetailContent({
                   }}
                 />
               )}
-            </section>
+            </TabsPanel>
           </div>
           {asking && (
             <PullAskAgent
@@ -1063,6 +1080,6 @@ function PullDetailContent({
           )}
         </>
       )}
-    </aside>
+    </Tabs>
   )
 }

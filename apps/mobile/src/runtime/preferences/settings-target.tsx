@@ -1,4 +1,4 @@
-import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Icon } from '../../ui/controls/icon'
 import { SettingsScrollView } from '../../screens/settings-search'
 import { projectDisplayName, runtimeComputerName } from '@dovo/protocol'
@@ -27,6 +27,7 @@ import { Action } from '../../ui/controls/action'
 import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { ProjectOrganizationSettings } from '../../scm/connections/project-organization'
+import { SettingsSaveScope } from '../../screens/settings-save-bar'
 
 const Context = createContext<{
   draftFlags: number
@@ -133,7 +134,7 @@ export function ScopedSettings({
 
   const { colors, styles } = useTheme()
   const [headerHeight, setHeaderHeight] = useState(0)
-  const { target, setTarget, source, scope, repository, projectName, computerName } =
+  const { target, setTarget, source, scope, repository, projectName, computerName, draftFlags } =
     useSettingsTargetState()
   const { overviews } = useRuntime()
   const projects = settingsProjectChoices(overviews, target.environmentId)
@@ -159,9 +160,11 @@ export function ScopedSettings({
           <Icon name="stack" size={18} color={colors.muted} />
         </Pressable>
       </View>
-      {source && !source.connected && (
-        <Text style={styles.muted}>
-          <InterfaceText>{'Offline · edits kept here'}</InterfaceText>
+      {source && !source.connected && !(draftFlags & 1) && (
+        <Text accessibilityLiveRegion="polite" style={styles.muted}>
+          {source.snapshot
+            ? uiText('Offline · Viewing saved settings')
+            : uiText('Reconnect to load settings')}
         </Text>
       )}
     </View>,
@@ -240,15 +243,10 @@ export function ScopedSettings({
           key={`${source.profile.id}:${scope}:${repository?.id ?? ''}`}
           runtimeId={source.profile.id}
         >
-          {!source.connected && (
-            <Text style={[styles.muted, { paddingHorizontal: 16 }]}>
-              <InterfaceText>
-                {'This computer is offline. Reconnect to make changes.'}
-              </InterfaceText>
-            </Text>
-          )}
-          {repository && <ProjectOrganizationSettings repository={repository} compact />}
-          {children({ scope, repository })}
+          <SettingsSaveScope.Provider value={{ label: summary.title, online: source.connected }}>
+            {repository && <ProjectOrganizationSettings repository={repository} compact />}
+            {children({ scope, repository })}
+          </SettingsSaveScope.Provider>
         </RuntimeScope>
       )}
     </View>,

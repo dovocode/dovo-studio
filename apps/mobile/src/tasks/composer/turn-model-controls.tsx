@@ -140,7 +140,7 @@ export function TurnModelControls({
             ...(selected.reasoning && !efforts.some((e) => e.id === selected.reasoning)
               ? [{ id: selected.reasoning, name: `${selected.reasoning} (saved)` }]
               : []),
-          ]}
+          ].map((effort) => (effort.id === 'ultra' ? { ...effort, icon: 'ultra' } : effort))}
           onChange={(reasoning) =>
             reasoning === '__inherit__' ? onChange(null) : update({ reasoning })
           }

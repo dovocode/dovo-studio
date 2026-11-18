@@ -87,7 +87,6 @@ export const WebView=forwardRef((props,ref)=>{
   ...[
     '../../ui/content/text',
     '../../ui/layout/glass',
-    '../../ui/controls/icon',
     '../../ui/controls/action',
     '../../ui/controls/icon-button',
     '../../ui/controls/field',
@@ -227,13 +226,23 @@ try {
       code.includes('"type":"navigate","url":"http://remote.lan/next"'),
     ),
   )
+  await page.evaluate(() =>
+    window.bridge('state', {
+      url: 'http://remote.lan/next',
+      title: 'Next page',
+      back: true,
+      forward: false,
+      loading: false,
+      editable: false,
+    }),
+  )
   await page.getByRole('button', { name: 'Back', exact: true }).click()
   await page.getByRole('button', { name: 'Reload', exact: true }).click()
   await page.getByLabel('Browser options').selectOption('external')
   assert.deepEqual(
     await page.evaluate(() => window.openedLinks.at(-1)),
     {
-      url: 'http://remote.lan/page',
+      url: 'http://remote.lan/next',
       external: true,
     },
     'Host pages can open directly in the device browser',
@@ -308,6 +317,18 @@ try {
     window.commands.some(({ code }) => code.includes('"type":"reconnect"')),
   )
   await tickets(reconnectRequests + 1)
+  const retainedBrowser = await page.locator('[data-webview]').getAttribute('data-webview')
+  await page.evaluate(() => window.bridge('closed', { message: 'Browser session ended.' }))
+  await page.getByRole('button', { name: 'Open URL in a new session', exact: true }).click()
+  assert.ok(await page.evaluate(() => window.commands.at(-1).code.includes('"type":"reconnect"')))
+  await page.evaluate(() => window.bridge('reconnect'))
+  await tickets(reconnectRequests + 2)
+  assert.equal(await page.locator('[data-webview]').getAttribute('data-webview'), retainedBrowser)
+  assert.equal(await remoteAddress.inputValue(), 'http://remote.lan/draft')
+  await page.evaluate(() => {
+    window.bridge('connection', { online: true })
+    window.bridge('connection', { online: false })
+  })
   const suspensionRequests = await page.evaluate(() => window.requests.length)
   const suspensionCommands = await page.evaluate(() => window.commands.length)
   const original = await page.locator('[data-webview]').getAttribute('data-webview')
@@ -515,7 +536,7 @@ try {
     'http://preview.lan/current',
     'Direct address catches up after untouched focus',
   )
-  await page.getByRole('button', { name: 'Open in default browser', exact: true }).click()
+  await page.getByLabel('Browser options').selectOption('external')
   assert.deepEqual(
     await page.evaluate(() => window.openedLinks.at(-1)),
     {

@@ -53,7 +53,7 @@ export function WorkspaceTerminalScreen({
     owner?.profile.connection.address,
     owner?.profile.connection.token,
   ])
-  const [generation, setGeneration] = useState(0)
+  const [reconnectToken, setReconnectToken] = useState(0)
   const [closing, setClosing] = useState(false)
   const status = terminal && terminalStatus(terminal, !!owner?.connected)
   const item = workspaceItems(owner ? [owner] : [], [], Date.now()).find(
@@ -128,13 +128,13 @@ export function WorkspaceTerminalScreen({
                   label: uiText('Reconnect terminal'),
                   icon: 'refresh',
                   overflow: true,
-                  disabled: !owner?.connected,
-                  onPress: () => setGeneration((value) => value + 1),
+                  disabled: !owner?.connected || !!terminal.exited,
+                  onPress: () => setReconnectToken((value) => value + 1),
                 },
                 {
                   label: uiText('New terminal'),
                   icon: 'add',
-                  overflow: true,
+                  overflow: !terminal.exited,
                   onPress: () => router.push('/terminal/new'),
                 },
                 {
@@ -198,7 +198,12 @@ export function WorkspaceTerminalScreen({
               ])}
               runtimeId={runtimeId}
             >
-              <RetainedTerminalSession id={terminalId} focused={focused} generation={generation} />
+              <RetainedTerminalSession
+                id={terminalId}
+                focused={focused}
+                readOnly={!!terminal.exited}
+                reconnectToken={reconnectToken}
+              />
             </RuntimeScope>
           )}
         </>
@@ -215,16 +220,18 @@ export function WorkspaceTerminalScreen({
 function RetainedTerminalSession({
   id,
   focused,
-  generation,
+  reconnectToken,
+  readOnly,
 }: {
   id: string
   focused: boolean
-  generation: number
+  reconnectToken: number
+  readOnly: boolean
 }) {
   const uiText = useInterfaceText()
 
   const { connected } = useRuntime()
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
   const [started, setStarted] = useState(false)
   useEffect(() => {
     if (connected && focused) setStarted(true)
@@ -240,11 +247,29 @@ function RetainedTerminalSession({
   return (
     <>
       {!connected && (
-        <Text style={[styles.muted, { padding: 10 }]}>
-          <InterfaceText>{'Computer offline. Showing retained terminal output.'}</InterfaceText>
-        </Text>
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            padding: 10,
+            zIndex: 1,
+            backgroundColor: colors.surface,
+          }}
+        >
+          <Text style={styles.muted}>
+            <InterfaceText>{'Computer offline. Showing retained terminal output.'}</InterfaceText>
+          </Text>
+        </View>
       )}
-      <TerminalSession key={`${id}:${generation}`} id={id} visible={focused} />
+      <TerminalSession
+        id={id}
+        visible={focused}
+        readOnly={readOnly}
+        reconnectToken={reconnectToken}
+      />
     </>
   )
 }

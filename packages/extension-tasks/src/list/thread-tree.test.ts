@@ -358,7 +358,40 @@ it('resolves foreign profile IDs by computer identity and uses live input withou
         createdAt: '2026-10-19T08:00:00Z',
       },
     ],
-    questions: [],
+    questions: [
+      {
+        id: 'human',
+        taskId: 'nested',
+        createdAt: '',
+        prompt: {
+          title: 'Question',
+          questions: [{ id: 'choice', header: '', question: 'Continue?' }],
+        },
+      },
+      {
+        id: 'agent',
+        taskId: 'child',
+        createdAt: '',
+        routing: 'parent',
+        prompt: {
+          title: 'Parent only',
+          questions: [{ id: 'choice', header: '', question: 'Continue?' }],
+        },
+      },
+    ],
+    secureInputs: [
+      {
+        id: 'secret',
+        taskId: 'nested',
+        title: 'Sign in',
+        prompt: 'Enter in the secure form',
+        destination: { kind: 'command', command: 'fixture', args: [], appendNewline: false },
+        directory: '',
+        publicKey: 'a'.repeat(64),
+        expiresAt: '',
+        status: 'pending',
+      },
+    ],
     terminals: [],
     runs: [],
     devices: [],
@@ -387,6 +420,11 @@ it('resolves foreign profile IDs by computer identity and uses live input withou
       .filter((node) => node.phase === 'needs-input')
       .map((node) => node.threadId),
   ).toEqual(['nested'])
+  expect(children[0]?.children[0]).toMatchObject({
+    approvals: 1,
+    questions: 1,
+    otherInputs: 1,
+  })
   expect(children[0]).toMatchObject({
     runtimeId: 'my-server-profile',
     runtimeIdentity: 'server-identity',

@@ -15,7 +15,7 @@ const built = await bundleBrowser(
 import {Effect} from 'effect';import {createRoot} from 'react-dom/client';import {useState} from 'react';import {flushSync} from 'react-dom';
 import {TaskSearchDialog} from './packages/extension-tasks/src/dialogs/task-search-dialog';
 window.calls=[];window.opened=[];window.activeCalls=0;window.watches=[];window.stops=[];
-const readRuntime=(profile,path,input)=>new Promise((resolve,reject)=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,fail:()=>reject(new Error('Host unavailable')),reply:(snippet,taskId='shared')=>resolve({taskIds:[taskId],hits:[{taskId,messageId:'remote',snippet,role:'assistant'}]})}));
+const readRuntime=(profile,path,input)=>new Promise((resolve,reject)=>window.calls.push({owner:profile.id,token:profile.connection.token,query:input.query,fail:()=>reject(new Error('Host unavailable')),replyMany:()=>resolve({taskIds:['shared'],hits:Array.from({length:35},(_,i)=>({taskId:'shared',messageId:'bulk-'+i,snippet:'Bulk result '+i,role:'assistant'}))}),reply:(snippet,taskId='shared')=>resolve({taskIds:[taskId],hits:[{taskId,messageId:'remote',snippet,role:'assistant'}]})}));
 function App(){const[cfg,setCfg]=useState({owners:['a','b'],token:'first',online:true,missing:false,older:false}),[tick,setTick]=useState(0),[mode,setMode]=useState(null);window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));window.stream=()=>flushSync(()=>setTick(n=>n+1));
 const profiles=['a','b'].filter(id=>id!=='b'||!cfg.missing).map(id=>({id,name:id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}}));
 window.workspace={activeRuntimeId:'a',connection:profiles[0].connection,runtimeRegistry:{profiles},readRuntimeEffect:(...args)=>Effect.tryPromise({try:()=>readRuntime(...args),catch:error=>error}),requestEffect:()=>Effect.sync(()=>{window.activeCalls++;return {taskIds:[],hits:[]}}),readRuntime,request:async()=>{window.activeCalls++;return {taskIds:[],hits:[]}}};
@@ -89,6 +89,11 @@ try {
     assert.equal(await page.getByText('Old B', { exact: true }).count(), 0)
     await page.evaluate(() => window.calls[1].reply('Old B'))
     await page.getByText('Old B', { exact: true }).waitFor()
+    await page
+      .getByRole('option')
+      .filter({ hasText: 'Old B' })
+      .getByText('Studio · Computer b')
+      .waitFor()
     assert.deepEqual(await input.boundingBox(), before, 'Results keep the search input anchored')
     await page.evaluate(() => {
       window.change({ owners: ['b'] })
@@ -114,6 +119,10 @@ try {
     await page.evaluate(() => window.change({ online: false }))
     await page.getByText('needle in saved messages', { exact: true }).waitFor()
     await page.getByRole('status').filter({ hasText: 'Offline computers' }).waitFor()
+    await page.getByRole('status').filter({ hasText: 'Computer b' }).waitFor()
+    await input.fill('no saved match')
+    await page.getByText('No matches in saved messages.', { exact: true }).waitFor()
+    await input.fill('needle')
     await page.evaluate(async () => {
       window.calls[3].reply('Obsolete reply')
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
@@ -178,6 +187,7 @@ try {
     await page.getByText('Older settled thread b', { exact: true }).waitFor()
     await taskInput.press('Escape')
     await page.getByRole('dialog').waitFor({ state: 'detached' })
+    await page.waitForFunction(() => document.activeElement?.textContent === 'Go to thread')
     await page.evaluate(() => window.change({ older: false }))
     await page.getByRole('button', { name: 'Search conversations', exact: true }).click()
     const count = await page.evaluate(() => window.calls.length)
@@ -207,6 +217,13 @@ try {
     await taskInput.fill('needle')
     assert.equal(await page.getByRole('option').count(), 2)
     assert.equal(await page.getByText('Needle child a', { exact: true }).count(), 0)
+    const subthreads = page.getByRole('button', { name: 'Show matching subthreads' })
+    await subthreads.press('Space')
+    await page.getByText('Needle child a', { exact: true }).waitFor()
+    assert.equal(await subthreads.getAttribute('aria-pressed'), 'true')
+    await subthreads.click()
+    await page.getByText('Needle child a', { exact: true }).waitFor({ state: 'detached' })
+    assert.equal(await subthreads.getAttribute('aria-pressed'), 'false')
     await page.keyboard.down('Alt')
     await page.getByText('Needle child a', { exact: true }).waitFor()
     assert.equal(await page.getByRole('option').count(), 4)
@@ -245,6 +262,34 @@ try {
     await page.waitForFunction(
       () => document.querySelector('[role="listbox"]').getAttribute('aria-busy') === 'false',
     )
+    const bulkStart = await page.evaluate(() => window.calls.length)
+    await input.fill('bulk')
+    await page.waitForFunction((count) => window.calls.length === count + 2, bulkStart)
+    await page.evaluate((count) => {
+      window.calls[count].replyMany()
+      window.calls[count + 1].fail()
+    }, bulkStart)
+    const bulk = page.getByRole('option').filter({ hasText: 'Bulk result 29' })
+    await bulk.getByRole('button').click()
+    assert.deepEqual(await page.evaluate(() => window.opened.at(-1)), {
+      key: '["a","shared"]',
+      messageId: 'bulk-29',
+    })
+    await page.getByRole('dialog').waitFor({ state: 'detached' })
+    const reopening = await page.evaluate(() => window.calls.length)
+    await page.getByRole('button', { name: 'Search conversations', exact: true }).click()
+    assert.equal(await input.inputValue(), 'bulk')
+    assert.equal(await input.evaluate((node) => document.activeElement === node), true)
+    await page.waitForFunction((count) => window.calls.length === count + 2, reopening)
+    await page.evaluate((count) => {
+      window.calls[count].replyMany()
+      window.calls[count + 1].fail()
+    }, reopening)
+    await page.waitForFunction(
+      () => document.querySelector('[role="listbox"]').getAttribute('aria-busy') === 'false',
+    )
+    assert.equal(await bulk.getAttribute('aria-selected'), 'true')
+    assert.ok(await page.getByRole('listbox').evaluate((node) => node.scrollTop > 0))
     assert.deepEqual(errors, [])
     await page.close()
   }

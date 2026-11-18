@@ -269,22 +269,20 @@ export function WorkspaceTerminalSurface({
           {error}
         </p>
       )}
-      {!owner.connected && (
-        <p role="status" className="border-b p-2 text-xs text-muted-foreground">
-          Computer offline. Reconnect to resume this session.
-        </p>
-      )}
-      {owner.connected && !currentSession && (
-        <p role="status" className="border-b p-2 text-xs text-muted-foreground">
-          {!owner.snapshot
-            ? 'Loading terminal sessions…'
-            : 'Waiting for terminal session… This workspace remains open.'}
-        </p>
-      )}
       <div
-        className="m-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/60"
+        className="relative m-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/60"
         data-terminal-primary
       >
+        {owner.connected && !currentSession && (
+          <p
+            role="status"
+            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-card p-2 text-xs text-muted-foreground"
+          >
+            {!owner.snapshot
+              ? 'Loading terminal sessions…'
+              : 'Waiting for terminal session… This workspace remains open.'}
+          </p>
+        )}
         <TerminalPane
           key={targetKey}
           taskId={session.taskId}

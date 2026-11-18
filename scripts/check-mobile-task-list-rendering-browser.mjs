@@ -21,7 +21,7 @@ export const Text=({children,accessibilityRole,numberOfLines,style})=>{const val
 export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
-export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
+export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style,ref})=><button ref={ref} style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
 export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange},ref){
   window.listScrollHandlers={onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange};
   useImperativeHandle(ref,()=>({scrollToOffset:({offset})=>{window.lastRestoredListOffset=offset}}),[]);
@@ -29,7 +29,7 @@ export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
-export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message)};
+export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message),sendAccessibilityEvent:(node,event)=>{if(event==='focus')node.focus()}};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
 export const Icon=({name})=><i data-icon={name}/>;
 export const IconButton=({label,onPress,disabled})=><button aria-label={label} onClick={onPress} disabled={disabled}>{label}</button>;
@@ -296,7 +296,7 @@ window.publish=changes=>flushSync(()=>{
 });
 function Probe(){window.runtime=useRuntime();window.messageReveal=useMessageReveal();return null}
 function PaneProbe({children}){const runtime=useRuntime();const {setView}=useTaskListView();window.resetThreadList=()=>setView({project:'',search:'',filter:'active',source:'all',sort:'newest'});const[sources,setSources]=useState(null);window.setListSources=value=>flushSync(()=>setSources(value));const[showDevice,setShowDevice]=useState(false);window.showDevices=value=>flushSync(()=>setShowDevice(value));const [panes,setPanes]=useState({expanded:false,detailWidth:390});window.setPanes=value=>flushSync(()=>setPanes(value));return <RuntimeContext.Provider value={sources?{...runtime,activeId:'shared-peer',overviews:sources,profiles:sources.map(source=>source.profile),selectRuntimeEffect:id=>window.holdSelection?Effect.promise(()=>new Promise(resolve=>window.releaseSelection=resolve)):runtime.selectRuntimeEffect(id)}:showDevice?{...runtime,profiles:[...runtime.profiles,{...runtime.profiles[0],id:'other-device'}]}:runtime}><TaskPanesContext.Provider value={panes}>{children}</TaskPanesContext.Provider></RuntimeContext.Provider>}
-function Screen(){const[lifecycle,setLifecycle]=useState(null);window.showBotLifecycle=setLifecycle;const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return lifecycle?<LifecycleActions task={lifecycle}/>:overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
+function Screen(){const[focused,setFocused]=useState(true);window.focusThreads=value=>flushSync(()=>setFocused(value));window.navigation.focused=focused;const[lifecycle,setLifecycle]=useState(null);window.showBotLifecycle=setLifecycle;const[overview,setOverview]=useState(false);window.showOverview=()=>setOverview(true);window.showThreads=()=>setOverview(false);return lifecycle?<LifecycleActions task={lifecycle}/>:overview?<WorkspaceViewProvider><BrowserWorkspaceProvider><WorkspaceOverview unified/></BrowserWorkspaceProvider></WorkspaceViewProvider>:<TasksScreen/>}
 function Language({children}){const[language,setLanguage]=useState('en-US');window.setInterfaceLanguage=setLanguage;return <InterfaceLanguageProvider language={language}>{children}</InterfaceLanguageProvider>}
 createRoot(document.getElementById('app')).render(<Language><ApplicationStateProvider><RuntimeProvider><Probe/><TaskListViewProvider><PaneProbe><Screen/></PaneProbe></TaskListViewProvider></RuntimeProvider></ApplicationStateProvider></Language>);
 `,
@@ -1035,6 +1035,33 @@ try {
     parentRuntimeId: 'http://mobile-owner.lan:8787',
     parentTaskId: 'parent',
     parentTitle: 'Parent task',
+  })
+  await page.evaluate(() => {
+    window.snapshot.approvals = ['a', 'b'].map((id) => ({
+      id,
+      taskId: 'child',
+      title: 'Review request',
+      detail: '',
+      createdAt: '',
+    }))
+    window.snapshot.questions = [
+      {
+        id: 'human',
+        taskId: 'child',
+        createdAt: '',
+        prompt: { title: 'Choose', questions: [{ id: 'q', header: '', question: 'Continue?' }] },
+      },
+    ]
+    window.publish({ parent: { pinned: true } })
+  })
+  await page
+    .getByTestId('Task parent')
+    .getByLabel('2 approvals · 1 question', { exact: true })
+    .waitFor()
+  await page.evaluate(() => {
+    window.snapshot.approvals = []
+    window.snapshot.questions = []
+    window.publish({ parent: { pinned: false } })
   })
   // Remote attention changes the parent status even when its local row is unchanged.
   await page.evaluate(() =>
@@ -1980,6 +2007,21 @@ try {
       window.holdSelection = false
       window.releaseSelection?.()
     })
+    await page.evaluate(() => {
+      window.focusThreads(false)
+      window.listScrollHandlers.onLayout({ nativeEvent: { layout: { height: 400 } } })
+      window.listScrollHandlers.onContentSizeChange(390, 800)
+      window.focusThreads(true)
+    })
+    await page.waitForFunction(
+      () =>
+        document.activeElement?.getAttribute('aria-label') ===
+        'Open assistant message in Startup real thread on Owner',
+    )
+    assert.equal(
+      await page.getByRole('textbox', { name: 'Search threads', exact: true }).inputValue(),
+      'history needle',
+    )
     console.log(
       'Mobile startup rows: Tasks and Workspace use the real cached project/harness icons and status, retain the row at live arrival, show connection state for missing owners and never substitute shared copies after failure.',
     )

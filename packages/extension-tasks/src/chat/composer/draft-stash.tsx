@@ -111,6 +111,7 @@ export function DraftStash(props: {
       </IconButton>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent
+          data-fixed-material=""
           className="max-w-lg"
           onCloseAutoFocus={(event) => {
             if (restoreFocus.current) {

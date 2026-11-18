@@ -563,7 +563,10 @@ try {
   // This isolated viewer does not include the app wrapper; call its corresponding endpoint.
   await call('/api/previews/browser/close', { taskId: 'browser-task' })
   await until(
-    async () => await viewer.getByRole('button', { name: 'Reconnect', exact: true }).isVisible(),
+    async () =>
+      await viewer
+        .getByRole('button', { name: 'Open URL in a new session', exact: true })
+        .isVisible(),
   )
   assert.deepEqual(errors, [])
   await writeFile(

@@ -25,7 +25,8 @@ try {
         window.sockets.push(this)
         setTimeout(() => {
           this.onopen?.()
-          this.onmessage?.({ data: 'session preserved \ue0a0 main \uf07b src\r\n' })
+          if (!window.deferReplay)
+            this.onmessage?.({ data: 'session preserved \ue0a0 main \uf07b src\r\n' })
         }, 0)
       }
       send(text) {
@@ -101,6 +102,32 @@ try {
       .then((text) => text.includes('session preserved')),
   )
   assert.equal(await page.evaluate(() => window.sockets.length), 1)
+  await page.evaluate(() => {
+    window.deferReplay = true
+    window.connectTerminal('ws://fixture/terminal', 2)
+  })
+  await page.waitForFunction(() =>
+    window.sockets[1].sent.some((message) => message.type === 'resize'),
+  )
+  assert.match(await page.locator('.xterm-rows').textContent(), /session preserved/)
+  assert.equal(
+    await page.getByRole('button', { name: 'Esc', exact: true }).isEnabled(),
+    false,
+    'Input stays disabled until the new connection replays the output',
+  )
+  await page.evaluate(() => window.sockets[1].onmessage({ data: 'session replayed\r\n' }))
+  await page.waitForFunction(() =>
+    window.messages.some((message) => message.type === 'connected' && message.attempt === 2),
+  )
+  await page.waitForFunction(() =>
+    document.querySelector('.xterm-rows')?.textContent.includes('session replayed'),
+  )
+  await page.evaluate(() => window.setTerminalReadOnly(true))
+  assert.equal(
+    await page.getByRole('button', { name: 'Esc', exact: true }).isEnabled(),
+    false,
+    'Exited terminal output remains available with keys disabled',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Mobile terminal: offline bundled Nerd Font, regular/bold loading, live font and size changes, PTY resizing and session continuity passed.',

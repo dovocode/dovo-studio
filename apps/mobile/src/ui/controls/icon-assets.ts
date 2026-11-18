@@ -4,6 +4,7 @@ import type { IconName } from './icon'
 export const iconAssets = {
   magic: require('../../../assets/icons/magic.png'),
   fast: require('../../../assets/icons/fast.png'),
+  ultra: require('../../../assets/icons/ultra.png'),
   scope: require('../../../assets/icons/scope.png'),
   tune: require('../../../assets/icons/tune.png'),
   maestro: require('../../../assets/icons/maestro.png'),

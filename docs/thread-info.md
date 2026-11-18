@@ -21,6 +21,15 @@ pull-request status remain visible in the summary.
 On mobile, Customize uses the sheet header. Rows keep a minimum touch height of 44 points. The
 native sheet presentation is unchanged.
 
+Thread rows show counts for pending approvals, questions and other input when the computer supplies
+request records. The count includes spawned and delegated threads under the same root. Open a
+subthread to review its requests. Older watch summaries can show **Needs input** when they only
+report a waiting status. A remote request with an ambiguous type appears as other input. Unread
+activity keeps its own indicator.
+
+On mobile, a link to a resolved approval checks the recorded decision for that request. If the check
+fails, use **Retry**. If the computer is offline, reconnect to check the decision.
+
 ## Verification
 
 Run these commands from the repository root in Bash:

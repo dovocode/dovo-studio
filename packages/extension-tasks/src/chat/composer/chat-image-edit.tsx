@@ -101,7 +101,7 @@ export function ChatImageEditProvider({
           if (!open) setError('')
         }}
       >
-        <DialogContent>
+        <DialogContent data-fixed-material="">
           <DialogTitle>Couldn’t attach image</DialogTitle>
           <p role="alert" className="text-sm text-muted-foreground">
             {error}

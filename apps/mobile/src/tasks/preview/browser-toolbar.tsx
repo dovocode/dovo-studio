@@ -4,7 +4,6 @@ import { type TextInput, View } from 'react-native'
 import { previewPresets } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { Glass } from '../../ui/layout/glass'
-import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
 import { Field } from '../../ui/controls/field'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -21,10 +20,11 @@ function addressLabel(address: string) {
   }
 }
 
-/** Native and host-rendered pages share navigation, touch targets and options. */
+/** Native and host-rendered pages use the same navigation row. */
 export function BrowserToolbar({
   address,
   context,
+  changed,
   onAddress,
   onNavigate,
   back,
@@ -42,6 +42,7 @@ export function BrowserToolbar({
   onExternal,
   available = true,
   onReconnect,
+  reconnectLabel,
   onEditing,
   onCloseSession,
   onDiagnostics,
@@ -58,6 +59,7 @@ export function BrowserToolbar({
   onDiagnostics?: () => void
   address: string
   context?: string
+  changed: boolean
   onAddress: (value: string) => void
   onNavigate: () => void
   back: boolean
@@ -75,6 +77,7 @@ export function BrowserToolbar({
   onExternal?: () => void
   available?: boolean
   onReconnect?: () => void
+  reconnectLabel?: string
   onEditing?: (editing: boolean) => void
 }) {
   const uiText = useInterfaceText()
@@ -91,187 +94,175 @@ export function BrowserToolbar({
     >
       {context && <Text style={{ color: colors.muted, paddingHorizontal: 8 }}>{context}</Text>}
       <Glass
+        solid
         testID="Browser toolbar surface"
-        style={{ borderRadius: 28, paddingHorizontal: 4, gap: 4 }}
+        style={{
+          borderRadius: 28,
+          paddingHorizontal: 4,
+          flexDirection: 'row',
+          alignItems: 'center',
+          minHeight: 52,
+        }}
       >
+        <IconButton
+          label={uiText('Back')}
+          icon="back"
+          disabled={!available || !back}
+          onPress={onBack}
+        />
         <View
           style={{
-            flexDirection: 'row',
-            alignItems: 'center',
-            minHeight: 48,
-            height: 48,
-            flexShrink: 0,
+            flex: 1,
+            minWidth: 0,
+            justifyContent: 'center',
+            height: 44,
             overflow: 'hidden',
-            borderRadius: 24,
+            borderRadius: 22,
             borderWidth: 1,
             borderColor: focused ? colors.accent : colors.border,
             ...(highContrast ? { backgroundColor: colors.surface } : {}),
           }}
         >
-          <View style={{ width: 44, alignItems: 'center' }}>
-            <Icon name="web" size={17} color={colors.muted} />
-          </View>
-          <View style={{ flex: 1, minWidth: 0, height: 46, overflow: 'hidden' }}>
-            <Field
-              inputRef={addressRef}
-              selectTextOnFocus
-              placeholder={focused ? uiText('Enter website address') : ''}
-              style={{
-                backgroundColor: 'transparent',
-                borderWidth: 0,
-                borderRadius: 0,
-                minHeight: 0,
-                height: 46,
-                paddingHorizontal: 0,
-                paddingVertical: 0,
-                fontSize: 16,
-                textAlign: 'left',
-                color: focused ? colors.text : 'transparent',
-              }}
-              label={uiText('Preview URL')}
-              hideLabel
-              value={address}
-              multiline={false}
+          <Field
+            inputRef={addressRef}
+            selectTextOnFocus
+            placeholder={focused ? uiText('Enter website address') : ''}
+            style={{
+              backgroundColor: 'transparent',
+              borderWidth: 0,
+              borderRadius: 0,
+              minHeight: 0,
+              height: 46,
+              paddingHorizontal: 8,
+              paddingVertical: 0,
+              fontSize: 16,
+              textAlign: 'center',
+              color: focused ? colors.text : 'transparent',
+            }}
+            label={uiText('Preview URL')}
+            hideLabel
+            value={address}
+            multiline={false}
+            numberOfLines={1}
+            caretHidden={!focused}
+            onChangeText={onAddress}
+            editable={available}
+            keyboardType="url"
+            autoCorrect={false}
+            spellCheck={false}
+            returnKeyType="go"
+            onSubmitEditing={onNavigate}
+            onFocus={() => {
+              setFocused(true)
+              onEditing?.(true)
+            }}
+            onBlur={() => {
+              setFocused(false)
+              onEditing?.(false)
+            }}
+          />
+          <View
+            pointerEvents="none"
+            style={{
+              position: 'absolute',
+              inset: 0,
+              justifyContent: 'center',
+              opacity: focused ? 0 : 1,
+            }}
+          >
+            <Text
+              accessible={false}
               numberOfLines={1}
-              caretHidden={!focused}
-              onChangeText={onAddress}
-              editable={available}
-              keyboardType="url"
-              autoCorrect={false}
-              spellCheck={false}
-              returnKeyType="go"
-              onSubmitEditing={onNavigate}
-              onFocus={() => {
-                setFocused(true)
-                onEditing?.(true)
-              }}
-              onBlur={() => {
-                setFocused(false)
-                onEditing?.(false)
-              }}
-            />
-            <View
-              pointerEvents="none"
+              ellipsizeMode="middle"
               style={{
-                position: 'absolute',
-                inset: 0,
-                justifyContent: 'center',
-                opacity: focused ? 0 : 1,
+                color: address ? colors.text : colors.muted,
+                fontSize: 16,
+                textAlign: 'center',
               }}
             >
-              <Text
-                accessible={false}
-                numberOfLines={1}
-                ellipsizeMode="middle"
-                style={{
-                  color: address ? colors.text : colors.muted,
-                  fontSize: 16,
-                  textAlign: 'center',
-                }}
-              >
-                {address ? addressLabel(address) : uiText('Enter website address')}
-              </Text>
-            </View>
+              {address ? addressLabel(address) : uiText('Enter website address')}
+            </Text>
           </View>
-          <IconButton
-            label={uiText('Go to address')}
-            icon="next"
-            disabled={!available || !address.trim()}
-            onPress={onNavigate}
-          />
         </View>
-        <View
-          style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
-        >
+        <IconButton
+          label={
+            !available
+              ? (reconnectLabel ?? uiText('Reconnect'))
+              : changed
+                ? uiText('Go to address')
+                : uiText('Reload')
+          }
+          icon={changed && available ? 'next' : 'refresh'}
+          disabled={
+            available ? (changed ? !address.trim() : reloadDisabled || !address) : !onReconnect
+          }
+          onPress={!available ? () => onReconnect?.() : changed ? onNavigate : onReload}
+        />
+        {onKeyboard && (
           <IconButton
-            label={uiText('Back')}
-            icon="back"
-            disabled={!available || !back}
-            onPress={onBack}
+            label={uiText('Keyboard')}
+            icon="keyboard"
+            disabled={!available}
+            onPress={onKeyboard}
           />
-          <IconButton
-            label={uiText('Forward')}
-            icon="next"
-            disabled={!available || !forward}
-            onPress={onForward}
+        )}
+        <View style={{ width: 44, height: 44, flexShrink: 0 }}>
+          <BrowserMenu
+            items={[
+              ...(forward && available
+                ? [{ id: 'forward', name: uiText('Forward'), icon: 'next' as const }]
+                : []),
+              ...(onExternal
+                ? [
+                    {
+                      id: 'external',
+                      name: uiText('Open in default browser'),
+                      icon: 'external' as const,
+                    },
+                  ]
+                : []),
+              ...(onMode && browserMode
+                ? [
+                    {
+                      id: 'mode',
+                      name: browserMode === 'remote' ? 'Browse on this device' : 'Browse on host',
+                      icon: 'web' as const,
+                    },
+                  ]
+                : []),
+              ...(onExpand
+                ? [{ id: 'expand', name: uiText('Expand page'), icon: 'expand' as const }]
+                : []),
+              {
+                id: 'screenshot',
+                name: uiText('Take screenshot'),
+                disabled: !available || screenshotDisabled,
+              },
+              ...previewPresets.map((item) => ({
+                id: item.id,
+                name: `Viewport · ${item.name}${preset === item.id ? ' ✓' : ''}`,
+                disabled: !available,
+              })),
+              {
+                id: 'rotate',
+                name: uiText('Rotate viewport'),
+                disabled: !available || preset === 'fill',
+              },
+              ...(onDiagnostics ? [{ id: 'diagnostics', name: uiText('Connection details') }] : []),
+              ...(onCloseSession ? [{ id: 'close', name: uiText('Close browser session') }] : []),
+            ]}
+            onChange={(value) => {
+              if (value === 'forward') onForward()
+              else if (value === 'screenshot') onScreenshot()
+              else if (value === 'rotate') onRotate()
+              else if (value === 'external') onExternal?.()
+              else if (value === 'mode') onMode?.(browserMode === 'remote' ? 'web' : 'remote')
+              else if (value === 'expand') onExpand?.()
+              else if (value === 'diagnostics') onDiagnostics?.()
+              else if (value === 'close') onCloseSession?.()
+              else if (previewPresets.some((item) => item.id === value)) onPreset(value)
+            }}
           />
-          <IconButton
-            label={available ? uiText('Reload') : uiText('Reconnect')}
-            icon="refresh"
-            disabled={available ? reloadDisabled || !address : !onReconnect}
-            onPress={available ? onReload : () => onReconnect?.()}
-          />
-          {onKeyboard && (
-            <IconButton
-              label={uiText('Keyboard')}
-              icon="keyboard"
-              disabled={!available}
-              onPress={onKeyboard}
-            />
-          )}
-          {!onKeyboard && onExternal && (
-            <IconButton
-              label={uiText('Open in default browser')}
-              icon="external"
-              onPress={onExternal}
-            />
-          )}
-          <View style={{ width: 44, height: 44, flexShrink: 0 }}>
-            <BrowserMenu
-              items={[
-                ...(onExternal
-                  ? [
-                      {
-                        id: 'external',
-                        name: uiText('Open in default browser'),
-                        icon: 'external' as const,
-                      },
-                    ]
-                  : []),
-                ...(onMode && browserMode
-                  ? [
-                      {
-                        id: 'mode',
-                        name: browserMode === 'remote' ? 'Browse on this device' : 'Browse on host',
-                        icon: 'web' as const,
-                      },
-                    ]
-                  : []),
-                ...(onExpand
-                  ? [{ id: 'expand', name: uiText('Expand page'), icon: 'expand' as const }]
-                  : []),
-                {
-                  id: 'screenshot',
-                  name: uiText('Take screenshot'),
-                  disabled: !available || screenshotDisabled,
-                },
-                ...previewPresets.map((item) => ({
-                  id: item.id,
-                  name: `Viewport · ${item.name}${preset === item.id ? ' ✓' : ''}`,
-                  disabled: !available,
-                })),
-                {
-                  id: 'rotate',
-                  name: uiText('Rotate viewport'),
-                  disabled: !available || preset === 'fill',
-                },
-                ...(onDiagnostics
-                  ? [{ id: 'diagnostics', name: uiText('Connection details') }]
-                  : []),
-                ...(onCloseSession ? [{ id: 'close', name: uiText('Close browser session') }] : []),
-              ]}
-              onChange={(value) => {
-                if (value === 'screenshot') onScreenshot()
-                else if (value === 'rotate') onRotate()
-                else if (value === 'external') onExternal?.()
-                else if (value === 'mode') onMode?.(browserMode === 'remote' ? 'web' : 'remote')
-                else if (value === 'expand') onExpand?.()
-                else if (value === 'diagnostics') onDiagnostics?.()
-                else if (value === 'close') onCloseSession?.()
-                else if (previewPresets.some((item) => item.id === value)) onPreset(value)
-              }}
-            />
-          </View>
         </View>
       </Glass>
     </View>

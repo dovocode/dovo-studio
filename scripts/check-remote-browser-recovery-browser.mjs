@@ -10,7 +10,7 @@ const built = await build({
 import {createRoot} from 'react-dom/client';
 import {useState} from 'react';
 import {RemoteBrowser} from './src/browser/remote-browser.tsx';
-window.host={sessions:new Map(),calls:[],states:[]};
+window.host={sessions:new Map(),calls:[],states:[],connections:[]};
 function App(){
   const [url,setUrl]=useState('http://localhost:3000/initial');
   const [mount,setMount]=useState(0);
@@ -18,7 +18,7 @@ function App(){
   window.setInitialUrl=setUrl;
   window.remount=()=>setMount(value=>value+1);
   return <><span data-url={url}/><RemoteBrowser key={mount} taskId="task" tabId="tab"
-    initialUrl={url} onState={state=>{
+    initialUrl={url} onConnection={(online,ended)=>window.host.connections.push({online,ended})} onState={state=>{
       window.host.states.push(state.url);
       setUrl(state.url==='about:blank'?'':state.url);
     }}/></>;
@@ -119,6 +119,16 @@ try {
     await page.evaluate(() => window.host.states.at(-1)),
     'http://localhost:3000/current',
   )
+  await page.evaluate(() => window.bridge({ type: 'closed', message: 'Browser session ended.' }))
+  assert.deepEqual(await page.evaluate(() => window.host.connections.at(-1)), {
+    online: false,
+    ended: true,
+  })
+  await page.evaluate(() => window.bridge({ type: 'connection', online: true }))
+  assert.deepEqual(await page.evaluate(() => window.host.connections.at(-1)), {
+    online: true,
+    ended: false,
+  })
 
   await page.evaluate(() =>
     window.bridge({ type: 'screenshot', image: 'data:image/png;base64,c2NyZWVu' }),

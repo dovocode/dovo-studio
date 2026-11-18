@@ -5,7 +5,7 @@ import { createRuntimeClient, mutableStruct, decode, responses } from '@dovo/pro
 import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
 import { startReconnecting } from '@dovo/client-runtime'
-import { AppState, KeyboardAvoidingView, Platform } from 'react-native'
+import { AppState, KeyboardAvoidingView, Platform, View } from 'react-native'
 import { Text } from '../ui/content/text'
 import { WebView } from 'react-native-webview'
 import { Schema } from 'effect'
@@ -13,13 +13,25 @@ import terminalHtml from '../../assets/terminal.json'
 import { useRuntime } from '../runtime/connection/provider'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
-export function WebViewTerminalSession({ id, visible = true }: { id: string; visible?: boolean }) {
+export type MobileTerminalSessionProps = {
+  id: string
+  visible?: boolean
+  readOnly?: boolean
+  reconnectToken?: number
+}
+
+export function WebViewTerminalSession({
+  id,
+  visible = true,
+  readOnly = false,
+  reconnectToken,
+}: MobileTerminalSessionProps) {
   const uiText = useInterfaceText()
 
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
   const { terminalFontFamily, terminalFontSize } = useMobilePreferences()
 
-  const { call, connection } = useRuntime(),
+  const { call, connection, connected: runtimeConnected } = useRuntime(),
     view = useRef<WebView>(null),
     [error, setError] = useApplicationState(''),
     [status, setStatus] = useApplicationState('Loading terminal…')
@@ -41,6 +53,12 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
         `window.setTerminalFont(${JSON.stringify(terminalFontFamily)},${terminalFontSize});true;`,
       )
   }, [ready, terminalFontFamily, terminalFontSize])
+  useEffect(() => {
+    if (ready)
+      view.current?.injectJavaScript(
+        `window.setTerminalReadOnly(${readOnly || !runtimeConnected});true;`,
+      )
+  }, [ready, readOnly, runtimeConnected])
   const sequence = useRef(0)
   const session = useRef<{
     attempt: number
@@ -48,7 +66,7 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
     fail: (error: Error) => void
   } | null>(null)
   useEffect(() => {
-    if (!ready || !connection || backgrounded || !visible) return
+    if (!ready || !connection || !runtimeConnected || backgrounded || !visible) return
     const reconnect = startReconnecting(
       async (signal, connected) => {
         setStatus('Connecting terminal…')
@@ -95,7 +113,7 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
     return () => {
       void reconnect.stop()
     }
-  }, [ready, connection, call, id, backgrounded, visible])
+  }, [ready, connection, call, id, backgrounded, visible, runtimeConnected, reconnectToken])
   return (
     <KeyboardAvoidingView
       style={styles.screen}
@@ -155,29 +173,20 @@ export function WebViewTerminalSession({ id, visible = true }: { id: string; vis
           }
         }}
       />
-      {!!status && !error && (
-        <Text
-          style={[
-            styles.muted,
-            {
-              padding: 10,
-            },
-          ]}
+      {runtimeConnected && !!(error || status) && (
+        <View
+          pointerEvents="none"
+          style={{
+            position: 'absolute',
+            bottom: 0,
+            left: 0,
+            right: 0,
+            backgroundColor: colors.surface,
+            padding: 10,
+          }}
         >
-          {status}
-        </Text>
-      )}
-      {!!error && (
-        <Text
-          style={[
-            styles.error,
-            {
-              padding: 10,
-            },
-          ]}
-        >
-          {error}
-        </Text>
+          <Text style={error ? styles.error : styles.muted}>{error || status}</Text>
+        </View>
       )}
     </KeyboardAvoidingView>
   )

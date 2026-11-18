@@ -109,6 +109,7 @@ export function ChangeSummary({
   )
   return (
     <Glass
+      solid
       style={{
         borderRadius: designTokens.radius.overlay,
         padding: 10,
@@ -238,6 +239,7 @@ export function ChangeSummary({
               >
                 {value === category.kind && (
                   <Glass
+                    solid
                     pointerEvents="none"
                     tinted
                     style={{

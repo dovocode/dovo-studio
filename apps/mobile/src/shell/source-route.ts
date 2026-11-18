@@ -44,9 +44,10 @@ export function pullHref(
   repositoryId: string,
   number: number,
   destination?: {
-    tab: 'overview' | 'changes' | 'checks' | 'agent-review'
+    tab: 'overview' | 'changes' | 'checks' | 'agent-review' | 'configure-agent-review'
     fragment: string
     navigationUrl?: string
+    reviewRequest?: string
   },
 ) {
   return {
@@ -60,6 +61,7 @@ export function pullHref(
             tab: destination.tab,
             fragment: destination.fragment,
             navigationUrl: destination.navigationUrl,
+            ...(destination.reviewRequest ? { reviewRequest: destination.reviewRequest } : {}),
           }
         : {}),
     },

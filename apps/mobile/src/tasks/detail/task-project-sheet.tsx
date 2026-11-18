@@ -23,7 +23,6 @@ import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { Icon, type IconName } from '../../ui/controls/icon'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
-import { Glass } from '../../ui/layout/glass'
 import { designTokens } from '@dovo/design'
 import { type HeaderAction } from '../../ui/layout/screen-header'
 import { Text } from '../../ui/content/text'
@@ -627,6 +626,7 @@ function ProjectPanelFrame({
   children: ReactNode
 }) {
   const uiText = useInterfaceText()
+  const { colors } = useTheme()
 
   if (!inline)
     return (
@@ -641,13 +641,19 @@ function ProjectPanelFrame({
       </Sheet>
     )
   return (
-    <Glass
+    <View
       accessibilityLabel={uiText('Thread info')}
-      style={{ maxHeight: '42%', borderRadius: designTokens.radius.overlay }}
+      style={{
+        maxHeight: '42%',
+        borderRadius: designTokens.radius.overlay,
+        borderWidth: 1,
+        borderColor: colors.border,
+        backgroundColor: colors.surface,
+      }}
     >
       <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ padding: 12 }}>
         {children}
       </ScrollView>
-    </Glass>
+    </View>
   )
 }

@@ -15,7 +15,7 @@ const mocks = {
     `export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" role="switch" aria-label={accessibilityLabel} checked={value} disabled={disabled} onChange={e=>onValueChange(e.target.checked)}/>;`,
   '@react-native-async-storage/async-storage': `export default {getItem:async key=>localStorage.getItem(key),setItem:async(key,value)=>localStorage.setItem(key,value)};`,
   './harness-settings': `import {useState} from 'react';export function HarnessSettings(){const[draft,setDraft]=useState('');return <div><p>Model controls</p><input aria-label="Model draft fixture" value={draft} onChange={e=>setDraft(e.target.value)}/></div>}`,
-  'expo-router': `export const router={push:href=>window.route=href};`,
+  'expo-router': `export const useLocalSearchParams=()=>({approvalId:window.approvalId});export const router={push:href=>window.route=href,setParams:({approvalId})=>window.setApprovalRoute(approvalId)};`,
   'lucide-react-native': `export * from 'lucide-react';`,
   'expo-crypto': `let n=0;export const randomUUID=()=>'00000000-0000-4000-8000-'+String(++n).padStart(12,'0');`,
   'expo-document-picker': `export const getDocumentAsync=async()=>({canceled:true});`,
@@ -25,6 +25,10 @@ const mocks = {
   '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
   '../../ui/controls/use-action': `import {useState} from 'react';import {Effect} from 'effect';export const useAction=()=>{const[busy,setBusy]=useState(false),[error,setError]=useState('');return{busy,error,act:async f=>{setBusy(true);setError('');try{const result=f();await (Effect.isEffect(result)?Effect.runPromise(result):result)}catch(error){setError(String(error))}finally{setBusy(false)}}}};`,
+  '../conversation/state/provider':
+    'export const useConversationSelector=select=>select({visible:true});',
+  '../../notifications/viewport-view':
+    'export const NotificationInputView=({children})=><section>{children}</section>;',
   '../../ui/controls/action': action,
   '../../../ui/controls/action': action,
   '../../screens/settings-controls': action,
@@ -52,16 +56,21 @@ const bundle = await build({
     loader: 'tsx',
     contents: `
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {Effect} from 'effect';
-import {TaskProjectSheet} from '${mobile}/tasks/detail/task-project-sheet';import {TaskLinkedPullSheet} from '${mobile}/tasks/detail/task-linked-pull-sheet';import {TaskThreadBehavior} from '${mobile}/tasks/detail/task-thread-behavior';import {ProjectIconSettings} from '${mobile}/scm/connections/project-icon-settings';import {PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details';
+import {TaskProjectSheet} from '${mobile}/tasks/detail/task-project-sheet';import {TaskApprovals} from '${mobile}/tasks/detail/approvals';import {TaskLinkedPullSheet} from '${mobile}/tasks/detail/task-linked-pull-sheet';import {TaskThreadBehavior} from '${mobile}/tasks/detail/task-thread-behavior';import {ProjectIconSettings} from '${mobile}/scm/connections/project-icon-settings';import {PipelineJobs} from '${mobile}/scm/pulls/detail/pipeline-details';
 window.calls=[];window.alerts=[];window.refreshes=0;
 const repo={id:'repo',name:'Dovo Studio',path:'/studio',branch:'main',gitIdentity:'github.com/dovocode/dovo-studio',actions:[]};
 const task=window.task={id:'thread',title:'Fix sync',repositoryId:'repo',agentId:'',status:'done',createdAt:'',execution:'local',harness:{provider:'codex',model:'gpt-6.1-sol',reasoning:'medium',permission:'full-access',instructions:'',endpoint:''},files:[],messages:[],example:false,pullRequest:{number:7,url:'https://github.com/dovocode/dovo-studio/pull/7',repositoryUrl:'https://github.com/dovocode/dovo-studio',title:'Fix reconnection'},linkedPullRequests:[{number:8,url:'https://github.com/foreign/project/pull/8',repositoryUrl:'https://github.com/foreign/project',title:'Foreign project'}]};
 window.setPullStatuses=()=>{task.pullStatus={number:7,url:task.pullRequest.url,state:'open',checks:'failed',checkedAt:'',title:'Fix reconnection',failedChecks:['Browser tests']};task.pullStatuses=[{number:8,url:task.linkedPullRequests[0].url,state:'merged',checks:'passed',checkedAt:''}]};
 const read=async(path,input)=>{window.calls.push({path,input});if(path==='/api/scm/open-targets')return{targets:['zed','finder']};if(path==='/api/tasks/waiting')return{dependencies:[{kind:'pipeline',repositoryId:'repo',target:'run-1',url:'https://github.com/dovocode/dovo-studio/actions/runs/1',project:'Studio',label:'Pipeline 1'}],related:[]};return{ok:true}};
 window.runtime={connected:true,profile:{id:'mac',name:'MacBook',connection:{address:'http://mac.local',token:'paired'}},snapshot:{workspace:{repositories:[repo],tasks:[task],agents:[]}},read,call:read,refresh:async()=>window.refreshes++,callEffect:(path,input)=>Effect.promise(()=>read(path,input))};
+window.approvalReads=[];window.approvalId='wanted';
+window.runtime.snapshot.approvals=[{id:'another',taskId:'thread',title:'Different pending approval',detail:'',createdAt:''}];
+window.runtime.readEffect=(path,input)=>Effect.callback(resume=>{
+  window.approvalReads.push({path,input,reply:events=>resume(Effect.succeed({events})),fail:()=>resume(Effect.fail(new Error('Connection interrupted')))});
+});
 const jobs=[{id:'test',name:'Tests',status:'success',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Run tests',status:'success'}]},{id:'release',name:'Release',status:'in_progress',url:'https://github.com/o/r/actions/runs/1',steps:[{id:'1',name:'Sign app',status:'in_progress'}]}];
 const graph=[{id:'check',name:'Tests',needs:[],jobIds:['test']},{id:'publish',name:'Release',needs:['check'],jobIds:['release']}];
-function App(){const[page,setPage]=useState('project');const[,render]=useState(0);window.setContextUsage=usage=>{task.contextUsage=usage;render(n=>n+1)};window.show=setPage;return page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Thread info <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
+function App(){const[page,setPage]=useState('project');const[,render]=useState(0);window.setContextUsage=usage=>{task.contextUsage=usage;render(n=>n+1)};window.show=setPage;window.approvalConnected=connected=>{window.runtime.connected=connected;render(n=>n+1)};window.setApprovalRoute=id=>{window.approvalId=id;render(n=>n+1)};return page==='approval'?<TaskApprovals taskId="thread"/>:page==='inline'?<div style={{height:'100vh',display:'flex',flexDirection:'column',background:'#101014',color:'#efeff2'}}><header style={{padding:12}}>Thread · Thread info <button onClick={()=>setPage('project')}>i</button></header><TaskProjectSheet onProjects={()=>window.projectsLinked=true} inline task={task} scripts={[]} branchActions={[]} onChanges={()=>window.inlineChanged=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>setPage('project')}/><p style={{padding:16}}>Conversation remains available</p></div>:page==='project'?<TaskProjectSheet onProjects={()=>window.projectsLinked=true} task={task} scripts={[]} branchActions={[]} onChanges={()=>window.changed=true} onPulls={url=>{window.selectedPull=url;setPage('pulls')}} onClose={()=>{}}/>:page==='pulls'?<TaskLinkedPullSheet task={task} onClose={()=>setPage('project')}/>:page==='behavior'?<TaskThreadBehavior task={task} onClose={()=>setPage('project')}/>:page==='icons'?<ProjectIconSettings repository={repo}/>:<PipelineJobs graph={graph} jobs={jobs} hasMore={false} onOpen={url=>window.opened=url}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
   },
   bundle: true,
@@ -281,6 +290,13 @@ try {
   await page.screenshot({ path: '/tmp/dovo-native-pipeline.png' })
   await page.evaluate(() => window.show('inline'))
   await page.getByText('Conversation remains available', { exact: true }).waitFor()
+  assert.equal(
+    await page
+      .getByLabel('Thread info', { exact: true })
+      .evaluate((panel) => getComputedStyle(panel).backgroundColor),
+    'rgb(23, 23, 28)',
+    'Inline Thread Info uses the solid theme surface',
+  )
   await page.getByRole('button', { name: 'More details', exact: true }).click()
   await page.getByRole('button', { name: 'Changes (0)', exact: true }).click()
   assert.equal(await page.evaluate(() => window.inlineChanged), true)
@@ -321,9 +337,49 @@ try {
   await page.getByRole('button', { name: 'More details', exact: true }).click()
   await page.getByRole('button', { name: 'Link projects', exact: true }).click()
   assert.equal(await page.evaluate(() => window.projectsLinked), true)
+  await page.evaluate(() => window.show('approval'))
+  await page.getByText('Checking decision…', { exact: true }).waitFor()
+  await page.waitForFunction(() => window.approvalReads.length === 1)
+  assert.deepEqual(
+    await page.evaluate(() => ({
+      path: window.approvalReads[0].path,
+      input: window.approvalReads[0].input,
+    })),
+    { path: '/api/activity', input: { scope: 'thread', kind: 'approval', query: 'wanted' } },
+  )
+  assert.equal(await page.getByText('Different pending approval', { exact: true }).count(), 0)
+  await page.evaluate(() => window.approvalReads[0].fail())
+  await page.getByText('Could not check this approval.', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await page.getByText('Checking decision…', { exact: true }).waitFor()
+  await page.waitForFunction(() => window.approvalReads.length === 2)
+  await page.evaluate(() => window.approvalConnected(false))
+  await page.getByText('Reconnect to check this approval.', { exact: true }).waitFor()
+  await page.evaluate(() => window.approvalConnected(true))
+  await page.waitForFunction(() => window.approvalReads.length === 3)
+  await page.evaluate(() => {
+    const event = (scope, id, decision) => ({
+      id: scope + id,
+      scope,
+      kind: 'approval',
+      time: '',
+      summary: '',
+      payload: JSON.stringify({ id, status: 'resolved', decision }),
+    })
+    window.approvalReads[1].reply([event('thread', 'wanted', 'approve')])
+    window.approvalReads[2].reply([
+      event('different-thread', 'wanted', 'approve'),
+      event('thread', 'another', 'always'),
+      event('thread', 'wanted', 'deny'),
+    ])
+  })
+  await page.getByText('Recorded decision: Not approved', { exact: true }).waitFor()
+  assert.equal(await page.getByText('Different pending approval', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'Show pending approvals', exact: true }).click()
+  await page.getByText('Different pending approval', { exact: true }).waitFor()
   assert.deepEqual(errors, [])
   console.log(
-    'React Native project panel: hidden editor controls, inline PR links, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers and pipeline graph passed.',
+    'React Native project panel: hidden editor controls, inline PR links, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers, pipeline graph and exact approval decision recovery passed.',
   )
 } finally {
   await browser.close()

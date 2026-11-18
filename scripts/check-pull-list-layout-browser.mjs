@@ -17,6 +17,7 @@ window.pages=()=>window.sources.map((source,index)=>({source,reader:source,error
 window.copied=[];Object.defineProperty(navigator,'clipboard',{value:{writeText:async value=>window.copied.push(value)}});
 `
 const native = `
+import {useImperativeHandle} from 'react';
 export const Field=({label,value,onChangeText,...props})=><label>{label}<input value={value} onChange={e=>onChangeText(e.target.value)} {...props}/></label>;
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style??{};
 const nativeStyle=style=>{const result={...flat(style)};for(const[key,axes]of Object.entries({paddingHorizontal:['paddingLeft','paddingRight'],paddingVertical:['paddingTop','paddingBottom'],marginHorizontal:['marginLeft','marginRight'],marginVertical:['marginTop','marginBottom']})){if(key in result){for(const axis of axes)result[axis]=result[key];delete result[key]}};return Object.fromEntries(Object.entries(result).filter(([,value])=>value!==undefined))};
@@ -30,7 +31,7 @@ export const Icon=()=>null;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)} style={{boxSizing:'border-box',width:'100%',padding:10,font:'inherit'}}/>;
 export const Choice=({label,value,onChange,items})=><select aria-label={label} value={value} onChange={event=>onChange(event.target.value)}>{items.map(item=><option value={item.id} key={item.id}>{item.name}</option>)}</select>;
-export const Sheet=({title,children,onClose})=><section role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close filters</button></section>;
+export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>({dismiss:(after)=>{onClose();after?.()}}));return <section role="dialog" aria-label={title}>{children}<button onClick={onClose}>Close filters</button></section>;}
 export const ScreenHeader=({title,subtitle,buttons})=><header><h1 style={{fontSize:20}}>{title}</h1><p>{subtitle}</p>{buttons.map(button=><button key={button.label} onClick={button.onPress}>{button.label}</button>)}</header>;
 `
 async function bundle(isMobile) {
@@ -41,9 +42,9 @@ async function bundle(isMobile) {
         'expo-router': `export const router={push:href=>window.opened=href};`,
         '../../../ui/content/markdown': `export const Markdown=()=>null;`,
         '../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
-        '../runtime/connection/provider': `export const useRuntime=()=>({overviews:window.sources.map(source=>({profile:source.profile})),cacheForRuntime:()=>({})});`,
+        '../runtime/connection/provider': `export const useRuntime=()=>({overviews:window.sources.map(source=>({profile:source.profile,snapshot:{codeReviewsEnabled:true}})),cacheForRuntime:()=>({})});`,
         '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
-        '../shell/source-route': `export const pullHref=(runtime,repo,number)=>'/'+runtime+'/pull/'+number;`,
+        '../shell/source-route': `export const pullHref=(runtime,repo,number,destination)=>{window.pullDestination=destination;return '/'+runtime+'/pull/'+number};`,
         '../scm/pulls/list/use-pulls': `export const usePulls=(repositoryId)=>({sources:window.sources,pages:window.pages().filter(page=>!repositoryId||page.sourceKey===repositoryId),busy:false,connected:window.sources.some(source=>source.connected),refresh:()=>{window.refreshed=true},more:async key=>{window.retried=key},chooseSource:async()=>{}});`,
         '../runtime/state/collection-sources': `export {projectContentIdentity} from '${mobile}runtime/state/collection-sources.ts';export const collectionSources=()=>window.sources;`,
         '../ui/layout/use-list-scroll': `export const useListScroll=()=>({retainPosition:()=>{}});`,
@@ -154,6 +155,26 @@ try {
         exact: true,
       })
       await search.waitFor()
+      if (isMobile && width === 390) {
+        const row = page.getByRole('button', { name: /Fix connection/ }).first()
+        await row.click({ button: 'right' })
+        const actions = page.getByRole('dialog', { name: 'Fix connection', exact: true })
+        await actions.getByRole('button', { name: 'Configure this run', exact: true }).click()
+        assert.equal(
+          await page.evaluate(() => window.pullDestination.tab),
+          'configure-agent-review',
+        )
+        assert.equal(await page.evaluate(() => window.pullDestination.reviewRequest), undefined)
+        await row.click({ button: 'right' })
+        await actions.getByRole('button', { name: 'Run agent review', exact: true }).click()
+        assert.equal(await page.evaluate(() => window.opened), '/mac/pull/1')
+        assert.equal(await page.evaluate(() => window.pullDestination.tab), 'agent-review')
+        assert.match(
+          await page.evaluate(() => window.pullDestination.reviewRequest),
+          /^[0-9a-f-]{36}$/,
+        )
+      }
+
       if (!isMobile) {
         const metadata = page.locator('.studio-collection-meta').first()
         await metadata.waitFor()
@@ -177,7 +198,7 @@ try {
         await page.evaluate(() => delete document.documentElement.dataset.textSize)
       }
       const rows = isMobile
-        ? page.locator('[data-rows] > div > button')
+        ? page.locator('[data-rows] > div > div > button')
         : page
             .locator(
               '[aria-label="Pull request rows"] button[aria-current], [aria-label="Pull request rows"] button',
@@ -188,7 +209,7 @@ try {
           ({ native, count }) =>
             document.querySelectorAll(
               native
-                ? '[data-rows] > div > button'
+                ? '[data-rows] > div > div > button'
                 : '[aria-label="Pull request rows"] button:has(p[title])',
             ).length === count,
           { native: isMobile, count },
@@ -197,6 +218,12 @@ try {
       }
       await expectRows(4, 'Duplicate source rows are merged')
       const first = rows.filter({ hasText: 'Fix connection' }).first()
+      if (isMobile) {
+        const review = page.getByRole('button', { name: 'Review changes', exact: true })
+        await review.click()
+        assert.equal(await page.evaluate(() => window.opened), '/mac/pull/1')
+        assert.equal(await page.evaluate(() => window.pullDestination.tab), 'changes')
+      }
       const title = first.getByText('Fix connection', { exact: true })
       assert.ok(
         (await first.getByText('Open', { exact: true }).boundingBox()).y <

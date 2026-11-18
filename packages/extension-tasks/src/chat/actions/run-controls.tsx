@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   runtimeComputerName,
+  resolveThreadRuntime,
   approvalActions,
   taskInputVisible,
   taskRemoteHumanInputs,
@@ -17,7 +18,8 @@ export function RunControls({ task }: { task: Task }) {
 
   const host = useStudioHost()
   const remoteInputs = taskRemoteHumanInputs(task)
-  const { request, connected, snapshot, runtimes, activeRuntimeId } = useWorkspace(),
+  const { request, connected, snapshot, runtimes, runtimeRegistry, activeRuntimeId } =
+      useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const act = (path: string, input: unknown) => {
@@ -122,21 +124,26 @@ export function RunControls({ task }: { task: Task }) {
           className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
         >
           <p className="text-xs text-muted-foreground">
-            {input.kind === 'approval' ? 'Permission request' : 'Question'} · For child thread:{' '}
-            {input.threadTitle} · {input.computerName}
+            {input.kind === 'approval' ? uiText('Permission request') : uiText('Input request')} ·
+            For child thread: {input.threadTitle} · {input.computerName}
           </p>
           <p className="py-1 text-xs font-medium">{input.title}</p>
           <Button
             size="sm"
             disabled={!host.openThread}
-            onClick={() =>
+            onClick={() => {
+              const owner = resolveThreadRuntime(
+                { runtimeId: input.runtimeId, runtimeIdentity: input.ownerRuntimeIdentity },
+                runtimeRegistry.profiles,
+                runtimes,
+              )
               host.openThread?.({
-                runtimeId: input.runtimeId,
-                runtimeIdentity: input.runtimeIdentity,
-                threadId: input.taskId,
+                runtimeId: owner?.id ?? input.runtimeId,
+                runtimeIdentity: owner ? input.ownerRuntimeIdentity : input.runtimeIdentity,
+                threadId: owner ? input.ownerTaskId : input.taskId,
                 title: input.threadTitle,
               })
-            }
+            }}
           >
             Review request
           </Button>

@@ -59,6 +59,18 @@ it('preserves legacy replies and supports textless turns', () => {
   })
 })
 
+it('keeps reasoning and the final reply visible in a folded turn', () => {
+  const content: ThreadMessage['content'] = [
+    { type: 'text', text: 'Earlier update' },
+    { type: 'data', name: 'dovo.reasoning', data: [{ summary: 'Check the branch.' }] },
+    { type: 'text', text: 'Final answer' },
+  ]
+  expect(foldedTurnPartRanges(content, 2, content.length)).toEqual([
+    { start: 1, end: 2 },
+    { start: 2, end: 3 },
+  ])
+})
+
 it('keeps created artifacts in folded work, including textless and intermediate replies', () => {
   const reference = {
     id: 'b43c4ca3-d5cd-40cd-b98c-cfba9b02e405',

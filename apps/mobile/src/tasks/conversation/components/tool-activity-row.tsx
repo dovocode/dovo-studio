@@ -233,71 +233,33 @@ export function ToolActivityRow({
 }
 export function ReasoningActivity({ events }: { events: TaskToolEvent[] }) {
   const uiText = useInterfaceText()
-
   const { colors, styles } = useTheme()
-
-  const [open, setOpen] = useApplicationState(false)
-  if (!events.length) return null
-  const active = events.some((event) => pendingActivity(event.status))
-  const latest = events.at(-1)
-  const status = latest && activityStatus(latest.status)
+  const summaries = events.flatMap((event) => {
+    const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
+    return detail.kind === 'reasoning' && detail.output.trim()
+      ? [
+          {
+            id: activityIdentity(event),
+            text: detail.output,
+            streaming: pendingActivity(event.status),
+          },
+        ]
+      : []
+  })
+  if (!summaries.length) return null
   return (
-    <View
-      style={{
-        gap: 2,
-      }}
-    >
-      <Pressable
-        accessibilityRole="button"
-        accessibilityState={{
-          expanded: open,
-        }}
-        onPress={() => setOpen((value) => !value)}
-        style={({ pressed }) => ({
-          minHeight: 44,
-          flexDirection: 'row',
-          alignItems: 'center',
-          gap: 8,
-          opacity: pressed ? 0.65 : 1,
-        })}
-      >
+    <View style={{ gap: 4 }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
         <Icon name="chat" size={14} color={colors.muted} />
-        <Text
-          style={[
-            styles.muted,
-            {
-              flex: 1,
-              fontSize: 13,
-            },
-          ]}
-        >
-          {active ? uiText('Thinking') : uiText('Reasoning summary')}
-          {status ? ` · ${status}` : ''}
+        <Text style={[styles.muted, { fontSize: 13, fontWeight: '500' }]}>
+          {uiText('Reasoning summary')}
         </Text>
-        {active && <ActivityIndicator size="small" color={colors.muted} />}
-        <Icon name={open ? 'down' : 'next'} size={10} color={colors.muted} />
-      </Pressable>
-      {open && (
-        <View
-          style={{
-            paddingLeft: 22,
-            paddingBottom: 8,
-            gap: 8,
-          }}
-        >
-          {events.map((event) => {
-            const detail = toolPresentation(event.payload, event.summary, event.inputPayload)
-            return (
-              <ThreadMarkdown
-                key={activityIdentity(event)}
-                text={detail.output || detail.input || detail.title}
-                variant="chat"
-                streaming={pendingActivity(event.status)}
-              />
-            )
-          })}
-        </View>
-      )}
+      </View>
+      <View style={{ paddingLeft: 22, paddingBottom: 8, gap: 8 }}>
+        {summaries.map(({ id, text, streaming }) => (
+          <ThreadMarkdown key={id} text={text} variant="chat" streaming={streaming} />
+        ))}
+      </View>
     </View>
   )
 }

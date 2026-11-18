@@ -19,7 +19,7 @@ export type ThreadTreeEntry = {
     runtimeId: string | null
     name: string
     online: boolean
-    snapshot: Pick<RuntimeSnapshot, 'runtimeId' | 'questions' | 'approvals'> | null
+    snapshot: Pick<RuntimeSnapshot, 'runtimeId' | 'questions' | 'approvals' | 'secureInputs'> | null
   }
 }
 const taskCollectionKey = (runtimeId: string | null, threadId: string) =>
@@ -44,6 +44,9 @@ export type NestedThread = {
   /** Linked work appears under the disclosure without changing its owning parent or root. */
   linkedThreads?: readonly NestedThread[]
   needsInput?: boolean
+  approvals?: number
+  questions?: number
+  otherInputs?: number
   partial?: boolean
   failureKey?: string
   activity?: string
@@ -65,14 +68,55 @@ export type NestedThread = {
   children: NestedThread[]
 }
 
-function threadNode(entry: ThreadTreeEntry): NestedThread {
+type ThreadInputs = Pick<NestedThread, 'approvals' | 'questions' | 'otherInputs'>
+
+function indexThreadInputs(snapshot: ThreadTreeEntry['source']['snapshot']) {
+  const inputs = new Map<string, ThreadInputs>()
+  const add = (taskId: string, kind: keyof ThreadInputs) => {
+    const current = inputs.get(taskId) ?? {}
+    current[kind] = (current[kind] ?? 0) + 1
+    inputs.set(taskId, current)
+  }
+  for (const request of snapshot?.approvals ?? []) add(request.taskId, 'approvals')
+  for (const request of snapshot?.questions ?? [])
+    if (request.routing !== 'parent') add(request.taskId, 'questions')
+  for (const request of snapshot?.secureInputs ?? []) add(request.taskId, 'otherInputs')
+  return inputs
+}
+
+export function taskThreadInputSummary(
+  snapshot: ThreadTreeEntry['source']['snapshot'],
+  taskId: string,
+) {
+  return indexThreadInputs(snapshot).get(taskId)
+}
+
+function watchedThreadInputs(
+  snapshot: ThreadWatchSummary['snapshot'],
+  runtimeId: string | undefined,
+  taskId: string,
+): ThreadInputs {
+  const approvals = new Set<string>()
+  const otherInputs = new Set<string>()
+  for (const request of snapshot?.humanInputs ?? []) {
+    if (request.runtimeId !== runtimeId || request.taskId !== taskId) continue
+    const ids = request.kind === 'approval' ? approvals : otherInputs
+    ids.add(request.id)
+  }
+  // The watch protocol also uses the question kind for secure input.
+  return {
+    approvals: approvals.size || undefined,
+    questions: undefined,
+    otherInputs: otherInputs.size || undefined,
+  }
+}
+
+function threadNode(entry: ThreadTreeEntry, inputs?: ThreadInputs): NestedThread {
   const { task, source } = entry
-  const needsInput = [
-    ...(source.snapshot?.questions ?? []),
-    ...(source.snapshot?.approvals ?? []),
-  ].some((request) => request.taskId === task.id)
+  const needsInput = !!inputs
   return {
     needsInput,
+    ...inputs,
     failureKey:
       task.status === 'failed'
         ? threadFailureKey(
@@ -122,7 +166,21 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
     runtimeIds?: ReadonlyMap<string, string | null>
   } = {},
 ) {
-  const nodes = new Map(entries.map((entry) => [entry.key, threadNode(entry)]))
+  const inputsBySnapshot = new Map<
+    ThreadTreeEntry['source']['snapshot'],
+    ReturnType<typeof indexThreadInputs>
+  >()
+  const nodes = new Map(
+    entries.map((entry) => {
+      const snapshot = entry.source.snapshot
+      let inputs = inputsBySnapshot.get(snapshot)
+      if (!inputs) {
+        inputs = indexThreadInputs(snapshot)
+        inputsBySnapshot.set(snapshot, inputs)
+      }
+      return [entry.key, threadNode(entry, inputs.get(entry.task.id))]
+    }),
+  )
   const parents = new Map<string, string>()
   const identities = new Map(
     entries.flatMap((entry) =>
@@ -340,6 +398,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
                   ? 'stopped'
                   : fact.phase,
             needsInput: fact.attention.length > 0,
+            ...watchedThreadInputs(watch.snapshot, fact.runtimeId, fact.threadId),
             failureKey:
               fact.status === 'failed'
                 ? threadFailureKey(
@@ -473,6 +532,7 @@ function watchedNode(
     (fact) => fact.threadId === watch.threadId && fact.runtimeId === watch.snapshot?.runtimeId,
   )
   return {
+    ...watchedThreadInputs(watch.snapshot, watch.snapshot?.runtimeId, watch.threadId),
     needsInput: own ? own.attention.length > 0 : watch.snapshot?.phase === 'needs-input',
     partial: watch.snapshot?.partial,
     failureKey:
@@ -513,6 +573,22 @@ function watchedNode(
 
 export function threadDescendants(children: readonly NestedThread[]): NestedThread[] {
   return children.flatMap((child) => [child, ...threadDescendants(child.children)])
+}
+
+/** Report only individual requests that the snapshot can attribute to an owning thread. */
+export function threadInputSummary(root: NestedThread, includeChildren = true) {
+  let approvals = 0
+  let questions = 0
+  let otherInputs = 0
+  let uncounted = false
+  for (const node of includeChildren ? [root, ...threadDescendants(root.children)] : [root]) {
+    if (!node.online || node.paused || node.nativeAgentKey || !threadNeedsInput(node)) continue
+    approvals += node.approvals ?? 0
+    questions += node.questions ?? 0
+    otherInputs += node.otherInputs ?? 0
+    uncounted ||= !node.approvals && !node.questions && !node.otherInputs
+  }
+  return { approvals, questions, otherInputs, uncounted }
 }
 
 /** Summarize child work; provider PR/check watches keep their own presentation. */

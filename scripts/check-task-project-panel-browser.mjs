@@ -230,30 +230,22 @@ try {
           )
           const style = getComputedStyle(button)
           const probe = document.createElement('span')
-          probe.style.boxShadow = 'var(--studio-surface-rim)'
-          probe.style.backgroundColor =
-            'color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill))'
-          probe.style.backgroundImage = 'var(--studio-glass-sheen)'
+          probe.style.backgroundColor = 'var(--selection)'
           button.append(probe)
-          const material = getComputedStyle(probe)
-          const expected = {
-            shadow: material.boxShadow,
-            fill: material.backgroundColor,
-            sheen: material.backgroundImage,
-          }
+          const expectedFill = getComputedStyle(probe).backgroundColor
           probe.remove()
           return {
             radius: style.borderRadius,
             shadow: style.boxShadow,
             fill: style.backgroundColor,
             sheen: style.backgroundImage,
-            expected,
+            expectedFill,
           }
         })
         assert.equal(style.radius, '10px')
-        assert.equal(style.shadow, style.expected.shadow, 'Selected tools use only the glass rim')
-        assert.equal(style.fill, style.expected.fill, 'Selected tools use the shared tinted fill')
-        assert.equal(style.sheen, style.expected.sheen, 'Selected tools use the shared glass sheen')
+        assert.equal(style.shadow, 'none', 'Selected tools have a flat fill')
+        assert.equal(style.fill, style.expectedFill, 'Selected tools use the shared selection fill')
+        assert.equal(style.sheen, 'none', 'Selected tools have a flat fill')
         assert.notEqual(
           await files.evaluate((button) => getComputedStyle(button, '::before').backgroundColor),
           'rgba(0, 0, 0, 0)',
@@ -277,8 +269,8 @@ try {
         )
         assert.equal(
           await files.evaluate((button) => getComputedStyle(button).boxShadow),
-          style.expected.shadow,
-          'Zero glow retains only the selected glass rim',
+          'none',
+          'Selected tools stay flat with glow disabled',
         )
         await page.evaluate(() => {
           delete document.documentElement.dataset.themeGlow
@@ -415,6 +407,19 @@ try {
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('complementary', { name: 'Thread info', exact: true }).waitFor()
     const info = page.getByRole('complementary', { name: 'Thread info', exact: true })
+    if (stylesheet) {
+      const material = await info.evaluate((panel) => {
+        const probe = document.createElement('span')
+        probe.style.backgroundColor = 'var(--popover)'
+        panel.append(probe)
+        const expected = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        const style = getComputedStyle(panel)
+        return { fill: style.backgroundColor, filter: style.backdropFilter, expected }
+      })
+      assert.equal(material.fill, material.expected, 'Thread Info uses the solid popover color')
+      assert.equal(material.filter, 'none', 'Thread Info does not refract the thread behind it')
+    }
     assert.equal(
       await info
         .getByRole('button', { name: 'More details', exact: true })
@@ -687,7 +692,7 @@ try {
       assert.equal(
         await advanced.evaluate((element) => getComputedStyle(element).backgroundImage),
         'none',
-        'Menu choices stay flat inside the glass menu',
+        'Menu choices stay flat inside the menu',
       )
       const highlight = await advanced.evaluate((element) => {
         const probe = document.createElement('span')
@@ -709,13 +714,13 @@ try {
       )
       const material = await menu.evaluate((element) => {
         const probe = document.createElement('span')
-        probe.style.boxShadow = 'var(--studio-surface-rim), var(--studio-surface-shadow)'
+        probe.style.boxShadow = 'var(--studio-surface-shadow)'
         element.append(probe)
         const expected = getComputedStyle(probe).boxShadow
         probe.remove()
         return { shadow: getComputedStyle(element).boxShadow, expected }
       })
-      assert.equal(material.shadow, material.expected, 'Menus use only the neutral glass shadow')
+      assert.equal(material.shadow, material.expected, 'Menus use only the neutral surface shadow')
       if (!mobile) await page.screenshot({ path: '/tmp/dovo-project-git-menu-effects.png' })
       await page.evaluate(() => {
         document.documentElement.dataset.themeGradients = 'false'
@@ -729,7 +734,7 @@ try {
       assert.equal(
         await menu.evaluate((element) => getComputedStyle(element).boxShadow),
         material.expected,
-        'Disabling glow keeps only the neutral glass shadow',
+        'Disabling glow keeps only the neutral surface shadow',
       )
       assert.equal(
         await menu.evaluate((element) =>

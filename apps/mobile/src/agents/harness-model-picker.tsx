@@ -347,7 +347,7 @@ function ComputerModelPicker({
               ...(agent.reasoning && !efforts.some((effort) => effort.id === agent.reasoning)
                 ? [{ id: agent.reasoning, name: agent.reasoning }]
                 : []),
-            ]}
+            ].map((effort) => (effort.id === 'ultra' ? { ...effort, icon: 'ultra' } : effort))}
             onChange={(reasoning) =>
               choose(selection, changeModelSettings(agent, { reasoning }, catalog))
             }

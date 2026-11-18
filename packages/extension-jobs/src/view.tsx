@@ -1,9 +1,15 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { randomUUID, resolveRuntimeTarget } from '@dovo/protocol'
+import {
+  randomUUID,
+  resolveRuntimeTarget,
+  runtimeComputerName,
+  runtimeReachability,
+} from '@dovo/protocol'
 import { PageHeader, SidebarHeader, useLeftSidebar } from '@dovo/studio-ui'
 import { SearchField } from '@dovo/studio-ui/search-field'
+import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef } from 'react'
 import { ArrowLeft, Monitor, Plus, RefreshCw, Workflow } from 'lucide-react'
 import {
   clientScopeKey,
@@ -35,9 +41,19 @@ type Selection = {
   runtimeId: string
   automationId: string
   canvas?: boolean
+  runId?: string
 }
-/** Section navigation unmounts this page; keep its list position, not the automation view. */
-const remembered: { search: string; selected: Selection | null } = { search: '', selected: null }
+const remembered: {
+  search: string
+  attentionOnly: boolean
+  scroll: number
+  selected: Selection | null
+} = {
+  search: '',
+  attentionOnly: false,
+  scroll: 0,
+  selected: null,
+}
 type Creation = {
   runtimeId: string
   connection: RuntimeConnection
@@ -61,6 +77,11 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
   const [selected, setSelected] = useApplicationState<Selection | null>(remembered.selected)
   const [sidebarVisible] = useLeftSidebar()
   const [search, setSearch] = useApplicationState(remembered.search)
+  const [attentionOnly, setAttentionOnly] = useApplicationState(remembered.attentionOnly)
+  const list = useRef<HTMLElement>(null)
+  useLayoutEffect(() => {
+    if (list.current) list.current.scrollTop = remembered.scroll
+  }, [])
   const [error, setError] = useApplicationState('')
   const [busy, setBusy] = useApplicationState(false)
   const [refreshing, setRefreshing] = useApplicationState(false)
@@ -73,9 +94,11 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
     remembered.selected = selected && {
       runtimeId: selected.runtimeId,
       automationId: selected.automationId,
+      runId: selected.runId,
     }
     remembered.search = search
-  }, [selected, search])
+    remembered.attentionOnly = attentionOnly
+  }, [selected, search, attentionOnly])
   const completedCreation = useRef('')
   const request = useRef(0)
   useEffect(
@@ -95,11 +118,21 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
   const destination = automationDestination(rows, activeRuntimeId, entityId, automationTarget)
   const notifiedRow = destination?.row
   const query = search.trim().toLowerCase()
-  const visible = rows.filter((row) =>
-    [row.flow.name, row.runtimeName, ...row.projects, row.status, row.botJob ?? ''].some((value) =>
-      value.toLowerCase().includes(query),
-    ),
+  const filtering = !!query || attentionOnly
+  const visible = rows.filter(
+    (row) =>
+      (!attentionOnly ||
+        row.needsInput ||
+        row.latest?.status === 'waiting' ||
+        row.latest?.status === 'failed') &&
+      [row.flow.name, row.runtimeName, ...row.projects, row.status, row.botJob ?? ''].some(
+        (value) => value.toLowerCase().includes(query),
+      ),
   )
+  const loading = refreshing || entries.some((entry) => !entry.snapshot && !entry.error)
+  const incomplete = entries.some((entry) => !entry.connected || entry.error || !entry.snapshot)
+  const available = entries.some((entry) => entry.connected && !entry.error && entry.snapshot)
+  const unavailable = entries.length > 0 && !available && !rows.length
   const chosen =
     selected && (!automationTarget || destination)
       ? rows.find(
@@ -107,18 +140,21 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
             row.runtime.profile.id === selected.runtimeId && row.flow.id === selected.automationId,
         )
       : undefined
+  const activeRunId =
+    selected?.runId ?? (notifiedRow?.key === chosen?.key ? destination?.runId : undefined)
   const ownDetail =
     !!chosen && connected && isActiveRuntime(chosen.runtime.profile, activeRuntimeId, connection)
   const back = () => {
     setSelected(null)
     setError('')
   }
-  const open = async (row: FleetAutomation, reconnect = false) => {
+  const open = async (row: FleetAutomation, reconnect = false, runId?: string) => {
     if (busy) return
     const attempt = ++request.current
     setSelected({
       runtimeId: row.runtime.profile.id,
       automationId: row.flow.id,
+      runId,
     })
     setError('')
     if (!row.runtime.connected && !reconnect) return
@@ -157,6 +193,25 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
         setBusy(false)
       }
     }
+  }
+  const create = () => {
+    setOwner(
+      entries.find((entry) => entry.profile.id === activeRuntimeId && entry.connected)?.profile
+        .id ??
+        entries.find((entry) => entry.connected)?.profile.id ??
+        '',
+    )
+    setName('')
+    setError('')
+    setCreating(true)
+  }
+  const refresh = () => {
+    if (refreshing) return
+    setRefreshing(true)
+    setError('')
+    void refreshRuntimes()
+      .catch((cause) => setError(String(cause)))
+      .finally(() => setRefreshing(false))
   }
   useEffect(() => {
     const target = pending && { id: pending.runtimeId, connection: pending.connection }
@@ -222,29 +277,14 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
             title={uiText('Refresh')}
             className="size-8"
             disabled={busy || refreshing}
-            onClick={() => {
-              setRefreshing(true)
-              void refreshRuntimes()
-                .catch((cause) => setError(String(cause)))
-                .finally(() => setRefreshing(false))
-            }}
+            onClick={refresh}
           >
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
           </Button>
           <Button
             size="sm"
             disabled={busy || !entries.some((entry) => entry.connected)}
-            onClick={() => {
-              setOwner(
-                entries.find((entry) => entry.profile.id === activeRuntimeId && entry.connected)
-                  ?.profile.id ??
-                  entries.find((entry) => entry.connected)?.profile.id ??
-                  '',
-              )
-              setName('')
-              setError('')
-              setCreating(true)
-            }}
+            onClick={create}
           >
             <Plus className="size-3.5" /> New automation
           </Button>
@@ -277,91 +317,197 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
                 value={search}
                 onValueChange={setSearch}
               />
+              <ToggleButton
+                variant="ghost"
+                size="sm"
+                className="studio-list-quick-filter mt-2 text-xs text-muted-foreground hover:bg-accent focus-visible:outline-2 focus-visible:outline-primary aria-pressed:bg-selection aria-pressed:text-foreground"
+                pressed={attentionOnly}
+                onPressedChange={setAttentionOnly}
+              >
+                {uiText('Needs attention')}
+              </ToggleButton>
             </div>
             <p
               role="status"
               className="shrink-0 border-b border-border/70 px-3 py-2 text-xs text-muted-foreground"
             >
-              {visible.length} automation{visible.length === 1 ? '' : 's'}
-              {query ? ` of ${rows.length}` : ' across your computers'}
+              {loading && !rows.length ? (
+                uiText('Loading automations…')
+              ) : (
+                <>
+                  {visible.length} automation{visible.length === 1 ? '' : 's'}
+                  {filtering ? ` of ${rows.length}` : incomplete ? '' : ' across your computers'}
+                </>
+              )}
             </p>
             <nav
+              ref={list}
+              onScroll={(event) => {
+                remembered.scroll = event.currentTarget.scrollTop
+              }}
               aria-label="Automations across computers"
               className="min-h-0 flex-1 divide-y divide-border/50 overflow-y-auto px-3 py-2"
             >
-              {visible.map((row) => (
-                <button
-                  key={row.key}
-                  disabled={busy}
-                  aria-current={chosen?.key === row.key ? 'true' : undefined}
-                  onClick={() => void open(row)}
-                  className={cn(
-                    'studio-collection-row w-full text-left disabled:opacity-60',
-                    chosen?.key === row.key && 'bg-accent',
-                  )}
-                >
-                  <span className="studio-collection-body">
-                    <span className="studio-collection-meta">
-                      <span
-                        className={cn(
-                          'studio-collection-status',
-                          row.needsInput || row.latest?.status === 'waiting'
-                            ? 'text-status-warning'
-                            : row.latest?.status === 'failed'
-                              ? 'text-destructive'
-                              : 'text-muted-foreground',
-                        )}
-                      >
-                        <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
-                        {row.status}
-                      </span>
-                      {!row.runtime.connected && <span>Offline · Last saved state</span>}
-                    </span>
-                    <span className="studio-collection-title truncate">{row.flow.name}</span>
-                    <span className="studio-collection-context">
-                      {row.botJob && <span className="truncate">{row.botJob}</span>}
-                      <span className="inline-flex min-w-0 items-center gap-1.5">
-                        <Monitor className="size-3 shrink-0" />
-                        <span className="truncate">{row.runtimeName}</span>
-                      </span>
-                      {row.projects.length > 0 && (
-                        <span className="truncate">{row.projects.join(', ')}</span>
-                      )}
-                    </span>
-                  </span>
-                  {row.latest && (
-                    <time
-                      className="studio-collection-date"
-                      dateTime={row.latest.updatedAt ?? row.latest.createdAt}
-                      title={`Last run updated ${formatDateTime(row.latest.updatedAt ?? row.latest.createdAt)}`}
+              {entries
+                .filter((entry) => !entry.connected || entry.error || !entry.snapshot)
+                .map((entry) => {
+                  const reachability = runtimeReachability(entry)
+                  const status =
+                    reachability === 'offline'
+                      ? entry.snapshot
+                        ? uiText('Offline · Showing saved automations')
+                        : uiText('Offline')
+                      : reachability === 'connecting' || (!entry.snapshot && !entry.error)
+                        ? uiText('Connecting…')
+                        : undefined
+                  return (
+                    <p
+                      key={entry.profile.id}
+                      role={entry.error ? 'alert' : undefined}
+                      className="break-words px-3 py-2 text-xs text-muted-foreground"
                     >
-                      {formatDateTime(row.latest.updatedAt ?? row.latest.createdAt, {
-                        month: 'short',
-                        day: 'numeric',
-                      })}
-                    </time>
-                  )}
-                </button>
-              ))}
-              {!visible.length && (
+                      {[runtimeComputerName(entry), status, entry.error]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )
+                })}
+              {visible.map((row) => {
+                const run = row.latest
+                const paused =
+                  !row.flow.enabled &&
+                  row.flow.nodes.some(
+                    (node) => node.data.kind === 'trigger' && node.data.trigger !== 'manual',
+                  )
+                return (
+                  <div key={row.key} className="flex min-w-0 items-center gap-1">
+                    <button
+                      disabled={busy}
+                      aria-current={chosen?.key === row.key ? 'true' : undefined}
+                      onClick={() => void open(row)}
+                      className={cn(
+                        'studio-collection-row min-w-0 flex-1 text-left focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60',
+                        chosen?.key === row.key && 'bg-accent',
+                      )}
+                    >
+                      <span className="studio-collection-body">
+                        <span className="studio-collection-title truncate">{row.flow.name}</span>
+                        <span className="studio-collection-meta">
+                          <span
+                            className={cn(
+                              'studio-collection-status',
+                              row.needsInput || row.latest?.status === 'waiting'
+                                ? 'text-status-warning'
+                                : row.latest?.status === 'failed'
+                                  ? 'text-destructive'
+                                  : 'text-muted-foreground',
+                            )}
+                          >
+                            <span aria-hidden="true" className="size-1.5 rounded-full bg-current" />
+                            {run?.status === 'failed' && !row.needsInput
+                              ? uiText('Last run failed')
+                              : run
+                                ? uiText(row.status)
+                                : uiText('Not run yet')}
+                          </span>
+                          {paused && <span>{uiText('Triggers paused')}</span>}
+                          {!row.runtime.connected && (
+                            <span>
+                              {uiText(row.runtime.error ? 'Offline' : 'Connecting…')} ·{' '}
+                              {uiText('Last saved state')}
+                            </span>
+                          )}
+                        </span>
+                        <span className="studio-collection-context">
+                          {row.botJob && <span className="truncate">{row.botJob}</span>}
+                          <span className="inline-flex min-w-0 items-center gap-1.5">
+                            <Monitor className="size-3 shrink-0" />
+                            <span className="truncate">{row.runtimeName}</span>
+                          </span>
+                          {row.projects.length > 0 && (
+                            <span className="truncate">{row.projects.join(', ')}</span>
+                          )}
+                        </span>
+                      </span>
+                      {row.latest && (
+                        <time
+                          className="studio-collection-date"
+                          dateTime={row.latest.updatedAt ?? row.latest.createdAt}
+                          title={`Last run updated ${formatDateTime(row.latest.updatedAt ?? row.latest.createdAt)}`}
+                        >
+                          {formatDateTime(row.latest.updatedAt ?? row.latest.createdAt, {
+                            month: 'short',
+                            day: 'numeric',
+                          })}
+                        </time>
+                      )}
+                    </button>
+                    {run &&
+                      (row.needsInput || run.status === 'waiting' || run.status === 'failed') && (
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="mr-1 shrink-0"
+                          disabled={busy}
+                          onClick={() => void open(row, false, run.id)}
+                        >
+                          {uiText('View run')}
+                        </Button>
+                      )}
+                  </div>
+                )
+              })}
+              {!visible.length && !loading && (
                 <EmptyState
                   icon={<Workflow />}
-                  title={query ? 'No matching automations' : 'Automate repeatable work'}
+                  title={
+                    !entries.length
+                      ? uiText('Connect a computer')
+                      : unavailable
+                        ? uiText('Automations unavailable')
+                        : filtering
+                          ? uiText('No matching automations.')
+                          : incomplete
+                            ? uiText('No automations on available computers')
+                            : uiText('Create an automation')
+                  }
                   description={
-                    query
-                      ? 'Search by automation, Bot, project or computer.'
-                      : 'Create an automation on one of your computers. Its runs appear here alongside your other work.'
+                    !entries.length
+                      ? uiText('Connect a computer to load its automations.')
+                      : unavailable
+                        ? uiText('Reconnect a computer to load its automations.')
+                        : incomplete
+                          ? uiText('Some computers could not be checked.')
+                          : filtering
+                            ? 'Search by automation, Bot, project or computer.'
+                            : uiText(
+                                'Run repeatable tasks manually or on a schedule, with review steps when you need them.',
+                              )
+                  }
+                  action={
+                    query && !unavailable ? (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => {
+                          setSearch('')
+                          setAttentionOnly(false)
+                        }}
+                      >
+                        {uiText('Clear search')}
+                      </Button>
+                    ) : incomplete ? (
+                      <Button size="sm" variant="outline" disabled={busy} onClick={refresh}>
+                        {uiText('Retry loading automations')}
+                      </Button>
+                    ) : entries.length ? (
+                      <Button size="sm" disabled={busy} onClick={create}>
+                        {uiText('New automation')}
+                      </Button>
+                    ) : undefined
                   }
                 />
               )}
-              {entries
-                .filter((entry) => !entry.snapshot)
-                .map((entry) => (
-                  <p key={entry.profile.id} className="px-3 py-2 text-xs text-muted-foreground">
-                    {entry.profile.name}:{' '}
-                    {entry.error ? 'Could not load saved automations.' : 'Loading automations…'}
-                  </p>
-                ))}
             </nav>
           </div>
         </div>
@@ -370,20 +516,20 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
             {chosen ? (
               ownDetail ? (
                 <AutomationDetail
-                  key={`${chosen.key}:${clientScopeKey(connection)}:${destination?.runId ?? ''}:${navigationKey ?? ''}`}
+                  key={`${chosen.key}:${clientScopeKey(connection)}:${activeRunId ?? ''}:${navigationKey ?? ''}`}
                   automationId={chosen.flow.id}
-                  initialRunId={notifiedRow?.key === chosen.key ? destination?.runId : undefined}
+                  initialRunId={activeRunId}
                   initialSurface={selected.canvas ? 'canvas' : 'runs'}
                   onBack={back}
                 />
               ) : (
                 <CachedAutomation
-                  key={`${chosen.key}:${destination?.runId ?? ''}`}
+                  key={`${chosen.key}:${activeRunId ?? ''}`}
                   row={chosen}
-                  initialRunId={notifiedRow?.key === chosen.key ? destination?.runId : undefined}
+                  initialRunId={activeRunId}
                   busy={busy}
                   error={error}
-                  onOpen={() => void open(chosen, true)}
+                  onOpen={() => void open(chosen, true, activeRunId)}
                   onBack={back}
                 />
               )

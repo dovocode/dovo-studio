@@ -218,7 +218,7 @@ try {
       assert.equal(await button.evaluate((element) => element === document.activeElement), true)
     }
   }
-  const checkIdle = async (screenshot) => {
+  const checkIdle = async (screenshot, running = false) => {
     const input = page.getByRole('textbox', { name: 'Message thread', exact: true })
     await page
       .locator('header')
@@ -266,6 +266,15 @@ try {
     }
     await checkTextAlignment()
     if (screenshots && screenshot) await page.screenshot({ path: screenshots + '/' + screenshot })
+    if (running) {
+      await input.focus()
+      await settleComposer()
+      assert.equal((await page.locator('.studio-composer').boundingBox()).height, surface.height)
+      await input.evaluate((element) => element.blur())
+      await settleComposer()
+      assert.equal((await page.locator('.studio-composer').boundingBox()).height, surface.height)
+      return
+    }
     const motion = await input.evaluate((element) => {
       element.focus()
       return new Promise((resolve) =>
@@ -768,7 +777,10 @@ try {
       )
       await closeInfo()
       assert.equal(await input.inputValue(), '')
-      await checkIdle(project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined)
+      await checkIdle(
+        project === 'dovo-studio' ? device.name + '-idle-thread.png' : undefined,
+        true,
+      )
       if (project === 'dovo-studio') {
         // The rich text editor takes the textarea's place in the single idle row.
         await page.evaluate(() => {
@@ -778,7 +790,7 @@ try {
         await page
           .locator('.studio-composer [contenteditable][aria-label="Message thread"]')
           .waitFor()
-        await checkIdle(device.name + '-idle-thread-rich.png')
+        await checkIdle(device.name + '-idle-thread-rich.png', true)
         await page.evaluate(() => {
           window.setRichText(false)
           window.setTask({})

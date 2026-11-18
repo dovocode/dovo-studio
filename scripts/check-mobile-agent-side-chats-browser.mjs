@@ -2,6 +2,9 @@ import assert from 'node:assert/strict'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
 
+const handoffReceiptText =
+  'HEAD: 0123456789abcdef0123456789abcdef01234567\n\nRecorded checklist at handoff: 1 of 2 open\n- Pending: Run integration checks\n\nCompleted result'
+
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const adapters = [
@@ -92,7 +95,7 @@ import {PullAgentChat} from '${mobile}scm/pulls/detail/agent-chat.tsx';
 window.pending={};window.ids=0;window.routes=[];window.calls=[];window.appends=[];
 const parent={createdAt:'2026-11-15T07:00:00Z',id:'parent',repositoryId:'repo',title:'Main thread',status:'review',draft:'Keep my draft',messages:[],linkedPullRequests:[{number:7,url:'https://github.com/team/project/pull/7'}]};
 const child={createdAt:'2026-11-15T07:00:00Z',id:'child',title:'Review side chat',status:'review',messages:[{id:'reply',role:'assistant',text:'Result'}],turns:[{id:'turn',status:'completed',assistantId:'reply'}],sideThread:{parentTaskId:'parent',contextMessageCount:0}};
-window.runtime={connected:true,profile:{id:'mac',connection:{address:'http://mac.lan'}},snapshot:{approvals:[],questions:[],workspace:{tasks:[parent,child],repositories:[{id:'repo',name:'Project'}]}},call:async(path,input)=>{window.calls.push({path,input});if(path.endsWith('discard')){window.runtime.snapshot.workspace.tasks=window.runtime.snapshot.workspace.tasks.filter(task=>task.id!==input.id);return{ok:true}}if(window.hold)return new Promise(resolve=>{window.finish=()=>resolve({id:'late'})});if(window.fail){window.fail=false;throw Error('Temporary disconnection')}return path.endsWith('bring-back')?{id:'parent',receiptId:'child:turn',text:'Completed result'}:{id:'created'}}};
+window.runtime={connected:true,profile:{id:'mac',connection:{address:'http://mac.lan'}},snapshot:{approvals:[],questions:[],workspace:{tasks:[parent,child],repositories:[{id:'repo',name:'Project'}]}},call:async(path,input)=>{window.calls.push({path,input});if(path.endsWith('discard')){window.runtime.snapshot.workspace.tasks=window.runtime.snapshot.workspace.tasks.filter(task=>task.id!==input.id);return{ok:true}}if(window.hold)return new Promise(resolve=>{window.finish=()=>resolve({id:'late'})});if(window.fail){window.fail=false;throw Error('Temporary disconnection')}return path.endsWith('bring-back')?{id:'parent',receiptId:'child:turn',text:${JSON.stringify(handoffReceiptText)}}:{id:'created'}}};
 window.reads=[];window.changesAfter='after-one';window.runtime.read=async(path,input)=>{window.reads.push({path,input});if(path.endsWith('/changes')){if(window.failRead){window.failRead=false;throw Error('Wait for the side thread to finish')};return {before:'creation-snapshot',after:window.changesAfter,files:[{path:'child.ts',before:'old',after:'new',viewed:false},{path:'other.ts',before:'old',after:'new',viewed:false}],omitted:window.omittedPaths??[]}}return {before:{kind:'text',text:'old',size:3,truncated:false},after:{kind:'text',text:input.full?'full-new':'new',size:3,truncated:!input.full},patch:'@@ -1 +1 @@\\n-old\\n+new'}};
 const detail={pull:{number:7,title:'Review PR',url:'https://github.com/team/project/pull/7',repositoryUrl:'https://github.com/team/project',headSha:'a'.repeat(40),baseSha:'b'.repeat(40),head:'feature',base:'main',destination:'account-A'},files:[{path:'src/main.ts',status:'modified',patch:'@@ -1 +1 @@\\n-old\\n+new',additions:1,deletions:1}],comments:[],warnings:[],checks:[]};
 window.prLatestDetail=detail;
@@ -160,7 +163,7 @@ try {
   assert.deepEqual(await page.evaluate(() => window.appends[0]), [
     'mac',
     'parent',
-    'Completed result',
+    handoffReceiptText,
     'Keep my draft',
     'child:turn',
     undefined,

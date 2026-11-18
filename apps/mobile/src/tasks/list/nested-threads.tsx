@@ -1,4 +1,4 @@
-import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { memo, useState } from 'react'
 import { View } from 'react-native'
@@ -6,6 +6,7 @@ import { Pressable } from './thread-pressable'
 import {
   modelDisplayName,
   threadTreeSummary,
+  threadInputSummary,
   threadChildRows,
   visibleThreadChildren,
   nativeOverflowFailures,
@@ -69,6 +70,7 @@ export const NestedThreads = memo(function NestedThreads({
       <Pressable
         accessibilityRole="button"
         accessibilityLabel={uiText('Open child thread {value0}', { value0: child.title })}
+        accessibilityHint={threadInputLabel(threadInputSummary(child, false), uiText) || undefined}
         disabled={disabled}
         style={{ paddingVertical: 10, gap: 4 }}
         onPress={() => {
@@ -92,7 +94,8 @@ export const NestedThreads = memo(function NestedThreads({
             child.executedModel ? modelDisplayName(child.executedModel) : '',
             child.nativeAgentKey && child.activity
               ? child.activity
-              : threadPhaseLabels[child.phase],
+              : threadInputLabel(threadInputSummary(child, false), uiText) ||
+                threadPhaseLabels[child.phase],
             child.nativeAgentKey ? 'Read only' : '',
             !child.online
               ? 'Offline · saved state'

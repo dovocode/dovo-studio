@@ -18,17 +18,19 @@ import {
   cn,
   DropdownMenu,
 } from '@dovo/studio-ui'
-import { Ellipsis, MessageSquarePlus, Trash2 } from 'lucide-react'
+import { ArrowUpRight, Ellipsis, MessageSquarePlus, Trash2 } from 'lucide-react'
 
 export function ArtifactLibraryActions({
   profile,
   artifact,
   onDeleted,
+  onOpenSource,
   compact = false,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
   onDeleted: () => void
+  onOpenSource?: () => void
   compact?: boolean
 }) {
   const uiText = useInterfaceText()
@@ -120,6 +122,14 @@ export function ArtifactLibraryActions({
                 }}
                 className="z-50 min-w-44 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
               >
+                {onOpenSource && (
+                  <DropdownMenu.Item
+                    onSelect={onOpenSource}
+                    className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent"
+                  >
+                    <ArrowUpRight className="size-4" aria-hidden /> {uiText('Open source thread')}
+                  </DropdownMenu.Item>
+                )}
                 <DropdownMenu.Item
                   disabled={!runtime?.connected}
                   onSelect={add}
@@ -139,6 +149,11 @@ export function ArtifactLibraryActions({
           </DropdownMenu.Root>
         ) : (
           <>
+            {onOpenSource && (
+              <Button size="sm" variant="ghost" onClick={onOpenSource}>
+                <ArrowUpRight className="size-4" aria-hidden /> {uiText('Open source thread')}
+              </Button>
+            )}
             <Button
               size="sm"
               variant="ghost"

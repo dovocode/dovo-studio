@@ -200,6 +200,10 @@
   max-width: calc(100% - 16px);
   border: 1px solid var(--border);
   border-radius: 999px;
+  background-color: var(--popover);
+  box-shadow: var(--studio-surface-shadow);
+}
+.studio-composer .studio-chat-image-edit {
   background-color: var(--studio-floating-fill);
   background-image: var(--studio-surface-sheen);
   -webkit-backdrop-filter: var(--studio-surface-filter);
@@ -3562,7 +3566,7 @@ a.studio-project-row:hover {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
-/* One translucent navigation surface; controls and rows do not add glass layers. */
+/* Keep the existing main navigation rail and give lists a solid background. */
 @media (min-width: 768px) {
   .studio {
     background: var(--studio-page-background);
@@ -3578,7 +3582,6 @@ a.studio-project-row:hover {
     border-radius: 14px;
     overflow: hidden;
   }
-  .studio-overview-pane,
   .studio-navigation[aria-label='Main navigation'] {
     border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
     background: var(--studio-navigation-fill);
@@ -3917,7 +3920,7 @@ a.studio-project-row:hover {
   opacity: 1;
 }
 
-/* Opaline glass belongs to the frame and floating surfaces, not their controls. */
+/* Preserve the existing composer and main navigation. */
 .studio-composer,
 .task-composer .studio-composer,
 .dark .task-composer .studio-composer {
@@ -3935,9 +3938,7 @@ a.studio-project-row:hover {
   border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
   box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
-.studio-header-corner,
-.studio-sidebar-brand-row,
-.studio-task-thread-header {
+.studio-header-corner {
   background-color: var(--studio-glass-fill);
   background-image: var(--studio-glass-sheen);
   -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
@@ -3945,17 +3946,12 @@ a.studio-project-row:hover {
   box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
 @media (min-width: 768px) {
-  .studio-overview-pane,
   .studio-navigation[aria-label='Main navigation'] {
     border-color: var(--studio-glass-edge);
     background-color: var(--studio-navigation-fill);
     background-image: var(--studio-glass-sheen);
     -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
     backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
-  }
-  .studio-task-thread-header {
-    background: var(--studio-glass-sheen), var(--studio-glass-fill);
     box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
   }
 }
@@ -3993,22 +3989,26 @@ a.studio-project-row:hover {
   backdrop-filter: none;
 }
 
-/* Selected destinations share a tinted glass material and retain their location marker. */
 :root
-  :is(
-    .studio-nav-selected,
-    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
-    .studio-browser-tab[data-active],
-    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
-    .studio-task-sidebar .studio-thread-child[aria-current='true']
-  ) {
+  .studio-navigation[aria-label='Main navigation']
+  .studio-navigation-item[aria-current='page'] {
   border-color: var(--studio-glass-edge);
   background-color: color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill));
   background-image: var(--studio-glass-sheen);
   -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
   backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
   box-shadow: var(--studio-surface-rim);
+}
+:root
+  :is(
+    .studio-nav-selected,
+    .studio-tools-navigation .studio-navigation-item[aria-pressed='true'],
+    .studio-browser-tab[data-active],
+    .studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card,
+    .studio-task-sidebar .studio-thread-child[aria-current='true']
+  ):not(.studio-navigation[aria-label='Main navigation'] *) {
+  border-color: var(--border);
+  background-color: var(--selection);
 }
 
 @media (forced-colors: active) {
@@ -4028,7 +4028,10 @@ a.studio-project-row:hover {
   }
 }
 
-/* Content panes use the same optical material as the shell. */
+/* Reading panes and headers use a solid palette fill. */
+.studio-overview-pane,
+.studio-sidebar-brand-row,
+.studio-task-thread-header,
 .studio-tools-navigation,
 .studio-glass-pane,
 .studio-change-summary,
@@ -4047,31 +4050,27 @@ a.studio-project-row:hover {
   .studio-thread-tools-panel *,
   .studio-side-panel *
 ) {
-  border-color: var(--studio-glass-edge);
-  background-color: var(--studio-glass-fill);
-  background-image: var(--studio-glass-sheen);
-  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: none;
 }
-/* Glass contains the edge handle's stacking context. Keep it above the adjacent pane. */
+/* Keep the resize handle above the adjacent pane. */
 .studio-resizable-sidebar {
   z-index: 1;
 }
 
-/* Dense review content keeps the pane visible without adding another optical layer. */
+/* File groups use an inset fill and align with the review pane. */
 .studio-change-summary .studio-change-file-tree {
-  background: color-mix(in srgb, var(--background) 35%, transparent);
+  background: var(--background);
 }
 .studio-change-summary .studio-change-category-card {
-  background: color-mix(in srgb, currentColor 5%, transparent);
-  box-shadow: var(--studio-surface-rim);
+  background: color-mix(in srgb, currentColor 5%, var(--card));
 }
 .studio-change-summary .studio-change-category-card:is(:hover, [aria-pressed='true']) {
   background: color-mix(in srgb, currentColor 12%, transparent);
 }
 
-/* Pane headers expose their parent's material instead of painting an opaque inset. */
+/* Pane headers reuse the fill of the pane. */
 :root .studio-browser-header .studio-browser-toolbar,
 .studio-thread-tools-panel .studio-thread-tools-header,
 .studio-thread-tools-panel .studio-browser-header {

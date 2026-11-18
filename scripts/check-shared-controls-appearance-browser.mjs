@@ -374,9 +374,9 @@ try {
     assert.ok(parseFloat(await toggle.evaluate((el) => getComputedStyle(el).outlineWidth)) >= 2)
     await page.getByRole('combobox', { name: 'Choice' }).click()
     assert.equal(
-      (await style('[data-slot="select-content"]', 'backdropFilter')) !== 'none',
-      !highContrast,
-      'High contrast keeps popup surfaces opaque without blur',
+      await style('[data-slot="select-content"]', 'backdropFilter'),
+      'none',
+      'Popup surfaces stay opaque in both contrast modes',
     )
     assert.equal(
       await page

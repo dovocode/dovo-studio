@@ -60,7 +60,7 @@ export function RemoteBrowser({
   reloadToken?: number
   ref?: Ref<RemoteBrowserControls>
   externalNavigation?: boolean
-  onConnection?: (online: boolean) => void
+  onConnection?: (online: boolean, ended: boolean) => void
   onFocusAddress?: () => void
   onPerformance?: (details: string) => void
   onShortcut?: (key: 't' | 'w' | 'd', shift: boolean) => void
@@ -75,7 +75,9 @@ export function RemoteBrowser({
     onState?.(state),
   )
   const reportClosed = useEffectEvent(() => onClosed?.())
-  const reportConnection = useEffectEvent((online: boolean) => onConnection?.(online))
+  const reportConnection = useEffectEvent((online: boolean) =>
+    onConnection?.(online, sessionEnded.current),
+  )
   const reportPerformance = useEffectEvent((details: string) => onPerformance?.(details))
   const focusAddress = useEffectEvent(() => onFocusAddress?.())
   const shortcut = useEffectEvent((key: 't' | 'w' | 'd', shift: boolean) =>
@@ -87,6 +89,7 @@ export function RemoteBrowser({
   }, [initialUrl])
   const visibility = useRef(active)
   const online = useRef(false)
+  const sessionEnded = useRef(false)
   const frame = useRef<HTMLIFrameElement>(null)
   const captures = useRef(new Map<number, (image?: string) => void>())
   const captureId = useRef(0)
@@ -218,7 +221,14 @@ export function RemoteBrowser({
       }
       if (data.type === 'closed') {
         const result = decodeResult(remoteBrowserMessageSchema, data)
-        if (result.success && result.data.type === 'closed' && result.data.byPage) reportClosed()
+        if (result.success && result.data.type === 'closed') {
+          if (result.data.byPage) reportClosed()
+          else if (!deviceId) {
+            sessionEnded.current = true
+            online.current = false
+            reportConnection(false)
+          }
+        }
       }
       if (data.type === 'state') {
         const state = decodeResult(remoteBrowserMessageSchema, data)
@@ -229,6 +239,7 @@ export function RemoteBrowser({
       }
       if (data.type === 'connection' && 'online' in data && typeof data.online === 'boolean') {
         online.current = data.online
+        if (data.online) sessionEnded.current = false
         reportConnection(data.online)
       }
       if (data.type === 'performance' && 'details' in data && typeof data.details === 'string')

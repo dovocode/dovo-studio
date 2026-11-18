@@ -14,6 +14,7 @@ import {
   terminalGroups,
   splitTerminal,
   type TerminalGroup,
+  type TerminalInfo,
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
@@ -163,8 +164,13 @@ export function TerminalPane({
   const scopedIds = scopedSession
     ? new Set([scopedSession, ...savedGroups.flatMap((group) => group.sessions)])
     : undefined
+  const rememberedSessions = useRef<{ ownerScope: string; sessions: TerminalInfo[] }>(undefined)
+  if (rememberedSessions.current?.ownerScope !== ownerScope) rememberedSessions.current = undefined
+  if (snapshot) rememberedSessions.current = { ownerScope, sessions: snapshot.terminals }
+  const sessionSnapshot =
+    snapshot?.terminals ?? (!connected ? rememberedSessions.current?.sessions : undefined)
   const sessions =
-      snapshot?.terminals.filter(
+      sessionSnapshot?.filter(
         (session) =>
           session.taskId === taskId &&
           (!scopedIds || (scopedIds.has(session.id) && !closedSessions.includes(session.id))),

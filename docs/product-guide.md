@@ -401,10 +401,13 @@ pnpm --filter @dovo/mobile android
 4. Switch to **Changes** for a file list and native iOS diff. **Edit file → Apply to disk** compares
    the original disk contents before writing. Android uses a unified text diff because the upstream
    native Android diff view is currently a placeholder.
-5. Open **Terminal** to start or reconnect to a real host shell. Returning to Chat fully hides it;
-   its process remains alive and the selected session is retained. **Close shell** terminates it.
-   **Keyboard** opens the phone keyboard; the touch toolbar provides Esc, Tab, Ctrl+C, arrow keys
-   and keyboard dismissal. The viewport resizes with the keyboard. xterm assets are bundled locally.
+5. Open **Terminal** to start or reconnect to a host shell. Return to Chat to hide the terminal. The
+   process keeps running, and the task keeps the selected session. **Reconnect terminal** keeps the
+   current output visible while the same shell reconnects. If the process exited, its output stays
+   available to read and copy. Use **New terminal** to start another shell. **Close shell**
+   terminates it. **Keyboard** opens the phone keyboard. The touch toolbar provides Esc, Tab,
+   Ctrl+C, arrow keys and keyboard dismissal. The viewport resizes with the keyboard. xterm assets
+   are bundled locally.
 6. **Tasks → Projects** registers repositories and opens Git tools. **Settings** contains custom
    agents, title generation, devices/runtime, and per-project or custom-agent MCP servers and
    skills. Browse and import from skills.sh and the MCP Registry directly on the phone.
@@ -731,9 +734,9 @@ controls.
   for explicit resume. Removing a queued item retains its submission in the activity log. Queuing is
   between turns; it does not inject text into an already running provider turn.
 - Each turn records its provider, model, reasoning, start/end times and result beside its response.
-  Tool activity shows recent operations and expandable provider details. The full log remains in
-  Devices & runtime. A diff-refresh failure reports a review error while preserving successful agent
-  work and its response.
+  Reasoning summaries appear inline. Tool activity shows recent operations and expandable provider
+  details. The full log remains in Devices & runtime. A diff-refresh failure reports a review error
+  while preserving successful agent work and its response.
 - The conversation suggests **Compact** when reported context use reaches 80%. The composer can
   compact an idle session on desktop or mobile; completed manual and automatic compactions appear in
   the conversation. Codex uses its app-server command, Claude uses `/compact`, and OpenCode uses
@@ -1082,17 +1085,19 @@ expandable tool output and checkpoint navigation against the isolated local harn
 Mobile tabs preserve visited lists, filters and scroll position. Tasks, Issues, PRs/Pipelines and
 Automations use native stacks: Back and the iOS swipe gesture return to the retained list. Routes
 include their computer identity, so a matching ID on another host cannot open the wrong item. Issue
-and pipeline details can reopen from the device cache offline; changes require fresh data.
-Automations keeps run controls and history on a dedicated detail screen, with pending run retries
-retained across Back and reopening. See the [source navigation notes](design/source-navigation.md).
-Hidden source screens pause their refreshes; background PR polling leaves the pull-to-refresh
-indicator idle. Changing computers resets host-specific detail screens while retaining the aggregate
-task list's search, filters, sorting and scroll position, as well as connection settings. Short
-choices use anchored native iOS menus, with searchable sheets for longer lists. Inside an existing
-sheet, longer choices expand into an inline searchable list to keep a single native presentation.
-Task filters and compact device summaries scroll with the thread list, and Settings groups
-computers, agents and project tools into separate pages. Pairing requires only an address and code;
-names and connection help are optional details.
+and pipeline details can reopen from the device cache offline; changes require fresh data. On
+desktop and web, the list marks the open issue or run. Use **View first failed job** in a run to go
+to its details. On mobile, failed jobs appear before the workflow graph. Automations keeps run
+controls and history on a dedicated detail screen, with pending run retries retained across Back and
+reopening. See the [source navigation notes](design/source-navigation.md). Hidden source screens
+pause their refreshes; background PR polling leaves the pull-to-refresh indicator idle. Changing
+computers resets host-specific detail screens while retaining the aggregate task list's search,
+filters, sorting and scroll position, as well as connection settings. Short choices use anchored
+native iOS menus, with searchable sheets for longer lists. Inside an existing sheet, longer choices
+expand into an inline searchable list to keep a single native presentation. Task filters and compact
+device summaries scroll with the thread list, and Settings groups computers, agents and project
+tools into separate pages. Pairing requires only an address and code; names and connection help are
+optional details.
 
 iOS icon actions use circular SwiftUI buttons with native press feedback. Thread controls stay in
 one glass capsule in the top-right toolbar; the subtitle keeps the project and execution device

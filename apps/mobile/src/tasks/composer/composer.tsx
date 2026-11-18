@@ -1524,6 +1524,9 @@ export function Composer({
                         </>
                       )}
                       {fastMode && <Icon name="fast" size={12} color={colors.muted} filled />}
+                      {!automaticModel && reasoning === 'ultra' && (
+                        <Icon name="ultra" size={12} color={colors.muted} />
+                      )}
                       <Text
                         numberOfLines={1}
                         style={[styles.muted, { fontSize: 11, flexShrink: 0 }]}

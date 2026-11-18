@@ -87,6 +87,10 @@ export type NativeTerminalSessionProps = {
   id: string
   /** Connect only while true; hiding or a true background stay closes the socket. */
   visible?: boolean
+  /** Keep the output available while blocking terminal input. */
+  readOnly?: boolean
+  /** Change to reconnect without remounting the terminal view. */
+  reconnectToken?: number
   /**
    * Issues a fresh single-use ticket and returns the `/ws/terminal` URL (see
    * `terminalSocketUrl`). Called for every (re)connect. Keep it referentially stable: a new
@@ -116,6 +120,8 @@ export function terminalSocketUrl(connection: RuntimeConnection, ticket: { ticke
 export function NativeTerminalSession({
   id,
   visible = true,
+  readOnly = false,
+  reconnectToken,
   openSocket,
   fontSize: requestedFontSize = 12,
   font = 'system',
@@ -139,7 +145,8 @@ export function NativeTerminalSession({
   const viewKey = platform === 'ios' ? `font-${fontSize}` : 'terminal'
   const [status, setStatus] = useState('Loading terminal…')
   const [error, setError] = useState('')
-  const [inputReady, setInputReady] = useState(false)
+  const [streamReady, setInputReady] = useState(false)
+  const inputReady = streamReady && !readOnly && visible
   const [fontFallback, setFontFallback] = useState({ family: '', message: '' })
   const [backgrounded, setBackgrounded] = useState(AppState.currentState === 'background')
   const [readyKey, setReadyKey] = useState('')
@@ -232,7 +239,7 @@ export function NativeTerminalSession({
     return () => {
       void reconnect.stop()
     }
-  }, [ready, backgrounded, visible, openSocket, id, viewKey, protocol])
+  }, [ready, backgrounded, visible, openSocket, id, viewKey, protocol, reconnectToken])
 
   return (
     <View
@@ -347,7 +354,12 @@ export function NativeTerminalSession({
         onFontFallback={({ nativeEvent }) =>
           setFontFallback({ family: nativeEvent.fontFamily, message: nativeEvent.message })
         }
-        onInput={({ nativeEvent }) => stream.current?.input(nativeEvent.text)}
+        onInput={({ nativeEvent }) => {
+          // The stream must still receive its replay barrier reply in read-only mode.
+          const current = stream.current
+          if (visible && current && (!readOnly || !current.inputReady))
+            current.input(nativeEvent.text)
+        }}
         onResize={({ nativeEvent }) => {
           const value = terminalGridSize(nativeEvent.cols, nativeEvent.rows)
           if (!value) return

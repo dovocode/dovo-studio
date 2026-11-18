@@ -1,4 +1,5 @@
 import { memo, useMemo, useState } from 'react'
+import { InterfaceText } from '@dovo/studio-core/interface-language'
 import {
   formatDateTime,
   useAppPreferences,
@@ -13,6 +14,7 @@ import {
   artifactReferences,
   watchMessage,
   hasToolImages,
+  toolPresentation,
   turnSummary,
   type ConversationTurn,
   type PendingMessage,
@@ -32,6 +34,11 @@ import { ForkTurn } from '../actions/fork-turn'
 import { ForkMessage } from '../actions/fork-message'
 import { RetryTurn } from '../actions/retry-turn'
 import { TaskActivity } from './task-activity'
+
+const hasReasoning = (tool: ReturnType<typeof recentTools>[number]) => {
+  const presentation = toolPresentation(tool.payload, tool.summary, tool.inputPayload)
+  return presentation.kind === 'reasoning' && !!presentation.output.trim()
+}
 
 export const ChatMessage = memo(function ChatMessage({
   taskId,
@@ -97,7 +104,8 @@ export const ChatMessage = memo(function ChatMessage({
     !final &&
     !footer &&
     !hasFailure &&
-    !hasRichResults
+    !hasRichResults &&
+    !tools.some(hasReasoning)
   )
     return null
   const watch = message.role === 'user' ? watchMessage(message) : null
@@ -124,12 +132,9 @@ export const ChatMessage = memo(function ChatMessage({
       )}
       <div className="group/message flex min-w-0 flex-col gap-2">
         {!watch && message.role === 'assistant' && taskRunning && turn?.status === 'running' && (
-          <div className="flex items-center gap-2 text-xs text-muted-foreground group-[.is-user]:justify-end">
-            <span className="inline-flex items-center gap-1.5">
-              <span className="size-1.5 rounded-full bg-primary" aria-hidden="true" />
-              Working
-            </span>
-          </div>
+          <span className="sr-only">
+            <InterfaceText>{'Working'}</InterfaceText>
+          </span>
         )}
         {message.role === 'user' && message.source && message.source.kind !== 'user' && (
           <MessageSource source={message.source} />
@@ -166,6 +171,7 @@ export const ChatMessage = memo(function ChatMessage({
                 block.tools.some(
                   (tool) =>
                     ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status) ||
+                    hasReasoning(tool) ||
                     artifactReferences(tool.payload).length > 0 ||
                     hasToolImages(tool.payload),
                 )

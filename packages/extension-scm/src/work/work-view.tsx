@@ -1,3 +1,4 @@
+import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { savedFilterScope } from '@dovo/protocol'
 import { SavedFilterViews } from '../saved-filter-views'
@@ -616,18 +617,18 @@ function WorkView({
                         className="studio-list-quick-views"
                       >
                         {['all', ...states.filter((value) => value !== 'all')].map((value) => (
-                          <Button
+                          <ToggleButton
                             key={value}
                             size="sm"
                             variant="ghost"
                             className="studio-list-quick-filter"
-                            aria-pressed={state === value}
-                            onClick={() => setState(value)}
+                            pressed={state === value}
+                            onPressedChange={() => setState(value)}
                           >
                             {value === 'all'
                               ? 'All states'
                               : value.charAt(0).toUpperCase() + value.slice(1)}
-                          </Button>
+                          </ToggleButton>
                         ))}
                       </div>
                     ) : (
@@ -637,25 +638,25 @@ function WorkView({
                         className="studio-list-quick-views"
                       >
                         <p className="sr-only">Counts in loaded, searched results</p>
-                        <Button
+                        <ToggleButton
                           size="sm"
                           variant="ghost"
-                          aria-pressed={state === 'all'}
+                          pressed={state === 'all'}
                           aria-label={`All runs: ${matchingRows.length}`}
-                          onClick={() => setState('all')}
+                          onPressedChange={() => setState('all')}
                           className="studio-list-quick-filter"
                         >
                           All runs{' '}
                           <span className="studio-list-filter-count">{matchingRows.length}</span>
-                        </Button>
+                        </ToggleButton>
                         {pipelineStatuses.map(({ status, label, count }) => (
-                          <Button
+                          <ToggleButton
                             key={label}
                             size="sm"
                             variant="ghost"
                             aria-label={`Filter ${label}: ${count} runs`}
-                            aria-pressed={state !== 'all' && pipelineSignal(state).label === label}
-                            onClick={() =>
+                            pressed={state !== 'all' && pipelineSignal(state).label === label}
+                            onPressedChange={() =>
                               setState(
                                 state !== 'all' && pipelineSignal(state).label === label
                                   ? 'all'
@@ -666,7 +667,7 @@ function WorkView({
                           >
                             <span className="truncate">{label}</span>
                             <span className="studio-list-filter-count">{count}</span>
-                          </Button>
+                          </ToggleButton>
                         ))}
                       </div>
                     )}
@@ -943,9 +944,15 @@ function WorkView({
                 {rows.map(({ source, item, stale, provider }) => (
                   <button
                     type="button"
-                    key={JSON.stringify([source.key, item.id])}
+                    key={jiraIssueRowKey(source, item.id)}
+                    data-work-item={jiraIssueRowKey(source, item.id)}
                     disabled={opening}
-                    className="studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+                    aria-current={
+                      selected?.source.scope === source.scope && selected.id === item.id
+                        ? 'true'
+                        : undefined
+                    }
+                    className={`studio-collection-row w-full text-left transition-colors focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-primary disabled:opacity-60 ${selected?.source.scope === source.scope && selected.id === item.id ? 'studio-nav-selected' : ''}`}
                     onClick={() => void open(source, item.id, item.url)}
                   >
                     <div className="studio-collection-body">

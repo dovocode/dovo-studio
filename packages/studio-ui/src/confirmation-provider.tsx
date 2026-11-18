@@ -101,6 +101,7 @@ function ConfirmationDialog({
       }}
     >
       <DialogContent
+        data-surface={options.destructive ? 'solid' : undefined}
         className="max-w-md"
         onOpenAutoFocus={(event) => {
           event.preventDefault()

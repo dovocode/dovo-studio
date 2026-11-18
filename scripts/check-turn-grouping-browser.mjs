@@ -67,7 +67,7 @@ async function bundle(mobile) {
     '../../../ui/content/open-link': `export const openAppLink=async()=>{};`,
     '../../../ui/content/link-origin': `export const useLinkOrigin=()=>({});`,
     './components/thread-markdown': `export const ThreadMarkdown=({text})=>{(window.renderedProse??=[]).push(text);return <p data-prose>{text}</p>};`,
-    './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export const ReasoningActivity=()=>null;`,
+    './components/tool-activity-row': `import {ToolActivityRow as ActualToolActivityRow} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';export const ToolActivityRow=props=>window.artifactCase?<ActualToolActivityRow {...props}/>:<div data-tools>Tools</div>;export {ReasoningActivity} from '${root}/apps/mobile/src/tasks/conversation/components/tool-activity-row.tsx';`,
     './components/work-group': `import {ConversationWorkGroup as ActualWorkGroup} from '${root}/apps/mobile/src/tasks/conversation/components/work-group.tsx';export const ConversationWorkGroup=props=>window.artifactCase?<ActualWorkGroup {...props}/>:<div>{props.children}</div>;`,
     './components/activity': `export const TaskActivity=()=>null;`,
     '../../preview/use-preview-active': `import {useFixture} from 'fixture';export const usePreviewActive=()=>useFixture().visible;`,
@@ -823,6 +823,87 @@ try {
       )
       assert.equal(await page.evaluate(() => window.copies.length), 1)
     }
+    await page.evaluate(() => {
+      window.setActive(true)
+      window.artifactCase = true
+      window.setPreferences((value) => ({ ...value, toolActivity: 'hidden' }))
+      const startedAt = '2026-10-03T10:00:01Z'
+      window.events.length = 0
+      for (const [index, text] of [
+        ' ',
+        'Inspect the first file.',
+        'Check the second file.',
+      ].entries()) {
+        const toolId = `reasoning:codex:summary-${index}`
+        window.events.push({
+          id: toolId,
+          time: `2026-10-03T10:00:0${index + 3}Z`,
+          scope: 'reasoning-thread',
+          kind: 'reasoning',
+          summary: 'Reasoning summary',
+          payload: JSON.stringify({
+            turnId: 'reasoning-turn',
+            messageId: 'answer',
+            toolId,
+            status: 'completed',
+            reasoning: { text },
+            rawReasoning: 'Do not display this.',
+          }),
+        })
+      }
+      window.setTask((task) => ({
+        ...task,
+        id: 'reasoning-thread',
+        status: 'done',
+        turns: [
+          {
+            id: 'reasoning-turn',
+            runId: 'run',
+            assistantId: 'answer',
+            provider: 'codex',
+            status: 'completed',
+            startedAt,
+            finishedAt: '2026-10-03T10:01:00Z',
+          },
+        ],
+        messages: [
+          {
+            id: 'request',
+            role: 'user',
+            text: 'Inspect both files',
+            turnId: 'reasoning-turn',
+            createdAt: '2026-10-03T10:00:00Z',
+          },
+          {
+            id: 'answer',
+            role: 'assistant',
+            text: 'Both files checked.',
+            turnId: 'reasoning-turn',
+            createdAt: '2026-10-03T10:00:02Z',
+          },
+        ],
+      }))
+    })
+    const heading = page.getByText('Reasoning summary', { exact: true })
+    await page
+      .getByText('Inspect the first file.', { exact: true })
+      .waitFor()
+      .catch(async () => {
+        assert.fail(
+          `${mobile ? 'Mobile' : 'Desktop'} reasoning did not render: ${errors.join('; ')}\n${await page.locator('body').innerText()}`,
+        )
+      })
+    await page.getByText('Check the second file.', { exact: true }).waitFor()
+    assert.equal(await heading.count(), 1, 'Adjacent summaries share a single heading')
+    assert.equal(await page.getByText('Do not display this.', { exact: true }).count(), 0)
+    await page.evaluate(() => {
+      window.events.splice(1)
+      window.events[0].scope = 'empty-reasoning-thread'
+      window.setTask((task) => ({ ...task, id: 'empty-reasoning-thread' }))
+    })
+    await page.getByText('Both files checked.', { exact: true }).waitFor()
+    await heading.waitFor({ state: 'detached' })
+
     // Queued watch updates retain their identity when projected into normal chat.
     await page.evaluate(() => {
       window.setActive(true)

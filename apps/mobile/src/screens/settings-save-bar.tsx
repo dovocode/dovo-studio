@@ -19,6 +19,7 @@ import { useTheme } from '../ui/theme'
 import { Glass } from '../ui/layout/glass'
 
 export const SettingsFooterContext = createContext<((footer: ReactNode) => void) | null>(null)
+export const SettingsSaveScope = createContext<{ label: string; online: boolean } | null>(null)
 
 /** SettingsPage owns the footer so actions stay outside the scrolling editor. */
 export function SettingsSaveBar({
@@ -50,6 +51,7 @@ export function SettingsSaveBar({
 }) {
   const uiText = useInterfaceText()
   const saveLabel = saveLabelOverride ?? uiText('Save changes')
+  const { label: scopeLabel, online: scopeOnline } = useContext(SettingsSaveScope) ?? {}
 
   const footer = useContext(SettingsFooterContext)
   const setFooter = inline ? null : footer
@@ -85,7 +87,9 @@ export function SettingsSaveBar({
   const status = saving
     ? 'Saving…'
     : dirty
-      ? `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
+      ? scopeOnline === false
+        ? uiText('Unsaved edits kept on this device')
+        : `${count} unsaved ${count === 1 ? 'change' : 'changes'}`
       : saved
         ? 'Changes saved.'
         : 'No unsaved changes'
@@ -102,9 +106,15 @@ export function SettingsSaveBar({
         }}
       >
         <Glass
+          solid
           testID="Settings save surface"
-          style={{ borderRadius: designTokens.radius.overlay, padding: 12, gap: 8 }}
+          style={{ borderRadius: designTokens.radius.overlay, padding: 12, gap: 4 }}
         >
+          {scopeLabel && (
+            <Text style={styles.muted}>
+              {uiText('Applies to {value0}', { value0: scopeLabel })}
+            </Text>
+          )}
           <View style={{ flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 }}>
             <Pressable
               accessibilityRole="button"
@@ -224,6 +234,7 @@ export function SettingsSaveBar({
       saved,
       count,
       status,
+      scopeLabel,
       changesKey,
       colors,
       styles,

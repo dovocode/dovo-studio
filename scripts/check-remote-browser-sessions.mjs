@@ -231,12 +231,15 @@ try {
   await browsers.open('unavailable', 'recovery', 'default', unavailableUrl)
   await browsers.open('agent-unavailable', 'recovery', 'default', unavailableUrl)
   const recoveryStates = []
+  const navigationErrors = []
   dispose.push(
     await browsers.attach('unavailable', (message) => {
       if (message.type === 'state') recoveryStates.push(message)
+      if (message.type === 'error') navigationErrors.push(message.operation)
     }),
   )
   await wait(() => recoveryStates.at(-1)?.url === unavailableUrl)
+  assert.deepEqual(navigationErrors, ['navigation'])
   const recovered = createServer((_request, response) => {
     response.end('<title>Recovered server</title>Back online')
   })

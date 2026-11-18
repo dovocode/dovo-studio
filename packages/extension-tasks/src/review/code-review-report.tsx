@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Button, ChoicePicker } from '@dovo/studio-ui'
+import { Tabs, TabsList, TabsTab } from '@dovo/studio-ui/tabs'
 import { useWorkspace, type Task } from '@dovo/studio-core'
 import {
   randomUUID,
@@ -60,46 +61,34 @@ export function CodeReviewReport({
     >
       {presentation !== 'panel' && (
         <div className="flex flex-wrap items-center gap-2 px-3 py-2">
-          <div role="tablist" aria-label="Code review" className="flex gap-1">
-            {(['diff', 'findings', 'verification'] as const).map((value) => (
-              <Button
-                key={value}
-                role="tab"
-                aria-selected={tab === value}
-                tabIndex={tab === value ? 0 : -1}
-                onKeyDown={(event) => {
-                  const tabs = ['diff', 'findings', 'verification'] as const
-                  const index = tabs.indexOf(value)
-                  const next =
-                    event.key === 'ArrowRight'
-                      ? (index + 1) % tabs.length
-                      : event.key === 'ArrowLeft'
-                        ? (index + tabs.length - 1) % tabs.length
-                        : event.key === 'Home'
-                          ? 0
-                          : event.key === 'End'
-                            ? tabs.length - 1
-                            : -1
-                  if (next < 0) return
-                  event.preventDefault()
-                  onTab(tabs[next])
-                  event.currentTarget.parentElement
-                    ?.querySelectorAll<HTMLButtonElement>('[role="tab"]')
-                    [next]?.focus()
-                }}
-                size="sm"
-                variant={tab === value ? 'secondary' : 'ghost'}
-                className="h-8 text-xs"
-                onClick={() => onTab(value)}
-              >
-                {value === 'diff'
-                  ? 'Diff & comments'
-                  : value === 'findings'
-                    ? `Findings${selected ? ` (${open.length})` : ''}`
-                    : 'Verification'}
-              </Button>
-            ))}
-          </div>
+          <Tabs
+            value={tab}
+            onValueChange={(value) => {
+              if (value === 'diff' || value === 'findings' || value === 'verification') onTab(value)
+            }}
+          >
+            <TabsList aria-label="Code review" className="flex gap-1">
+              {(['diff', 'findings', 'verification'] as const).map((value) => (
+                <TabsTab
+                  key={value}
+                  value={value}
+                  render={
+                    <Button
+                      size="sm"
+                      variant={tab === value ? 'secondary' : 'ghost'}
+                      className="h-8 text-xs"
+                    />
+                  }
+                >
+                  {value === 'diff'
+                    ? 'Diff & comments'
+                    : value === 'findings'
+                      ? `Findings${selected ? ` (${open.length})` : ''}`
+                      : 'Verification'}
+                </TabsTab>
+              ))}
+            </TabsList>
+          </Tabs>
           <ChoicePicker
             className="h-8 w-auto max-w-60 text-xs"
             aria-label="Reviewer configuration"

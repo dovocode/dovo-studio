@@ -9,7 +9,7 @@ export function NavigationStack({
   title: string
   headerShown?: boolean
 }) {
-  const { colors, mode, highContrast, reduceTransparency } = useTheme()
+  const { colors, mode } = useTheme()
 
   return (
     <Stack
@@ -19,11 +19,7 @@ export function NavigationStack({
         headerBackButtonDisplayMode: 'minimal',
         headerTintColor: colors.text,
         statusBarStyle: mode === 'dark' ? 'light' : 'dark',
-        // Let UIKit render its native glass bar. Keep an opaque accessibility fallback.
-        headerStyle:
-          Platform.OS === 'ios' && !highContrast && !reduceTransparency
-            ? undefined
-            : { backgroundColor: colors.background },
+        headerStyle: { backgroundColor: colors.background },
         headerShadowVisible: false,
         contentStyle: { backgroundColor: colors.background },
         gestureEnabled: true,

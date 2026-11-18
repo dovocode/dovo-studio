@@ -46,6 +46,7 @@ export function Pill({
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
       <Glass
+        solid
         interactive
         style={{
           flexShrink: 1,

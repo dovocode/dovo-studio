@@ -1170,6 +1170,12 @@ export class RemoteBrowsers {
         this.scheduleSharpFrame(session)
         await this.state(session)
       }
+      if (session.failedNavigation)
+        listener({
+          type: 'error',
+          message: 'Could not load this page.',
+          operation: 'navigation',
+        })
     } catch (error) {
       session.listeners.delete(listener)
       session.visibleListeners.delete(listener)

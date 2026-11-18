@@ -2,6 +2,8 @@ import assert from 'node:assert/strict'
 import { build } from 'esbuild'
 import { chromium } from 'playwright'
 
+const handoffMetadata =
+  'HEAD: 0123456789abcdef0123456789abcdef01234567\n\nRecorded checklist at handoff: 1 of 2 open\n- Pending: Run integration checks'
 const resolveDir = new URL('../packages/studio-ui/', import.meta.url).pathname
 const mocks = {
   './bot-create-dialog': 'export const BotCreateDialog=()=>null;',
@@ -144,7 +146,7 @@ const built = await build({
           window.requests.push({path,input});
           if(path==='/api/tasks/side-thread/create'){if(window.saved.some(task=>task.id===input.id&&task.sideThread))throw Error('Side chats cannot start side chats');const created=thread('side-'+input.childId,'New side chat',{status:'draft',createdAt:'2026-10-31T11:00:00Z',draft:input.objective??'',sideThread:link(input.id)});setWorkspace(current=>({...current,tasks:[...current.tasks,created]}));return {id:created.id}};
           if(path==='/api/tasks/side-thread/discard'){setWorkspace(current=>({...current,tasks:current.tasks.filter(task=>task.id!==input.id)}));return {ok:true}};
-          if(path==='/api/tasks/side-thread/bring-back'){const source=window.saved.find(task=>task.id===input.id);const turn=source.turns.at(-1);const receiptId=source.id+':'+turn.id;const text='[Side thread: '+source.title+' ('+source.id+'), completed turn '+turn.id+']\\n'+source.messages.at(-1).text;const target=source.sideThread.parentTaskId;if(!window.serverDrafts.has(receiptId)){if(input.expectedDraft!==window.saved.find(task=>task.id===target).draft)throw Error('The parent draft changed');window.serverDrafts.set(receiptId,text)}if(window.loseHandoff){window.loseHandoff=false;setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));throw Error('Connection lost')}if(window.markBroughtBack)setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));return {id:target,receiptId,text}};
+          if(path==='/api/tasks/side-thread/bring-back'){const source=window.saved.find(task=>task.id===input.id);const turn=source.turns.at(-1);const receiptId=source.id+':'+turn.id;const text='[Side thread: '+source.title+' ('+source.id+'), completed turn '+turn.id+']\\n'+${JSON.stringify(handoffMetadata + '\n\n')}+source.messages.at(-1).text;const target=source.sideThread.parentTaskId;if(!window.serverDrafts.has(receiptId)){if(input.expectedDraft!==window.saved.find(task=>task.id===target).draft)throw Error('The parent draft changed');window.serverDrafts.set(receiptId,text)}if(window.loseHandoff){window.loseHandoff=false;setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));throw Error('Connection lost')}if(window.markBroughtBack)setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));return {id:target,receiptId,text}};
           return {ok:true};
         };
         return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',switchRuntime:async()=>{},runtimes,runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView key={mount} entityId={route.entity} pullTarget={route.pullTarget} navigationKey={route.key}/></WorkspaceValueProvider>
@@ -312,7 +314,7 @@ try {
 
   // The runtime's draft change never reaches this composer here, so the result must be appended
   // locally, on top of unsaved typing. A lost response is retried without a duplicate.
-  const handoff = '[Side thread: Investigate cache (child), completed turn turn-1]\nCache is fine'
+  const handoff = `[Side thread: Investigate cache (child), completed turn turn-1]\n${handoffMetadata}\n\nCache is fine`
   await composer('parent').fill('Parent draft with local edit')
   await page.evaluate(() => {
     window.loseHandoff = true

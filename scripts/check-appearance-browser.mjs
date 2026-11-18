@@ -339,13 +339,10 @@ try {
         { id, scheme },
       )
       const expected = palette[scheme]
-      // Navigation destinations use the same palette-tinted glass. Filter choices stay flat.
+      // Ordinary selected rows and tabs use the palette's solid selection fill.
       await page.waitForFunction(() => {
         const probe = document.createElement('span')
-        probe.style.backgroundColor =
-          'color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill))'
-        probe.style.backgroundImage = 'var(--studio-glass-sheen)'
-        probe.style.boxShadow = 'var(--studio-surface-rim)'
+        probe.style.backgroundColor = 'var(--selection)'
         document.body.append(probe)
         const expected = getComputedStyle(probe)
         const settled = [
@@ -444,8 +441,8 @@ try {
       assert.equal(effects.intensity, '0.5')
       assert.equal(effects.gradients, 'true')
       assert.equal(effects.primary, expected.primary)
-      assert.match(effects.tab, /linear-gradient/, 'Selected tabs use the glass highlight')
-      assert.notEqual(effects.tabShadow, 'none', 'Selected tabs use the glass rim')
+      assert.equal(effects.tab, 'none', 'Selected tabs use a solid fill')
+      assert.equal(effects.tabShadow, 'none', 'Selected tabs have no glass rim')
       assert.ok(
         effects.glowShadow.includes('7px') && effects.glowShadow.includes(effects.glow),
         id + ' ' + scheme + ' glow intensity and color follow the palette',
@@ -455,8 +452,9 @@ try {
           effects.rails.every(
             (rail) =>
               rail.background !== 'rgba(0, 0, 0, 0)' &&
-              /gradient/.test(rail.image) &&
-              rail.shadow !== 'none' &&
+              (rail.main
+                ? /gradient/.test(rail.image) && rail.shadow !== 'none'
+                : rail.image === 'none' && rail.shadow === 'none') &&
               rail.marker === effects.accent &&
               rail.markerWidth === '2px' &&
               rail.markerHeight === '16px' &&
@@ -465,7 +463,7 @@ try {
         id +
           ' ' +
           scheme +
-          ' selected navigation keeps glass and accent markers: ' +
+          ' main navigation keeps its material and both rails retain accent markers: ' +
           JSON.stringify(effects.rails),
       )
       assert.equal(effects.threadEdgeWidth, '2px')
@@ -485,7 +483,7 @@ try {
           JSON.stringify(effects.navigationMarkers),
       )
       assert.ok(effects.sectionsMatch, id + ' ' + scheme + ' browser sections match threads')
-      assert.match(effects.dialog, /linear-gradient/, 'Dialogs use the shared surface highlight')
+      assert.equal(effects.dialog, 'none', 'Dialogs use a solid fill')
       const actual = await page.evaluate(() => {
         const color = (value) => {
           const div = document.createElement('div')
@@ -663,10 +661,10 @@ try {
   await setGlow(0)
   assert.match(
     await page
-      .locator('[data-testid=effects] .dovo-dialog-content')
+      .locator('[data-testid=effects] .studio-composer')
       .evaluate((el) => getComputedStyle(el).backgroundImage),
     /linear-gradient/,
-    'Glass highlight remains when glow is disabled',
+    'Composer highlight remains when glow is disabled',
   )
   await gradients.click()
   const checkFlatEffects = async () => {
@@ -694,18 +692,7 @@ try {
     const selectedTab = surfaces.find((surface) => surface.element === 'studio-browser-tab')
     assert.ok(selectedTab, 'Fixture includes a selected browser tab')
     assert.notEqual(selectedTab.fill, 'rgba(0, 0, 0, 0)', 'Selected tabs retain a solid fill')
-    const selected = await page
-      .locator('[data-testid=effects] .studio-browser-tab')
-      .evaluate((el) => {
-        const style = getComputedStyle(el)
-        const probe = document.createElement('span')
-        probe.style.boxShadow = 'var(--studio-surface-rim)'
-        document.body.append(probe)
-        const rim = getComputedStyle(probe).boxShadow
-        probe.remove()
-        return { shadow: style.boxShadow, rim }
-      })
-    assert.equal(selected.shadow, selected.rim, 'Zero glow retains only the selected glass rim')
+    assert.equal(selectedTab.shadow, 'none', 'The browser tab has no glass rim')
   }
   await checkFlatEffects()
   await choose('Nord')
@@ -735,7 +722,7 @@ try {
       document.documentElement.dataset.themeGradients === 'true' &&
       document.documentElement.dataset.themeGlow === '1' &&
       getComputedStyle(
-        document.querySelector('[data-testid=effects] .dovo-dialog-content'),
+        document.querySelector('[data-testid=effects] .studio-composer'),
       ).backgroundImage.includes('linear-gradient'),
   )
   for (const scheme of ['light', 'dark']) {

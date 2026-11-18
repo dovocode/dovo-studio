@@ -13,6 +13,7 @@ import {
   Pressable,
   Share,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native'
 import { WebView } from 'react-native-webview'
@@ -29,7 +30,6 @@ import {
   STUDIO_BROWSER_SCOPE,
   studioReference,
   isPrivateBrowserProfile,
-  isBrowserLoopbackAddress,
   browserTabCategory,
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
@@ -89,6 +89,8 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const uiText = useInterfaceText()
 
   const { styles, colors } = useTheme()
+  const { width } = useWindowDimensions()
+  const compactLocalNavigation = width < 420
   const runtime = useRuntime()
   const runtimeRef = useRef(runtime)
   runtimeRef.current = runtime
@@ -112,6 +114,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   const { state, current, loaded, writable, storageError, change, resetStorage } =
     useBrowserWorkspace()
   const [pageError, setError] = useState('')
+  const [localPageError, setLocalPageError] = useState('')
   const error = pageError || storageError
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
@@ -171,6 +174,10 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
     active.kind === 'remote'
       ? runtime.overviews.find((entry) => entry.profile.id === active.runtimeId)
       : undefined
+  const browserOwner =
+    active.kind === 'local'
+      ? uiText('This device')
+      : (owner?.profile.name ?? uiText('Unavailable computer'))
   const profileScope = JSON.stringify([
     owner?.profile.id,
     owner?.profile.connection.address,
@@ -201,23 +208,6 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   useEffect(() => setCustomization(null), [websiteOrigin])
   const websiteProfiles = active.kind === 'local' ? preferences.browserProfiles : profiles
   const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
-  const browserOwner =
-    active.kind === 'local'
-      ? uiText('This device')
-      : (runtime.profiles.find((profile) => profile.id === active.runtimeId)?.name ??
-        uiText('Unavailable computer'))
-  const browserLocation =
-    active.kind === 'remote' && isBrowserLoopbackAddress(active.url)
-      ? uiText('Local address on {value0}', { value0: browserOwner })
-      : browserOwner
-  const browserProfile = isPrivateBrowserProfile(active.profileId)
-    ? uiText('Private session')
-    : (websiteProfile?.name ??
-      (active.kind === 'local' && active.profileId === 'device'
-        ? uiText('Device session')
-        : active.profileId === 'default'
-          ? uiText('Default profile')
-          : uiText('Unavailable profile')))
   const searchProfile =
     websiteProfile ?? websiteProfiles.find((profile) => profile.id === 'default')
   const saveProfileSettings = async (patch: {
@@ -314,6 +304,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   useEffect(() => {
     setAddress(active.url)
     editing.current = false
+    setLocalPageError('')
     setNavigation({ back: false, forward: false })
     return () => {
       const request = pending.current
@@ -374,7 +365,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           back: page.canGoBack,
           forward: page.canGoForward,
         })
-      if (page.error && page.tabId === current.current.active) setError(page.error)
+      if (page.tabId === current.current.active) setLocalPageError(page.error ?? '')
     }
     const created = (page: BrowserTabState) => {
       if (!alive) return
@@ -737,6 +728,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       if (DovoWebKitBrowser && !native.status)
         throw new Error(native.error || 'Native browser is still starting.')
       const url = browserAddress(address, searchProfile?.search)
+      setLocalPageError('')
       editing.current = false
       addressField.current?.blur()
       setAddress(url)
@@ -749,6 +741,21 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           change((state) => recordPage(state, active.id, { url, title: '' }))
       } else if (url === active.url) web.current?.reload()
       else change((state) => recordPage(state, active.id, { url, title: '' }))
+    })
+  const moveHistory = (direction: 'back' | 'forward') =>
+    void act(async () => {
+      setLocalPageError('')
+      if (nativeAvailable && DovoWebKitBrowser) {
+        if (direction === 'back') await DovoWebKitBrowser.goBack(active.id)
+        else await DovoWebKitBrowser.goForward(active.id)
+      } else if (direction === 'back') web.current?.goBack()
+      else web.current?.goForward()
+    })
+  const reloadLocal = () =>
+    void act(async () => {
+      setLocalPageError('')
+      if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.reload(active.id)
+      else web.current?.reload()
     })
   const capture = async (): Promise<BrowserSelection> => {
     if (active.kind === 'remote') {
@@ -948,14 +955,24 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         </View>
       )}
       <View style={{ paddingHorizontal: 12 }}>
-        <Text style={styles.muted}>
-          {uiText('Browser workspace')} · {browserLocation} · {browserProfile}
-        </Text>
         {native.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {native.error}
           </Text>
         ) : null}
+        {active.kind === 'local' && !!localPageError && (
+          <View style={{ backgroundColor: colors.surface, paddingVertical: 8, gap: 4 }}>
+            <Text accessibilityRole="alert" style={styles.error}>
+              {localPageError}
+            </Text>
+            <Action
+              secondary
+              label={uiText('Reload page')}
+              disabled={busy || nativeOpening}
+              onPress={reloadLocal}
+            />
+          </View>
+        )}
         {error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}
@@ -1065,7 +1082,12 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
               />
             </RuntimeScope>
           ) : (
-            <View style={styles.content}>
+            <View style={[styles.content, { backgroundColor: colors.surface, gap: 8 }]}>
+              <Text accessibilityRole="alert" style={styles.text}>
+                {owner
+                  ? uiText('{value0} · Offline', { value0: browserOwner })
+                  : uiText('Unavailable computer')}
+              </Text>
               <Text style={styles.muted}>
                 <InterfaceText>
                   {
@@ -1073,6 +1095,14 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                   }
                 </InterfaceText>
               </Text>
+              {owner && (
+                <Action
+                  secondary
+                  label={uiText('Retry')}
+                  disabled={busy}
+                  onPress={() => void act(() => runtime.refreshRuntime(owner.profile))}
+                />
+              )}
             </View>
           )
         ) : nativeAvailable && DovoWebKitBrowserView ? (
@@ -1146,7 +1176,8 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 forward: page.canGoForward,
               })
             }
-            onError={(event) => setError(event.nativeEvent.description)}
+            onError={(event) => setLocalPageError(event.nativeEvent.description)}
+            onLoad={() => setLocalPageError('')}
             onMessage={(event) => {
               try {
                 const value: unknown = JSON.parse(event.nativeEvent.data)
@@ -1188,7 +1219,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           </View>
         )}
       </View>
-      {Platform.OS === 'ios' && active.kind === 'local' ? (
+      {active.kind === 'local' ? (
         <BrowserNavigation
           addressRef={addressField}
           address={address}
@@ -1199,18 +1230,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           back={navigation.back}
           forward={navigation.forward}
           disabled={busy || nativeOpening}
-          onBack={() =>
-            void act(async () => {
-              if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.goBack(active.id)
-              else web.current?.goBack()
-            })
-          }
-          onForward={() =>
-            void act(async () => {
-              if (nativeAvailable && DovoWebKitBrowser) await DovoWebKitBrowser.goForward(active.id)
-              else web.current?.goForward()
-            })
-          }
+          compact={compactLocalNavigation}
+          onBack={() => moveHistory('back')}
+          onForward={() => moveHistory('forward')}
           tabs={recentTabs(state.tabs).length}
           onTabs={() => {
             setQuery('')
@@ -1230,93 +1252,14 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
             gap: 4,
           }}
         >
-          {active.kind === 'local' && (
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                backgroundColor: colors.elevated,
-                borderRadius: 24,
-                minHeight: 48,
-              }}
-            >
-              <IconButton
-                label={uiText('Browser options')}
-                icon="more"
-                onPress={() => setOptionsOpen(true)}
-              />
-              <TextInput
-                ref={addressField}
-                accessibilityLabel={uiText('Search or enter address')}
-                testID="Search or enter address"
-                placeholder={uiText('Search or enter address')}
-                placeholderTextColor={colors.muted}
-                selectionColor={colors.accent}
-                value={address}
-                onChangeText={setAddress}
-                autoCapitalize="none"
-                autoCorrect={false}
-                selectTextOnFocus
-                keyboardType="web-search"
-                onFocus={() => onAddressEditing(true)}
-                onBlur={() => onAddressEditing(false)}
-                returnKeyType="go"
-                onSubmitEditing={navigateLocal}
-                style={{
-                  flex: 1,
-                  minWidth: 0,
-                  minHeight: 48,
-                  color: colors.text,
-                  fontSize: 16,
-                  textAlign: 'center',
-                  paddingVertical: 8,
-                }}
-              />
-              <IconButton
-                label={address !== active.url || !active.url ? uiText('Go') : uiText('Reload')}
-                icon={address !== active.url || !active.url ? 'next' : 'refresh'}
-                disabled={busy || nativeOpening || !address.trim()}
-                onPress={navigateLocal}
-              />
-            </View>
-          )}
           <View
             style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}
           >
-            {active.kind === 'local' ? (
-              <>
-                <IconButton
-                  label={uiText('Back')}
-                  icon="back"
-                  disabled={!navigation.back || busy || nativeOpening}
-                  onPress={() =>
-                    void act(async () => {
-                      if (nativeAvailable && DovoWebKitBrowser)
-                        await DovoWebKitBrowser.goBack(active.id)
-                      else web.current?.goBack()
-                    })
-                  }
-                />
-                <IconButton
-                  label={uiText('Forward')}
-                  icon="next"
-                  disabled={!navigation.forward || busy || nativeOpening}
-                  onPress={() =>
-                    void act(async () => {
-                      if (nativeAvailable && DovoWebKitBrowser)
-                        await DovoWebKitBrowser.goForward(active.id)
-                      else web.current?.goForward()
-                    })
-                  }
-                />
-              </>
-            ) : (
-              <IconButton
-                label={uiText('Browser options')}
-                icon="more"
-                onPress={() => setOptionsOpen(true)}
-              />
-            )}
+            <IconButton
+              label={uiText('Browser options')}
+              icon="more"
+              onPress={() => setOptionsOpen(true)}
+            />
             <IconButton
               label={uiText('Page actions')}
               icon="share"
@@ -1535,7 +1478,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           title={uiText('Browser options')}
           onClose={() => setOptionsOpen(false)}
         >
-          {Platform.OS === 'ios' && active.kind === 'local' && (
+          <Text style={styles.muted}>
+            {uiText('Computer')} · {browserOwner}
+          </Text>
+          {active.kind === 'local' && compactLocalNavigation && navigation.forward && (
+            <Action
+              secondary
+              label={uiText('Forward')}
+              disabled={busy || nativeOpening}
+              onPress={() => optionsSheet.current?.dismiss(() => moveHistory('forward'))}
+            />
+          )}
+          {active.kind === 'local' && (
             <>
               <Action
                 secondary

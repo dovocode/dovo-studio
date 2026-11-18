@@ -81,40 +81,31 @@ try {
   const field = page.getByRole('textbox', { name: 'Message', exact: true })
   const filters = () => page.locator('filter[id^="studio-glass-"]').count()
   await page.waitForFunction(() => !!document.querySelector('.studio-composer[data-studio-glass]'))
+  const rail = page.getByRole('navigation', { name: 'Main navigation' })
   await page.waitForFunction(
-    () => !!document.querySelector('.studio-sidebar-brand-row[data-studio-glass]'),
+    () => !!document.querySelector('.studio-navigation[data-studio-glass]'),
   )
-  assert.match(await brandHeader.evaluate((el) => getComputedStyle(el).backdropFilter), /url\(/)
-  for (const selector of [
-    '[data-slot="card"]',
-    '.studio-navigation-item[aria-current="page"]',
-    '#selected-thread .studio-thread-card',
-  ]) {
-    await page.waitForFunction(
-      (selector) => document.querySelector(selector).hasAttribute('data-studio-glass'),
-      selector,
-    )
-    assert.match(
-      await page.locator(selector).evaluate((el) => getComputedStyle(el).backdropFilter),
-      /url\(/,
-    )
+  assert.match(await rail.evaluate((el) => getComputedStyle(el).backdropFilter), /url\(/)
+  const solid = async (target) => {
+    assert.equal(await target.getAttribute('data-studio-glass'), null)
+    assert.equal(await target.evaluate((el) => getComputedStyle(el).backdropFilter), 'none')
+    assert.equal(await target.evaluate((el) => getComputedStyle(el).backgroundImage), 'none')
   }
+  await solid(brandHeader)
+  for (const selector of [
+    '.studio-overview-pane',
+    '.studio-task-thread-header',
+    '[data-slot="card"]',
+    '#selected-thread .studio-thread-card',
+  ])
+    await solid(page.locator(selector))
   // Changing the selected row transfers its material without leaving stale optical maps.
   await page.evaluate(() => {
     document.getElementById('selected-thread').removeAttribute('data-highlighted')
     document.getElementById('other-thread').setAttribute('data-highlighted', '')
   })
-  await page.waitForFunction(
-    () =>
-      !document.querySelector('#selected-thread .studio-thread-card[data-studio-glass]') &&
-      !!document.querySelector('#other-thread .studio-thread-card[data-studio-glass]'),
-  )
-  assert.equal(
-    await page
-      .locator('#selected-thread .studio-thread-card')
-      .evaluate((el) => getComputedStyle(el).backdropFilter),
-    'none',
-  )
+  await solid(page.locator('#selected-thread .studio-thread-card'))
+  await solid(page.locator('#other-thread .studio-thread-card'))
   assert.match(
     await page
       .locator('.studio-header-corner')
@@ -125,15 +116,7 @@ try {
   // A review pane can arrive and leave inside a streaming conversation.
   const beforeInlinePane = await filters()
   await page.evaluate(() => window.showSummary(true))
-  await page.waitForFunction(
-    () => !!document.querySelector('.studio-change-summary[data-studio-glass]'),
-  )
-  assert.match(
-    await page
-      .locator('.studio-change-summary')
-      .evaluate((el) => getComputedStyle(el).backdropFilter),
-    /url\(/,
-  )
+  await solid(page.locator('.studio-change-summary'))
   await page.evaluate(() => window.showSummary(false))
   await page.waitForFunction(
     (count) => document.querySelectorAll('filter[id^="studio-glass-"]').length === count,
@@ -172,7 +155,7 @@ try {
   for (const theme of ['dark', 'light', 'dark']) {
     await page.evaluate((theme) => window.preferences({ theme }), theme)
     await page.waitForFunction((theme) => document.documentElement.dataset.theme === theme, theme)
-    assert.match(await brandHeader.evaluate((el) => getComputedStyle(el).backdropFilter), /url\(/)
+    await solid(brandHeader)
     assert.equal(await field.inputValue(), 'Draft survives appearance changes')
     assert.equal(
       await field.evaluate((el) => el === window.savedInput && el === document.activeElement),
@@ -193,16 +176,13 @@ try {
   // Image previews use the same portal material and retain their zoom controls.
   await page.getByRole('button', { name: 'Open image', exact: true }).click()
   const imageDialog = page.getByRole('dialog', { name: 'Image preview' })
-  await page.waitForFunction(
-    () => !!document.querySelector('.dovo-dialog-content[data-studio-glass]'),
-  )
-  assert.match(await imageDialog.evaluate((el) => getComputedStyle(el).backdropFilter), /url\(/)
+  await solid(imageDialog)
   assert.equal(
     await page
       .locator('.dovo-dialog-overlay')
       .evaluate((el) => getComputedStyle(el).backdropFilter),
     'none',
-    'The overlay preserves detail for the optical dialog',
+    'The dim overlay leaves context visible',
   )
   await imageDialog.getByRole('button', { name: 'Actual size', exact: true }).click()
   await page.screenshot({ path: `${output}/image-dialog-dark.png` })
@@ -211,7 +191,7 @@ try {
     (expected) => document.querySelectorAll('filter[id^="studio-glass-"]').length === expected,
     count,
   )
-  // Work/detail views turn existing elements into glass panes without remounting them.
+  // A solid pane can become a standalone composer without remounting.
   await page.addStyleTag({ content: '.material-wide-radius { border-radius: 30px !important; }' })
   await page.evaluate(() => {
     const pane = document.createElement('aside')
@@ -220,6 +200,11 @@ try {
     pane.textContent = 'Detail pane'
     document.body.append(pane)
     pane.classList.add('studio-overview-pane')
+  })
+  await solid(page.locator('#dynamic-pane'))
+  await page.locator('#dynamic-pane').evaluate((el) => {
+    el.classList.remove('studio-overview-pane')
+    el.classList.add('studio-composer')
   })
   await page.waitForFunction(() =>
     document.getElementById('dynamic-pane').hasAttribute('data-studio-glass'),
@@ -237,7 +222,7 @@ try {
     paneFilter,
   )
   assert.equal(await filters(), count + 1, 'Radius updates replace rather than leak maps')
-  await page.locator('#dynamic-pane').evaluate((el) => el.classList.remove('studio-overview-pane'))
+  await page.locator('#dynamic-pane').evaluate((el) => el.classList.remove('studio-composer'))
   await page.waitForFunction(
     () => !document.getElementById('dynamic-pane').hasAttribute('data-studio-glass'),
   )
@@ -252,13 +237,11 @@ try {
     'Standalone launcher composers share the material',
   )
   await page.locator('#dynamic-pane').evaluate((el) => el.remove())
-  // A portal-mounted command palette receives its own material and keeps keyboard behavior.
+  // A portal-mounted command palette stays solid and keeps keyboard behavior.
   await page.getByRole('button', { name: 'Open commands', exact: true }).click()
-  await page.waitForFunction(
-    () => !!document.querySelector('.dovo-dialog-content[data-studio-glass]'),
-  )
+  await solid(page.getByRole('dialog'))
   await page.screenshot({ path: `${output}/commands-dark.png` })
-  // A launcher inside a glass dialog is content, not a second glass layer.
+  // A launcher inside a dialog is content, not a second glass layer.
   await page.evaluate(() => {
     window.observedMaterialTargets = []
     const observe = Reflect.get(ResizeObserver.prototype, 'observe')

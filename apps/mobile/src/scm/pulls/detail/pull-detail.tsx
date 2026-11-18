@@ -68,6 +68,8 @@ export function PullDetail({
   onBack,
   initialTab,
   initialAgentReview,
+  configureInitialReview,
+  rowReviewRun,
   initialFragment = '',
   initialNavigationUrl,
   backLabel: backLabelOverride,
@@ -79,6 +81,8 @@ export function PullDetail({
   onBack: () => void
   initialTab?: 'overview' | 'changes' | 'checks'
   initialAgentReview?: boolean
+  configureInitialReview?: boolean
+  rowReviewRun?: () => boolean
   initialFragment?: string
   initialNavigationUrl?: string
   backLabel?: string
@@ -146,6 +150,8 @@ export function PullDetail({
     () => ({ tab: initialTab ?? 'overview', metadataOpen: false }),
   )
   const { tab, metadataOpen } = navigation
+  const tabOffsets = useRef<Partial<Record<PullTab, number>>>({})
+  const scrollTab = useRef(tab)
   const {
     detail,
     sections,
@@ -192,6 +198,15 @@ export function PullDetail({
     routedFragment.current = ''
   }, [initialTab, initialFragment])
   const destination = detail ? pullDestination(detail, tab, fragment) : undefined
+  useEffect(() => {
+    if (!detail || scrollTab.current === tab) return
+    const offset = tabOffsets.current[tab] ?? 0
+    const frame = requestAnimationFrame(() => {
+      scrollTab.current = tab
+      if (!fragment) body.current?.scrollTo({ y: offset, animated: false })
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [tab, fragment, !!detail])
   useEffect(() => {
     if (!destination?.comment || routedFragment.current === fragment) return
     routedFragment.current = fragment
@@ -374,10 +389,6 @@ export function PullDetail({
             onChange={(value) => {
               setFragment('')
               setTab(value)
-              body.current?.scrollTo({
-                y: 0,
-                animated: false,
-              })
               if (value === 'changes') setChangesOpened(true)
             }}
             items={[
@@ -402,6 +413,10 @@ export function PullDetail({
           <ScrollView
             ref={body}
             testID="PR detail content"
+            scrollEventThrottle={16}
+            onScroll={({ nativeEvent }) => {
+              if (scrollTab.current === tab) tabOffsets.current[tab] = nativeEvent.contentOffset.y
+            }}
             onLayout={({ nativeEvent }) => setBodyHeight(nativeEvent.layout.height)}
             contentContainerStyle={{
               paddingHorizontal: tab === 'changes' ? 0 : 12,
@@ -577,6 +592,15 @@ export function PullDetail({
                   gap: 12,
                 }}
               >
+                <Action
+                  secondary
+                  label={uiText('Review changes')}
+                  onPress={() => {
+                    setFragment('')
+                    setTab('changes')
+                    setChangesOpened(true)
+                  }}
+                />
                 {snapshot?.codeReviewsEnabled && (
                   <MobilePullCodeReview
                     key={JSON.stringify([
@@ -590,6 +614,8 @@ export function PullDetail({
                     repositoryId={repositoryId}
                     detail={detail}
                     initiallyOpen={initialAgentReview}
+                    initiallyConfigure={configureInitialReview}
+                    rowReviewRun={rowReviewRun}
                     onRefresh={refresh}
                     onOpenStackReview={(member, runtimeId) =>
                       navigateAfterSheet(() =>

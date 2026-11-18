@@ -2,27 +2,10 @@ import { designTokens } from '@dovo/design'
 import { clearGlassMaps, createDisplacementMap, createSpecularMap } from './optics'
 
 const selector = [
-  '.studio-glass-pane',
-  '.studio-change-summary',
-  '.studio-project-card:not(.studio-menu-surface *)',
-  '.studio-side-panel:not(:has(.studio-overview-pane, .studio-thread-tools-panel, .studio-menu-surface))',
-  '.studio-thread-tools-panel:not(.studio-thread-tools-panel *)',
-  '.studio-browser-header:not(.studio-overview-pane *, .studio-thread-tools-panel *, .studio-side-panel *)',
-  '.studio-page-header:not(.studio-overview-pane *, .studio-thread-tools-panel *, .studio-side-panel *)',
-  '.studio-sidebar-brand-row',
-  '.studio-nav-selected',
-  ".studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page']",
-  ".studio-tools-navigation .studio-navigation-item[aria-pressed='true']",
-  '.studio-browser-tab[data-active]',
-  '.studio-task-sidebar .studio-thread-row[data-highlighted] .studio-thread-card',
-  ".studio-task-sidebar .studio-thread-child[aria-current='true']",
-  '.studio-overview-pane',
-  '.studio-tools-navigation',
   ".studio-navigation[aria-label='Main navigation']",
+  ".studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page']",
   '.studio-composer:not(.dovo-dialog-content *)',
-  '.studio-menu-surface',
-  '.dovo-dialog-content',
-  '.studio-task-thread-header',
+  '[data-fixed-material]',
 ].join(',')
 const ns = 'http://www.w3.org/2000/svg'
 let nextId = 0

@@ -19,6 +19,13 @@ label. Change history keeps the source. Older runtimes keep their existing sourc
 
 ## Create and edit on mobile
 
+The Automations list keeps saved rows visible if a computer goes offline. It names the affected
+computer and offers a retry when data could not load. If a search has no matches, clear the search
+to see the available rows. The first-use action appears when the connected computers finish loading.
+Choose **Needs attention** to find failed runs and runs waiting for input. **View run** opens the
+affected run on its computer. **Triggers paused** describes the trigger policy. The current or last
+run has its own status.
+
 Open **Settings → Coding → Automations**, select the computer, then **New automation**. Give it a
 name, choose a trigger and configure its ordered steps:
 

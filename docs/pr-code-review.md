@@ -2,6 +2,9 @@
 
 ## Continue after a push
 
+When your review is requested, use **Review changes** in the PR list to open the diff directly. On
+narrow desktop windows, this action is in the PR row menu.
+
 If a new revision arrives while you have the PR open, **Changes** keeps the previous diff read-only.
 Select **Switch revision** after the new files load. Dovo keeps the selected file if it is still
 part of the diff. Viewed marks stay for files with the same review fingerprint. Line drafts do not
@@ -9,15 +12,22 @@ move to new lines or revisions automatically.
 
 ## Start a review
 
-Enable **Experimental code reviews** in the connected computer's settings. On desktop and web, use
-the PR row menu. On mobile, touch and hold a PR row and choose **Open agent review**, or open the PR
-and use the **Agent review** card. Choose **Open agent review** to see the review, or **Configure
-agent review** to open the reviewer settings. On mobile, **View review run** opens a running review.
-None of these actions starts the agent or publishes a review.
+Enable **Experimental code reviews** in the connected computer's settings. Open the PR overview.
+Choose **Review changes** to inspect the files yourself. If repository CI reports a failure, use
+**View failed checks** from the PR list to open Checks.
 
-Choose a provider, model, depth, and optional project checks. The computer remembers the reviewer
-choice separately from its title model. Select **Start agent review** to run the review. Publishing
-the result remains a separate action.
+For an agent review, choose **Run agent review** when a reviewer is ready. **Set up agent review**
+opens the settings if the reviewer needs a model or the computer needs to reconnect. **Configure
+this run** opens the settings for the next run. Choose a provider, model, depth, and optional
+project checks, then choose **Start agent review**. The computer remembers the reviewer choice
+separately from its title model. Publishing the result remains a separate action.
+
+Use **Open agent review** to see an existing report. Use **View review run** to see a running
+review. The PR row menu offers the same three actions. On mobile, touch and hold the row. **Run
+agent review** from the list starts a first run if the verified source has a saved reviewer. If
+there is already a report or run, it opens that review. If a reviewer needs a model, it opens the
+settings. On desktop and web, use the arrow keys, Home, or End to switch review tabs after moving
+focus to the tab list.
 
 The review uses the computer's existing agent installation. It does not depend on PR-Agent. It works
 with a connected Git project or a supported PR URL. It verifies the PR and forge account on the
@@ -26,10 +36,17 @@ and report storage. HTTP runtimes, pairing codes and device tokens work as befor
 
 ## Read and share a review
 
+Completed reports start with the finding count and commit. File coverage counts the patches supplied
+to the reviewer. Project check results come from commands on the review computer. Mobile puts
+**Review again** and **Configure this run** under **More review actions**. **View failed project
+checks** opens the check results with failures first.
+
 1. Start a review. The runtime captures PR intent and patches between checks of the base and head.
    It reviews every eligible changed file in bounded batches automatically. It then challenges
    supported findings in fresh model calls. Progress shows the active batch and phase.
-2. Read the findings beside the captured diff. On mobile, open a finding's file to read its diff.
+2. Open a finding's location to see its captured patch. A verified location selects the exact line
+   on the reported side. The patch stays tied to the reviewed commit after a push. Close it on
+   desktop or choose **Back to findings** on mobile to return to the report position.
 3. Open **Evidence and finding check** to see the exact code quote, challenge reason and model
    confidence. Open snapshot context to inspect the surrounding code supplied to the model.
 4. Check file coverage. Each batch holds whole patches within a 180,000-character serialized patch

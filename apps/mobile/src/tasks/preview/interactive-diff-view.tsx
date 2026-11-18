@@ -30,6 +30,7 @@ export function DiffView({
   before,
   after,
   focusedLine,
+  focusedSide = 'after',
   onLinePress,
   annotations = [],
   wrapLines,
@@ -78,20 +79,20 @@ export function DiffView({
   )
   const listRef = useRef<FlatList<HighlightedDiffRow>>(null)
   useEffect(() => {
-    const index = plainRows.findIndex((row) => row.after === focusedLine)
+    const index = plainRows.findIndex((row) => row[focusedSide] === focusedLine)
     if (focusedLine === undefined || index < 0) return
     const frame = requestAnimationFrame(() =>
       listRef.current?.scrollToIndex({ index, viewPosition: 0.3, animated: false }),
     )
     return () => cancelAnimationFrame(frame)
-  }, [plainRows, focusedLine])
+  }, [plainRows, focusedLine, focusedSide])
   const render = ({ item }: { item: HighlightedDiffRow }) => (
     <View>
       <View
         style={{
           flexDirection: 'row',
           backgroundColor:
-            focusedLine !== undefined && item.after === focusedLine
+            focusedLine !== undefined && item[focusedSide] === focusedLine
               ? (code?.colors.selection ?? colors.selection)
               : item.kind === 'addition'
                 ? `${addition}${changeAlpha}`

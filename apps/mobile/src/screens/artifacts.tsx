@@ -131,15 +131,16 @@ export default function ArtifactsScreen() {
     },
     [guard],
   )
-  const loading = sources.some(
+  const loadingSources = sources.filter(
     (source) => (states.get(source.owner)?.status ?? 'loading') === 'loading',
   )
+  const loading = loadingSources.length > 0
   const entries: Entry[] = sources.flatMap((source) =>
     (states.get(source.owner)?.saved?.artifacts ?? []).map((artifact) => ({ ...source, artifact })),
   )
   const errors = sources.flatMap((source) => {
     const state = states.get(source.owner)
-    return state?.status === 'failed' ? [`${source.computerName}: ${state.error}`] : []
+    return state?.status === 'failed' ? [{ source, error: state.error, saved: !!state.saved }] : []
   })
   const currentSelection =
     selected &&
@@ -169,6 +170,10 @@ export default function ArtifactsScreen() {
   const offline = sources.some((source) => !source.connected && !source.connecting)
   const incomplete = errors.length > 0 || offline
   const unavailable = !entries.length && incomplete
+  const openSourceThread = (item: Entry) => {
+    setSelected(undefined)
+    navigate('tasks', item.artifact.taskId, item.profile.id)
+  }
   const clearFilters = () => {
     setQuery('')
     setFormat('all')
@@ -179,7 +184,6 @@ export default function ArtifactsScreen() {
       <ScreenHeader
         title={uiText('Artifacts')}
         onBack={() => backToCollection('/')}
-        subtitle={uiText('Your creations, all in one place.')}
         buttons={[
           {
             label: uiText('Artifact filters'),
@@ -323,9 +327,17 @@ export default function ArtifactsScreen() {
                   </InterfaceText>
                 </Text>
               ))}
-            {errors.map((error) => (
-              <Text key={error} accessibilityRole="alert" style={styles.error}>
-                {error}
+            {loading && visible.length > 0 && (
+              <Text accessibilityRole="status" style={styles.muted}>
+                {uiText('Loading artifacts from {value0}…', {
+                  value0: loadingSources.map((source) => source.computerName).join(', '),
+                })}
+              </Text>
+            )}
+            {errors.map(({ source, error, saved }) => (
+              <Text key={source.owner} accessibilityRole="alert" style={styles.error}>
+                {source.computerName}: {error}
+                {saved && ` ${uiText('Showing saved artifacts.')}`}
               </Text>
             ))}
           </View>
@@ -445,9 +457,10 @@ export default function ArtifactsScreen() {
                   <Text numberOfLines={2} style={[styles.text, { fontWeight: '600' }]}>
                     {item.artifact.title}
                   </Text>
-                  <ArtifactSharedBadge artifact={item.artifact} />
                   <Text numberOfLines={1} style={styles.muted}>
                     {item.artifact.threadTitle} · {item.computerName}
+                    {!item.connected &&
+                      (item.connecting ? ` · ${uiText('Connecting…')}` : uiText(', Offline'))}
                   </Text>
                   <Text style={styles.muted}>
                     {artifactLabel(item.artifact)} · v{item.artifact.revision} ·{' '}
@@ -456,9 +469,16 @@ export default function ArtifactsScreen() {
                       day: 'numeric',
                     })}
                   </Text>
-                  <Text style={{ fontSize: 11, color: colors.muted, textTransform: 'capitalize' }}>
-                    {item.artifact.threadState}
-                  </Text>
+                  <View
+                    style={{ flexDirection: 'row', alignItems: 'center', flexWrap: 'wrap', gap: 6 }}
+                  >
+                    <Text
+                      style={{ fontSize: 11, color: colors.muted, textTransform: 'capitalize' }}
+                    >
+                      {item.artifact.threadState}
+                    </Text>
+                    <ArtifactSharedBadge artifact={item.artifact} />
+                  </View>
                   {item.artifact.deleteAt && (
                     <Text style={styles.error}>
                       <InterfaceText
@@ -474,10 +494,7 @@ export default function ArtifactsScreen() {
             <ArtifactLibraryActions
               profile={item.profile}
               artifact={item.artifact}
-              onOpenSource={() => {
-                setSelected(undefined)
-                navigate('tasks', item.artifact.taskId, item.profile.id)
-              }}
+              onOpenSource={() => openSourceThread(item)}
               onDeleted={() => {
                 // A library read started before deletion must not restore the deleted card.
                 guard.begin(item.owner)
@@ -519,6 +536,12 @@ export default function ArtifactsScreen() {
             ])}
             taskId={currentSelection.artifact.taskId}
             initialId={currentSelection.artifact.id}
+            initialArtifact={currentSelection.artifact}
+            sourceThread={{
+              title: currentSelection.artifact.threadTitle,
+              computerName: currentSelection.computerName,
+              open: () => openSourceThread(currentSelection),
+            }}
             onClose={() => setSelected(undefined)}
           />
         </RuntimeScope>

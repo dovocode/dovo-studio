@@ -72,6 +72,11 @@ try {
     await trigger.click()
     const prompt = dialog('Delete selected threads?')
     await prompt.waitFor()
+    assert.equal(await prompt.getAttribute('data-surface'), 'solid')
+    assert.equal(
+      await prompt.evaluate((element) => getComputedStyle(element).backdropFilter),
+      'none',
+    )
     const scrim = await page.locator('.dovo-dialog-overlay').evaluate((element) => {
       const style = getComputedStyle(element)
       return { color: style.backgroundColor, blur: style.backdropFilter }
@@ -79,9 +84,9 @@ try {
     assert.equal(
       scrim.color,
       mode === 'dark' ? 'rgba(0, 0, 0, 0.32)' : 'rgba(0, 0, 0, 0.18)',
-      `${mode} theme keeps context visible behind the glass dialog`,
+      `${mode} theme keeps context visible around the dialog`,
     )
-    assert.equal(scrim.blur, 'none', 'The overlay leaves backdrop blur to the dialog surface')
+    assert.equal(scrim.blur, 'none', 'The overlay does not blur the surrounding context')
     assert.equal(
       await prompt
         .getByRole('button', { name: 'Cancel', exact: true })

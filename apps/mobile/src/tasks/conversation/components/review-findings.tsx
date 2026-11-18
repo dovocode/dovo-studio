@@ -36,6 +36,7 @@ export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => voi
     )
   return (
     <Glass
+      solid
       style={{
         borderRadius: designTokens.radius.overlay,
         padding: 12,
