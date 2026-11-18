@@ -142,7 +142,7 @@ export function MobileFileTree({
       <Pressable
         key={node.path}
         accessibilityRole="button"
-        accessibilityLabel={`${node.path}${!folder && node.viewed !== undefined ? (node.viewed ? uiText(', viewed') : uiText(', unviewed')) : ''}`}
+        accessibilityLabel={`${node.path}${folder ? '' : node.changedSinceViewed ? uiText(', changed since viewed') : node.viewed !== undefined ? (node.viewed ? uiText(', viewed') : uiText(', unviewed')) : ''}`}
         accessibilityState={folder ? { expanded: open } : { selected: active, disabled }}
         disabled={!folder && disabled}
         onPress={() => {
@@ -193,6 +193,11 @@ export function MobileFileTree({
           >
             {node.name}
           </Text>
+          {!folder && node.changedSinceViewed && (
+            <Text style={{ color: colors.warning, fontSize: 11 }}>
+              <InterfaceText>{'Changed since viewed'}</InterfaceText>
+            </Text>
+          )}
           {flat && node.path.includes('/') && (
             <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
               {node.path.slice(0, node.path.lastIndexOf('/'))}

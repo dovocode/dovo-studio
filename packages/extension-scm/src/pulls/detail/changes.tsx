@@ -110,14 +110,20 @@ export function PullChanges({
       ),
     [visibleFiles, review.progress?.groups, related, kind],
   )
-  const viewed = useMemo(
+  const fileList = useMemo(
     () =>
-      new Set(
-        files
-          .filter((file) => fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed)
-          .map((file) => file.path),
-      ),
-    [files, fingerprints, fileState],
+      files.map((file) => {
+        const state = fileState(file.path, fingerprints.get(file.path) ?? '')
+        return {
+          path: file.path,
+          changeKind: pullFileKind(file),
+          viewed: state?.viewed ?? false,
+          changedSinceViewed: state?.changedSinceViewed,
+          additions: file.additions ?? undefined,
+          deletions: file.deletions ?? undefined,
+        }
+      }),
+    [files, fileState, fingerprints],
   )
   const { request, connected, snapshot } = useWorkspace()
   const commentsByPath = useMemo(
@@ -190,7 +196,7 @@ export function PullChanges({
   return (
     <section aria-label="Code changes" className="min-w-0">
       <ChangeSummary
-        title={`${files.length} ${files.length === 1 ? 'file' : 'files'} · ${viewed.size} viewed`}
+        title={`${files.length} ${files.length === 1 ? 'file' : 'files'} · ${fileList.filter((file) => file.viewed).length} viewed`}
         files={visibleFiles}
         expanded={summaryExpanded}
         onExpandedChange={setSummaryExpanded}
@@ -202,13 +208,7 @@ export function PullChanges({
           <ReviewFiles
             showTypeFilters={false}
             showChangeBars
-            files={files.map((file) => ({
-              path: file.path,
-              changeKind: pullFileKind(file),
-              viewed: viewed.has(file.path),
-              additions: file.additions ?? undefined,
-              deletions: file.deletions ?? undefined,
-            }))}
+            files={fileList}
             groups={review.progress?.groups ?? []}
             related={related}
             onRelatedChange={setRelated}
@@ -219,6 +219,7 @@ export function PullChanges({
       </ChangeSummary>
       <div className="flex flex-wrap items-center justify-between gap-2 py-1">
         <OrganizeReview
+          disabled={!active}
           onOpenFile={(path) => {
             setGuidePath(path)
             setKind(undefined)
@@ -242,7 +243,7 @@ export function PullChanges({
           className="sticky -top-4 z-20 -mx-4 bg-background shadow-sm"
         >
           <FileReviewControls
-            files={files.map((file) => ({ path: file.path, viewed: viewed.has(file.path) }))}
+            files={fileList}
             selected={selectedFile?.path ?? ''}
             onSelect={selectFile}
             onViewed={(viewed) => {
@@ -254,6 +255,7 @@ export function PullChanges({
                 )
             }}
             disabled={
+              !active ||
               !review.ready ||
               !selectedFile ||
               !fileState(selectedFile.path, fingerprints.get(selectedFile.path) ?? '')
@@ -276,6 +278,8 @@ export function PullChanges({
         {!files.length && <p className="p-4 text-xs text-muted-foreground">No matching files.</p>}
         {files.map((file) => {
           const comments = commentsByPath.get(file.path) ?? []
+          const fingerprint = fingerprints.get(file.path) ?? ''
+          const state = fileState(file.path, fingerprint)
           return (
             <article
               key={file.path}
@@ -301,22 +305,21 @@ export function PullChanges({
                   </span>
                   <label className="flex items-center gap-1 text-xs">
                     <Checkbox
-                      checked={viewed.has(file.path)}
-                      disabled={
-                        !review.ready ||
-                        review.busy ||
-                        !fileState(file.path, fingerprints.get(file.path) ?? '')
-                      }
+                      checked={state?.viewed ?? false}
+                      disabled={!active || !review.ready || review.busy || !state}
                       aria-label={`Viewed ${file.path}`}
+                      aria-description={
+                        state?.changedSinceViewed ? uiText('Changed since viewed') : undefined
+                      }
                       onCheckedChange={(checked) =>
-                        review.setViewed(
-                          file.path,
-                          fingerprints.get(file.path) ?? '',
-                          checked === true,
-                        )
+                        review.setViewed(file.path, fingerprint, checked === true)
                       }
                     />
-                    Viewed
+                    {state?.changedSinceViewed ? (
+                      <span className="text-status-warning">{uiText('Changed since viewed')}</span>
+                    ) : (
+                      'Viewed'
+                    )}
                   </label>
                 </div>
                 <DeferredPullFile

@@ -57,6 +57,7 @@ const stateSchema = z.object({
     })
     .optional(),
   failed: z.boolean().optional(),
+  failedStep: z.object({ name: z.string(), url: z.string() }).optional(),
   attempt: z.number().int().positive().optional(),
   notifiedStatus: z.string().optional(),
   startedAt: z.string(),
@@ -96,13 +97,23 @@ const hasFailedPart = (detail: ForgePipelineDetail) =>
       job.steps?.some((step) => pipelineSignal(step.status).tone === 'danger'),
   )
 
+function linkedFailedStep(detail: ForgePipelineDetail) {
+  for (const job of detail.jobs) {
+    for (const step of job.steps ?? []) {
+      const name = step.name.trim().slice(0, 300)
+      if (step.url && name && pipelineSignal(step.status).tone === 'danger')
+        return { name, url: step.url }
+    }
+  }
+}
+
 const jobContext = (job: ForgePipelineDetail['jobs'][number]) => {
   const steps = (job.steps ?? [])
     .filter((step) => actionableStatus(step.status))
     .slice(0, 10)
     .map(
       (step) =>
-        `${step.name.slice(0, 300)}: ${step.status.slice(0, 100)}\n${(step.errors ?? []).join('\n').slice(0, 1000)}`,
+        `${step.name.slice(0, 300)}: ${step.status.slice(0, 100)}${step.url ? `\nStep link: ${step.url}` : ''}\n${(step.errors ?? []).join('\n').slice(0, 1000)}`,
     )
     .join('\n')
     .slice(0, 2000)
@@ -268,22 +279,14 @@ export class PipelineWatch {
     let first: ForgePipelineDetail | undefined
     let detail: ForgePipelineDetail
     do {
+      const input = { id: runId, refresh, section: 'jobs', ...(cursor ? { cursor } : {}) }
       detail = decode(
         forgePipelineDetailSchema,
         await retrievalWatching(
           () =>
             source
-              ? this.s.forgeWork.pipelineFromUrl(
-                  source,
-                  { id: runId, refresh, ...(cursor ? { cursor } : {}) },
-                  background,
-                )
-              : this.s.forgeWork.request(
-                  repositoryId,
-                  'pipelines/detail',
-                  { id: runId, refresh, ...(cursor ? { cursor } : {}) },
-                  background,
-                ),
+              ? this.s.forgeWork.pipelineFromUrl(source, input, background)
+              : this.s.forgeWork.request(repositoryId, 'pipelines/detail', input, background),
           background,
         ),
       )
@@ -468,6 +471,7 @@ export class PipelineWatch {
             partial: !!detail.next,
           },
           failed: hasFailedPart(detail) || pipelineSignal(detail.run.status).tone === 'danger',
+          failedStep: linkedFailedStep(detail),
           attempt: detail.run.attempt,
           // Registration returns the current result directly to the agent.
           notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
@@ -582,6 +586,7 @@ export class PipelineWatch {
               partial: !!detail.next,
             },
             failed: failedPart || signal.tone === 'danger',
+            failedStep: linkedFailedStep(detail),
             attempt: detail.run.attempt,
             notifiedStatus: attentionRequired(detail.run.status) ? detail.run.status : undefined,
             checkedAt: new Date().toISOString(),
@@ -616,7 +621,7 @@ export class PipelineWatch {
                 false,
                 false,
                 undefined,
-                { source: { kind: 'pipeline', url: state.url } },
+                { source: { kind: 'pipeline', url: state.url, failedStep: next.failedStep } },
               )
             this.save(next)
             this.s.store.updateTask(state.taskId, (task) => task)

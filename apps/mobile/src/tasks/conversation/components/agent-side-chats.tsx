@@ -72,10 +72,14 @@ export function AgentSideChats({
     ],
     { id: task.id, runtimeId: profile?.id ?? null, runtimeIdentity: snapshot?.runtimeId },
   )
-  const open = (id: string, runtimeId = profile?.id) => {
+  const open = (
+    id: string,
+    runtimeId: string | null | undefined,
+    runtimeIdentity?: string,
+  ) => {
     if (!runtimeId || !current()) return
     sheet.current?.dismiss(() => {
-      if (current()) router.push(taskHref(runtimeId, id))
+      if (current()) router.push(taskHref(runtimeId, id, undefined, undefined, runtimeIdentity))
     })
   }
   return (
@@ -122,7 +126,7 @@ export function AgentSideChats({
               resultSchema,
             )
             await finishRuntimeSideThread(profile.id, task.id, id)
-            open(result.id)
+            open(result.id, profile.id, snapshot?.runtimeId)
           })
         }
       />
@@ -145,7 +149,7 @@ export function AgentSideChats({
         </Text>
       )}
       {children.map(({ task: child, runtimeId, runtimeIdentity, mention, mentionSourceTitle }) => {
-        const local = runtimeId === profile?.id
+        const local = runtimeId === profile?.id && runtimeIdentity === snapshot?.runtimeId
         const attention = local ? sideThreadAttention(snapshot, child.id) : undefined
         const label =
           attention === 'approval'
@@ -171,7 +175,7 @@ export function AgentSideChats({
               secondary
               label={`${child.title} · ${label}`}
               disabled={!profile || action.busy}
-              onPress={() => open(child.id, runtimeId ?? undefined)}
+              onPress={() => open(child.id, runtimeId, runtimeIdentity)}
             />
             <ChildThreadName
               key={JSON.stringify([runtimeId, child.id])}
@@ -192,7 +196,7 @@ export function AgentSideChats({
                 <Action
                   secondary
                   label={uiText('Open source thread')}
-                  onPress={() => open(mention.sourceTaskId, runtimeId ?? undefined)}
+                  onPress={() => open(mention.sourceTaskId, runtimeId, runtimeIdentity)}
                 />
               </>
             )}
@@ -348,7 +352,19 @@ export function SideChatAttention({ task }: { task: Task }) {
       <Action
         secondary
         label={target.kind === 'approval' ? uiText('Open approval') : uiText('Open question')}
-        onPress={() => router.push(taskHref(profile.id, target.id))}
+        onPress={() =>
+          router.push(
+            taskHref(
+              profile.id,
+              target.id,
+              target.kind === 'input' ? target.requestId : undefined,
+              undefined,
+              snapshot?.runtimeId,
+              undefined,
+              target.kind === 'approval' ? target.requestId : undefined,
+            ),
+          )
+        }
       />
     </View>
   )

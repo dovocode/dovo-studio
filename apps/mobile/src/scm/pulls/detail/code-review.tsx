@@ -51,12 +51,14 @@ function LocalMobilePullCodeReview({
   repositoryId,
   detail,
   sourceReady = true,
+  initiallyOpen = false,
   onAsk,
   onRefresh,
   onOpenStackReview,
 }: {
   repositoryId: string
   sourceReady?: boolean
+  initiallyOpen?: boolean
   detail: PullDetail
   onAsk: (finding: PullCodeReview['findings'][number]) => void
   onRefresh?: () => void
@@ -82,7 +84,7 @@ function LocalMobilePullCodeReview({
     request: transport,
     connected: connected && !!target.expectedDestination,
   })
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initiallyOpen)
   const [agent, setAgent] = useState<Agent | null>(null)
   const [additional, setAdditional] = useState<Agent[]>()
   const [imageError, setImageError] = useState('')
@@ -138,6 +140,7 @@ function LocalMobilePullCodeReview({
   )
   const supplied = current?.coverage.filter((file) => file.state === 'supplied').length ?? 0
   const ready =
+    !!review.report &&
     !imageBusy &&
     reviewers.every(
       (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
@@ -184,8 +187,18 @@ function LocalMobilePullCodeReview({
           </View>
         </View>
         <Action
-          label={current ? uiText('Open agent review') : uiText('Review with agent')}
+          label={running ? uiText('View review run') : uiText('Open agent review')}
           onPress={() => {
+            setSettings(false)
+            setOpen(true)
+          }}
+        />
+        <Action
+          secondary
+          label={uiText('Configure agent review')}
+          disabled={!!blocked}
+          onPress={() => {
+            setSettings(true)
             setOpen(true)
           }}
         />
@@ -473,6 +486,13 @@ function LocalMobilePullCodeReview({
               />
               {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
                 <View style={{ gap: 10 }}>
+                  {review.report && (
+                    <Text style={styles.muted}>
+                      {review.report.oneRunSettingsSupported
+                        ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
+                        : uiText('This runtime saves reviewer settings as defaults when you start a run.')}
+                    </Text>
+                  )}
                   {reviewers.map((reviewer, index) => (
                     <View key={index} style={[styles.card, { gap: 10 }]}>
                       <Text style={styles.muted}>
@@ -715,7 +735,7 @@ function LocalMobilePullCodeReview({
                     ? uiText('Review latest revision')
                     : current
                       ? uiText('Review again')
-                      : uiText('Start review')
+                      : uiText('Start agent review')
                 }
                 disabled={!!blocked || !ready}
                 onPress={() => start()}
@@ -1149,14 +1169,18 @@ export function MobilePullCodeReview(props: PanelProps) {
         />
       )}
       {runtimeId === profile?.id || !runtimeId ? (
-        <LocalMobilePullCodeReview key={runtimeId} {...props} />
+        <LocalMobilePullCodeReview
+          key={runtimeId}
+          {...props}
+          initiallyOpen={!chosen && props.initiallyOpen}
+        />
       ) : !overviews.some((computer) => computer.profile.id === runtimeId) ? (
         <Text accessibilityRole="alert" style={styles.muted}>
           {uiText('This computer is no longer saved.')}
         </Text>
       ) : (
         <RuntimeScope runtimeId={runtimeId}>
-          <RemoteMobilePullCodeReview key={runtimeId} {...props} />
+          <RemoteMobilePullCodeReview key={runtimeId} {...props} initiallyOpen={false} />
         </RuntimeScope>
       )}
     </View>

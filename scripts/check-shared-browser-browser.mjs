@@ -1449,6 +1449,7 @@ try {
   await loadStyles()
   await page.addScriptTag({ content: built.outputFiles[0].text })
   // Direct BrowserPane coverage deliberately bypasses the experimental BrowserView gate.
+  await page.getByText(/Browser workspace · This device/).waitFor()
   const recent = page.getByRole('complementary', { name: 'Recent browser tabs' })
   const preview = page.getByRole('region', { name: 'Link preview', exact: true })
   if (!(await recent.isVisible())) throw new Error('Missing vertical tab list')

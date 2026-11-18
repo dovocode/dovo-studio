@@ -1,5 +1,9 @@
 # Terminals and unified workspace
 
+Terminal panes name the computer running the session. Desktop panes show the checkout, and mobile
+thread panes show the branch when known. A reported process exit is separate from an offline
+computer that cannot accept input.
+
 Desktop and web have a **Terminals** workspace for standalone sessions on paired Dovo computers.
 Shells opened inside a thread stay in that thread. Its thread-style starter lets you choose a
 computer, an installed shell and either **Home folder** or a project. Enter an optional startup

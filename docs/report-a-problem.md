@@ -21,7 +21,8 @@ Update an older runtime to use the feature.
 3. Choose the computer. Only connected computers with a supported runtime are available.
 4. Choose the agent and model. The default is the default agent for threads without a project on
    that computer.
-5. Choose what to include. All available options are on by default.
+5. Choose what to include. App and runtime versions are on by default. Turn on logs, recent app
+   errors, or recent app actions only when they help explain the problem.
 6. Select **Preview**. The runtime builds the redacted message and file, and the app shows them.
 7. Read the preview. You cannot edit it. Select **Edit report** to change the form, or **Start
    triage thread** to start.

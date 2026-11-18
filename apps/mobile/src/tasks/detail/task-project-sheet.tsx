@@ -280,8 +280,12 @@ export function TaskProjectSheet({
                 : (repository?.name ?? uiText('No Project'))}
             </Text>
             {!details && (
-              <Text numberOfLines={1} style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
-                {runtimeComputerName({ profile, snapshot })}
+              <Text numberOfLines={2} style={{ color: colors.muted, fontSize: 12, flexShrink: 1 }}>
+                {connected
+                  ? runtimeComputerName({ profile, snapshot })
+                  : uiText('{value0} · Offline', {
+                      value0: runtimeComputerName({ profile, snapshot }),
+                    })}
               </Text>
             )}
           </View>
@@ -292,6 +296,12 @@ export function TaskProjectSheet({
               <Icon name="changes" color={colors.muted} />
               <Text numberOfLines={2} style={{ color: colors.text, fontSize: 13, flex: 1 }}>
                 {task.checkoutBranch || repository?.branch || uiText('Project checkout')}
+                {repository && !repository.kind && (
+                  <Text style={{ color: colors.muted }}>
+                    {' · '}
+                    {task.execution === 'worktree' ? uiText('Worktree') : uiText('Local checkout')}
+                  </Text>
+                )}
               </Text>
             </View>
             <View style={{ display: details ? 'flex' : 'none' }}>
@@ -384,7 +394,13 @@ export function TaskProjectSheet({
         {show('changes') && (
           <ProjectRow
             secondary
-            label={uiText('Changes ({value0})', { value0: task.files.length })}
+            label={
+              task.files.length === 1
+                ? uiText('Review 1 changed file')
+                : task.files.length > 1
+                  ? uiText('Review {value0} changed files', { value0: task.files.length })
+                  : uiText('Changes ({value0})', { value0: task.files.length })
+            }
             icon="changes"
             onPress={() => dismissThen(onChanges)}
           />

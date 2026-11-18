@@ -44,7 +44,7 @@ export function pullHref(
   repositoryId: string,
   number: number,
   destination?: {
-    tab: 'overview' | 'changes' | 'checks'
+    tab: 'overview' | 'changes' | 'checks' | 'agent-review'
     fragment: string
     navigationUrl?: string
   },

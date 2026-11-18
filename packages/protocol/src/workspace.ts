@@ -334,6 +334,7 @@ export const fileSchema = mutableStruct({
   before: Schema.String,
   after: Schema.String,
   viewed: Schema.Boolean,
+  changedSinceViewed: Schema.optional(Schema.Literal(true)),
   diskContents: Schema.optional(Schema.String),
   preview: Schema.optional(filePreviewMetadataSchema),
   // Working scans only. Older runtimes and historical reviews may omit this metadata.
@@ -802,7 +803,7 @@ export const taskSchema = mutableStruct({
     mutableStruct({
       taskId: Schema.String,
       turnId: Schema.optional(Schema.String),
-      /** Last source message copied into a message fork. */
+      /** Last source message copied into a conversation or turn fork. */
       messageId: Schema.optional(Schema.String),
       head: Schema.optional(Schema.String),
       title: maxValue(Schema.String, 400),

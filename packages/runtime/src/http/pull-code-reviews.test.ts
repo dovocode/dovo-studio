@@ -267,6 +267,34 @@ it('runs a fresh Quick tools-disabled review, validates anchors, and saves a mod
   await f.start('start-1', 'quick')
   expect(f.calls).toHaveLength(2)
 })
+it('keeps saved defaults when an agent review uses one-run settings', async () => {
+  const f = await setup()
+  await f.start()
+  await f.completed()
+  const defaults = await f.s.pullCodeReviews.read(f.target)
+  const alternateSelection = { ...selection, model: 'another-model' }
+  const report = await f.s.pullCodeReviews.start({
+    target: f.target,
+    requestId: 'one-run-settings',
+    headSha: head,
+    baseSha: base,
+    selection: alternateSelection,
+    reviewers: [selection],
+    depth: 'thorough',
+    oneRunSettings: true,
+  })
+  expect(report.reviews.find((review) => review.requestId === 'one-run-settings')).toMatchObject({
+    selection: { model: alternateSelection.model },
+    reviewers: [{ model: selection.model }],
+    depth: 'thorough',
+  })
+  expect(report).toMatchObject({
+    oneRunSettingsSupported: true,
+    selection: defaults.selection,
+    reviewers: defaults.reviewers,
+    depth: defaults.depth,
+  })
+})
 it('persists review depth, keeps check consent per request, and rejects changed retry options', async () => {
   const f = await setup()
   const input = {
@@ -504,7 +532,10 @@ it('rejects incomplete reviewer setup without saving a report or reviewer prefer
       }),
     ).rejects.toMatchObject({ status: 400 })
   }
-  expect(await f.s.pullCodeReviews.read(f.target)).toEqual({ reviews: [] })
+  expect(await f.s.pullCodeReviews.read(f.target)).toEqual({
+    reviews: [],
+    oneRunSettingsSupported: true,
+  })
   expect(f.calls).toHaveLength(0)
 })
 it('keeps a newer draft saved while publication checks the forge', async () => {

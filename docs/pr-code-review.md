@@ -1,9 +1,24 @@
 # Agent PR review
 
-Enable **Experimental code reviews** in the connected computer's settings. Open a PR and select
-**Agent review** on desktop, or **Review with agent** on mobile. Choose a provider and model. The
-computer remembers this choice separately from its title model. On mobile, the PR card opens the
-review sheet. Choose the depth and optional project checks, then select **Start review**.
+## Continue after a push
+
+If a new revision arrives while you have the PR open, **Changes** keeps the previous diff
+read-only. Select **Switch revision** after the new files load. Dovo keeps the selected file
+if it is still part of the diff. Viewed marks stay for files with the same review fingerprint.
+Line drafts do not move to new lines or revisions automatically.
+
+## Start a review
+
+Enable **Experimental code reviews** in the connected computer's settings.
+On desktop and web, use the PR row menu. On mobile, touch and hold a PR row and choose
+**Open agent review**, or open the PR and use the **Agent review** card.
+Choose **Open agent review** to see the review, or **Configure agent review** to open the reviewer
+settings. On mobile, **View review run** opens a running review. None of these actions starts the
+agent or publishes a review.
+
+Choose a provider, model, depth, and optional project checks. The computer remembers the reviewer
+choice separately from its title model. Select **Start agent review** to run the review. Publishing
+the result remains a separate action.
 
 The review uses the computer's existing agent installation. It does not depend on PR-Agent. It works
 with a connected Git project or a supported PR URL. It verifies the PR and forge account on the

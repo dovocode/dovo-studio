@@ -1,7 +1,7 @@
 import { decode } from '@dovo/protocol'
 import { describe, expect, it } from 'vite-plus/test'
 import { taskSchema } from '@dovo/protocol'
-import { taskToolEvents, type ToolEvents } from './tool-events'
+import { activeToolTitle, taskToolEvents, type ToolEvents } from './tool-events'
 const task = decode(taskSchema, {
   id: 'task',
   repositoryId: 'repo',
@@ -38,6 +38,17 @@ const event = (scope: string, turnId: string): ToolEvents[number] => ({
   }),
 })
 describe('mobile task activity ownership and lifecycle', () => {
+  it('names the most recent unfinished tool only while the turn is running', () => {
+    const [running] = taskToolEvents(task, [event('task', 'live')])
+    const events = [
+      { ...running, summary: 'Open file' },
+      running,
+      { ...running, status: 'completed', summary: 'Read file' },
+    ]
+    expect(activeToolTitle(events, true)).toBe('Run command')
+    expect(activeToolTitle(events, false)).toBeUndefined()
+    expect(activeToolTitle(events.slice(-1), true)).toBeUndefined()
+  })
   it('only treats a matching active turn as running, including legacy activity', () => {
     expect(
       taskToolEvents(task, [

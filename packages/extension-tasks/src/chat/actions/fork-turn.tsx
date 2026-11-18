@@ -1,21 +1,35 @@
 import { useState } from 'react'
-import { Schema } from 'effect'
 import { GitBranchPlus, RotateCcw } from 'lucide-react'
-import { botResultSchema, mutableStruct, taskIsWorking } from '@dovo/protocol'
+import {
+  botResultSchema,
+  forkFileDescription,
+  forkMessagePreview,
+  taskIsWorking,
+  turnForkResultSchema,
+  type ChatMessage,
+  type TaskTurn,
+} from '@dovo/protocol'
 import { useConfirmation, useStudioHost, useWorkspace } from '@dovo/studio-core'
 import { MessageAction } from '@dovo/studio-ui'
 
-const forkSchema = mutableStruct({ id: Schema.String })
-
-/** Starts a new task from this point in the conversation, with this turn's files. */
-export function ForkTurn({ taskId, turnId }: { taskId: string; turnId: string }) {
+export function ForkTurn({
+  taskId,
+  turn,
+  message,
+}: {
+  taskId: string
+  turn: Pick<TaskTurn, 'id' | 'checkpoint'>
+  message: ChatMessage
+}) {
   const { request, connected, workspace, snapshot } = useWorkspace()
   const confirm = useConfirmation()
   const task = workspace.tasks.find((task) => task.id === taskId)
   const host = useStudioHost()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  if (task?.bot)
+  if (!task) return null
+  const turnId = turn.id
+  if (task.bot)
     return (
       <span className="inline-flex items-center gap-1" data-studio-human-only>
         <MessageAction
@@ -68,26 +82,44 @@ export function ForkTurn({ taskId, turnId }: { taskId: string; turnId: string })
         )}
       </span>
     )
+  const snapshotTree = turn.checkpoint?.after
+  const project = workspace.repositories.find((repo) => repo.id === task.repositoryId)
+  const label = snapshotTree ? 'Fork with files from this turn' : 'Fork from this reply'
+  const fork = async () => {
+    const navigationCurrent = host.taskNavigationGuard?.()
+    setBusy(true)
+    setError('')
+    try {
+      const files = forkFileDescription(task.execution, project?.kind, snapshotTree)
+      if (
+        !(await confirm({
+          title: `${label}?`,
+          description: `The new thread includes the conversation up to and including this reply. ${snapshotTree ? '' : 'This turn has no saved file snapshot. '}${files}`,
+          details: `Selected reply: ${forkMessagePreview(message) || '(No reply text)'}`,
+          confirmLabel: 'Fork',
+        }))
+      )
+        return
+      const result = await request('/api/tasks/fork', { id: taskId, turnId }, turnForkResultSchema)
+      if (!navigationCurrent || navigationCurrent())
+        host.navigate({
+          viewId: 'tasks',
+          entityId: result.id,
+          ...(result.messageId ? { messageId: result.messageId } : {}),
+        })
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : String(cause))
+    } finally {
+      setBusy(false)
+    }
+  }
   return (
     <>
       <MessageAction
-        label="Fork with files from this turn: a new thread with this conversation and a worktree holding this turn’s files"
+        label={label}
         className="size-6 text-muted-foreground"
         disabled={!connected || busy}
-        onClick={() => {
-          const navigationCurrent = host.taskNavigationGuard?.()
-          setBusy(true)
-          setError('')
-          void request('/api/tasks/fork', { id: taskId, turnId }, forkSchema)
-            .then((fork) => {
-              if (!navigationCurrent || navigationCurrent())
-                host.navigate({ viewId: 'tasks', entityId: fork.id })
-            })
-            .catch((cause: unknown) =>
-              setError(cause instanceof Error ? cause.message : String(cause)),
-            )
-            .finally(() => setBusy(false))
-        }}
+        onClick={() => void fork()}
       >
         <GitBranchPlus size={12} />
       </MessageAction>

@@ -4,6 +4,7 @@ import { useScreenshotAttachment } from './screenshot-attachment'
 import { Text } from '../../ui/content/text'
 import {
   createRuntimeClient,
+  isBrowserLoopbackAddress,
   mutableStruct,
   decodeResult,
   remoteBrowserTicketSchema,
@@ -115,7 +116,11 @@ function RemoteBrowserContent({
   const [preset, setPreset] = useApplicationState('fill')
   const [landscape, setLandscape] = useApplicationState(false)
 
-  const { connection, profiles, readEffect } = useRuntime()
+  const { connection, profile, profiles, readEffect } = useRuntime()
+  const browserOwner = profile?.name ?? uiText('Unavailable computer')
+  const browserLocation = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
+    ? uiText('Local address on {value0}', { value0: browserOwner })
+    : browserOwner
   const [filePicking, setFilePicking] = useApplicationState<string | null>(null)
   const foreground = usePreviewActive()
   const active = usePreviewActive(!!filePicking)
@@ -532,6 +537,11 @@ function RemoteBrowserContent({
         <BrowserToolbar
           addressRef={addressField}
           address={address}
+          context={
+            tabId
+              ? undefined
+              : `${uiText('Thread preview')} · ${browserLocation} · ${uiText('Default profile')}`
+          }
           mode="remote"
           onMode={onMode ? (next) => onMode(next, lastAddress.current) : undefined}
           onExpand={onExpand}

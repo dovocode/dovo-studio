@@ -9,7 +9,7 @@ const fixture = vi.hoisted(() => ({
   selected: 'source',
   confirm: vi.fn<() => Promise<boolean>>(),
   navigate: vi.fn<(target: StudioNavigation) => void>(),
-  request: vi.fn<(path: string) => Promise<{ id: string }>>(),
+  request: vi.fn<(path: string) => Promise<{ id: string; messageId?: string }>>(),
   action: vi.fn<(props: { onClick: () => void }) => null>(() => null),
 }))
 
@@ -18,7 +18,7 @@ vi.mock('@dovo/studio-core', () => ({
     connected: true,
     request: fixture.request,
     snapshot: { messageForkSupported: true },
-    workspace: { tasks: [{ id: 'source', status: 'review' }] },
+    workspace: { tasks: [{ id: 'source', status: 'review' }], repositories: [] },
   }),
   useConfirmation: () => fixture.confirm,
   useStudioHost: () => ({
@@ -36,6 +36,7 @@ const forks = [
   {
     label: 'conversation fork',
     endpoint: '/api/tasks/fork-message',
+    messageId: 'message',
     action: createElement(ForkMessage, {
       taskId: 'source',
       message: { id: 'message', role: 'user', text: 'Start here' },
@@ -45,7 +46,12 @@ const forks = [
   {
     label: 'files fork',
     endpoint: '/api/tasks/fork',
-    action: createElement(ForkTurn, { taskId: 'source', turnId: 'turn' }),
+    messageId: 'reply',
+    action: createElement(ForkTurn, {
+      taskId: 'source',
+      turn: { id: 'turn' },
+      message: { id: 'reply', role: 'assistant', text: 'First answer' },
+    }),
   },
 ]
 
@@ -82,28 +88,31 @@ it.each(forks)('keeps the new selection when a $label finishes late', async (for
   expect(fixture.request).toHaveBeenCalledTimes(1)
 })
 
-it('still saves a conversation fork if the selection changes before confirmation', async () => {
-  const confirmation = deferred<boolean>()
-  const reply = deferred<{ id: string }>()
-  fixture.confirm.mockReturnValue(confirmation.promise)
-  fixture.request.mockReturnValue(reply.promise)
-  renderToStaticMarkup(forks[0].action)
-  fixture.action.mock.lastCall?.[0].onClick()
+it.each(forks)(
+  'still saves the $label if the selection changes before confirmation',
+  async (fork) => {
+    const confirmation = deferred<boolean>()
+    const reply = deferred<{ id: string }>()
+    fixture.confirm.mockReturnValue(confirmation.promise)
+    fixture.request.mockReturnValue(reply.promise)
+    renderToStaticMarkup(fork.action)
+    fixture.action.mock.lastCall?.[0].onClick()
 
-  expect(fixture.confirm).toHaveBeenCalledTimes(1)
-  expect(fixture.request).not.toHaveBeenCalled()
-  fixture.selected = 'another-thread'
-  confirmation.complete(true)
-  await vi.waitFor(() => expect(fixture.request).toHaveBeenCalledTimes(1))
-  reply.complete({ id: 'saved-fork' })
-  await reply.promise
+    expect(fixture.confirm).toHaveBeenCalledTimes(1)
+    expect(fixture.request).not.toHaveBeenCalled()
+    fixture.selected = 'another-thread'
+    confirmation.complete(true)
+    await vi.waitFor(() => expect(fixture.request).toHaveBeenCalledTimes(1))
+    reply.complete({ id: 'saved-fork' })
+    await reply.promise
 
-  expect(fixture.selected).toBe('another-thread')
-  expect(fixture.navigate).not.toHaveBeenCalled()
-})
+    expect(fixture.selected).toBe('another-thread')
+    expect(fixture.navigate).not.toHaveBeenCalled()
+  },
+)
 
-it.each(forks)('opens the $label when the selection has not changed', async (fork) => {
-  fixture.request.mockResolvedValue({ id: 'saved-fork' })
+it.each(forks)('opens the $label at the selected message', async (fork) => {
+  fixture.request.mockResolvedValue({ id: 'saved-fork', messageId: fork.messageId })
   renderToStaticMarkup(fork.action)
   fixture.action.mock.lastCall?.[0].onClick()
 
@@ -111,6 +120,7 @@ it.each(forks)('opens the $label when the selection has not changed', async (for
     expect(fixture.navigate).toHaveBeenCalledExactlyOnceWith({
       viewId: 'tasks',
       entityId: 'saved-fork',
+      messageId: fork.messageId,
     }),
   )
 })

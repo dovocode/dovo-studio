@@ -145,48 +145,59 @@ export function RunControls({ task }: { task: Task }) {
       {approvals.map((approval) => (
         <div
           key={approval.id}
-          data-approval-id={approval.id}
-          tabIndex={0}
-          aria-keyshortcuts="Y N Enter"
           data-studio-human-only
           className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
         >
-          <p className="mb-1 text-[0.6875rem] text-muted-foreground">
-            Permission request · {executionHost}
-            {approval.taskId !== task.id && (
-              <>
-                {' '}
-                · For child thread:{' '}
-                {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)?.title ??
-                  approval.taskId}
-              </>
-            )}
+          <p
+            data-request-kind="approval"
+            data-request-id={approval.id}
+            tabIndex={-1}
+            className="text-xs font-medium"
+          >
+            {approval.title}
           </p>
-          <p className="text-xs font-medium">{approval.title}</p>
-          <ApprovalDetails key={approval.id} detail={approval.detail} />
-          <div className="flex flex-wrap gap-2">
-            {approvalActions(approval).map((action) => (
-              <Button
-                key={action.decision}
-                size="sm"
-                variant={action.decision === 'approve' ? 'default' : 'outline'}
-                disabled={busy || !connected}
-                onClick={() =>
-                  act('/api/approvals', {
-                    id: approval.id,
-                    allow: action.decision !== 'deny',
-                    decision: action.decision,
-                  })
-                }
-              >
-                {action.label}
-                {action.decision === 'approve' || action.decision === 'deny' ? (
-                  <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                    {action.decision === 'approve' ? 'Y / Enter' : 'N'}
-                  </kbd>
-                ) : null}
-              </Button>
-            ))}
+          <div
+            data-approval-id={approval.id}
+            tabIndex={0}
+            aria-label={approval.title}
+            aria-keyshortcuts="Y N Enter"
+          >
+            <p className="mb-1 text-[0.6875rem] text-muted-foreground">
+              Permission request · {executionHost}
+              {approval.taskId !== task.id && (
+                <>
+                  {' '}
+                  · For child thread:{' '}
+                  {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)?.title ??
+                    approval.taskId}
+                </>
+              )}
+            </p>
+            <ApprovalDetails key={approval.id} detail={approval.detail} />
+            <div className="flex flex-wrap gap-2">
+              {approvalActions(approval).map((action) => (
+                <Button
+                  key={action.decision}
+                  size="sm"
+                  variant={action.decision === 'approve' ? 'default' : 'outline'}
+                  disabled={busy || !connected}
+                  onClick={() =>
+                    act('/api/approvals', {
+                      id: approval.id,
+                      allow: action.decision !== 'deny',
+                      decision: action.decision,
+                    })
+                  }
+                >
+                  {action.label}
+                  {action.decision === 'approve' || action.decision === 'deny' ? (
+                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
+                      {action.decision === 'approve' ? 'Y / Enter' : 'N'}
+                    </kbd>
+                  ) : null}
+                </Button>
+              ))}
+            </div>
           </div>
         </div>
       ))}

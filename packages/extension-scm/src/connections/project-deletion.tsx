@@ -1,6 +1,7 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { projectDeletionPreview } from '@dovo/studio-core/project-deletion'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { nativeAgentWorking, taskFamilyIds } from '@dovo/protocol'
+import { runtimeComputerName } from '@dovo/protocol'
 import { responses, useStudioHost, useWorkspace, type Repository } from '@dovo/studio-core'
 import { AlertTriangle } from 'lucide-react'
 import {
@@ -31,66 +32,16 @@ export function ProjectDeletion({
   } | null>(null)
   const [busy, setBusy] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
+  const profile = runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile
+  const computer = runtimeComputerName({ profile, snapshot })
   const pending = useRef(false)
   const cancel = useRef<HTMLButtonElement>(null)
-  // Mirror the deletion service's guards using activity already known to this computer.
-  // The service remains authoritative for in-flight work and changes after confirmation.
-  const projectTasks = workspace.tasks.filter((task) => task.repositoryId === repository.id)
-  const guardedIds = new Set(
-    projectTasks.flatMap((task) => [...taskFamilyIds(workspace.tasks, task.id)]),
+  const { blockers, projectThreads, affectedAutomations } = projectDeletionPreview(
+    repository.id,
+    workspace,
+    snapshot,
   )
-  for (const task of workspace.tasks) {
-    if (
-      [...(task.linkedCheckouts ?? []), ...(task.pendingLinkedCheckouts ?? [])].some(
-        (link) => link.repositoryId === repository.id,
-      )
-    )
-      guardedIds.add(task.id)
-  }
-  const guardedTasks = workspace.tasks.filter((task) => guardedIds.has(task.id))
-  const affectedFlows = new Set(
-    workspace.automations
-      .filter((flow) =>
-        flow.nodes.some(
-          (node) =>
-            node.data.repositoryId === repository.id ||
-            node.data.linkedCheckouts?.some((link) => link.repositoryId === repository.id),
-        ),
-      )
-      .map((flow) => flow.id),
-  )
-  let activeWorkReason = ''
-  const activeTurn = guardedTasks.find(
-    (task) => task.status === 'running' || task.subagents?.some(nativeAgentWorking),
-  )
-  const pendingDecision =
-    snapshot?.questions.find((question) => guardedIds.has(question.taskId)) ??
-    snapshot?.approvals.find((approval) => guardedIds.has(approval.taskId))
-  const activeTerminal = snapshot?.terminals.find(
-    (terminal) => guardedIds.has(terminal.taskId) && !terminal.exited,
-  )
-  const watchedThread = guardedTasks.find((task) =>
-    task.threadWatches?.some((watch) => watch.status === 'watching'),
-  )
-  const activeAutomation = snapshot?.runs.find(
-    (run) =>
-      (run.status === 'running' || run.status === 'waiting') &&
-      (affectedFlows.has(run.automationId) || run.taskIds.some((id) => guardedIds.has(id))),
-  )
-  const activeWorkThreadId =
-    activeTurn?.id ??
-    pendingDecision?.taskId ??
-    activeTerminal?.taskId ??
-    watchedThread?.id ??
-    activeAutomation?.taskIds.find((id) => guardedIds.has(id))
-  if (activeTurn) activeWorkReason = 'Stop active turns and agents before deleting this project.'
-  else if (pendingDecision)
-    activeWorkReason = 'Finish pending questions or approvals before deleting this project.'
-  else if (activeTerminal) activeWorkReason = 'Close active terminals before deleting this project.'
-  else if (watchedThread)
-    activeWorkReason = 'Stop linked active threads before deleting this project.'
-  else if (activeAutomation)
-    activeWorkReason = 'Finish or cancel active automations before deleting this project.'
+  const blocker = blockers[0]
   const open =
     confirmation?.repositoryId === repository.id && confirmation.runtimeId === activeRuntimeId
   useEffect(() => {
@@ -100,9 +51,8 @@ export function ProjectDeletion({
   if (repository.kind) return null
 
   const remove = async () => {
-    if (!open || !confirmation || pending.current || !connected || activeWorkReason) return
+    if (!open || !confirmation || pending.current || !connected || blocker) return
     const target = confirmation
-    const profile = runtimes.find((entry) => entry.profile.id === target.runtimeId)?.profile
     if (!profile) return
     pending.current = true
     setBusy(true)
@@ -145,7 +95,7 @@ export function ProjectDeletion({
       <Button
         type="button"
         variant="destructive"
-        disabled={!connected || busy}
+        disabled={busy}
         onClick={() => {
           setError('')
           setConfirmation({ repositoryId: repository.id, runtimeId: activeRuntimeId })
@@ -165,7 +115,7 @@ export function ProjectDeletion({
         }}
       >
         <DialogContent
-          className="max-w-md"
+          className="max-h-[90dvh] max-w-md overflow-y-auto"
           onOpenAutoFocus={(event) => {
             event.preventDefault()
             cancel.current?.focus()
@@ -174,12 +124,46 @@ export function ProjectDeletion({
           <DialogHeader>
             <DialogTitle>Delete “{repository.name}”?</DialogTitle>
             <DialogDescription>
-              This removes the project and its thread and conversation history from Dovo. The
-              repository and worktree files remain on disk. Active work must finish before you can
-              delete this project.
+              This deletion applies to {computer} only. You cannot undo it.
             </DialogDescription>
           </DialogHeader>
-          {activeWorkReason && (
+          <dl className="space-y-3 text-sm">
+            <div>
+              <dt className="font-medium">Will be removed</dt>
+              <dd className="text-muted-foreground">
+                The project entry and its thread and conversation history from Dovo. Local artifact
+                feeds for those threads stop.
+              </dd>
+              {connected && snapshot && (
+                <dd className="text-muted-foreground">Project threads: {projectThreads}</dd>
+              )}
+            </div>
+            <div>
+              <dt className="font-medium">Will change</dt>
+              <dd className="text-muted-foreground">
+                Dovo disables affected automations, redirects project targets to General, and
+                removes links to this checkout from other threads and automations.
+              </dd>
+              {connected && snapshot && (
+                <dd className="text-muted-foreground">
+                  Affected automations: {affectedAutomations}
+                </dd>
+              )}
+            </div>
+            <div>
+              <dt className="font-medium">Will stay</dt>
+              <dd className="text-muted-foreground">
+                Repository and worktree files remain on disk. Other projects, their threads, and
+                hosted artifact copies remain.
+              </dd>
+            </div>
+          </dl>
+          {(!connected || !profile) && (
+            <p role="status" className="text-sm text-muted-foreground">
+              Connect to {computer} before deleting this project.
+            </p>
+          )}
+          {connected && profile && blocker && (
             <div
               role="status"
               className="flex items-start gap-3 rounded-lg border border-status-warning/30 bg-status-warning/5 p-3 text-xs"
@@ -189,21 +173,40 @@ export function ProjectDeletion({
                 aria-hidden="true"
               />
               <div className="space-y-2">
-                <p className="font-medium text-foreground">Active work prevents deletion</p>
-                <p className="leading-relaxed text-muted-foreground">{activeWorkReason}</p>
-                {activeWorkThreadId && (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setConfirmation(null)
-                      host.navigate({ viewId: 'tasks', entityId: activeWorkThreadId })
-                    }}
-                  >
-                    Open affected thread
-                  </Button>
-                )}
+                <p className="font-medium text-foreground">Deletion blocked</p>
+                {blocker.name && <p className="break-words">{blocker.name}</p>}
+                {blocker.reasons.map((reason) => (
+                  <p key={reason} className="leading-relaxed text-muted-foreground">
+                    {uiText(reason)}
+                  </p>
+                ))}
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    setConfirmation(null)
+                    if (blocker.kind === 'thread') {
+                      host.navigate({ viewId: 'tasks', entityId: blocker.id })
+                    } else {
+                      host.navigate({
+                        viewId: 'jobs',
+                        entityId: blocker.id,
+                        automationTarget: {
+                          runtimeId: profile.id,
+                          automationId: blocker.automationId,
+                          runId: blocker.id,
+                        },
+                      })
+                    }
+                  }}
+                >
+                  {uiText(
+                    blocker.kind === 'thread'
+                      ? 'Open affected thread'
+                      : 'Open affected automation run',
+                  )}
+                </Button>
               </div>
             </div>
           )}
@@ -225,7 +228,7 @@ export function ProjectDeletion({
             <Button
               type="button"
               variant="destructive"
-              disabled={!connected || busy || !!activeWorkReason}
+              disabled={!connected || !profile || busy || !!blocker}
               onClick={() => void remove()}
             >
               {busy ? 'Deleting…' : `Delete ${repository.name} and history`}

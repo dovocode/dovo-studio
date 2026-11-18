@@ -133,7 +133,10 @@ function computePresentation(
   if (typeof reasoning.text === 'string')
     return recomputeFromInput(
       {
-        title: 'Reasoning',
+        title:
+          typeof envelope.toolId === 'string' && envelope.toolId.startsWith('reasoning:codex:')
+            ? 'Reasoning summary'
+            : 'Reasoning',
         input: '',
         output: reasoning.text,
         kind: 'reasoning',

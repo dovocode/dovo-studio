@@ -2,11 +2,15 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { responseReply } from '@dovo/protocol'
 import {
   botResultSchema,
+  forkFileDescription,
+  forkMessagePreview,
   messageForkBlocker,
   randomUUID,
+  resolveTaskDefaults,
   taskForkResultSchema,
   taskIsWorking,
   threadForkBlocker,
+  turnForkResultSchema,
 } from '@dovo/protocol'
 import { loadMobileModelCatalog } from '../../../agents/use-model-catalog'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -31,11 +35,9 @@ import {
   usePendingConversationMessage,
 } from '../state/provider'
 import { router } from 'expo-router'
-import { Schema } from 'effect'
-import { modelCatalogSchema, mutableStruct, resolveTaskAgent } from '@dovo/protocol'
+import { modelCatalogSchema, resolveTaskAgent } from '@dovo/protocol'
 import { taskHref } from '../../../shell/task-route'
-
-const forkSchema = mutableStruct({ id: Schema.String })
+import { requestMessageReveal } from '../message-reveal'
 
 type Feedback = '' | 'message' | 'code'
 
@@ -68,12 +70,16 @@ export function MessageActions({
   const task = useConversationSelector((value) => value.task)
   const setBookmark = useConversationSelector((value) => value.history.setBookmark)
   const openTerminal = useConversationSelector((value) => value.openTerminal)
-  const { call, connected, activeId, profile, readRuntime } = useRuntime()
+  const { call, connected, activeId, profile, readRuntime, snapshot } = useRuntime()
   const bookmarked = task.messages.some((message) => message.id === messageId && message.bookmarked)
   // Fork from a finished agent turn: a new task with the conversation up to here.
   const turn = user ? undefined : task.turns?.find((item) => item.assistantId === messageId)
   const [forking, setForking] = useState(false)
-  const { snapshot } = useRuntime()
+  const snapshotTree = turn?.checkpoint?.after
+  const turnForkLabel = snapshotTree
+    ? uiText('Fork with files from this turn')
+    : uiText('Fork from this reply')
+  const project = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
   const latest = !!turn && task.turns?.at(-1)?.id === turn.id && task.status !== 'running'
   // Runtimes with message forks also offer settled user and assistant messages.
   const messageForks = snapshot?.messageForkSupported === true
@@ -153,23 +159,34 @@ export function MessageActions({
         )
       })
   }
+  const openFork = (id: string, anchor: string | undefined) => {
+    if (!activeId) return
+    if (anchor && profile) requestMessageReveal(profile.connection, id, anchor)
+    router.navigate(taskHref(activeId, id, undefined, undefined, snapshot?.runtimeId), {
+      withAnchor: true,
+    })
+  }
   const fork = () => {
     if (!turn || forking || !activeId || task.bot) return
+    const files = uiText(forkFileDescription(task.execution, project?.kind, snapshotTree))
+    const preview = forkMessagePreview({ text, attachments: message?.attachments })
     Alert.alert(
-      uiText('Fork with files from this turn?'),
-      uiText(
-        'A new task starts with the conversation up to this reply, and this turn’s files in its own worktree.',
-      ),
+      snapshotTree ? uiText('Fork with files from this turn?') : uiText('Fork from this reply?'),
+      [
+        uiText('The new thread includes the conversation up to and including this reply.'),
+        uiText('Selected reply: {value0}', { value0: preview || uiText('(No reply text)') }),
+        [snapshotTree ? '' : uiText('This turn has no saved file snapshot.'), files]
+          .filter(Boolean)
+          .join(' '),
+      ].join('\n\n'),
       [
         { text: uiText('Cancel'), style: 'cancel' },
         {
           text: uiText('Fork'),
           onPress: () => {
             setForking(true)
-            void call('/api/tasks/fork', { id: task.id, turnId: turn.id }, forkSchema)
-              .then((result) =>
-                router.navigate(taskHref(activeId, result.id), { withAnchor: true }),
-              )
+            void call('/api/tasks/fork', { id: task.id, turnId: turn.id }, turnForkResultSchema)
+              .then((result) => openFork(result.id, result.messageId))
               .catch((error: unknown) =>
                 Alert.alert(
                   uiText('Could not fork'),
@@ -186,11 +203,19 @@ export function MessageActions({
     if (!message || forking || !activeId) return
     const blocker = threadForkBlocker(task)
     if (blocker) return Alert.alert(uiText('Could not fork'), blocker)
+    const defaults = resolveTaskDefaults(snapshot?.defaults, project)
+    const preview = forkMessagePreview(message) || uiText('(No message text)')
     Alert.alert(
       uiText('Fork conversation?'),
-      uiText(
-        'A new thread starts with the conversation up to and including this message. It uses this thread’s harness, model and access. Files are not rewound.',
-      ),
+      [
+        uiText(
+          'The new thread includes the conversation up to and including this message. It uses this thread’s harness, model and access.',
+        ),
+        message.role === 'assistant'
+          ? uiText('Selected reply: {value0}', { value0: preview })
+          : uiText('Selected message: {value0}', { value0: preview }),
+        `${uiText('Files are not rewound.')} ${uiText(forkFileDescription(defaults.execution, project?.kind))}`,
+      ].join('\n\n'),
       [
         { text: uiText('Cancel'), style: 'cancel' },
         {
@@ -204,7 +229,7 @@ export function MessageActions({
             )
               .then((result) => {
                 forkId.current = undefined
-                router.navigate(taskHref(activeId, result.id), { withAnchor: true })
+                openFork(result.id, message.id)
               })
               .catch((error: unknown) =>
                 Alert.alert(
@@ -403,10 +428,10 @@ export function MessageActions({
       )}
       {!!turn && !task.bot && turn.status !== 'running' && (
         <Pressable
-          testID="Fork with files from this turn"
+          testID={snapshotTree ? 'Fork with files from this turn' : 'Fork from this reply'}
           accessibilityRole="button"
-          accessibilityLabel={uiText('Fork with files from this turn')}
-          accessibilityHint={uiText('Starts a new task with the conversation up to this reply.')}
+          accessibilityLabel={turnForkLabel}
+          accessibilityHint={uiText('Shows the conversation and files that the fork will use.')}
           accessibilityState={{ disabled: !connected || forking, busy: forking }}
           disabled={!connected || forking}
           onPress={fork}

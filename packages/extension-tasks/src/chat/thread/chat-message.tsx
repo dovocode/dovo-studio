@@ -327,7 +327,7 @@ export const ChatMessage = memo(function ChatMessage({
               <ForkMessage taskId={taskId} message={message} status={groupStatus} />
             )}
             {ownsFooter && turn && turn.status !== 'running' && (
-              <ForkTurn taskId={taskId} turnId={turn.id} />
+              <ForkTurn taskId={taskId} turn={turn} message={message} />
             )}
             {ownsFooter &&
               turn &&

@@ -22,9 +22,9 @@ export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style})=><button style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
-export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop},ref){
-  window.listScrollHandlers={onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop};
-  useImperativeHandle(ref,()=>({scrollToOffset:()=>{}}),[]);
+export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange},ref){
+  window.listScrollHandlers={onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange};
+  useImperativeHandle(ref,()=>({scrollToOffset:({offset})=>{window.lastRestoredListOffset=offset}}),[]);
   return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}<div data-list-footer style={{display:'flex',flexDirection:'column',...nativeStyle(ListFooterComponentStyle)}}>{ListFooterComponent}</div></div>
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
@@ -825,6 +825,17 @@ try {
   await historyInput.blur()
   assert.equal(await historyInput.isVisible(), true, 'Keep a nonempty query visible')
   await scrollSearch(40, 20)
+  await page.evaluate(() => window.showOverview())
+  await historyInput.waitFor({ state: 'detached' })
+  await page.evaluate(() => window.showThreads())
+  await historyInput.waitFor({ state: 'visible' })
+  assert.equal(await historyInput.inputValue(), 'active query', 'Restore the query on return')
+  await page.evaluate(() => {
+    window.lastRestoredListOffset = null
+    window.listScrollHandlers.onLayout({ nativeEvent: { layout: { height: 600 } } })
+    window.listScrollHandlers.onContentSizeChange(390, 1000)
+  })
+  assert.equal(await page.evaluate(() => window.lastRestoredListOffset), 20)
 
   await historyInput.fill('old history')
   await page.waitForFunction(() => !!window.finishOldSearch)

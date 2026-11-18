@@ -25,7 +25,7 @@ let revision=0,guide;const listeners=new Set(),marks=new Map();
 export const useFiles=()=>{useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>revision);return files};
 window.changeFile=()=>{files=files.map(file=>file.path==='types.ts'?{...file,after:file.after+' '} : file);revision++;listeners.forEach(fn=>fn())};
 export const request=async(path,input)=>{
- const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
+ const current=files.map(file=>{const fingerprint=changedFileFingerprint(file);let row=marks.get(file.path);if(!row||row.fingerprint!==fingerprint){row={path:file.path,fingerprint,viewed:false,changedSinceViewed:row?.viewed||row?.changedSinceViewed||undefined,version:(row?.version??0)+1};marks.set(file.path,row)}return row});
  const currentRevision='revision-'+revision;
  if(guide?.revision!==currentRevision)guide=undefined;
  if(path.endsWith('/guide')){
@@ -51,7 +51,7 @@ export const request=async(path,input)=>{
  }
 
  if(path.endsWith('/set') && window.holdReviewSave)await new Promise(resolve=>window.finishReviewSave=resolve);
- if(path.endsWith('/set')){const row=marks.get(input.path);if(!row||row.fingerprint!==input.fingerprint||row.version!==input.version)throw new Error('This file changed. Refresh before marking it again.');marks.set(input.path,{...row,viewed:input.viewed,version:row.version+1})}
+ if(path.endsWith('/set')){const row=marks.get(input.path);if(!row||row.fingerprint!==input.fingerprint||row.version!==input.version)throw new Error('This file changed. Refresh before marking it again.');marks.set(input.path,{...row,viewed:input.viewed,changedSinceViewed:input.viewed?undefined:row.changedSinceViewed,version:row.version+1})}
  return {files:files.map(file=>marks.get(file.path)),groups:[],revision:currentRevision,...(guide?{guide}:{})};
 };
 export const workspace={connected:true,activeRuntimeId:'host',request};export const runtime={connected:true,profile:{id:'host'},read:request,call:(path,...args)=>{if(path.endsWith('/read')||path.endsWith('/organize'))throw new Error('Review reads must not refresh workspace snapshots or persist offline caches');return request(path,...args)}};
@@ -82,7 +82,9 @@ mocks['../../ui/controls/icon'] = mocks['../controls/icon']
 const bundle = await build({
   stdin: {
     contents: `import {createRoot} from 'react-dom/client';import {useMemo,useState} from 'react';import {useFiles} from 'test-store';import {changedFileFingerprint,reviewFileState,orderReviewFiles} from '@dovo/protocol';import {useFileReview as useDesktopReview} from '${root}/packages/studio-core/src/review/use-file-review.ts';import {useFileReview as useMobileReview} from '${root}/apps/mobile/src/scm/review/use-file-review.ts';import {ReviewFiles,FileReviewControls} from '${root}/packages/studio-ui/src/review/file-review.tsx';import {OrganizeReview} from '${root}/packages/studio-ui/src/review/organize-review.tsx';import {MobileFileReview} from '${root}/apps/mobile/src/scm/review/file-review.tsx';import {MobileOrganizeReview} from '${root}/apps/mobile/src/scm/review/organize-review.tsx';
-function Review({mobile=false}){const source=useFiles(),fingerprints=useMemo(()=>new Map(source.map(file=>[file.path,changedFileFingerprint(file)])),[source]);const useReview=mobile?useMobileReview:useDesktopReview;const review=useReview({kind:'task',taskId:'task',source:'working'},JSON.stringify([...fingerprints]));const [related,setRelated]=useState(true),[selected,setSelected]=useState('types.ts'),[editing,setEditing]=useState(false);const files=orderReviewFiles(source.map(file=>({...file,viewed:reviewFileState(review.progress,file.path,fingerprints.get(file.path))?.viewed??false})),review.progress?.groups??[],related);const file=files.find(file=>file.path===selected)||files[0];const props={files,groups:review.progress?.groups??[],selected:file.path,onSelect:setSelected,related,onRelatedChange:setRelated,onViewed:viewed=>review.setViewed(file.path,fingerprints.get(file.path),viewed),disabled:!review.ready||!reviewFileState(review.progress,file.path,fingerprints.get(file.path)),busy:review.busy,navigationDisabled:editing,error:review.error,onRetry:review.reload};return <section data-client={mobile?'mobile':'desktop'} style={{width:mobile?320:650,minWidth:0,border:'1px solid #555',padding:8}}><button onClick={()=>setEditing(v=>!v)}>{editing?'Cancel edit':'Edit draft'}</button>{mobile?<><MobileOrganizeReview onOpenFile={setSelected} review={review} disabled={editing} onOrganized={()=>setRelated(true)}/><MobileFileReview {...props}/></>:<><OrganizeReview onOpenFile={setSelected} review={review} onOrganized={()=>setRelated(true)} disabled={editing}/><FileReviewControls {...props}/><div style={{display:'flex',height:400}}><aside style={{display:'flex',flexDirection:'column',width:300,minHeight:0}}><ReviewFiles {...props} disabled={editing}/></aside><pre data-diff>{file.path}</pre></div></>}</section>}
+function Review({mobile=false}){const source=useFiles(),fingerprints=useMemo(()=>new Map(source.map(file=>[file.path,changedFileFingerprint(file)])),[source]);const useReview=mobile?useMobileReview:useDesktopReview;const review=useReview({kind:'task',taskId:'task',source:'working'},JSON.stringify([...fingerprints]));const [related,setRelated]=useState(true),[selected,setSelected]=useState('types.ts'),[editing,setEditing]=useState(false);
+ const files=orderReviewFiles(source.map(file=>{const state=reviewFileState(review.progress,file.path,fingerprints.get(file.path));return {...file,viewed:state?.viewed??false,changedSinceViewed:state?.changedSinceViewed}}),review.progress?.groups??[],related);
+ const file=files.find(file=>file.path===selected)||files[0];const props={files,groups:review.progress?.groups??[],selected:file.path,onSelect:setSelected,related,onRelatedChange:setRelated,onViewed:viewed=>review.setViewed(file.path,fingerprints.get(file.path),viewed),disabled:!review.ready||!reviewFileState(review.progress,file.path,fingerprints.get(file.path)),busy:review.busy,navigationDisabled:editing,error:review.error,onRetry:review.reload};return <section data-client={mobile?'mobile':'desktop'} style={{width:mobile?320:650,minWidth:0,border:'1px solid #555',padding:8}}><button onClick={()=>setEditing(v=>!v)}>{editing?'Cancel edit':'Edit draft'}</button>{mobile?<><MobileOrganizeReview onOpenFile={setSelected} review={review} disabled={editing} onOrganized={()=>setRelated(true)}/><MobileFileReview {...props}/></>:<><OrganizeReview onOpenFile={setSelected} review={review} onOrganized={()=>setRelated(true)} disabled={editing}/><FileReviewControls {...props}/><div style={{display:'flex',height:400}}><aside style={{display:'flex',flexDirection:'column',width:300,minHeight:0}}><ReviewFiles {...props} disabled={editing}/></aside><pre data-diff>{file.path}</pre></div></>}</section>}
 function App(){const [desktop,setDesktop]=useState(true);return <div className="studio dark" style={{display:'flex',gap:12,alignItems:'flex-start'}}><button onClick={()=>setDesktop(v=>!v)}>Reopen desktop</button>{desktop&&<Review/>}<Review mobile/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root + '/packages/studio-ui',
     loader: 'tsx',
@@ -175,6 +177,15 @@ try {
         .querySelector('[data-client="desktop"] button[role="checkbox"][aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'false',
   )
+  await desktop
+    .getByRole('status')
+    .filter({ hasText: /^Changed since viewed$/ })
+    .waitFor()
+  await desktop
+    .getByRole('button', { name: 'types.ts, changed since viewed', exact: true })
+    .waitFor()
+  await mobile.getByText('Changed since viewed', { exact: true }).waitFor()
+  assert.equal(await mobile.evaluate((element) => element.scrollWidth <= element.clientWidth), true)
   await desktop.getByRole('button', { name: 'Previous file', exact: true }).click()
   await page.waitForFunction(
     () =>
@@ -182,6 +193,9 @@ try {
         .querySelector('[data-client="desktop"] button[role="checkbox"][aria-label="File viewed"]')
         .getAttribute('aria-checked') === 'true',
   )
+  await desktop.getByRole('button', { name: 'Next unviewed', exact: true }).click()
+  assert.equal(await desktop.locator('[data-diff]').textContent(), 'types.ts')
+  await desktop.getByRole('button', { name: 'Previous file', exact: true }).click()
   await desktop.getByRole('button', { name: 'Edit draft' }).click()
   assert.equal(
     await desktop.getByRole('button', { name: 'Next file', exact: true }).isDisabled(),
@@ -214,12 +228,19 @@ try {
   await mobile.getByRole('button', { name: 'Browse changed files' }).click()
   await dialog.getByRole('textbox', { name: 'Search changed files' }).fill('')
   await dialog.getByRole('switch', { name: 'Unviewed only' }).click()
+  await dialog
+    .getByRole('button', { name: 'types.ts, changed since viewed', exact: true })
+    .waitFor()
   assert.equal(
     await dialog.getByRole('button', { name: 'src/view.tsx, viewed', exact: true }).count(),
     0,
   )
-  await dialog.getByRole('button', { name: 'Close', exact: true }).click()
+  await dialog.getByRole('button', { name: 'types.ts, changed since viewed', exact: true }).click()
+  await mobile.getByRole('checkbox', { name: 'File viewed' }).click()
+  await mobile.getByRole('checkbox', { name: 'File viewed', checked: true }).waitFor()
+  await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')))
   await desktop.getByRole('searchbox', { name: 'Search changed files' }).fill('')
+  await desktop.getByRole('button', { name: 'types.ts, viewed', exact: true }).waitFor()
   await desktop.locator('summary').filter({ hasText: 'Organize review' }).click()
   assert.equal(
     await desktop

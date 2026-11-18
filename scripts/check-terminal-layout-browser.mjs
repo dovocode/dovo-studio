@@ -146,6 +146,7 @@ try {
         {
           profile: {
             id: 'fixture',
+            name: 'Build computer',
             connection: { address: 'http://runtime.local', token: 'test' },
           },
         },
@@ -219,6 +220,7 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   const terminal = page.getByRole('region', { name: 'Terminal', exact: true })
   await terminal.locator('.dovo-terminal-canvas').waitFor()
+  await terminal.getByText('Build computer · Project · Primary checkout', { exact: true }).waitFor()
   await page.waitForFunction(() =>
     window.sockets[0]?.sent.some((message) => message.type === 'resize'),
   )
@@ -342,6 +344,10 @@ try {
     window.runtime = { ...window.runtime, connected: false }
     window.render()
   })
+  await terminal
+    .getByRole('status')
+    .filter({ hasText: 'Computer offline · Input unavailable' })
+    .waitFor()
   await openMenu()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Paste', exact: true }).getAttribute('data-disabled'),
@@ -352,10 +358,13 @@ try {
     window.runtime = {
       ...window.runtime,
       connected: true,
-      snapshot: { terminals: [{ id: 'session', taskId: 'task', title: 'Shell', exited: true }] },
+      snapshot: {
+        terminals: [{ id: 'session', taskId: 'task', title: 'Shell', exited: true, exitCode: 2 }],
+      },
     }
     window.render()
   })
+  await terminal.getByRole('status').filter({ hasText: 'Process exited (2)' }).waitFor()
   await openMenu()
   assert.equal(
     await page.getByRole('menuitem', { name: 'Paste', exact: true }).getAttribute('data-disabled'),

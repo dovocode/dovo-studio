@@ -267,6 +267,7 @@ export class PullCodeReviews {
     const stacks = this.stacks.list(this.stackScope(target, source.readerIdentity), target.number)
     return {
       reviews: this.list(this.scope(target, source.readerIdentity)),
+      oneRunSettingsSupported: true,
       ...(stacks.length ? { stacks } : {}),
       ...(reviewers
         ? {
@@ -438,15 +439,17 @@ export class PullCodeReviews {
       this.db
         .prepare('INSERT INTO pull_code_reviews(id,scope,request_id,value) VALUES(?,?,?,?)')
         .run(review.id, scope, review.requestId, JSON.stringify(review))
-      this.db
-        .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-model',?)")
-        .run(JSON.stringify(input.selection))
-      this.db
-        .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-depth',?)")
-        .run(JSON.stringify(depth))
-      this.db
-        .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-reviewers',?)")
-        .run(JSON.stringify(input.reviewers ?? []))
+      if (!input.oneRunSettings) {
+        this.db
+          .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-model',?)")
+          .run(JSON.stringify(input.selection))
+        this.db
+          .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-depth',?)")
+          .run(JSON.stringify(depth))
+        this.db
+          .prepare("INSERT OR REPLACE INTO documents(id,value) VALUES('pull-review-reviewers',?)")
+          .run(JSON.stringify(input.reviewers ?? []))
+      }
       const controller = new AbortController()
       this.active.set(review.id, controller)
       const done = this.run(review, scope, reader, controller, images).finally(() => {

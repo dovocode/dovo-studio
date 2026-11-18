@@ -4,6 +4,9 @@ Thread info opens with a compact summary on desktop and mobile. It shows the pro
 branch, agent and model, linked pull requests, changed files and reported context usage. Empty
 pull-request and file sections stay hidden in the summary.
 
+The default order puts the project and checkout before agent settings. The summary names the
+checkout type, labels an offline computer, and links directly to changed files for review.
+
 The desktop panel is 352 pixels wide and opens by default. A saved closed state still applies. Agent
 lineage also appears in the desktop summary when related threads or agents exist.
 

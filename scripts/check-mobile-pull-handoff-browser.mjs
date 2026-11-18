@@ -9,6 +9,8 @@ const ui = `
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole==='header'?'heading':accessibilityRole}>{children}</span>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Choice=()=>null;export const Icon=()=>null;export const PullRequestIcon=()=>null;
+export const Field=({label,value,onChangeText})=><textarea aria-label={label} value={value} onChange={event=>onChangeText(event.target.value)} />;
+export const Sheet=({title,children})=><section aria-label={title}>{children}</section>;
 export const ScreenHeader=({title,leading,actions})=><header>{title}{leading}{actions}</header>;
 export const useTheme=()=>({colors:{},styles:{}});export const useSheetNavigation=()=>callback=>callback();
 export const Markdown=({text})=><span>{text}</span>;export const formatTime=()=>'';
@@ -21,6 +23,7 @@ const boundaries = new Map([
     'ui/content/text',
     'ui/controls/action',
     'ui/controls/choice',
+    'ui/controls/field',
     'ui/controls/icon',
     'ui/content/pull-request-icon',
     'ui/layout/screen-header',
@@ -39,9 +42,8 @@ const boundaries = new Map([
   [mobile + 'scm/pulls/detail/pull-comments', 'export const PullComments=()=>null;'],
   [
     mobile + 'scm/pulls/detail/pull-changes',
-    `import {useState,useEffect} from 'react';export function PullChanges({detail,active}){const [selected,setSelected]=useState('changed.ts');useEffect(()=>{window.changesMounts=(window.changesMounts??0)+1},[]);return <section aria-label="Files probe" data-active={active}><output>{selected}</output><button onClick={()=>setSelected('second.ts')}>Select second file</button><span>{detail.stale?'read-only':'current'}</span></section>}`,
+    `import {useState,useEffect} from 'react';export function PullChanges({detail,active,onLineComment}){const [selected,setSelected]=useState('changed.ts');useEffect(()=>{window.changesMounts=(window.changesMounts??0)+1},[]);return <section aria-label="Files probe" data-active={active}><output>{selected}</output><button onClick={()=>setSelected('second.ts')}>Select second file</button><button disabled={!onLineComment} onClick={()=>onLineComment(selected)}>Open line draft</button><span>{detail.stale?'read-only':'current'}</span></section>}`,
   ],
-  [mobile + 'scm/pulls/detail/line-comment', 'export const LineComment=()=>null;'],
   [
     mobile + 'scm/pulls/detail/pull-tabs',
     `export const PullTabs=({items,onChange,value})=><nav>{items.map(item=><button key={item.id} aria-pressed={value===item.id} onClick={()=>onChange(item.id)}>{item.name}</button>)}</nav>;`,
@@ -451,14 +453,26 @@ try {
   await layout.addScriptTag({ content: built.outputFiles[0].text })
   await layout.getByRole('button', { name: 'Files', exact: true }).click()
   await layout.getByRole('button', { name: 'Select second file', exact: true }).click()
+  await layout.getByRole('button', { name: 'Open line draft', exact: true }).click()
+  const lineDraft = layout.getByRole('region', { name: 'Comment on code' })
+  await lineDraft.getByRole('textbox', { name: 'Comment', exact: true }).fill('Keep this draft')
+  const postComment = lineDraft.getByRole('button', { name: 'Post comment', exact: true })
+  assert.equal(await postComment.isEnabled(), true)
   await layout.evaluate(() => {
     window.blockedSections = ['changes']
     window.pushed = true
   })
   await layout.getByRole('button', { name: 'Refresh PR', exact: true }).click()
-  await layout
-    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
-    .waitFor()
+  const revisionNotice = layout.getByText(/^New revision available\./)
+  const switchRevision = layout.getByRole('button', { name: 'Switch revision', exact: true })
+  await revisionNotice.waitFor()
+  await lineDraft.getByText(/^This draft is saved on the older revision/).waitFor()
+  assert.equal(await postComment.isDisabled(), true)
+  assert.equal(
+    await lineDraft.getByRole('textbox', { name: 'Comment', exact: true }).inputValue(),
+    'Keep this draft',
+  )
+  assert.equal(await switchRevision.isDisabled(), true)
   const files = layout.getByRole('region', { name: 'Files probe' })
   assert.equal(await files.getAttribute('data-active'), 'false')
   await files.getByText('second.ts', { exact: true }).waitFor()
@@ -467,9 +481,11 @@ try {
     window.blockedSections = []
     window.releaseSections.changes()
   })
-  await layout
-    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
-    .waitFor({ state: 'hidden' })
+  await switchRevision.and(layout.locator(':enabled')).waitFor()
+  assert.equal(await files.getAttribute('data-active'), 'false')
+  await switchRevision.click()
+  await revisionNotice.waitFor({ state: 'hidden' })
+  assert.equal(await files.getAttribute('data-active'), 'true')
   await files.getByText('second.ts', { exact: true }).waitFor()
   assert.equal(await layout.evaluate(() => window.changesMounts), 1)
   await layout.close()

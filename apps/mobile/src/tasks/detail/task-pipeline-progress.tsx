@@ -69,6 +69,20 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
                 : ''}
               {pipelineSignal(item.status).label}
             </Text>
+            {(item.revision || item.attempt) && (
+              <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 }}>
+                {item.revision && (
+                  <Text style={styles.muted}>
+                    {uiText('Commit {value0}', { value0: item.revision.slice(0, 8) })}
+                  </Text>
+                )}
+                {item.attempt && (
+                  <Text style={styles.muted}>
+                    {uiText('Attempt {value0}', { value0: item.attempt })}
+                  </Text>
+                )}
+              </View>
+            )}
             <View
               accessibilityRole="progressbar"
               accessibilityLabel={uiText('{value0} jobs', { value0: item.label })}

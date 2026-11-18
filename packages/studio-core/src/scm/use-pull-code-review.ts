@@ -234,17 +234,21 @@ export function usePullCodeReview({
       runChecks: false,
     },
   ) => {
-    if (operation.current) return
+    if (operation.current || !report) return
     operation.current = true
     setBusy(true)
     try {
       if (review && !(await save())) return
+      const settings = {
+        ...options,
+        ...(report.oneRunSettingsSupported ? { oneRunSettings: true } : {}),
+      }
       const fingerprint = JSON.stringify([
         selection,
         headSha,
         baseSha,
         remaining && review?.id,
-        options,
+        settings,
       ])
       let attempt = starts.get(key)
       if (!attempt || attempt.fingerprint !== fingerprint) {
@@ -256,7 +260,7 @@ export function usePullCodeReview({
         selection,
         headSha,
         baseSha,
-        ...options,
+        ...settings,
         ...(remaining && review ? { remainingFrom: review.id } : {}),
       })
       if (result) {

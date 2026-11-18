@@ -264,21 +264,33 @@ export function combinePullSections(
   }
 }
 
-/** Keep the review layout while a new revision loads, without mixing accounts or revisions. */
+/** Keep the accepted diff read-only until the reviewer switches to the new revision. */
 export function pullChangesSnapshot(
   current: PullDetail | null,
   ready: boolean,
   previous: PullDetail | null,
 ): PullDetail | null {
-  if (ready) return current
+  if (ready && !pullChangesRevisionPending(current, previous)) return current
   if (
     !current?.destination ||
     previous?.destination !== current.destination ||
     previous.pull.url !== current.pull.url ||
     previous.pull.connectionId !== current.pull.connectionId
   )
-    return null
+    return ready ? current : null
   return { ...previous, stale: true }
+}
+
+export function pullChangesRevisionPending(current: PullDetail | null, previous: PullDetail | null) {
+  return !!(
+    current &&
+    previous &&
+    current.destination &&
+    previous.destination === current.destination &&
+    previous.pull.url === current.pull.url &&
+    previous.pull.connectionId === current.pull.connectionId &&
+    pullRevision(current) !== pullRevision(previous)
+  )
 }
 
 export const pullTaskInputSchema = refine(

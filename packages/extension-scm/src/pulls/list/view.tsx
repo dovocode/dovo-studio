@@ -88,6 +88,10 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
     [openError, setOpenError] = useApplicationState(''),
     [selected, setSelected] = useRetainedPullState(selectionCache, listKey, null)
   const [urlSelection, setUrlSelection] = useRetainedPullState(urlCache, listKey + ':url', null)
+  const [reviewSelection, setReviewSelection] = useApplicationState<{
+    key: string
+    configure: boolean
+  } | null>(null)
   const [urlOwnerId, setUrlOwnerId] = useRetainedPullState(urlCache, listKey + ':owner', null)
   const [selectedNavigation, setSelectedNavigation] = useRetainedPullState(
     urlCache,
@@ -122,8 +126,15 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
   }))
   const parseTarget = (url: string) => forgePullTarget(url, bindings)
   const detailTarget = parseTarget(selectedNavigation ?? urlSelection ?? '')
-  const open = (source: RepositorySource, number: number, url?: string, replace = false) =>
+  const open = (
+    source: RepositorySource,
+    number: number,
+    url?: string,
+    replace = false,
+    review?: { configure: boolean },
+  ) =>
     transition(() => {
+      setReviewSelection(review ? { key: JSON.stringify([source.scope, number]), ...review } : null)
       const pull = pages
         .find((page) => page.source.key === source.key)
         ?.pulls.find((pull) => pull.number === number)
@@ -787,6 +798,15 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                       selectionCount={marked.includes(rowKey(p)) ? marked.length : 1}
                       onClick={(event) => selectRow(p, event)}
                       onSelect={() => open(p.source, p.number)}
+                      onOpenAgentReview={
+                        runtimes.some(
+                          (runtime) =>
+                            runtime.profile.id === p.source.runtimeId &&
+                            runtime.snapshot?.codeReviewsEnabled,
+                        )
+                          ? (configure) => open(p.source, p.number, undefined, false, { configure })
+                          : undefined
+                      }
                       onIntent={(resting) =>
                         intent(resting ? { source: p.source, number: p.number } : null)
                       }
@@ -852,11 +872,19 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                   number={selected.number}
                   connectionId={pullTarget?.connectionId}
                   initialTab={
-                    pullTarget?.tab ??
-                    (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
-                      ? detailTarget.tab
-                      : undefined)
+                    reviewSelection?.key === JSON.stringify([selectedSource.scope, selected.number])
+                      ? 'review'
+                      : (pullTarget?.tab ??
+                        (detailTarget && (detailTarget.tab !== 'overview' || detailTarget.fragment)
+                          ? detailTarget.tab
+                          : undefined))
                   }
+                  configureInitialReview={
+                    reviewSelection?.key ===
+                      JSON.stringify([selectedSource.scope, selected.number]) &&
+                    reviewSelection.configure
+                  }
+                  onInitialReviewOpened={() => setReviewSelection(null)}
                   initialFragment={pullTarget?.fragment ?? detailTarget?.fragment}
                   onBack={back}
                   onChanged={refresh}

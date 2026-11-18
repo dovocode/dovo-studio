@@ -11,7 +11,7 @@ import { useConversationTurn } from '../state/provider'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { Icon } from '../../../ui/controls/icon'
-import { activityOutcome } from '../state/tool-events'
+import { activeToolTitle, activityOutcome } from '../state/tool-events'
 import { artifactReferences } from '@dovo/protocol'
 import { ArtifactCard } from '../../../ui/content/artifacts'
 import { ToolResultImages } from './tool-result-images'
@@ -44,15 +44,19 @@ export function ConversationWorkGroup({
     const parsed = decodeResult(toolSchema, part.artifact)
     return parsed.success ? [parsed.data] : []
   })
-  const summary = [activitySummary(groupEvents), activityOutcome(groupEvents)]
-    .filter(Boolean)
-    .join(' · ')
   const turn = useConversationTurn(id)
   const workStatus =
     turn?.status === 'running' && message.status?.type !== 'running' ? 'interrupted' : turn?.status
   // Settings → General → Tool activity.
   const { toolActivity } = useMobilePreferences()
   const [open, setOpen] = useApplicationState(toolActivity === 'expanded')
+  const active = !open ? activeToolTitle(groupEvents, workStatus === 'running') : undefined
+  const summary = [
+    active ? uiText('Working: {value0}', { value0: active }) : activitySummary(groupEvents),
+    activityOutcome(groupEvents),
+  ]
+    .filter(Boolean)
+    .join(' · ')
   useEffect(() => {
     setOpen(toolActivity === 'expanded')
   }, [toolActivity])

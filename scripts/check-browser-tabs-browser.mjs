@@ -411,6 +411,7 @@ try {
   await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
   await page.getByRole('tab', { name: /Page/ }).waitFor()
+  await page.getByText(/Thread preview · Local address on LAN runtime/).waitFor()
   if ((await toolbar.count()) !== 1)
     throw new Error('Remote browser must use the shared navigation toolbar')
   await page.getByRole('button', { name: 'Reload', exact: true }).click()

@@ -697,7 +697,13 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           : projectMembers.has(runtimeResourceKey(hit.runtimeId, task.repositoryId))))
     )
       return []
-    return [{ ...hit, owner, task }]
+    const projectName = task?.repositoryId
+      ? (owner.snapshot?.workspace.repositories.find(({ id }) => id === task.repositoryId)?.name ??
+        uiText('Project unavailable'))
+      : task
+        ? uiText('General')
+        : undefined
+    return [{ ...hit, owner, task, projectName }]
   })
   const commands: TaskListRowActions = {
     open: (key) => {
@@ -1054,6 +1060,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                       {hit.task?.title ?? uiText('Thread')}
                     </Text>
                     <Text style={styles.muted}>
+                      {hit.projectName ? `${hit.projectName} · ` : ''}
                       {hit.owner.profile.name} · {hit.role}
                       {hit.task?.delegation || hit.task?.spawnParent
                         ? uiText(' · Child thread')

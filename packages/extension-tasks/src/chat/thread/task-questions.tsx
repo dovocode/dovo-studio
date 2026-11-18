@@ -13,9 +13,11 @@ import { Schema } from 'effect'
 import { mutableStruct, questionRecoveryDraft } from '@dovo/protocol'
 export function TaskQuestions({
   taskId,
+  questionId,
   onUseDraft,
 }: {
   taskId: string
+  questionId?: string
   onUseDraft: (text: string, done: () => void) => void
 }) {
   const { snapshot, connection } = useWorkspace()
@@ -29,7 +31,10 @@ export function TaskQuestions({
     />
   )
   if (!questions.length) return recovery
-  const pending = questions.find((q) => q.prompt.blocking !== false) ?? questions[0]
+  const pending =
+    questions.find((q) => q.id === questionId) ??
+    questions.find((q) => q.prompt.blocking !== false) ??
+    questions[0]
   return (
     <div
       className="mx-auto w-full max-w-[var(--chat-max)] shrink-0 px-5 pb-2"
@@ -49,6 +54,16 @@ export function TaskQuestions({
         </p>
       )}
       {recovery}
+      {pending.id === questionId && (
+        <p
+          data-request-kind="input"
+          data-request-id={pending.id}
+          tabIndex={-1}
+          className="pb-1 text-xs font-medium"
+        >
+          {pending.prompt.title}
+        </p>
+      )}
       <QuestionCard
         key={JSON.stringify([
           connection?.runtimeId,

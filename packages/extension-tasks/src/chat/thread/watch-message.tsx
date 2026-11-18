@@ -9,7 +9,7 @@ export function WatchMessageCard({ update }: { update: WatchMessage }) {
       aria-label={update.label}
       className="w-full min-w-0 rounded-xl border bg-card p-3 text-sm"
     >
-      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
         <Icon size={14} aria-hidden="true" />
         <span
           className={
@@ -33,7 +33,28 @@ export function WatchMessageCard({ update }: { update: WatchMessage }) {
         <span className="min-w-0 break-words">{update.title}</span>
         <ExternalLink size={13} className="mt-1 shrink-0" aria-hidden="true" />
       </a>
-      <p className="mt-1 font-mono text-xs text-muted-foreground">{update.commit.slice(0, 8)}</p>
+      {(update.commit || update.attempt) && (
+        <p className="mt-1 flex flex-wrap gap-x-3 text-xs text-muted-foreground">
+          {update.commit && (
+            <span title={update.commit}>
+              {update.kind === 'pipeline' && 'Commit '}
+              <span className="font-mono">{update.commit.slice(0, 8)}</span>
+            </span>
+          )}
+          {update.attempt && <span>Attempt {update.attempt}</span>}
+        </p>
+      )}
+      {update.failedStep && (
+        <a
+          href={update.failedStep.url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-2 flex min-w-0 items-start gap-2 text-xs underline"
+        >
+          <span className="min-w-0 break-words">Open failed step: {update.failedStep.name}</span>
+          <ExternalLink size={13} className="shrink-0" aria-hidden="true" />
+        </a>
+      )}
       {!!update.highlights.length && (
         <ul className="mt-2 space-y-1 text-xs">
           {update.highlights.slice(0, 4).map((item, index) => (

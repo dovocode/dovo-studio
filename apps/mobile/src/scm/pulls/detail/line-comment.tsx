@@ -28,12 +28,14 @@ const lineDrafts = createDetailDrafts<{
 export function LineComment({
   repositoryId,
   detail: initialDetail,
+  latestDetail,
   path,
   onClose,
   onDone,
 }: {
   repositoryId: string
   detail: PullDetail
+  latestDetail: PullDetail
   path: string
   onClose: () => void
   onDone: () => void
@@ -57,6 +59,7 @@ export function LineComment({
         detail.pull.repositoryUrl,
         detail.pull.number,
         detail.pull.headSha,
+        detail.pull.baseSha,
         path,
       ),
     ).current,
@@ -70,6 +73,19 @@ export function LineComment({
   const { line, end, side, body } = draft
   const { connectionId, headSha } = detail.pull
   const expectedDestination = detail.destination ?? detail.pull.destination
+  const revisionChanged =
+    latestDetail.pull.headSha !== headSha || latestDetail.pull.baseSha !== detail.pull.baseSha
+  const sourceChanged =
+    latestDetail.pull.number !== detail.pull.number ||
+    latestDetail.pull.repositoryUrl !== detail.pull.repositoryUrl ||
+    latestDetail.pull.connectionId !== connectionId ||
+    (latestDetail.destination ?? latestDetail.pull.destination) !== expectedDestination
+  const canPost =
+    connected &&
+    !revisionChanged &&
+    !sourceChanged &&
+    !latestDetail.stale &&
+    !latestDetail.refreshError
   const setLine = (value: string) => setField('line', value)
   const setEnd = (value: string) => setField('end', value)
   const setSide = (value: string) => setField('side', value)
@@ -81,7 +97,7 @@ export function LineComment({
   const submit = () => {
     return runClientEffect(
       mobileWorkflow(function* () {
-        if (pending.current || !connected || detail.stale || detail.refreshError) return
+        if (pending.current || !canPost) return
         pending.current = true
         setBusy(true)
         setError('')
@@ -128,6 +144,15 @@ export function LineComment({
       <Text selectable style={styles.muted}>
         {path}
       </Text>
+      {(sourceChanged || revisionChanged) && (
+        <Text accessibilityRole="alert" style={styles.muted}>
+          {sourceChanged
+            ? uiText('The PR source changed. Your draft stays with the original source.')
+            : uiText(
+                'This draft is saved on the older revision. Switch revision and choose a new line before posting.',
+              )}
+        </Text>
+      )}
       <Choice
         label={uiText('Version')}
         value={side}
@@ -178,7 +203,7 @@ export function LineComment({
       )}
       <Action
         label={busy ? uiText('Posting…') : uiText('Post comment')}
-        disabled={busy || !connected || !!detail.stale || !!detail.refreshError}
+        disabled={busy || !canPost}
         onPress={() => void submit()}
       />
     </Sheet>

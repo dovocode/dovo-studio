@@ -60,6 +60,7 @@ export function TaskConversation({
   onPullLink,
   onArtifact,
   revealMessage,
+  questionId,
   onRevealHandled,
   onAside,
   visible,
@@ -88,6 +89,7 @@ export function TaskConversation({
   onPullLink?: (url: string) => boolean
   onArtifact?: (reference: ArtifactReference) => void
   revealMessage?: string
+  questionId?: string
   onRevealHandled?: () => void
   /** Opens side chats, showing a newly created draft agent side chat when provided. */
   onAside?: (childId?: string) => void
@@ -419,6 +421,7 @@ export function TaskConversation({
           <SpendPauseNotice task={task} />
           <TaskQuestions
             taskId={task.id}
+            questionId={questionId}
             onUseDraft={(text, done) => {
               setComposerCollapsed(false)
               setRecoveryInsert({

@@ -6,35 +6,42 @@ type AttentionSnapshot = {
   workspace: {
     tasks: readonly Pick<Task, 'id' | 'delegation' | 'sideThread' | 'botJob' | 'botMention'>[]
   }
-  approvals: readonly { taskId: string }[]
-  questions: readonly { taskId: string; routing?: 'parent' | 'human' }[]
+  approvals: readonly { id: string; taskId: string }[]
+  questions: readonly { id: string; taskId: string; routing?: 'parent' | 'human' }[]
 }
 
 export type SideThreadAttention = 'approval' | 'input'
+export type SideThreadRequest = { id: string; kind: SideThreadAttention; requestId: string }
 
 /** Human input in a child or its delegated agents stays discoverable from its parent. */
 export function sideThreadAttention(
   snapshot: AttentionSnapshot | null | undefined,
   childId: string,
 ): SideThreadAttention | undefined {
+  return sideThreadRequest(snapshot, childId)?.kind
+}
+
+export function sideThreadRequest(
+  snapshot: AttentionSnapshot | null | undefined,
+  childId: string,
+): SideThreadRequest | undefined {
   if (!snapshot || !snapshot.workspace.tasks.some((task) => task.id === childId)) return
   const family = taskFamilyIds(snapshot.workspace.tasks, childId)
-  if (snapshot.approvals.some((approval) => family.has(approval.taskId))) return 'approval'
-  if (
-    snapshot.questions.some(
-      (question) => question.routing !== 'parent' && family.has(question.taskId),
-    )
+  const approval = snapshot.approvals.find((request) => family.has(request.taskId))
+  if (approval) return { id: childId, kind: 'approval', requestId: approval.id }
+  const question = snapshot.questions.find(
+    (request) => request.routing !== 'parent' && family.has(request.taskId),
   )
-    return 'input'
+  if (question) return { id: childId, kind: 'input', requestId: question.id }
 }
 
 /** Open the owning side chat, whose ordinary conversation renders its family's controls. */
 export function sideThreadAttentionTarget(
   snapshot: AttentionSnapshot | null | undefined,
   parentId: string,
-): { id: string; kind: SideThreadAttention } | undefined {
+): SideThreadRequest | undefined {
   if (!snapshot) return
-  let input: { id: string; kind: SideThreadAttention } | undefined
+  let input: SideThreadRequest | undefined
   for (const task of snapshot.workspace.tasks) {
     if (
       task.sideThread?.parentTaskId !== parentId &&
@@ -46,9 +53,9 @@ export function sideThreadAttentionTarget(
       )
     )
       continue
-    const kind = sideThreadAttention(snapshot, task.id)
-    if (kind === 'approval') return { id: task.id, kind }
-    if (kind === 'input' && !input) input = { id: task.id, kind }
+    const target = sideThreadRequest(snapshot, task.id)
+    if (target?.kind === 'approval') return target
+    if (target && !input) input = target
   }
   return input
 }

@@ -20,6 +20,7 @@
     "./browser-json": "./src/browser-json.ts",
     "./browser-json-format": "./src/browser-json-format.ts",
     "./repository-open": "./src/repository-open.ts",
+    "./project-deletion": "./src/scm/project-deletion.ts",
     "./side-thread-creation": "./src/side-thread-creation.ts",
     "./next-prompt": "./src/use-next-prompt.ts",
     "./dictation-session": "./src/dictation-session.ts",

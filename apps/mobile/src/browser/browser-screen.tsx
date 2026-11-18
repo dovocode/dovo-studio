@@ -29,6 +29,7 @@ import {
   STUDIO_BROWSER_SCOPE,
   studioReference,
   isPrivateBrowserProfile,
+  isBrowserLoopbackAddress,
   browserTabCategory,
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
@@ -200,6 +201,23 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   useEffect(() => setCustomization(null), [websiteOrigin])
   const websiteProfiles = active.kind === 'local' ? preferences.browserProfiles : profiles
   const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
+  const browserOwner =
+    active.kind === 'local'
+      ? uiText('This device')
+      : (runtime.profiles.find((profile) => profile.id === active.runtimeId)?.name ??
+        uiText('Unavailable computer'))
+  const browserLocation =
+    active.kind === 'remote' && isBrowserLoopbackAddress(active.url)
+      ? uiText('Local address on {value0}', { value0: browserOwner })
+      : browserOwner
+  const browserProfile = isPrivateBrowserProfile(active.profileId)
+    ? uiText('Private session')
+    : (websiteProfile?.name ??
+      (active.kind === 'local' && active.profileId === 'device'
+        ? uiText('Device session')
+        : active.profileId === 'default'
+          ? uiText('Default profile')
+          : uiText('Unavailable profile')))
   const searchProfile =
     websiteProfile ?? websiteProfiles.find((profile) => profile.id === 'default')
   const saveProfileSettings = async (patch: {
@@ -930,6 +948,9 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         </View>
       )}
       <View style={{ paddingHorizontal: 12 }}>
+        <Text style={styles.muted}>
+          {uiText('Browser workspace')} · {browserLocation} · {browserProfile}
+        </Text>
         {native.error ? (
           <Text accessibilityRole="alert" style={styles.error}>
             {native.error}

@@ -217,13 +217,17 @@ function PrimaryReviewPane({
   const files = useMemo(
     () =>
       orderReviewFiles(
-        visibleFiles.map((file) => ({
-          ...file,
-          viewed:
+        visibleFiles.map((file) => {
+          const state =
             source.kind === 'working'
-              ? file.viewed
-              : (fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false),
-        })),
+              ? file
+              : fileState(file.path, fingerprints.get(file.path) ?? '')
+          return {
+            ...file,
+            viewed: state?.viewed ?? false,
+            changedSinceViewed: state?.changedSinceViewed,
+          }
+        }),
         review.progress?.groups ?? [],
         related,
       ),

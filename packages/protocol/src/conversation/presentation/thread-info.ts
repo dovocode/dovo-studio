@@ -1,8 +1,8 @@
 /** Stable preference keys shared by the desktop and mobile Thread Info panels. */
 export const threadInfoSections = [
-  { id: 'sharing', label: 'Sharing' },
-  { id: 'settings', label: 'Environment and access' },
   { id: 'project', label: 'Local checkout' },
+  { id: 'settings', label: 'Environment and access' },
+  { id: 'sharing', label: 'Sharing' },
   { id: 'openIn', label: 'Open in…', desktopOnly: true },
   { id: 'scripts', label: 'Project actions' },
   { id: 'pulls', label: 'Pull requests' },

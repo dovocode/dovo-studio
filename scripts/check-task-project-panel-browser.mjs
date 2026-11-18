@@ -652,7 +652,7 @@ try {
       .locator('.studio-thread-primary-action')
       .getByText('Commit & push', { exact: true })
       .waitFor()
-    await page.getByRole('button', { name: /^Changes · 1 file/ }).waitFor()
+    await page.getByRole('button', { name: /^Review 1 changed file/ }).waitFor()
     await info.getByRole('button', { name: 'Project actions', exact: true }).click()
     const runActions = page.getByRole('group', { name: 'Run actions', exact: true })
     const projectSetup = page.getByRole('group', { name: 'Project setup', exact: true })
@@ -979,7 +979,7 @@ try {
     await page.waitForFunction(() => window.navigation?.entityId === 'new-thread')
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('button', { name: 'More details', exact: true }).click()
-    await page.getByRole('button', { name: /^Changes/ }).click()
+    await page.getByRole('button', { name: /^Review 1 changed file/ }).click()
     assert.equal(await page.evaluate(() => window.surface), 'changes')
     await page
       .getByRole('region', { name: 'Thread info', exact: true })

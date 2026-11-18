@@ -284,14 +284,19 @@ it('refuses unsettled messages and thread kinds that stay with their execution',
   expect(deleted.text).toContain('deleted')
 })
 
-it('copies attachments that history inherited from another thread', async () => {
+it('anchors a turn fork without a snapshot and copies attachments into later forks', async () => {
   const { s, source, attachment, post } = await setup()
-  // A turn fork owns copies of its files.
   const turnFork = await post('/api/tasks/fork', { id: source.id, turnId: 't1' })
   expect(turnFork.status).toBe(200)
   const turnForkId = s.store.get().tasks.find((task) => task.forkedFrom?.turnId === 't1')?.id ?? ''
-  expect(turnFork.body).toEqual({ id: turnForkId })
-  const turnCopy = s.store.task(turnForkId).messages[0]?.attachments?.[0]
+  expect(turnFork.body).toEqual({ id: turnForkId, messageId: 'answer-1' })
+  const turnDraft = s.store.task(turnForkId)
+  expect(turnDraft.execution).toBe('main')
+  expect(turnDraft.forkedFrom?.messageId).toBe('answer-1')
+  expect(turnDraft.forkedFrom?.snapshot).toBeUndefined()
+  expect(turnDraft.messages.map((message) => message.id)).toEqual(['user-1', 'answer-1'])
+  expect(await s.checkouts.directory(turnDraft.id)).toBe(await s.checkouts.directory(source.id))
+  const turnCopy = turnDraft.messages[0]?.attachments?.[0]
   expect(turnCopy?.id).not.toBe(attachment.id)
   expect(s.attachments.read(turnForkId, turnCopy?.id ?? '').data).toBe(
     Buffer.from('notes').toString('base64'),
@@ -338,4 +343,15 @@ it('copies attachments that history inherited from another thread', async () => 
   const missing = await forkFrom(legacy)
   expect(missing.messages.map((message) => message.text)).toEqual(['First request', 'First answer'])
   expect(missing.messages[0]?.attachments).toEqual([])
+})
+
+it('does not copy later messages when the selected reply is missing', async () => {
+  const { s, source, post } = await setup()
+  s.store.updateTaskHistory(source.id, (task) => ({
+    ...task,
+    messages: task.messages.filter((message) => message.id !== 'answer-1'),
+  }))
+  const fork = await post('/api/tasks/fork', { id: source.id, turnId: 't1' })
+  expect(fork.status).toBe(404)
+  expect(s.store.get().tasks.some((task) => task.forkedFrom?.taskId === source.id)).toBe(false)
 })

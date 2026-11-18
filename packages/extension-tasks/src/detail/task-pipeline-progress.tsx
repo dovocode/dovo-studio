@@ -46,6 +46,16 @@ export function TaskPipelineProgress({ taskId, active }: { taskId: string; activ
                 {pipelineSignal(item.status).label}
               </span>
             </div>
+            {(item.revision || item.attempt) && (
+              <p className="flex flex-wrap gap-x-3 text-muted-foreground">
+                {item.revision && (
+                  <span title={item.revision}>
+                    Commit <span className="font-mono">{item.revision.slice(0, 8)}</span>
+                  </span>
+                )}
+                {item.attempt && <span>Attempt {item.attempt}</span>}
+              </p>
+            )}
             <progress
               className="h-1.5 w-full accent-primary"
               aria-label={`${item.label} jobs`}

@@ -137,8 +137,8 @@ export function TurnCheckpoint({
               Turn checkpoint · {count} {count === 1 ? 'file' : 'files'}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              Saved changes from this turn. Edits that existed before the turn are preserved in the
-              starting snapshot.
+              File changes captured during this turn, including edits made outside the agent.
+              Reverting a file does not change the conversation.
             </DialogDescription>
           </div>
           <ChangeTypeFilters

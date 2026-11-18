@@ -152,6 +152,7 @@ try {
   assert.equal(await page.locator('iframe').count(), 0)
   await page.evaluate(() => window.setExperimental(true))
   await button('Tabs (1)').waitFor()
+  await page.getByText(/Browser workspace · This device/).waitFor()
   const address = page.getByLabel('Search or enter address', { exact: true })
   await address.fill('http://192.168.1.7:3000/dev')
   await button('Go').click()
@@ -238,6 +239,7 @@ try {
   await page.getByLabel('Computer for new tab').selectOption('lan')
   await page.evaluate(() => (window.holdProfileReads = true))
   await button('New tab').click()
+  await page.getByText(/Browser workspace · LAN computer/).waitFor()
   await page.waitForFunction(() =>
     [...document.querySelectorAll('button')].some(
       (button) => button.textContent === 'Keyboard' && !button.disabled,

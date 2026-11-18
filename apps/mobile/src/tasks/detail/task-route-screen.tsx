@@ -13,6 +13,7 @@ import { ActivityIndicator, Keyboard, View } from 'react-native'
 import { RuntimeScope, useRuntime } from '../../runtime/connection/provider'
 import { PairComputer } from '../../runtime/connection/pair-computer'
 import { StartupThread } from '../creation/startup-thread'
+import { requestMessageReveal } from '../conversation/message-reveal'
 import { useNavigation } from '../../shell/navigation'
 import { taskHref } from '../../shell/task-route'
 import { useRouteComputer } from '../../shell/use-route-computer'
@@ -174,7 +175,19 @@ function TaskRouteContent({ startup }: { startup: boolean }) {
       <Action
         label={uiText('Forked from {value0}', { value0: forkSource.title })}
         secondary
-        onPress={() => router.push(taskHref(params.runtimeId, forkSource.taskId))}
+        onPress={() => {
+          if (owner && forkSource.messageId)
+            requestMessageReveal(owner.connection, forkSource.taskId, forkSource.messageId)
+          router.push(
+            taskHref(
+              params.runtimeId,
+              forkSource.taskId,
+              undefined,
+              undefined,
+              snapshot?.runtimeId ?? params.runtimeIdentity,
+            ),
+          )
+        }}
       />
     ) : null
   if (task?.replica)

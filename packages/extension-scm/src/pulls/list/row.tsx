@@ -2,7 +2,14 @@ import { pullStackLabel } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import type { PullSummary } from '@dovo/studio-core'
 import { Badge, ContextMenu, DropdownMenu } from '@dovo/studio-ui'
-import { pullChecks, pullReview, pullState, pullNextStep, formatDateTime } from '@dovo/studio-core'
+import {
+  pullChecks,
+  pullReview,
+  pullState,
+  pullNextStep,
+  pullNeedsAttention,
+  formatDateTime,
+} from '@dovo/studio-core'
 import {
   GitPullRequest,
   GitPullRequestDraft,
@@ -22,6 +29,7 @@ export function PullRow({
   compact = false,
   onClick,
   onAddToThread,
+  onOpenAgentReview,
   onIntent,
   selectionCount = 1,
 }: {
@@ -32,6 +40,7 @@ export function PullRow({
   onSelect: () => void
   onClick?: (event: React.MouseEvent<HTMLButtonElement>) => void
   onAddToThread?: () => void
+  onOpenAgentReview?: (configure: boolean) => void
   /** True while the pointer or focus rests on the row; false when both leave it. */
   onIntent?: (resting: boolean) => void
   selectionCount?: number
@@ -40,7 +49,8 @@ export function PullRow({
   const ci = pullChecks(pull)
   const hasStatus =
     pull.checksState !== undefined || pull.reviewDecision !== undefined || !!pull.statusError
-  const reviewRequested = pull.state === 'open' && !pull.draft && pull.viewerReviewRequested
+  const nextStep = pullNextStep(pull)
+  const needsAttention = pullNeedsAttention(pull)
   const copy = async (text: string) => {
     setError('')
     try {
@@ -59,6 +69,16 @@ export function PullRow({
       <Menu.Item className={menuItem} onSelect={onSelect}>
         Open PR details
       </Menu.Item>
+      {onOpenAgentReview && (
+        <>
+          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview(false)}>
+            Open agent review
+          </Menu.Item>
+          <Menu.Item className={menuItem} onSelect={() => onOpenAgentReview(true)}>
+            Configure agent review
+          </Menu.Item>
+        </>
+      )}
       {onAddToThread && (
         <Menu.Item className={menuItem} onSelect={onAddToThread}>
           Add to thread{selectionCount > 1 ? ` (${selectionCount} PRs)` : ''}
@@ -248,12 +268,12 @@ export function PullRow({
                     )}
                   </div>
                 </div>
-                {(hasStatus || reviewRequested) && (
+                {(hasStatus || needsAttention) && (
                   <div
                     className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs @[64rem]/pr-row:flex-col @[64rem]/pr-row:items-start"
                     role="group"
                     aria-label="PR readiness"
-                    title={pullNextStep(pull).label}
+                    title={nextStep.label}
                   >
                     {(pull.checksState !== undefined || pull.statusError) && (
                       <Signal
@@ -264,9 +284,14 @@ export function PullRow({
                     {(pull.reviewDecision !== undefined || pull.statusError) && (
                       <Signal signal={pullReview(pull)} subtle />
                     )}
-                    {reviewRequested && (
-                      <span className="font-medium text-status-done">Your review requested</span>
-                    )}
+                    {needsAttention && <Signal signal={nextStep} />}
+                    {!needsAttention &&
+                      pull.statusError &&
+                      pull.state === 'open' &&
+                      !pull.draft &&
+                      pull.viewerReviewRequested && (
+                        <Signal signal={{ label: 'Your review requested', tone: 'accent' }} />
+                      )}
                   </div>
                 )}
               </div>

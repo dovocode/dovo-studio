@@ -110,9 +110,9 @@ for (const [path, names] of [
 
 // The normal approval and question controls, reduced to what attention navigation focuses.
 mocks['../chat/actions/run-controls'] =
-  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const RunControls=({task})=>{const {snapshot,workspace}=useWorkspace();return snapshot.approvals.some(a=>taskInputVisible(workspace.tasks,task.id,a))?<div data-human-input="approval" data-human-input-task={task.id}><button>Approve in {task.id}</button></div>:null};`
+  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const RunControls=({task})=>{const {snapshot,workspace}=useWorkspace();return snapshot.approvals.filter(a=>taskInputVisible(workspace.tasks,task.id,a)).map(a=><div key={a.id}><p data-request-kind="approval" data-request-id={a.id} tabIndex={-1}>Permission {a.id}</p><button>Approve in {task.id}</button></div>).reverse()};`
 mocks['../chat/thread/task-questions'] =
-  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const TaskQuestions=({taskId})=>{const {snapshot,workspace}=useWorkspace();return snapshot.questions.some(q=>taskInputVisible(workspace.tasks,taskId,q))?<div data-human-input="question" data-human-input-task={taskId}><textarea aria-label={'Answer in '+taskId}/></div>:null};`
+  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const TaskQuestions=({taskId,questionId})=>{const {snapshot,workspace}=useWorkspace();const target=snapshot.questions.find(q=>q.id===questionId&&taskInputVisible(workspace.tasks,taskId,q));return target?<div><p data-request-kind="input" data-request-id={target.id} tabIndex={-1}>Question {target.id}</p><textarea aria-label={'Answer in '+taskId}/></div>:null};`
 for (const name of ['ComposerHarnessControls', 'TurnModelControls'])
   mocks[
     name === 'ComposerHarnessControls' ? './composer-harness-controls' : './turn-model-controls'
@@ -500,14 +500,22 @@ try {
   // Approvals in a side chat surface on the parent, its list and the split header, and open the
   // side chat's normal controls.
   await page.evaluate(() =>
-    window.setRequests({ approvals: [{ id: 'approval', taskId: 'child' }], questions: [] }),
+    window.setRequests({
+      approvals: [
+        { id: 'approval', taskId: 'child' },
+        { id: 'another', taskId: 'child' },
+      ],
+      questions: [],
+    }),
   )
   const banner = page.locator('[data-side-chat-attention-banner="approval"]')
   await banner.getByText(/Investigate cache.*is waiting for approval/).waitFor()
   await banner.getByRole('button', { name: 'Open approval', exact: true }).click()
   await besideChild.waitFor()
   await besideChild.locator('[data-side-chat-attention="approval"]').waitFor()
-  await page.waitForFunction(() => document.activeElement?.textContent === 'Approve in child')
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('data-request-id') === 'approval',
+  )
   await page.getByRole('button', { name: 'Open side chats', exact: true }).click()
   const childRow = panel.locator('li').filter({ hasText: 'Investigate cache' })
   await childRow.locator('[data-side-chat-attention="approval"]').waitFor()
@@ -531,7 +539,7 @@ try {
   await besideChild.locator('[data-side-chat-attention="input"]').waitFor()
   await childRow.getByRole('button', { name: 'Answer in Investigate cache', exact: true }).click()
   await page.waitForFunction(
-    () => document.activeElement?.getAttribute('aria-label') === 'Answer in child',
+    () => document.activeElement?.getAttribute('data-request-id') === 'question',
   )
   await page.evaluate(() => window.setRequests({ approvals: [], questions: [] }))
   await banner.waitFor({ state: 'detached' })

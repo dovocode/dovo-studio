@@ -374,8 +374,10 @@ const ActivityEntry = memo(function ActivityEntry({
           ? 'Interrupted'
           : ''
   const reasoning = presentation.kind === 'reasoning'
+  const showOutput = showDetails || reasoning
   const expandable =
     showDetails ||
+    (showOutput && !!presentation.output) ||
     (presentation.kind === 'command' && !!presentation.input) ||
     !!presentation.diff ||
     (presentation.kind === 'file' && !!presentation.input)
@@ -434,7 +436,7 @@ const ActivityEntry = memo(function ActivityEntry({
               <DiffText text={presentation.diff} />
             </div>
           )}
-          {showDetails &&
+          {showOutput &&
             !!presentation.output &&
             (reasoning ? (
               <div className="text-xs">

@@ -1,7 +1,7 @@
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
-import { decode, mutableStruct } from '@dovo/protocol'
+import { decode, mutableStruct, taskWaitingSchema, watchMessage } from '@dovo/protocol'
 import type { AgentAdapter } from '../../agents/execution/types.js'
 import type { ForgePipelineDetail } from '@dovo/protocol'
 import { startRuntime } from '../../index.js'
@@ -109,13 +109,21 @@ it('publishes job progress from the watched snapshot and removes finished bars',
   const job = (id: string, status: string) => ({ id, name: id, status, url: detail().run.url })
   f.read.mockResolvedValue(
     detail('7', 'in_progress', {
+      run: { ...detail().run, attempt: 2 },
       jobs: [job('build', 'success'), job('test', 'running'), job('package', 'queued')],
     }),
   )
   await f.watch()
   const { taskWaiting } = await import('../../http/endpoints/task-waiting.js')
-  expect((await taskWaiting(f.s, { taskId: f.taskId })).dependencies).toMatchObject([
-    { label: 'Build', progress: { completed: 1, total: 3, partial: false } },
+  expect(
+    decode(taskWaitingSchema, await taskWaiting(f.s, { taskId: f.taskId })).dependencies,
+  ).toMatchObject([
+    {
+      label: 'Build',
+      revision: detail().run.sha,
+      attempt: 2,
+      progress: { completed: 1, total: 3, partial: false },
+    },
   ])
   f.read.mockImplementation(async (_repo, _operation, input) => {
     const cursor = decode(mutableStruct({ cursor: Schema.optional(Schema.String) }), input).cursor
@@ -199,7 +207,12 @@ it('adds explicit runs, preserves existing watches and delivers each completion 
   await f.watch(['9'])
   await f.watch(['7'])
   expect((await f.status()).watches).toHaveLength(3)
-  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true }, false)
+  expect(f.read).toHaveBeenCalledWith(
+    'repo',
+    'pipelines/detail',
+    { id: '7', refresh: true, section: 'jobs' },
+    false,
+  )
   await f.s.pipelineWatch.tick()
   expect(f.s.store.task(f.taskId).queue).toHaveLength(0)
   f.read.mockImplementation(async (_repo, _operation, input) => detail(runId(input), 'failure'))
@@ -491,7 +504,7 @@ it('isolates colliding run IDs across repositories and scopes stop/status withou
   expect(f.read).toHaveBeenCalledWith(
     'linked',
     'pipelines/detail',
-    { id: '7', refresh: true },
+    { id: '7', refresh: true, section: 'jobs' },
     true,
   )
   expect(f.s.store.task(f.taskId).queue).toHaveLength(1)
@@ -567,17 +580,21 @@ it('prioritizes failed jobs and includes failed step diagnostics in bounded feed
     status: 'success',
     url: detail().run.url,
   }))
+  const failedStep = { name: 'Compile', url: `${detail().run.url}/job/42#compile` }
   jobs.push({ id: 'failed', name: 'Failing build', status: 'failure', url: detail().run.url })
   f.read.mockResolvedValue(
     detail('7', 'failure', {
+      run: { ...detail('7', 'failure').run, attempt: 2 },
       jobs: jobs.map((job) =>
         job.id === 'failed'
           ? {
               ...job,
               steps: [
+                { id: 'setup', name: 'Set up', status: 'success', url: detail().run.url },
+                { id: 'lint', name: 'Lint', status: 'failure' },
                 {
                   id: 'compile',
-                  name: 'Compile',
+                  ...failedStep,
                   status: 'failure',
                   errors: ['Type error in app.ts'],
                 },
@@ -588,9 +605,17 @@ it('prioritizes failed jobs and includes failed step diagnostics in bounded feed
     }),
   )
   await f.s.pipelineWatch.tick()
-  const text = f.s.store.task(f.taskId).queue?.[0]?.text ?? ''
+  const message = f.s.store.task(f.taskId).queue?.[0]
+  const text = message?.text ?? ''
   expect(text).toContain('Failing build')
   expect(text).toContain('Type error in app.ts')
+  expect(text).toContain(`Step link: ${failedStep.url}`)
+  expect(message && watchMessage(message)).toMatchObject({
+    commit: detail().run.sha,
+    attempt: 2,
+    failedStep,
+  })
+  expect(await f.status()).toMatchObject({ watches: [{ failedStep }] })
   expect(text).toContain('Partial job context')
   expect(text.length).toBeLessThan(20000)
 })
@@ -792,6 +817,7 @@ it('reads all job pages for registration and detects early failures beyond the f
       id: '7',
       cursor: '3',
       refresh: true,
+      section: 'jobs',
     },
     false,
   )
@@ -873,7 +899,12 @@ it('polls with background quota and retains last success when a later poll fails
   expect(registered.lastSuccessAt).toBe(registered.checkedAt)
   f.read.mockClear()
   await f.s.pipelineWatch.tick()
-  expect(f.read).toHaveBeenCalledWith('repo', 'pipelines/detail', { id: '7', refresh: true }, true)
+  expect(f.read).toHaveBeenCalledWith(
+    'repo',
+    'pipelines/detail',
+    { id: '7', refresh: true, section: 'jobs' },
+    true,
+  )
   const success = (await f.status()).watches[0]!
   f.read.mockRejectedValue(new Error('Background quota reserved for interactive work'))
   await f.s.pipelineWatch.tick()

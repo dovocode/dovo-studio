@@ -298,6 +298,7 @@ export const pullReviewerStatusLabels: Record<
 }
 export const pullCodeReviewReportSchema = mutableStruct({
   reviews: mutableArray(pullCodeReviewSchema),
+  oneRunSettingsSupported: Schema.optional(Schema.Boolean),
   stacks: Schema.optional(mutableArray(pullReviewStackSchema)),
   selection: Schema.optional(titleGenerationSettingsSchema),
   reviewers: Schema.optional(reviewerSelections),
@@ -317,6 +318,7 @@ export const pullCodeReviewStartSchema = strictStruct({
   runChecks: Schema.optional(Schema.Boolean),
   remainingFrom: Schema.optional(id),
   fullStack: Schema.optional(Schema.Boolean),
+  oneRunSettings: Schema.optional(Schema.Boolean),
 })
 export const pullCodeReviewStopSchema = strictStruct({
   target: pullCodeReviewTargetSchema,

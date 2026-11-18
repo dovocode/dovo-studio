@@ -1,9 +1,15 @@
 # Reviewing changed files
 
-Task diffs and PR changes on desktop and mobile share viewed progress through the connected
-computer. Mark a file viewed from the diff toolbar. Its check clears when that file's diff changes;
-unchanged files keep their checks. Image and binary task files also reset when their saved content
-or mode changes. PR files without a text patch reset conservatively when the PR revision changes.
+Task diffs and PR changes on desktop, web and mobile share viewed progress through the connected
+computer. Mark a file viewed from the diff toolbar. If that file changes, the viewer clears its
+check and shows **Changed since viewed** in the file list and beside the viewed control. Mark the
+file viewed again to clear this label. Unchanged files keep their checks. New files and files that
+return after removal start as unviewed. Older runtimes still clear the check without showing the
+label.
+
+Image and binary task files can change when their saved content or mode changes. For PR files
+without a text patch, the viewer treats a new PR revision as a file change. In a pinned PR review,
+switch to the new revision to see which files changed.
 
 Files default to folder order. AST dependency analysis is no longer used.
 
@@ -12,12 +18,13 @@ change counts and viewed progress. Search reveals matching paths. Desktop arrow 
 and expand or collapse folders; mobile uses a virtualized list. Model-proposed feature groups keep
 their review order.
 
-On mobile, tap the file path to open a searchable file browser. Both clients offer an **Unviewed
-only** filter and previous, next and next-unviewed navigation. File and checkout navigation pause
-while a task diff has an active edit. Mobile edits retain their text and disk baseline when
-switching task panes. Cancel remains available if a refresh removes the file or replaces its text
-with a preview. Desktop inline PR drafts retain their original revision and range across pushes;
-stale drafts cannot post against the new revision.
+On mobile, tap the file path to open a searchable file browser. All clients offer an **Unviewed
+only** filter and previous, next and next-unviewed navigation. The filter and next-unviewed action
+include files that changed since you viewed them. File and checkout navigation pause while a task
+diff has an active edit. Mobile edits retain their text and disk baseline when switching task panes.
+Cancel remains available if a refresh removes the file or replaces its text with a preview. Desktop
+inline PR drafts retain their original revision and range across pushes; stale drafts cannot post
+against the new revision.
 
 Desktop/web PR diffs mount as files enter the viewport; file navigation loads the destination
 directly. Loaded diffs stay mounted to preserve inline drafts. Mobile renders only the selected

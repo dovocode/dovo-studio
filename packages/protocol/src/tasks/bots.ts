@@ -1,4 +1,5 @@
 import { botSkillProposalSchema } from './bot-skills.js'
+import type { Task } from '../workspace.js'
 import { Effect, Schema } from 'effect'
 import {
   isoDateTime,
@@ -104,6 +105,38 @@ export type BotState = Schema.Schema.Type<typeof botStateSchema>
 export const botPaused = (task: { bot?: Bot | undefined }) => task.bot?.state === 'paused'
 
 export const botPausedMessage = 'This Bot is paused. Resume it to start new work.'
+
+export function botLifecyclePresentation(
+  state: BotState,
+  task: Pick<
+    Task,
+    'status' | 'activeRunId' | 'queue' | 'queuePaused' | 'restartRecovery' | 'subagentInbox'
+  >,
+) {
+  const paused = state === 'paused'
+  const running = task.status === 'running' || !!task.activeRunId
+  const queuePaused = task.queuePaused && task.restartRecovery?.kind !== 'queue'
+  const first = task.queue?.[0]
+  const ready = (first && !first.paused) || !!task.subagentInbox?.length
+  return {
+    policy: paused ? 'New work paused' : 'New work allowed',
+    activity: running ? 'Current turn still running' : 'No turn running',
+    queue: queuePaused
+      ? 'The queue is paused separately.'
+      : first?.paused
+        ? 'The first queued message is paused.'
+        : undefined,
+    consequence: !paused
+      ? 'Pause holds new turns. Use Stop in the chat to interrupt a running turn.'
+      : queuePaused
+        ? 'Resume Bot does not resume the queue.'
+        : ready
+          ? 'Ready work can start when the Bot is idle.'
+          : first?.paused
+            ? 'Resume Bot does not unpause that message.'
+            : 'Resume Bot allows new turns. No queued work is ready to start.',
+  } as const
+}
 
 /** Standing instructions added to every turn of a Bot's coordinator thread. */
 export function botInstructions(bot: Bot, delegationAvailable = false) {

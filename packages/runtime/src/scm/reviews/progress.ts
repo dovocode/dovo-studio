@@ -16,6 +16,7 @@ const rowsSchema = mutableArray(
     path: Schema.String,
     fingerprint: Schema.String,
     viewed: Schema.Number,
+    changed_since_viewed: Schema.Number,
     version: Schema.Number,
   }),
 )
@@ -24,7 +25,7 @@ const PULL_REVISION_LIMIT = 500
 export class ReviewMarks {
   constructor(private db: Database.Database) {
     db.exec(
-      'CREATE TABLE IF NOT EXISTS review_marks (scope TEXT NOT NULL, path TEXT NOT NULL, fingerprint TEXT NOT NULL, viewed INTEGER NOT NULL, version INTEGER NOT NULL, PRIMARY KEY(scope,path)); CREATE TABLE IF NOT EXISTS review_scopes (scope TEXT PRIMARY KEY); INSERT OR IGNORE INTO review_scopes SELECT DISTINCT scope FROM review_marks',
+      'CREATE TABLE IF NOT EXISTS review_marks (scope TEXT NOT NULL, path TEXT NOT NULL, fingerprint TEXT NOT NULL, viewed INTEGER NOT NULL, version INTEGER NOT NULL, changed_since_viewed INTEGER NOT NULL DEFAULT 0, PRIMARY KEY(scope,path)); CREATE TABLE IF NOT EXISTS review_scopes (scope TEXT PRIMARY KEY); INSERT OR IGNORE INTO review_scopes SELECT DISTINCT scope FROM review_marks',
     )
     db.exec(
       'CREATE TABLE IF NOT EXISTS review_revisions (scope TEXT PRIMARY KEY, revision TEXT NOT NULL, updated INTEGER NOT NULL DEFAULT 0)',
@@ -37,6 +38,8 @@ export class ReviewMarks {
         mutableArray(mutableStruct({ name: Schema.String })),
         db.prepare(`PRAGMA table_info(${table})`).all(),
       ).map((column) => column.name)
+    if (!columns('review_marks').includes('changed_since_viewed'))
+      db.exec('ALTER TABLE review_marks ADD COLUMN changed_since_viewed INTEGER NOT NULL DEFAULT 0')
     if (!columns('review_revisions').includes('updated'))
       db.exec('ALTER TABLE review_revisions ADD COLUMN updated INTEGER NOT NULL DEFAULT 0')
     if (!columns('review_guides').includes('generated_at')) {
@@ -124,7 +127,9 @@ export class ReviewMarks {
       const rows = decode(
         rowsSchema,
         this.db
-          .prepare('SELECT path,fingerprint,viewed,version FROM review_marks WHERE scope=?')
+          .prepare(
+            'SELECT path,fingerprint,viewed,changed_since_viewed,version FROM review_marks WHERE scope=?',
+          )
           .all(scope),
       )
       const prior = new Map(rows.map((row) => [row.path, row]))
@@ -133,7 +138,7 @@ export class ReviewMarks {
         if (!paths.has(row.path))
           this.db
             .prepare(
-              "UPDATE review_marks SET fingerprint='',viewed=0,version=version+1 WHERE scope=? AND path=? AND fingerprint<>''",
+              "UPDATE review_marks SET fingerprint='',viewed=0,changed_since_viewed=0,version=version+1 WHERE scope=? AND path=? AND fingerprint<>''",
             )
             .run(scope, row.path)
       return files.map((file) => {
@@ -141,13 +146,15 @@ export class ReviewMarks {
         const changed = row?.fingerprint !== file.fingerprint
         const version = (row?.version ?? 0) + (changed ? 1 : 0)
         const viewed = !changed && row?.viewed === 1
+        const changedSinceViewed =
+          !viewed && (row?.changed_since_viewed === 1 || (changed && row?.viewed === 1))
         if (changed)
           this.db
             .prepare(
-              'INSERT OR REPLACE INTO review_marks(scope,path,fingerprint,viewed,version) VALUES(?,?,?,?,?)',
+              'INSERT OR REPLACE INTO review_marks(scope,path,fingerprint,viewed,changed_since_viewed,version) VALUES(?,?,?,?,?,?)',
             )
-            .run(scope, file.path, file.fingerprint, 0, version)
-        return { ...file, viewed, version }
+            .run(scope, file.path, file.fingerprint, 0, Number(changedSinceViewed), version)
+        return { ...file, viewed, ...(changedSinceViewed ? { changedSinceViewed } : {}), version }
       })
     })()
   }
@@ -157,9 +164,16 @@ export class ReviewMarks {
   ) {
     const result = this.db
       .prepare(
-        'UPDATE review_marks SET viewed=?,version=version+1 WHERE scope=? AND path=? AND fingerprint=? AND version=?',
+        'UPDATE review_marks SET viewed=?,changed_since_viewed=CASE WHEN ?=1 THEN 0 ELSE changed_since_viewed END,version=version+1 WHERE scope=? AND path=? AND fingerprint=? AND version=?',
       )
-      .run(Number(input.viewed), scope, input.path, input.fingerprint, input.version)
+      .run(
+        Number(input.viewed),
+        Number(input.viewed),
+        scope,
+        input.path,
+        input.fingerprint,
+        input.version,
+      )
     if (!result.changes)
       throw new HttpError(
         409,
@@ -171,9 +185,15 @@ export class ReviewMarks {
       rowsSchema,
       this.db
         .prepare(
-          "SELECT path,fingerprint,viewed,version FROM review_marks WHERE scope=? AND fingerprint<>'' ORDER BY path",
+          "SELECT path,fingerprint,viewed,changed_since_viewed,version FROM review_marks WHERE scope=? AND fingerprint<>'' ORDER BY path",
         )
         .all(scope),
-    ).map((row) => ({ ...row, viewed: row.viewed === 1 }))
+    ).map(({ path, fingerprint, viewed, changed_since_viewed, version }) => ({
+      path,
+      fingerprint,
+      viewed: viewed === 1,
+      ...(viewed !== 1 && changed_since_viewed === 1 ? { changedSinceViewed: true as const } : {}),
+      version,
+    }))
   }
 }

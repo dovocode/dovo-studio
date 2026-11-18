@@ -32,10 +32,10 @@ const built = await bundleBrowser(
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {ProjectDeletion} from './packages/extension-scm/src/connections/project-deletion';
 window.calls=[];window.refreshes=[];window.deleted=[];window.fail=false;window.navigations=[];window.host={navigate:target=>window.navigations.push(target)};
-window.store={connected:true,activeRuntimeId:'machine',workspace:{tasks:[],automations:[]},snapshot:{questions:[],approvals:[],terminals:[],runs:[]},runtimes:[{profile:{id:'machine'}},{profile:{id:'other-machine'}}],
+window.store={connected:true,activeRuntimeId:'machine',workspace:{tasks:[],automations:[]},snapshot:{questions:[],approvals:[],terminals:[],runs:[]},runtimes:[{profile:{id:'machine',name:'Test computer',nameIsCustom:true}},{profile:{id:'other-machine',name:'Other computer',nameIsCustom:true}}],
 readRuntime:async(profile,path,input)=>{window.calls.push({runtimeId:profile.id,path,input});if(window.fail)throw Error('Project has active work');return {ok:true}},
 refreshRuntime:async profile=>{window.refreshes.push(profile.id)}};
-function App(){const [general,setGeneral]=useState(false),[repositoryId,setRepositoryId]=useState('repo-1'),[,render]=useState(0);window.setActivity=(workspace,snapshot)=>{window.store.workspace={tasks:[],automations:[],...workspace};window.store.snapshot={questions:[],approvals:[],terminals:[],runs:[],...snapshot};render(value=>value+1)};window.setGeneral=setGeneral;window.setRepository=setRepositoryId;window.setRuntime=id=>{window.store.activeRuntimeId=id;render(value=>value+1)};const repository=general?{id:'scratch',name:'General',path:'/general',kind:'scratch'}:{id:repositoryId,name:repositoryId==='repo-1'?'My project':'Other project',path:'/project'};return <ProjectDeletion repository={repository} onDeleted={error=>window.deleted.push(error??'ok')}/>}
+function App(){const [general,setGeneral]=useState(false),[repositoryId,setRepositoryId]=useState('repo-1'),[,render]=useState(0);window.setActivity=(workspace,snapshot)=>{window.store.workspace={tasks:[],automations:[],...workspace};window.store.snapshot={questions:[],approvals:[],terminals:[],runs:[],...snapshot};render(value=>value+1)};window.setConnected=connected=>{window.store.connected=connected;render(value=>value+1)};window.setGeneral=setGeneral;window.setRepository=setRepositoryId;window.setRuntime=id=>{window.store.activeRuntimeId=id;render(value=>value+1)};const repository=general?{id:'scratch',name:'General',path:'/general',kind:'scratch'}:{id:repositoryId,name:repositoryId==='repo-1'?'My project':'Other project',path:'/project'};return <ProjectDeletion repository={repository} onDeleted={error=>window.deleted.push(error??'ok')}/>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -63,7 +63,15 @@ try {
   await dialog.waitFor()
   assert.match(await dialog.innerText(), /thread and conversation history from Dovo/)
   assert.match(await dialog.innerText(), /files remain on disk/)
-  assert.match(await dialog.innerText(), /Active work must finish/)
+  assert.match(await dialog.innerText(), /Test computer only/)
+  assert.deepEqual(await dialog.locator('dt').allTextContents(), [
+    'Will be removed',
+    'Will change',
+    'Will stay',
+  ])
+  assert.match(await dialog.innerText(), /hosted artifact copies remain/)
+  assert.match(await dialog.innerText(), /Project threads: 0/)
+  assert.match(await dialog.innerText(), /Affected automations: 0/)
   assert.equal(
     await dialog
       .getByRole('button', { name: 'Cancel', exact: true })
@@ -71,8 +79,49 @@ try {
     true,
   )
   const confirm = dialog.getByRole('button', { name: 'Delete My project and history', exact: true })
-  const task = { id: 'thread', repositoryId: 'repo-1', status: 'done' }
+  const task = { id: 'thread', title: 'Build app', repositoryId: 'repo-1', status: 'done' }
+  await page.evaluate(() => window.setConnected(false))
+  await dialog
+    .getByRole('status')
+    .getByText(/Connect to Test computer/)
+    .waitFor()
+  assert.equal(await confirm.isDisabled(), true)
+  assert.doesNotMatch(await dialog.innerText(), /Project threads:/)
+  await page.evaluate(() => window.setConnected(true))
   const scenarios = [
+    [
+      {
+        tasks: [
+          task,
+          {
+            ...task,
+            id: 'child',
+            repositoryId: 'other-project',
+            delegation: { parentTaskId: 'thread' },
+          },
+        ],
+      },
+      {},
+      'Resolve the delegated thread link',
+    ],
+    [
+      { tasks: [{ ...task, delegation: { parentTaskId: 'missing-parent' } }] },
+      {},
+      'Resolve the delegated thread link',
+    ],
+    [
+      {
+        tasks: [
+          {
+            ...task,
+            repositoryId: 'other-project',
+            turns: [{ checkpoint: { restorePending: true, linked: [{ repositoryId: 'repo-1' }] } }],
+          },
+        ],
+      },
+      {},
+      'Finish the pending undo or redo',
+    ],
     [{ tasks: [{ ...task, status: 'running' }] }, {}, 'Stop active turns and agents'],
     [
       {
@@ -103,12 +152,12 @@ try {
     ],
     [
       { tasks: [task] },
-      { runs: [{ status: 'waiting', taskIds: ['thread'], automationId: 'flow' }] },
+      { runs: [{ id: 'run', status: 'waiting', taskIds: ['thread'], automationId: 'flow' }] },
       'Finish or cancel active automations',
     ],
     [
       { automations: [{ id: 'flow', nodes: [{ data: { repositoryId: 'repo-1' } }] }] },
-      { runs: [{ status: 'running', taskIds: [], automationId: 'flow' }] },
+      { runs: [{ id: 'run', status: 'running', taskIds: [], automationId: 'flow' }] },
       'Finish or cancel active automations',
     ],
     [
@@ -153,6 +202,25 @@ try {
     0,
     'Opening active work never deletes the project or closes terminals',
   )
+  await page.getByRole('button', { name: 'Delete My project…', exact: true }).click()
+  await page.evaluate(() =>
+    window.setActivity(
+      {
+        automations: [
+          { id: 'flow', name: 'Nightly checks', nodes: [{ data: { repositoryId: 'repo-1' } }] },
+        ],
+      },
+      { runs: [{ id: 'run', status: 'running', taskIds: [], automationId: 'flow' }] },
+    ),
+  )
+  await dialog.getByText('Nightly checks', { exact: true }).waitFor()
+  await dialog.getByRole('button', { name: 'Open affected automation run', exact: true }).click()
+  await dialog.waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+    viewId: 'jobs',
+    entityId: 'run',
+    automationTarget: { runtimeId: 'machine', automationId: 'flow', runId: 'run' },
+  })
   await page.getByRole('button', { name: 'Delete My project…', exact: true }).click()
   // Work on another project, finished terminals, and old agent metadata do not block deletion.
   await page.evaluate(

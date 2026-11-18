@@ -34,6 +34,8 @@ export const taskWaitingSchema = mutableStruct({
       project: Schema.String,
       url: Schema.String,
       status: Schema.String,
+      revision: Schema.optional(Schema.String),
+      attempt: Schema.optional(Schema.Int.check(Schema.isGreaterThan(0))),
       progress: Schema.optional(
         mutableStruct({
           completed: Schema.Int.check(Schema.isGreaterThanOrEqualTo(0)),

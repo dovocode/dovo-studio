@@ -74,10 +74,14 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
   const files = useMemo(
     () =>
       orderReviewFiles(
-        sourceFiles.map((file) => ({
-          ...file,
-          viewed: fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false,
-        })),
+        sourceFiles.map((file) => {
+          const state = fileState(file.path, fingerprints.get(file.path) ?? '')
+          return {
+            ...file,
+            viewed: state?.viewed ?? false,
+            changedSinceViewed: state?.changedSinceViewed,
+          }
+        }),
         review.progress?.groups ?? [],
         related,
       ),

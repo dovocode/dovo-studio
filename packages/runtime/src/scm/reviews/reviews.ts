@@ -239,6 +239,7 @@ export class FileReviews {
       ? files.map((file, index) => ({
           ...file,
           viewed: working?.[index]?.viewed ?? false,
+          changedSinceViewed: working?.[index]?.changedSinceViewed,
           version: workingVersions?.[file.path] ?? 0,
         }))
       : organize || s.reviewMarks.hasScope(scope)
@@ -260,9 +261,17 @@ export class FileReviews {
             file.path === mark.path ? { ...file, viewed: mark.viewed } : file,
           ),
         }))
-        const updated = s.store.taskSummary(context.taskId).fileReviewVersions?.[mark.path] ?? 0
+        const updated = s.store.taskSummary(context.taskId)
+        const updatedFile = updated.files.find((file) => file.path === mark.path)
         states = states.map((file) =>
-          file.path === mark.path ? { ...file, viewed: mark.viewed, version: updated } : file,
+          file.path === mark.path
+            ? {
+                ...file,
+                viewed: mark.viewed,
+                changedSinceViewed: updatedFile?.changedSinceViewed,
+                version: updated.fileReviewVersions?.[mark.path] ?? 0,
+              }
+            : file,
         )
       } else {
         s.reviewMarks.set(scope, mark)

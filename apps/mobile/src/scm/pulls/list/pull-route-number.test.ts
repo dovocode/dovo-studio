@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vite-plus/test'
-import { pullRouteNumber } from './pull-route-number'
+import { pullRouteDestination, pullRouteNumber } from './pull-route-number'
 
 describe('PR route number', () => {
   it('accepts positive safe-integer PR numbers', () => {
@@ -23,5 +23,23 @@ describe('PR route number', () => {
       '9007199254740992',
     ])
       expect(pullRouteNumber(value)).toBeUndefined()
+  })
+})
+
+describe('PR route destination', () => {
+  it('opens existing review controls on the overview', () => {
+    expect(pullRouteDestination('agent-review')).toEqual({
+      initialTab: 'overview',
+      initialAgentReview: true,
+    })
+  })
+
+  it('preserves regular tabs and ignores unsupported or repeated values', () => {
+    expect(pullRouteDestination('overview')).toEqual({ initialTab: 'overview' })
+    expect(pullRouteDestination('changes')).toEqual({ initialTab: 'changes' })
+    expect(pullRouteDestination('checks')).toEqual({ initialTab: 'checks' })
+    for (const tab of [undefined, 'start-review', ['agent-review']]) {
+      expect(pullRouteDestination(tab)).toEqual({})
+    }
   })
 })

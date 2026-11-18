@@ -322,6 +322,7 @@ try {
     .click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).waitFor()
+  await page.getByText(/New work paused/).waitFor()
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Pause Bot', exact: true }).waitFor()
   await page.getByLabel('Role', { exact: true }).fill('Senior reviewer')

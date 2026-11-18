@@ -2,7 +2,7 @@ import { Schema } from 'effect'
 import { attachmentIdsSchema } from '../shared/attachments.js'
 import { maxValue, minValue, mutableStruct, uuidSchema } from '../shared/schema.js'
 import { mutableArray } from '../shared/schema.js'
-import { fileSchema, type ChatMessage } from '../workspace.js'
+import { fileSchema, type ChatMessage, type Repository, type Task } from '../workspace.js'
 import type { ConversationTurn } from '../conversation/timeline.js'
 import type { TaskMetadata } from './task-summary.js'
 
@@ -14,8 +14,30 @@ export const startForkSchema = mutableStruct({
   attachmentIds: attachmentIdsSchema,
 })
 export const taskForkResultSchema = mutableStruct({ id })
+export const turnForkResultSchema = mutableStruct({ id, messageId: Schema.optional(id) })
 /** `forkId` is chosen by the client, so a retried request returns the same fork. */
 export const forkMessageSchema = mutableStruct({ id, messageId: id, forkId: uuidSchema })
+
+export function forkFileDescription(
+  execution: Task['execution'],
+  projectKind: Repository['kind'],
+  snapshot?: string,
+) {
+  if (snapshot)
+    return 'A new worktree starts with the primary project’s files from this turn’s saved snapshot.'
+  if (projectKind === 'scratch') return 'The fork starts with an empty scratch workspace.'
+  if (execution === 'worktree')
+    return 'A new worktree starts from a Git commit, without uncommitted changes from the source.'
+  return 'The fork uses the current files in the project’s local checkout.'
+}
+
+export function forkMessagePreview(message: Pick<ChatMessage, 'text' | 'attachments'>) {
+  const text = message.text.trim().replace(/\s+/g, ' ')
+  const characters = Array.from(
+    text || message.attachments?.map((file) => file.name).join(', ') || '',
+  )
+  return characters.length > 160 ? `${characters.slice(0, 160).join('')}…` : characters.join('')
+}
 
 type ForkSource = Pick<
   TaskMetadata,

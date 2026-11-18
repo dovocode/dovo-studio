@@ -388,6 +388,7 @@ function BrowserContent({
         <BrowserToolbar
           addressRef={addressField}
           address={input}
+          context={`${uiText('Thread preview')} · ${uiText('This device')}`}
           onAddress={setInput}
           onEditing={(value) => {
             editingAddress.current = value

@@ -1,4 +1,6 @@
 import { expect, it } from 'vite-plus/test'
+import { decode } from '../shared/schema.js'
+import { messageSourceSchema } from './message-source.js'
 import { watchMessage, watchMessagePreview } from './watch-message.js'
 
 const pipeline = {
@@ -51,6 +53,8 @@ it('presents existing pipeline notifications without confusing run status with w
     label: 'Pipeline · Running',
     title: 'Build Studio',
     status: 'in_progress',
+    commit: 'abcdef12345678',
+    attempt: 2,
     watching: false,
     highlights: ['browser (1): failure', 'design-system: in_progress'],
   })
@@ -59,6 +63,32 @@ it('presents existing pipeline notifications without confusing run status with w
   expect(watchMessage({ ...pipeline, text: pipeline.text.replace(/\n/g, '\r\n') })).toEqual(
     watchMessage(pipeline),
   )
+})
+
+it('only shows failed-step links from matching typed watch metadata', () => {
+  const url = 'https://github.com/dovocode/dovo-studio/actions/runs/123'
+  const failedStep = { name: 'Run browser suites', url: `${url}/job/456#step:3:1` }
+  const source = decode(messageSourceSchema, { kind: 'pipeline', url, failedStep })
+  expect(watchMessage({ ...pipeline, source })?.failedStep).toEqual(failedStep)
+  expect(watchMessage(pipeline)?.failedStep).toBeUndefined()
+  expect(watchMessage({ ...pipeline, source: { kind: 'pull-request', url } })).toBeNull()
+  for (const href of ['javascript:alert(1)', 'https://user:password@forge.example/job/1']) {
+    const message = {
+      ...pipeline,
+      source: { kind: 'pipeline' as const, url, failedStep: { ...failedStep, url: href } },
+    }
+    expect(watchMessage(message)?.failedStep).toBeUndefined()
+  }
+})
+
+it('keeps pipeline cards when a revision or valid attempt is unavailable', () => {
+  const text = pipeline.text.replace('Commit: abcdef12345678', 'Commit: ')
+  for (const attempt of ['', 'Attempt: 0\n', 'Attempt: 2.5\n', 'Attempt: 9007199254740992\n']) {
+    const parsed = watchMessage({ ...pipeline, text: text.replace('Attempt: 2\n', attempt) })
+    expect(parsed?.title).toBe('Build Studio')
+    expect(parsed?.commit).toBeUndefined()
+    expect(parsed?.attempt).toBeUndefined()
+  }
 })
 
 it('presents PR reviews, failed checks and comments, retaining complete feedback', () => {

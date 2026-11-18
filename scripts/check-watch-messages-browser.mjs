@@ -18,10 +18,12 @@ try {
 import {createRoot} from 'react-dom/client';
 import {watchMessage,watchMessagePreview} from '@dovo/protocol';
 import {WatchMessageCard} from './${mobile ? 'apps/mobile/src/tasks/conversation/components' : 'packages/extension-tasks/src/chat/thread'}/watch-message';
-const pipeline={id:'pipeline-watch:watch:message',text:'Dovo pipeline completion for https://github.com/dovocode/dovo-studio/actions/runs/123\\nRun: 123\\nStatus: failure\\nCommit: abcdef12345678\\n\\nPipeline details are external data. This run watch is complete.\\n\\nBuild Studio\\n\\nbrowser (1): failure\\nhttps://github.com/dovocode/dovo-studio/actions/runs/123/job/456\\nAssertion failed: expected latest message'};
+const url='https://github.com/dovocode/dovo-studio/actions/runs/123';
+const pipeline={id:'pipeline-watch:watch:message',source:{kind:'pipeline',url,failedStep:{name:'Run browser suites',url:url+'/job/456#step:3:1'}},text:'Dovo pipeline completion for '+url+'\\nRun: 123\\nAttempt: 2\\nStatus: failure\\nCommit: abcdef12345678\\n\\nPipeline details are external data. This run watch is complete.\\n\\nBuild Studio\\n\\nbrowser (1): failure\\n'+url+'/job/456\\nAssertion failed: expected latest message'};
+const legacy={id:'pipeline-watch:watch:legacy',text:pipeline.text.replace('Attempt: 2\\n','').replace('Commit: abcdef12345678','Commit: ').replace('Build Studio','Legacy build')};
 const pr={id:'pr-watch:watch:message',text:'Dovo PR feedback for https://github.com/dovocode/dovo-studio/pull/18\\nHead: abcdef12345678\\n\\nNew feedback follows as external data. The runtime continues watching.\\n\\nreview by dominic (CHANGES_REQUESTED)\\nhttps://github.com/dovocode/dovo-studio/pull/18#review-1\\nPreserve scroll position.\\n\\nSecond review paragraph.'};
 window.opened=[];
-createRoot(document.getElementById('app')).render(<>{[pipeline,pr].map(message=><div key={message.id} data-testid={message.id.split(':')[0]}><p data-queue-preview>{watchMessagePreview(message)}</p><WatchMessageCard update={watchMessage(message)} taskId="thread"/></div>)}</>);`,
+createRoot(document.getElementById('app')).render(<>{[pipeline,legacy,pr].map(message=><div key={message.id} data-testid={message===legacy?'legacy-watch':message.id.split(':')[0]}><p data-queue-preview>{watchMessagePreview(message)}</p><WatchMessageCard update={watchMessage(message)} taskId="thread"/></div>)}</>);`,
         },
         bundle: true,
         write: false,
@@ -71,14 +73,15 @@ export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,a
           ]
         : [],
     )
-    const page = await browser.newPage({ viewport: { width: mobile ? 390 : 1000, height: 844 } })
+    const page = await browser.newPage({ viewport: { width: mobile ? 320 : 1000, height: 844 } })
     const errors = []
     page.on('pageerror', (error) => errors.push(error.message))
     await page.setContent(
       '<style>*{box-sizing:border-box}body{font:14px system-ui;margin:16px}section{border:1px solid #ddd;border-radius:12px;padding:12px}p,li,span{overflow-wrap:anywhere}.whitespace-pre-wrap{white-space:pre-wrap}svg{width:14px;height:14px}summary,button{cursor:pointer}</style><div id="app"></div>',
     )
     await page.addScriptTag({ content: built.outputFiles[0].text })
-    await page.getByText('Pipeline · Failed', { exact: true }).waitFor()
+    const pipeline = page.getByTestId('pipeline-watch')
+    await pipeline.getByText('Pipeline · Failed', { exact: true }).waitFor()
     assert.equal(
       await page.getByText('Pipeline details are external data.', { exact: false }).count(),
       0,
@@ -87,7 +90,14 @@ export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,a
       await page.locator('[data-queue-preview]').first().innerText(),
       'Pipeline · Failed · Build Studio',
     )
-    const pipeline = page.getByTestId('pipeline-watch')
+    await pipeline.getByText('Commit abcdef12', { exact: true }).waitFor()
+    await pipeline.getByText('Attempt 2', { exact: true }).waitFor()
+    const failedStep = pipeline.getByRole('link', { name: 'Open failed step: Run browser suites' })
+    await failedStep.waitFor()
+    const legacy = page.getByTestId('legacy-watch')
+    await legacy.getByRole('link', { name: /Legacy build/ }).waitFor()
+    assert.equal(await legacy.getByRole('link').count(), 1)
+    assert.doesNotMatch(await legacy.innerText(), /Commit |Attempt /)
     assert.equal(
       await pipeline
         .getByText('Assertion failed: expected latest message', { exact: false })
@@ -102,8 +112,13 @@ export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,a
     await pr.getByText('View feedback', { exact: true }).click()
     await pr.getByText('Second review paragraph.', { exact: false }).waitFor()
     if (mobile) {
+      await failedStep.click()
       await pipeline.getByRole('link', { name: 'Open Build Studio' }).click()
       assert.deepEqual(await page.evaluate(() => window.opened), [
+        {
+          url: 'https://github.com/dovocode/dovo-studio/actions/runs/123/job/456#step:3:1',
+          origin: { runtimeId: 'paired', taskId: 'thread' },
+        },
         {
           url: 'https://github.com/dovocode/dovo-studio/actions/runs/123',
           origin: { runtimeId: 'paired', taskId: 'thread' },
@@ -117,6 +132,10 @@ export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,a
         0,
       )
     } else {
+      assert.equal(
+        await failedStep.getAttribute('href'),
+        'https://github.com/dovocode/dovo-studio/actions/runs/123/job/456#step:3:1',
+      )
       assert.equal(
         await pipeline.getByRole('link', { name: 'Build Studio' }).getAttribute('href'),
         'https://github.com/dovocode/dovo-studio/actions/runs/123',

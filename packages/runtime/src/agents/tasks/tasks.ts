@@ -952,10 +952,14 @@ export class Tasks {
     if (!turn) throw new HttpError(404, 'Turn not found')
     if (turn.status === 'running')
       throw new HttpError(409, 'Wait for this turn to finish before forking.')
-    const end = task.messages.findIndex((message) => message.id === turn.assistantId)
-    const history = (end >= 0 ? task.messages.slice(0, end + 1) : task.messages).filter(
-      (message) => message.role === 'assistant' || !message.file,
+    const messageId = turn.assistantId
+    const end = task.messages.findIndex(
+      (message) => message.id === messageId && message.role === 'assistant',
     )
+    if (end < 0) throw new HttpError(404, 'This turn has no reply to fork.')
+    const history = task.messages
+      .slice(0, end + 1)
+      .filter((message) => message.role === 'assistant' || !message.file)
     const snapshot = turn.checkpoint?.after
     const forkId = randomUUID()
     // The fork owns copies of its files, so it keeps them when the source thread is deleted.
@@ -980,11 +984,17 @@ export class Tasks {
         files: [],
         draft: '',
         example: false,
-        forkedFrom: { taskId: id, turnId, title: task.title, ...(snapshot ? { snapshot } : {}) },
+        forkedFrom: {
+          taskId: id,
+          turnId,
+          messageId,
+          title: task.title,
+          ...(snapshot ? { snapshot } : {}),
+        },
       }
       this.store.update((workspace) => ({ ...workspace, tasks: [...workspace.tasks, fork] }))
       this.activity?.add('task', fork.id, 'Forked from another task', { taskId: id, turnId })
-      return { id: fork.id }
+      return { id: fork.id, messageId }
     })
   }
   /** Continue the conversation in an independent worktree at the source's committed HEAD. */

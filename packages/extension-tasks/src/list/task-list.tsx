@@ -420,6 +420,8 @@ export function TaskList({
     setBulkBusy(true)
     setActionError('')
     const capturedEntries = selectedEntries
+    let confirmed = 0
+    let inFlight: TaskEntry | undefined
     const isCurrent = () => mounted.current && currentScope.current === scope
     const sourceIsCurrent = (entry: TaskEntry) => {
       const current = currentSources.current.find(
@@ -456,8 +458,16 @@ export function TaskList({
       )
         return
       for (const entry of capturedEntries) {
-        if (!isCurrent() || !sourceIsCurrent(entry)) return
+        if (!isCurrent()) return
+        if (!sourceIsCurrent(entry)) {
+          setActionError(
+            `${confirmed} confirmed · ${capturedEntries.length - confirmed} not attempted. The selection changed or ${entry.source.name} is unavailable.`,
+          )
+          await store.refreshRuntimes().catch(() => undefined)
+          return
+        }
         const client = taskActionClient(store, entry.source)
+        inFlight = entry
         if (action === 'archive' || action === 'delete')
           await client.request('/api/tasks/lifecycle', { id: entry.task.id, action }, responses.ok)
         else if (action === 'read' || action === 'unread') {
@@ -486,6 +496,8 @@ export function TaskList({
           await client.patch(entry.task, {
             snoozedUntil: until,
           })
+        confirmed += 1
+        inFlight = undefined
         if (!isCurrent()) return
         if ((action === 'archive' || action === 'delete') && entry.key === selectedMainKey)
           onDeselect()
@@ -496,10 +508,14 @@ export function TaskList({
         })
       }
       setSelected(new Set())
-      await store.refreshRuntimes()
+      await store.refreshRuntimes().catch(() => undefined)
     } catch (cause) {
       if (!isCurrent()) return
-      setActionError(cause instanceof Error ? cause.message : String(cause))
+      const reason = cause instanceof Error ? cause.message : String(cause)
+      const remaining = capturedEntries.length - confirmed - (inFlight ? 1 : 0)
+      setActionError(
+        `${confirmed} confirmed · ${remaining} not attempted.${inFlight ? ` Could not confirm “${inFlight.task.title}” on ${inFlight.source.name}. Check its state before retrying.` : ''} ${reason}`,
+      )
       await store.refreshRuntimes().catch(() => undefined)
     } finally {
       bulkLock.current = false
@@ -836,12 +852,14 @@ export function TaskList({
   // Rows share one menu element; rebuild it only when its count or disabled actions change.
   const blockedKey = selectionActions.map(({ id }) => (blockedAction(id) ? 1 : 0)).join('')
   const selectedCount = selectedEntries.length
+  const selectedComputerCount = new Set(selectedEntries.map(({ source }) => source.runtimeId)).size
   const selectionMenu = useMemo(() => {
     const blocked = (index: number) => blockedKey[index] === '1'
     return (
       <>
         <ContextMenu.Label className="px-2.5 py-1.5 text-xs text-muted-foreground">
           {selectedCount} threads selected
+          {selectedComputerCount > 1 && ` across ${selectedComputerCount} computers`}
         </ContextMenu.Label>
         {selectionActions.map(({ id, label }, index) =>
           id === 'snooze' ? (
@@ -884,6 +902,7 @@ export function TaskList({
     )
   }, [
     selectedCount,
+    selectedComputerCount,
     blockedKey,
     runBulk,
     preferences.taskSnoozeMinutes,
@@ -978,7 +997,7 @@ export function TaskList({
         </div>
         {(error || actionError || searchError) && (
           <p role="alert" className="px-3 pb-2 text-xs text-destructive">
-            {error || actionError || searchError}
+            {actionError || error || searchError}
           </p>
         )}
         <div

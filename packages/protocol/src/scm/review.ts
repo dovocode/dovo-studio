@@ -59,7 +59,13 @@ export const reviewProgressSchema = mutableStruct({
   /** Replaces `guide` when the request named the same guide. */
   guideState: Schema.optional(reviewGuideStateSchema),
   files: mutableArray(
-    mutableStruct({ path, fingerprint: Schema.String, viewed: Schema.Boolean, version: integer }),
+    mutableStruct({
+      path,
+      fingerprint: Schema.String,
+      viewed: Schema.Boolean,
+      changedSinceViewed: Schema.optional(Schema.Literal(true)),
+      version: integer,
+    }),
   ),
   groups: mutableArray(
     mutableStruct({

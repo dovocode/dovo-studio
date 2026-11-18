@@ -1,6 +1,14 @@
 import { expect, it } from 'vite-plus/test'
 import { moveThreadInfoSection, orderedThreadInfoSections, threadInfoSections } from './thread-info'
 
+it('shows the checkout before agent settings by default', () => {
+  expect(
+    orderedThreadInfoSections()
+      .slice(0, 2)
+      .map((section) => section.id),
+  ).toEqual(['project', 'settings'])
+})
+
 it('keeps saved order, ignores duplicate/removed keys and appends new sections', () => {
   const sections = orderedThreadInfoSections(['usage', 'removed', 'project', 'usage'])
   expect(sections.slice(0, 2).map((section) => section.id)).toEqual(['usage', 'project'])
@@ -10,8 +18,8 @@ it('keeps saved order, ignores duplicate/removed keys and appends new sections',
 it('reorders sections without dropping hidden or desktop-only preferences', () => {
   const before = orderedThreadInfoSections().map((section) => section.id)
   const moved = moveThreadInfoSection(before, 'scripts', -1, true)
-  expect(moved.indexOf('scripts')).toBeLessThan(moved.indexOf('project'))
+  expect(moved.indexOf('scripts')).toBeLessThan(moved.indexOf('sharing'))
   expect(moved).toContain('openIn')
-  expect(moveThreadInfoSection(before, 'sharing', -1)).toEqual(before)
+  expect(moveThreadInfoSection(before, 'project', -1)).toEqual(before)
   expect(moveThreadInfoSection(before, 'usage', 1)).toEqual(before)
 })

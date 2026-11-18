@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useDeferredValue, useId, useMemo, useState } from 'react'
 import { pullFileKind, type FileKind, type ReviewGroup, type FileTreeEntry } from '@dovo/protocol'
 import { ChevronRight, Layers } from 'lucide-react'
 import { ChangeTypeFilters } from './change-types'
@@ -33,6 +33,8 @@ export function FileReviewControls({
 
   const index = files.findIndex((file) => file.path === selected)
   const file = files[index]
+  const statusId = useId()
+  const changed = file?.changedSinceViewed
   const nextUnviewed = [...files.slice(index + 1), ...files.slice(0, index)].find(
     (file) => !file.viewed,
   )
@@ -48,6 +50,7 @@ export function FileReviewControls({
         <label aria-busy={busy} className="flex min-h-8 items-center gap-2">
           <Checkbox
             aria-label="File viewed"
+            aria-describedby={changed ? statusId : undefined}
             checked={file?.viewed ?? false}
             disabled={disabled || busy || !file}
             onCheckedChange={(checked) => onViewed(checked === true)}
@@ -96,6 +99,11 @@ export function FileReviewControls({
           Next unviewed
         </Button>
       </div>
+      {changed && (
+        <p id={statusId} role="status" className="text-xs text-status-warning">
+          {uiText('Changed since viewed')}
+        </p>
+      )}
       {error && (
         <p role="alert" className="flex items-center gap-2 text-xs text-destructive">
           {error}

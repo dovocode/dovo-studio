@@ -1,7 +1,26 @@
 import { decodeResult } from '../../shared/schema.js'
 import { describe, expect, it } from 'vite-plus/test'
-import { previewUrl, browserCommandSchema, desktopBrowserHostSchema } from './previews'
+import {
+  previewUrl,
+  browserCommandSchema,
+  desktopBrowserHostSchema,
+  isBrowserLoopbackAddress,
+} from './previews'
 describe('preview addresses', () => {
+  it.each([
+    ['http://localhost:3000/page', true],
+    ['http://127.0.0.2:3000', true],
+    ['http://[::1]:3000', true],
+    ['http://0.0.0.0:3000', true],
+    ['http://localhost.example.com', false],
+    ['http://127.0.0.1.example.com', false],
+    ['https://example.com/?next=http://localhost:3000', false],
+    ['ftp://localhost', false],
+    ['about:blank', false],
+    ['', false],
+  ])('classifies browser address %s', (address, expected) => {
+    expect(isBrowserLoopbackAddress(address)).toBe(expected)
+  })
   it('resolves loopback against the task runtime while retaining port, path and query', () => {
     expect(previewUrl('localhost:3000/demo?q=one', 'http://workstation.internal:8787')).toBe(
       'http://workstation.internal:3000/demo?q=one',

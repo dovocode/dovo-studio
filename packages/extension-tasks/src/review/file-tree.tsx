@@ -48,6 +48,7 @@ export function FileTree({
             return {
               path: file.path,
               viewed: file.viewed,
+              changedSinceViewed: file.changedSinceViewed,
               label: file.preview ? filePreviewLabel(file) : undefined,
               additions: file.preview ? undefined : (stats?.additions ?? 0),
               deletions: file.preview ? undefined : (stats?.deletions ?? 0),

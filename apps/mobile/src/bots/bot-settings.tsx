@@ -12,6 +12,7 @@ import { Sheet, useSheetNavigation } from '../ui/layout/sheet'
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   botResultSchema,
+  botLifecyclePresentation,
   responses,
   botRoutines,
   botWorkInbox,
@@ -89,6 +90,7 @@ function BotSettingsEditor({
   const baseline = useRef(task.bot)
   const bot = task.bot
   if (!bot) return null
+  const lifecycle = botLifecyclePresentation(bot.state, task)
   return (
     <BotEditor
       draftKey={detailDraftKey(profile?.connection ?? null, 'bot', task.id)}
@@ -177,11 +179,15 @@ function BotSettingsEditor({
       {(draft, retain) => (
         <>
           <View style={{ gap: 12 }}>
-            <Text>
-              {bot.state === 'paused'
-                ? uiText('Paused. New messages stay queued until you resume.')
-                : uiText('Active. This Bot keeps one conversation across its work.')}
+            <Text accessibilityLiveRegion="polite">
+              {uiText(lifecycle.policy)} · {uiText(lifecycle.activity)}
             </Text>
+            {lifecycle.queue && <Text>{uiText(lifecycle.queue)}</Text>}
+            <Text>{uiText(lifecycle.consequence)}</Text>
+            {!connected && <Text>{uiText('This computer is offline. Your draft is kept.')}</Text>}
+            {connected && !snapshot?.botsSupported && (
+              <Text>{uiText('Update this runtime to manage Bots.')}</Text>
+            )}
             {!!error && <Text accessibilityRole="alert">{error}</Text>}
             <Action
               label={bot.state === 'paused' ? uiText('Resume Bot') : uiText('Pause Bot')}
@@ -212,13 +218,6 @@ function BotSettingsEditor({
                 })
               }
             />
-            <Text>
-              <InterfaceText>
-                {
-                  'Pause holds new work. The current turn can finish. Use Stop in the chat to cancel it.'
-                }
-              </InterfaceText>
-            </Text>
             {snapshot?.botBackupSupported && (
               <>
                 <Choice

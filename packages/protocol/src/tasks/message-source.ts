@@ -6,7 +6,17 @@ import { watchMessage } from './watch-message.js'
 const messageSourceVariants = [
   mutableStruct({ kind: Schema.Literal('user') }),
   mutableStruct({
-    kind: Schema.Literals(['pipeline', 'pull-request']),
+    kind: Schema.Literal('pipeline'),
+    url: urlSchema({ protocol: /^https?$/ }),
+    failedStep: Schema.optional(
+      mutableStruct({
+        name: maxValue(Schema.String, 300),
+        url: urlSchema({ protocol: /^https?$/ }),
+      }),
+    ),
+  }),
+  mutableStruct({
+    kind: Schema.Literal('pull-request'),
     url: urlSchema({ protocol: /^https?$/ }),
   }),
   mutableStruct({

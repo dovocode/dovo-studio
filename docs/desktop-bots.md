@@ -24,8 +24,10 @@ give the chat more space. The harness, model and access controls edit the real t
 keep the existing provider session and permission rules. They do not create a separate browser
 session or establish browser isolation.
 
-**Pause Bot** holds new turns. You can still queue messages. Current work may finish; use the normal
-Stop control to cancel it. **Resume Bot** releases queued work. The runtime owns this behavior.
+Bot settings on desktop, web, and mobile show the new-work policy separately from the current turn.
+**Pause Bot** holds new turns. You can still queue messages. Use **Stop** in the chat to interrupt a
+running turn. **Resume Bot** lets ready work start when the Bot is idle. It does not resume a queue
+you paused separately or unpause an individual message.
 
 Memory notes use the Bot memory scope. Dovo memory tools give access to the Bot coordinator and the
 paired human. Delegated agents do not inherit them. An agent with full file access on the same

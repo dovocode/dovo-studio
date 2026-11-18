@@ -25,6 +25,19 @@ export function previewUrl(input: string, runtimeAddress?: string): string {
     url.hostname = new URL(runtimeAddress).hostname
   return url.href
 }
+export function isBrowserLoopbackAddress(address: string): boolean {
+  try {
+    const url = new URL(address)
+    return (
+      ['http:', 'https:'].includes(url.protocol) &&
+      (['localhost', '[::1]', '0.0.0.0'].includes(url.hostname) ||
+        /^127(?:\.\d+){3}$/.test(url.hostname))
+    )
+  } catch {
+    return false
+  }
+}
+
 export function deviceDeepLink(input: string): string {
   const value = input.trim()
   if (!/^[a-z][a-z0-9+.-]*:/i.test(value) || /\p{Cc}/u.test(value))

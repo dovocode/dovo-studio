@@ -318,6 +318,7 @@ try {
             window.render()
           }, originalPulls)
           await other.getByText('Repository CI: passed', { exact: true }).waitFor()
+          await other.getByText('Review merge readiness', { exact: true }).waitFor()
         }
         if (width === 1280) {
           const sidebar = page.getByRole('navigation', {

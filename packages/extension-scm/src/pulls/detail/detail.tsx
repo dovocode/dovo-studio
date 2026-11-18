@@ -4,6 +4,7 @@ import { PullLinkedThreads } from './linked-threads'
 import { AuthorAvatar } from '../author-avatar'
 import {
   buildPullReviewObjective,
+  pullChangesRevisionPending,
   pullChangesSnapshot,
   pullReadiness,
   pullLinkedTasks,
@@ -14,7 +15,7 @@ import { PullSectionStatus } from './section-status'
 import { PullStack } from './stack'
 import { CreatePull } from '../list/create'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useLayoutEffect, useRef } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { usePullDetail } from './use-pull-detail'
 import {
   useWorkspace,
@@ -71,7 +72,9 @@ type PullDetailProps = {
   onChanged: () => void
   onSelect?: (number: number) => void
   onTabChange?: (tab: Exclude<PullTab, 'review'>) => void
-  initialTab?: Exclude<PullTab, 'review'>
+  initialTab?: PullTab
+  configureInitialReview?: boolean
+  onInitialReviewOpened?: () => void
   initialFragment?: string
   /**
    * The thread showing this PR. Agent feedback goes to it only when it explicitly links this PR;
@@ -113,6 +116,8 @@ function PullDetailContent({
   onTabChange,
   embedded = false,
   initialTab,
+  configureInitialReview,
+  onInitialReviewOpened,
   initialFragment = '',
   linkedThread,
 }: PullDetailProps) {
@@ -215,11 +220,13 @@ function PullDetailContent({
       signal: { ...pipelineStatus, label: pipelineStatus.label.replace(/^Pipeline runs: /, '') },
     },
   ]
-  const previousChanges = useRef<typeof detail>(null)
-  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
+  const [previousChanges, setPreviousChanges] = useState<typeof detail>(null)
+  const revisionPending = pullChangesRevisionPending(detail, previousChanges)
+  const changesCurrent = sections.changes.ready && !revisionPending
+  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges)
   useEffect(() => {
-    if (sections.changes.ready) previousChanges.current = detail
-  }, [detail, sections.changes.ready])
+    if (changesCurrent) setPreviousChanges(detail)
+  }, [detail, changesCurrent])
 
   const content = useRef<HTMLDivElement>(null)
   const scrollPositions = useRef(
@@ -231,6 +238,7 @@ function PullDetailContent({
   const [changesOpened, setChangesOpened] = useApplicationState(tab === 'changes')
   const [checksOpened, setChecksOpened] = useApplicationState(tab === 'checks')
   const [reviewOpened, setReviewOpened] = useApplicationState(tab === 'review')
+  const [reviewConfigurationRequest, setReviewConfigurationRequest] = useApplicationState(0)
   const [reviewStatus, setReviewStatus] = useApplicationState<{
     running: boolean
     findings: number
@@ -295,7 +303,10 @@ function PullDetailContent({
   useEffect(() => {
     setSummaryFragment('')
     if (initialTab) selectTab(initialTab)
-  }, [initialTab, initialFragment])
+    if (initialTab === 'review' && configureInitialReview)
+      setReviewConfigurationRequest((request) => request + 1)
+    if (initialTab === 'review') onInitialReviewOpened?.()
+  }, [initialTab, initialFragment, configureInitialReview])
   const scrolledFragment = useRef('')
   useEffect(() => {
     if (!initialFragment || !detail || scrolledFragment.current === initialFragment) return
@@ -737,6 +748,7 @@ function PullDetailContent({
                   detail={detail}
                   onAsk={(selection) => setAsking({ selection })}
                   onStatus={setReviewStatus}
+                  configurationRequest={reviewConfigurationRequest}
                   onRefresh={changed}
                   onOpenStackReview={(member, runtimeId) => {
                     if (
@@ -987,14 +999,30 @@ function PullDetailContent({
             >
               <PullSectionStatus label={uiText('Files')} section={sections.changes} />
               <PullSectionStatus label="Code discussion" section={sections.discussion} />
-              {!sections.changes.ready && changesDetail && (
+              {revisionPending && (
+                <div className="mb-3 flex flex-wrap items-center gap-2">
+                  <p role="status" className="text-xs text-muted-foreground">
+                    New revision available. Showing the previous revision read-only. Viewed marks
+                    stay for unchanged files. Line drafts stay on their original revision.
+                  </p>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={!connected || !sections.changes.ready || detail.stale}
+                    onClick={() => setPreviousChanges(detail)}
+                  >
+                    Switch revision
+                  </Button>
+                </div>
+              )}
+              {!revisionPending && !changesCurrent && changesDetail && (
                 <p role="status" className="mb-3 text-xs text-muted-foreground">
                   Updating files · showing the previous revision read-only.
                 </p>
               )}
               {changesOpened && changesDetail && (
                 <PullChanges
-                  active={tab === 'changes' && sections.changes.ready}
+                  active={tab === 'changes' && changesCurrent}
                   key={`${repositoryId}:${detail.pull.connectionId ?? ''}:${detail.pull.url}`}
                   detail={changesDetail}
                   embedded={embedded}

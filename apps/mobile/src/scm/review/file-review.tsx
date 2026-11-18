@@ -60,6 +60,8 @@ export function MobileFileReview({
   )
   const index = files.findIndex((file) => file.path === selected)
   const file = files[index]
+  const changed = file?.changedSinceViewed
+  const changedLabel = uiText('Changed since viewed')
   const nextUnviewed = [...files.slice(index + 1), ...files.slice(0, index)].find(
     (file) => !file.viewed,
   )
@@ -112,6 +114,7 @@ export function MobileFileReview({
         <Pressable
           accessibilityRole="checkbox"
           accessibilityLabel={uiText('File viewed')}
+          accessibilityHint={changed ? changedLabel : undefined}
           accessibilityState={{
             checked: file?.viewed ?? false,
             disabled: disabled || busy || !file,
@@ -138,7 +141,7 @@ export function MobileFileReview({
               importantForAccessibility="no-hide-descendants"
               style={{ opacity: 0, fontSize: 12 }}
             >
-              <InterfaceText>{'Saving…'}</InterfaceText>
+              {uiText('Saving…')}
             </Text>
             <Text
               accessibilityLiveRegion="polite"
@@ -223,6 +226,11 @@ export function MobileFileReview({
           )}
         </View>
       </View>
+      {changed && (
+        <Text accessibilityLiveRegion="polite" style={{ color: colors.warning, fontSize: 12 }}>
+          {changedLabel}
+        </Text>
+      )}
       {!!error && (
         <View>
           <Text style={styles.error}>{error}</Text>

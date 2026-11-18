@@ -25,12 +25,25 @@ it('prioritizes approvals and includes delegated descendants without unrelated i
         { id: 'worker', delegation: { parentTaskId: 'second', parentRunId: 'run', key: 'worker' } },
       ],
     },
-    approvals: [{ taskId: 'worker' }, { taskId: 'unrelated' }],
-    questions: [{ taskId: 'first' }],
+    approvals: [
+      { id: 'unrelated-approval', taskId: 'unrelated' },
+      { id: 'worker-approval', taskId: 'worker' },
+      { id: 'second-approval', taskId: 'second' },
+    ],
+    questions: [{ id: 'first-question', taskId: 'first' }],
   }
   expect(sideThreadAttention(snapshot, 'first')).toBe('input')
   expect(sideThreadAttention(snapshot, 'second')).toBe('approval')
-  expect(sideThreadAttentionTarget(snapshot, 'parent')).toEqual({ id: 'second', kind: 'approval' })
+  expect(sideThreadAttentionTarget(snapshot, 'parent')).toEqual({
+    id: 'second',
+    kind: 'approval',
+    requestId: 'worker-approval',
+  })
+  expect(sideThreadAttentionTarget({ ...snapshot, approvals: [] }, 'parent')).toEqual({
+    id: 'first',
+    kind: 'input',
+    requestId: 'first-question',
+  })
   expect(sideThreadAttentionTarget(snapshot, 'unrelated')).toBeUndefined()
   expect(sideThreadAttention(snapshot, 'unrelated')).toBeUndefined()
 })
@@ -39,7 +52,7 @@ it('ignores ordinary questions routed to an agent and clears when input is resol
   const snapshot = {
     workspace: { tasks: [child('child')] },
     approvals: [],
-    questions: [{ taskId: 'child', routing: 'parent' as const }],
+    questions: [{ id: 'parent-question', taskId: 'child', routing: 'parent' as const }],
   }
   expect(sideThreadAttention(snapshot, 'child')).toBeUndefined()
   expect(sideThreadAttentionTarget(snapshot, 'parent')).toBeUndefined()

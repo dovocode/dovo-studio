@@ -18,12 +18,21 @@ const errors = Array.from({ length: 25 }, (_, index) => ({
   message: `Error ${index}`,
 }))
 
+it('includes versions by default but leaves optional diagnostic records off', () => {
+  expect(defaultProblemReportInclude).toEqual({
+    versions: true,
+    diagnostics: false,
+    clientErrors: false,
+    clientTimeline: false,
+  })
+})
+
 it('builds a trimmed request and sends client errors only when included', () => {
   const request = problemReportRequest(
     {
       description: '  Threads stop loading \n',
       expected: '  ',
-      include: defaultProblemReportInclude,
+      include: { ...defaultProblemReportInclude, clientErrors: true },
     },
     client,
     errors,
@@ -32,9 +41,9 @@ it('builds a trimmed request and sends client errors only when included', () => 
   expect(request).not.toHaveProperty('expected')
   expect(request.include).toEqual({
     versions: true,
-    diagnostics: true,
+    diagnostics: false,
     clientErrors: true,
-    clientTimeline: true,
+    clientTimeline: false,
   })
   expect(request.clientErrors).toHaveLength(MAX_PROBLEM_REPORT_CLIENT_ERRORS)
   expect(request.clientErrors.at(-1)?.message).toBe('Error 24')

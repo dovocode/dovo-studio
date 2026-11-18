@@ -6,6 +6,7 @@ import { botScope } from './bot-scope'
 import { useEffect, useRef, useState } from 'react'
 import {
   botResultSchema,
+  botLifecyclePresentation,
   responses,
   workspacePatchResultSchema,
   emptyBotResources,
@@ -122,16 +123,19 @@ export function BotSettings({
       )
     }
   }
+  const lifecycle = botLifecyclePresentation(hostBot.state, task)
   return (
     <div className="grid gap-5 p-4 text-sm">
       <div hidden={section !== 'settings'} className="space-y-5">
         <section className="grid gap-2">
           <h2 className="font-semibold">Assistant</h2>
-          <p role="status" className="text-xs text-muted-foreground">
-            {hostBot.state === 'paused'
-              ? 'Paused. Messages queue until you resume. Current work may finish.'
-              : 'Active. This thread keeps your Bot’s conversation and work.'}
-          </p>
+          <div role="status" className="text-xs text-muted-foreground">
+            <p>
+              {uiText(lifecycle.policy)} · {uiText(lifecycle.activity)}
+            </p>
+            {lifecycle.queue && <p>{uiText(lifecycle.queue)}</p>}
+            <p>{uiText(lifecycle.consequence)}</p>
+          </div>
           {!store.connected && <p role="status">This computer is offline. Your draft is kept.</p>}
           {!supported && <p role="status">Update this runtime to manage Bots.</p>}
           <Button

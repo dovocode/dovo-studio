@@ -7,7 +7,9 @@ export type WatchMessage = {
   title: string
   url: string
   status?: string
-  commit: string
+  commit?: string
+  attempt?: number
+  failedStep?: { name: string; url: string }
   watching: boolean
   details: string
   highlights: string[]
@@ -30,9 +32,10 @@ export function watchMessage(message: {
   text: string
   source?: MessageSource
 }): WatchMessage | null {
-  if (message.source && !['pipeline', 'pull-request'].includes(message.source.kind)) return null
   const pipeline = message.id.startsWith('pipeline-watch:')
   if (!pipeline && !message.id.startsWith('pr-watch:')) return null
+  const kind = pipeline ? 'pipeline' : 'pull-request'
+  if (message.source && message.source.kind !== kind) return null
   const text = message.text.replace(/\r\n/g, '\n')
   const header = text.match(
     pipeline
@@ -51,10 +54,13 @@ export function watchMessage(message: {
     )
   )
     return null
-  const commit = metadata.match(pipeline ? /^Commit: (.+)$/m : /^Head: (.+)$/m)?.[1]
+  const commit = metadata.match(pipeline ? /^Commit: (.+)$/m : /^Head: (.+)$/m)?.[1]?.trim()
   const run = metadata.match(/^Run: (.+)$/m)?.[1]
   const status = metadata.match(/^Status: (.+)$/m)?.[1]
-  if (!commit || (pipeline && (!run || !status))) return null
+  if (pipeline ? !run || !status : !commit) return null
+  const attempt = pipeline ? Number(metadata.match(/^Attempt: ([1-9]\d*)$/m)?.[1]) : NaN
+  const step = message.source?.kind === 'pipeline' ? message.source.failedStep : undefined
+  const stepUrl = step && webUrl(step.url)
   const details = sections.slice(2).join('\n\n').trim()
   const highlights = details
     .split('\n')
@@ -68,12 +74,14 @@ export function watchMessage(message: {
     .replace('/- #', ' #')
     .slice(1)
   return {
-    kind: pipeline ? 'pipeline' : 'pull-request',
+    kind,
     label: pipeline ? `Pipeline · ${pipelineSignal(status ?? '').label}` : 'PR feedback',
     title: pipeline ? details.split('\n')[0] || `Run ${run}` : pullPath,
     url,
     status,
-    commit,
+    commit: commit || undefined,
+    attempt: Number.isSafeInteger(attempt) ? attempt : undefined,
+    failedStep: step && stepUrl && step.name.trim() ? { name: step.name, url: stepUrl } : undefined,
     watching: instruction.includes('continues watching'),
     details,
     highlights,

@@ -53,6 +53,7 @@ function LocalPullCodeReviewPanel({
   repositoryId,
   detail,
   sourceReady = true,
+  configurationRequest = 0,
   onAsk,
   onStatus,
   onRefresh,
@@ -60,6 +61,7 @@ function LocalPullCodeReviewPanel({
 }: {
   repositoryId: string
   sourceReady?: boolean
+  configurationRequest?: number
   detail: PullDetail
   onAsk: (selection: PullReviewSelection) => void
   onStatus?: (status: { running: boolean; findings: number; stale: boolean }) => void
@@ -97,6 +99,9 @@ function LocalPullCodeReviewPanel({
       setAdditional((items) => (items ?? []).map((item, at) => (at === index - 1 ? value : item)))
   }
   const [settings, setSettings] = useState(false)
+  useEffect(() => {
+    if (configurationRequest) setSettings(true)
+  }, [configurationRequest])
   const [fullStack, setFullStack] = useState(false)
   const [preview, setPreview] = useState<PullCodeReview>()
   const [patch, setPatch] = useState<string>()
@@ -145,6 +150,7 @@ function LocalPullCodeReviewPanel({
     current?.coverage.find((file) => file.path === patch) ??
     current?.coverage.find((file) => file.state === 'supplied')
   const ready =
+    !!review.report &&
     !imageBusy &&
     reviewers.every(
       (reviewer) => reviewer?.model && supportsPullReview(reviewer.provider, review.depth),
@@ -207,6 +213,13 @@ function LocalPullCodeReviewPanel({
       )}
       {(settings || !reviewers.every((reviewer) => reviewer?.model)) && (
         <div className="space-y-3 border-b p-4">
+          {review.report && (
+            <p className="text-xs text-muted-foreground">
+              {review.report.oneRunSettingsSupported
+                ? uiText('These settings apply to this run. Saved defaults stay unchanged.')
+                : uiText('This runtime saves reviewer settings as defaults when you start a run.')}
+            </p>
+          )}
           {reviewers.map((reviewer, index) => (
             <div key={index} className="space-y-3 rounded-lg border p-3">
               <div className="flex items-center justify-between text-xs">
@@ -484,7 +497,7 @@ function LocalPullCodeReviewPanel({
             </p>
           )}
           <Button size="sm" disabled={!!blocked || !ready} onClick={() => start()}>
-            {uiText('Review with agent')}
+            {uiText('Start agent review')}
           </Button>
         </div>
       )}

@@ -1,6 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
-import { botContextMessages, botInstructions } from './bots.js'
+import { botContextMessages, botInstructions, botLifecyclePresentation } from './bots.js'
 import { compareBotActivity } from './bot-activity.js'
 import { botSchema, decode, taskSchema } from '../index.js'
 
@@ -11,6 +11,33 @@ const bot = decode(botSchema, {
   revision: randomUUID(),
   createdAt: '2026-11-01T00:00:00Z',
   updatedAt: '2026-11-01T00:00:00Z',
+})
+
+it('separates the Bot hold from an active turn and a separately paused queue', () => {
+  const running = { status: 'running', queuePaused: true } as const
+  expect(botLifecyclePresentation('paused', running)).toEqual({
+    policy: 'New work paused',
+    activity: 'Current turn still running',
+    queue: 'The queue is paused separately.',
+    consequence: 'Resume Bot does not resume the queue.',
+  })
+  expect(botLifecyclePresentation('active', running).queue).toBe('The queue is paused separately.')
+})
+
+it('distinguishes ready work after a restart from a paused message', () => {
+  const message = { id: 'queued', role: 'user', text: 'Run checks', createdAt: '' } as const
+  expect(
+    botLifecyclePresentation('paused', {
+      status: 'done',
+      queue: [message],
+      queuePaused: true,
+      restartRecovery: { kind: 'queue', automatic: false },
+    }).consequence,
+  ).toBe('Ready work can start when the Bot is idle.')
+  expect(
+    botLifecyclePresentation('paused', { status: 'done', queue: [{ ...message, paused: true }] })
+      .consequence,
+  ).toBe('Resume Bot does not unpause that message.')
 })
 
 it('excludes only reset ranges and retains messages after each reset', () => {

@@ -24,6 +24,7 @@ function addressLabel(address: string) {
 /** Native and host-rendered pages share navigation, touch targets and options. */
 export function BrowserToolbar({
   address,
+  context,
   onAddress,
   onNavigate,
   back,
@@ -56,6 +57,7 @@ export function BrowserToolbar({
   onCloseSession?: () => void
   onDiagnostics?: () => void
   address: string
+  context?: string
   onAddress: (value: string) => void
   onNavigate: () => void
   back: boolean
@@ -87,6 +89,7 @@ export function BrowserToolbar({
         paddingVertical: 4,
       }}
     >
+      {context && <Text style={{ color: colors.muted, paddingHorizontal: 8 }}>{context}</Text>}
       <Glass
         testID="Browser toolbar surface"
         style={{ borderRadius: 28, paddingHorizontal: 4, gap: 4 }}

@@ -537,12 +537,7 @@ export function TaskProjectPanel({
                 panel
                 task={task}
                 verifiedBranch={gitState ? gitState.branch || null : undefined}
-                label={
-                  gitState?.branch ||
-                  task.checkoutBranch ||
-                  (task.execution === 'worktree' ? 'Worktree' : repo.branch) ||
-                  'Local checkout'
-                }
+                label={repo.branch || 'Local checkout'}
               />
               <p
                 className="mt-1 flex items-center gap-1.5 text-[11px] text-muted-foreground"
@@ -822,9 +817,12 @@ export function TaskProjectPanel({
               onClick={() => onSurface('changes')}
             >
               <span className="flex items-center gap-2.5">
-                <FileDiff className="size-4 shrink-0" /> Changes
-                {task.files.length > 0 &&
-                  ` · ${task.files.length} ${task.files.length === 1 ? 'file' : 'files'}`}
+                <FileDiff className="size-4 shrink-0" />
+                {task.files.length === 1
+                  ? uiText('Review 1 changed file')
+                  : task.files.length > 1
+                    ? uiText('Review {value0} changed files', { value0: task.files.length })
+                    : uiText('Changes')}
               </span>
               {!!(stats.additions || stats.deletions) && (
                 <span className="studio-project-diff">

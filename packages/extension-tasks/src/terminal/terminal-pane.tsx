@@ -10,6 +10,7 @@ import { mutableStruct } from '@dovo/protocol'
 import type { TerminalFileLink } from './terminal-file-links'
 import {
   STUDIO_TERMINAL_SCOPE,
+  runtimeComputerName,
   terminalGroups,
   splitTerminal,
   type TerminalGroup,
@@ -78,7 +79,12 @@ export function TerminalPane({
 }) {
   const uiText = useInterfaceText()
 
-  const { snapshot, workspace, connected, request, connection } = useWorkspace()
+  const { snapshot, workspace, connected, request, connection, runtimes, activeRuntimeId } =
+    useWorkspace()
+  const computer = runtimeComputerName({
+    profile: runtimes?.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
+    snapshot,
+  })
   const scopedSession = taskId === STUDIO_TERMINAL_SCOPE ? sessionScopeId : undefined
   const sharedScope = JSON.stringify([connection?.runtimeId ?? connection?.address, taskId])
   const scope = JSON.stringify([
@@ -564,6 +570,22 @@ export function TerminalPane({
         <IconButton label="Hide terminal pane" className="size-6" onClick={onClose}>
           <ChevronDown size={12} />
         </IconButton>
+        {active && (
+          <div className="ml-auto flex shrink-0 gap-2 px-2 text-xs text-muted-foreground">
+            <span>
+              {computer} · {checkoutLabel(active)}
+            </span>
+            {active.exited ? (
+              <span role="status">
+                {active.exitCode == null
+                  ? uiText('Process exited')
+                  : uiText('Process exited ({value0})', { value0: active.exitCode })}
+              </span>
+            ) : !connected ? (
+              <span role="status">{uiText('Computer offline · Input unavailable')}</span>
+            ) : null}
+          </div>
+        )}
       </header>
       {!!sessions.length && (
         <div

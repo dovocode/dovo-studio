@@ -520,6 +520,8 @@ it('reverts one file, forks from a turn with its files, retries, and marks revie
   const fork = s.store.task(String(forked.body.id))
   expect(fork).toMatchObject({ status: 'draft', execution: 'worktree' })
   expect(fork.messages.map((message) => message.role)).toEqual(['user', 'assistant'])
+  expect(forked.body.messageId).toBe(fork.messages[1]?.id)
+  expect(fork.forkedFrom?.messageId).toBe(fork.messages[1]?.id)
   const forkCwd = await s.checkouts.directory(fork.id)
   cleanups.push(() => rm(forkCwd, { recursive: true, force: true }))
   expect(await readFile(join(forkCwd, 'hello.txt'), 'utf8')).toBe('attempt 1\n')

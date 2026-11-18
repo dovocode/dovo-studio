@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { buildFileTree, fileIconKind, type FileTreeEntry, type FileTreeNode } from '@dovo/protocol'
 import {
   Check,
@@ -70,6 +71,7 @@ export function FileBrowserTree({
   defaultExpandedDepth?: number
   showChangeBars?: boolean
 }) {
+  const uiText = useInterfaceText()
   const container = useRef<HTMLDivElement>(null)
   const maximumChanges = showChangeBars
     ? files.reduce(
@@ -190,7 +192,7 @@ export function FileBrowserTree({
           data-path={node.path}
           data-parent={parent}
           aria-current={selected === node.path ? 'true' : undefined}
-          aria-label={`${node.path}${node.viewed === undefined ? '' : node.viewed ? ', viewed' : ', unviewed'}`}
+          aria-label={`${node.path}${node.changedSinceViewed ? uiText(', changed since viewed') : node.viewed === undefined ? '' : node.viewed ? ', viewed' : ', unviewed'}`}
           title={node.path}
           disabled={disabled}
           onClick={() => onSelect(node.path)}
@@ -206,6 +208,11 @@ export function FileBrowserTree({
           <FileTypeIcon path={node.path} />
           <span className="min-w-0 flex-1">
             <span className="block truncate">{node.name}</span>
+            {node.changedSinceViewed && (
+              <span className="block text-[0.625rem] text-status-warning">
+                {uiText('Changed since viewed')}
+              </span>
+            )}
             {flat && node.path.includes('/') && (
               <span className="block truncate text-[0.625rem] text-muted-foreground">
                 {node.path.slice(0, node.path.lastIndexOf('/'))}

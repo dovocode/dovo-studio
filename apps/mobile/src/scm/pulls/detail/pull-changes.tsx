@@ -129,10 +129,14 @@ export function PullChanges({
   const allFiles = useMemo(
     () =>
       orderReviewFiles(
-        reviewFiles.map((file) => ({
-          ...file,
-          viewed: fileState(file.path, fingerprints.get(file.path) ?? '')?.viewed ?? false,
-        })),
+        reviewFiles.map((file) => {
+          const state = fileState(file.path, fingerprints.get(file.path) ?? '')
+          return {
+            ...file,
+            viewed: state?.viewed ?? false,
+            changedSinceViewed: state?.changedSinceViewed,
+          }
+        }),
         review.progress?.groups ?? [],
         related,
       ),
@@ -166,6 +170,7 @@ export function PullChanges({
           path: item.path,
           changeKind: pullFileKind(item),
           viewed: item.viewed,
+          changedSinceViewed: item.changedSinceViewed,
           additions: item.additions ?? undefined,
           deletions: item.deletions ?? undefined,
         }))}
@@ -229,6 +234,7 @@ export function PullChanges({
               path: file.path,
               changeKind: pullFileKind(file),
               viewed: file.viewed,
+              changedSinceViewed: file.changedSinceViewed,
               additions: file.additions ?? undefined,
               deletions: file.deletions ?? undefined,
             }))}
@@ -242,7 +248,9 @@ export function PullChanges({
             onViewed={(viewed) =>
               review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
             }
-            disabled={!review.ready || !fileState(file.path, fingerprints.get(file.path) ?? '')}
+            disabled={
+              !active || !review.ready || !fileState(file.path, fingerprints.get(file.path) ?? '')
+            }
             busy={review.busy}
             error={review.error}
             onRetry={review.reload}

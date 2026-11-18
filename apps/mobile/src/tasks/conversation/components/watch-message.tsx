@@ -14,6 +14,12 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
   const [expanded, setExpanded] = useState(false)
   const origin = useLinkOrigin(taskId)
   const tone = update.status ? pipelineSignal(update.status).tone : 'neutral'
+  const open = (url: string) => {
+    void openAppLink(url, false, origin).catch((cause: unknown) =>
+      Alert.alert(uiText('Could not open link'), String(cause)),
+    )
+  }
+  const failedStep = update.failedStep
   return (
     <View
       accessibilityLabel={update.label}
@@ -26,7 +32,9 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
         backgroundColor: colors.surface,
       }}
     >
-      <View style={{ flexDirection: 'row', justifyContent: 'space-between', gap: 8 }}>
+      <View
+        style={{ flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-between', gap: 8 }}
+      >
         <Text
           style={[
             styles.muted,
@@ -50,18 +58,41 @@ export function WatchMessageCard({ update, taskId }: { update: WatchMessage; tas
       <Pressable
         accessibilityRole="link"
         accessibilityLabel={uiText('Open {value0}', { value0: update.title })}
-        onPress={() => {
-          void openAppLink(update.url, false, origin).catch((cause: unknown) =>
-            Alert.alert(uiText('Could not open link'), String(cause)),
-          )
-        }}
+        onPress={() => open(update.url)}
         style={{ minHeight: 44, justifyContent: 'center' }}
       >
         <Text style={[styles.text, { fontWeight: '600', color: colors.accent }]}>
           {update.title} ↗
         </Text>
       </Pressable>
-      <Text style={[styles.muted, { fontSize: 12 }]}>{update.commit.slice(0, 8)}</Text>
+      {(update.commit || update.attempt) && (
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', columnGap: 12 }}>
+          {update.commit && (
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              {update.kind === 'pipeline'
+                ? uiText('Commit {value0}', { value0: update.commit.slice(0, 8) })
+                : update.commit.slice(0, 8)}
+            </Text>
+          )}
+          {update.attempt && (
+            <Text style={[styles.muted, { fontSize: 12 }]}>
+              {uiText('Attempt {value0}', { value0: update.attempt })}
+            </Text>
+          )}
+        </View>
+      )}
+      {failedStep && (
+        <Pressable
+          accessibilityRole="link"
+          accessibilityLabel={uiText('Open failed step: {value0}', { value0: failedStep.name })}
+          onPress={() => open(failedStep.url)}
+          style={{ minHeight: 44, justifyContent: 'center' }}
+        >
+          <Text style={[styles.text, { color: colors.accent, textDecorationLine: 'underline' }]}>
+            {uiText('Open failed step: {value0}', { value0: failedStep.name })} ↗
+          </Text>
+        </Pressable>
+      )}
       {update.highlights.slice(0, 4).map((item, index) => (
         <Text key={index} style={[styles.text, { fontSize: 12 }]}>
           {item}

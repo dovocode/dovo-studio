@@ -6,6 +6,7 @@ export function taskHref(
   parent?: { runtimeId: string; runtimeIdentity?: string; taskId: string; title: string },
   runtimeIdentity?: string,
   nativeAgentKey?: string,
+  approvalId?: string,
 ) {
   return {
     pathname: '/(tasks)/thread/[runtimeId]/[taskId]' as const,
@@ -15,6 +16,7 @@ export function taskHref(
       ...(nativeAgentKey ? { nativeAgentKey } : {}),
       ...(runtimeIdentity ? { runtimeIdentity } : {}),
       ...(questionId ? { questionId } : {}),
+      ...(approvalId ? { approvalId } : {}),
       ...(parent
         ? {
             parentRuntimeId: parent.runtimeId,

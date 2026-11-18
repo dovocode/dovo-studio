@@ -334,6 +334,8 @@ try {
           project: 'Project',
           url: 'https://github.com/team/project/actions/runs/9',
           status: 'in_progress',
+          revision: 'abcdef12345678',
+          attempt: 2,
           progress: { completed: 2, total: 4, partial: false },
         },
       ]
@@ -343,6 +345,8 @@ try {
     await progress.waitFor({ state: 'attached' })
     assert.equal(await progress.getAttribute(mobile ? 'aria-valuenow' : 'value'), '2')
     assert.match(await page.locator('#app').innerText(), /2\/4 jobs/)
+    await page.getByText('Commit abcdef12', { exact: true }).waitFor()
+    await page.getByText('Attempt 2', { exact: true }).waitFor()
     await page.evaluate(() => {
       window.items[0].progress.partial = true
     })
@@ -354,6 +358,16 @@ try {
       window.render()
     })
     await page.getByText('Offline · Last known progress', { exact: true }).waitFor()
+    await page.getByText('Attempt 2', { exact: true }).waitFor()
+    await page.evaluate(() => {
+      delete window.items[0].revision
+      delete window.items[0].attempt
+      window.store.connected = true
+      window.render()
+    })
+    await page.getByText('Attempt 2', { exact: true }).waitFor({ state: 'detached' })
+    assert.equal(await page.getByText('Commit abcdef12', { exact: true }).count(), 0)
+    assert.equal(await progress.count(), 1)
     await page.evaluate(() => {
       window.items = []
       window.store.connected = true

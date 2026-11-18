@@ -84,6 +84,54 @@ it('keeps commands, status, turn offsets and apps while dropping raw data and ou
   expect(compactActivityEvents([compact])).toEqual([compact])
   expect(full.payload).toContain('large-output')
 })
+it('keeps the published Codex summary without retaining raw reasoning or tool output', () => {
+  const persisted = {
+    ...event({
+      toolId: 'reasoning:codex:item',
+      turnId: 'turn',
+      status: 'completed',
+      reasoning: { text: 'Checked the changed files.' },
+      event: { content: 'private raw content' },
+    }),
+    kind: 'reasoning',
+  }
+  const [compact] = compactActivityEvents([persisted])
+  expect(compact.payload).not.toContain('private raw content')
+  expect(toolPresentation(compact.payload, compact.summary)).toMatchObject({
+    output: 'Checked the changed files.',
+    title: 'Reasoning summary',
+  })
+  expect(compactActivityEvents([compact])).toEqual([compact])
+  const unclassified = {
+    ...persisted,
+    payload: persisted.payload.replace('reasoning:codex:', 'unclassified:'),
+  }
+  expect(compactActivityEvents([unclassified])[0].payload).not.toContain(
+    'Checked the changed files.',
+  )
+})
+it.each(['claude', 'acp', 'hermes', 'copilot', 'cursor', 'vibe', 'muse', 'opencode'])(
+  'keeps %s reasoning that the harness already exposed for display',
+  (harness) => {
+    const full = {
+      ...event({
+        turnId: 'turn',
+        toolId: `reasoning:${harness}:item`,
+        status: 'completed',
+        reasoning: { text: 'Checking the fixture.' },
+        event: { privateField: 'raw-only' },
+      }),
+      kind: 'reasoning',
+    }
+    const [compact] = compactActivityEvents([full])
+    expect(compact.payload).not.toContain('raw-only')
+    expect(toolPresentation(compact.payload, compact.summary)).toMatchObject({
+      kind: 'reasoning',
+      output: 'Checking the fixture.',
+    })
+    expect(compactActivityEvents([compact])).toEqual([compact])
+  },
+)
 it('preserves multiple Claude tool identities while dropping result text and full arguments', () => {
   const full = event({
     turnId: 'turn',

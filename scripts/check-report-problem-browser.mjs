@@ -127,15 +127,17 @@ try {
   assert.equal(await page.locator('[data-agent]').textContent(), 'codex')
   const checkboxes = page.getByRole('checkbox')
   assert.equal(await checkboxes.count(), 4)
-  for (const box of await checkboxes.all())
-    assert.equal(await box.getAttribute('aria-checked'), 'true')
+  assert.deepEqual(
+    await Promise.all((await checkboxes.all()).map((box) => box.getAttribute('aria-checked'))),
+    ['true', 'false', 'false', 'false'],
+  )
 
   await page
     .getByLabel('What happened? (required)')
     .fill(`Threads stop syncing after I paste my token ${deviceToken}`)
   await page.getByLabel('What did you expect? (optional)').fill('Threads keep syncing.')
-  await page.getByRole('checkbox').nth(2).click()
-  assert.equal(await page.getByRole('checkbox').nth(2).getAttribute('aria-checked'), 'false')
+  await checkboxes.nth(1).click()
+  await checkboxes.nth(3).click()
   await previewButton.click()
 
   await page.getByRole('region', { name: 'First message' }).waitFor()

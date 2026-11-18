@@ -10,9 +10,9 @@ starts on; **Separate Bots overview** starts off. These Appearance settings are 
 either, both, or neither. The separate overview appears in the desktop activity bar or the mobile
 More menu. Direct Bot conversation links still work when its overview is hidden.
 
-Search starts hidden. Scroll up to show it, or use the keyboard search shortcut. Scroll down to hide
-it. Search stays visible while focused or while its query is nonempty. Switching tabs keeps the
-query and list position.
+Use **Search threads** in the Threads header. It stays visible as you scroll and does not open the
+keyboard until you select it or use the keyboard search shortcut. Switching tabs keeps the query and
+list position. Car mode hides search.
 
 Browser and Terminal appear in the bottom tabs only when enabled in **Settings → General →
 Experimental**. Car mode hides both. PRs keeps its bottom tab. The header's More menu opens the

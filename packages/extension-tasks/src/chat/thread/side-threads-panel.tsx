@@ -17,9 +17,10 @@ import {
 } from 'lucide-react'
 import {
   randomUUID,
-  sideThreadAttention,
+  sideThreadRequest,
   sideThreadAttentionTarget,
   type SideThreadAttention,
+  type SideThreadRequest,
 } from '@dovo/protocol'
 import {
   formatDateTime,
@@ -227,9 +228,10 @@ export function useSideThreadAttention() {
   const { workspace, snapshot } = useWorkspace()
   const approvals = snapshot?.approvals
   const questions = snapshot?.questions
+  const runtimeId = snapshot?.runtimeId
   return useMemo(
-    () => ({ workspace, approvals: approvals ?? [], questions: questions ?? [] }),
-    [workspace, approvals, questions],
+    () => ({ workspace, runtimeId, approvals: approvals ?? [], questions: questions ?? [] }),
+    [workspace, runtimeId, approvals, questions],
   )
 }
 
@@ -244,40 +246,22 @@ export function SideThreadAttentionBadge({ kind }: { kind: SideThreadAttention }
   )
 }
 
-/**
- * Brings a side chat's approval or question into view through its normal controls. The side
- * chat may still be loading its conversation, so this waits briefly for them to render.
- */
-export function focusSideThreadAttention(childId: string, kind: SideThreadAttention) {
-  const selector = `[data-human-input="${kind === 'approval' ? 'approval' : 'question'}"][data-human-input-task="${CSS.escape(childId)}"]`
-  const deadline = Date.now() + 3000
-  const attempt = () => {
-    const controls = document.querySelector<HTMLElement>(selector)
-    if (!controls) {
-      if (Date.now() < deadline) requestAnimationFrame(attempt)
-      return
-    }
-    controls.scrollIntoView({ block: 'nearest' })
-    const first = controls.querySelector<HTMLElement>(
-      'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [tabindex="0"]',
-    )
-    ;(first ?? controls).focus({ preventScroll: true })
-  }
-  requestAnimationFrame(attempt)
-}
-
 /** A parent shows when any of its side chats, or their delegated agents, waits for someone. */
 export function SideThreadAttentionBanner({
   task,
   onAttend,
 }: {
   task: Task
-  onAttend: (childId: string, kind: SideThreadAttention) => void
+  onAttend: (target: SideThreadRequest) => void
 }) {
   const attention = useSideThreadAttention()
   const target = sideThreadAttentionTarget(attention, task.id)
   if (!target) return null
   const child = attention.workspace.tasks.find((item) => item.id === target.id)
+  const approvalTitle =
+    target.kind === 'approval'
+      ? attention.approvals.find((approval) => approval.id === target.requestId)?.title
+      : undefined
   return (
     <div
       role="status"
@@ -288,12 +272,13 @@ export function SideThreadAttentionBanner({
       <span className="min-w-0 flex-1 truncate">
         Side chat <span className="font-medium">{child?.title ?? 'Untitled'}</span>{' '}
         {target.kind === 'approval' ? 'is waiting for approval.' : 'is waiting for your answer.'}
+        {approvalTitle && <span className="ml-1">{approvalTitle}</span>}
       </span>
       <Button
         size="sm"
         variant="outline"
         className="h-6 px-2 text-[0.6875rem]"
-        onClick={() => onAttend(target.id, target.kind)}
+        onClick={() => onAttend(target)}
       >
         {attentionActions[target.kind]}
       </Button>
@@ -445,7 +430,7 @@ export function SideThreadsPanel({
   openId?: string
   onOpen: (childId: string) => void
   onOpenThread: (childId: string) => void
-  onAttend: (childId: string, kind: SideThreadAttention) => void
+  onAttend: (target: SideThreadRequest) => void
   onBroughtBack: (handoff: SideThreadHandoff, child: Task) => void
   onDiscarded: (childId: string) => void
   readOnlyQuestions: ReactNode
@@ -588,7 +573,8 @@ export function SideThreadsPanel({
                       threadId: child.id,
                       title: child.title,
                     })
-              const kind = local ? sideThreadAttention(attention, child.id) : undefined
+              const target = local ? sideThreadRequest(attention, child.id) : undefined
+              const kind = target?.kind
               return (
                 <li
                   key={JSON.stringify([runtimeId, child.id])}
@@ -659,13 +645,13 @@ export function SideThreadsPanel({
                         Open source thread
                       </Button>
                     )}
-                    {kind && (
+                    {target && kind && (
                       <Button
                         size="sm"
                         variant="outline"
                         className="h-6 px-2 text-[0.6875rem]"
                         aria-label={`${attentionActions[kind]} in ${child.title}`}
-                        onClick={() => onAttend(child.id, kind)}
+                        onClick={() => onAttend(target)}
                       >
                         {attentionActions[kind]}
                       </Button>

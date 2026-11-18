@@ -237,7 +237,12 @@ export function compactActivityEvents(events: Event[]): Event[] {
           presentation: {
             ...presentation,
             input: presentation.kind === 'command' ? presentation.input : '',
-            output: '',
+            output:
+              call.kind === 'reasoning' &&
+              fields?.toolId.startsWith('reasoning:') &&
+              presentation.kind === 'reasoning'
+                ? presentation.output
+                : '',
             // Compact search keeps its pattern in `detail`; otherwise mark that context
             // still has to be derived from the retained raw args.
             ...(presentation.kind === 'search' && !presentation.detail ? { contextAt: 1 } : {}),

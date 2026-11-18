@@ -56,6 +56,14 @@ Edited contributions remain intact. If the same PR receives a push, **Use latest
 preserves the question and clears stale line selections. A different account or source requires
 reopening.
 
+## Side chat requests
+
+On desktop and web, use **Open approval** or **Answer** in the parent notice or side chat list. Dovo
+opens the side chat and focuses the selected request text, not an approval button. Requests from
+delegated agents can appear in the side chat that started them. The link stays on the current
+runtime and does not move focus to a different request if the selected one is no longer pending. On
+mobile, **Open question** opens the selected question. **Open approval** opens the side chat.
+
 ## Refresh behavior
 
 Opening a PR, activating a section, reconnecting, or returning to the app requests a fresh read from

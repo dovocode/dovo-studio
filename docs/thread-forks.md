@@ -8,18 +8,19 @@ unchanged.
 1. Open the thread.
 2. On desktop or web, point to a message. On iPhone, tap the message.
 3. Select **Fork conversation**.
-4. Read the confirmation and select **Fork**.
+4. Check the selected message and the file source in the confirmation. Select **Fork**.
 
-Dovo opens the new thread. Its title starts with "Fork:". Type the next message to start it.
+Dovo opens the new thread at the copied message when the reply link is available. Its title starts
+with "Fork:". Type the next message to start it.
 
 On desktop and web, if another thread or view is open when a fork finishes, Dovo keeps it open. Open
 the saved fork from the thread list. This also applies when you select **Fork** in the composer's
 **More message actions** menu to send a draft in a new thread.
 
-Agent replies also have **Fork with files from this turn**. **Fork conversation** copies only the
-conversation and does not rewind files. **Fork with files from this turn** copies the conversation
-up to that reply. If that turn saved a file snapshot, the new thread gets its own worktree with the
-files as they were after that turn.
+Agent replies also have a turn fork. Choose **Fork with files from this turn** if the turn has a
+saved file snapshot. Otherwise, choose **Fork from this reply**. Both actions copy the conversation
+up to and including the selected reply. The confirmation shows the reply and the files the fork will
+use.
 
 You can fork user messages and assistant replies. The action is not available while the turn of that
 message runs. Earlier settled messages stay available. Review comments cannot start a fork.
@@ -28,25 +29,31 @@ message runs. Earlier settled messages stay available. Review comments cannot st
 
 - The conversation up to and including the selected message. Attachments are copied.
 - The harness, model and access settings of the source thread.
-- A link to the source. Select **Forked from <thread title>** to open the source thread. On desktop
-  and web, the link is in the thread header of a wide window, and Dovo scrolls to the selected
-  message. On iPhone, the link is above the conversation and opens the source thread.
+- A link to the source. Select **Forked from <thread title>** to open the source thread at the
+  selected message when Dovo has its link. Look in the thread header on desktop and web or above the
+  conversation on iPhone.
 
-The fork does not contain later messages, turn records, queued messages, the draft, the checklist or
-linked projects. It starts as a draft and has no provider session.
+The fork does not contain later messages, turn records, queued messages, the draft or the checklist.
+A turn fork keeps the linked project settings. A conversation fork does not. The new thread starts
+as a draft and has no provider session.
 
 Both fork actions give the new thread its own copy of each attachment. The fork keeps its files when
 you delete the source thread. A thread forked with files by an older Dovo version can still refer to
 the files of its source thread. Dovo copies those files from the thread that stores them. If a file
 is no longer stored, the fork keeps the message without that file.
 
-## Files are not rewound
+## Which files the fork uses
 
-A fork does not restore files to the state of the selected message. The fork uses the checkout
-setting for new threads in that project. If the project starts new threads in a worktree, the fork
-gets its own new worktree when it first runs. If the project uses the local checkout, the fork works
-on the current files in that checkout. Dovo does not change files in the source checkout when it
-creates a fork.
+- **Fork conversation** uses the project's checkout setting for new threads. It does not restore a
+  snapshot.
+- **Fork with files from this turn** uses the saved snapshot of the primary project in a new
+  worktree. It does not restore snapshots for linked projects.
+- **Fork from this reply** uses the source thread's checkout mode without a snapshot. In worktree
+  mode, Dovo starts a new worktree from a Git commit. It does not copy uncommitted source changes.
+  In local mode, the fork uses the project checkout's current files. A General thread starts with
+  its own empty scratch workspace.
+
+Dovo does not change files in the source checkout when it creates a fork.
 
 ## How the agent receives the history
 
@@ -73,18 +80,23 @@ Dovo explains the reason. The rules match **Continue elsewhere**:
 ## Compatibility
 
 The runtime advertises `messageForkSupported` in its snapshot. Clients show **Fork conversation**
-only when the connected runtime has this flag. With an older runtime, agent replies show only **Fork
-with files from this turn**.
+only when the connected runtime has this flag. With an older runtime, agent replies still have the
+turn fork. If the runtime does not return a reply link, Dovo opens the new thread without scrolling
+to a message. The source link also opens the thread without scrolling if the fork has no saved
+message ID.
 
 The runtime endpoint is `POST /api/tasks/fork-message` with `id`, `messageId` and a client-chosen
 `forkId`. A retry with the same `forkId` returns the same thread.
+
+`POST /api/tasks/fork` takes `id` and `turnId`. New runtimes return the starting `messageId` and
+store it with the fork's source reference. Clients also accept older responses with only `id`.
 
 ## Verification
 
 Run the focused checks:
 
 ```sh
-pnpm exec vp test packages/runtime/src/http/message-fork.test.ts packages/protocol/src/tasks/task-fork.test.ts packages/extension-tasks/src/chat/actions/fork-navigation.test.ts
+pnpm exec vp test run packages/runtime/src/http/message-fork.test.ts packages/runtime/src/agents/tasks/quality-of-life.test.ts packages/protocol/src/tasks/task-fork.test.ts packages/extension-tasks/src/chat/actions/fork-navigation.test.ts
 pnpm --filter @dovo/protocol --filter @dovo/runtime --filter @dovo/extension-tasks --filter @dovo/mobile typecheck
 ```
 

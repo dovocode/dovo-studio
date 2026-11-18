@@ -20,6 +20,13 @@ it('shares persisted marks, invalidates only changed files, and rejects stale pa
     expect(new ReviewMarks(db).files('repo/PR1').every((file) => file.viewed)).toBe(true)
     const updated = mobile.reconcile('repo/PR1', [{ path: 'a.ts', fingerprint: 'a2' }, files[1]])
     expect(updated.map((file) => file.viewed)).toEqual([false, true])
+    expect(updated.map((file) => file.changedSinceViewed)).toEqual([true, undefined])
+    expect(new ReviewMarks(db).files('repo/PR1')).toEqual(updated)
+    const next = mobile.reconcile('repo/PR1', [{ path: 'a.ts', fingerprint: 'a3' }, files[1]])
+    expect(next.map((file) => file.changedSinceViewed)).toEqual([true, undefined])
+    expect(() => mobile.set('repo/PR1', { ...updated[0], viewed: true })).toThrow(
+      'viewed flag changed',
+    )
     expect(() => desktop.set('repo/PR1', { ...initial[0], viewed: true })).toThrow(
       'viewed flag changed',
     )
@@ -29,9 +36,45 @@ it('shares persisted marks, invalidates only changed files, and rejects stale pa
     expect(desktop.files('repo/PR1').map((file) => file.path)).toEqual(['b.ts'])
     desktop.reconcile('repo/PR1', files)
     expect(desktop.files('repo/PR1')[0].viewed).toBe(false)
+    expect(desktop.files('repo/PR1')[0].changedSinceViewed).toBeUndefined()
     expect(() => desktop.set('repo/PR1', { ...initial[0], viewed: true })).toThrow(
       'viewed flag changed',
     )
+  } finally {
+    db.close()
+  }
+})
+it('migrates legacy marks and clears changed history only when the current file is viewed', () => {
+  const db = openDatabase(':memory:')
+  try {
+    db.exec(`CREATE TABLE review_marks (scope TEXT NOT NULL, path TEXT NOT NULL,
+      fingerprint TEXT NOT NULL, viewed INTEGER NOT NULL, version INTEGER NOT NULL,
+      PRIMARY KEY(scope,path));
+      INSERT INTO review_marks VALUES ('scope','viewed.ts','before',1,7), ('scope','unread.ts','before',0,3)`)
+    const marks = new ReviewMarks(db)
+    expect(marks.files('scope')).toEqual([
+      { path: 'unread.ts', fingerprint: 'before', viewed: false, version: 3 },
+      { path: 'viewed.ts', fingerprint: 'before', viewed: true, version: 7 },
+    ])
+    const changed = marks.reconcile('scope', [
+      { path: 'unread.ts', fingerprint: 'after' },
+      { path: 'viewed.ts', fingerprint: 'after' },
+    ])
+    expect(changed.map((file) => file.changedSinceViewed)).toEqual([undefined, true])
+    marks.set('scope', { ...changed[1], viewed: false })
+    const stillChanged = marks.files('scope')[1]
+    expect(stillChanged.changedSinceViewed).toBe(true)
+    marks.set('scope', { ...stillChanged, viewed: true })
+    const reviewed = marks.files('scope')[1]
+    expect(reviewed).toMatchObject({ viewed: true, version: 10 })
+    expect(reviewed.changedSinceViewed).toBeUndefined()
+    marks.set('scope', { ...reviewed, viewed: false })
+    expect(marks.reconcile('scope', [{ path: 'viewed.ts', fingerprint: 'next' }])[0]).toEqual({
+      path: 'viewed.ts',
+      fingerprint: 'next',
+      viewed: false,
+      version: 12,
+    })
   } finally {
     db.close()
   }

@@ -12,6 +12,7 @@ import {
   forgeConnectionsSchema,
   type ForgeConnection,
   runtimeComputerName,
+  pullChangesRevisionPending,
   pullChangesSnapshot,
   pullReadiness,
 } from '@dovo/protocol'
@@ -66,6 +67,7 @@ export function PullDetail({
   connectionId,
   onBack,
   initialTab,
+  initialAgentReview,
   initialFragment = '',
   initialNavigationUrl,
   backLabel: backLabelOverride,
@@ -76,6 +78,7 @@ export function PullDetail({
   connectionId?: string
   onBack: () => void
   initialTab?: 'overview' | 'changes' | 'checks'
+  initialAgentReview?: boolean
   initialFragment?: string
   initialNavigationUrl?: string
   backLabel?: string
@@ -155,11 +158,13 @@ export function PullDetail({
     acceptCurrentAccount,
     readConnected,
   } = usePullDetail(repositoryId, number, account, { tab })
-  const previousChanges = useRef<typeof detail>(null)
-  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges.current)
+  const [previousChanges, setPreviousChanges] = useState<typeof detail>(null)
+  const revisionPending = pullChangesRevisionPending(detail, previousChanges)
+  const changesCurrent = sections.changes.ready && !revisionPending
+  const changesDetail = pullChangesSnapshot(detail, sections.changes.ready, previousChanges)
   useEffect(() => {
-    if (sections.changes.ready) previousChanges.current = detail
-  }, [detail, sections.changes.ready])
+    if (changesCurrent) setPreviousChanges(detail)
+  }, [detail, changesCurrent])
   const onPosted = () => {
     invalidate()
     invalidatePullList(readCache, repositoryId)
@@ -584,6 +589,7 @@ export function PullDetail({
                     ])}
                     repositoryId={repositoryId}
                     detail={detail}
+                    initiallyOpen={initialAgentReview}
                     onRefresh={refresh}
                     onOpenStackReview={(member, runtimeId) =>
                       navigateAfterSheet(() =>
@@ -835,7 +841,22 @@ export function PullDetail({
                   label={uiText('Code discussion')}
                   section={sections.discussion}
                 />
-                {!sections.changes.ready && changesDetail && (
+                {revisionPending && (
+                  <View style={{ gap: 8 }}>
+                    <Text style={styles.muted} accessibilityLiveRegion="polite">
+                      {uiText(
+                        'New revision available. Showing the previous revision read-only. Viewed marks stay for unchanged files.',
+                      )}
+                    </Text>
+                    <Action
+                      secondary
+                      label={uiText('Switch revision')}
+                      disabled={!readConnected || !sections.changes.ready || detail.stale}
+                      onPress={() => setPreviousChanges(detail)}
+                    />
+                  </View>
+                )}
+                {!revisionPending && !changesCurrent && changesDetail && (
                   <Text style={styles.muted} accessibilityRole="text">
                     <InterfaceText>
                       {'Updating files · showing the previous revision read-only.'}
@@ -844,12 +865,12 @@ export function PullDetail({
                 )}
                 {changesOpened && changesDetail && (
                   <PullChanges
-                    active={tab === 'changes' && sections.changes.ready}
+                    active={tab === 'changes' && changesCurrent}
                     key={`${repositoryId}:${detail.pull.number}`}
                     repositoryId={repositoryId}
                     detail={changesDetail}
                     onAskAgent={
-                      !sections.changes.ready || actionDisabled
+                      !changesCurrent || actionDisabled
                         ? undefined
                         : (path) => setAgentContext({ detail: changesDetail, path })
                     }
@@ -858,9 +879,9 @@ export function PullDetail({
                     fragment={fragment}
                     onAnchor={tab === 'changes' ? scrollToAnchor : undefined}
                     onOpen={open}
-                    onAction={actionDisabled || !sections.changes.ready ? undefined : openAction}
+                    onAction={actionDisabled || !changesCurrent ? undefined : openAction}
                     onLineComment={
-                      actionDisabled || !sections.changes.ready
+                      actionDisabled || !changesCurrent
                         ? undefined
                         : (path) => {
                             lineOrigin.current = detail
@@ -915,6 +936,7 @@ export function PullDetail({
         <LineComment
           repositoryId={repositoryId}
           detail={lineOrigin.current ?? detail}
+          latestDetail={detail}
           path={lineComment}
           onClose={() => setLineComment(null)}
           onDone={onPosted}

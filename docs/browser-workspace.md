@@ -46,6 +46,10 @@ Shared Browser sessions are separate from the thread's right-side preview. Profi
 reused across both surfaces, but their login cookies are isolated; signing in on one does not sign
 you in on the other.
 
+The browser context label shows whether you are in Browser workspace or Thread preview. It also
+shows the device or computer that runs the browser and the profile when available. In a remote
+browser, `Local address on [computer]` means the address refers to that computer, not your device.
+
 When Browser workspace is off, **Open in Dovo** uses a standalone preview window. In that window,
 links with `target="_blank"` and `window.open` open child previews directly. They do not ask you to
 choose where to open the link again. Child previews keep the preview session, form submissions and

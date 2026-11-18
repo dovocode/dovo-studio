@@ -124,6 +124,7 @@ import {
   browserSelectionSchema,
   previewUrl,
   previewPresets,
+  isBrowserLoopbackAddress,
   previewDevicesSchema,
   previewResultSchema,
   responses,
@@ -2960,6 +2961,19 @@ function BrowserContent({
     websiteProfile,
     remoteOnline,
   }
+  const browserOwner =
+    mode === 'remote'
+      ? ((shared ? selectedRuntime : runtimes.find((entry) => entry.profile.id === activeRuntimeId))
+          ?.profile.name ?? 'Unavailable computer')
+      : 'This device'
+  const browserLocation =
+    mode === 'remote' && isBrowserLoopbackAddress(history.url || url)
+      ? `Local address on ${browserOwner}`
+      : browserOwner
+  const browserProfile = isPrivateBrowserProfile(profileId)
+    ? 'Private session'
+    : (websiteProfile?.name ??
+      (profileId === 'default' ? 'Default profile' : 'Unavailable profile'))
   const restorePreviewOpener = () => {
     if (!selectedTab.previewOf || !previewSource) return
     // A pointer or keyboard focus on the retained toolbar returns to its page before
@@ -3767,6 +3781,12 @@ function BrowserContent({
       )}
 
       {selectedTab.previewOf && <div className="@container/browser shrink-0">{navigation()}</div>}
+      {mode !== 'devices' && (
+        <p className="shrink-0 break-words border-b px-3 py-1 text-xs text-muted-foreground">
+          {browserPageOnly ? 'Link preview' : shared ? 'Browser workspace' : 'Thread preview'} ·{' '}
+          {browserLocation} · {browserProfile}
+        </p>
+      )}
       {mode === 'web' && browser && url && (
         <BrowserFindBar
           key={browserKey}

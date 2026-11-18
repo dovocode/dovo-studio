@@ -5,8 +5,8 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
 // Shared fixture state: the runtime reply mode, recorded requests and the rendered message.
-const fixture = `window.requests=[];window.navigations=[];window.prompts=[];window.mode='ok';
-window.respond=async(path,input)=>{window.requests.push({path,input});if(window.mode==='lost'){window.mode='ok';throw new Error('Connection lost');}return {id:input.forkId??'turn-fork'}};`
+const fixture = `window.requests=[];window.navigations=[];window.prompts=[];window.reveals=[];window.mode='ok';
+window.respond=async(path,input)=>{window.requests.push({path,input});if(window.mode==='lost'){window.mode='ok';throw new Error('Connection lost');}return {id:input.forkId??'turn-fork',...(path==='/api/tasks/fork'&&window.state.supported?{messageId:'answer-1'}:{})}};`
 const options = (contents) => ({
   stdin: { contents, resolveDir: root, loader: 'tsx' },
   bundle: true,
@@ -30,12 +30,12 @@ import {ForkMessage} from '${desktopFolder}fork-message';
 import {ForkTurn} from '${desktopFolder}fork-turn';
 ${fixture}
 window.state={supported:true,task:{id:'task',status:'review'},status:'completed',message:{id:'user-1',role:'user',text:'First request'}};
-function App(){const[state,setState]=useState(window.state);window.update=next=>setState(old=>{window.state={...old,...next};return window.state});return <><ForkMessage key={state.message.id} taskId="task" message={state.message} status={state.status}/>{state.turnId&&<ForkTurn taskId="task" turnId={state.turnId}/>}</>}
+function App(){const[state,setState]=useState(window.state);window.update=next=>setState(old=>{window.state={...old,...next};return window.state});return <><ForkMessage key={state.message.id} taskId="task" message={state.message} status={state.status}/>{state.turn&&<ForkTurn taskId="task" turn={state.turn} message={state.message}/>}</>}
 createRoot(document.getElementById('app')).render(<App/>);`),
   [
     {
       path: '@dovo/studio-core',
-      contents: `export const useWorkspace=()=>({connected:true,workspace:{tasks:[window.state.task]},snapshot:window.state.supported?{messageForkSupported:true}:{},request:(path,input)=>window.respond(path,input)});
+      contents: `export const useWorkspace=()=>({connected:true,workspace:{tasks:[window.state.task],repositories:[{id:'repo',taskDefaults:{execution:'worktree'}}]},snapshot:window.state.supported?{messageForkSupported:true}:{},request:(path,input)=>window.respond(path,input)});
 export const useConfirmation=()=>async options=>{window.prompts.push(options);return window.confirmResult??true};
 export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});`,
     },
@@ -59,7 +59,7 @@ createRoot(document.getElementById('app')).render(<App/>);`),
     {
       path: 'react-native',
       contents: `export const Platform={OS:'ios'};export const AccessibilityInfo={announceForAccessibility(){}};export const ActionSheetIOS={showActionSheetWithOptions(){}};
-export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.text==='Fork')?.onPress?.()}};
+export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});if(window.confirmResult!==false)buttons?.find(button=>button.text==='Fork')?.onPress?.()}};
 export const View=({children})=><div>{children}</div>;
 export const Pressable=({children,accessibilityLabel,accessibilityHint,onPress,disabled})=><button aria-label={accessibilityLabel} title={accessibilityHint} disabled={disabled} onClick={onPress}>{children}</button>;`,
     },
@@ -91,7 +91,12 @@ export const Pressable=({children,accessibilityLabel,accessibilityHint,onPress,d
     {
       path: '../../../runtime/connection/provider',
       importer: mobileFolder,
-      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',snapshot:window.state.supported?{messageForkSupported:true,workspace:{agents:[]}}:{workspace:{agents:[]}},call:(path,input)=>window.respond(path,input)});`,
+      contents: `export const useRuntime=()=>({connected:true,activeId:'computer',profile:{connection:{address:'http://computer',token:'test'}},snapshot:{messageForkSupported:window.state.supported,workspace:{agents:[],repositories:[]}},call:(path,input)=>window.respond(path,input)});`,
+    },
+    {
+      path: '../message-reveal',
+      importer: mobileFolder,
+      contents: `export const requestMessageReveal=(connection,taskId,messageId)=>window.reveals.push({address:connection.address,taskId,messageId});`,
     },
     {
       path: '../state/provider',
@@ -127,6 +132,7 @@ try {
   const forkButton = (page) => page.getByRole('button', { name: /^Fork conversation/ })
   const filesButton = (page) =>
     page.getByRole('button', { name: /^Fork with files from this turn/ })
+  const replyButton = (page) => page.getByRole('button', { name: 'Fork from this reply' })
 
   {
     const { page, errors } = await open(desktop)
@@ -144,10 +150,13 @@ try {
     assert.deepEqual(await page.evaluate(() => window.navigations[0]), {
       viewId: 'tasks',
       entityId: retried.input.forkId,
+      messageId: 'user-1',
     })
     const prompt = await page.evaluate(() => window.prompts[0])
     assert.match(prompt.description, /Files are not rewound/)
     assert.match(prompt.description, /up to and including this message/)
+    assert.match(prompt.description, /local checkout/)
+    assert.equal(prompt.details, 'Selected message: First request')
     assert.match((await forkButton(page).getAttribute('aria-label')) ?? '', /not rewound/)
     // The next fork is a new request.
     await forkButton(page).click()
@@ -209,21 +218,45 @@ try {
     )
     await forkButton(page).waitFor()
     // A settled reply offers both forks with distinct labels. The files fork keeps its turn request.
-    await page.evaluate(() =>
-      window.update({ task: { id: 'task', status: 'review' }, turnId: 'turn-1' }),
-    )
+    await page.evaluate(() => {
+      window.confirmResult = false
+      window.update({
+        task: { id: 'task', status: 'review', repositoryId: 'repo', execution: 'main' },
+        turn: { id: 'turn-1', checkpoint: { after: 'snapshot-tree' } },
+      })
+    })
     await forkButton(page).waitFor()
     await filesButton(page).click()
-    await page.waitForFunction(() => window.requests.length === 4)
+    await page.waitForFunction(() => window.prompts.length === 5)
+    const snapshotPrompt = await page.evaluate(() => window.prompts.at(-1))
+    assert.match(snapshotPrompt.description, /new worktree.*saved snapshot/)
+    assert.equal(snapshotPrompt.details, 'Selected reply: First answer')
+    assert.equal(await page.evaluate(() => window.requests.length), 3)
+    await page.evaluate(() => (window.confirmResult = true))
+    await filesButton(page).click()
+    await page.waitForFunction(() => window.navigations.at(-1)?.entityId === 'turn-fork')
     assert.deepEqual(await page.evaluate(() => window.requests[3]), {
       path: '/api/tasks/fork',
       input: { id: 'task', turnId: 'turn-1' },
     })
-    assert.match((await filesButton(page).getAttribute('aria-label')) ?? '', /this turn’s files/)
-    // Older runtimes keep only the files fork.
-    await page.evaluate(() => window.update({ supported: false }))
+    assert.equal(await page.evaluate(() => window.navigations.at(-1).messageId), 'answer-1')
+    await forkButton(page).click()
+    await page.waitForFunction(() => window.requests.length === 5)
+    assert.match(await page.evaluate(() => window.prompts.at(-1).description), /from a Git commit/)
+    // An older runtime keeps the reply fork and returns no message anchor.
+    await page.evaluate(() => window.update({ supported: false, turn: { id: 'turn-1' } }))
     await forkButton(page).waitFor({ state: 'detached' })
-    await filesButton(page).waitFor()
+    await filesButton(page).waitFor({ state: 'detached' })
+    await replyButton(page).click()
+    await page.waitForFunction(() => window.requests.length === 6)
+    assert.match(
+      await page.evaluate(() => window.prompts.at(-1).description),
+      /no saved file snapshot.*local checkout/,
+    )
+    assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+      viewId: 'tasks',
+      entityId: 'turn-fork',
+    })
     assert.deepEqual(errors, [])
     await page.close()
     console.log(
@@ -246,6 +279,12 @@ try {
     const [confirmation] = await page.evaluate(() => window.alerts)
     assert.equal(confirmation.title, 'Fork conversation?')
     assert.match(confirmation.message, /Files are not rewound/)
+    assert.match(confirmation.message, /Selected message: First request/)
+    assert.deepEqual(await page.evaluate(() => window.reveals[0]), {
+      address: 'http://computer',
+      taskId: request.input.forkId,
+      messageId: 'user-1',
+    })
     // Running turns hide the action.
     await page.evaluate(() => window.update({ status: 'running' }))
     await forkButton(page).waitFor({ state: 'detached' })
@@ -267,8 +306,26 @@ try {
     )
     await forkButton(page).waitFor()
     await filesButton(page).waitFor({ state: 'detached' })
-    await page.evaluate(() => window.update({ messageId: 'answer-1', user: false }))
+    await page.evaluate(() => {
+      window.confirmResult = false
+      window.update({ messageId: 'answer-1', user: false })
+    })
     await forkButton(page).waitFor()
+    await replyButton(page).click()
+    const noSnapshot = await page.evaluate(() => window.alerts.at(-1))
+    assert.equal(noSnapshot.title, 'Fork from this reply?')
+    assert.match(noSnapshot.message, /Selected reply: First answer/)
+    assert.match(noSnapshot.message, /no saved file snapshot.*local checkout/)
+    assert.equal(await page.evaluate(() => window.requests.length), 1)
+    await page.evaluate(() => {
+      window.confirmResult = true
+      window.update({
+        task: {
+          ...window.state.task,
+          turns: [{ ...window.state.task.turns[0], checkpoint: { after: 'snapshot-tree' } }],
+        },
+      })
+    })
     await filesButton(page).click()
     await page.waitForFunction(() => window.requests.length === 2)
     assert.deepEqual(await page.evaluate(() => window.requests[1]), {
@@ -279,12 +336,22 @@ try {
       await page.evaluate(() => window.alerts.at(-1).title),
       'Fork with files from this turn?',
     )
+    assert.match(
+      await page.evaluate(() => window.alerts.at(-1).message),
+      /new worktree.*saved snapshot/,
+    )
+    assert.deepEqual(await page.evaluate(() => window.reveals.at(-1)), {
+      address: 'http://computer',
+      taskId: 'turn-fork',
+      messageId: 'answer-1',
+    })
     // Older runtimes keep only the files fork on replies and show no fork on user messages.
     await page.evaluate(() => window.update({ supported: false }))
     await forkButton(page).waitFor({ state: 'detached' })
     await filesButton(page).click()
     await page.waitForFunction(() => window.requests.length === 3)
     assert.equal(await page.evaluate(() => window.requests[2].path), '/api/tasks/fork')
+    assert.equal(await page.evaluate(() => window.reveals.length), 2)
     await page.evaluate(() => window.update({ messageId: 'user-1', user: true }))
     await forkButton(page).waitFor({ state: 'detached' })
     await filesButton(page).waitFor({ state: 'detached' })

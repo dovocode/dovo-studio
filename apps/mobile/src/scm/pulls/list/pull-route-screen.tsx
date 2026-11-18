@@ -9,7 +9,7 @@ import { ScreenHeader } from '../../../ui/layout/screen-header'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { PullDetail } from '../detail/pull-detail'
-import { pullRouteNumber } from './pull-route-number'
+import { pullRouteDestination, pullRouteNumber } from './pull-route-number'
 
 export function PullRouteScreen() {
   const uiText = useInterfaceText()
@@ -26,6 +26,7 @@ export function PullRouteScreen() {
     navigationUrl?: string
   }>()
   const number = pullRouteNumber(params.number)
+  const destination = pullRouteDestination(params.tab)
   const back = () => backToCollection('/pulls')
   return (
     <RuntimeRoute
@@ -36,15 +37,17 @@ export function PullRouteScreen() {
     >
       {number ? (
         <PullDetail
-          key={JSON.stringify([params.runtimeId, params.repositoryId, number, params.connectionId])}
+          key={JSON.stringify([
+            params.runtimeId,
+            params.repositoryId,
+            number,
+            params.connectionId,
+            destination.initialAgentReview,
+          ])}
           repositoryId={params.repositoryId}
           number={number}
           connectionId={params.connectionId}
-          initialTab={
-            params.tab === 'changes' || params.tab === 'checks' || params.tab === 'overview'
-              ? params.tab
-              : undefined
-          }
+          {...destination}
           initialFragment={params.fragment ?? ''}
           initialNavigationUrl={params.navigationUrl}
           onBack={back}

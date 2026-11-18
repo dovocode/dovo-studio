@@ -2,7 +2,12 @@ import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Sheet } from '../ui/layout/sheet'
 import { Choice } from '../ui/controls/choice'
-import { terminalGroups, splitTerminal, type TerminalGroup } from '@dovo/protocol'
+import {
+  runtimeComputerName,
+  terminalGroups,
+  splitTerminal,
+  type TerminalGroup,
+} from '@dovo/protocol'
 import { mobileWorkflow } from '../runtime/state/native-effect'
 import { useApplicationState } from '../runtime/state/application-state'
 import { useEffect, useRef } from 'react'
@@ -31,7 +36,7 @@ export function TerminalPane({
 
   const { colors, styles } = useTheme()
 
-  const { snapshot, connected, callEffect, connection } = useRuntime(),
+  const { snapshot, profile, connected, callEffect, connection } = useRuntime(),
     { busy, error, act } = useAction()
   const [savedGroups, setGroups] = useApplicationState<TerminalGroup[]>([])
   const scope = JSON.stringify([
@@ -315,6 +320,27 @@ export function TerminalPane({
                     />
                   </View>
                 )}
+                <Text
+                  style={[styles.muted, { paddingHorizontal: 8, paddingVertical: 4, fontSize: 12 }]}
+                >
+                  {[
+                    runtimeComputerName({ profile, snapshot }),
+                    terminal.checkoutBranch ??
+                      (terminal.checkoutId
+                        ? task.linkedCheckouts?.find((link) => link.id === terminal.checkoutId)
+                            ?.branch
+                        : task.checkoutBranch),
+                    terminal.exited
+                      ? terminal.exitCode == null
+                        ? uiText('Process exited')
+                        : uiText('Process exited ({value0})', { value0: terminal.exitCode })
+                      : !connected
+                        ? uiText('Computer offline · Input unavailable')
+                        : undefined,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </Text>
                 <TerminalSession
                   key={`${terminal.id}:${generation}`}
                   id={terminal.id}

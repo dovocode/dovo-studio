@@ -124,6 +124,8 @@ export async function taskWaiting(
           project: watch.source?.repository ?? project(watch.repositoryId),
           url: watch.url,
           status: watch.runStatus,
+          revision: watch.sha || undefined,
+          attempt: watch.attempt,
           progress: watch.progress,
           lastSuccessAt: watch.lastSuccessAt,
           pausedReason: pausedReason(settings.enablePipelineWatching),

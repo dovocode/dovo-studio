@@ -123,9 +123,9 @@ export type ProblemReportStart = typeof problemReportStartSchema.Type
 
 export const defaultProblemReportInclude: ProblemReportInclude = {
   versions: true,
-  diagnostics: true,
-  clientErrors: true,
-  clientTimeline: true,
+  diagnostics: false,
+  clientErrors: false,
+  clientTimeline: false,
 }
 export type ProblemReportForm = {
   description: string

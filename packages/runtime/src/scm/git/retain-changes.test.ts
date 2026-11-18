@@ -45,3 +45,7 @@ it('publishes staging-only updates while preserving content review marks', () =>
   // An older scan without metadata must not retain an obsolete staged claim.
   expect(retainChangedFiles(result, [{ ...file, viewed: false }])[0]).toEqual(file)
 })
+it('keeps viewed marks when only the editor disk baseline changes', () => {
+  const scanned = { ...file, viewed: false, diskContents: 'new' }
+  expect(retainChangedFiles([file], [scanned])).toEqual([{ ...scanned, viewed: true }])
+})

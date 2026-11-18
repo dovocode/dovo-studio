@@ -141,6 +141,21 @@ export function TaskHeader({
       </span>
     </>
   )
+  const forkSource = !task.bot && !parent ? task.forkedFrom : undefined
+  const forkSourceButton = forkSource && (
+    <button
+      type="button"
+      className="max-w-48 truncate text-xs text-muted-foreground hover:text-foreground hover:underline"
+      title={`Forked from ${forkSource.title}`}
+      onClick={() => {
+        if (forkSource.messageId && onOpenForkSource)
+          onOpenForkSource(forkSource.taskId, forkSource.messageId)
+        else host.navigate({ viewId: 'tasks', entityId: forkSource.taskId })
+      }}
+    >
+      Forked from {forkSource.title}
+    </button>
+  )
   const repo = workspace.repositories.find((r) => r.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, workspace.repositories)
   const projectName = projectDisplayName(displayProject, 'Project')
@@ -343,6 +358,7 @@ export function TaskHeader({
                 /
               </span>
               {parentCrumb}
+              {forkSourceButton}
               <h1 className="studio-titlebar-task min-w-0" aria-current="page" title={task.title}>
                 {titleMenu}
               </h1>
@@ -378,21 +394,7 @@ export function TaskHeader({
             )}
             {!task.bot && !projectPanelOpen && (
               <>
-                {task.forkedFrom && (
-                  <button
-                    type="button"
-                    className="hidden max-w-48 truncate hover:text-foreground hover:underline md:inline"
-                    title={`Forked from ${task.forkedFrom.title}${task.forkedFrom.messageId ? '. Files were not rewound.' : ''}`}
-                    onClick={() => {
-                      const source = task.forkedFrom
-                      if (source?.messageId && onOpenForkSource)
-                        onOpenForkSource(source.taskId, source.messageId)
-                      else if (source) host.navigate({ viewId: 'tasks', entityId: source.taskId })
-                    }}
-                  >
-                    Forked from {task.forkedFrom.title}
-                  </button>
-                )}
+                {forkSourceButton}
                 <TaskPullStatus task={task} onPullLink={onPullLink} />
                 {!repo?.kind && (
                   <TaskBranchMenu

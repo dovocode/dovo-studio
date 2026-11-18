@@ -134,6 +134,11 @@ export function TaskBranchMenu({
           <span className={panel ? 'min-w-0 flex-1 truncate text-left font-mono' : 'truncate'}>
             {notice && notice !== 'Copied' ? notice : branchLabel}
           </span>
+          {panel && (branch || verifiedBranch === null) && (
+            <span className="shrink-0 font-sans text-xs text-muted-foreground">
+              {inWorktree ? uiText('Worktree') : uiText('Local checkout')}
+            </span>
+          )}
           {panel && <ChevronDown className="studio-project-branch-chevron" size={16} />}
         </button>
       </DropdownMenu.Trigger>

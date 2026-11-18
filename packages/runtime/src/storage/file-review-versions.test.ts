@@ -54,6 +54,7 @@ it('versions only the changed mark and retains marks for equivalent file inputs'
     rescanned,
   )
   expect(edited.files[1].viewed).toBe(false)
+  expect(edited.files.map((entry) => entry.changedSinceViewed)).toEqual([undefined, true])
   expect(edited.fileReviewVersions?.['b.ts']).toBeGreaterThan(next.fileReviewVersion!)
 })
 
@@ -85,6 +86,7 @@ it('uses every preview identity field and preserves the review version through a
       before,
     )
     expect(next.files[0].viewed).toBe(false)
+    expect(next.files[0].changedSinceViewed).toBe(true)
     expect(next.fileReviewVersions?.['a.ts']).toBeGreaterThan(before.fileReviewVersion!)
   }
 })

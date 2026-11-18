@@ -33,11 +33,15 @@ export function versionReviewedFiles<T extends TaskMetadata>(task: T, previous?:
         old.after !== file.after ||
         filePreviewIdentity(old.preview) !== filePreviewIdentity(file.preview))
     const viewed = changed ? false : file.viewed
+    const changedSinceViewed = !viewed && (old?.changedSinceViewed || (changed && old?.viewed))
     const viewedVersion =
       old && !changed && old.viewed === viewed ? (previousVersions?.[file.path] ?? 0) : ++version
     if (!Number.isSafeInteger(viewedVersion)) throw new Error('File review version limit exceeded')
     versions.push([file.path, viewedVersion])
-    return file.viewed === viewed ? file : { ...file, viewed }
+    if (file.viewed === viewed && file.changedSinceViewed === (changedSinceViewed || undefined))
+      return file
+    const { changedSinceViewed: _previousMark, ...content } = file
+    return { ...content, viewed, ...(changedSinceViewed ? { changedSinceViewed } : {}) }
   })
   return {
     ...task,

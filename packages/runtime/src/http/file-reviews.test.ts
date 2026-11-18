@@ -1,4 +1,7 @@
 import { Effect } from 'effect'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   createReviewSession,
@@ -20,6 +23,7 @@ function taggedDetail(detail: PullDetail) {
   return { ...detail, destination, pull: { ...detail.pull, destination } }
 }
 const cleanup: (() => Promise<void>)[] = []
+const owner = 'file-review-test-owner-token-at-least-32-characters'
 afterEach(async () => {
   for (const close of cleanup.splice(0).reverse()) await close()
   vi.restoreAllMocks()
@@ -68,9 +72,8 @@ it('reads working and saved review progress without inspecting checkout sources'
   expect(checkout).not.toHaveBeenCalled()
   expect(git).not.toHaveBeenCalled()
 })
-async function setup() {
-  const owner = 'file-review-test-owner-token-at-least-32-characters'
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: owner, port: 0 })
+async function setup(databasePath = ':memory:') {
+  const runtime = await startRuntime({ databasePath, ownerToken: owner, port: 0 })
   cleanup.push(runtime.close)
   const desktop = 'desktop-test-device-token-at-least-32-characters',
     mobile = 'mobile-test-device-token-at-least-32-characters'
@@ -125,7 +128,17 @@ async function setup() {
       {
         method: 'POST',
         headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(mark ? { context, ...mark } : { context }),
+        body: JSON.stringify(
+          mark
+            ? {
+                context,
+                path: mark.path,
+                fingerprint: mark.fingerprint,
+                viewed: mark.viewed,
+                version: mark.version,
+              }
+            : { context },
+        ),
       },
     )
     return response
@@ -156,6 +169,25 @@ it('authenticates paired clients, shares granular working/history marks and reje
   expect((await request(context, mobile, { ...initial.files[1], viewed: true })).status).toBe(409)
   expect(runtime.services.store.task('task').files[1].after).toBe('new contents')
   expect(runtime.services.store.task('task').files[0].viewed).toBe(true)
+  expect((await read(context)).files[1].changedSinceViewed).toBeUndefined()
+  const reviewed = (await read(context)).files[0]
+  for (const after of ['another edit', files[0].after]) {
+    runtime.services.store.updateTask('task', (task) => ({
+      ...task,
+      files: task.files.map((file) => (file.path === reviewed.path ? { ...file, after } : file)),
+    }))
+    expect((await read(context, mobile)).files[0]).toMatchObject({
+      viewed: false,
+      changedSinceViewed: true,
+    })
+  }
+  expect(runtime.services.store.taskSummary('task').files[0].changedSinceViewed).toBe(true)
+  expect((await request(context, mobile, { ...reviewed, viewed: true })).status).toBe(409)
+  const changed = (await read(context)).files[0]
+  const saved = await request(context, mobile, { ...changed, viewed: true })
+  expect(saved.status).toBe(200)
+  expect(decode(reviewProgressSchema, await saved.json()).files[0]).toMatchObject({ viewed: true })
+  expect((await read(context)).files[0].changedSinceViewed).toBeUndefined()
   const history: ReviewContext = { ...context, source: 'turn', turnId: 'turn' }
   const historical = await read(history)
   expect((await request(history, mobile, { ...historical.files[0], viewed: true })).status).toBe(
@@ -163,6 +195,39 @@ it('authenticates paired clients, shares granular working/history marks and reje
   )
   expect((await read(history)).files[0].viewed).toBe(true)
   expect(runtime.services.store.task('task').turns?.[0].checkpoint?.files).toEqual(files) // Checkpoint content remains immutable.
+})
+it('restores changed and unchanged working review states after a runtime restart', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-file-review-'))
+  cleanup.push(() => rm(directory, { recursive: true, force: true }))
+  const databasePath = join(directory, 'runtime.sqlite')
+  const { runtime, request, read, mobile } = await setup(databasePath)
+  const context: ReviewContext = { kind: 'task', taskId: 'task', source: 'working' }
+  const initial = await read(context)
+  for (const file of initial.files)
+    expect((await request(context, mobile, { ...file, viewed: true })).status).toBe(200)
+  runtime.services.store.updateTask('task', (task) => ({
+    ...task,
+    files: task.files.map((file) =>
+      file.path === initial.files[0].path ? { ...file, after: 'new version' } : file,
+    ),
+  }))
+  const beforeRestart = await read(context, mobile)
+  expect(
+    beforeRestart.files.map(({ viewed, changedSinceViewed }) => [viewed, changedSinceViewed]),
+  ).toEqual([
+    [false, true],
+    [true, undefined],
+  ])
+  await runtime.close()
+  const reopened = await startRuntime({ databasePath, ownerToken: owner, port: 0 })
+  cleanup.push(reopened.close)
+  const response = await fetch(`http://127.0.0.1:${reopened.port}/api/review/read`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${mobile}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ context }),
+  })
+  expect(response.status).toBe(200)
+  expect(decode(reviewProgressSchema, await response.json())).toEqual(beforeRestart)
 })
 it('retains unchanged PR progress across pushes, resets changed patches and isolates repository identities', async () => {
   const { runtime, request, read, mobile } = await setup()
@@ -282,13 +347,15 @@ it('retains unchanged PR progress across pushes, resets changed patches and isol
   await Effect.runPromise(
     runtime.services.pullCache.sectionEffect('/file-review-test/absent', 1, 'changes', true),
   )
-  expect((await read(context)).files.map((file) => file.viewed)).toEqual([false, true])
   const current = await read(context)
+  expect(current.files.map((file) => file.viewed)).toEqual([false, true])
+  expect(current.files.map((file) => file.changedSinceViewed)).toEqual([true, undefined])
   expect((await request(context, mobile, { ...current.files[0], viewed: true })).status).toBe(200)
   const cachedRead = vi
     .spyOn(runtime.services.pullCache, 'sectionEffect')
     .mockReturnValue(Effect.succeed(oldDetail))
   expect((await read(context)).files.every((file) => file.viewed)).toBe(true)
+  expect((await read(context)).files[0].changedSinceViewed).toBeUndefined()
   cachedRead.mockRestore()
   expect((await read(context)).files.every((file) => file.viewed)).toBe(true)
 

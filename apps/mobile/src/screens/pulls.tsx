@@ -126,10 +126,22 @@ export default function PullsScreen() {
     state,
     pullProjectVisibility,
   )
-  const openPull = (runtimeId: string, repositoryId: string, number: number) => {
+  const openPull = (
+    runtimeId: string,
+    repositoryId: string,
+    number: number,
+    agentReview = false,
+  ) => {
     retainPosition()
     Keyboard.dismiss()
-    router.push(pullHref(runtimeId, repositoryId, number))
+    router.push(
+      pullHref(
+        runtimeId,
+        repositoryId,
+        number,
+        agentReview ? { tab: 'agent-review', fragment: '' } : undefined,
+      ),
+    )
   }
   const query = useDeferredValue(search)
   const matchingPulls = useMemo(
@@ -480,8 +492,18 @@ export default function PullsScreen() {
             onLongPress={() =>
               Alert.alert(p.title, `#${p.number} · ${p.repositoryName}`, [
                 {
-                  text: uiText('Open details'),
-                  onPress: () => openPull(p.runtimeId, p.repositoryId, p.number),
+                  ...(overviews.some(
+                    (computer) =>
+                      computer.profile.id === p.runtimeId && computer.snapshot?.codeReviewsEnabled,
+                  )
+                    ? {
+                        text: uiText('Open agent review'),
+                        onPress: () => openPull(p.runtimeId, p.repositoryId, p.number, true),
+                      }
+                    : {
+                        text: uiText('Open details'),
+                        onPress: () => openPull(p.runtimeId, p.repositoryId, p.number),
+                      }),
                 },
                 {
                   text: uiText('Add to thread'),

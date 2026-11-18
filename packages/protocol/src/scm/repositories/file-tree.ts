@@ -3,6 +3,7 @@ export type FileTreeEntry = {
   path: string
   changeKind?: FileKind
   viewed?: boolean
+  changedSinceViewed?: true
   label?: string
   additions?: number
   deletions?: number

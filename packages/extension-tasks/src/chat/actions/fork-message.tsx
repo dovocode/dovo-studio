@@ -1,8 +1,11 @@
 import { useRef, useState } from 'react'
 import { GitFork } from 'lucide-react'
 import {
+  forkFileDescription,
+  forkMessagePreview,
   messageForkBlocker,
   randomUUID,
+  resolveTaskDefaults,
   taskForkResultSchema,
   threadForkBlocker,
   type ConversationTurn,
@@ -34,11 +37,14 @@ export function ForkMessage({
     const blocker = threadForkBlocker(task)
     if (blocker) return setError(blocker)
     const navigationCurrent = host.taskNavigationGuard?.()
+    const project = workspace.repositories.find((repo) => repo.id === task.repositoryId)
+    const defaults = resolveTaskDefaults(snapshot.defaults, project)
+    const selected = message.role === 'assistant' ? 'reply' : 'message'
     if (
       !(await confirm({
         title: 'Fork conversation?',
-        description:
-          'A new thread starts with the conversation up to and including this message. It uses this thread’s harness, model and access. Files are not rewound: the fork uses the project’s checkout setting for new threads. This thread stays unchanged.',
+        description: `The new thread includes the conversation up to and including this ${selected}. It uses this thread’s harness, model and access. Files are not rewound. ${forkFileDescription(defaults.execution, project?.kind)}`,
+        details: `Selected ${selected}: ${forkMessagePreview(message) || '(No message text)'}`,
         confirmLabel: 'Fork',
       }))
     )
@@ -53,7 +59,7 @@ export function ForkMessage({
       )
       forkId.current = undefined
       if (!navigationCurrent || navigationCurrent())
-        host.navigate({ viewId: 'tasks', entityId: result.id })
+        host.navigate({ viewId: 'tasks', entityId: result.id, messageId: message.id })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {

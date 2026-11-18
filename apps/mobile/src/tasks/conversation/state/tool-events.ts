@@ -1,11 +1,29 @@
 import { mutableStruct } from '@dovo/protocol'
 import { decodeResult } from '@dovo/protocol'
-import { recentTools, createRecentTools, type activitySchema, type Task } from '@dovo/protocol'
+import {
+  recentTools,
+  createRecentTools,
+  toolPresentation,
+  type activitySchema,
+  type Task,
+} from '@dovo/protocol'
 import { Schema } from 'effect'
 export type ToolEvents = Schema.Schema.Type<typeof activitySchema>['events']
 export type TaskToolEvent = ReturnType<typeof recentTools>[number]
 export const pendingActivity = (status: string) =>
   ['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(status)
+
+export function activeToolTitle(events: TaskToolEvent[], running: boolean) {
+  if (!running) return undefined
+  let reasoningTitle: string | undefined
+  for (const event of [...events].reverse()) {
+    if (!pendingActivity(event.status)) continue
+    const presentation = toolPresentation(event.payload, event.summary, event.inputPayload)
+    if (presentation.kind !== 'reasoning') return presentation.title
+    reasoningTitle ??= presentation.title
+  }
+  return reasoningTitle
+}
 
 /** A provider may omit the last tool event when the enclosing turn ends. */
 export function taskToolEvents(

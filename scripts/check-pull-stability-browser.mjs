@@ -46,10 +46,10 @@ window.store.request = async (path, input, ...rest) => {
   const files = window.detail.files.map(file => {
     const key = window.detail.pull.url + ':' + file.path, fingerprint = pullFileFingerprint(file, window.detail.pull);
     const prior = marks.get(key);
-    const state = prior?.fingerprint === fingerprint ? prior : {path:file.path, fingerprint, viewed:false, version:(prior?.version??0)+1};
+    const state = prior?.fingerprint === fingerprint ? prior : {path:file.path, fingerprint, viewed:false, changedSinceViewed:prior?.viewed||prior?.changedSinceViewed||undefined, version:(prior?.version??0)+1};
     marks.set(key,state); return state;
   });
-  if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,version:file.version+1}); }
+  if (path.endsWith('/set')) { const file = files.find(file => file.path === input.path); if (!file || file.fingerprint !== input.fingerprint || file.version !== input.version) throw new Error('File changed'); Object.assign(file,{viewed:input.viewed,changedSinceViewed:input.viewed?undefined:file.changedSinceViewed,version:file.version+1}); }
   return {files:files.map(file=>({...file})), groups:[{label:'src',basis:'folder',paths:files.map(file=>file.path)}]};
 };
 window.showAnchored=()=>rootView.render(<main className="studio dark flex flex-col" style={{height:'100vh'}}><PullDetail key="anchored" repositoryId="repo" number={7} initialTab="changes" initialFragment="#anchor" onBack={()=>{}} onChanged={()=>{}}/></main>);window.showProbe();`,
@@ -517,6 +517,7 @@ try {
     window.detail.files[0].attributes = { binary: true, generated: false, vendored: false }
   })
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
+  await detail.getByRole('button', { name: 'Switch revision', exact: true }).click()
   await detail.getByRole('status').filter({ hasText: 'earlier PR revision' }).waitFor()
   assert.equal(await inline.inputValue(), 'Keep my inline feedback across pushes')
   const inlineForm = inline.locator('xpath=ancestor::form')
@@ -824,6 +825,8 @@ try {
     .filter({ hasText: 'src/review-11.ts' })
     .locator('diffs-container')
     .waitFor()
+  const changedFile = detail.getByRole('checkbox', { name: 'Viewed src/review-10.ts', exact: true })
+  await changedFile.check()
   await page.waitForFunction(() => {
     const node = document.querySelector('[aria-label="Pull request content"]')
     const h = node.scrollHeight
@@ -855,6 +858,9 @@ try {
   )
   await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
   // A push must retain the mounted file list and its position while the new diff is pending.
+  const viewedFile = reviewControls.getByRole('checkbox', { name: 'File viewed', exact: true })
+  await viewedFile.click()
+  await viewedFile.and(page.locator('[aria-checked="true"]')).waitFor()
   await page.evaluate(() => {
     window.priorFile = [...document.querySelectorAll('article')].find(
       (element) => element.querySelector('span')?.textContent.trim() === 'src/review-11.ts',
@@ -862,11 +868,14 @@ try {
     window.priorScroll = document.querySelector('[aria-label="Pull request content"]').scrollTop
     window.blockedSections = ['changes']
     window.detail.pull.headSha = 'd'.repeat(40)
+    window.detail.files.find((file) => file.path === 'src/review-10.ts').patch += '\n+new revision'
   })
   await detail.getByRole('button', { name: 'Refresh details', exact: true }).click()
-  await page
-    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
-    .waitFor()
+  const revisionNotice = page.getByText(/^New revision available\./)
+  const switchRevision = page.getByRole('button', { name: 'Switch revision', exact: true })
+  await revisionNotice.waitFor()
+  assert.equal(await switchRevision.isDisabled(), true)
+  assert.equal(await detail.getByText('Changed since viewed', { exact: true }).count(), 0)
   await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
   assert.ok(
     await page.evaluate(() => !!window.priorFile),
@@ -900,10 +909,20 @@ try {
       ),
   )
   await page.evaluate(() => window.releaseSection('changes'))
-  await page
-    .getByText('Updating files · showing the previous revision read-only.', { exact: true })
-    .waitFor({ state: 'hidden' })
+  await switchRevision.and(page.locator(':enabled')).waitFor()
+  assert.equal(await revisionNotice.isVisible(), true)
+  assert.equal(
+    await reviewControls.getByRole('checkbox', { name: 'File viewed' }).isDisabled(),
+    true,
+  )
+  await switchRevision.click()
+  await revisionNotice.waitFor({ state: 'hidden' })
   await reviewControls.getByText('src/review-11.ts', { exact: true }).waitFor()
+  await viewedFile.and(page.locator('[aria-checked="true"]:enabled')).waitFor()
+  await detail
+    .getByRole('button', { name: 'src/review-10.ts, changed since viewed', exact: true })
+    .waitFor()
+  await changedFile.and(page.locator('[aria-checked="false"]:enabled')).waitFor()
   assert.equal(
     await page.evaluate(() => window.scrollCalls),
     0,
@@ -1015,6 +1034,7 @@ try {
     window.showLinked({ title: 'Unrelated thread', linkedPullRequests: [link(99)] })
   })
   await detail.getByRole('tab', { name: /^Changes/ }).click()
+  await switchRevision.click()
   await detail.getByText('src/linked.ts').first().waitFor()
   assert.equal(await detail.getByRole('button', { name: /Ask in linked thread/ }).count(), 0)
   await page.waitForFunction(() => !!window.inlineSelections?.['src/linked.ts'])

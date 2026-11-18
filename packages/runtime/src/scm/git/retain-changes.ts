@@ -9,11 +9,11 @@ export function retainChangedFiles(previous: ChangedFile[], incoming: ChangedFil
       prior &&
       prior.before === file.before &&
       prior.after === file.after &&
-      filePreviewIdentity(prior.preview) === filePreviewIdentity(file.preview) &&
-      prior.diskContents === file.diskContents
+      filePreviewIdentity(prior.preview) === filePreviewIdentity(file.preview)
     if (!sameContent) return file
     // Staging can change without changing the reviewed HEAD-to-working contents.
-    return prior.gitStatus?.index === file.gitStatus?.index &&
+    return prior.diskContents === file.diskContents &&
+      prior.gitStatus?.index === file.gitStatus?.index &&
       prior.gitStatus?.workingTree === file.gitStatus?.workingTree
       ? prior
       : { ...file, viewed: prior.viewed }
