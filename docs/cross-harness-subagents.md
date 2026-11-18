@@ -138,10 +138,12 @@ Automation steps and chained tasks wait for delegated work and result handling b
 
 ## Cross-computer thread monitoring
 
-`studio_threads` automatically monitors threads created on a paired computer. Set `watch: false`
-when creating an independent conversation. To follow an existing conversation, use `watch` with its
-`id` and owning `runtimeId`; this records a **linked** relationship, not spawned ancestry. `watches`
-lists the current conversation's monitors; `unwatch` removes a selected monitor.
+`studio_threads` automatically monitors threads created on a paired computer. Set `watch: false` to
+skip automatic monitoring. A Bot can monitor a project thread it creates without adding it to its
+subthread tree. An explicit delegated launch keeps its stop and question controls. To follow an
+existing conversation, use `watch` with its `id` and owning `runtimeId`; this records a **linked**
+relationship, not spawned ancestry. `watches` lists the current conversation's monitors; `unwatch`
+removes a selected monitor.
 
 Monitors persist the computer/thread reference, last observed state, and notification receipts in
 SQLite. They use the existing paired runtime transport and private pairing registry for background

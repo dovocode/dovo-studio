@@ -136,11 +136,6 @@ function NestedThreadsView({
             <span className="shrink-0">· Monitor stopped</span>
           ) : null}
         </span>
-        {child.mentionSourceTitle && (
-          <span className="mt-0.5 block truncate text-[0.625rem] text-muted-foreground">
-            {uiText('Saved from {value0}', { value0: child.mentionSourceTitle })}
-          </span>
-        )}
         {!child.online && child.lastSuccessAt && (
           <span className="block text-[0.625rem] text-muted-foreground">
             Updated {new Date(child.lastSuccessAt).toLocaleString()}

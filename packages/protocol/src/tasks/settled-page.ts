@@ -58,8 +58,10 @@ export function settledSummaryPage<T extends Task>(
   limit: number,
   selected: readonly string[] = [],
   now = Date.now(),
+  runtimeId = '',
 ) {
   const protectedIds = new Set(selected)
+  const botCallers = new Set<string>()
   const relatedIds = new Set<string>()
   for (const task of tasks) {
     // A page must not turn a child into a root, or an unsent side chat into an orphan.
@@ -69,7 +71,12 @@ export function settledSummaryPage<T extends Task>(
       task.delegation?.parentTaskId ??
       task.spawnParent?.threadId ??
       task.sideThread?.parentTaskId
-    if (task.botMention) protectedIds.add(task.id)
+    if (task.botMention) {
+      protectedIds.add(task.id)
+      const callerRuntime =
+        task.botMention.sourceRuntimeId ?? task.replica?.ownerRuntimeId ?? runtimeId
+      botCallers.add(JSON.stringify([callerRuntime, task.botMention.sourceTaskId]))
+    }
     if (parentId) {
       protectedIds.add(task.id)
       relatedIds.add(parentId)
@@ -103,6 +110,7 @@ export function settledSummaryPage<T extends Task>(
       task.status === 'running' ||
       task.waitingForFeedback ||
       protectedIds.has(task.id) ||
+      (botCallers.size > 0 && botCallers.has(settledThreadKey(task, runtimeId))) ||
       relatedIds.has(task.replica?.threadId ?? task.id) ||
       (task.snoozedUntil && Date.parse(task.snoozedUntil) > now)
     ) {

@@ -211,6 +211,36 @@ it('surfaces fresh-session rejection without a retry loop', async () => {
   expect(run).toHaveBeenCalledTimes(2)
 })
 
+it.each([
+  ['Failed to read session full-session: connection timed out', false],
+  ['input stream closed: request timeout exceeded', false],
+  ['Session full-session-other not found', false],
+  ['Thread other not found while resuming full-session', false],
+  ['Session full-session: credential file not found', false],
+  ['Context window is full', true],
+  ['Prompt exceeds the maximum context length', true],
+  ["Thread 'full-session' does not exist", true],
+  ['Session not found: full-session', true],
+] as const)(
+  'replaces the provider session only for an explicit recovery error: %s',
+  async (message, recover) => {
+    const calls: Array<string | undefined> = []
+    const attempt = recoverContext(
+      {
+        run: async (run) => {
+          calls.push(run.sessionId)
+          if (run.sessionId) throw new Error(message)
+        },
+      },
+      async (run) => ({ ...run, sessionId: undefined }),
+      () => false,
+    ).run(input())
+    if (recover) await attempt
+    else await expect(attempt).rejects.toThrow(message)
+    expect(calls).toEqual(recover ? ['full-session', undefined] : ['full-session'])
+  },
+)
+
 it.each(['missing', 'different-session', 'accepted', 'tool', 'busy'] as const)(
   'recovers a missing session only before acceptance with exact ownership: %s',
   async (mode) => {

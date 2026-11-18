@@ -28,9 +28,7 @@ const botMetadata = {
   updatedAt: '2026-11-15T08:00:00Z',
 }
 
-it('groups local routine workers and remote mention copies by runtime identity', () => {
-  const bot = task('bot', { bot: botMetadata })
-  const worker = task('worker', { botJob: { botId: 'bot', runId: 'run' } })
+it('shows an old mention copy under its caller on the sending computer', () => {
   const copy = task('copy', {
     botMention: {
       botId: 'bot',
@@ -38,91 +36,88 @@ it('groups local routine workers and remote mention copies by runtime identity',
       sourceTaskId: 'source',
       sourceMessageId: 'input',
     },
+    forkedFrom: { taskId: 'source', title: 'Saved source title' },
   })
-  const unrelated = task('unrelated', { botMention: { ...copy.botMention, runtimeId: 'other' } })
-  const sources = [
-    { runtimeId: 'bot-profile', runtimeIdentity: 'owner', tasks: [bot, worker] },
-    {
-      runtimeId: 'source-profile',
-      runtimeIdentity: 'sender',
-      tasks: [copy, unrelated, task('source'), task('foreign-worker', { botJob: worker.botJob })],
-    },
-  ]
-  const rows = threadChildren(sources, {
-    id: 'bot',
+  const owner = {
     runtimeId: 'bot-profile',
     runtimeIdentity: 'owner',
-  })
-  expect(rows.map((row) => [row.task.id, row.runtimeId])).toEqual([
-    ['copy', 'source-profile'],
-    ['worker', 'bot-profile'],
+    tasks: [task('bot', { bot: botMetadata }), task('source')],
+  }
+  const sender = {
+    runtimeId: 'caller-profile',
+    runtimeIdentity: 'sender',
+    tasks: [copy, task('source')],
+  }
+  expect(threadChildren([owner, sender], { ...owner, id: 'bot' })).toEqual([])
+  expect(threadChildren([owner, sender], { ...owner, id: 'source' })).toEqual([])
+  expect(
+    threadChildren([owner, sender, { ...sender, runtimeId: 'alias' }], { ...sender, id: 'source' }),
+  ).toMatchObject([
+    { task: { id: 'copy' }, runtimeId: 'caller-profile', mentionSourceTitle: 'source' },
   ])
-  expect(rows[0]).toMatchObject({ mentionSourceTitle: 'source' })
-  expect(taskParentReference(copy, 'source-profile', [], 'sender', sources)).toMatchObject({
-    runtimeId: 'bot-profile',
-    runtimeIdentity: 'owner',
-    threadId: 'bot',
+  expect(taskParentReference(copy, sender.runtimeId, [], 'sender', [owner])).toMatchObject({
+    runtimeId: 'caller-profile',
+    runtimeIdentity: 'sender',
+    threadId: 'source',
+    title: 'Saved source title',
   })
-  expect(taskParentReference(worker, 'bot-profile', [bot], 'owner')).toMatchObject({
-    threadId: 'bot',
-    title: 'bot',
-  })
-  expect(threadChildren(sources, { id: 'bot', runtimeId: 'unverified-profile' })).toEqual([])
-  expect(
-    threadChildren([...sources, { ...sources[1]!, runtimeId: 'sender-alias' }], {
-      id: 'bot',
-      runtimeId: 'bot-profile',
-      runtimeIdentity: 'owner',
-    }),
-  ).toHaveLength(2)
-  expect(
-    threadChildren([{ runtimeId: 'bot-profile', runtimeIdentity: 'other', tasks: [worker] }], {
-      id: 'bot',
-      runtimeId: 'bot-profile',
-      runtimeIdentity: 'owner',
-    }),
-  ).toEqual([])
 })
 
-it('does not group Bot work under a known ordinary thread and keeps unresolved references', () => {
+it('treats a Bot calling itself as a subthread only on the same runtime', () => {
+  const bot = task('bot', { bot: botMetadata })
+  const call = task('call', {
+    botMention: {
+      botId: 'bot',
+      runtimeId: 'destination',
+      sourceRuntimeId: 'caller',
+      sourceTaskId: 'bot',
+      sourceMessageId: 'input',
+      sourceTitle: 'Saved caller',
+    },
+  })
+  const self = task('self', { botMention: { ...call.botMention, sourceRuntimeId: 'destination' } })
+  const owner = {
+    runtimeId: 'destination-profile',
+    runtimeIdentity: 'destination',
+    tasks: [bot, call, self],
+  }
+  const caller = { runtimeId: 'caller-profile', runtimeIdentity: 'caller', tasks: [bot] }
+  expect(threadChildren([owner, caller], { ...owner, id: 'bot' })).toEqual([])
+  expect(threadChildren([owner, caller], { ...caller, id: 'bot' })).toMatchObject([
+    { task: { id: 'call' }, runtimeId: 'destination-profile' },
+  ])
+  expect(
+    taskParentReference(call, owner.runtimeId, owner.tasks, 'destination', [caller]),
+  ).toMatchObject({
+    runtimeId: 'caller-profile',
+    threadId: 'bot',
+  })
+  expect(taskParentReference(call, owner.runtimeId, owner.tasks, 'destination')).toMatchObject({
+    runtimeIdentity: 'caller',
+    title: 'Saved caller',
+  })
+})
+
+it('keeps routine workers and saved conversations with their Bot', () => {
   const ordinary = task('parent')
   const worker = task('worker', { botJob: { botId: 'parent', runId: 'run' } })
   const conversation = task('conversation', {
     botConversation: { botId: 'parent', requestRevision: 'revision' },
   })
-  const copy = task('copy', {
-    botMention: {
-      botId: 'parent',
-      runtimeId: 'owner',
-      sourceTaskId: 'original',
-      sourceMessageId: 'input',
-    },
-    forkedFrom: { taskId: 'original', title: 'Saved source title' },
-  })
   const parent = { id: 'parent', runtimeId: 'owner-profile', runtimeIdentity: 'owner' }
-  const sender = { runtimeId: 'sender-profile', runtimeIdentity: 'sender', tasks: [copy] }
-  const withoutParent = [{ ...parent, tasks: [worker, conversation] }, sender]
-  const withParent = [{ ...parent, tasks: [ordinary, worker, conversation] }, sender]
-
-  expect(threadChildren(withParent, parent)).toEqual([])
-  expect(threadChildren(withoutParent, parent)).toMatchObject([
+  const tasks = [worker, conversation]
+  expect(threadChildren([{ ...parent, tasks: [ordinary, ...tasks] }], parent)).toEqual([])
+  expect(threadChildren([{ ...parent, tasks }], parent)).toMatchObject([
     { task: { id: 'conversation' } },
-    { task: { id: 'copy' }, mentionSourceTitle: 'Saved source title' },
     { task: { id: 'worker' } },
   ])
-  for (const child of [worker, conversation]) {
+  for (const child of tasks) {
     expect(taskParentReference(child, parent.runtimeId, [ordinary], 'owner')).toBeUndefined()
     expect(taskParentReference(child, parent.runtimeId, [], 'owner')).toMatchObject({
       threadId: 'parent',
       title: 'Bot',
     })
   }
-  expect(taskParentReference(copy, sender.runtimeId, [copy], 'sender', withParent)).toBeUndefined()
-  expect(taskParentReference(copy, sender.runtimeId, [copy], 'sender', [])).toMatchObject({
-    runtimeIdentity: 'owner',
-    threadId: 'parent',
-    title: 'Bot',
-  })
 })
 
 it('keeps archived children after open ones and ignores self links', () => {

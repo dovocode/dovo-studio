@@ -116,8 +116,6 @@ type Entry = {
   prepareNavigation: (url: string) => void
   cookiesReady?: Promise<void>
   url: string
-  /** Extension page an extension opened here; the renderer adopts the tab with this exact URL. */
-  extensionUrl?: string
   /** Created by Chromium itself, retaining target names, opener and deferred navigation. */
   pageCreated?: boolean
   /** Navigation readiness, without waiting for page subresources. */
@@ -281,6 +279,8 @@ export function registerBrowser(
   const pendingReturns = new Map<number, { target: BrowserWindow; keys: Set<string> }>()
   const returnOperations = new Map<number, Promise<void>>()
   const views = new Map<string, Entry>()
+  // Keep the original URL authorization when an inactive extension page loses its native view.
+  const extensionPages = new Map<string, { profileId: string; url: string }>()
   const entriesByContents = new WeakMap<Electron.WebContents, Entry>()
   const zoom = createBrowserZoom()
   const downloadSessions = new Set<Electron.Session>()
@@ -479,7 +479,7 @@ export function registerBrowser(
     for (const popup of entry.popups) dismissDocumentPipWindow(popup)
     entry.popups.clear()
   }
-  /** Extension-opened and extension-closed tabs, drained by any `status` in that window. */
+  /** Tab events, drained by the shared Browser in that window. */
   const windowTabs = new Map<
     number,
     {
@@ -501,17 +501,18 @@ export function registerBrowser(
       windowTabs.set(windowId, (events = { created: [], closed: [], moved: [], favicons: [] }))
     return events
   }
-  const drainTabEvents = (windowId: number, consumeMoves: boolean) => {
+  const drainTabEvents = (windowId: number, workspace: boolean) => {
+    // Thread previews can poll in the same window as the shared Browser.
+    if (!workspace) return {}
     const events = windowTabs.get(windowId)
     const createdTabs = events?.created.splice(0) ?? []
     const closedTabs = events?.closed.splice(0) ?? []
-    // A thread preview can poll in the same Studio window while Browser is opening.
-    const movedTabs = consumeMoves ? (events?.moved.splice(0) ?? []) : []
-    const faviconUpdates = consumeMoves ? (events?.favicons.splice(0) ?? []) : []
+    const movedTabs = events?.moved.splice(0) ?? []
+    const faviconUpdates = events?.favicons.splice(0) ?? []
     if (movedTabs.length && !workspaceStates.has(windowId))
       tabCounts.set(windowId, (tabCounts.get(windowId) ?? 1) + movedTabs.length)
     return {
-      ...(consumeMoves ? { detachedTabs: detachedTabKeys(windowId) } : {}),
+      detachedTabs: detachedTabKeys(windowId),
       ...(createdTabs.length ? { createdTabs } : {}),
       ...(closedTabs.length ? { closedTabs } : {}),
       ...(movedTabs.length ? { movedTabs } : {}),
@@ -594,16 +595,23 @@ export function registerBrowser(
           ? last.key.slice(0, last.key.lastIndexOf(':'))
           : 'extension-tab'
       const key = `${scope}:${randomUUID()}`
-      const entry = createEntry(window, JSON.stringify([window.id, key]), key, profileId, true)
+      const viewKey = JSON.stringify([window.id, key])
+      const entry = createEntry(window, viewKey, key, profileId, true)
       entry.inactiveAt = Date.now()
       entry.url = url
-      if (!openableUrl(url)) entry.extensionUrl = url
+      if (!openableUrl(url)) extensionPages.set(viewKey, { profileId, url })
       entry.loading = loadUntilReady(entry, url).catch((error: unknown) => {
         if (!isAborted(error))
           entry.navigationError = 'The page an extension opened could not be loaded.'
       })
-      events.created.push({ key, url, profileId })
+      events.created.push({ key, url, profileId, active: details.active !== false })
       return [entry.view.webContents, window]
+    },
+    select: (profileId, contents) => {
+      const entry = entriesByContents.get(contents)
+      if (!entry?.workspace || entry.profileId !== profileId) return
+      if (activeViews.get(entry.windowId)?.key !== JSON.stringify([entry.windowId, entry.key]))
+        focusedTabs.set(entry.windowId, entry.key)
     },
     close: (contents) => {
       for (const [key, entry] of views) {
@@ -644,7 +652,8 @@ export function registerBrowser(
       browserSession.closeAllConnections(),
     ]).catch((error: unknown) => console.error('Could not clear private browser data.', error))
   }
-  const releaseView = (key: string) => {
+  const releaseView = (key: string, evicted = false) => {
+    if (!evicted) extensionPages.delete(key)
     const entry = views.get(key)
     if (!entry) return
     entry.stopFrames?.()
@@ -687,7 +696,7 @@ export function registerBrowser(
         Date.now() - entry.inactiveAt! < 5 * 60_000
       )
         continue
-      releaseView(key)
+      releaseView(key, true)
       counts.set(entry.windowId, counts.get(entry.windowId)! - 1)
     }
   }
@@ -708,6 +717,8 @@ export function registerBrowser(
     activeViews.delete(window.id)
     windowTabs.delete(window.id)
     focusedTabs.delete(window.id)
+    for (const key of extensionPages.keys())
+      if (key.startsWith(`[${window.id},`)) extensionPages.delete(key)
     for (const key of awakeRequests.keys())
       if (key.startsWith(`[${window.id},`)) awakeRequests.delete(key)
     media.releaseWindow(window.id)
@@ -1045,11 +1056,11 @@ export function registerBrowser(
       declaredFavicons = icons
       void faviconLoader.load(url, icons)
     })
-    view.webContents.on('did-finish-load', () => {
-      void faviconLoader.load(view.webContents.getURL(), declaredFavicons ?? faviconCandidates)
-      void renderBrowserJson(view.webContents)
+    created.contents.on('did-finish-load', () => {
+      void faviconLoader.load(created.contents.getURL(), declaredFavicons ?? faviconCandidates)
+      void renderBrowserJson(created.contents)
         .catch((error: unknown) => {
-          if (!view.webContents.isDestroyed()) console.error('Could not format browser JSON', error)
+          if (!created.contents.isDestroyed()) console.error('Could not format browser JSON', error)
         })
         .finally(() => {
           created.documentRevision = (created.documentRevision ?? 0) + 1
@@ -1678,6 +1689,7 @@ export function registerBrowser(
       configureBrowserLanguage(entry.browserSession, entry.profileId, entry.nativeUserAgent)
     }
     if (await extensions.sync()) return
+    extensionPages.clear()
     awakeRequests.clear()
     media.reset()
     // Content scripts outlive their extension in already-open pages, so close those pages too.
@@ -1834,6 +1846,12 @@ export function registerBrowser(
         }
       : tab,
   })
+  const moveExtensionPage = (sourceKey: string, target: BrowserWindow, key: string) => {
+    const page = extensionPages.get(sourceKey)
+    if (!page) return
+    extensionPages.delete(sourceKey)
+    extensionPages.set(JSON.stringify([target.id, key]), page)
+  }
   const moveWorkspace = (
     source: BrowserWindow,
     target: BrowserWindow,
@@ -1847,10 +1865,15 @@ export function registerBrowser(
       throw new Error('Close some tabs in the main window before returning these tabs (limit 100).')
     const ids = new Set(existing.map(({ tab }) => tab.id))
     for (const { key, tab } of incoming) {
-      const entry = views.get(JSON.stringify([source.id, key]))
+      const sourceKey = JSON.stringify([source.id, key])
+      const targetKey = JSON.stringify([target.id, key])
+      const entry = views.get(sourceKey)
+      const extensionPage = extensionPages.get(sourceKey)
       if (
         ids.has(tab.id) ||
-        views.has(JSON.stringify([target.id, key])) ||
+        views.has(targetKey) ||
+        extensionPages.has(targetKey) ||
+        (extensionPage && (extensionPage.profileId !== tab.profileId || tab.kind !== 'web')) ||
         (entry && (!entry.workspace || entry.profileId !== tab.profileId || tab.kind !== 'web'))
       )
         throw new Error('The browser tabs changed before they could be moved.')
@@ -1864,6 +1887,7 @@ export function registerBrowser(
       if (activeViews.get(source.id)?.key === viewKey) activeViews.delete(source.id)
       const entry = views.get(viewKey)
       if (entry) moveEntry(entry, target)
+      moveExtensionPage(viewKey, target, key)
       const item = movedTab(key, tab, entry)
       const owner = detachedPinnedTabs.get(key)
       if (owner) {
@@ -2083,10 +2107,14 @@ export function registerBrowser(
         (command.targetMain && command.targetWindowId !== undefined)
       )
         throw new Error('Choose one destination for this browser tab.')
+      const extensionPage = extensionPages.get(viewKey)
       const validateSource = () => {
         if (
           window.isDestroyed() ||
           views.get(viewKey) !== entry ||
+          extensionPages.get(viewKey) !== extensionPage ||
+          (extensionPage &&
+            (extensionPage.profileId !== command.tab.profileId || command.tab.kind !== 'web')) ||
           (entry &&
             (!entry.workspace ||
               entry.profileId !== command.tab.profileId ||
@@ -2110,12 +2138,16 @@ export function registerBrowser(
         throw new Error('The destination browser window is unavailable.')
       // Loading a new window yields; the source may have closed or entered fullscreen meanwhile.
       validateSource()
+      const targetKey = JSON.stringify([target.id, command.key])
+      if (views.has(targetKey) || extensionPages.has(targetKey))
+        throw new Error('The destination already has this browser tab.')
       if ((tabCounts.get(target.id) ?? 1) + tabEvents(target.id).moved.length >= 100)
         throw new Error('The destination browser window has reached its 100-tab limit.')
       registerWindow(target)
       awakeRequests.delete(viewKey)
       if (activeViews.get(window.id)?.key === viewKey) activeViews.delete(window.id)
       if (entry) moveEntry(entry, target)
+      moveExtensionPage(viewKey, target, command.key)
       tabEvents(target.id).moved.push(movedTab(command.key, command.tab, entry))
       const destination = workspaceState(target)
       workspaceStates.set(target.id, {
@@ -2146,8 +2178,8 @@ export function registerBrowser(
           const background = views.get(JSON.stringify([window.id, entry.previewBackgroundKey]))
           if (background) setVisible(background, false)
         }
-        releaseView(viewKey)
       }
+      releaseView(viewKey)
       return
     }
     if (command.action === 'hide') {
@@ -2191,11 +2223,17 @@ export function registerBrowser(
     if (command.action === 'show') {
       const profileId = command.profileId ?? 'default'
       const workspace = !!command.workspaceBrowser
-      // Adopting an extension-opened tab keeps its extension page; every other URL must be web.
+      const extensionPage = workspace ? extensionPages.get(viewKey) : undefined
+      const extensionUrl =
+        extensionPage?.profileId === profileId &&
+        extensionPage.url === command.url &&
+        extensions.ownsUrl(profileId, command.url)
       const url =
-        (entry?.extensionUrl === command.url ||
-          (entry?.pageCreated && command.url === 'about:blank')) &&
-        entry?.workspace === workspace
+        extensionUrl ||
+        (entry?.pageCreated &&
+          entry.workspace === workspace &&
+          entry.profileId === profileId &&
+          command.url === 'about:blank')
           ? command.url
           : previewUrl(command.url)
       const showing = { key: viewKey }
@@ -2228,6 +2266,13 @@ export function registerBrowser(
           console.error('Browser extensions could not load for this profile.', error)
         })
         if (activeViews.get(window.id) !== showing) return
+        if (
+          extensionUrl &&
+          (extensionPages.get(viewKey) !== extensionPage || !extensions.ownsUrl(profileId, url))
+        ) {
+          activeViews.delete(window.id)
+          throw new Error('This browser extension is no longer loaded.')
+        }
         entry = views.get(viewKey)
       }
       if (entry) entry.inactiveAt = undefined
@@ -2250,6 +2295,9 @@ export function registerBrowser(
         activeViews.set(window.id, showing)
         entry = undefined
       }
+      const authorizedPage = extensionPages.get(viewKey)
+      if (authorizedPage && (!workspace || authorizedPage.profileId !== profileId))
+        extensionPages.delete(viewKey)
       entry ??= createEntry(window, viewKey, command.key, profileId, workspace)
       entry.previewBackgroundKey = retained?.key
       entry.keepAwake = command.keepAwake
@@ -2811,6 +2859,7 @@ export function registerBrowser(
       views.clear()
       activeViews.clear()
       windowTabs.clear()
+      extensionPages.clear()
       workspaceStates.clear()
       detachedWindows.clear()
       detachedPinnedTabs.clear()

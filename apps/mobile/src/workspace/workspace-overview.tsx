@@ -253,7 +253,12 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
   const renderRow = (item: WorkspaceItem) => {
     if (item.kind !== 'thread')
       return (
-        <StandaloneRow item={item} onOpen={() => open(item)} onActions={() => setActions(item)} />
+        <StandaloneRow
+          item={item}
+          workspaceType={unified}
+          onOpen={() => open(item)}
+          onActions={() => setActions(item)}
+        />
       )
     const data = threadRows.get(runtimeResourceKey(item.runtimeId, item.task.id))
     return data ? (
@@ -269,7 +274,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         disabled={false}
         density={preferences.threadDensity}
         showDevice={runtime.profiles.length > 1}
-        showTypeIndicator
+        showTypeIndicator={unified}
       />
     ) : null
   }
@@ -433,6 +438,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
                     key={item.key}
                     item={item}
                     tile
+                    workspaceType={unified}
                     onOpen={() => open(item)}
                     onActions={() => setActions(item)}
                   />

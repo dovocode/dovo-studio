@@ -4,6 +4,7 @@ import {
   redactCredentialText,
   recentTools,
   toolPresentation,
+  terminalWrapperKey,
 } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
 import type Database from 'better-sqlite3'
@@ -44,6 +45,12 @@ const record = mutableStruct({
   summary: Schema.String,
   payload: Schema.String,
 })
+export type RetainedToolOutput = {
+  turnId: string
+  sessionId?: string
+  read: () => string
+}
+
 export class Activity {
   private scopes = new Map<
     string,
@@ -144,6 +151,7 @@ export class Activity {
     scope: string,
     owner: { sessionId?: string; turnId?: string },
     status: 'interrupted' | 'cancelled' | 'failed',
+    retainedOutputs?: ReadonlyMap<string, RetainedToolOutput>,
   ) {
     if (!owner.sessionId && !owner.turnId) return
     const rows = decode(
@@ -164,6 +172,14 @@ export class Activity {
       if (!['started', 'running', 'in_progress', 'pending', 'inProgress'].includes(tool.status))
         continue
       const payload = decode(Schema.Record(Schema.String, Schema.Unknown), JSON.parse(tool.payload))
+      const view = toolPresentation(tool.payload, tool.summary, tool.inputPayload)
+      const retained = tool.toolId && retainedOutputs?.get(tool.toolId)
+      const output =
+        retained &&
+        retained.turnId === tool.turnId &&
+        retained.sessionId === payload.providerSessionId
+          ? retained.read()
+          : undefined
       this.add(
         'tool',
         scope,
@@ -175,7 +191,7 @@ export class Activity {
           textOffset: tool.textOffset,
           providerTool: true,
           providerSessionId: payload.providerSessionId,
-          presentation: toolPresentation(tool.payload, tool.summary, tool.inputPayload),
+          presentation: output === undefined ? view : { ...view, output: output || view.output },
           status,
           error: 'Provider stopped before this tool completed.',
         },
@@ -313,7 +329,7 @@ export class Activity {
       .run(scope, artifactId ? `artifact:${artifactId}:*` : 'artifact:*').changes
     if (changes) this.changed(scope)
   }
-  list(query: string, kind: string, offset: number, scope = '') {
+  list(query: string, kind: string, offset: number, scope = '', toolPayloadsOnly = false) {
     const filters: string[] = []
     const values: (string | number)[] = []
     if (scope) {
@@ -330,7 +346,10 @@ export class Activity {
       filters.push('(summary LIKE ? OR payload LIKE ? OR scope LIKE ?)')
       values.push(`%${query}%`, `%${query}%`, `%${query}%`)
     }
-    const page = `SELECT * FROM activity${filters.length ? ` WHERE ${filters.join(' AND ')}` : ''} ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?`
+    const columns = toolPayloadsOnly
+      ? "id,time,kind,scope,summary,CASE WHEN kind='tool' THEN payload ELSE '' END AS payload"
+      : '*'
+    const page = `SELECT ${columns} FROM activity${filters.length ? ` WHERE ${filters.join(' AND ')}` : ''} ORDER BY time DESC,id DESC LIMIT 100 OFFSET ?`
     // Thread outputs must survive newer tool calls in both polling and live sync.
     const includeArtifacts = kind === 'task-activity' && !!scope && !query && offset === 0
     return {
@@ -344,6 +363,127 @@ export class Activity {
           )
           .all(...values, offset, ...(includeArtifacts ? [scope] : [])),
       ),
+    }
+  }
+  event(id: string, scope?: string) {
+    return decode(
+      Schema.UndefinedOr(record),
+      this.db
+        .prepare('SELECT * FROM activity WHERE id=? AND (? IS NULL OR scope=?)')
+        .get(id, scope ?? null, scope ?? null),
+    )
+  }
+  /** Page by saved events so collapsed tool calls do not make the next page skip a record. */
+  overview(offset: number, scope = '') {
+    const page = this.list('', '', offset, scope, true).events
+    const rawTools = page.filter((event) => event.kind === 'tool')
+    const pageIds = new Set(rawTools.map((event) => event.id))
+    const calls = recentTools(rawTools)
+    // Even a completed call with input on this page may have an earlier start.
+    const paginated = offset > 0 || page.length === 100
+    const callKeys = paginated
+      ? calls.flatMap((tool) =>
+          tool.turnId !== undefined && tool.toolId ? [[tool.scope, tool.turnId, tool.toolId]] : [],
+        )
+      : []
+    const siblings = callKeys.length
+      ? decode(
+          mutableArray(record),
+          this.db
+            .prepare(`
+            WITH wanted AS MATERIALIZED (
+              SELECT json_extract(value,'$[0]') AS scope, json_extract(value,'$[1]') AS turn_id,
+                     json_extract(value,'$[2]') AS tool_id FROM json_each(?)
+            )
+            SELECT activity.* FROM (SELECT DISTINCT scope FROM wanted) scopes
+            JOIN activity USING (scope)
+            WHERE activity.kind='tool' AND json_valid(activity.payload) AND (
+              (activity.scope, json_extract(activity.payload,'$.turnId'), json_extract(activity.payload,'$.toolId'))
+                IN (SELECT scope, turn_id, tool_id FROM wanted)
+              OR (json_type(activity.payload,'$.event.message.content')='array' AND EXISTS (
+                SELECT 1 FROM json_each(activity.payload,'$.event.message.content') AS block
+                WHERE CASE WHEN block.type='object' THEN
+                  (activity.scope, json_extract(activity.payload,'$.turnId'),
+                    coalesce(json_extract(block.value,'$.tool_use_id'), json_extract(block.value,'$.id'))
+                  ) IN (SELECT scope, turn_id, tool_id FROM wanted)
+                END
+              ))
+            )`)
+            .all(JSON.stringify(callKeys)),
+        ).filter((event) => !pageIds.has(event.id))
+      : []
+    const pageTools = (
+      siblings.length
+        ? recentTools(
+            [...rawTools, ...siblings].sort(
+              (a, b) => b.time.localeCompare(a.time) || (a.id < b.id ? 1 : a.id > b.id ? -1 : 0),
+            ),
+          )
+        : calls
+    ).filter((tool) => pageIds.has(tool.sourceEventId ?? tool.id))
+    // A terminal receipt can be pages away from its wrapper, under a different provider ID.
+    // Query only the identity of matching commands. Their output stays on its own page.
+    const wrapperKeys = new Map<string, string>()
+    if (paginated)
+      for (const tool of pageTools) {
+        const key = terminalWrapperKey(tool)
+        if (key) wrapperKeys.set(tool.id, key)
+      }
+    const recorded = new Set(
+      wrapperKeys.size
+        ? decode(
+            mutableArray(
+              mutableStruct({
+                scope: Schema.String,
+                turnId: Schema.String,
+                command: Schema.String,
+              }),
+            ),
+            this.db
+              .prepare(`
+                WITH wanted AS MATERIALIZED (
+                  SELECT json_extract(value,'$[0]') AS scope, json_extract(value,'$[1]') AS turn_id,
+                         json_extract(value,'$[2]') AS command FROM json_each(?)
+                )
+                SELECT DISTINCT activity.scope, json_extract(payload,'$.turnId') AS turnId,
+                       json_extract(payload,'$.presentation.input') AS command
+                FROM (SELECT DISTINCT scope FROM wanted) scopes JOIN activity USING (scope)
+                WHERE kind='tool' AND json_valid(payload) AND json_extract(payload,'$.terminalCommand')=1
+                  AND (activity.scope, turnId, command) IN (SELECT scope, turn_id, command FROM wanted)
+              `)
+              .all(JSON.stringify([...wrapperKeys.values()])),
+          ).map((row) => JSON.stringify([row.scope, row.turnId, row.command]))
+        : [],
+    )
+    const tools = pageTools
+      .filter((tool) => !recorded.has(wrapperKeys.get(tool.id) ?? ''))
+      .map((tool) => {
+        const view = toolPresentation(tool.payload, tool.summary, tool.inputPayload)
+        return {
+          id: tool.sourceEventId ?? tool.id,
+          ...(tool.sourceEventId ? { callId: tool.toolId } : {}),
+          ...(tool.inputEventId ? { inputEventId: tool.inputEventId } : {}),
+          time: tool.time,
+          kind: tool.kind,
+          scope: tool.scope,
+          summary: view.title.slice(0, 200),
+          status: tool.status,
+          durationMs:
+            tool.startedAt && tool.startedAt !== tool.time
+              ? Math.max(0, Date.parse(tool.time) - Date.parse(tool.startedAt))
+              : undefined,
+          command: view.kind === 'command' && view.input ? view.input.slice(0, 400) : undefined,
+          preview: view.output ? view.output.slice(-300) : undefined,
+        }
+      })
+    return {
+      events: [
+        ...page.flatMap(({ id, time, kind, scope, summary }) =>
+          kind === 'tool' ? [] : [{ id, time, kind, scope, summary: summary.slice(0, 200) }],
+        ),
+        ...tools,
+      ].sort((a, b) => b.time.localeCompare(a.time) || b.id.localeCompare(a.id)),
+      before: page.length === 100 ? String(offset + page.length) : undefined,
     }
   }
   *toolPayloads(scope: string) {

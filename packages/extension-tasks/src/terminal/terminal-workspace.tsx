@@ -489,6 +489,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                                     setCreating(false)
                                   }}
                                   project={repository?.name ?? 'Home folder'}
+                                  repository={repository}
                                   checkout={
                                     branch ??
                                     (repository

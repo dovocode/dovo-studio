@@ -263,6 +263,86 @@ it('rejects changed accounts before reading target feedback or jobs', async () =
     (await f.s.pullRequestWatch.command({ taskId: f.task.id, action: 'status' })).watches[0]?.error,
   ).toBeUndefined()
 })
+it('uses a verified unlinked checkout account only for automatic PR registration', async () => {
+  const f = await setup()
+  const other = f.s.forges.list().find((account) => account.id !== f.selected.id)!
+  const primary = f.s.store.get().repositories.find((repo) => repo.id === 'repo')!
+  const checkout = join(primary.path, 'external')
+  const binding = {
+    connectionId: other.id,
+    repository: 'foreign/project',
+    revision: other.revision,
+  }
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'external', name: 'External', path: checkout, branch: 'fix', forge: binding },
+    ],
+  }))
+  f.api.mockImplementation(async (args, _limits, cwd, credential) => {
+    expect(args.at(-1)).toBe('user')
+    expect(credential?.token).toBe(cwd === checkout ? 'other-secret' : 'thread-secret')
+    return JSON.stringify({ id: cwd === checkout ? 2 : 1, login: 'viewer' })
+  })
+  f.read.mockImplementation(async () => ({
+    ...feedback(),
+    pull: { ...feedback().pull, headCloneUrl: 'https://github.com/foreign/project.git' },
+  }))
+  f.s.store.updateTask(f.task.id, (task) => ({
+    ...task,
+    queuePaused: false,
+    linkedPullRequests: [
+      {
+        url: pullUrl,
+        number: 7,
+        title: 'Fix',
+        repositoryUrl: 'https://github.com/foreign/project',
+      },
+    ],
+  }))
+  f.s.store.saveExternalGitReceipts(f.task.id, [
+    {
+      branch: 'fix',
+      repositoryIdentity: 'github.com/foreign/project',
+      sha: feedback().pull.headSha,
+      cwd: checkout,
+      turnId: 'external-push',
+      recordedAt: new Date().toISOString(),
+    },
+  ])
+  f.s.preferences.save({ enablePullRequestBabysitting: true })
+  await f.s.pullRequestWatch.tick()
+  const status = await f.s.pullRequestWatch.command({
+    taskId: f.task.id,
+    action: 'status',
+    url: pullUrl,
+  })
+  expect(status.watches).toMatchObject([{ status: 'watching', source: { connectionId: other.id } }])
+  const automatic = status.watches[0]?.source
+  if (!automatic) throw new Error('Expected checkout source')
+  expect((await f.s.pulls.watchReader(automatic).context()).cwd).toBe(checkout)
+  const manual = await f.s.pulls.watchSource(pullUrl, 'repo')
+  expect(manual.source?.connectionId).toBe(f.selected.id)
+  await expect(
+    f.s.pulls.watchSource(
+      'https://github.com/foreign/another/pull/7',
+      undefined,
+      undefined,
+      checkout,
+    ),
+  ).rejects.toThrow('does not match this PR repository')
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: workspace.repositories.map((repo) =>
+      repo.id === 'external'
+        ? { ...repo, forge: { ...binding, connectionId: f.selected.id } }
+        : repo,
+    ),
+  }))
+  await expect(f.s.pulls.watchReader(automatic).context()).rejects.toThrow(/account/)
+})
+
 it('stops existing external watches by their returned keys while an account lookup is pending', async () => {
   const f = await setup()
   const pull = await f.s.pullRequestWatch.command({

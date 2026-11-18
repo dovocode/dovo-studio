@@ -112,5 +112,3 @@ export * from './secret-reference-fields'
 export { BotAvatar } from './bot-avatar'
 
 export { SecretReferenceCheck } from './secret-reference-check'
-
-export { startLiquidGlass } from './liquid-glass/controller'

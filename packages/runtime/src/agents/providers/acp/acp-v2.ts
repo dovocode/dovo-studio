@@ -2,6 +2,7 @@ import { configureAcpV2 } from './acp-v2-config.js'
 import { grokSteering } from './grok-steering.js'
 import {
   SessionUpdate,
+  RequestError,
   RequestPermissionSubject,
   type NewSessionResponse,
   type ResumeSessionResponse,
@@ -13,6 +14,7 @@ import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-po
 import { formQuestions } from '../shared/form-questions.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { openAcpV2Connection, AcpV1Fallback } from './acp-v2-connection.js'
+import { NativeForegroundCancelled, NativeSessionBusyError } from '../../execution/handover.js'
 import { AcpV2Updates } from './acp-v2-updates.js'
 
 type Connection = ReturnType<typeof openAcpV2Connection>
@@ -28,9 +30,11 @@ type Warm = {
     run: AgentRun
     updates?: AcpV2Updates
     prompting: boolean
+    resuming: boolean
     compact: boolean
     foreground?: string
     idle?: () => void
+    cancelled?: () => void
     fail?: (message: string) => void
   }
 }
@@ -43,23 +47,32 @@ function working(value: Warm) {
 }
 
 export function createAcpV2Adapter() {
-  const close = async (value: Warm) => {
-    await value.connection.close()
-    value.state.run.onSubagentEvent?.('dovo/session/closed', {}, value.sessionId)
+  const shutdown = new WeakMap<Connection, Promise<void>>()
+  const close = (connection: Connection, state: Warm['state'], sessionId?: string) => {
+    const pending = shutdown.get(connection)
+    if (pending) return pending
+    const closing = connection.close().then(() => {
+      if (sessionId) state.run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
+    })
+    shutdown.set(connection, closing)
+    return closing
   }
-  const idle = new IdleProviders<Warm>(close, working)
+  const release = (value: Warm) => close(value.connection, value.state, value.sessionId)
+  const idle = new IdleProviders<Warm>(release, working)
   return {
     releaseTask: (taskId: string) => idle.release(taskId),
     beforeV1: async (taskId: string) => {
       const held = idle.get(taskId)
       if (held && working(held))
-        throw new Error('Stop ACP background work before changing protocol versions')
+        throw new NativeSessionBusyError(
+          'Stop ACP background work before changing protocol versions',
+        )
       await idle.release(taskId)
     },
     dispose: async () => {
       const values = [...idle.values()]
       idle.clear()
-      await Promise.all(values.map(close))
+      await Promise.all(values.map(release))
     },
     /** False means explicit v1 negotiation. No session or prompt has been sent. */
     async run(input: AgentRun, launch: AcpLaunch): Promise<boolean> {
@@ -77,15 +90,31 @@ export function createAcpV2Adapter() {
       if (previous && !warm) {
         if (working(previous)) {
           if (run.taskId) idle.set(run.taskId, previous)
-          throw new Error('Stop ACP background work before changing its session configuration')
+          throw new NativeSessionBusyError(
+            'Stop ACP background work before changing its session configuration',
+          )
         }
-        await close(previous)
+        await release(previous)
       }
-      const state: Warm['state'] = warm?.state ?? { run, prompting: false, compact: false }
+      const state: Warm['state'] = warm?.state ?? {
+        run,
+        prompting: false,
+        resuming: false,
+        compact: false,
+      }
       state.run = run
+      state.resuming = !!warm
       let sessionId = warm?.sessionId ?? run.sessionId
-      let loading = !warm
+      let synchronized = !!warm || !run.sessionId
       let cancelling = false
+      let acknowledgedCancellation = false
+      const sessionUpdates = state.updates ?? new AcpV2Updates(run, () => {})
+      state.updates = sessionUpdates
+      sessionUpdates.attach(run)
+      const interactionPhase = () => {
+        if (state.prompting) return 'prompt'
+        if (state.resuming && state.foreground && state.foreground !== 'idle') return 'resume'
+      }
       const connection =
         warm?.connection ??
         openAcpV2Connection(
@@ -93,12 +122,13 @@ export function createAcpV2Adapter() {
           {
             permission: async ({ params }) => {
               const owner = state.run
-              if (!state.prompting || params.sessionId !== sessionId || owner.signal.aborted)
+              const phase = interactionPhase()
+              if (!phase || params.sessionId !== sessionId || owner.signal.aborted)
                 return { outcome: { outcome: 'cancelled' } }
               const subject = params.subject
               let operation: 'read' | 'edit' | 'execute' | 'other' = 'other'
               if (subject && RequestPermissionSubject.isToolCall(subject)) {
-                state.updates?.tool(subject.toolCall, params.sessionId)
+                if (phase === 'prompt') state.updates?.tool(subject.toolCall, params.sessionId)
                 const kind = subject.toolCall.kind
                 operation = ['read', 'search', 'think'].includes(kind ?? '')
                   ? 'read'
@@ -118,7 +148,7 @@ export function createAcpV2Adapter() {
                       .join('\n'),
                     operation === 'execute' ? 'command' : undefined,
                   )) !== 'deny')
-              if (owner.signal.aborted || !state.prompting)
+              if (owner.signal.aborted || owner !== state.run || phase !== interactionPhase())
                 return { outcome: { outcome: 'cancelled' } }
               const option = params.options.find(
                 (option) => option.kind === (allow ? 'allow_once' : 'reject_once'),
@@ -131,8 +161,9 @@ export function createAcpV2Adapter() {
             },
             elicitation: async ({ params }) => {
               const owner = state.run
+              const phase = interactionPhase()
               if (
-                !state.prompting ||
+                !phase ||
                 !('sessionId' in params) ||
                 params.sessionId !== sessionId ||
                 owner.signal.aborted ||
@@ -145,25 +176,28 @@ export function createAcpV2Adapter() {
                 owner,
                 owner.signal,
               )
-              if (owner.signal.aborted || !state.prompting) return { action: 'cancel' }
+              if (owner.signal.aborted || owner !== state.run || phase !== interactionPhase())
+                return { action: 'cancel' }
               return content ? { action: 'accept', content } : { action: 'decline' }
             },
             update: (params) => {
               if (params.sessionId !== sessionId) return
               if (SessionUpdate.isStateUpdate(params.update)) {
                 state.foreground = params.update.state
-                if (params.update.state === 'idle') state.idle?.()
+                synchronized = true
               }
               if (SessionUpdate.isAvailableCommandsUpdate(params.update))
                 state.compact = params.update.availableCommands.some(
                   (command) => command.name === 'compact',
                 )
-              if (!loading) {
-                try {
-                  state.updates?.accept(params, state.prompting)
-                } catch (error) {
-                  state.fail?.(error instanceof Error ? error.message : String(error))
-                }
+              try {
+                sessionUpdates.accept(params, state.prompting, synchronized)
+              } catch (error) {
+                state.fail?.(error instanceof Error ? error.message : String(error))
+              }
+              if (SessionUpdate.isStateUpdate(params.update) && params.update.state === 'idle') {
+                if (params.update.stopReason === 'cancelled') state.cancelled?.()
+                state.idle?.()
               }
             },
           },
@@ -171,14 +205,23 @@ export function createAcpV2Adapter() {
         )
       run.onOwnedProcess?.(connection.child)
       if (!warm)
-        void connection.exited.catch(() => {
-          for (const [taskId, value] of idle)
-            if (value.connection === connection) idle.delete(taskId)
-          if (sessionId) state.run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
-        })
-      let succeeded = false
+        void connection.exited
+          .catch(async () => {
+            await close(connection, state, sessionId)
+            for (const [taskId, value] of idle)
+              if (value.connection === connection) idle.delete(taskId)
+          })
+          .catch((error: unknown) => console.error('Could not close ACP v2 connection:', error))
+      let retained = false
       let ephemeralDelete = false
       let abortTimer: ReturnType<typeof setTimeout> | undefined
+      const cancellation = new Promise<void>((resolve) => {
+        state.cancelled = () => {
+          if (!cancelling) return
+          acknowledgedCancellation = true
+          resolve()
+        }
+      })
       const abort = () => {
         cancelling = true
         if (sessionId) {
@@ -188,6 +231,28 @@ export function createAcpV2Adapter() {
           }, 1500)
           abortTimer.unref()
         } else void connection.close()
+      }
+      const registerSession = (id: string) => {
+        run.onSession(id)
+        run.onNativeSession?.(
+          {
+            foregroundCancellation: true,
+            stop: async (childId) => {
+              if (childId) throw new Error('Stop the ACP v2 session to stop its background work')
+              try {
+                await connection.control(
+                  connection.rpc.request('session/close', { sessionId: id }),
+                  'session close',
+                )
+              } finally {
+                await close(connection, state, id)
+                if (run.taskId && idle.get(run.taskId)?.connection === connection)
+                  idle.delete(run.taskId)
+              }
+            },
+          },
+          id,
+        )
       }
       const waitForIdle = async () => {
         if (!state.foreground || state.foreground === 'idle') return
@@ -201,6 +266,19 @@ export function createAcpV2Adapter() {
           state.idle = undefined
         }
         run.signal.throwIfAborted()
+      }
+      let completed = false
+      const retain = () => {
+        if (
+          warm &&
+          run.taskId &&
+          !run.ephemeral &&
+          run.tools !== 'none' &&
+          !connection.signal.aborted
+        ) {
+          idle.set(run.taskId, warm)
+          retained = true
+        }
       }
       run.signal.addEventListener('abort', abort, { once: true })
       try {
@@ -228,6 +306,8 @@ export function createAcpV2Adapter() {
             )
               throw new Error(`This ACP v2 agent does not support ${kind} MCP servers`)
           }
+          state.resuming = !!run.sessionId
+          if (run.sessionId) registerSession(run.sessionId)
           const session = await connection.control(
             run.sessionId
               ? connection.rpc.request('session/resume', {
@@ -252,6 +332,7 @@ export function createAcpV2Adapter() {
             state,
             image: launch.authentication === 'grok' || !!capabilities.prompt?.image,
           }
+          if (!run.sessionId) registerSession(sessionId)
           const id = sessionId
           await waitForIdle()
           await configureAcpV2(
@@ -263,37 +344,20 @@ export function createAcpV2Adapter() {
           )
         }
         run.signal.throwIfAborted()
-        run.onSession(warm.sessionId)
-        const id = warm.sessionId
-        run.onNativeSession?.(
-          {
-            stop: async (childId) => {
-              if (childId) throw new Error('ACP v2 native child control is not enabled')
-              try {
-                await connection.control(
-                  connection.rpc.request('session/close', { sessionId: id }),
-                  'session close',
-                )
-              } finally {
-                await connection.close()
-                if (run.taskId) idle.delete(run.taskId)
-                run.onSubagentEvent?.('dovo/session/closed', {}, id)
-              }
-            },
-          },
-          id,
-        )
+        if (previous === warm) registerSession(warm.sessionId)
         await waitForIdle()
-        loading = false
         if (run.compact && !state.compact)
           throw new Error('This ACP agent does not advertise a compact command')
         let finish: (reason: string, error?: string) => void = () => {}
         const finished = new Promise<{ reason: string; error?: string }>((resolve) => {
-          finish = (reason, error) => resolve({ reason, error })
+          finish = (reason, error) => {
+            if (reason !== 'error') state.prompting = false
+            resolve({ reason, error })
+          }
         })
-        if (state.updates) state.updates.begin(run, finish)
-        else state.updates = new AcpV2Updates(run, finish)
+        sessionUpdates.begin(run, finish)
         state.fail = (message) => finish('error', message)
+        state.resuming = false
         state.prompting = true
         if (launch.authentication === 'grok')
           run.onSteer?.(
@@ -311,7 +375,7 @@ export function createAcpV2Adapter() {
         if (!warm.image && run.attachments?.some(isImageAttachment) && run.tools === 'none')
           throw new Error('This ACP agent does not accept image input for tool-free reviews.')
         // The response only acknowledges insertion. Only a subsequent foreground idle state ends work.
-        await Promise.race([
+        const inserted = await Promise.race([
           connection.rpc.request('session/prompt', {
             sessionId: warm.sessionId,
             prompt: [
@@ -331,7 +395,14 @@ export function createAcpV2Adapter() {
             ],
           }),
           connection.exited,
-        ])
+        ]).catch(async (error: unknown) => {
+          // ACP rejects a held prompt when cancel withdraws it. The rejection
+          // can precede the idle snapshot that confirms foreground cancellation.
+          if (!cancelling || !(error instanceof RequestError) || error.code !== -32800) throw error
+          await Promise.race([cancellation, connection.exited])
+          return undefined
+        })
+        if (!inserted) return true
         run.onPromptAccepted?.()
         if (!warm.image && run.attachments?.some(isImageAttachment))
           run.onActivity('ACP v2 attachments are available as files in the prompt context.')
@@ -339,27 +410,31 @@ export function createAcpV2Adapter() {
         if (result.reason !== 'end_turn' && !(cancelling && result.reason === 'cancelled'))
           throw new Error(result.error ?? `ACP v2 stopped: ${result.reason}`)
         run.onTextBoundary?.()
-        if (run.compact) run.onEvent?.('dovo/compaction/completed', { sessionId })
+        if (run.compact && !cancelling) run.onEvent?.('dovo/compaction/completed', { sessionId })
         run.onNativeTurnEnd?.()
-        succeeded = true
-        if (run.taskId && !run.ephemeral && run.tools !== 'none' && !run.signal.aborted) {
-          idle.set(run.taskId, warm)
-          await idle.prune(releaseIdleProvider())
-        }
+        completed = true
         return true
+      } catch (error) {
+        if (!run.signal.aborted && warm && working(warm) && !connection.signal.aborted) {
+          retain()
+          throw new NativeSessionBusyError(error instanceof Error ? error.message : String(error))
+        }
+        throw error
       } finally {
+        if (state.prompting && sessionId) state.updates?.flush(sessionId)
+        state.resuming = false
         state.prompting = false
         run.onSteer?.(undefined)
         state.fail = undefined
+        state.cancelled = undefined
         clearTimeout(abortTimer)
         run.signal.removeEventListener('abort', abort)
-        if (
-          !succeeded ||
-          !run.taskId ||
-          run.ephemeral ||
-          run.tools === 'none' ||
-          run.signal.aborted
-        ) {
+        const keepCancelled = acknowledgedCancellation && sessionUpdates.background
+        if (keepCancelled || (completed && !run.signal.aborted)) retain()
+        if (retained) {
+          await idle.prune(releaseIdleProvider())
+          if (keepCancelled) throw new NativeForegroundCancelled()
+        } else {
           try {
             if (sessionId && !connection.signal.aborted && !run.signal.aborted) {
               try {
@@ -385,7 +460,7 @@ export function createAcpV2Adapter() {
                 'session deletion',
               )
           } finally {
-            await connection.close()
+            await close(connection, state, sessionId)
           }
         }
       }

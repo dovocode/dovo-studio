@@ -345,7 +345,7 @@ export function BrowserExtensions({
                       launch(extension.id)
                     }}
                   >
-                    {extension.popup ? 'Open popup' : 'Run action'}
+                    {extension.popup ? 'Open extension' : 'Run action'}
                   </Button>
                   <Button
                     size="sm"

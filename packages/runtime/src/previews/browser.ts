@@ -1709,6 +1709,7 @@ export class RemoteBrowsers {
           else await page.evaluate((deltaY) => window.scrollBy(0, deltaY), command.deltaY)
           break
         case 'snapshot':
+        case 'elements':
         case 'screenshot':
           break
       }
@@ -1722,19 +1723,20 @@ export class RemoteBrowsers {
         ...(session.downloadErrors?.length ? { downloadErrors: session.downloadErrors } : {}),
       }
       if (command.action === 'evaluate') return { ...details, result: scriptResult }
+      if (command.action === 'elements')
+        return {
+          ...details,
+          ...decode(
+            browserObservationSchema,
+            await browserScript(session.cdp, `(${readBrowserObservation.toString()})()`),
+          ),
+        }
       if (command.action === 'screenshot')
         return {
           ...details,
           image: (await page.screenshot({ type: 'png', timeout: 10000 })).toString('base64'),
         }
-      return {
-        ...details,
-        ...(await browserTree(page)),
-        ...decode(
-          browserObservationSchema,
-          await browserScript(session.cdp, `(${readBrowserObservation.toString()})()`),
-        ),
-      }
+      return { ...details, ...(await browserTree(page)) }
     })
     session.queue = operation
       .then(

@@ -24,10 +24,14 @@ import {
   permissionPolicyIssue,
   supportsAccess,
   studioToolSettings,
+  botProjectThread,
   type Task,
+  type TaskSummary,
   type Automation,
   type MessageSource,
   type StudioToolPart,
+  type StudioThreadCaller,
+  taskHarnessSchema,
   taskFamilyRunToken,
   SCRATCH_PROJECT_ID,
 } from '@dovo/protocol'
@@ -69,17 +73,56 @@ function routineActor(
   }
 }
 
+export function studioThreadCaller(s: Services, taskId: string): StudioThreadCaller | undefined {
+  const task = s.store.get().tasks.find((task) => task.id === taskId)
+  if (task)
+    return {
+      runtimeId: s.runtimeId,
+      threadId: task.id,
+      title: task.title.slice(0, 1000),
+      bot: !!task.bot,
+      coordinationDepth: task.coordinationDepth,
+    }
+}
+
+export function forwardedThreadScope(runtimeId: string, threadId: string) {
+  return `paired:${createHash('sha256')
+    .update(JSON.stringify([runtimeId, threadId]))
+    .digest('hex')}`
+}
+
 /** The sender of a prompt that an agent writes into another thread. Never the person. */
-function agentMessageSource(s: Services, taskId: string): MessageSource {
-  return s.store.get().tasks.some((task) => task.id === taskId)
-    ? {
-        kind: 'thread',
-        runtimeId: 'local',
-        runtimeIdentity: s.runtimeId,
-        threadId: taskId,
-        title: s.store.taskSummary(taskId).title.slice(0, 400),
+function agentMessageSource(s: Services, caller?: StudioThreadCaller): MessageSource {
+  if (caller)
+    return {
+      kind: 'thread',
+      runtimeId: caller.runtimeId === s.runtimeId ? 'local' : caller.runtimeId,
+      runtimeIdentity: caller.runtimeId,
+      threadId: caller.threadId,
+      title: (caller.title ?? 'Parent thread').slice(0, 400),
+    }
+  return { kind: 'system', label: 'Agent on paired computer' }
+}
+
+async function startStudioThread(s: Services, id: string, start: boolean | undefined) {
+  if (start) {
+    try {
+      await s.tasks.start(id)
+    } catch (error) {
+      return {
+        id,
+        status: s.store.taskSummary(id).status,
+        startError: error instanceof Error ? error.message : 'Could not start thread',
       }
-    : { kind: 'system', label: 'Agent on paired computer' }
+    }
+  }
+  return {
+    id,
+    status: s.store.taskSummary(id).status,
+    note: start
+      ? 'Thread start accepted.'
+      : 'Created a draft. Use resume to execute its prompt, or send to add a prompt and start.',
+  }
 }
 
 const safeReference = (s: Services, kind: 'thread' | 'browser', id: string) => {
@@ -87,6 +130,55 @@ const safeReference = (s: Services, kind: 'thread' | 'browser', id: string) => {
     return studioReference(s.runtimeId, kind, id)
   } catch {
     return undefined
+  }
+}
+
+function threadBrief(s: Services, task: TaskSummary) {
+  const { id, title, status, repositoryId, agentId, historyRevision, updatedAt, error, bot } = task
+  return {
+    id,
+    title,
+    status,
+    repositoryId,
+    agentId,
+    historyRevision,
+    updatedAt,
+    error: error?.slice(0, 1000),
+    bot: bot ? true : undefined,
+    reference: safeReference(s, 'thread', id),
+  }
+}
+
+function threadMessage(message: Task['messages'][number], offset = 0, limit = 8000) {
+  const { id, role, text, createdAt } = message
+  if (offset > text.length) throw new HttpError(400, 'Offset is outside the message')
+  const end = offset + limit
+  return {
+    id,
+    role,
+    createdAt,
+    text: text.slice(offset, end),
+    nextOffset: end < text.length ? end : undefined,
+  }
+}
+
+function threadHistory(s: Services, id: string, before?: string) {
+  const page = s.store.historyPage(id, before, false)
+  if (!page) throw new HttpError(409, 'This history cursor no longer exists. Read the latest page.')
+  const messages: ReturnType<typeof threadMessage>[] = []
+  let remaining = 16000
+  for (let index = page.messages.length - 1; index >= 0; index--) {
+    const message = page.messages[index]!
+    if (remaining <= 0) break
+    const preview = threadMessage(message, 0, Math.min(remaining, 8000))
+    messages.push(preview)
+    remaining -= preview.text.length
+  }
+  messages.reverse()
+  return {
+    messages,
+    historyRevision: page.historyRevision,
+    before: messages.length < page.messages.length ? messages[0]?.id : page.before,
   }
 }
 
@@ -106,14 +198,22 @@ export function studioReadAction(part: string, action: unknown) {
   return (
     part === 'discover' ||
     (part === 'threads' &&
-      ['list', 'read', 'search', 'wait', 'snapshot', 'watches', 'answer-child-question'].includes(
-        String(action),
-      )) ||
+      [
+        'list',
+        'read',
+        'message',
+        'search',
+        'wait',
+        'snapshot',
+        'watches',
+        'answer-child-question',
+      ].includes(String(action))) ||
     (part === 'automations' &&
       ['list', 'read', 'definition', 'validate', 'dryRun', 'runs', 'wait'].includes(
         String(action),
       )) ||
-    (part === 'browsers' && ['list', 'snapshot', 'screenshot', 'logs'].includes(String(action))) ||
+    (part === 'browsers' &&
+      ['list', 'snapshot', 'elements', 'screenshot', 'logs'].includes(String(action))) ||
     (part === 'ui' && ['list', 'snapshot', 'theme-read'].includes(String(action))) ||
     part === 'diagnostics'
   )
@@ -176,6 +276,7 @@ export async function studioTool(
   value: unknown,
   authorize: () => void,
   policy?: StudioPolicy,
+  forwardedCaller?: StudioThreadCaller,
 ) {
   const check = () => {
     authorize()
@@ -215,7 +316,7 @@ export async function studioTool(
       return { agentId, catalog }
     }
     return {
-      capabilities: { targetedSubagents: 1 },
+      capabilities: { targetedSubagents: 1, compactToolResults: 1 },
       enabled: Object.fromEntries(
         Object.entries(enabled).map(([key, value]) => [
           key,
@@ -243,6 +344,11 @@ export async function studioTool(
   }
   if (part === 'threads') {
     const command = decode(studioThreadsCommandSchema, value)
+    if (
+      forwardedCaller &&
+      forwardedThreadScope(forwardedCaller.runtimeId, forwardedCaller.threadId) !== taskId
+    )
+      throw new HttpError(403, 'The forwarded caller does not match the thread scope')
     if (command.action === 'list') {
       const rows = workspace.tasks.filter(
         (task) => !command.query || task.title.toLowerCase().includes(command.query.toLowerCase()),
@@ -251,7 +357,7 @@ export async function studioTool(
       if (command.before && index < 0) throw new HttpError(400, 'Unknown thread cursor')
       const items = rows
         .slice(index + 1, index + 51)
-        .map(({ id, title, status, repositoryId, agentId, archivedAt, error }) => ({
+        .map(({ id, title, status, repositoryId, agentId, archivedAt, error, bot }) => ({
           id,
           reference: safeReference(s, 'thread', id),
           title,
@@ -260,6 +366,7 @@ export async function studioTool(
           agentId,
           archivedAt,
           error,
+          bot: bot ? true : undefined,
         }))
       return { threads: items, before: rows.length > index + 51 ? items.at(-1)?.id : undefined }
     }
@@ -272,9 +379,7 @@ export async function studioTool(
         parent &&
         (parent.runtimeId === s.runtimeId
           ? parent.threadId
-          : `paired:${createHash('sha256')
-              .update(JSON.stringify([parent.runtimeId, parent.threadId]))
-              .digest('hex')}`)
+          : forwardedThreadScope(parent.runtimeId, parent.threadId))
       if (!coordinator || coordinator !== taskId)
         throw new HttpError(403, 'This question belongs to another parent thread')
       s.questions.answerByParent(child.id, command.questionId, command.answers)
@@ -332,6 +437,13 @@ export async function studioTool(
         throw new HttpError(400, 'Add a prompt to create and start a thread')
       const create = async () => {
         check()
+        const localCaller = forwardedCaller ? undefined : studioThreadCaller(s, taskId)
+        const caller = forwardedCaller ?? localCaller
+        const spawnParent =
+          command.spawnParent ??
+          (caller && !botProjectThread(caller.bot, command.repositoryId)
+            ? { runtimeId: caller.runtimeId, threadId: caller.threadId, title: caller.title }
+            : undefined)
         const task = s.tasks.create({
           title: command.title,
           repositoryId: command.repositoryId,
@@ -341,33 +453,11 @@ export async function studioTool(
           agentOverrides: overrides,
           agentId: command.agentId ?? '',
           objective: command.prompt ?? '',
-          messageSource: agentMessageSource(s, taskId),
+          messageSource: agentMessageSource(s, localCaller),
+          spawnParent,
+          coordinationDepth: command.coordinationDepth,
         })
-        if (command.coordinationDepth || command.spawnParent)
-          s.store.updateTask(task.id, (task) => ({
-            ...task,
-            coordinationDepth: command.coordinationDepth,
-            spawnParent: command.spawnParent,
-          }))
-        if (command.start) {
-          try {
-            await s.tasks.start(task.id)
-          } catch (error) {
-            // The durable draft exists; return its ID so callers can repair/resume it.
-            return {
-              id: task.id,
-              status: s.store.taskSummary(task.id).status,
-              startError: error instanceof Error ? error.message : 'Could not start thread',
-            }
-          }
-        }
-        return {
-          id: task.id,
-          status: s.store.taskSummary(task.id).status,
-          note: command.start
-            ? 'Thread start accepted.'
-            : 'Created a draft. Use resume to execute its prompt, or send to add a prompt and start.',
-        }
+        return startStudioThread(s, task.id, command.start)
       }
       if (command.requestId)
         return s.mutations.execute(
@@ -391,24 +481,43 @@ export async function studioTool(
       return create()
     }
     const target = s.store.taskSummary(command.id)
-    if (command.action === 'read')
+    if (command.action === 'read') {
+      if (command.detail === 'full')
+        return {
+          thread: s.store.publicValue(target),
+          history: s.store.historyPage(command.id, command.before),
+        }
+      const thread = threadBrief(s, target)
+      if (command.detail === 'files') return { thread, files: s.store.publicValue(target.files) }
+      if (command.detail === 'checkpoints')
+        return { thread, history: s.store.historyPage(command.id, command.before) }
       return {
-        thread: s.store.publicValue(target),
-        history: s.store.historyPage(command.id, command.before),
+        thread,
+        history: threadHistory(s, command.id, command.before),
       }
-    if (command.action === 'wait')
+    }
+    if (command.action === 'message') {
+      const message = s.store.taskMessage(target.id, command.messageId)
+      if (!message) throw new HttpError(404, 'Message not found in this thread')
+      return threadMessage(message, command.offset)
+    }
+    if (command.action === 'wait') {
+      const working = (task: TaskSummary) =>
+        s.tasks.hasWorkingFamily(task.id) || (!!nextQueuedMessage(task) && !task.queuePaused)
+      const thread = await waitFor(
+        () => s.store.taskSummary(command.id),
+        working,
+        command.timeoutMs ?? 20000,
+        check,
+      )
+      const running = working(thread)
       return {
-        thread: s.store.publicValue(
-          await waitFor(
-            () => s.store.taskSummary(command.id),
-            (task) =>
-              s.tasks.hasWorkingFamily(task.id) || (!!nextQueuedMessage(task) && !task.queuePaused),
-            command.timeoutMs ?? 20000,
-            check,
-          ),
-        ),
+        thread: threadBrief(s, thread),
+        running,
+        ...(running ? {} : { history: threadHistory(s, thread.id) }),
       }
-    if (command.id === taskId)
+    }
+    if (command.id === taskId && !(command.action === 'send' && target.bot))
       throw new HttpError(
         409,
         'Use this conversation’s normal reply and lifecycle controls for its own run',
@@ -421,6 +530,60 @@ export async function studioTool(
     )
     if (command.action === 'send') {
       if (!command.text.trim()) throw new HttpError(400, 'Add a message')
+      const caller = forwardedCaller ?? studioThreadCaller(s, taskId)
+      if (target.bot) {
+        if (!caller)
+          throw new HttpError(409, 'Update the calling runtime before sending work to a Bot')
+        return s.mutations.execute(
+          `studio-bot-call:${taskId}:${target.id}`,
+          command.messageId,
+          { text: command.text },
+          async () => {
+            check()
+            const depth = (caller.coordinationDepth ?? 0) + 1
+            if (depth > 3) throw new HttpError(409, 'Maximum child agent nesting reached')
+            await s.scratch.ensure()
+            check()
+            const current = s.store.taskSummary(target.id)
+            const bot = current.bot
+            if (!bot || bot.state === 'paused')
+              throw new HttpError(409, 'Resume the Bot before calling it')
+            withinPolicy(s, current, policy, command.allowPermissionIncrease)
+            const agent = resolveTaskAgent(current, s.store.get().agents)
+            if (!agent) throw new HttpError(400, 'Select an agent for this Bot first')
+            const task = s.tasks.create({
+              title: `${current.title} · ${command.text.trim().split('\n', 1)[0]}`.slice(0, 200),
+              repositoryId: SCRATCH_PROJECT_ID,
+              execution: 'main',
+              agentId: '',
+              harness: decode(taskHarnessSchema, {
+                ...agent,
+                instructions: [
+                  agent.instructions,
+                  `Bot role: ${bot.role}\nStanding responsibilities: ${bot.responsibilities}`,
+                ]
+                  .filter(Boolean)
+                  .join('\n\n'),
+              }),
+              objective: command.text,
+              messageSource: agentMessageSource(s, caller),
+              coordinationDepth: depth,
+              botMention: {
+                runtimeId: s.runtimeId,
+                botId: target.id,
+                sourceRuntimeId: caller.runtimeId,
+                sourceTaskId: caller.threadId,
+                sourceMessageId: command.messageId,
+                sourceTitle: caller.title,
+              },
+            })
+            return {
+              ...(await startStudioThread(s, task.id, true)),
+              reference: safeReference(s, 'thread', task.id),
+            }
+          },
+        )
+      }
       return runClientEffect(
         s.tasks.sendEffect(
           command.id,
@@ -430,7 +593,7 @@ export async function studioTool(
           undefined,
           true,
           undefined,
-          agentMessageSource(s, taskId),
+          agentMessageSource(s, caller),
         ),
       )
     }
@@ -640,10 +803,23 @@ export async function studioTool(
   if (part === 'diagnostics') {
     const command = decode(studioDiagnosticsCommandSchema, value)
     if (command.action === 'health') return runtimeDiagnostics(s)
+    if (command.action === 'event') {
+      const event = s.activity.event(command.id, command.scope)
+      if (!event) throw new HttpError(404, 'Activity event not found')
+      const { payload, ...header } = event
+      const offset = command.offset ?? 0
+      if (offset > payload.length) throw new HttpError(400, 'Offset is outside the event payload')
+      const end = offset + 8000
+      return {
+        ...header,
+        payload: payload.slice(offset, end),
+        nextOffset: end < payload.length ? end : undefined,
+      }
+    }
     const offset = command.before === undefined ? 0 : Number(command.before)
     if (!Number.isSafeInteger(offset) || offset < 0)
       throw new HttpError(400, 'Invalid activity cursor')
-    return s.activity.list('', '', offset, command.scope)
+    return s.activity.overview(offset, command.scope)
   }
   throw new HttpError(400, 'Unknown Studio Tools part')
 }

@@ -200,6 +200,33 @@ it('runs a project child from General in its own checkout and consumes its answe
   ])
 })
 
+it('lets a Bot steer a project worker while its thread stays independent', async () => {
+  const source = await setup()
+  source.s.store.updateTask(source.parent.id, (task) => ({
+    ...task,
+    bot: {
+      role: 'Coordinator',
+      responsibilities: 'Steer project work',
+      state: 'active',
+      revision: randomUUID(),
+      createdAt: task.createdAt,
+      updatedAt: task.createdAt,
+    },
+  }))
+  const response = await source.post('spawn', request)
+  expect(response.status).toBe(200)
+  const child = decode(childSchema, await response.json())
+  expect(source.s.store.taskSummary(child.threadId).spawnParent).toMatchObject({
+    threadId: source.parent.id,
+    steering: true,
+  })
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { threadId: child.threadId, delegated: true, steering: true },
+  ])
+  expect((await source.post('wait', { id: child.id })).status).toBe(200)
+  expect(threadSnapshot(source.s, child.threadId).threads?.[0]?.parent).toBeUndefined()
+})
+
 it('targets paired projects with the parent permissions and deduplicates concurrent retries across receipt reconstruction', async () => {
   const source = await setup(),
     target = await setup()

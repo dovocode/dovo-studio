@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { toolPresentation } from '@dovo/protocol'
 import type { AgentRun } from '../../execution/types.js'
 import { AcpV2Updates } from './acp-v2-updates.js'
 import { providerFixture } from '../shared/provider-fixture.js'
@@ -250,3 +251,65 @@ it('replaces each item plan by ID and keeps other plans in the shared checklist'
     await rm(f.cwd, { recursive: true, force: true })
   }
 })
+
+it.each(['tool', 'terminal'])(
+  'shows bounded recent %s output during progress and retains the complete receipt at idle',
+  async (kind) => {
+    const f = await providerFixture('acp', '')
+    try {
+      const receipts: string[] = []
+      const view = new AcpV2Updates(
+        {
+          ...f.run,
+          onEvent: (name, payload) => {
+            if (name === 'tool_call_update') receipts.push(JSON.stringify(payload))
+          },
+        },
+        () => {},
+      )
+      const blocks: string[] = []
+      for (let index = 0; index < 256; index++) {
+        const text = String(index).padEnd(256, 'x')
+        blocks.push(text)
+        view.accept({
+          sessionId: 's',
+          update:
+            kind === 'tool'
+              ? {
+                  sessionUpdate: 'tool_call_content_chunk',
+                  toolCallId: 't',
+                  content: { type: 'content', content: { type: 'text', text } },
+                }
+              : {
+                  sessionUpdate: 'terminal_output_chunk',
+                  terminalId: 't',
+                  data: Buffer.from(text).toString('base64'),
+                },
+        })
+      }
+      const displayed = () =>
+        toolPresentation(JSON.stringify({ event: JSON.parse(receipts.at(-1)!) }), 'Tool update')
+          .output
+      const full = blocks.join(kind === 'tool' ? '\n' : '')
+      expect(displayed()).toBe(full.slice(-1024))
+      for (let n = 0; n < 10; n++) {
+        view.accept({
+          sessionId: 's',
+          update:
+            kind === 'tool'
+              ? { sessionUpdate: 'tool_call_update', toolCallId: 't', title: 'Reading' }
+              : { sessionUpdate: 'terminal_update', terminalId: 't' },
+        })
+      }
+      expect(displayed()).toBe(full.slice(-1024))
+      view.accept({
+        sessionId: 's',
+        update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'end_turn' },
+      })
+      expect(displayed()).toBe(full)
+      expect(receipts.join('').length).toBeLessThan(7 * 65536)
+    } finally {
+      await rm(f.cwd, { recursive: true, force: true })
+    }
+  },
+)

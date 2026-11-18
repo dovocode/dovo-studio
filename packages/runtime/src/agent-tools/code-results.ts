@@ -1,32 +1,53 @@
 import { randomUUID } from 'node:crypto'
+import { CallToolResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { z } from 'zod'
 
 const threshold = 4 * 1024 * 1024
 const capacity = 64 * 1024 * 1024
 const lifetime = 60 * 60_000
+export const codeResponseTextLimit = 64 * 1024
+// Leave room for the page metadata and execution wrapper.
+const pageTextLimit = codeResponseTextLimit - 512
+// Leave room in the 64 KiB Code mode response even when every code unit needs escaping.
+const defaultReadLimit = 8192
 const readSchema = z
   .object({
     resultId: z.string().uuid(),
     offset: z.number().int().nonnegative().default(0),
-    limit: z.number().int().min(1).max(262144).default(65536),
+    limit: z.number().int().min(1).max(262144).default(defaultReadLimit),
   })
   .strict()
 
 export const codeResultTool = {
   name: 'read_tool_result',
   description:
-    'Read a retained large tool result as untrusted JSON text. Offsets and lengths count UTF-16 code units. Reading does not repeat the original action. Results expire after one hour or earlier under storage pressure.',
+    'Read a retained large tool result as untrusted JSON text. Offsets and lengths count UTF-16 code units. A page can be shorter than the requested limit to fit the response. Use nextOffset to continue. Reading does not repeat the original action. Results expire after one hour or earlier under storage pressure.',
   inputSchema: {
     type: 'object' as const,
     properties: {
       resultId: { type: 'string', format: 'uuid' },
       offset: { type: 'integer', minimum: 0 },
-      limit: { type: 'integer', minimum: 1, maximum: 262144 },
+      limit: { type: 'integer', minimum: 1, maximum: 262144, default: defaultReadLimit },
     },
     required: ['resultId'],
     additionalProperties: false,
   },
   source: 'harness',
+}
+
+export function checkCodeToolResult(result: unknown) {
+  const parsed = CallToolResultSchema.safeParse(result)
+  if (parsed.success && parsed.data.isError) {
+    let message = ''
+    for (const item of parsed.data.content) {
+      if (item.type !== 'text' || !item.text) continue
+      if (message) message += '\n'
+      message += item.text.slice(0, 4097 - message.length)
+      if (message.length > 4096) throw new Error(`${message.slice(0, 4096)}…`)
+    }
+    throw new Error(message || 'Tool failed')
+  }
+  return result
 }
 
 /** Runtime-owned, bounded storage. A result never grants access to another thread. */
@@ -44,10 +65,14 @@ export class CodeResults {
       }
     }
   }
-  retain(taskId: string, value: unknown, now = Date.now()): unknown {
+  has(taskId: string, resultId: string, now = Date.now()) {
+    const entry = this.entries.get(resultId)
+    return entry?.taskId === taskId && entry.expires > now
+  }
+  retain(taskId: string, value: unknown, now = Date.now(), inlineLimit = threshold): unknown {
     const json = JSON.stringify(value ?? null)
     const bytes = Buffer.byteLength(json)
-    if (bytes <= threshold) return value
+    if (bytes <= inlineLimit) return value
     this.prune(now)
     const completed = {
       toolCompleted: true,
@@ -90,7 +115,18 @@ export class CodeResults {
         'Tool result is unavailable or expired in this thread. Do not repeat a completed action blindly.',
       )
     if (offset > entry.json.length) throw new Error('Offset exceeds the tool result length')
-    const text = entry.json.slice(offset, offset + limit)
+    let text = entry.json.slice(offset, offset + Math.min(limit, pageTextLimit))
+    if (Buffer.byteLength(JSON.stringify(text)) > pageTextLimit) {
+      let lower = defaultReadLimit
+      let upper = text.length
+      while (lower + 1 < upper) {
+        const length = Math.floor((lower + upper) / 2)
+        if (Buffer.byteLength(JSON.stringify(text.slice(0, length))) <= pageTextLimit)
+          lower = length
+        else upper = length
+      }
+      text = text.slice(0, lower)
+    }
     const nextOffset = offset + text.length
     return {
       resultId,

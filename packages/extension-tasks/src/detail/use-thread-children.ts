@@ -1,5 +1,5 @@
 import { useWorkspace } from '@dovo/studio-core'
-import { threadChildren } from '@dovo/protocol'
+import { sideThreadPeers, threadChildren } from '@dovo/protocol'
 
 /** Read metadata from the connected computers. Conversation history stays lazy. */
 export function useThreadChildren(parentId: string) {
@@ -7,7 +7,7 @@ export function useThreadChildren(parentId: string) {
   return threadChildren(
     [
       { runtimeId: activeRuntimeId, runtimeIdentity: snapshot?.runtimeId, tasks: workspace.tasks },
-      ...(runtimes ?? []).flatMap((source) =>
+      ...sideThreadPeers(runtimes ?? [], snapshot?.runtimeId).flatMap((source) =>
         source.profile.id !== activeRuntimeId && source.snapshot
           ? [
               {

@@ -14,7 +14,6 @@ import {
   nativeBrowserHole,
 } from './native-browser-layout'
 import { BrowserTabRow } from './browser-tab-row'
-import { Globe2 } from 'lucide-react'
 import { SnoozeDialog } from '../dialogs/snooze-dialog'
 import { BrowserSiteControls } from './browser-site-controls'
 import { BrowserHistoryButton } from './browser-history-button'
@@ -1460,9 +1459,9 @@ function BrowserContent({
                 if (tab.active || (previewLinks.current && (tab.openerKey || browserPageOnly)))
                   foreground = index
               })
-              if (foreground >= 0) {
-                void showLinkPreview(adopted[foreground], previousSelected)
-              }
+              const foregroundTab = adopted[foreground]
+              if (foregroundTab?.previewOf) void showLinkPreview(foregroundTab, previousSelected)
+              else if (foregroundTab) selectTab(foregroundTab)
               for (const [key, value] of nativeTabKeys)
                 if (closedKeys.has(value)) nativeTabKeys.delete(key)
               if (incoming.length) selectTab(incoming[incoming.length - 1])
@@ -2194,17 +2193,7 @@ function BrowserContent({
       }
       active={target ? target.active : !tab.detached && activeTab === tab.id}
       pinnedTile={target?.pinnedTile ?? !!tab.pinned}
-      titleIcon={
-        target && !target.pinnedTile ? (
-          <span
-            aria-hidden="true"
-            data-workspace-kind-icon
-            className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
-          >
-            <Globe2 className="size-3.5" strokeWidth={1.7} />
-          </span>
-        ) : undefined
-      }
+      workspaceType={!!target}
       disabled={target?.disabled}
       busy={busy || !!tab.detached || !!target?.disabled}
       reorder={
@@ -3842,10 +3831,9 @@ function BrowserContent({
       )}
 
       {selectedTab.previewOf && <div className="@container/browser shrink-0">{navigation()}</div>}
-      {mode !== 'devices' && (!shared || browserPageOnly || !!selectedTab.previewOf) && (
+      {mode !== 'devices' && !shared && !browserPageOnly && !selectedTab.previewOf && (
         <p className="shrink-0 break-words border-b bg-card px-3 py-1 text-xs text-muted-foreground">
-          {browserPageOnly || selectedTab.previewOf ? 'Link preview' : 'Thread preview'} ·{' '}
-          {browserLocation} · {browserProfile}
+          Thread preview · {browserLocation} · {browserProfile}
         </p>
       )}
       {shared && !browserPageOnly && !selectedTab.previewOf && browserLocation !== browserOwner && (

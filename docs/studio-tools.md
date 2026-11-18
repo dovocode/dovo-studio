@@ -42,16 +42,44 @@ through a loopback connection. It has no computer selector and cannot be forward
 Most tools accept a command object containing an action and its arguments. Thread creation makes a
 draft by default. Set `start:true` with a prompt to create and start together, or use resume to
 execute the draft later. Supply a stable `requestId` for creation: concurrent retries and lost
-replies return the original thread ID. Reusing an ID with different arguments is rejected. If
-startup fails, the response retains the created ID with `startError`; repair/resume that thread
-instead of creating another. An interrupted operation is reported as uncertain after restart, rather
-than repeated blindly. Use a stable messageId when sending and a stable requestId when starting an
+replies return the original thread ID. Retrying a paired creation preserves its saved watch state.
+Use `watch` to restart monitoring. Reusing an ID with different arguments is rejected. If startup
+fails, the response retains the created ID with `startError`; repair/resume that thread instead of
+creating another. An interrupted operation is reported as uncertain after restart, rather than
+repeated blindly. Use a stable messageId when sending and a stable requestId when starting an
 automation, so repeating a request after a lost reply does not execute it twice. The wait action
 accepts up to 20 seconds and returns current state on timeout without cancelling work. Thread
-list/history cursors are returned as before. Automation run and runs take an automation ID; wait,
+list/history cursors are returned as before. A thread that creates a thread gets a subthread. A Bot
+that creates a project thread can steer and monitor it, while the thread appears on its own in the
+project. When `send` targets a Bot, the tool returns the ID and reference for a new conversation on
+the Bot’s computer. Open it from the caller’s side threads. A Bot calling itself gets a subthread.
+For cross-computer sends, update both runtimes. Automation run and runs take an automation ID; wait,
 cancel and retry take a run ID. Runs retain their original workflow when retried. Supported triggers
 are manual, schedule (cron and timezone), webhook and GitHub; workflows use the existing
 trigger/task/review graph schema.
+
+Thread reads return a short thread summary and up to 16,000 characters of recent message text. Use
+the returned `before` cursor for older messages. When a message has `nextOffset`, use
+`{ "action": "message", "id": "thread-id", "messageId": "message-id", "offset": 8000 }` to continue
+it. Use `detail: "files"` to read saved file contents, `detail: "checkpoints"` to read the
+checkpoint history, or `detail: "full"` for the older complete response shape. When `wait` finishes,
+its response includes compact history. Older paired runtimes still return the full thread read and
+combined browser state. Use `studio_discover` on that computer to check for
+`capabilities.compactToolResults`.
+
+Use diagnostics `activity` to see recent event headers and grouped tool calls. A tool row includes
+its outcome, duration when known, command, and a short output preview. Use the returned `before`
+cursor to read older activity. Use `{ "action": "event", "id": "event-id" }` to read one retained
+raw event. Pass `nextOffset` as `offset` to continue a large payload. When the provider records a
+separate start event, `inputEventId` opens its original arguments, even if progress and completion
+appear on a later page. The duration starts at the earliest retained event for the call. When a
+provider wraps a terminal command, Activity shows the recorded command once across pages. A failed
+provider call remains visible with its error.
+
+After a CI or release run starts, register its ID with `pipeline_watch` when follow-up is
+authorized. Use the completion notification to continue. Use `pull_request_watch` for ongoing PR
+checks when enabled and authorized. Use `studio_threads watch` for an existing thread that will
+finish in the background.
 
 New browser tabs use isolated profiles. Listing returns every live tab with its kind, title, URL and
 a unified Studio reference: the user's Browser-workspace tabs appear as `workspace` (remote runtime
@@ -60,18 +88,17 @@ the desktop's page-scoped CDP host while the tab is open in the desktop Browser 
 alongside `thread`, `agent` and `studio` sessions. Workspace and desktop tabs are the user's live,
 signed-in tabs; private-profile tabs are never listed or accessible. Choose a session ID explicitly
 before operating a live tab. Desktop tabs support CSS and `text=` selectors (no `role=`) and capture
-no console logs. Page actions return accessibility text and live DOM data by default. Logs contain
-at most the most recent 100 console, page-error and failed HTTP/network entries. They live only as
-long as the browser session.
+no console logs. Page actions return the accessibility tree and fresh element refs. Logs contain at
+most the most recent 100 console, page-error and failed HTTP/network entries. They live only as long
+as the browser session.
 
 Use this browser workflow:
 
 1. Use `list` and choose a session ID or reference. Use `open` for an isolated session.
-2. Use `snapshot` to read the accessibility tree in `snapshot` and the live DOM data in `elements`.
-   The tree shows roles, names, nesting, states and element references such as `[ref=abc-1-e4]`.
-   Each DOM element has a CSS `selector`, tag and name. Form controls also report current values,
-   check states, disabled/read-only states, validation messages and select options. Links report
-   their URLs. Password values and file paths are omitted.
+2. Use the tree returned by `open` or `snapshot`. It shows roles, names, states and element
+   references such as `[ref=abc-1-e4]`. Use the `elements` action only for DOM details such as
+   current values, CSS selectors and select options. It leaves existing refs valid. Password values
+   and file paths are excluded.
 3. Use `selector: "ref=abc-1-e4"` with `click`, `fill`, `key` or `scroll` to target a tree element.
    References belong to one tab and one snapshot. A new snapshot or navigation makes old references
    invalid. DOM CSS selectors remain available as a fallback. Navigation and input return fresh page
@@ -90,7 +117,7 @@ viewport, and up to 50 options per select. The response reports truncation throu
 `snapshotTruncated`, `elementsTruncated` and `optionsTruncated`. Use a focused `evaluate` read when
 data is truncated. DOM element data covers the main document. Iframe entries report frame URLs;
 inner frame and shadow-root controls are not included in this list. Both the isolated `browser` tool
-and `studio_browsers` use this data-first workflow. `snapshot` and `screenshot` remain available in
+and `studio_browsers` use this data-first workflow. `snapshot`, `elements` and `screenshot` work in
 read-only runs; existing pairing and private-tab rules still apply.
 
 The tree and reference design follows the patterns used by
@@ -143,8 +170,9 @@ Threads and browser tabs share one paste-ready ID format: `studio:<runtime>:thre
 `studio:<runtime>:browser:<id>` (the three-part `studio:<runtime>:<id>` form also works). Users copy
 it from **Copy Studio ID (for agents)** in thread and browser-tab menus (on mobile, remote browser
 tabs have the same action). Passing a full reference as a tool `id` unwraps it and selects its
-computer, so no separate `runtimeId` is needed. Thread lists and browser lists include each item's
-`reference`.
+computer, so no separate `runtimeId` is needed. If you supply both, they must select the same
+computer. Use thread references with `studio_threads` and browser references with `studio_browsers`.
+Thread lists and browser lists include each item's `reference`.
 
 **UI debugging is local to the machine.** Both UI control and client registration require a loopback
 runtime connection (localhost, 127.0.0.1 or ::1). Remote paired desktop/web clients cannot register

@@ -26,9 +26,9 @@ const built = await bundleBrowser(
   },
   [
     {
-      path: '../ui/layout/glass',
+      path: '../ui/layout/surface',
       importer: mobile + '/src/browser',
-      contents: "export {View as Glass} from 'react-native'",
+      contents: "export {View as Surface} from 'react-native'",
     },
     {
       path: '../ui/content/text',

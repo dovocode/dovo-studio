@@ -20,7 +20,7 @@ import {
   sideThreadRequest,
   sideThreadAttentionTarget,
   type SideThreadAttention,
-  type SideThreadRequest,
+  type RoutedSideThreadRequest,
 } from '@dovo/protocol'
 import {
   formatDateTime,
@@ -225,13 +225,19 @@ const attentionActions: Record<SideThreadAttention, string> = {
 
 /** Pending requests against the current workspace, including unsaved local thread changes. */
 export function useSideThreadAttention() {
-  const { workspace, snapshot } = useWorkspace()
+  const { workspace, snapshot, runtimes } = useWorkspace()
   const approvals = snapshot?.approvals
   const questions = snapshot?.questions
   const runtimeId = snapshot?.runtimeId
   return useMemo(
-    () => ({ workspace, runtimeId, approvals: approvals ?? [], questions: questions ?? [] }),
-    [workspace, runtimeId, approvals, questions],
+    () => ({
+      workspace,
+      runtimeId,
+      peers: runtimes,
+      approvals: approvals ?? [],
+      questions: questions ?? [],
+    }),
+    [workspace, runtimeId, runtimes, approvals, questions],
   )
 }
 
@@ -252,15 +258,18 @@ export function SideThreadAttentionBanner({
   onAttend,
 }: {
   task: Task
-  onAttend: (target: SideThreadRequest) => void
+  onAttend: (target: RoutedSideThreadRequest) => void
 }) {
   const attention = useSideThreadAttention()
-  const target = sideThreadAttentionTarget(attention, task.id)
+  const target = sideThreadAttentionTarget(attention, task.id, attention.peers)
   if (!target) return null
-  const child = attention.workspace.tasks.find((item) => item.id === target.id)
+  const source = target.owner
+    ? attention.peers.find((peer) => peer.profile.id === target.owner?.runtimeId)?.snapshot
+    : attention
+  const child = source?.workspace.tasks.find((item) => item.id === target.id)
   const approvalTitle =
     target.kind === 'approval'
-      ? attention.approvals.find((approval) => approval.id === target.requestId)?.title
+      ? source?.approvals.find((approval) => approval.id === target.requestId)?.title
       : undefined
   return (
     <div
@@ -430,7 +439,7 @@ export function SideThreadsPanel({
   openId?: string
   onOpen: (childId: string) => void
   onOpenThread: (childId: string) => void
-  onAttend: (target: SideThreadRequest) => void
+  onAttend: (target: RoutedSideThreadRequest) => void
   onBroughtBack: (handoff: SideThreadHandoff, child: Task) => void
   onDiscarded: (childId: string) => void
   readOnlyQuestions: ReactNode
@@ -573,7 +582,14 @@ export function SideThreadsPanel({
                       threadId: child.id,
                       title: child.title,
                     })
-              const target = local ? sideThreadRequest(attention, child.id) : undefined
+              const source = local
+                ? attention
+                : attention.peers?.find((peer) => peer.profile.id === runtimeId)?.snapshot
+              const request = sideThreadRequest(source, child.id)
+              const target =
+                request && !local && runtimeId && runtimeIdentity
+                  ? { ...request, owner: { runtimeId, runtimeIdentity } }
+                  : request
               const kind = target?.kind
               return (
                 <li
@@ -615,7 +631,7 @@ export function SideThreadsPanel({
                     </p>
                   )}
                   {child.sideThread && <SideThreadProvenance link={child.sideThread} />}
-                  {mention && (
+                  {mention && !mention.sourceRuntimeId && (
                     <p className="text-xs text-muted-foreground">
                       {mentionSourceTitle
                         ? uiText('Saved from {value0}', { value0: mentionSourceTitle })
@@ -626,25 +642,6 @@ export function SideThreadsPanel({
                     <span className="mr-auto text-[0.6875rem] text-muted-foreground">
                       {formatDateTime(child.createdAt, { dateStyle: 'medium', timeStyle: 'short' })}
                     </span>
-                    {mention && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="h-6 px-2 text-[0.6875rem]"
-                        onClick={() =>
-                          local
-                            ? onOpenThread(mention.sourceTaskId)
-                            : host.openThread?.({
-                                runtimeId,
-                                runtimeIdentity,
-                                threadId: mention.sourceTaskId,
-                                title: mentionSourceTitle ?? 'Source thread',
-                              })
-                        }
-                      >
-                        Open source thread
-                      </Button>
-                    )}
                     {target && kind && (
                       <Button
                         size="sm"

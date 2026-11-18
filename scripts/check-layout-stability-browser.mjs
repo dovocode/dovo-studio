@@ -58,10 +58,6 @@ function App(){const [state,setState]=useState('clean');window.setSaveState=setS
     { path: '../ui/content/text', importer: mobile + 'screens/', contents: native },
     { path: '../ui/theme', importer: mobile + 'screens/', contents: native },
     { path: '../theme', importer: mobile + 'ui/layout/', contents: native },
-    {
-      path: 'expo-glass-effect',
-      contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
-    },
   ],
 )
 const server = await createServer({

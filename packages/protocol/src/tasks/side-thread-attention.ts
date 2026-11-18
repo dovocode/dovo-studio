@@ -1,8 +1,10 @@
 import type { Task } from '../workspace.js'
 import { taskFamilyIds } from './delegation.js'
+import { botInvocationParent } from './thread-parent.js'
 
 type AttentionSnapshot = {
   runtimeId?: string
+  revision?: number
   workspace: {
     tasks: readonly Pick<Task, 'id' | 'delegation' | 'sideThread' | 'botJob' | 'botMention'>[]
   }
@@ -12,6 +14,30 @@ type AttentionSnapshot = {
 
 export type SideThreadAttention = 'approval' | 'input'
 export type SideThreadRequest = { id: string; kind: SideThreadAttention; requestId: string }
+type Peer = { connected?: boolean; profile: { id: string }; snapshot?: AttentionSnapshot | null }
+export type RoutedSideThreadRequest = SideThreadRequest & {
+  owner?: { runtimeId: string; runtimeIdentity: string }
+}
+
+/** Choose one view per physical computer before reading its children or their pending requests. */
+export function sideThreadPeers<T extends Peer>(peers: readonly T[], activeIdentity?: string) {
+  const selected = new Map<string, T>()
+  for (const peer of peers) {
+    if (!peer.snapshot || (activeIdentity && peer.snapshot.runtimeId === activeIdentity)) continue
+    const key = peer.snapshot.runtimeId
+      ? `runtime:${peer.snapshot.runtimeId}`
+      : `profile:${peer.profile.id}`
+    const prior = selected.get(key)
+    if (
+      !prior ||
+      (peer.connected && !prior.connected) ||
+      (!!peer.connected === !!prior.connected &&
+        (peer.snapshot.revision ?? 0) > (prior.snapshot?.revision ?? 0))
+    )
+      selected.set(key, peer)
+  }
+  return [...selected.values()]
+}
 
 /** Human input in a child or its delegated agents stays discoverable from its parent. */
 export function sideThreadAttention(
@@ -25,7 +51,12 @@ export function sideThreadRequest(
   snapshot: AttentionSnapshot | null | undefined,
   childId: string,
 ): SideThreadRequest | undefined {
-  if (!snapshot || !snapshot.workspace.tasks.some((task) => task.id === childId)) return
+  if (
+    !snapshot ||
+    (!snapshot.approvals.length && !snapshot.questions.length) ||
+    !snapshot.workspace.tasks.some((task) => task.id === childId)
+  )
+    return
   const family = taskFamilyIds(snapshot.workspace.tasks, childId)
   const approval = snapshot.approvals.find((request) => family.has(request.taskId))
   if (approval) return { id: childId, kind: 'approval', requestId: approval.id }
@@ -39,23 +70,44 @@ export function sideThreadRequest(
 export function sideThreadAttentionTarget(
   snapshot: AttentionSnapshot | null | undefined,
   parentId: string,
-): SideThreadRequest | undefined {
+  peers: readonly Peer[] = [],
+): RoutedSideThreadRequest | undefined {
   if (!snapshot) return
-  let input: SideThreadRequest | undefined
-  for (const task of snapshot.workspace.tasks) {
-    if (
-      task.sideThread?.parentTaskId !== parentId &&
-      task.botJob?.botId !== parentId &&
-      !(
-        task.botMention?.botId === parentId &&
-        !!snapshot.runtimeId &&
-        task.botMention.runtimeId === snapshot.runtimeId
+  let input: RoutedSideThreadRequest | undefined
+  const sources = [
+    { snapshot, owner: undefined },
+    ...sideThreadPeers(peers, snapshot.runtimeId).flatMap((peer) =>
+      snapshot.runtimeId && peer.snapshot?.runtimeId
+        ? [
+            {
+              snapshot: peer.snapshot,
+              owner: { runtimeId: peer.profile.id, runtimeIdentity: peer.snapshot.runtimeId },
+            },
+          ]
+        : [],
+    ),
+  ]
+  for (const source of sources) {
+    if (!source.snapshot.approvals.length && !source.snapshot.questions.length) continue
+    for (const task of source.snapshot.workspace.tasks) {
+      if (!source.owner && task.id === parentId) continue
+      const call = botInvocationParent(task, source.snapshot.runtimeId)
+      const sideCall =
+        call?.threadId === parentId &&
+        !call.subthread &&
+        call.runtimeIdentity === snapshot.runtimeId
+      if (
+        !sideCall &&
+        (source.owner ||
+          (task.sideThread?.parentTaskId !== parentId && task.botJob?.botId !== parentId))
       )
-    )
-      continue
-    const target = sideThreadRequest(snapshot, task.id)
-    if (target?.kind === 'approval') return target
-    if (target && !input) input = target
+        continue
+      const target = sideThreadRequest(source.snapshot, task.id)
+      if (!target) continue
+      const routed = source.owner ? { ...target, owner: source.owner } : target
+      if (target.kind === 'approval') return routed
+      input ??= routed
+    }
   }
   return input
 }

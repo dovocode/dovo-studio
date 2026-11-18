@@ -84,6 +84,7 @@ async function setup(
   const transport = new StdioClientTransport({
     command: process.execPath,
     args: [
+      '--conditions=development',
       '--import',
       createRequire(import.meta.url).resolve('tsx'),
       fileURLToPath(new URL('./server.ts', import.meta.url)),
@@ -268,6 +269,103 @@ it('uses the existing terminal session with command approval and sandbox limits'
   ).toBe(true)
 })
 
+it('runs a check once and returns its exit code, failure names and a bounded tail', async () => {
+  const { code, client, s } = await setup()
+  const script =
+    "console.log('not ok 1 - checkout round trip'); console.log('x'.repeat(7000)); setTimeout(() => { console.log('check finished'); process.exit(7) }, 100)"
+  const command = `node -e ${JSON.stringify(script)}`
+  const result = execution(
+    await code(`
+    const result = data(await tools.harness.terminal_run({command:${JSON.stringify(command)},check:true,waitMs:0}));
+    const summary = data(await tools.harness.terminal_read({id:result.id,summary:true,waitMs:5000}));
+    return {result,summary};
+  `),
+  )
+  expect(result.result).toMatchObject({
+    result: { id: expect.any(String) },
+    summary: {
+      running: false,
+      exitCode: 7,
+      outputTruncated: true,
+      failedTests: ['checkout round trip'],
+      outputTail: expect.stringMatching(/check finished\s*$/),
+    },
+  })
+  const terminal = s.terminals.list()[0]!
+  expect(s.terminals.list()).toHaveLength(1)
+  const raw = await client.callTool({ name: 'terminal_read', arguments: { id: terminal.id } })
+  expect(JSON.stringify(raw)).toContain('checkout round trip')
+  await vi.waitFor(() => {
+    expect(
+      s.activity
+        .list('', 'tool', 0, terminal.taskId)
+        .events.map((event) => JSON.parse(event.payload)),
+    ).toEqual(expect.arrayContaining([expect.objectContaining({ exitCode: 7, status: 'failed' })]))
+  })
+})
+
+it('reads a large Code mode result by reference without redoing its work', async () => {
+  const { code, s, token } = await setup()
+  const output = await code(`return {text:'dovo'.repeat(20_000)}`)
+  const first = output.content[0]
+  if (first?.type !== 'text') throw new Error('Missing compact result')
+  expect(first.text.length).toBeLessThan(5000)
+  const result = JSON.parse(first.text)
+  expect(result).toMatchObject({
+    resultId: expect.any(String),
+    retained: true,
+    toolCompleted: true,
+  })
+  const read = `return await tools.harness.read_tool_result({resultId:${JSON.stringify(result.resultId)},limit:64})`
+  expect(execution(await code(read)).result).toMatchObject({ offset: 0, nextOffset: 64 })
+  s.runCredentials.revoke(token)
+  expect((await code(read)).isError).toBe(true)
+})
+
+it('returns default and large result pages directly from both result stores', async () => {
+  const { code, command, s } = await setup()
+  const large = '\u2028'.repeat(5 * 1024 * 1024)
+  vi.spyOn(s.mcpApps, 'codeTools').mockResolvedValue({ content: [{ type: 'text', text: large }] })
+  const runtimeResult = await command({ source: 'mcp', server: 'fixture', name: 'large' })
+  expect(runtimeResult.status).toBe(200)
+  const output = await code(`return '🙂' + '\\u2028'.repeat(30000)`)
+  const first = output.content[0]
+  if (first?.type !== 'text') throw new Error('Missing compact result')
+  const localResultId = JSON.parse(first.text).resultId
+  for (const resultId of [runtimeResult.value.resultId, localResultId]) {
+    expect(resultId).toEqual(expect.any(String))
+    const page = execution(
+      await code(
+        `return await tools.harness.read_tool_result({resultId:${JSON.stringify(resultId)}})`,
+      ),
+    )
+    expect(page.result).toMatchObject({
+      resultId,
+      offset: 0,
+      text: expect.any(String),
+      nextOffset: 8192,
+    })
+    const largePage = execution(
+      await code(
+        `return await tools.harness.read_tool_result({resultId:${JSON.stringify(resultId)},offset:8192,limit:262144})`,
+      ),
+    )
+    expect(largePage.result).toMatchObject({
+      resultId,
+      offset: 8192,
+      text: expect.any(String),
+      nextOffset: expect.any(Number),
+    })
+  }
+  const offset = '{"result":"'.length
+  const read = (offset: number) =>
+    code(
+      `return await tools.harness.read_tool_result({resultId:${JSON.stringify(localResultId)},offset:${offset},limit:1})`,
+    )
+  expect(execution(await read(offset)).result).toMatchObject({ text: '\ud83d' })
+  expect(execution(await read(offset + 1)).result).toMatchObject({ text: '\ude42' })
+})
+
 it('runs bundled Mirage in all five modes through real code-mode MCP', async () => {
   const { code, f } = await setup()
   const image = await sharp(
@@ -364,5 +462,38 @@ it('keeps recovery details when an MCP discovery catalog exceeds the code value 
     ),
   )
   expect(page.result).toMatchObject({ untrusted: true, offset: 0, nextOffset: 64 })
+  expect(execute).toHaveBeenCalledTimes(1)
+})
+
+it('filters a large MCP catalog before retaining the matching schemas', async () => {
+  const { code, s } = await setup()
+  vi.spyOn(s.mcpApps, 'codeTools').mockResolvedValue({
+    tools: [
+      { name: 'large_schema', description: 'x'.repeat(5 * 1024 * 1024) },
+      { name: 'small_schema', description: 'Unique match', inputSchema: { type: 'object' } },
+    ],
+  })
+  const found = execution(
+    await code(`return await tools.search({source:'mcp',server:'fixture',query:'UNIQUE MATCH'})`),
+  )
+  expect(found.result).toEqual({
+    tools: [{ name: 'small_schema', description: 'Unique match', inputSchema: { type: 'object' } }],
+  })
+})
+
+it('rejects a large MCP tool error before it can look like a successful retained result', async () => {
+  const { code, s } = await setup()
+  const execute = vi.spyOn(s.mcpApps, 'codeTools').mockResolvedValue({
+    isError: true,
+    content: [{ type: 'text', text: `Upstream failed: ${'x'.repeat(5 * 1024 * 1024)}` }],
+  })
+  const answer = execution(
+    await code(`
+    try { await tools.mcp.fixture.write_once({}); return 'continued' }
+    catch (error) { return error.message }
+  `),
+  )
+  expect(answer.result).toEqual(expect.stringContaining('Upstream failed'))
+  expect(answer.result).toHaveLength(4097)
   expect(execute).toHaveBeenCalledTimes(1)
 })

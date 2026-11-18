@@ -8,6 +8,8 @@ import {
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
 import { runToolCode } from './code-runtime.js'
+import { checkCodeToolResult, codeResponseTextLimit, type CodeResults } from './code-results.js'
+import { codeCatalog, codeCatalogQuery, matchesCodeCatalogQuery } from './code-catalog.js'
 
 type CodeTool = Omit<Tool, 'inputSchema'> & {
   inputSchema: JSONSchema.JSONSchema & { type: 'object' }
@@ -35,18 +37,16 @@ const searchSchema = z
   .object({
     source: z.enum(['dovo', 'harness', 'mcp']).optional(),
     server: z.string().min(1).max(200).optional(),
-    query: z.string().max(256).optional(),
+    query: codeCatalogQuery,
   })
   .strict()
-const catalogSchema = z.object({
-  tools: z.array(z.object({ name: z.string(), description: z.string().optional() }).passthrough()),
-})
 const serverSchema = z.object({ servers: z.array(z.string()) })
 
 export async function executeCodeTool(options: {
   code: string
   signal: AbortSignal
   tools: CodeTool[]
+  results?: { store: CodeResults; scope: string }
   dovo: (
     name: string,
     input: Record<string, unknown>,
@@ -64,20 +64,12 @@ export async function executeCodeTool(options: {
 }): Promise<CallToolResult> {
   const tools = options.tools.filter((tool) => tool.name !== 'code')
   const validator = new AjvJsonSchemaValidator()
-  const checked = (result: unknown) => {
-    const parsed = CallToolResultSchema.safeParse(result)
-    if (parsed.success && parsed.data.isError)
-      throw new Error(
-        parsed.data.content
-          .filter((item) => item.type === 'text')
-          .map((item) => item.text)
-          .join('\n') || 'Tool failed',
-      )
-    return result
-  }
+  const retention = options.results
   const execution = await runToolCode({
     code: options.code,
     signal: options.signal,
+    retainResult:
+      retention && ((value) => retention.store.retain(retention.scope, value, Date.now(), 0)),
     call: async (raw, signal) => {
       const call = callSchema.parse(raw)
       if (call.source === 'catalog') {
@@ -85,11 +77,11 @@ export async function executeCodeTool(options: {
         const args = searchSchema.parse(call.arguments ?? {})
         if (args.server && args.source !== 'mcp')
           throw new Error('Select source:"mcp" when choosing a server')
-        const found: unknown[] = []
+        const found: z.infer<typeof codeCatalog>['tools'] = []
         if (!args.source || args.source === 'dovo')
           found.push(...tools.map((tool) => ({ ...tool, source: 'dovo', origin: 'studio' })))
         if (!args.source || args.source === 'harness') {
-          const files = catalogSchema.parse(
+          const files = codeCatalog.parse(
             await options.remote({ source: 'harness', name: '__catalog' }, signal),
           )
           found.push(
@@ -101,7 +93,12 @@ export async function executeCodeTool(options: {
         }
         if (args.source === 'mcp' && args.server) {
           const catalog = await options.remote(
-            { source: 'mcp', name: '__catalog', server: args.server },
+            {
+              source: 'mcp',
+              name: '__catalog',
+              server: args.server,
+              arguments: { query: args.query },
+            },
             signal,
           )
           // Catalogs can also exceed the transport limit. Keep their recovery details visible.
@@ -110,22 +107,26 @@ export async function executeCodeTool(options: {
             .passthrough()
             .safeParse(catalog)
           if (retained.success) return { ...retained.data, tools: [] }
-          found.push(...catalogSchema.parse(catalog).tools)
+          return codeCatalog.parse(catalog)
         }
-        const query = args.query?.toLowerCase()
         return {
-          tools: found.filter((tool) => {
-            const item = z
-              .object({ name: z.string(), description: z.string().optional() })
-              .parse(tool)
-            return !query || `${item.name} ${item.description ?? ''}`.toLowerCase().includes(query)
-          }),
+          tools: found.filter(matchesCodeCatalogQuery(args.query)),
           ...(!args.source || (args.source === 'mcp' && !args.server)
             ? serverSchema.parse(await options.remote({ source: 'mcp', name: '__servers' }, signal))
             : {}),
         }
       }
       if (call.name.startsWith('__')) throw new Error('Use tools.search for discovery')
+      const resultId = call.arguments?.resultId
+      if (
+        call.source === 'harness' &&
+        call.name === 'read_tool_result' &&
+        typeof resultId === 'string' &&
+        retention?.store.has(retention.scope, resultId)
+      ) {
+        await options.remote({ source: 'harness', name: '__check' }, signal)
+        return retention.store.read(retention.scope, call.arguments)
+      }
       if (
         call.source === 'dovo' ||
         (call.source === 'harness' && call.name.startsWith('terminal_'))
@@ -134,9 +135,9 @@ export async function executeCodeTool(options: {
         if (!tool) throw new Error('Tool is disabled or unavailable in this run')
         if (!validator.getValidator(ToolSchema.parse(tool).inputSchema)(call.arguments ?? {}).valid)
           throw new Error(`Arguments do not match the ${tool.name} input schema`)
-        return checked(await options.dovo(tool.name, call.arguments ?? {}, signal))
+        return checkCodeToolResult(await options.dovo(tool.name, call.arguments ?? {}, signal))
       }
-      return checked(
+      return checkCodeToolResult(
         await options.remote(
           { source: call.source, name: call.name, server: call.server, arguments: call.arguments },
           signal,
@@ -146,9 +147,10 @@ export async function executeCodeTool(options: {
   })
   const content: CallToolResult['content'] = []
   const selected = (value: unknown) => {
+    if (!value || typeof value !== 'object' || !('content' in value)) return value
     const parsed = CallToolResultSchema.safeParse(value)
     if (!parsed.success) return value
-    content.push(...parsed.data.content)
+    content.push(...parsed.data.content.filter((item) => item.type !== 'text'))
     // Keep binary payloads in MCP blocks instead of duplicating them as base64 text.
     return {
       ...parsed.data,
@@ -164,5 +166,8 @@ export async function executeCodeTool(options: {
       Array.isArray(values) ? values.map(selected) : selected(values),
     ),
   }
-  return { content: [{ type: 'text', text: JSON.stringify(summary) }, ...content] }
+  const inline = retention
+    ? retention.store.retain(retention.scope, summary, Date.now(), codeResponseTextLimit)
+    : summary
+  return { content: [{ type: 'text', text: JSON.stringify(inline) }, ...content] }
 }

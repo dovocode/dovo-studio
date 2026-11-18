@@ -288,13 +288,18 @@ Enable **PR babysitting**. The setting is off by default. Enabling it also enabl
 watcher. This permits agent runs, tests and pushes for the thread's authorized task and uses agent
 tokens. Merge approval stays manual.
 
-Dovo starts a durable watch for a linked open PR when it matches an editing thread's checkout branch
-and verified repository identity. It excludes Bots, review checkouts, read-only threads, paused
-queues and settled or archived threads. An agent can also register an authorized PR through
-`pull_request_watch`. A watch for an unrelated branch remains a feedback watch and does not start
-automatic checkout work. The thread's project information shows the current babysitting status. Stop
-its PR watch there to opt out for that thread. Stopped watches survive restarts and do not start
-again on their own.
+Dovo can follow an open PR on the editing thread's primary branch or on a branch in another
+repository the thread updated. For an editable linked project, Dovo uses saved file changes on that
+branch. For a checkout outside the linked projects, Dovo checks a successful Git commit or push from
+the thread against the open PR's repository, branch and commit. Dovo can verify ordinary provider
+shell commands and completed Dovo terminal checks. The owning computer keeps the evidence. Enable
+babysitting before the turn starts to capture these updates. The thread must have access through a
+configured forge account. A clone or a PR URL alone does not qualify. Dovo excludes Bots, review
+checkouts, read-only threads, paused queues and settled or archived threads. An agent can also
+register an authorized PR through `pull_request_watch`. A watch for an unrelated branch only reports
+feedback. The thread's project information shows the current babysitting status. Stop its PR watch
+there to opt out for that thread. Stopped watches survive restarts and do not start again on their
+own.
 
 The runtime checks active PRs every 30 seconds while babysitting is enabled. Normal feedback
 watching keeps its two-minute interval. New check failures, review feedback, conflicts and target

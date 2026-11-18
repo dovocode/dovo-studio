@@ -126,7 +126,7 @@ export function createAcpAdapter(): AgentAdapter {
         await close(previous)
       }
       let cancelling = false
-      let loading = !!run.sessionId && !reusable
+      let loading = false
       let sessionId: string | undefined = reusable?.sessionId
       let compactAvailable = reusable?.compactAvailable ?? false
       const children = reusable?.native.children ?? new Map<string, SubagentUpdate>()
@@ -255,24 +255,26 @@ export function createAcpAdapter(): AgentAdapter {
           }
         },
         sessionUpdate: (params) => {
-          if (
+          // Cold load can replay child identities before session setup returns. Only
+          // child announcements from the requested parent may establish ownership.
+          const parentId = sessionId ?? (loading ? run.sessionId : undefined)
+          const child =
             params.update.sessionUpdate === 'subagent_update' &&
-            (params.sessionId === sessionId || children.has(params.sessionId))
-          ) {
-            const child = params.update
-            children.set(child.sessionId, { ...children.get(child.sessionId), ...child })
-          }
-          if (params.sessionId === sessionId || children.has(params.sessionId)) {
+            (params.sessionId === parentId || children.has(params.sessionId))
+              ? params.update
+              : undefined
+          if (child) children.set(child.sessionId, { ...children.get(child.sessionId), ...child })
+          if (child || params.sessionId === sessionId || children.has(params.sessionId)) {
             nativeAgents = updateSubagents(
               nativeAgents,
               'acp',
               params,
               new Date().toISOString(),
               params.update.sessionUpdate,
-              sessionId,
+              parentId,
             )
             if (nativeState) nativeState.agents = nativeAgents
-            run.onSubagentEvent?.(params.update.sessionUpdate, params, sessionId)
+            run.onSubagentEvent?.(params.update.sessionUpdate, params, parentId)
           }
 
           if (
@@ -386,6 +388,7 @@ export function createAcpAdapter(): AgentAdapter {
           !initialization.agentCapabilities?.mcpCapabilities?.http
         )
           throw new Error('This ACP harness does not support HTTP MCP servers')
+        loading = !!run.sessionId && !reusable
         let session = reusable?.session
         if (!session)
           try {
@@ -620,7 +623,8 @@ export function createAcpAdapter(): AgentAdapter {
         run.onPromptAccepted?.()
         if (result.stopReason !== 'end_turn' && !(cancelling && result.stopReason === 'cancelled'))
           throw new Error(`ACP stopped: ${result.stopReason}`)
-        if (run.compact) run.onEvent?.('dovo/compaction/completed', { sessionId: id })
+        if (run.compact && !cancelling)
+          run.onEvent?.('dovo/compaction/completed', { sessionId: id })
         run.onNativeTurnEnd?.()
         succeeded = true
         if (run.taskId && run.tools !== 'none' && !run.signal.aborted) {

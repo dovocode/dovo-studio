@@ -9,7 +9,7 @@ export const StyleSheet={hairlineWidth:1};
 export const Alert={alert:(title,details)=>{window.alerts=(window.alerts??[]).concat({title,details})}};
 export const View=({children})=><div>{children}</div>;
 export const ScrollView=View;
-export const Glass=View;
+export const Surface=View;
 export const Icon=()=>null;
 export const Image=()=>null;
 export const Text=({children})=><span>{children}</span>;
@@ -86,7 +86,7 @@ export const WebView=forwardRef((props,ref)=>{
   },
   ...[
     '../../ui/content/text',
-    '../../ui/layout/glass',
+    '../../ui/layout/surface',
     '../../ui/controls/action',
     '../../ui/controls/icon-button',
     '../../ui/controls/field',
@@ -316,6 +316,8 @@ try {
   await page.waitForFunction(() =>
     window.commands.some(({ code }) => code.includes('"type":"reconnect"')),
   )
+  assert.equal(await page.evaluate(() => window.requests.length), reconnectRequests)
+  await page.evaluate(() => window.bridge('reconnect'))
   await tickets(reconnectRequests + 1)
   const retainedBrowser = await page.locator('[data-webview]').getAttribute('data-webview')
   await page.evaluate(() => window.bridge('closed', { message: 'Browser session ended.' }))
@@ -462,6 +464,54 @@ try {
   assert.equal(await page.evaluate(() => window.requests.length), suspensionRequests + 9)
   await page.evaluate(() => [...window.webViews.values()][0].onContentProcessDidTerminate())
   await tickets(suspensionRequests + 10)
+
+  for (const surface of ['device', 'remote']) {
+    await page.evaluate((surface) => window.setScene({ surface }), surface)
+    await page.waitForFunction(() => window.commands.at(-1)?.code.includes('"type":"presentation"'))
+    const before = await page.evaluate(() => window.requests.length)
+    const viewer = await page.locator('[data-webview]').getAttribute('data-webview')
+    await page.evaluate(() => {
+      window.setScene({ focused: false })
+      window.runtime.connected = false
+      window.setScene({ focused: true })
+    })
+    assert.equal(await page.evaluate(() => window.requests.length), before)
+    await page.evaluate(() => {
+      window.runtime.connected = true
+      window.setScene({})
+    })
+    await tickets(before + 1)
+    assert.equal(await page.locator('[data-webview]').getAttribute('data-webview'), viewer)
+  }
+
+  const policyRequests = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => {
+    window.bridge('connection', { online: false, manualReconnect: true })
+    window.setScene({ focused: false })
+    window.setScene({ focused: true })
+  })
+  assert.equal(await page.evaluate(() => window.requests.length), policyRequests)
+  await page.evaluate(() => window.bridge('reconnect'))
+  await tickets(policyRequests + 1)
+
+  const endedRequests = await page.evaluate(() => window.requests.length)
+  await page.evaluate(() => {
+    window.bridge('closed', { message: 'Browser session ended.' })
+    window.runtime.connected = false
+    window.setScene({})
+    window.bridge('ready')
+    window.runtime.connected = true
+    window.setScene({})
+  })
+  assert.equal(await page.evaluate(() => window.requests.length), endedRequests)
+  await page.evaluate(() => {
+    window.runtime.connected = false
+    window.setScene({})
+    window.bridge('reconnect')
+    window.runtime.connected = true
+    window.setScene({})
+  })
+  await tickets(endedRequests + 1)
 
   await page.evaluate(() => window.setScene({ surface: 'browser' }))
   // Verify the native inset boundary without pretending Chromium implements UIKit safe areas.

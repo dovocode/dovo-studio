@@ -13,6 +13,8 @@ export const threadParentSchema = mutableStruct({
   runtimeId: id,
   threadId: id,
   title: Schema.optional(maxValue(Schema.String, 1000)),
+  /** A coordinator can steer work without owning it in the thread hierarchy. */
+  steering: Schema.optional(Schema.Boolean),
 })
 export type ThreadParent = typeof threadParentSchema.Type
 export const threadNativeAgentSchema = mutableStruct({
@@ -106,6 +108,7 @@ export const threadWatchSummarySchema = mutableStruct({
   offline: Schema.Boolean,
   paused: Schema.optional(Schema.Boolean),
   delegated: Schema.optional(Schema.Boolean),
+  steering: Schema.optional(Schema.Boolean),
   stopRequested: Schema.optional(Schema.Boolean),
 })
 export type ThreadWatchSummary = typeof threadWatchSummarySchema.Type

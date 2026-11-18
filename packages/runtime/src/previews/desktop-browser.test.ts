@@ -133,7 +133,8 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
     const initial = await call({ action: 'snapshot' })
     expect(initial).not.toHaveProperty('image')
     expect(JSON.stringify(initial)).not.toContain('secret-password')
-    expect(initial).toMatchObject({
+    expect(initial).not.toHaveProperty('elements')
+    expect(await call({ action: 'elements' })).toMatchObject({
       elements: expect.arrayContaining([
         expect.objectContaining({ selector: '#name', name: 'Name' }),
       ]),
@@ -203,18 +204,21 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
       document.body.append(heading)
     })
     const large = await call({ action: 'snapshot' })
-    expect(large).toMatchObject({
-      snapshotTruncated: true,
+    expect(large).toMatchObject({ snapshotTruncated: true })
+    expect(large).not.toHaveProperty('elements')
+    const elements = await call({ action: 'elements' })
+    expect(elements).not.toHaveProperty('snapshot')
+    expect(elements).toMatchObject({
       elementsTruncated: true,
       elements: expect.arrayContaining([
         expect.objectContaining({ selector: '#large-select', optionsTruncated: true }),
       ]),
     })
     expect('snapshot' in large && large.snapshot.length).toBeLessThanOrEqual(32000)
-    expect('elements' in large && large.elements).toHaveLength(150)
+    expect('elements' in elements && elements.elements).toHaveLength(150)
     expect(
-      'elements' in large &&
-        large.elements.find((element) => element.selector === '#large-select')?.options,
+      'elements' in elements &&
+        elements.elements.find((element) => element.selector === '#large-select')?.options,
     ).toHaveLength(50)
     const oldRef = refFor(large, 'textbox', 'Name')
     await page.evaluate(() => {
@@ -235,7 +239,7 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
         document.body.append(input)
       }
     })
-    const bounded = await call({ action: 'snapshot' })
+    const bounded = await call({ action: 'elements' })
     expect(bounded).toMatchObject({ elementsTruncated: true })
     expect('elements' in bounded && JSON.stringify(bounded.elements).length).toBeLessThanOrEqual(
       32000,
@@ -352,8 +356,11 @@ it('lists and drives desktop workspace tabs through page-scoped CDP', async () =
       ok: true,
       url: 'https://example.com/',
       title: 'Example',
-      elements: [{ selector: '#save', tag: 'button', name: 'Save' }],
     })
+    expect(result).not.toHaveProperty('elements')
+    expect(
+      await desktopBrowserCommand('desktop:tab-1', { action: 'elements' }, () => {}),
+    ).toMatchObject({ elements: [{ selector: '#save', tag: 'button', name: 'Save' }] })
     expect('snapshot' in result && result.snapshot).toContain('Hello desktop')
     expect(result).not.toHaveProperty('image')
     expect(

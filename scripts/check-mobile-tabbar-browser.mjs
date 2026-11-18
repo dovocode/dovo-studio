@@ -65,7 +65,7 @@ export const usePathname=()=>window.fixture.path;export const useGlobalSearchPar
     path: 'expo-router/unstable-native-tabs',
     contents: `
 import {Children} from 'react';
-function NativeTabs({children,hidden,unstable_nativeProps}){const Scene=window.WorkbenchScene;return <><nav hidden={hidden} data-prominent={unstable_nativeProps?.ios?.prominentScreenKey}>{Children.toArray(children).filter(child=>!child.props.hidden).map(({props})=>{if(props.name==='compose')window.compose=props;return <button key={props.name} data-testid={props.testID} data-role={props.role} aria-label={props.accessibilityLabel??props.testID} disabled={props.disabled} onClick={()=>{props.listeners?.tabPress?.({data:{isPrevented:props.unstable_nativeProps?.preventNativeSelection??false}});if(!props.unstable_nativeProps?.preventNativeSelection)window.nativeSelections.push(props.name)}}>{props.testID}</button>})}</nav><Scene tab={window.fixture.path.startsWith('/settings')?'settings':'pulls'}/></>}
+function NativeTabs({children,hidden,unstable_nativeProps,backgroundColor,blurEffect,disableTransparentOnScrollEdge}){const Scene=window.WorkbenchScene;return <><nav hidden={hidden} data-fill={backgroundColor} data-blur={blurEffect} data-solid-edge={disableTransparentOnScrollEdge} data-prominent={unstable_nativeProps?.ios?.prominentScreenKey}>{Children.toArray(children).filter(child=>!child.props.hidden).map(({props})=>{if(props.name==='compose')window.compose=props;return <button key={props.name} data-testid={props.testID} data-role={props.role} aria-label={props.accessibilityLabel??props.testID} disabled={props.disabled} onClick={()=>{props.listeners?.tabPress?.({data:{isPrevented:props.unstable_nativeProps?.preventNativeSelection??false}});if(!props.unstable_nativeProps?.preventNativeSelection)window.nativeSelections.push(props.name)}}>{props.testID}</button>})}</nav><Scene tab={window.fixture.path.startsWith('/settings')?'settings':'pulls'}/></>}
 NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export {NativeTabs};`,
   },
   {
@@ -143,7 +143,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: '../ui/theme',
     importer: root + 'apps/mobile/src/shell/',
-    contents: 'export const useTheme=()=>({colors:{},styles:{}});',
+    contents: `export const useTheme=()=>({colors:{surface:'#141419'},styles:{}});`,
   },
 ]
 const built = await bundleBrowser(
@@ -196,6 +196,10 @@ try {
     'Native tabs must start on the thread list instead of the compose redirect',
   )
   await page.getByText('Collection content', { exact: true }).waitFor()
+  const navigation = page.getByRole('navigation')
+  assert.equal(await navigation.getAttribute('data-fill'), '#141419')
+  assert.equal(await navigation.getAttribute('data-blur'), 'none')
+  assert.equal(await navigation.getAttribute('data-solid-edge'), 'true')
   assert.equal(
     await page.getByLabel('Link navigation host').textContent(),
     'true',

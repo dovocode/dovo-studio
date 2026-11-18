@@ -304,10 +304,49 @@ try {
       await reloadPage.click()
       await page.waitForFunction(() => window.outbox.at(-1).type === 'reload')
       await failure.waitFor({ state: 'hidden' })
+      assert.equal(
+        await page.evaluate(() => {
+          const previous = window.socket
+          Object.defineProperty(document, 'hidden', { value: true, configurable: true })
+          try {
+            document.dispatchEvent(new Event('visibilitychange'))
+            window.dispatchEvent(
+              new MessageEvent('message', {
+                source: window.parent,
+                data: { channel: 'dovo-browser', type: 'connect', url: 'ws://fixture/late-ticket' },
+              }),
+            )
+            return previous === window.socket
+          } finally {
+            delete document.hidden
+          }
+        }),
+        true,
+        'A ticket received after the preview was hidden must not open a socket',
+      )
+      await post({ type: 'connect', url: 'ws://fixture/visible-again' })
+      await page.getByText('Connected', { exact: true }).waitFor()
       await page.evaluate(() => window.socket.onclose({ code: 1008 }))
       await page.getByText('Connection lost. Reconnect to the browser session.').waitFor()
       const reconnects = await page.evaluate(
         () => window.bridges.filter((type) => type === 'reconnect').length,
+      )
+      await page.evaluate(async () => {
+        document.dispatchEvent(new Event('visibilitychange'))
+        await new Promise((resolve) => {
+          const barrier = (event) => {
+            if (event.data !== 'after-visibility') return
+            window.removeEventListener('message', barrier)
+            resolve()
+          }
+          window.addEventListener('message', barrier)
+          window.postMessage('after-visibility', '*')
+        })
+      })
+      assert.equal(
+        await page.evaluate(() => window.bridges.filter((type) => type === 'reconnect').length),
+        reconnects,
+        'Showing the viewer after a policy close waits for manual reconnect',
       )
       await page.getByRole('button', { name: 'Reconnect', exact: true }).click()
       await page.waitForFunction(

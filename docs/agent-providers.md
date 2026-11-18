@@ -19,6 +19,8 @@ and Muse support steering an active turn. Grok follows the shared ACP queue/inte
 provider retains its own credentials, configuration and release channel. SDK updates ship with Dovo;
 diagnostics report them separately from the host CLI.
 
+When you stop an ACP compact command, Dovo keeps the current context usage and compaction history.
+
 Copilot accepts per-session MCP servers and tool filters. Tool-free utilities exclude all builtin,
 MCP and custom tools and deny permission requests. Its optional configuration directory selects
 `COPILOT_HOME`. Dovo resolves executable names on PATH before supplying them to the SDK. Copilot's
@@ -219,12 +221,23 @@ turn. It retains partial output when the agent reports a later failure. Message 
 interleaved chunks, whole-message replacement and clearing. Tool updates retain omitted fields,
 clear null fields and patch metadata by key. Exposed thoughts and item plans use the existing
 reasoning and checklist UI. Agent terminal output appears as a display receipt, with no local input
-or process controls. Full v2 payloads remain in provider events, including unknown update variants.
+or process controls. Live receipts show up to 1024 characters of recent tool or terminal text. At
+completion or turn end the receipt contains the collected tool output or the last 262144 terminal
+characters. If you stop a turn, its interrupted receipt includes output accepted before Stop. Later
+chunks cannot change the receipt. Full v2 payloads remain in provider events, including unknown
+update variants.
 
-Session resume omits replay because Dovo already stores the transcript. If the agent reports
-unfinished foreground work, Dovo waits for idle before applying configuration or sending another
-prompt. Stop sends cancellation and waits for confirmation. If the agent does not confirm within 1.5
-seconds, Dovo closes its owned process tree. Temporary sessions require deletion support.
+Session resume omits replay because Dovo already stores the transcript. Dovo saves live assistant,
+tool and terminal output after the current state update. Output from resumed foreground work belongs
+to the earlier turn. Dovo waits for idle before applying configuration or sending another prompt,
+and routes permission requests and forms under the current thread policy during the wait. When a v1
+load or resume announces a child, Dovo restores its identity and controls even if session setup has
+yet to finish.
+
+Stop sends foreground cancellation and waits for confirmation. ACP v2 background work listed by the
+agent continues after confirmation. Use Stop agents to stop all work in that session. If the agent
+does not confirm cancellation within 1.5 seconds, Dovo closes its owned process tree. Temporary
+sessions require deletion support.
 
 V2 model, mode, reasoning and boolean options use typed configuration IDs. Read-only turns require
 an advertised read-only or plan mode. Permission subjects use Dovo's current access policy. Native

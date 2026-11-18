@@ -139,6 +139,10 @@ try {
       openThread: (target) => {
         window.openedThread = target
       },
+      openPullLink: (url, origin) => {
+        window.openedPull = { url, origin }
+        return true
+      },
     }
     const Observer = window.IntersectionObserver
     window.IntersectionObserver = class extends Observer {
@@ -777,17 +781,17 @@ try {
   assert.ok(
     (await draftGlyph.boundingBox()).x >
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
-    'Draft status sits after the project name with the other row statuses',
+    'Draft status keeps the right side of the first line',
   )
-  assert.equal(await draftStatus.innerText(), '')
+  assert.equal(await draftStatus.innerText(), 'Draft')
   assert.equal(await draftStatus.getAttribute('aria-label'), 'Draft')
-  const draftProjectBox = await projectless.getByText('No Project', { exact: true }).boundingBox()
+  const draftTitleBox = await projectless.locator('[data-thread-title]').boundingBox()
   const draftStatusBox = await draftStatus.boundingBox()
   assert.ok(
     Math.abs(
-      draftProjectBox.y + draftProjectBox.height / 2 - draftStatusBox.y - draftStatusBox.height / 2,
+      draftTitleBox.y + draftTitleBox.height / 2 - draftStatusBox.y - draftStatusBox.height / 2,
     ) < 1,
-    'Draft status and project name share the top line',
+    'Draft status and title share the top line',
   )
   assert.equal(
     await projectless.evaluate((el) => getComputedStyle(el).backgroundColor),
@@ -798,8 +802,8 @@ try {
   const titleLine = await projectless.locator('[data-thread-title]').boundingBox()
   const executionLine = await projectless.locator('[data-thread-execution]').boundingBox()
   assert.ok(
-    Math.abs(titleLine.y + titleLine.height / 2 - executionLine.y - executionLine.height / 2) < 1,
-    'Projectless runtime and agent share the title line',
+    titleLine.y + titleLine.height / 2 < executionLine.y + executionLine.height / 2,
+    'Projectless runtime and agent share the metadata line',
   )
   assert.equal(await projectless.locator('.lucide-git-fork').count(), 0)
   const stateColors = []
@@ -833,7 +837,10 @@ try {
         ]),
       { state, draft },
     )
-    const badge = projectless.getByLabel('1 linked pull request', { exact: true })
+    const badge = projectless
+      .locator('..')
+      .getByRole('button', { name: '#42 · PR', exact: true })
+      .getByLabel('1 linked pull request', { exact: true })
     await badge.waitFor()
     const numberColor = await badge.evaluate((el) => getComputedStyle(el).color)
     assert.equal(
@@ -847,6 +854,34 @@ try {
     4,
     'Open, closed, merged and draft PRs have distinct state colors',
   )
+  await projectless.locator('..').getByRole('button', { name: '#42 · PR', exact: true }).click()
+  assert.deepEqual(await page.evaluate(() => window.openedPull), {
+    url: 'https://github.com/o/r/pull/42',
+    origin: { runtimeId: 'local', repositoryId: 'scratch' },
+  })
+  await page.evaluate(() => {
+    const task = window.tasks[0]
+    window.publish([
+      {
+        ...task,
+        linkedPullRequests: [
+          ...task.linkedPullRequests,
+          {
+            number: 43,
+            url: 'https://github.com/o/r/pull/43',
+            repositoryUrl: 'https://github.com/o/r',
+            title: 'Follow-up',
+          },
+        ],
+      },
+    ])
+  })
+  await projectless
+    .locator('..')
+    .getByRole('button', { name: 'Linked pull requests', exact: true })
+    .click()
+  await page.getByRole('menuitem', { name: '#43 · Follow-up' }).click()
+  assert.equal(await page.evaluate(() => window.openedPull.url), 'https://github.com/o/r/pull/43')
   await page.evaluate(() => {
     window.setRemoteTasks([])
     window.setListPreferences({ workingSection: true, collapsedThreadSections: [] })
@@ -877,31 +912,30 @@ try {
     const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
-    assert.doesNotMatch(text, /Working|Waiting/, 'Rows show no status label')
+    assert.equal(text, state)
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
-    if (state === 'Working')
-      assert.match(text, /^\d+[smh]/, 'Grouped working rows keep their elapsed time')
     assert.equal(await indicator.locator('svg').count(), 1)
     await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
   }
-  assert.doesNotMatch(
+  assert.equal(
     await page
       .getByRole('button', { name: /Pinned working thread/ })
       .first()
+      .locator('.studio-thread-status')
       .innerText(),
-    /Working/,
+    'Working',
   )
-  assert.doesNotMatch(
+  assert.equal(
     await page
       .getByRole('button', { name: /Saving thread/ })
       .first()
+      .locator('.studio-thread-status')
       .innerText(),
-    /Saving changes/,
+    'Saving changes',
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
-  assert.doesNotMatch(await workingRow.innerText(), /Working/, 'Ungrouped rows show no label')
-  assert.match(await workingRow.locator('.studio-thread-status').innerText(), /^\d+[smh]/)
-  assert.doesNotMatch(await waitingRow.locator('.studio-thread-status').innerText(), /Waiting/)
+  assert.equal(await workingRow.locator('.studio-thread-status').innerText(), 'Working')
+  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'Waiting')
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
   await page.evaluate(() => {
@@ -1005,18 +1039,12 @@ try {
       .locator('.studio-thread-card')
       .filter({ has: page.getByText('State ' + status, { exact: true }) })
     const indicator = row.locator('.studio-thread-status')
-    if (status === 'review') {
-      await row.waitFor()
-      assert.equal(await indicator.count(), 0, 'Read review rows have no status text or icon')
-      continue
-    }
     await indicator.waitFor()
     assert.equal(await indicator.getAttribute('data-thread-state'), state)
     assert.equal(await indicator.getAttribute('data-tone'), tone)
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.match(await indicator.getAttribute('title'), new RegExp('^' + state))
-    if (status === 'draft') assert.equal(await indicator.innerText(), '')
-    else assert.match(await indicator.innerText(), /^\d+[smh]/)
+    assert.equal(await indicator.innerText(), state)
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row
@@ -1057,9 +1085,12 @@ try {
     const card = node.closest('.studio-thread-card')
     const icon = card.querySelector('.studio-thread-project-icon')
     const title = card.querySelector('[data-thread-title]')
-    const top = card.querySelector('.studio-thread-card-context')
+    const top = card.querySelector('.studio-thread-card-title')
     return {
-      iconInTopLine: top.contains(icon),
+      iconLeads:
+        icon.parentElement === card &&
+        icon.getBoundingClientRect().right < title.getBoundingClientRect().left,
+      statusInTopLine: !!top.querySelector('.studio-thread-status'),
       iconY: icon.getBoundingClientRect().y,
       titleY: title.getBoundingClientRect().y,
       branchY: node.getBoundingClientRect().y,
@@ -1071,8 +1102,9 @@ try {
       titleSize: Number.parseFloat(getComputedStyle(title).fontSize),
     }
   })
-  assert.equal(rowHierarchy.iconInTopLine, true)
-  assert.ok(rowHierarchy.iconY < rowHierarchy.titleY && rowHierarchy.titleY < rowHierarchy.branchY)
+  assert.equal(rowHierarchy.iconLeads, true)
+  assert.equal(rowHierarchy.statusInTopLine, true)
+  assert.ok(rowHierarchy.titleY < rowHierarchy.branchY)
   assert.ok(Math.abs(rowHierarchy.titleLeft - rowHierarchy.metadataLeft) < 1)
   assert.equal(rowHierarchy.font, rowHierarchy.titleFont)
   assert.ok(rowHierarchy.size < rowHierarchy.titleSize)

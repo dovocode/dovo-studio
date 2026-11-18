@@ -100,7 +100,7 @@ try {
   const close = page.getByRole('button', { name: 'Close image' })
   assert.equal(await close.textContent(), '×')
   assert.equal(await close.getAttribute('data-icon'), 'close')
-  assert.equal(await close.getAttribute('data-variant'), 'glass')
+  assert.equal(await close.getAttribute('data-variant'), 'bordered')
   assert.equal(await close.evaluate((element) => element.closest('[data-zoom]') === null), true)
   const bounds = await close.boundingBox()
   assert.equal(bounds.width, 44)

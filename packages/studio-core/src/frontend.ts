@@ -20,6 +20,7 @@ export interface StudioThreadReference {
   runtimeIdentity?: string
   threadId: string
   title: string
+  threadRequest?: import('@dovo/protocol').SideThreadRequest
   /** Read-only provider agent inside this owning Studio thread. */
   nativeAgentKey?: string
 }
@@ -30,6 +31,7 @@ export interface StudioNavigation {
   automationTarget?: StudioAutomationTarget
   /** Scroll this message of the `entityId` thread into view after opening it. */
   messageId?: string
+  threadRequest?: import('@dovo/protocol').SideThreadRequest
   nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }
@@ -54,6 +56,7 @@ export interface StudioViewProps {
   /** Render a linked item inside a dialog without changing shell navigation. */
   preview?: boolean
   onClose?: () => void
+  threadRequest?: import('@dovo/protocol').SideThreadRequest
   nativeAgentKey?: string
   threadParent?: StudioThreadReference
   threadConnection?: StudioThreadReference & { parent?: StudioThreadReference }

@@ -7,6 +7,10 @@ import { Conversations } from './conversations.js'
 import { TaskHistories, type HistoryBudget } from './task-histories.js'
 import { WorkspaceDocuments, type StoredWorkspace } from './workspace-documents.js'
 import { ProviderActions, type ProviderAction } from './provider-actions.js'
+import {
+  externalGitReceiptsSchema,
+  type ExternalGitReceipt,
+} from '../scm/tasks/external-git-updates.js'
 import { UsageTranscripts } from './usage-transcripts.js'
 import { UsagePricing } from './usage-pricing.js'
 import { UsageHistory } from './usage-history.js'
@@ -238,6 +242,27 @@ export class WorkspaceStore {
   private projected?: { revision: number; workspace: WorkspaceSummary }
   private readonly publicTasks = new WeakMap<TaskSummary, WeakRef<Task>>()
   private readonly validatedSummaries = new WeakMap<object, TaskSummary>()
+  /** Paths and Git evidence stay on the runtime that observed the operation. */
+  externalGitReceipts(taskId: string): ExternalGitReceipt[] {
+    const row = decode(
+      Schema.UndefinedOr(rowSchema),
+      this.db.prepare('SELECT value FROM documents WHERE id = ?').get(`external-push:${taskId}`),
+    )
+    return row ? decode(externalGitReceiptsSchema, JSON.parse(row.value)) : []
+  }
+  saveExternalGitReceipts(taskId: string, receipts: readonly ExternalGitReceipt[]) {
+    if (!receipts.length || !this.workspace.tasks.some((task) => task.id === taskId)) return
+    const keys = new Set<string>()
+    const distinct = [...receipts, ...this.externalGitReceipts(taskId)].filter((receipt) => {
+      const key = JSON.stringify([receipt.repositoryIdentity, receipt.branch, receipt.sha])
+      if (keys.has(key)) return false
+      keys.add(key)
+      return true
+    })
+    this.db
+      .prepare('INSERT OR REPLACE INTO documents (id, value) VALUES (?, ?)')
+      .run(`external-push:${taskId}`, JSON.stringify(distinct.slice(0, 40)))
+  }
   /** Host-local inventory survives thread deletion and changes to the worktree folder. */
   managedWorktrees(common: string): string[] {
     const row = decode(
@@ -1096,6 +1121,7 @@ export class WorkspaceStore {
           )
       for (const { id } of removed) {
         this.providerActions.remove(id)
+        this.db.prepare('DELETE FROM documents WHERE id = ?').run(`external-push:${id}`)
         this.db.prepare('DELETE FROM task_submissions WHERE task_id = ?').run(id)
         this.db.prepare('DELETE FROM question_responses WHERE task_id = ?').run(id)
         this.db.prepare('DELETE FROM queue_restore_receipts WHERE task_id = ?').run(id)
@@ -1217,15 +1243,22 @@ export class WorkspaceStore {
   }
   /** Reuse a retained committed history without loading or retaining any additional histories.
    * Otherwise read one bounded SQLite page. Undefined when the cursor no longer exists. */
-  historyPage(id: string, before?: string) {
+  historyPage(id: string, before?: string, includeTurns = true) {
     const summary = this.taskSummary(id)
     const retained = this.seed?.get(id) ?? this.histories.peek(summary)
     if (retained) {
       if (before !== undefined && !retained.messages.some((message) => message.id === before))
         return undefined
-      return conversationPage({ ...retained, historyRevision: summary.historyRevision }, before)
+      return conversationPage(
+        {
+          messages: retained.messages,
+          turns: includeTurns ? retained.turns : undefined,
+          historyRevision: summary.historyRevision,
+        },
+        before,
+      )
     }
-    return this.conversations.page(id, before, summary.historyRevision)
+    return this.conversations.page(id, before, summary.historyRevision, includeTurns)
   }
   /** Defer derived search text during a run, while retaining every authoritative save.
    * Call the returned completion function after the final flush, including failure/cancellation. */

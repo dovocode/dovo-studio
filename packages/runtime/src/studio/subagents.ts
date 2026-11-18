@@ -17,6 +17,7 @@ import {
   type ThreadWatchSummary,
   type ThreadWatchSnapshot,
   SCRATCH_PROJECT_ID,
+  botProjectThread,
 } from '@dovo/protocol'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
@@ -124,6 +125,7 @@ export async function spawnChild(s: Services, input: SubagentSpawn, supplied?: S
   const policy = parentPolicy(s, input.taskId, supplied)
   requireStudioPart(s, 'threads', policy)
   const repositoryId = input.repositoryId ?? SCRATCH_PROJECT_ID
+  const steering = botProjectThread(!!s.store.taskSummary(input.taskId).bot, repositoryId)
   const request = {
     name: input.name,
     prompt: input.prompt,
@@ -220,6 +222,7 @@ export async function spawnChild(s: Services, input: SubagentSpawn, supplied?: S
                   runtimeId: s.runtimeId,
                   threadId: input.taskId,
                   title: s.store.taskSummary(input.taskId).title.slice(0, 1000),
+                  steering: steering || undefined,
                 },
                 agentOverrides: input.agentId
                   ? {
@@ -254,6 +257,7 @@ export async function spawnChild(s: Services, input: SubagentSpawn, supplied?: S
             policy,
             'spawned',
             true,
+            steering,
           )
           const target = { runtimeId, threadId: created.id }
           if (scope.signal.aborted)

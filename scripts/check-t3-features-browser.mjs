@@ -59,6 +59,7 @@ const request=async(path,input)=>{
  if(path==='/api/dictation/status'){if(window.holdStatus)await new Promise(resolve=>window.finishStatus=resolve);return {engine:true,model:true,downloading:false,downloaded:0}}
  if(path==='/api/dictation/transcribe'){window.dictationCalls.push(input);return {text:'Runtime transcript'}}
  if(path==='/api/dictation/cancel'){window.dictationCalls.push(input);return {ok:true}}
+ if(path==='/api/attachments/draft-guard' && window.failGuard)throw Error('Draft guard unavailable');
  if(path==='/api/attachments/draft-guard')return {guard:'guard',guardedUploads:1};
  if(path==='/api/attachments/commit-upload')return {nextGuard:'guard',revision:2,attachment:window.lastAttachment};
  if(path==='/api/attachments/upload'){
@@ -150,6 +151,21 @@ window.bridge=runtimeDictationBridge(request,'task');createRoot(document.getElem
       await page.getByRole('button', { name: 'Send upload', exact: true }).isDisabled(),
       true,
     )
+    await page.evaluate(() => {
+      window.failGuard = true
+    })
+    await page.getByRole('button', { name: 'Retry file', exact: true }).click()
+    await page.waitForFunction(
+      () => !window.files.busy && window.files.error.includes('Draft guard unavailable'),
+    )
+    assert.equal(await page.getByRole('button', { name: 'Retry file', exact: true }).count(), 1)
+    assert.equal(
+      await page.getByRole('button', { name: 'Send upload', exact: true }).isEnabled(),
+      false,
+    )
+    await page.evaluate(() => {
+      window.failGuard = false
+    })
     await page.evaluate(() => (window.fail = false))
     await page.getByRole('button', { name: 'Retry file', exact: true }).click()
     await page.waitForFunction(() => window.uploadCalls.length === 3)
@@ -157,6 +173,22 @@ window.bridge=runtimeDictationBridge(request,'task');createRoot(document.getElem
     assert.equal(ids[1], ids[2], 'Retry must reuse its upload identity')
     await page.evaluate(() => window.finishUpload())
     await page.waitForFunction(() => !window.files.busy && !window.files.failedUploads.length)
+    // The upload response was lost, but the runtime has already saved the file.
+    await page.evaluate(() => {
+      window.fail = true
+      void window.upload()
+    })
+    await page.waitForFunction(() => window.uploadCalls.length === 4)
+    await page.evaluate(() => window.finishUpload())
+    await page.getByRole('button', { name: 'Retry file', exact: true }).waitFor()
+    await page.evaluate(() => {
+      const confirmed = window.uploadCalls.at(-1)
+      window.publish({ id: confirmed.id, name: confirmed.name, mime: 'text/plain', size: 5 })
+      window.failGuard = true
+    })
+    await page.getByRole('button', { name: 'Retry file', exact: true }).click()
+    await page.waitForFunction(() => !window.files.failedUploads.length)
+    assert.equal(await page.evaluate(() => window.uploadCalls.length), 4)
     await page.evaluate(() => window.enableSuggestions(true))
     await page.waitForFunction(() => window.suggestionCalls === 1)
     await page.getByRole('textbox', { name: 'Message', exact: true }).fill('My typed draft')

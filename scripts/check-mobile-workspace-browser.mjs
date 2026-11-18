@@ -62,9 +62,9 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
     contents: 'export const useTheme=()=>({colors:{}});',
   },
   {
-    path: '../ui/layout/glass',
+    path: '../ui/layout/surface',
     importer: workspace,
-    contents: 'export const Glass=({children})=><div>{children}</div>;',
+    contents: 'export const Surface=({children})=><div>{children}</div>;',
   },
   {
     path: '../ui/layout/screen-header',

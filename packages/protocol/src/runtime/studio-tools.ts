@@ -98,7 +98,18 @@ export const studioThreadsCommandSchema = Schema.Union([
     answers: Schema.optional(questionAnswersSchema),
   }),
   mutableStruct({ action: Schema.Literal('list'), query: Schema.optional(text), before: page }),
-  mutableStruct({ action: Schema.Literal('read'), id, before: page }),
+  mutableStruct({
+    action: Schema.Literal('read'),
+    id,
+    before: page,
+    detail: Schema.optional(Schema.Literals(['files', 'checkpoints', 'full'])),
+  }),
+  mutableStruct({
+    action: Schema.Literal('message'),
+    id,
+    messageId: id,
+    offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  }),
   mutableStruct({ action: Schema.Literal('snapshot'), id }),
   mutableStruct({ action: Schema.Literals(['watch', 'unwatch']), id }),
   mutableStruct({ action: Schema.Literal('watches') }),
@@ -215,4 +226,10 @@ export const studioUIPollResultSchema = mutableStruct({ job: Schema.NullOr(studi
 export const studioDiagnosticsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('health') }),
   mutableStruct({ action: Schema.Literal('activity'), scope: Schema.optional(id), before: page }),
+  mutableStruct({
+    action: Schema.Literal('event'),
+    id,
+    scope: Schema.optional(id),
+    offset: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+  }),
 ])

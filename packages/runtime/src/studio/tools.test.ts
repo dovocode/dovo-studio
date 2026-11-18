@@ -239,6 +239,145 @@ it('creates, sends, waits, reads, searches and archives threads through existing
   expect((await post('diagnostics', { action: 'health' })).status).toBe(200)
   expect((await post('diagnostics', { action: 'activity', scope: id })).status).toBe(200)
 }, 30000)
+it('returns bounded conversation text and reads files, checkpoints and long messages on demand', async () => {
+  const { s, post } = await setup()
+  const target = s.tasks.create({
+    title: 'Review',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const file = {
+    path: 'review.ts',
+    before: 'a'.repeat(700000),
+    after: 'b'.repeat(700000),
+    viewed: false,
+  }
+  s.store.updateTask(target.id, (task) => ({
+    ...task,
+    files: [file],
+    status: 'review',
+    activeRunId: undefined,
+  }))
+  s.store.updateTaskHistory(target.id, (task) => ({
+    ...task,
+    messages: [
+      { id: 'older', role: 'user', text: 'Earlier request' },
+      { id: 'long', role: 'assistant', text: 'answer '.repeat(1500), turnId: 'turn' },
+      { id: 'newest', role: 'user', text: 'question '.repeat(1000) },
+    ],
+    turns: [
+      {
+        id: 'turn',
+        assistantId: 'long',
+        agentId: 'agent',
+        provider: 'codex',
+        model: '',
+        status: 'completed',
+        startedAt: '2026-11-18T08:00:00Z',
+        checkpoint: { before: 'before', after: 'after', omitted: [], files: [file] },
+      },
+    ],
+  }))
+  const read = async (parameters = {}) => {
+    const response = await post('threads', { action: 'read', id: target.id, ...parameters })
+    expect(response.status).toBe(200)
+    return response.json()
+  }
+  const compact = await read()
+  expect(compact.thread).not.toHaveProperty('files')
+  expect(compact.history).not.toHaveProperty('turns')
+  expect(compact.history).toMatchObject({
+    before: 'long',
+    messages: [
+      { id: 'long', nextOffset: 8000 },
+      { id: 'newest', nextOffset: 8000 },
+    ],
+  })
+  expect((await read({ before: 'long' })).history.messages).toMatchObject([{ id: 'older' }])
+  expect((await read({ detail: 'files' })).files[0].after.length).toBe(700000)
+  expect(
+    (await read({ detail: 'checkpoints', before: 'newest' })).history.turns[0].checkpoint.files[0]
+      .after.length,
+  ).toBe(700000)
+  const rest = await post('threads', {
+    action: 'message',
+    id: target.id,
+    messageId: 'long',
+    offset: 8000,
+  })
+  expect(await rest.json()).toMatchObject({ id: 'long', text: 'answer '.repeat(1500).slice(8000) })
+  const waited = await post('threads', { action: 'wait', id: target.id, timeoutMs: 0 })
+  expect(await waited.json()).toMatchObject({ running: false, history: compact.history })
+  const full = await read({ detail: 'full', before: 'newest' })
+  expect(JSON.stringify(compact).length).toBeLessThan(JSON.stringify(full).length / 100)
+})
+
+it('coalesces tool starts and results across activity pages and pages the saved raw event', async () => {
+  const { s, post, parent } = await setup()
+  const tool = { turnId: 'turn', toolId: 'shell' }
+  s.activity.add(
+    'tool',
+    parent.id,
+    'Bash',
+    {
+      ...tool,
+      status: 'running',
+      presentation: { kind: 'command', title: 'Bash', input: 'pnpm check', output: '' },
+    },
+    'started',
+  )
+  for (let i = 0; i < 100; i++) s.activity.add('task', parent.id, 'Task event', {}, `task-${i}`)
+  s.activity.add(
+    'tool',
+    parent.id,
+    'Tool result',
+    {
+      ...tool,
+      status: 'completed',
+      presentation: {
+        kind: 'command',
+        title: 'Tool result',
+        input: '',
+        output: 'x'.repeat(20_000) + 'Success',
+      },
+    },
+    'result',
+  )
+  s.db
+    .prepare(
+      "UPDATE activity SET time=CASE id WHEN 'started' THEN '2026-11-18T09:00:00Z' WHEN 'result' THEN '2026-11-18T09:00:02Z' ELSE '2026-11-18T09:00:01Z' END WHERE scope=?",
+    )
+    .run(parent.id)
+  const first = await (await post('diagnostics', { action: 'activity', scope: parent.id })).json()
+  expect(first).toMatchObject({
+    before: '100',
+    events: expect.arrayContaining([
+      expect.objectContaining({
+        id: 'result',
+        inputEventId: 'started',
+        status: 'completed',
+        durationMs: 2000,
+        command: 'pnpm check',
+        preview: expect.stringMatching(/Success$/),
+      }),
+    ]),
+  })
+  expect(first.events[0]).not.toHaveProperty('payload')
+  const second = await (
+    await post('diagnostics', { action: 'activity', scope: parent.id, before: first.before })
+  ).json()
+  expect(second.events.some((event: { kind: string }) => event.kind === 'tool')).toBe(false)
+  const detail = await (
+    await post('diagnostics', { action: 'event', scope: parent.id, id: 'result' })
+  ).json()
+  expect(detail).toMatchObject({ id: 'result', nextOffset: 8000 })
+  expect(detail.payload.length).toBe(8000)
+  expect(
+    (await post('diagnostics', { action: 'event', scope: 'another', id: 'result' })).status,
+  ).toBe(404)
+})
+
 it('validates and manages automations and runs without admitting approval bypasses', async () => {
   const { s, post, raw } = await setup()
   vi.spyOn(s.agents, 'get').mockResolvedValue({
@@ -589,6 +728,66 @@ it('routes non-UI tools to a selected paired runtime over HTTP without exposing 
   expect((await pairing.register([])).status).toBe(200)
   expect((await source.post('threads', { action: 'list' }, pairing.peer.id)).status).toBe(404)
 })
+it('rejects conflicting Studio reference owners and accepts equivalent selectors', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  const screenshot = vi
+    .spyOn(source.s.browsers, 'agentCommand')
+    .mockResolvedValue({ ok: true, image: 'png' })
+
+  const rejectedThread = await source.post(
+    'threads',
+    { action: 'read', id: `studio:${target.s.runtimeId}:thread:${source.parent.id}` },
+    source.s.runtimeId,
+  )
+  expect(await rejectedThread.text()).toContain('select different computers')
+  expect(rejectedThread.status).toBe(409)
+  const rejectedBrowser = await source.post(
+    'browsers',
+    { action: 'screenshot', id: `studio:${target.s.runtimeId}:browser:existing` },
+    'local',
+  )
+  expect(rejectedBrowser.status).toBe(409)
+  expect(screenshot).not.toHaveBeenCalled()
+
+  const local = await source.post(
+    'browsers',
+    { action: 'screenshot', id: 'studio:local:browser:existing' },
+    source.s.runtimeId,
+  )
+  expect(local.status).toBe(200)
+  expect(screenshot).toHaveBeenCalledOnce()
+  const remote = await source.post(
+    'threads',
+    { action: 'read', id: `studio:${target.s.runtimeId}:thread:${target.parent.id}` },
+    pairing.peer.id,
+  )
+  expect(remote.status).toBe(200)
+  expect(await remote.json()).toMatchObject({ thread: { id: target.parent.id } })
+})
+
+it('rejects mismatched Studio reference kinds and accepts untyped references', async () => {
+  const { s, post, parent } = await setup()
+  const screenshot = vi
+    .spyOn(s.browsers, 'agentCommand')
+    .mockResolvedValue({ ok: true, image: 'png' })
+  const [thread, browser] = await Promise.all([
+    post('threads', { action: 'read', id: `studio:local:browser:${parent.id}` }),
+    post('browsers', { action: 'screenshot', id: 'studio:local:thread:existing' }),
+  ])
+  expect(thread.status).toBe(400)
+  expect(browser.status).toBe(400)
+  expect(screenshot).not.toHaveBeenCalled()
+  expect((await post('threads', { action: 'read', id: `studio:local:${parent.id}` })).status).toBe(
+    200,
+  )
+  expect(
+    (await post('browsers', { action: 'screenshot', id: 'studio:local:existing' })).status,
+  ).toBe(200)
+  expect(screenshot).toHaveBeenCalledOnce()
+})
+
 it('preserves run read-only access and permission ceilings across paired computers', async () => {
   const reader = await setup(undefined, true)
   const target = await setup()
@@ -721,6 +920,206 @@ it('rejects older paired runtimes before attempting an unscoped tool action', as
   expect(response.status).toBe(404)
   expect(await response.text()).toContain('Update this paired runtime')
   expect(paths).toEqual(['/api/studio/forward-v2'])
+})
+
+it('sends to ordinary older-peer threads but never forwards legacy Bot calls or retries a rejected send', async () => {
+  const source = await setup()
+  const requests: { path: string; action: string; id: string; messageId?: string }[] = []
+  const legacy = createServer(async (request, response) => {
+    let raw = ''
+    for await (const chunk of request) raw += chunk
+    const { command } = decode(
+      Schema.Struct({
+        command: Schema.Struct({
+          id: Schema.String,
+          action: Schema.String,
+          messageId: Schema.optional(Schema.String),
+          timeoutMs: Schema.optional(Schema.Number),
+        }),
+      }),
+      JSON.parse(raw),
+    )
+    requests.push({ path: request.url ?? '', ...command })
+    response.setHeader('Content-Type', 'application/json')
+    if (request.url === '/api/studio/forward-v3') {
+      response.statusCode = 404
+      response.end(
+        JSON.stringify({
+          error: command.id === 'missing' ? 'Thread not found' : 'Endpoint not found',
+        }),
+      )
+    } else if (command.action === 'wait' && command.timeoutMs === 0) {
+      response.end(
+        JSON.stringify({
+          thread: { id: command.id, ...(command.id === 'bot' && { bot: botMetadata() }) },
+        }),
+      )
+    } else response.end(JSON.stringify({ ok: true }))
+  })
+  legacy.listen(0, '127.0.0.1')
+  await once(legacy, 'listening')
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve, reject) =>
+        legacy.close((error) => (error ? reject(error) : resolve())),
+      ),
+  )
+  const address = legacy.address()
+  if (!address || typeof address === 'string') throw new Error('Missing legacy runtime address')
+  studioPeers(source.s).register(
+    'owner',
+    {
+      sessionId: 'legacy',
+      peers: [
+        {
+          id: 'legacy',
+          name: 'Legacy',
+          connection: {
+            address: `http://127.0.0.1:${address.port}`,
+            token: 'legacy-pairing-token-at-least-32-chars',
+          },
+        },
+      ],
+    },
+    () => {},
+  )
+  const send = { action: 'send', id: 'thread', text: 'Hello', messageId: randomUUID() }
+  expect((await source.post('threads', send, 'legacy')).status).toBe(200)
+  expect(requests.map(({ path, action }) => [path, action])).toEqual([
+    ['/api/studio/forward-v3', 'send'],
+    ['/api/studio/forward', 'wait'],
+    ['/api/studio/forward', 'send'],
+  ])
+  expect(requests.at(-1)?.messageId).toBe(send.messageId)
+  requests.length = 0
+  expect((await source.post('threads', { ...send, id: 'bot' }, 'legacy')).status).toBe(409)
+  expect(requests.map(({ action }) => action)).toEqual(['send', 'wait'])
+  requests.length = 0
+  expect((await source.post('threads', { ...send, id: 'missing' }, 'legacy')).status).toBe(404)
+  expect(requests.map(({ action }) => action)).toEqual(['send'])
+})
+
+function botMetadata() {
+  return {
+    role: 'Coordinator',
+    responsibilities: 'Review project work',
+    state: 'active' as const,
+    revision: randomUUID(),
+    createdAt: '2026-11-15T08:00:00Z',
+    updatedAt: '2026-11-15T08:00:00Z',
+  }
+}
+
+it('starts an independent project thread for a Bot and a subthread for an ordinary caller', async () => {
+  const { s, post, parent } = await setup()
+  const create = { action: 'create', title: 'Project work', repositoryId: 'repo', agentId: 'agent' }
+  const child = decode(
+    mutableStruct({ id: Schema.String }),
+    await (await post('threads', create)).json(),
+  )
+  expect(s.store.taskSummary(child.id).spawnParent).toMatchObject({
+    threadId: parent.id,
+    runtimeId: s.runtimeId,
+  })
+  s.store.updateTask(parent.id, (task) => ({ ...task, bot: botMetadata() }))
+  const project = decode(
+    mutableStruct({ id: Schema.String }),
+    await (await post('threads', create)).json(),
+  )
+  expect(s.store.taskSummary(project.id).spawnParent).toBeUndefined()
+})
+
+it('calls a Bot in an isolated thread and reuses the call after a lost reply', async () => {
+  const { s, post, parent } = await setup()
+  const destination = s.tasks.create({
+    title: 'Review Bot',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  s.store.updateTask(destination.id, (task) => ({ ...task, bot: botMetadata() }))
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Bot answer'),
+  })
+  const send = {
+    action: 'send',
+    id: destination.id,
+    text: 'Review the files',
+    messageId: randomUUID(),
+  }
+  const [response, retry] = await Promise.all([post('threads', send), post('threads', send)])
+  expect(response.status).toBe(200)
+  expect(retry.status).toBe(200)
+  const raw = await response.json()
+  expect(await retry.json()).toEqual(raw)
+  const { id } = decode(mutableStruct({ id: Schema.String }), raw)
+  expect(s.store.task(id).botMention).toMatchObject({
+    botId: destination.id,
+    runtimeId: s.runtimeId,
+    sourceRuntimeId: s.runtimeId,
+    sourceTaskId: parent.id,
+  })
+  expect((await post('threads', { action: 'wait', id })).status).toBe(200)
+  expect(s.store.task(id).messages).toEqual(
+    expect.arrayContaining([expect.objectContaining({ text: 'Bot answer' })]),
+  )
+  expect(s.store.task(destination.id).messages).toEqual([])
+  expect(s.store.get().tasks.filter((task) => task.botMention)).toHaveLength(1)
+  s.store.updateTask(parent.id, (task) => ({ ...task, bot: botMetadata() }))
+  const self = await post('threads', { ...send, id: parent.id })
+  expect(self.status).toBe(200)
+  const selfCall = decode(mutableStruct({ id: Schema.String }), await self.json())
+  expect(s.store.task(selfCall.id).botMention).toMatchObject({
+    botId: parent.id,
+    sourceTaskId: parent.id,
+  })
+})
+
+it('preserves the remote caller identity for Bot calls and keeps Bot project watches independent', async () => {
+  const source = await setup()
+  const target = await setup()
+  const pairing = await pairComputers(source, target)
+  source.s.store.updateTask(source.parent.id, (task) => ({ ...task, bot: botMetadata() }))
+  target.s.store.updateTask(target.parent.id, (task) => ({ ...task, bot: botMetadata() }))
+  vi.spyOn(target.s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => run.onText('Remote Bot answer'),
+  })
+  const call = await source.post(
+    'threads',
+    {
+      action: 'send',
+      id: target.parent.id,
+      text: 'Review remotely',
+      messageId: randomUUID(),
+    },
+    pairing.peer.id,
+  )
+  expect(call.status).toBe(200)
+  const { id } = decode(mutableStruct({ id: Schema.String }), await call.json())
+  expect(target.s.store.task(id).botMention).toMatchObject({
+    botId: target.parent.id,
+    runtimeId: target.s.runtimeId,
+    sourceTaskId: source.parent.id,
+    sourceRuntimeId: source.s.runtimeId,
+  })
+  const created = await source.post(
+    'threads',
+    {
+      action: 'create',
+      title: 'Independent remote project',
+      repositoryId: 'repo',
+      agentId: 'agent',
+    },
+    pairing.peer.id,
+  )
+  expect(created.status).toBe(200)
+  const project = decode(mutableStruct({ id: Schema.String }), await created.json())
+  expect(target.s.store.taskSummary(project.id).spawnParent).toBeUndefined()
+  expect(source.s.threadWatch.list(source.parent.id)).toMatchObject([
+    { threadId: project.id, steering: true },
+  ])
 })
 
 it('durably monitors remote children, preserves offline facts and delivers each attention/completion once', async () => {
@@ -1142,6 +1541,14 @@ it('deduplicates remote creation and supports an explicitly authorized permissio
   const child = target.s.store.task(values[0]!.id)
   expect(child.agentOverrides?.permission).toBe('full-access')
   expect(target.s.store.get().tasks.filter((task) => task.title === command.title)).toHaveLength(1)
+  const unwatch = await source.post('threads', { action: 'unwatch', id: child.id }, pairing.peer.id)
+  expect(unwatch.status).toBe(200)
+  const stopped = source.s.threadWatch.list(source.parent.id)
+  expect(stopped).toMatchObject([{ threadId: child.id, status: 'stopped' }])
+  const retry = await source.post('threads', command, pairing.peer.id)
+  expect(retry.status).toBe(200)
+  expect(await retry.json()).toMatchObject({ id: child.id })
+  expect(source.s.threadWatch.list(source.parent.id)).toEqual(stopped)
   expect(
     (await source.post('threads', { ...command, title: 'Changed request' }, pairing.peer.id))
       .status,

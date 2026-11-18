@@ -694,7 +694,10 @@ it('cancels linked registrations on unlink/relink without cancelling unrelated p
   releasePrimary(detail())
   await expect(linked).rejects.toThrow('replaced or stopped')
   await primary
-  expect((await f.status()).watches).toHaveLength(1)
+  expect((await f.status()).watches).toMatchObject([
+    { url, status: 'watching' },
+    { url: f.linkedUrl, status: 'stopped' },
+  ])
   const registration = f.linkedWatch()
   await Promise.resolve()
   const links = f.s.store.task(f.taskId).linkedCheckouts
@@ -1038,6 +1041,347 @@ it('starts babysitting a linked editing PR, uses Update branch once per revision
   expect((await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.status).toBe(
     'stopped',
   )
+})
+
+it.each(['account discovery', 'feedback baseline'])(
+  'remembers Stop during the first automatic registration at %s',
+  async (phase) => {
+    const f = await careFixture()
+    f.s.store.updateTask(f.taskId, (task) => ({
+      ...task,
+      status: 'review',
+      queuePaused: false,
+      pullStatus: {
+        number: 7,
+        url,
+        state: 'open',
+        draft: false,
+        checkedAt: new Date().toISOString(),
+      },
+    }))
+    const started = Promise.withResolvers<void>()
+    const proceed = Promise.withResolvers<void>()
+    const source = vi.mocked(f.s.pulls.watchSource)
+    if (phase === 'account discovery') {
+      source.mockImplementationOnce(async () => {
+        started.resolve()
+        await proceed.promise
+        return { repositoryId: 'repo' }
+      })
+    } else {
+      f.read.mockImplementationOnce(async () => {
+        started.resolve()
+        await proceed.promise
+        return f.current
+      })
+    }
+    const tick = f.watcher.tick()
+    await started.promise
+    const stop = await f.watcher.manage({
+      taskId: f.taskId,
+      action: 'stop',
+      ...(phase === 'feedback baseline' ? { repositoryId: 'repo', url } : {}),
+    })
+    proceed.resolve()
+    await tick
+    expect(stop.watches).toMatchObject([{ url, status: 'stopped' }])
+    expect(f.act).not.toHaveBeenCalled()
+    await f.watcher.dispose()
+    const reopened = new PullRequestWatch(f.s.db, f.s)
+    cleanups.push(() => reopened.dispose())
+    source.mockClear()
+    await reopened.tick()
+    expect(source).not.toHaveBeenCalled()
+    expect(await reopened.manage({ taskId: f.taskId, action: 'status', url })).toMatchObject({
+      watches: [{ status: 'stopped' }],
+    })
+    await reopened.command({ taskId: f.taskId, action: 'watch', url })
+    expect(await reopened.manage({ taskId: f.taskId, action: 'status', url })).toMatchObject({
+      watches: [{ status: 'watching' }],
+    })
+  },
+)
+
+it('keeps a stopped PR stopped after a different PR replaces it in the same repository', async () => {
+  const f = await careFixture()
+  const secondUrl = url.replace('/7', '/8')
+  await f.watch()
+  await f.watcher.manage({ taskId: f.taskId, action: 'stop', url })
+  const second = { ...f.current.pull, number: 8, url: secondUrl }
+  f.setDetail({ ...f.current, pull: second })
+  await f.watcher.command({ taskId: f.taskId, action: 'watch', url: secondUrl })
+  await f.watcher.dispose()
+  const reopened = new PullRequestWatch(f.s.db, f.s)
+  cleanups.push(() => reopened.dispose())
+  expect(await reopened.manage({ taskId: f.taskId, action: 'status', url })).toMatchObject({
+    watches: [{ status: 'stopped' }],
+  })
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: false,
+    pullStatus: {
+      number: 7,
+      url,
+      state: 'open',
+      draft: false,
+      checkedAt: new Date().toISOString(),
+    },
+  }))
+  f.setDetail({ ...f.current, pull: { ...second, state: 'merged' } })
+  await reopened.tick()
+  f.setDetail(f.current)
+  const source = vi.mocked(f.s.pulls.watchSource).mockClear()
+  await reopened.tick()
+  expect(source).not.toHaveBeenCalled()
+  await reopened.command({ taskId: f.taskId, action: 'watch', url })
+  expect(await reopened.manage({ taskId: f.taskId, action: 'status', url })).toMatchObject({
+    watches: [{ status: 'watching' }],
+  })
+  expect(await reopened.manage({ taskId: f.taskId, action: 'status', url: secondUrl })).toEqual({
+    watches: [],
+  })
+})
+
+it('only enrolls an editable linked checkout after this thread records changes on its PR branch', async () => {
+  const f = await careFixture()
+  const repositoryUrl = 'https://github.com/team/linked'
+  const linkedUrl = `${repositoryUrl}/pull/7`
+  const path = join(f.f.directory, 'linked')
+  const now = new Date().toISOString()
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      ...workspace.repositories,
+      { id: 'linked', name: 'Linked', path, branch: 'fix', gitIdentity: 'github.com/team/linked' },
+    ],
+  }))
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: false,
+    linkedCheckouts: [
+      { id: 'edit-link', repositoryId: 'linked', access: 'edit', execution: 'main' },
+    ],
+    linkedPullRequests: [{ title: 'Fix', number: 7, url: linkedUrl, repositoryUrl }],
+  }))
+  f.setDetail({
+    ...f.current,
+    pull: {
+      ...f.current.pull,
+      url: linkedUrl,
+      repositoryUrl,
+      headCloneUrl: `${repositoryUrl}.git`,
+    },
+  })
+  await f.watcher.tick()
+  expect(f.act).not.toHaveBeenCalled()
+  expect((await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches).toHaveLength(0)
+  f.s.store.updateTaskHistory(f.taskId, (task) => ({
+    ...task,
+    turns: [
+      {
+        id: 'linked-edit-turn',
+        assistantId: 'assistant',
+        startedAt: now,
+        status: 'completed',
+        agentId: 'agent',
+        provider: 'codex',
+        model: 'fixture',
+        checkpoint: {
+          before: '',
+          files: [],
+          omitted: [],
+          linked: [
+            {
+              checkoutId: 'edit-link',
+              repositoryId: 'linked',
+              directory: path,
+              branch: 'fix',
+              before: 'before',
+              after: 'after',
+              files: [{ path: 'file.txt', before: 'before', after: 'after', viewed: false }],
+              omitted: [],
+            },
+          ],
+        },
+      },
+    ],
+  }))
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledExactlyOnceWith(
+    path,
+    expect.objectContaining({ action: 'update-branch', headSha: f.current.pull.headSha }),
+  )
+  expect(f.queued()[0]?.text).toContain('Use linked checkout edit-link.')
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(1)
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    linkedCheckouts: task.linkedCheckouts?.map((link) => ({ ...link, access: 'read-only' })),
+  }))
+  await f.watcher.tick()
+  expect(f.act).toHaveBeenCalledTimes(1)
+  expect(
+    (await f.watcher.command({ taskId: f.taskId, action: 'status', url: linkedUrl })).watches[0]
+      ?.status,
+  ).toBe('stopped')
+})
+
+it.each([false, true])(
+  'uses an exact push receipt to start care on an unlinked PR (existing feedback watch: %s)',
+  async (existing) => {
+    const f = await careFixture()
+    const repositoryUrl = 'https://github.com/team/external'
+    const externalUrl = `${repositoryUrl}/pull/7`
+    const source = {
+      url: externalUrl,
+      repository: 'github.com/team/external',
+      accountRepositoryId: 'repo',
+      readerIdentity: 'reader',
+      destination: 'destination',
+    }
+    vi.spyOn(f.s.pulls, 'watchSource').mockResolvedValue({
+      repositoryId: 'external:external',
+      source,
+    })
+    type Reader = ReturnType<typeof f.s.pulls.watchReader>
+    const act = vi.fn<Reader['act']>().mockResolvedValue({
+      number: 7,
+      url: externalUrl,
+      status: 'updated',
+    })
+    vi.spyOn(f.s.pulls, 'watchReader').mockReturnValue({
+      identity: vi.fn<Reader['identity']>(),
+      feedback: vi.fn<Reader['feedback']>(),
+      context: vi.fn<Reader['context']>(),
+      act,
+    })
+    const pull = {
+      ...f.current.pull,
+      url: externalUrl,
+      repositoryUrl,
+      headCloneUrl: `${repositoryUrl}.git`,
+      headSha: 'c'.repeat(40),
+    }
+    f.setDetail({ ...f.current, pull })
+    const now = new Date().toISOString()
+    const cwd = join(f.f.directory, 'external')
+    f.s.store.updateTask(f.taskId, (task) => ({
+      ...task,
+      status: 'review',
+      queuePaused: false,
+      linkedPullRequests: [{ title: 'Fix', number: 7, url: externalUrl, repositoryUrl }],
+    }))
+    if (existing) await f.watcher.command({ taskId: f.taskId, action: 'watch', url: externalUrl })
+    f.s.store.saveExternalGitReceipts(f.taskId, [
+      {
+        repositoryIdentity: 'github.com/team/external',
+        branch: 'fix',
+        sha: 'a'.repeat(40),
+        cwd,
+        turnId: 'push-turn',
+        recordedAt: now,
+      },
+    ])
+    await f.watcher.tick()
+    expect(act).not.toHaveBeenCalled()
+    expect(f.queued()).toHaveLength(0)
+    f.setDetail({ ...f.current, pull: { ...pull, headSha: 'a'.repeat(40) } })
+    await f.watcher.tick()
+    expect(act).toHaveBeenCalledTimes(1)
+    expect(f.s.pulls.watchSource).toHaveBeenLastCalledWith(
+      ...(existing ? [externalUrl, 'repo', undefined] : [externalUrl, undefined, undefined, cwd]),
+    )
+    expect(f.queued()[0]?.text).toContain('repository github.com/team/external, branch fix')
+    expect(f.queued()[0]?.text).toContain(cwd)
+    f.setDetail({ ...f.current, pull })
+    await f.watcher.tick()
+    expect(act).toHaveBeenCalledTimes(2)
+    await f.watcher.command({ taskId: f.taskId, action: 'stop', url: externalUrl })
+    await f.watcher.tick()
+    expect(act).toHaveBeenCalledTimes(2)
+    expect(
+      (await f.watcher.command({ taskId: f.taskId, action: 'status', url: externalUrl })).watches[0]
+        ?.status,
+    ).toBe('stopped')
+  },
+)
+
+it('discards an automatic unlinked PR registration when the user unlinks it during the read', async () => {
+  const f = await careFixture()
+  const repositoryUrl = 'https://github.com/team/external'
+  const externalUrl = `${repositoryUrl}/pull/7`
+  const cwd = join(f.f.directory, 'external')
+  const source = vi.mocked(f.s.pulls.watchSource).mockResolvedValue({
+    repositoryId: 'external:external',
+    source: {
+      url: externalUrl,
+      repository: 'github.com/team/external',
+      checkoutDirectory: cwd,
+      readerIdentity: 'reader',
+      destination: 'destination',
+    },
+  })
+  const act = vi.fn()
+  vi.spyOn(f.s.pulls, 'watchReader').mockReturnValue({
+    identity: vi.fn(),
+    feedback: vi.fn(),
+    context: vi.fn(),
+    act,
+  })
+  const pull = {
+    ...f.current.pull,
+    url: externalUrl,
+    repositoryUrl,
+    headCloneUrl: `${repositoryUrl}.git`,
+    headSha: 'a'.repeat(40),
+  }
+  const externalDetail = { ...f.current, pull }
+  f.setDetail(externalDetail)
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    status: 'review',
+    queuePaused: false,
+    linkedPullRequests: [{ title: 'Fix', number: 7, url: externalUrl, repositoryUrl }],
+  }))
+  f.s.store.saveExternalGitReceipts(f.taskId, [
+    {
+      repositoryIdentity: 'github.com/team/external',
+      branch: 'fix',
+      sha: pull.headSha,
+      cwd,
+      turnId: 'push-turn',
+      recordedAt: new Date().toISOString(),
+    },
+  ])
+  const started = Promise.withResolvers<void>()
+  const proceed = Promise.withResolvers<void>()
+  f.read.mockImplementationOnce(async () => {
+    started.resolve()
+    await proceed.promise
+    return externalDetail
+  })
+  const tick = f.watcher.tick()
+  await started.promise
+  f.s.store.updateTask(f.taskId, (task) => ({
+    ...task,
+    linkedPullRequests: [],
+    ignoredPullRequestUrls: [externalUrl],
+  }))
+  proceed.resolve()
+  await tick
+  await f.watcher.dispose()
+  const reopened = new PullRequestWatch(f.s.db, f.s)
+  cleanups.push(() => reopened.dispose())
+  source.mockClear()
+  await reopened.tick()
+  expect(await reopened.manage({ taskId: f.taskId, action: 'status', url: externalUrl })).toEqual({
+    watches: [],
+  })
+  expect(source).not.toHaveBeenCalled()
+  expect(act).not.toHaveBeenCalled()
+  expect(f.queued()).toHaveLength(0)
 })
 
 it('preserves paused queues and active turns, and reports an unavailable branch action', async () => {

@@ -31,7 +31,8 @@ remove its native tools.
 
 `tools.search({ source, server, query })` returns tool schemas. Omit `source` to find Studio tools,
 file tools and MCP server names. Select `source: 'mcp'` and a server name to load that server's
-tools. Discovery does not enable disabled tools.
+tools. Discovery does not enable disabled tools. Code mode filters MCP tool names and descriptions
+before deciding whether to retain the result.
 
 ```js
 print(await tools.search({ source: 'mcp' }))
@@ -66,12 +67,29 @@ commands require approval when the run policy requires it. Later terminal input 
 session and access checks. Cancellation does not stop an already started persistent terminal. Close
 it explicitly when finished.
 
+For a noninteractive check, pass `check: true` to `terminal_run`. It runs once in a new terminal
+using the platform shell. The response includes the exit code when the process finishes, up to 3,000
+characters of its log, and test names when the output uses a recognized format. The tool waits up to
+10 seconds by default. Set `waitMs` between 0 and 20,000. If the check is still running, use
+`terminal_read` with its ID, `summary: true` and a wait time. The full retained log remains
+available in the terminal.
+
 ## Limits and recovery
 
 Each execution has a 64 MiB JavaScript heap, a 512 KiB stack, 2 seconds of active JavaScript CPU
 time and a 12.5-minute wall deadline. Tool waits do not use the JavaScript CPU budget. Scripts can
 make 100 calls with at most 8 calls active at once. Code is limited to 100 KB. Each tool value,
 returned value and total printed output is limited to 4 MiB. There are at most 100 print records.
+The guest also has a 4 MiB budget for incoming tool results per execution, including retained result
+previews. Code mode returns a reference when a result exceeds the remaining budget and the reference
+fits, or when the final text output exceeds 64 KiB. Read a reference with
+`tools.harness.read_tool_result({resultId, offset, limit})` in the same thread. Leave out `limit` to
+return up to 8,192 UTF-16 code units per page. Pass the returned `nextOffset` to read the next page.
+Larger requested pages can be shorter than `limit` to fit the response. Join all pages before
+parsing the retained JSON or decoding characters that span page boundaries. Use a fresh code call
+when the guest reaches its input limit. If a retained reference cannot fit in the guest, the error
+gives its result ID. Result references expire as described by the tool. A reference to assembled
+Code mode output also expires if its tool process stops.
 
 Scripts have no Node globals, filesystem, network, imports or package loader. They reach resources
 only through checked tool calls. Calls keep run identity, cancellation, approval and linked-checkout
@@ -79,7 +97,8 @@ restrictions. MCP tools in read-only runs must declare a read-only hint and must
 destructive hint. These hints are server claims, not an operating-system sandbox.
 
 Calls are not a transaction. An error or cancellation does not undo completed calls. Inspect the
-current state before retrying a mutation. Await calls whose results matter.
+current state before retrying a mutation. Await calls whose results matter. Failed MCP calls reject
+with an error. Code mode shortens long error messages.
 
 ## Verification
 

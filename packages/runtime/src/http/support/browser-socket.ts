@@ -152,7 +152,7 @@ export function attachBrowserSocket(
         if (!visible) return
         const oldest = inFlight.values().next().value
         if (oldest !== undefined && performance.now() - Math.max(oldest.sentAt, resumedAt) > 10000)
-          client.close(1008, 'Browser renderer stopped responding')
+          client.close(1013, 'Browser renderer stopped responding')
       }, 2000)
     : undefined
   watchdog?.unref()

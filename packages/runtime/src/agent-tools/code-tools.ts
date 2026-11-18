@@ -4,7 +4,8 @@ import type { Services } from '../services.js'
 import type { RunPolicy } from '../auth/run-credentials.js'
 import { checkCodeAccess } from './code-access.js'
 import { codeFileTools, codeFileCall } from './code-files.js'
-import { CodeResults, codeResultTool } from './code-results.js'
+import { CodeResults, codeResultTool, checkCodeToolResult } from './code-results.js'
+import { codeCatalog, codeCatalogQuery, matchesCodeCatalogQuery } from './code-catalog.js'
 
 const results = new WeakMap<Services, CodeResults>()
 
@@ -30,6 +31,7 @@ export async function codeToolCommand(
   let retained = results.get(s)
   if (!retained) results.set(s, (retained = new CodeResults()))
   if (call.source === 'harness') {
+    if (call.name === '__check') return { ok: true }
     if (call.name === '__catalog')
       return {
         tools: [...codeFileTools, codeResultTool].filter(
@@ -44,15 +46,22 @@ export async function codeToolCommand(
   if (call.name === '__servers')
     return { servers: grant.codeDirectories?.mcp?.map((server) => server.name) ?? [] }
   if (!call.server) throw new Error('Select an MCP server from tools.search({source:"mcp"})')
+  const catalog = call.name === '__catalog'
+  const query = catalog ? codeCatalogQuery.parse(call.arguments?.query) : undefined
   const value = await s.mcpApps.codeTools(
     grant,
     call.server,
-    call.name === '__catalog' ? undefined : { name: call.name, arguments: call.arguments },
+    catalog ? undefined : { name: call.name, arguments: call.arguments },
     signal,
     authorize,
   )
   authorize()
   signal.throwIfAborted()
   checkCodeAccess(s.store, grant)
-  return retained.retain(grant.taskId, value)
+  return retained.retain(
+    grant.taskId,
+    catalog
+      ? { tools: codeCatalog.parse(value).tools.filter(matchesCodeCatalogQuery(query)) }
+      : checkCodeToolResult(value),
+  )
 }

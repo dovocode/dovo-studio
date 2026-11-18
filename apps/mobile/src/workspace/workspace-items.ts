@@ -15,7 +15,7 @@ import {
   type TerminalInfo,
   type Repository,
 } from '@dovo/protocol'
-import type { BrowserTab } from '../browser/browser-state'
+import { browserTabProjectName, type BrowserTab } from '../browser/browser-state'
 
 export const workspaceSections = [
   { id: 'pinned', title: 'Pinned' },
@@ -46,7 +46,7 @@ export type WorkspaceItem = Common &
         needsInput: boolean
       }
     | { kind: 'terminal'; runtimeId: string; terminal: TerminalInfo; repository?: Repository }
-    | { kind: 'browser'; tab: BrowserTab }
+    | { kind: 'browser'; tab: BrowserTab; linkedProject?: string }
   )
 export const terminalHref = (runtimeId: string, terminalId: string) => ({
   pathname: '/terminal/[runtimeId]/[terminalId]' as const,
@@ -162,6 +162,7 @@ export function workspaceItems(
       kind: 'browser',
       key: JSON.stringify(['browser', tab.id]),
       tab,
+      linkedProject: browserTabProjectName(tab, overviews),
       title: tab.title || tab.url,
       detail: `${new URL(tab.url).host} · ${tab.kind === 'remote' ? (owner ? runtimeComputerName(owner) : 'Unpaired computer') : 'This device'}`,
       status: category === 'settled' ? 'Settled' : category === 'snoozed' ? 'Snoozed' : 'Page',

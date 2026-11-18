@@ -10,10 +10,11 @@ export function resolveThreadRuntime<
   overviews: readonly { profile: { id: string }; snapshot: { runtimeId?: string } | null }[],
 ): Profile | undefined {
   if (!target.runtimeIdentity) return profiles.find((profile) => profile.id === target.runtimeId)
-  return profiles.find((profile) => {
+  const matches = profiles.filter((profile) => {
     const identity =
       profile.connection.runtimeId ??
       overviews.find((source) => source.profile.id === profile.id)?.snapshot?.runtimeId
     return identity === target.runtimeIdentity
   })
+  return matches.find((profile) => profile.id === target.runtimeId) ?? matches[0]
 }

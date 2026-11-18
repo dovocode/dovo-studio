@@ -1202,51 +1202,53 @@ it('hides isolated scheduled Bot workers and their descendants from overview roo
   }
 })
 
-it('keeps mention copies under the Bot on its computer and preserves their source routing', () => {
-  const owner = source('owner-profile', [
-    task('bot', {
-      bot: {
-        role: 'Coordinator',
-        responsibilities: '',
-        state: 'active',
-        revision: randomUUID(),
-        createdAt: '2026-11-15T08:00:00Z',
-        updatedAt: '2026-11-15T08:00:00Z',
-      },
-    }),
-  ])
-  owner.snapshot = decode(snapshotSchema, {
-    runtimeId: 'owner-identity',
-    revision: 1,
-    owner: false,
-    workspace: owner.workspace,
-    approvals: [],
-    questions: [],
-    terminals: [],
-    runs: [],
-    devices: [],
-    pendingDevices: [],
-  })
-  const copy = task('copy', {
-    botMention: {
-      botId: 'bot',
-      runtimeId: 'owner-identity',
-      sourceTaskId: 'source',
-      sourceMessageId: 'message',
+it('only nests Bot self-calls and thread-created threads in the subthread tree', () => {
+  const bot = task('bot', {
+    bot: {
+      role: 'Coordinator',
+      responsibilities: '',
+      state: 'active',
+      revision: randomUUID(),
+      createdAt: '2026-11-15T08:00:00Z',
+      updatedAt: '2026-11-15T08:00:00Z',
     },
   })
-  const sender = source('sender', [task('source'), task('bot'), copy])
-  const tree = buildThreadTree(collectTasks([owner, sender]))
-  expect(tree.roots.map((entry) => entry.key).sort()).toEqual(
-    [key('owner-profile', 'bot'), key('sender', 'bot'), key('sender', 'source')].sort(),
-  )
-  expect(tree.nodes.get(key('sender', 'bot'))!.children).toEqual([])
-  expect(tree.nodes.get(key('owner-profile', 'bot'))!.children).toMatchObject([
-    { threadId: 'copy', runtimeId: 'sender', mentionSourceTitle: 'source' },
+  const call = {
+    botId: 'bot',
+    runtimeId: 'computer',
+    sourceTaskId: 'caller',
+    sourceMessageId: 'message',
+  }
+  const computer = source('profile', [
+    bot,
+    task('caller'),
+    task('side-call', { botMention: call }),
+    task('self-call', { botMention: { ...call, sourceTaskId: 'bot' } }),
+    task('thread-child', { spawnParent: { runtimeId: 'computer', threadId: 'caller' } }),
+    task('project-work', {
+      repositoryId: 'repo',
+      spawnParent: { runtimeId: 'computer', threadId: 'bot', steering: true },
+    }),
+    task('legacy-project-work', {
+      repositoryId: 'repo',
+      spawnParent: { runtimeId: 'computer', threadId: 'bot' },
+    }),
+    task('orphan', { botMention: { ...call, sourceTaskId: 'removed' } }),
   ])
-  expect(buildThreadTree(collectTasks([sender])).roots.map((entry) => entry.task.id)).not.toContain(
-    'copy',
-  )
+  const tree = buildThreadTree(collectTasks([computer]), undefined, undefined, {
+    runtimeIds: new Map([['computer', 'profile']]),
+  })
+  expect(tree.roots.map((entry) => entry.task.id).sort()).toEqual([
+    'bot',
+    'caller',
+    'legacy-project-work',
+    'orphan',
+    'project-work',
+  ])
+  expect(tree.nodes.get(key('profile', 'caller'))?.children).toMatchObject([
+    { threadId: 'thread-child' },
+  ])
+  expect(tree.nodes.get(key('profile', 'bot'))?.children).toMatchObject([{ threadId: 'self-call' }])
 })
 
 it('leaves Bot work visible when its exact parent is a known ordinary thread', () => {

@@ -319,7 +319,12 @@ export * from './tasks/thread-tree.js'
 
 export * from './tasks/subagent-failures.js'
 
-export { taskParentReference } from './tasks/thread-parent.js'
+export {
+  botInvocationParent,
+  botProjectThread,
+  spawnedThreadWatch,
+  taskParentReference,
+} from './tasks/thread-parent.js'
 export * from './tasks/thread-children.js'
 export * from './tasks/thread-navigation.js'
 

@@ -1,7 +1,13 @@
 import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { decode, taskSchema, threadStartMessage, type Task } from '@dovo/protocol'
+import {
+  decode,
+  sameRuntimeConnection,
+  taskSchema,
+  threadStartMessage,
+  type Task,
+} from '@dovo/protocol'
 import { RuntimeContext, useRuntime } from '../../runtime/connection/provider'
 
 const taskPatch = Schema.Struct({
@@ -162,6 +168,25 @@ export function TemporaryTaskRuntime({
     (...args) => runClientEffect(requestEffect(...args)),
     [requestEffect],
   )
+  const { profile, readRuntimeEffect } = runtime
+  const readOnComputer = useCallback<typeof readRuntimeEffect>(
+    (owner, path, input, schema, method, options) => {
+      // The picker addresses its computer explicitly so an upload survives navigation.
+      // Its first draft guard needs the same saved thread as a scoped composer request.
+      if (
+        path === '/api/attachments/draft-guard' &&
+        owner.id === profile?.id &&
+        sameRuntimeConnection(owner.connection, profile.connection) &&
+        input &&
+        typeof input === 'object' &&
+        'taskId' in input &&
+        input.taskId === task.id
+      )
+        return requestEffect(path, input, schema, method, options)
+      return readRuntimeEffect(owner, path, input, schema, method, options)
+    },
+    [profile, readRuntimeEffect, requestEffect, task.id],
+  )
   const visibleTask = committed.current
     ? (runtime.snapshot?.workspace.tasks.find((item) => item.id === task.id) ?? draft)
     : draft
@@ -169,6 +194,14 @@ export function TemporaryTaskRuntime({
     <RuntimeContext.Provider
       value={{
         ...runtime,
+        localAttachmentDraft: (id) =>
+          id === task.id &&
+          !committed.current &&
+          !hosted.current &&
+          !starting.current &&
+          !creation.current
+            ? current.current
+            : undefined,
         snapshot: runtime.snapshot
           ? {
               ...runtime.snapshot,
@@ -182,6 +215,7 @@ export function TemporaryTaskRuntime({
             }
           : null,
         readEffect: requestEffect,
+        readRuntimeEffect: readOnComputer,
         callEffect: requestEffect,
         read: request,
         call: request,

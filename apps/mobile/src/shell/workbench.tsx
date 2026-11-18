@@ -80,6 +80,9 @@ export function WorkbenchTabs() {
     <NativeTabs
       hidden={hidden}
       tintColor={colors.accent}
+      backgroundColor={colors.surface}
+      blurEffect="none"
+      disableTransparentOnScrollEdge
       backBehavior="history"
       unstable_nativeProps={{ ios: { prominentScreenKey: 'compose' } }}
     >

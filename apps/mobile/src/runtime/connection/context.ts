@@ -50,6 +50,8 @@ type RuntimeReadEffect = <T extends Schema.Codec<unknown, unknown>>(
 ) => Effect.Effect<T['Type'], Error>
 
 export type Runtime = {
+  /** Local draft identity before its first server action. */
+  localAttachmentDraft?: (taskId: string) => Task | undefined
   previewTaskEffect: <A extends WorkspacePatchResult, E>(
     profile: RuntimeProfile,
     taskId: string,

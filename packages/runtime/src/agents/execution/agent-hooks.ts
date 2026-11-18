@@ -230,8 +230,8 @@ export async function runWithHooks(
               enqueue('session-start', { resumed: !!run.sessionId || attempt > 0 })
             }
           },
-          onEvent: (name, payload) => {
-            run.onEvent?.(name, payload)
+          onEvent: (name, payload, retainedOutput) => {
+            run.onEvent?.(name, payload, retainedOutput)
             observe(name, payload)
           },
           onSubagentEvent: (name, payload, id) => {

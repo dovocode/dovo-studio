@@ -34,12 +34,14 @@ import {
   taskPromptTime,
   randomUUID,
   runtimeComputerName,
+  resolveThreadRuntime,
   preferredThreadCopies,
   STUDIO_BROWSER_SCOPE,
   STUDIO_TERMINAL_SCOPE,
   taskFamilyInputIds,
   taskIsWorking,
   wakeBrowserTab,
+  type Repository,
   type RuntimeSnapshot,
   type TerminalInfo,
   type UpdateTerminal,
@@ -141,6 +143,7 @@ type WorkspaceResource = {
         project: string
         checkout: string
         /** True only for a known branch; folders and unknown checkouts are not branches. */
+        repository?: Repository
         checkoutIsBranch: boolean
         state: string
         stateTone: TerminalStatusTone
@@ -508,10 +511,11 @@ function WorkspaceContent() {
         } else host.navigate(target, options)
       },
       openThread: (target: Parameters<NonNullable<typeof host.openThread>>[0]) => {
-        const owner = routing.current.computers.find(
-          (entry) =>
-            entry.profile.id === target.runtimeId ||
-            (!!target.runtimeIdentity && entry.snapshot?.runtimeId === target.runtimeIdentity),
+        const computers = routing.current.computers
+        const owner = resolveThreadRuntime(
+          target,
+          computers.map((entry) => entry.profile),
+          computers,
         )
         if (!owner) {
           host.openThread?.(target)
@@ -519,13 +523,14 @@ function WorkspaceContent() {
         }
         const tab: WorkspaceTab = {
           kind: 'thread',
-          runtimeId: owner.profile.id,
+          runtimeId: owner.id,
           id: target.threadId,
         }
         threadNavigation.current.set(workspaceTabKey(tab), {
           viewId: 'tasks',
           entityId: target.threadId,
           nativeAgentKey: target.nativeAgentKey,
+          threadRequest: target.threadRequest,
           threadParent: target.parent,
         })
         open(tab)
@@ -723,6 +728,7 @@ function WorkspaceContent() {
                   ? 'Home folder'
                   : (session.directory ??
                     (session.execution === 'worktree' ? 'Worktree' : 'Local checkout'))),
+              repository,
               checkoutIsBranch: branch !== undefined,
               state: activity.label,
               stateTone: activity.tone,
@@ -954,6 +960,7 @@ function WorkspaceContent() {
     ) : (
       <WorkspaceTerminalRow
         key={key}
+        workspaceType
         {...shell}
         {...row}
         pinned={resource.pinned}

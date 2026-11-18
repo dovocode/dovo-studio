@@ -6,7 +6,7 @@ import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
-import { Glass } from '../../../ui/layout/glass'
+import { Surface } from '../../../ui/layout/surface'
 import { designTokens } from '@dovo/design'
 
 /** After a plan-mode reply: approve with one tap, or reply with changes. */
@@ -19,8 +19,7 @@ export function PlanApproval({ task }: { task: Task }) {
   const { act, busy, error } = useAction()
   if (!planAwaitingApproval(task)) return null
   return (
-    <Glass
-      solid
+    <Surface
       style={{
         borderRadius: designTokens.radius.overlay,
         padding: 12,
@@ -49,6 +48,6 @@ export function PlanApproval({ task }: { task: Task }) {
         }
       />
       {!!error && <Text style={styles.error}>{error}</Text>}
-    </Glass>
+    </Surface>
   )
 }

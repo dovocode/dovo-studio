@@ -59,3 +59,57 @@ it('ignores ordinary questions routed to an agent and clears when input is resol
   expect(sideThreadAttention(undefined, 'child')).toBeUndefined()
   expect(sideThreadAttentionTarget(null, 'parent')).toBeUndefined()
 })
+
+it('routes a remote Bot request to its owner despite colliding task IDs', () => {
+  const local = {
+    runtimeId: 'local',
+    workspace: { tasks: [child('call')] },
+    approvals: [],
+    questions: [{ taskId: 'call', id: 'local-question' }],
+  }
+  const call = {
+    id: 'call',
+    botMention: {
+      runtimeId: 'other',
+      botId: 'bot',
+      sourceTaskId: 'parent',
+      sourceRuntimeId: 'local',
+      sourceMessageId: 'message',
+    },
+  }
+  const peer = {
+    profile: { id: 'profile2' },
+    snapshot: {
+      runtimeId: 'other',
+      workspace: { tasks: [call, child('unrelated')] },
+      approvals: [
+        { taskId: 'unrelated', id: 'other-family' },
+        { taskId: 'call', id: 'remote-approval' },
+      ],
+      questions: [],
+    },
+  }
+  const disconnected = { ...peer, connected: false }
+  const live = {
+    profile: { id: 'lan' },
+    connected: true,
+    snapshot: { ...peer.snapshot, approvals: [] },
+  }
+  for (const order of [
+    [disconnected, live],
+    [live, disconnected],
+  ]) {
+    expect(sideThreadAttentionTarget(local, 'parent', order)?.requestId).toBe('local-question')
+  }
+  expect(sideThreadAttentionTarget(local, 'parent', [peer])).toEqual({
+    id: 'call',
+    kind: 'approval',
+    requestId: 'remote-approval',
+    owner: { runtimeId: 'profile2', runtimeIdentity: 'other' },
+  })
+  expect(sideThreadAttentionTarget({ ...local, runtimeId: 'third' }, 'parent', [peer])).toEqual({
+    id: 'call',
+    kind: 'input',
+    requestId: 'local-question',
+  })
+})

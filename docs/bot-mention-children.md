@@ -1,9 +1,9 @@
 # Bot mention children
 
-Send an explicit Bot mention from the composer. Dovo saves a child conversation under that Bot. The
-message runs once in the source thread. The child stays idle until you send a follow-up there. Open
-the Bot's Side threads list on desktop or mobile to find it. Use Open source thread to see the
-source's later replies.
+Send an explicit Bot mention from the composer. Dovo saves a copy under the conversation that sent
+the mention. Find it in that conversation’s side chats on desktop or mobile. A Bot’s mention of
+itself appears in its subthread list. The message runs once in the source thread. The copy stays
+idle until you send a follow-up there.
 
 The child contains the source's retained conversation through the sent message. It copies the
 selected harness, model settings, access settings, resources, linked projects and attachments. It
@@ -24,14 +24,22 @@ Message admission and child creation share one database transaction. A failed co
 message unsent. Retrying the same message ID preserves the saved result, including across restart.
 Deleting a child does not make a retried submission recreate it.
 
-The child stays on the sending computer, including when the Bot is on another computer. The client
-shows remote children when it has snapshots for both paired computers. Opening one uses its owning
-computer. Copy rows show the source thread title when available. If the source is absent, Dovo uses
-the title saved with the copy. A thread that is known not to be a Bot cannot group Bot work. If the
-Bot is missing from the available snapshots, Dovo keeps the saved reference for reconnect. This
-association sends no conversation to the Bot's runtime and grants no access. Update the source
-runtime and both clients to use this behavior. Older runtimes still send the source message but do
-not create the copy. Existing messages are not copied retroactively.
+The copy stays on the sending computer, including when the mentioned Bot is on another computer. The
+caller link opens the original conversation. If the caller is absent, Dovo keeps the saved
+reference. The mention grants no access to the Bot. Older runtimes still send the source message
+without creating a copy. Dovo does not copy old messages retroactively.
+
+A Studio Tools `send` to a Bot starts an isolated conversation on the Bot’s computer. The caller
+owns the side thread. A Bot that calls itself gets a subthread instead. The call uses the Bot’s
+agent configuration and role, with the caller’s permission ceiling. It starts with the supplied
+prompt and keeps the Bot’s permanent conversation and private memory separate. The response contains
+the new thread ID. Use that ID to read the answer or send a follow-up. Retry the same message ID to
+recover a lost response. Both paired runtimes must support this call behavior. You can still message
+ordinary threads on older paired runtimes. If the older runtime cannot start a Bot call, Dovo asks
+you to update it.
+
+Open the caller to see a waiting approval or question from its side thread on a paired computer.
+Select the request to open it on the computer that owns it.
 
 Routine workers also appear in their Bot's Side threads list. They retain their saved job context
 and stay out of the normal thread overview. Their rows open the worker conversation. They do not

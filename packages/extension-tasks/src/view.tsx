@@ -110,11 +110,16 @@ import {
   type SideThreadHandoff,
 } from './detail/side-threads'
 import { ReviewSideThreadChangesButton } from './detail/side-thread-changes'
-import { sideThreadAttention, type SideThreadRequest } from '@dovo/protocol'
+import {
+  sideThreadAttention,
+  type SideThreadRequest,
+  type RoutedSideThreadRequest,
+} from '@dovo/protocol'
 const mac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform)
 export default function TasksView({
   entityId,
   threadParent,
+  threadRequest,
   nativeAgentKey,
   navigationKey,
   pullTarget,
@@ -881,8 +886,17 @@ export default function TasksView({
     originId: string | undefined
     compact: boolean
   }>()
-  const attentionPane = useRef<HTMLDivElement>(null)
-  const focusedAttention = useRef<typeof attentionRoute>(undefined)
+  const primaryAttention =
+    threadRequest && threadRequest.id === task?.id && entityId === task?.id
+      ? threadRequest
+      : undefined
+  const primaryPane = useRef<HTMLDivElement>(null)
+  const splitPane = useRef<HTMLDivElement>(null)
+  const focusedRequest = useRef<SideThreadRequest>(undefined)
+  useEffect(() => {
+    focusedRequest.current = undefined
+    if (primaryAttention) selectSurface('chat')
+  }, [primaryAttention, navigationKey, selectSurface])
   const attentionTarget =
     attentionRoute?.runtimeId === activeRuntimeId &&
     attentionRoute?.runtimeIdentity === runtimeIdentity &&
@@ -893,15 +907,30 @@ export default function TasksView({
       ? attentionRoute?.target
       : undefined
   useEffect(() => {
-    if (!attentionTarget || focusedAttention.current === attentionRoute) return
-    const selector = `[data-request-kind="${attentionTarget.kind}"][data-request-id="${CSS.escape(attentionTarget.requestId)}"]`
-    const requestHeading = attentionPane.current?.querySelector<HTMLElement>(selector)
+    const target = attentionTarget ?? primaryAttention
+    if (!target || focusedRequest.current === target) return
+    const pane = attentionTarget && !compact ? splitPane : primaryPane
+    const selector = `[data-request-kind="${target.kind}"][data-request-id="${CSS.escape(target.requestId)}"]`
+    const requestHeading = pane.current?.querySelector<HTMLElement>(selector)
     if (!requestHeading?.getClientRects().length) return
-    focusedAttention.current = attentionRoute
+    focusedRequest.current = target
     requestHeading.scrollIntoView({ block: 'nearest' })
     requestHeading.focus({ preventScroll: true })
   })
-  const attendSideThread = useCommittedCallback((target: SideThreadRequest) => {
+  const attendSideThread = useCommittedCallback((target: RoutedSideThreadRequest) => {
+    if (target.owner) {
+      const { owner, ...threadRequest } = target
+      const child = runtimes
+        .find(
+          (peer) =>
+            peer.profile.id === owner.runtimeId &&
+            peer.snapshot?.runtimeId === owner.runtimeIdentity,
+        )
+        ?.snapshot?.workspace.tasks.find((item) => item.id === target.id)
+      if (child)
+        host.openThread?.({ ...owner, threadId: child.id, title: child.title, threadRequest })
+      return
+    }
     if (compact) {
       openThread(target.id)
       setThreadSurfaces((current) => ({
@@ -1342,15 +1371,17 @@ export default function TasksView({
                   minSize="30%"
                 >
                   <div
-                    ref={compact ? attentionPane : undefined}
+                    ref={primaryPane}
                     className="relative h-full min-h-0"
                     data-conversation-boundary
                   >
                     <TaskConversation
                       questionId={
-                        compact && attentionTarget?.kind === 'input'
-                          ? attentionTarget.requestId
-                          : undefined
+                        primaryAttention?.kind === 'input'
+                          ? primaryAttention.requestId
+                          : compact && attentionTarget?.kind === 'input'
+                            ? attentionTarget.requestId
+                            : undefined
                       }
                       historyLoaded={usingStartupDraft || historyLoaded}
                       historyError={historyError}
@@ -2011,7 +2042,7 @@ export default function TasksView({
                       className="shrink-0 border-b px-4 py-1.5"
                     />
                   )}
-                  <div ref={attentionPane} className="min-h-0 flex-1">
+                  <div ref={splitPane} className="min-h-0 flex-1">
                     <TaskConversation
                       questionId={
                         attentionTarget?.kind === 'input' ? attentionTarget.requestId : undefined

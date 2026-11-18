@@ -8,10 +8,14 @@ const built = await bundleBrowser(
       resolveDir: mobile,
       loader: 'tsx',
       contents: `
-import {ChatImageEditProvider} from './src/tasks/composer/chat-image-edit';import {EditChatImage} from './src/tasks/composer/chat-image-edit-context';import {useState} from 'react';import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
-window.data={};window.deleted=[];window.calls=[];window.rows=[];window.stored={};window.fail=false;
-window.request=async(path,input)=>{window.calls.push({path,input});if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.data['photo.png']};if(path==='/api/attachments/draft-guard')return {guard:JSON.stringify(window.rows.map(f=>f.id))};if(path==='/api/attachments/commit-upload'){if(input.guard!==JSON.stringify(window.rows.map(f=>f.id)))throw Error('draft changed');const saved=window.stored[input.id];window.rows=saved.replaceId?window.rows.map(f=>f.id===saved.replaceId?saved.attachment:f):[...window.rows,saved.attachment];return {attachment:saved.attachment,revision:1,nextGuard:JSON.stringify(window.rows.map(f=>f.id))}}if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data,replaceId:input.replaceId};return {attachment,revision:1}};
-function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRevision(v=>v+1);const[loading,setLoading]=useState(false);const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.upload=picker.upload;window.edit=picker.edit;window.busy=picker.busy;return <ChatImageEditProvider upload={picker.upload} busy={loading||picker.busy} onBusy={setLoading} disabled={false}><EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></ChatImageEditProvider>};createRoot(document.getElementById('app')).render(<App/>);`,
+import {TemporaryTaskRuntime} from './src/tasks/creation/temporary-task-runtime';import {ChatImageEditProvider} from './src/tasks/composer/chat-image-edit';import {EditChatImage} from './src/tasks/composer/chat-image-edit-context';import {useState} from 'react';import {useScreenshotAttachment} from './src/tasks/preview/screenshot-attachment';import {createRoot} from 'react-dom/client';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';
+window.data={};window.deleted=[];window.calls=[];window.rows=[];window.stored={};window.finished=[];window.fail=false;
+window.request=async(path,input)=>{window.calls.push({path,input});
+if(window.freshThread && path==='/api/workspace'){window.created=input.create;return {revision:1}}
+if(window.freshThread && path==='/api/attachments/draft-guard' && window.created?.id!==input.taskId)throw Error('Task not found');
+if(path==='/api/attachments/read')return window.stored[input.id];if(path==='/api/tasks/images/read')return {uri:'data:image/png;base64,'+window.data['photo.png']};if(path==='/api/attachments/draft-guard')return {guard:JSON.stringify(window.rows.map(f=>f.id))};if(path==='/api/attachments/commit-upload'){if(input.guard!==JSON.stringify(window.rows.map(f=>f.id)))throw Error('draft changed');const saved=window.stored[input.id];window.rows=saved.replaceId?window.rows.map(f=>f.id===saved.replaceId?saved.attachment:f):[...window.rows,saved.attachment];if(window.loseCommitResponse){window.loseCommitResponse=false;throw Error('Commit response lost')}return {attachment:saved.attachment,revision:1,nextGuard:JSON.stringify(window.rows.map(f=>f.id))}}if(window.fail)throw Error('Mobile upload rejected');const attachment={id:input.id,name:input.name,mime:input.name.endsWith('.png')?'image/png':'application/octet-stream',size:atob(input.data).length};window.stored[input.id]={attachment,data:input.data,replaceId:input.replaceId};return {attachment,revision:1}};
+function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRevision(v=>v+1);const[loading,setLoading]=useState(false);const picker=useAttachmentPicker('task');const screenshots=useScreenshotAttachment('task');window.capture=screenshots.attach;window.captureBusy=screenshots.busy;window.captureError=screenshots.error;window.select=picker.select;window.paste=picker.pasteImage;window.upload=picker.upload;window.edit=picker.edit;window.retry=picker.retryUpload;window.failed=picker.failedUploads;window.busy=picker.busy;return <ChatImageEditProvider upload={picker.upload} busy={loading||picker.busy} onBusy={setLoading} disabled={false}><EditChatImage source={{taskId:"source-thread",attachmentId:"sent"}} label="Sent image"/><EditChatImage source={{taskId:"source-thread",eventId:"generated",index:0}} label="Tool image"/><EditChatImage source={{taskId:"source-thread",path:"/output/chart.png"}} label="Inline image"/>{picker.editor}{screenshots.editor}<div role="alert">{picker.error}</div><textarea aria-label="Message" defaultValue="Keep mobile draft"/></ChatImageEditProvider>};const task={id:'task',title:'New thread',status:'draft',repositoryId:'project',agentId:'',createdAt:new Date().toISOString(),messages:[],files:[],draft:'',example:false};
+createRoot(document.getElementById('app')).render(window.freshThread ? <TemporaryTaskRuntime task={task} onCommit={()=>{}}>{()=> <App/>}</TemporaryTaskRuntime> : <App/>);`,
     },
     bundle: true,
     write: false,
@@ -39,7 +43,7 @@ function App(){const[revision,setRevision]=useState(0);window.refresh=()=>setRev
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `import {Effect} from 'effect';const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:[{id:'task',draftAttachments:window.rows}]}},readEffect:request,callEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),requestAttachmentEffect:(_profile,input,replace)=>request(replace?'/api/attachments/recoverable-replace':'/api/attachments/recoverable-upload',input),reviewAttachments:()=>{},refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.void});`,
+      contents: `import {createContext,useContext} from 'react';import {Effect} from 'effect';export const RuntimeContext=createContext(null);const request=(path,input)=>Effect.tryPromise({try:()=>window.request(path,input),catch:error=>error});export const useRuntime=()=>useContext(RuntimeContext)??({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:window.freshThread&&!window.created?[]:[{id:'task',draftAttachments:window.rows}]}},readEffect:request,callEffect:request,readRuntimeEffect:(_profile,path,input)=>request(path,input),requestAttachmentEffect:(_profile,input,replace)=>request(replace?'/api/attachments/recoverable-replace':'/api/attachments/recoverable-upload',input),reviewAttachments:()=>{},refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:(_profile,id)=>Effect.sync(()=>window.finished.push(id))});`,
     },
     {
       path: '../../ui/controls/use-action',
@@ -82,7 +86,7 @@ export const Path=props=><path {...props}/>;export const Rect=props=><rect {...p
     },
     {
       path: 'expo-clipboard',
-      contents: `export const getImageAsync=async()=>{throw new Error('Unexpected clipboard read in image editor fixture')};`,
+      contents: `export const getImageAsync=async()=>null;`,
     },
     {
       path: 'expo-crypto',
@@ -105,7 +109,7 @@ export const PixelRatio={get:()=>3};export const Alert={alert(){}};export const 
     },
     {
       path: 'expo-document-picker',
-      contents: `export const getDocumentAsync=async()=>({canceled:true});`,
+      contents: `export const getDocumentAsync=()=>new Promise(resolve=>window.chooseDocument=resolve);`,
     },
   ],
 )
@@ -129,6 +133,60 @@ try {
   const editor = page.locator('section')
   await editor.getByRole('button', { name: 'Use original', exact: true }).click()
   await page.waitForFunction(() => !window.busy && window.rows.length === 1)
+  const fresh = await browser.newPage()
+  await fresh.setContent('<div id="app"></div>')
+  await fresh.evaluate(() => {
+    window.freshThread = true
+  })
+  await fresh.addScriptTag({ content: built.outputFiles[0].text })
+  await fresh.waitForFunction(() => !!window.upload)
+  await fresh.evaluate(() => window.paste())
+  await fresh.getByRole('alert').filter({ hasText: 'No image found on the clipboard.' }).waitFor()
+  assert.deepEqual(
+    await fresh.evaluate(() => window.calls),
+    [],
+    'An empty paste keeps the composer local',
+  )
+  await fresh.evaluate(
+    (data) => {
+      window.data['photo.png'] = data
+      void window.upload([{ uri: 'photo.png', name: 'photo.png', mimeType: 'image/png' }])
+    },
+    await page.evaluate(() => window.data['photo.png']),
+  )
+  await fresh.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await fresh.waitForFunction(() => !window.busy)
+  assert.deepEqual(
+    await fresh.evaluate(() => window.calls),
+    [],
+    'Cancelling the editor keeps the composer local',
+  )
+  await fresh.evaluate(() => {
+    void window.upload([{ uri: 'photo.png', name: 'photo.png', mimeType: 'image/png' }])
+  })
+  await fresh.getByRole('button', { name: 'Use original', exact: true }).click()
+  await fresh.waitForFunction(() => !window.busy && window.rows.length === 1)
+  assert.deepEqual(await fresh.evaluate(() => window.calls.map((call) => call.path)), [
+    '/api/workspace',
+    '/api/attachments/draft-guard',
+    '/api/attachments/recoverable-upload',
+    '/api/attachments/commit-upload',
+  ])
+  await fresh.evaluate(() => window.select('files'))
+  await fresh.waitForFunction(() => !!window.chooseDocument)
+  assert.equal(
+    await fresh.evaluate(() => window.calls.at(-1).path),
+    '/api/attachments/draft-guard',
+    'The picker captures the draft before a second device can send it',
+  )
+  await fresh.evaluate(() => {
+    window.rows = []
+    window.data['note.txt'] = btoa('Review this file')
+    window.chooseDocument({ canceled: false, assets: [{ uri: 'note.txt', name: 'note.txt' }] })
+  })
+  await fresh.waitForFunction(() => !window.busy)
+  assert.deepEqual(await fresh.evaluate(() => window.rows), [])
+  await fresh.close()
   const originalId = await page.evaluate(() => window.rows[0].id)
   await page.evaluate(() => {
     window.operation = window.edit(window.rows[0].id)
@@ -258,9 +316,34 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Mobile upload rejected' }).waitFor()
   await page.waitForFunction(() => !window.busy)
   assert.equal(await page.evaluate(() => window.rows[0].id), editedId)
-  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
-  await page.evaluate(() => {
+  const failedReplacement = await page.evaluate(
+    () =>
+      window.calls.filter((call) => call.path === '/api/attachments/recoverable-replace').at(-1)
+        .input,
+  )
+  assert.equal(await page.evaluate(() => window.failed[0]?.id), failedReplacement.id)
+  await page.evaluate((id) => window.retry(id), failedReplacement.id)
+  await page.waitForFunction(() => !window.busy)
+  assert.equal(await page.evaluate(() => window.failed[0]?.id), failedReplacement.id)
+  await page.evaluate((id) => {
     window.fail = false
+    window.loseCommitResponse = true
+    window.retry(id)
+  }, failedReplacement.id)
+  await page.waitForFunction((id) => window.rows[0].id === id && !window.busy, failedReplacement.id)
+  assert.equal(await page.evaluate(() => window.failed[0]?.id), failedReplacement.id)
+  const requestsAfterCommit = await page.evaluate(() => window.calls.length)
+  await page.evaluate((id) => window.retry(id), failedReplacement.id)
+  await page.waitForFunction(() => !window.busy && !window.failed.length)
+  assert.equal(await page.evaluate(() => window.rows.length), 1)
+  assert.equal(await page.evaluate(() => window.calls.length), requestsAfterCommit)
+  assert.equal(await page.evaluate(() => window.finished.at(-1)), failedReplacement.id)
+  assert.deepEqual(await page.evaluate(() => Object.keys(window.data)), ['photo.png'])
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Keep mobile draft',
+  )
+  await page.evaluate(() => {
     window.operation = window.capture('data:image/png;base64,' + window.data['photo.png'])
   })
   await editor.getByRole('button', { name: 'Use original', exact: true }).click()

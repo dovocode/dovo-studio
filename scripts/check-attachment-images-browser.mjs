@@ -9,8 +9,8 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';import {useAttachments} from './src/chat/composer/use-attachments';import {optimizeAttachmentImage} from './src/chat/composer/attachment-images';
-window.optimize=optimizeAttachmentImage;window.uploads=[];window.connected=true;window.request=async(path,input)=>{if(path==='/api/attachments/draft-guard')return {guard:'guard-'+window.uploads.length,guardedUploads:1};if(input.draftGuard!=='guard-'+window.uploads.length)throw Error('Unexpected draft guard');window.uploads.push({path,input});return {revision:1,nextGuard:'guard-'+window.uploads.length,attachment:{id:input.id,name:input.name,mime:input.name.endsWith('.webp')?'image/webp':'application/octet-stream',size:atob(input.data).length}}};
-function App(){const attachments=useAttachments({id:'task',draftAttachments:[]});window.upload=attachments.upload;return <><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{attachments.error}</div><div role="status">{attachments.busy?'Working':'Ready'}</div></>};createRoot(document.getElementById('app')).render(<App/>);`,
+window.optimize=optimizeAttachmentImage;window.uploads=[];window.connected=true;window.request=async(path,input)=>{if(path==='/api/attachments/read')return window.original;if(path==='/api/attachments/draft-guard')return {guard:'guard-'+window.uploads.length,guardedUploads:1};if(input.draftGuard!=='guard-'+window.uploads.length)throw Error('Unexpected draft guard');window.uploads.push({path,input});if(window.fail)throw Error('Upload rejected');return {revision:1,nextGuard:'guard-'+window.uploads.length,attachment:{id:input.id,name:input.name,mime:input.name.endsWith('.webp')?'image/webp':'application/octet-stream',size:atob(input.data).length}}};
+function App(){const attachments=useAttachments({id:'task',draftAttachments:window.original?[window.original.attachment]:[]});window.upload=attachments.upload;window.edit=attachments.edit;window.retry=attachments.retryUpload;window.failed=attachments.failedUploads;return <><textarea aria-label="Message" defaultValue="Keep draft"/><div role="alert">{attachments.error}</div><div role="status">{attachments.busy?'Working':'Ready'}</div></>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -23,7 +23,7 @@ function App(){const attachments=useAttachments({id:'task',draftAttachments:[]})
     {
       path: './image-editor',
       importer: resolveDir,
-      contents: `export const useImageEditor=()=>({edit:async file=>file,editor:null});`,
+      contents: `export const useImageEditor=()=>({edit:async file=>window.editing?new File([file],file.name,{type:file.type}):file,editor:null});`,
     },
     {
       path: '@dovo/studio-core',
@@ -129,8 +129,41 @@ try {
   await page.getByRole('alert').filter({ hasText: 'Could not decode this image' }).waitFor()
   assert.equal(await page.evaluate(() => window.uploads.at(-1).input.name), 'valid.txt')
   assert.deepEqual(errors, [])
+  await page.evaluate(async () => {
+    const data =
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJc0AAAAASUVORK5CYII='
+    window.original = {
+      data,
+      attachment: { id: 'original', name: 'edit.png', mime: 'image/png', size: atob(data).length },
+    }
+    await window.edit('original')
+  })
+  assert.equal(await page.evaluate(() => window.uploads.at(-1).input.name), 'valid.txt')
+  await page.evaluate(async () => {
+    window.editing = true
+    window.fail = true
+    await window.edit('original')
+  })
+  const failedReplacement = await page.evaluate(() => window.uploads.at(-1).input)
+  assert.equal(await page.evaluate(() => window.failed[0]?.id), failedReplacement.id)
+  await page.evaluate((id) => window.retry(id), failedReplacement.id)
+  await page.getByRole('status').getByText('Ready').waitFor()
+  assert.equal(await page.evaluate(() => window.failed[0]?.id), failedReplacement.id)
+  await page.evaluate((id) => {
+    window.fail = false
+    window.editing = false
+    window.retry(id)
+  }, failedReplacement.id)
+  await page.getByRole('status').getByText('Ready').waitFor()
+  const retry = await page.evaluate(() => window.uploads.at(-1))
+  assert.equal(retry.path, '/api/attachments/replace')
+  assert.equal(retry.input.replaceId, 'original')
+  assert.equal(retry.input.id, failedReplacement.id)
+  assert.equal(retry.input.data, failedReplacement.data)
+  assert.equal(await page.evaluate(() => window.failed.length), 0)
+  assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep draft')
   console.log(
-    'Attachment image browser checks passed: oversized image optimization, proportional resize, transparency, small-file and animation preservation, mixed batches, 5 MB boundary and decode errors.',
+    'Attachment image browser checks passed: image optimization, animations, size and decode checks, edit cancellation, replacement retry and draft preservation.',
   )
 } finally {
   await browser.close()

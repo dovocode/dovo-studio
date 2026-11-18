@@ -31,3 +31,14 @@ it('does not trust a stale cached identity over the current pairing', () => {
     ),
   ).toBeUndefined()
 })
+
+it('opens the selected profile when two pairings identify the same runtime', () => {
+  const alias = { ...paired, id: 'vpn' }
+  expect(
+    resolveThreadRuntime(
+      { runtimeId: paired.id, runtimeIdentity: target.runtimeIdentity },
+      [alias, paired],
+      [],
+    ),
+  ).toBe(paired)
+})

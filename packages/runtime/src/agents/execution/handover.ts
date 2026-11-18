@@ -8,8 +8,14 @@ export class NativeSessionBusyError extends HttpError {
     super(409, message)
   }
 }
+export class NativeForegroundCancelled extends Error {
+  constructor() {
+    super('Foreground work cancelled')
+  }
+}
 export const preservesNativeSession = (error: unknown): boolean =>
   error instanceof NativeSessionBusyError ||
+  error instanceof NativeForegroundCancelled ||
   (error instanceof RuntimeOperationError && preservesNativeSession(error.cause))
 
 // A byte budget is deliberately conservative and independent of a provider's tokenizer.
@@ -60,7 +66,14 @@ export function isContextRejection(error: unknown) {
   const message = errorMessage(error)
   return (
     /\b(context_length_exceeded|context_window_exceeded|prompt_too_long)\b/i.test(message) ||
-    /\b(?:context (?:window|length)|prompt|input)\b.{0,70}\b(?:exceed(?:ed|s)?|too (?:long|large)|full|exhausted)\b/i.test(
+    /\b(?:prompt|input)(?: (?:length|size))? (?:is )?too (?:long|large)\b/i.test(message) ||
+    /\bcontext (?:window|length)(?: (?:limit|size))?(?: (?:is|was|has been))? (?:full|exceeded|exhausted)\b/i.test(
+      message,
+    ) ||
+    /\bexceed(?:s|ed)? (?:the |your )?(?:model(?:'s)? )?(?:maximum |available )?context (?:window|length)\b/i.test(
+      message,
+    ) ||
+    /\b(?:input|prompt)(?: (?:length|size))? exceed(?:s|ed)? (?:the )?(?:maximum )?token limit\b/i.test(
       message,
     )
   )
@@ -69,14 +82,17 @@ export function isContextRejection(error: unknown) {
 /** Require the exact resumed identity, so an unrelated tool's missing session cannot replay work. */
 export function isMissingProviderSession(error: unknown, sessionId: string) {
   const message = errorMessage(error)
-  return (
-    !!sessionId &&
-    message.includes(sessionId) &&
-    (/(?:session|thread).{0,100}(?:not found|does not exist|no longer exists|missing)/i.test(
-      message,
-    ) ||
-      /Failed to read session/i.test(message))
-  )
+  if (!sessionId) return false
+  // Match the ID belonging to the missing-session report. The same diagnostic can
+  // name other sessions or a missing resource inside a session that still exists.
+  const idFirst =
+    /\b(?:session|thread)(?: id)?\s+(?:"([^"]+)"|'([^']+)'|([^\s,;]+?))(?:: | (?:was |is )?)(?:not found|does not exist|no longer exists|missing)\b/gi
+  const missingFirst =
+    /\b(?:session|thread)(?: id)? (?:not found|missing):\s*(?:"([^"]+)"|'([^']+)'|([^\s,;]+))/gi
+  for (const pattern of [idFirst, missingFirst])
+    for (const match of message.matchAll(pattern))
+      if ((match[1] ?? match[2] ?? match[3]) === sessionId) return true
+  return false
 }
 
 /** Only retry a resumed prompt explicitly rejected before acceptance or any interaction. */
@@ -106,10 +122,10 @@ export function recoverContext(
             mark()
             input.onTextReplace?.(text, length)
           },
-          onEvent: (name, payload) => {
+          onEvent: (name, payload, retainedOutput) => {
             // Activity may include tool side effects even if a harness omits acceptance.
             if (/tool|item\/(?:started|completed)|message\/start/i.test(name)) mark()
-            input.onEvent?.(name, payload)
+            input.onEvent?.(name, payload, retainedOutput)
           },
           onSteer: (steer) =>
             input.onSteer?.(

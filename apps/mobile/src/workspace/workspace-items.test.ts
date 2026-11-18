@@ -131,6 +131,19 @@ it('mixes resources while separating thread PTYs and namespacing identities by t
   expect(items.find((item) => item.kind === 'browser')?.detail).toContain('app.lan:3000')
 })
 
+it('shows the project from a browser tab’s linked computer when thread IDs match', () => {
+  const local = computer()
+  const remote = computer('linux')
+  remote.snapshot!.workspace.repositories[0]!.name = 'Remote project'
+  const linked = { ...page, thread: { id: task.id, runtimeId: remote.profile.id } }
+  expect(
+    workspaceItems([local, remote], [linked], now).find((item) => item.kind === 'browser'),
+  ).toMatchObject({ linkedProject: 'Remote project' })
+  expect(
+    workspaceItems([local], [linked], now).find((item) => item.kind === 'browser'),
+  ).toMatchObject({ linkedProject: '' })
+})
+
 it('keeps pinned browser tiles above pinned threads and terminals', () => {
   const owner = computer()
   owner.snapshot!.workspace.tasks[0] = { ...task, pinned: true }

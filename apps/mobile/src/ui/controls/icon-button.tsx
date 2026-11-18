@@ -13,7 +13,6 @@ import {
   shapes,
   tint,
 } from '@expo/ui/swift-ui/modifiers'
-import { isGlassEffectAPIAvailable, isLiquidGlassAvailable } from 'expo-glass-effect'
 import { Platform, Pressable, View } from 'react-native'
 import { Icon, type IconName } from './icon'
 import { NativeIcon, NativeMenuButton } from './native-icon'
@@ -31,7 +30,7 @@ type IconButtonProps = {
   prominent?: boolean
   selected?: boolean
   size?: 44 | 48
-  variant?: 'glass' | 'plain' | 'filled'
+  variant?: 'bordered' | 'plain' | 'filled'
   destructive?: boolean
   color?: string
 }
@@ -51,22 +50,13 @@ function NativeIconButton({
 }: IconButtonProps) {
   const { colors } = useTheme()
 
-  const glass = isGlassEffectAPIAvailable() && isLiquidGlassAvailable()
   return (
     <Button
       testID={label}
       onPress={onPress}
       modifiers={[
         buttonStyle(
-          variant === 'plain' || variant === 'filled'
-            ? 'plain'
-            : glass
-              ? prominent
-                ? 'glassProminent'
-                : 'glass'
-              : prominent
-                ? 'borderedProminent'
-                : 'bordered',
+          variant === 'bordered' ? (prominent ? 'borderedProminent' : 'bordered') : 'plain',
         ),
         buttonBorderShape('circle'),
         controlSize('large'),
@@ -104,8 +94,8 @@ function NativeIconButton({
               ]
             : []),
           frame({
-            width: variant === 'glass' ? size - 24 : size,
-            height: variant === 'glass' ? size - 24 : size,
+            width: variant === 'bordered' ? size - 24 : size,
+            height: variant === 'bordered' ? size - 24 : size,
           }),
         ]}
       />
@@ -131,7 +121,7 @@ export function NativeActionMenu({
   onPrimaryAction?: () => void
   disabled?: boolean
   size?: 44 | 48
-  variant?: 'glass' | 'plain' | 'filled'
+  variant?: 'bordered' | 'plain' | 'filled'
   destructive?: boolean
   color?: string
 }) {
@@ -287,12 +277,12 @@ export function IconButton(props: IconButtonProps) {
         backgroundColor:
           selected && variant === 'plain'
             ? colors.selection
-            : variant !== 'glass'
+            : variant !== 'bordered'
               ? 'transparent'
               : prominent && !disabled
                 ? colors.action
                 : colors.surface,
-        borderWidth: variant === 'glass' ? 1 : 0,
+        borderWidth: variant === 'bordered' ? 1 : 0,
         borderColor: colors.border,
         opacity: disabled ? 0.4 : pressed ? 0.6 : 1,
       })}

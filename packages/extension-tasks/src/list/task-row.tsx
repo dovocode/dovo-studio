@@ -1,5 +1,6 @@
 import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ThreadWatchSummary } from './thread-watch-summary'
+import { WorkspaceTypeBadge } from '../unified/workspace-type-badge'
 import { MiddleTruncate } from './middle-truncate'
 import { NestedThreads } from './nested-threads'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
@@ -53,7 +54,7 @@ import {
 } from 'lucide-react'
 import { memo, useId, useMemo, useState, type ReactNode } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
-import { Button, cn, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
+import { Button, cn, DropdownMenu, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
 import { threadTreeSummary } from '@dovo/protocol'
@@ -88,6 +89,7 @@ function TaskRowView({
   searching,
   search,
   revealSearch,
+  workspaceType,
   titleIcon,
 }: {
   task: Task
@@ -107,6 +109,7 @@ function TaskRowView({
   searching?: boolean
   search?: ThreadSearchFilter
   revealSearch?: boolean
+  workspaceType?: boolean
   titleIcon?: ReactNode
 }) {
   const uiText = useInterfaceText()
@@ -189,11 +192,20 @@ function TaskRowView({
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon = task.bot ? (
-    <Bot className="size-4 shrink-0" aria-hidden="true" />
+    <Bot className={cn(compact ? 'size-4' : 'size-5', 'shrink-0')} aria-hidden="true" />
   ) : displayProject?.kind === 'scratch' ? (
-    <MessageCircleDashed className="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
+    <MessageCircleDashed
+      className={cn(compact ? 'size-4' : 'size-5', 'shrink-0 text-muted-foreground')}
+      aria-hidden="true"
+    />
   ) : (
-    <ProjectIcon repository={displayProject} className="size-4 shrink-0 rounded-sm text-[10px]" />
+    <ProjectIcon
+      repository={displayProject}
+      className={cn(
+        compact ? 'size-4 rounded-sm text-[10px]' : 'size-6 rounded-[7px] text-xs',
+        'shrink-0',
+      )}
+    />
   )
   const latest = task.turns?.at(-1)
   const provider =
@@ -220,6 +232,7 @@ function TaskRowView({
     (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
   )
   const badgeStatus = linkedPulls[0] ? taskPullStatusFor(task, linkedPulls[0].url) : undefined
+  const failedChecks = badgeStatus?.state === 'open' && badgeStatus.checks === 'failed'
   const stack = linkedPulls[0]?.url === task.pullStatus?.url ? task.pullStatus?.stack : undefined
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
@@ -233,16 +246,16 @@ function TaskRowView({
   const status =
     !owner.online && owner.runtimeId ? 'Offline · Cached' : inputLabel || presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const hideReviewStatus = !offline && !inputLabel && presentation.state === 'Review'
   const statusTime = presentation.time.replace(' ago', '')
   const StatusIcon = inputLabel
     ? MessageCircleQuestion
-    : hideReviewStatus
+    : compact && presentation.state === 'Review' && !offline
       ? undefined
       : offline
         ? CloudOff
         : (statusIcons[presentation.state] ?? CircleDashed)
   const statusTone = offline ? 'neutral' : inputLabel ? 'attention' : presentation.tone
+  const rowStatus = offline ? uiText('Offline') : inputLabel || uiText(presentation.state)
   const statusDetail = [
     status,
     unread ? uiText('Unread') : '',
@@ -266,7 +279,9 @@ function TaskRowView({
     <span
       className={cn(
         'inline-flex shrink-0 items-center gap-0.5 font-mono tabular-nums',
-        pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
+        failedChecks
+          ? 'text-destructive'
+          : pullRequestIconTone(badgeStatus?.state, badgeStatus?.draft),
       )}
       aria-label={`${linkedPulls.length} linked pull ${linkedPulls.length === 1 ? 'request' : 'requests'}`}
       title={linkedPulls.map((pull) => `#${pull.number} · ${pull.title}`).join(' · ')}
@@ -280,9 +295,13 @@ function TaskRowView({
           aria-label={pullStackLabel(stack)}
         />
       ) : (
-        <PullRequestIcon state={badgeStatus?.state} draft={badgeStatus?.draft} />
+        <PullRequestIcon
+          state={badgeStatus?.state}
+          draft={badgeStatus?.draft}
+          className={failedChecks ? 'text-destructive' : undefined}
+        />
       )}
-      {linkedPulls.length > 1 ? `${linkedPulls.length} PRs` : linkedPulls[0]!.number}
+      {linkedPulls.length > 1 ? `${linkedPulls.length} PRs` : `#${linkedPulls[0]!.number}`}
       {stack && linkedPulls.length === 1 && (
         <span className="text-[0.625rem]">
           {stack.complete ? `${stack.position}/${stack.size}` : 'Stack'}
@@ -290,18 +309,74 @@ function TaskRowView({
       )}
     </span>
   )
+  const openPull = (url: string) => {
+    if (
+      studioHost.openPullLink?.(url, {
+        runtimeId: owner.runtimeId ?? undefined,
+        repositoryId: task.repositoryId,
+      })
+    )
+      return
+    if (studioHost.openExternalLink) void studioHost.openExternalLink(url)
+    else window.open(url, '_blank', 'noopener,noreferrer')
+  }
+  const pullShortcutClass =
+    'studio-thread-pr-control inline-flex h-6 items-center justify-center rounded px-0.5 text-xs hover:bg-accent focus-visible:outline-2 focus-visible:outline-ring'
+  const pullShortcut =
+    !compact &&
+    pullIndicators &&
+    (linkedPulls.length === 1 ? (
+      <button
+        type="button"
+        className={pullShortcutClass}
+        disabled={disabled}
+        aria-label={`#${linkedPulls[0]!.number} · ${linkedPulls[0]!.title}`}
+        onClick={() => openPull(linkedPulls[0]!.url)}
+      >
+        {pullIndicators}
+      </button>
+    ) : (
+      <DropdownMenu.Root>
+        <DropdownMenu.Trigger asChild>
+          <button
+            type="button"
+            className={pullShortcutClass}
+            disabled={disabled}
+            aria-label={uiText('Linked pull requests')}
+          >
+            {pullIndicators}
+          </button>
+        </DropdownMenu.Trigger>
+        <DropdownMenu.Portal>
+          <DropdownMenu.Content
+            sideOffset={4}
+            className="z-50 max-w-xs rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
+          >
+            {linkedPulls.map((pull) => (
+              <DropdownMenu.Item
+                key={pull.url}
+                onSelect={() => openPull(pull.url)}
+                className="cursor-default rounded px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent"
+              >
+                #{pull.number} · {pull.title}
+              </DropdownMenu.Item>
+            ))}
+          </DropdownMenu.Content>
+        </DropdownMenu.Portal>
+      </DropdownMenu.Root>
+    ))
   const executionIcons = (
     <span className="inline-flex shrink-0 items-center gap-1" data-thread-execution>
-      {(general || compact) && pullIndicators}
+      {compact && pullIndicators}
       {!!childCount && <span className="studio-subthread-anchor block h-3.5 w-5 shrink-0" />}
+      {provider && (
+        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5 shrink-0" />
+      )}
       <RuntimeIcon
         icon={owner.runtimeIcon}
         className="size-3.5 shrink-0"
         aria-label={host ?? 'Unknown host'}
       />
-      {provider && (
-        <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5 shrink-0" />
-      )}
     </span>
   )
   const grouped = compact && !!childCount && open
@@ -325,9 +400,7 @@ function TaskRowView({
               data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
-                compact
-                  ? 'min-h-9 items-center py-1.5'
-                  : cn('items-start py-2', general ? 'min-h-[48px]' : 'min-h-[68px]'),
+                compact ? 'min-h-9 items-center py-1.5' : 'studio-thread-row-two-line items-center',
                 grouped
                   ? 'mb-0'
                   : highlighted
@@ -337,74 +410,60 @@ function TaskRowView({
               onClick={onSelect}
               disabled={disabled}
             >
-              {compact && (
-                <span className="studio-thread-project-icon shrink-0">{projectIcon}</span>
-              )}
+              <span
+                className="studio-thread-project-icon relative inline-flex shrink-0 items-center justify-center"
+                title={projectName}
+              >
+                {projectIcon}
+                {workspaceType && <WorkspaceTypeBadge kind="thread" />}
+              </span>
               <span
                 className={cn(
                   'studio-thread-card-body flex min-w-0 flex-1',
-                  compact ? 'items-center gap-1.5' : 'flex-col items-stretch gap-0.5',
+                  compact ? 'items-center gap-1.5' : 'flex-col items-stretch',
                 )}
               >
-                {!compact && (
-                  <span
-                    className={cn(
-                      'studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4',
-                      editable &&
-                        'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-                    )}
-                  >
-                    <span className="studio-thread-project-icon inline-flex shrink-0 items-center justify-center">
-                      {projectIcon}
-                    </span>
-                    <span
-                      className="min-w-0 flex-1 truncate"
-                      data-thread-copy=""
-                      title={`${statusDetail} · ${agentDetail}`}
-                    >
-                      {task.bot ? task.bot.role : projectName}
-                    </span>
-                    {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
-                    {!hideReviewStatus && (
-                      <span
-                        className="studio-thread-status flex min-w-0 max-w-[65%] shrink-0 items-center gap-1 text-xs"
-                        data-thread-copy=""
-                        data-tone={statusTone}
-                        data-thread-state={
-                          offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
-                        }
-                        aria-label={status}
-                        title={status}
-                      >
-                        {StatusIcon && (
-                          <StatusIcon
-                            className="studio-thread-status-icon size-3.5"
-                            aria-hidden="true"
-                          />
-                        )}
-                        {inputLabel ? (
-                          <span className="truncate">{inputLabel}</span>
-                        ) : (
-                          statusTime && <span className="tabular-nums">{statusTime}</span>
-                        )}
-                      </span>
-                    )}
-                  </span>
-                )}
                 <span
                   className={cn(
-                    'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
+                    'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5 text-foreground',
                     compact ? 'flex-1' : 'w-full',
-                    'text-foreground',
+                    editable &&
+                      !compact &&
+                      'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                     compact && editable && 'pr-24',
                   )}
                 >
                   {titleIcon}
-                  <span className="min-w-0 flex-1 truncate" data-thread-title data-thread-copy="">
+                  <span
+                    className="min-w-0 flex-1 truncate"
+                    data-thread-title
+                    data-thread-copy=""
+                    title={task.title}
+                  >
                     {task.title}
                   </span>
-                  {(general || (compact && !!childCount)) && executionIcons}
-                  {(general || compact) && terminalIndicator}
+                  {compact && !!childCount && executionIcons}
+                  {compact && terminalIndicator}
+                  {!compact && (
+                    <span
+                      className="studio-thread-status flex min-w-0 max-w-[56%] shrink-0 items-center gap-1 text-xs font-normal"
+                      data-thread-copy=""
+                      data-tone={statusTone}
+                      data-thread-state={
+                        offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
+                      }
+                      aria-label={status}
+                      title={status}
+                    >
+                      {StatusIcon && (
+                        <StatusIcon
+                          className="studio-thread-status-icon size-3.5 shrink-0"
+                          aria-hidden="true"
+                        />
+                      )}
+                      <span className="truncate">{rowStatus}</span>
+                    </span>
+                  )}
                 </span>
                 {compact && StatusIcon && (
                   <span
@@ -420,20 +479,41 @@ function TaskRowView({
                     {statusTime && <span className="tabular-nums">{statusTime}</span>}
                   </span>
                 )}
-                {!task.bot && !compact && !general && (
-                  <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4">
-                    <GitBranch className="size-3 shrink-0" />
-                    <MiddleTruncate
-                      value={branch || 'Local checkout'}
-                      className="flex-1 text-left"
-                      aria-label={branch || 'Local checkout'}
-                      data-thread-branch
+                {!compact && (
+                  <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs">
+                    <span
+                      className={cn(
+                        'truncate',
+                        !task.bot && !general && 'studio-thread-checkout-project',
+                      )}
                       data-thread-copy=""
-                    />
-                    {pullIndicators}
+                      title={task.bot ? task.bot.role : projectName}
+                    >
+                      {task.bot ? task.bot.role : projectName}
+                    </span>
+                    {!task.bot && !general && (
+                      <>
+                        <span className="studio-thread-checkout-project" aria-hidden="true">
+                          ·
+                        </span>
+                        <MiddleTruncate
+                          value={branch || 'Local checkout'}
+                          className="min-w-0 flex-1 text-left"
+                          aria-label={branch || 'Local checkout'}
+                          data-thread-branch
+                          data-thread-copy=""
+                        />
+                      </>
+                    )}
+                    {task.pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
                     <span className="ml-auto inline-flex shrink-0 items-center gap-1">
-                      {executionIcons}
+                      {pullIndicators && (
+                        <span className="studio-thread-pr-anchor inline-flex shrink-0">
+                          {pullIndicators}
+                        </span>
+                      )}
                       {terminalIndicator}
+                      {executionIcons}
                     </span>
                   </span>
                 )}
@@ -511,6 +591,7 @@ function TaskRowView({
             </div>
           </TooltipContent>
         </Tooltip>
+        {pullShortcut}
         {!!childCount && (
           <button
             type="button"

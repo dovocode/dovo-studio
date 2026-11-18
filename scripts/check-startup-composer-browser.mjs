@@ -21,6 +21,7 @@ const mocks = {
     export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
+    export {imageEditorDocument,parseImageEditorResult} from '../client-runtime/src/images/image-editor';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
     export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     export {useCachedTask} from '../studio-core/src/workspace/use-cached-task';
@@ -58,12 +59,11 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
     export const IconButton=({children,label,onClick})=><button aria-label={label} onClick={onClick}>{children}</button>;
     export const Input=props=><input {...props}/>;
     export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={event=>onValueChange(event.target.value)}>{children}</select>;
-    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}</form>;
+    export const ComposerSurface=({children,controls,leadingActions,actions,onSubmit,error})=><form onSubmit={onSubmit}>{children}{leadingActions}{controls}{actions}{error&&<p role="alert">{error}</p>}</form>;
     export const ComposerSubmit=props=><button {...props}/>;
     export const ComposerTextarea=props=><textarea {...props}/>;
     export const ContextMenu={Root:Box,Trigger:Box,Content:Box,Label:Box,Sub:Box,SubTrigger:Box,Portal:Box,SubContent:Box,Item:Box};
   `,
-  './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:()=>{},remove:()=>{}});`,
   './task-row': `export const TaskRow=({task,selected,onSelect})=><button data-row-id={task.id} aria-current={selected?'true':undefined} onClick={onSelect}>{task.title} · {task.status}</button>;`,
   '../detail/task-context-menu':
     'export const TaskContextMenu=({children})=><div>{children}</div>;',
@@ -99,7 +99,6 @@ for (const [path, names] of [
   ['../chat/thread/review-findings', ['ReviewFindings']],
   ['../review/code-review-card', ['CodeReviewCard']],
   ['../dialogs/task-pull-link-dialog', ['TaskPullLinkDialog']],
-  ['./attachment-picker', ['AttachmentPicker']],
   ['./message-attachments', ['MessageAttachments']],
   ['./composer-command-dialog', ['ComposerCommandDialog']],
   ['../../dialogs/saved-prompts-dialog', ['SavedPromptsDialog']],
@@ -153,7 +152,7 @@ const built = await build({
         const repositories=id=>[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''},{id:id==='mac'?'local-project':'remote-project',name:'Shared project',path:'/project',branch:'main'}];
         const [workspace,setWorkspace]=useState({tasks:[other],agents:[],skills:[],mcpServers:[],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}]});
         window.setEntity=setEntity;window.saved=workspace.tasks;window.setWorkspace=setWorkspace;
-        const snapshot={autoProjectSelectionEnabled:true,autoProjectModelSelection:"smart",questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
+        const snapshot={workspace,revision,autoProjectSelectionEnabled:true,autoProjectModelSelection:"smart",questions:[],approvals:[],defaults:{},detailTaskIds:revision?workspace.tasks.map(task=>task.id):[]};
         window.hydrate=()=>setRevision(value=>value+1);
         window.replaceCommandRegistry=()=>{const previous=window.host.registerCommand;window.host={...window.host,registerCommand:command=>previous(command)};setRevision(value=>value+1)};
         const request=async(path,input)=>{
@@ -161,11 +160,27 @@ const built = await build({
           window.requests.push({path,input});
           if(path==='/api/tasks/native-thread')return {entries:[{id:'native-prompt',role:'user',text:'Claude native prompt'},{id:'native-answer',role:'assistant',text:'Claude native answer'}]};
           if(path==='/api/tasks/title')return {title:'New thread'};
+          if(path.startsWith('/api/attachments/')){
+            // The real workspace request flushes pending task edits before the API reads the guard.
+            await new Promise(resolve=>requestAnimationFrame(()=>resolve()));
+            const task=window.saved.find(task=>task.id===input.taskId);
+            if(!task)throw Error('Thread not found');
+            const guard=JSON.stringify([task.draft,(task.draftAttachments??[]).map(file=>file.id)]);
+            if(path==='/api/attachments/draft-guard')return {guard,guardedUploads:1};
+            if(path==='/api/attachments/upload'){
+              if(input.draftGuard!==guard)throw Error('The draft changed. Review the draft before attaching the file again.');
+              const attachment={id:input.id,name:input.name,mime:'image/png',size:atob(input.data).length};
+              const files=[...(task.draftAttachments??[]),attachment];
+              setWorkspace(current=>({...current,tasks:current.tasks.map(item=>item.id===task.id?{...item,draftAttachments:files}:item)}));
+              setRevision(value=>value+1);
+              return {attachment,revision:revision+1,nextGuard:JSON.stringify([task.draft,files.map(file=>file.id)])};
+            }
+          }
           if(path==='/api/tasks/side-thread/create'){const create=()=>{const child={...createTask({title:'Side chat '+input.childId.slice(0,4),objective:input.objective,agentId:'',repositoryId:'scratch'}),id:'side-'+input.childId,draft:input.objective,sideThread:{parentTaskId:input.id,objective:input.objective,contextMessageCount:0,source:'head',permissionCeiling:{permission:'workspace-write'}}};setWorkspace(current=>({...current,tasks:[...current.tasks,child]}));return {id:child.id}};if(window.delaySideSave)return new Promise(resolve=>{window.finishSideSave=()=>resolve(create())});return create()};
           if(path==='/api/tasks/message')return new Promise(resolve=>{window.finishSend=()=>{setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===input.id?{...task,status:'running',messages:[{id:'message',role:'user',text:input.text}]}:task)}));resolve({ok:true})}});
           return {ok:true};
         };
-        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceValueProvider>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:active,switchRuntime:async id=>{setWorkspace(current=>({...current,tasks:id==='mac'?[other]:[],repositories:repositories(id)}));setActive(id)},runtimes:[],runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:()=>new Promise(resolve=>requestAnimationFrame(()=>resolve())),readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView entityId={entity}/></WorkspaceValueProvider>
       }
       const root=createRoot(document.getElementById('app'));window.unmount=()=>root.unmount();root.render(<App/>);
     `,
@@ -210,7 +225,7 @@ try {
   await page.route('http://startup-composer.test/**', (route) =>
     route.fulfill({
       contentType: 'text/html',
-      body: '<style>.hidden{display:none}</style><div id="app"></div>',
+      body: '<style>.hidden{display:none}iframe{width:100%;height:560px}</style><div id="app"></div>',
     }),
   )
   await page.goto('http://startup-composer.test')
@@ -463,6 +478,68 @@ try {
     () => !document.querySelector('[aria-current=true]')?.textContent.includes('New thread'),
   )
   assert.equal(await page.evaluate(() => window.saved.length), count)
+  const image = {
+    name: 'first-image.png',
+    mimeType: 'image/png',
+    buffer: Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aJc0AAAAASUVORK5CYII=',
+      'base64',
+    ),
+  }
+  const imageEditor = page.frameLocator('iframe[title="Image editor"]')
+  const attachments = page.locator('input[aria-label="Choose attachments"]:not(.hidden *)')
+  // Start a task from the first attachment, with no text to commit it first.
+  await page.evaluate(() => window.commands.get('tasks.new')())
+  await page.waitForFunction(
+    () =>
+      !window.saved.some((task) => task.id === document.querySelector('textarea')?.dataset.taskId),
+  )
+  const startupId = await page.locator('textarea').getAttribute('data-task-id')
+  await attachments.setInputFiles(image)
+  await imageEditor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(
+    (id) => window.saved.find((task) => task.id === id)?.draftAttachments?.length === 1,
+    startupId,
+  )
+  await page.getByRole('button', { name: 'Existing · draft', exact: true }).click()
+  // The guard must include text typed before opening the editor, even if the draft debounce
+  // would otherwise send that text while the editor is open.
+  await page.locator('textarea').fill('Add this to the first image')
+  await attachments.setInputFiles(image)
+  await imageEditor.getByRole('button', { name: 'Use original', exact: true }).waitFor()
+  await page.waitForFunction(
+    () =>
+      window.saved.find((task) => task.title === 'Existing')?.draft ===
+      'Add this to the first image',
+  )
+  await imageEditor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.waitForFunction(
+    () => window.saved.find((task) => task.title === 'Existing')?.draftAttachments?.length === 1,
+  )
+  // A change from another device while the editor is open still invalidates the guard.
+  await attachments.setInputFiles(image)
+  await imageEditor.getByRole('button', { name: 'Use original', exact: true }).waitFor()
+  await page.evaluate(() =>
+    window.setWorkspace((current) => ({
+      ...current,
+      tasks: current.tasks.map((task) =>
+        task.title === 'Existing' ? { ...task, draft: 'Edited on another device' } : task,
+      ),
+    })),
+  )
+  await page.waitForFunction(
+    () =>
+      window.saved.find((task) => task.title === 'Existing')?.draft === 'Edited on another device',
+  )
+  await imageEditor.getByRole('button', { name: 'Use original', exact: true }).click()
+  await page.getByRole('alert').filter({ hasText: 'The draft changed' }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.saved.find((task) => task.title === 'Existing').draftAttachments.length,
+    ),
+    1,
+  )
+  await page.locator('textarea').fill('')
   // Exercise both reference producers through the actual TasksView → conversation → composer.
   const existingId = await page.locator('[data-thread-header]').getAttribute('data-thread-header')
   const switchThread = async (id) => {
@@ -531,7 +608,7 @@ try {
   )
   assert.deepEqual(errors, [])
   console.log(
-    'Actual TasksView, StartupDraft, TaskConversation, Composer and ComposerEditor retain the textarea, focus and backward selection through persistence, routing, delayed hydration, sending and continued typing; agent side-chat shortcuts create an unsent draft beside the current thread and late creations respect navigation; untouched drafts still discard; diff and file references are inserted once and stay deleted across thread switches.',
+    'Actual startup composer retains focus and selection through persistence, routing, hydration and sending. First images attach to empty and recently edited drafts through the image editor. Changes from another device invalidate the guard. Side chats respect navigation, untouched drafts discard, and inserted references stay deleted across thread switches.',
   )
 } finally {
   await browser.close()

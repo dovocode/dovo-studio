@@ -68,8 +68,8 @@ export function journalProvider(
           onTextBoundary: () => {
             if (active()) input.onTextBoundary?.()
           },
-          onEvent: (name, payload) => {
-            if (active()) input.onEvent?.(name, payload)
+          onEvent: (name, payload, retainedOutput) => {
+            if (active()) input.onEvent?.(name, payload, retainedOutput)
           },
           onActivity: (text) => {
             if (active()) input.onActivity(text)

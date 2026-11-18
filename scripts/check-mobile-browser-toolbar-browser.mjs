@@ -12,9 +12,9 @@ const stubs = [
     contents: "export {useState as useApplicationState} from 'react'",
   },
   {
-    path: '../../ui/layout/glass',
+    path: '../../ui/layout/surface',
     importer: mobile,
-    contents: "export {View as Glass} from 'react-native'",
+    contents: "export {View as Surface} from 'react-native'",
   },
   { path: './icon', importer: mobile + '/src/ui/controls', contents: 'export const Icon=()=>null' },
   {
@@ -39,7 +39,7 @@ const stubs = [
   },
   { path: '../../ui/theme', importer: mobile, contents: "export {useTheme} from './src/ui/theme'" },
 ]
-// Use the real RN Web layout, Field and theme; native glass and SwiftUI button rendering
+// Use the real RN Web layout, Field and theme; native surfaces and SwiftUI button rendering
 // are boundaries, verified separately on iOS. Their fixed 44px frames match IconButton.
 const built = await bundleBrowser(
   {

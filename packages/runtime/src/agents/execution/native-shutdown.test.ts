@@ -1,7 +1,13 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { defaultTaskHarness, taskFamilyRunToken, recentTools } from '@dovo/protocol'
+import {
+  defaultTaskHarness,
+  taskFamilyRunToken,
+  recentTools,
+  toolPresentation,
+} from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
+import { AcpV2Updates } from '../providers/acp/acp-v2-updates'
 import { runtimeIntegration } from '../../testing/integration'
 import type { AgentAdapter, AgentRun } from './types'
 vi.setConfig(runtimeIntegration)
@@ -10,6 +16,84 @@ afterEach(async () => {
   vi.useRealTimers()
   vi.restoreAllMocks()
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+
+it('finalizes an interrupted ACP stream with all accepted output and ignores later chunks', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'cancelled-provider-receipts-test-owner-token',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  s.store.update(() => f.workspace)
+  const prefix = 'opening output\n' + 'X'.repeat(1200)
+  const ready = Promise.withResolvers<void>()
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      run.onSession('owner')
+      const view = new AcpV2Updates(run, () => {})
+      const chunk = (text: string) => {
+        view.accept({
+          sessionId: 'owner',
+          update: {
+            sessionUpdate: 'terminal_output_chunk',
+            terminalId: 'term',
+            data: Buffer.from(text).toString('base64'),
+          },
+        })
+        view.accept({
+          sessionId: 'owner',
+          update: {
+            sessionUpdate: 'tool_call_content_chunk',
+            toolCallId: 'tool',
+            content: { type: 'content', content: { type: 'text', text } },
+          },
+        })
+      }
+      chunk(prefix)
+      chunk('end')
+      const stopped = new Promise<void>((resolve) =>
+        run.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+      ready.resolve()
+      await stopped
+      chunk('after cancellation')
+      view.accept({
+        sessionId: 'owner',
+        update: { sessionUpdate: 'state_update', state: 'idle', stopReason: 'cancelled' },
+      })
+    },
+  })
+  const task = s.tasks.create({
+    title: 'Stop streaming',
+    repositoryId: 'repo',
+    agentId: '',
+    objective: 'Run',
+    harness: defaultTaskHarness('acp'),
+  })
+  const started = await s.tasks.start(task.id)
+  const done = started.done.catch(() => undefined)
+  await Promise.race([ready.promise, started.done])
+  const live = recentTools(s.activity.list('', 'tool', 0, task.id).events)
+  expect(live).toHaveLength(2)
+  for (const tool of live)
+    expect(toolPresentation(tool.payload, tool.summary, tool.inputPayload).output).toHaveLength(
+      1024,
+    )
+  s.tasks.cancel(task.id)
+  await done
+  const tools = recentTools(s.activity.list('', 'tool', 0, task.id).events)
+  expect(tools).toHaveLength(2)
+  for (const tool of tools) {
+    expect(tool.status).toBe('cancelled')
+    expect(toolPresentation(tool.payload, tool.summary, tool.inputPayload).output).toBe(
+      prefix + (tool.toolId === 'tool' ? '\n' : '') + 'end',
+    )
+  }
 })
 
 it('settles native work after a late provider exit while an independent child keeps running', async () => {

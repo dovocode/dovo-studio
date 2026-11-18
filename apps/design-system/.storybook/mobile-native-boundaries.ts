@@ -50,8 +50,4 @@ export const resizable = boundary('SwiftUI image modifier')
 export const shapes = boundary('SwiftUI shapes')
 export const tint = boundary('SwiftUI tint modifier')
 
-export const isGlassEffectAPIAvailable = boundary('Expo glass effect API')
-export const isLiquidGlassAvailable = boundary('Expo liquid glass API')
-
-export const GlassView = boundary('Native glass view')
 export const VStack = boundary('SwiftUI vertical stack')

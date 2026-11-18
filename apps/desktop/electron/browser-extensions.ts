@@ -118,6 +118,7 @@ type Profile = {
   queue: Promise<unknown>
   native: ReturnType<typeof attachNativeMessaging>
   browserAPIs: ReturnType<typeof attachExtensionBrowserAPIs>
+  actionPopups: Map<string, BrowserWindow>
 }
 type ActionClick = (details: {
   eventType: 'click'
@@ -144,6 +145,7 @@ const actionInternals = Schema.Struct({
 })
 const hasActionInternals = Schema.is(actionInternals)
 const popupInternals = Schema.Struct({
+  extensionId: Schema.String,
   browserWindow: Schema.declare(
     (value: unknown): value is BrowserWindow => value instanceof BrowserWindow,
   ),
@@ -162,6 +164,8 @@ export type ExtensionTabHost = {
     profileId: string,
     details: { url?: string; active?: boolean; windowId?: number },
   ): Promise<[Electron.WebContents, BaseWindow]>
+  /** Select an existing shared-browser tab at an extension's request. */
+  select(profileId: string, contents: Electron.WebContents): void
   /** Close a tab because its extension called `chrome.tabs.remove`. */
   close(contents: Electron.WebContents): void
   /** Resolve the renderer's tab key to its native page in that profile. */
@@ -372,6 +376,8 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     }
   }
   const unload = (profile: Profile, id: string) => {
+    const popup = profile.actionPopups.get(id)
+    if (popup && !popup.isDestroyed()) popup.destroy()
     profile.native.close(id)
     profile.browserAPIs.close(id)
     if (profile.session.extensions.getExtension(id)) profile.session.extensions.removeExtension(id)
@@ -390,6 +396,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           session: browserSession,
           modulePath: runtime,
           createTab: (details) => tabs.create(profileId, details),
+          selectTab: (contents) => tabs.select(profileId, contents),
           removeTab: (contents) => tabs.close(contents),
           createWindow: async () => {
             throw new Error('Dovo does not support extension windows yet.')
@@ -398,11 +405,12 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
             requestPermissions(profileId, extension, request),
         })
         attachExtensionPermissionChecks(extensions)
+        const actionPopups = new Map<string, BrowserWindow>()
         // The library's native child window is the overlay: keep it anchored and within Studio.
         extensions.on('browser-action-popup-created', (raw: unknown) => {
           if (!Schema.is(popupInternals)(raw)) return
-          const popup = raw.browserWindow
-          const parent = raw.parent
+          const { browserWindow: popup, parent, extensionId } = raw
+          actionPopups.set(extensionId, popup)
           dismissExtensionPopupOnBlur(popup, parent)
           const fit = () => {
             if (popup.isDestroyed() || parent.isDestroyed()) return
@@ -425,7 +433,10 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           popup.on('show', fit)
           popup.on('resize', fit)
           parent.on('resize', fit)
-          popup.once('closed', () => parent.off('resize', fit))
+          popup.once('closed', () => {
+            if (actionPopups.get(extensionId) === popup) actionPopups.delete(extensionId)
+            parent.off('resize', fit)
+          })
         })
         for (const type of ['frame', 'service-worker'] as const)
           browserSession.registerPreloadScript({
@@ -486,6 +497,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           id: profileId,
           session: browserSession,
           extensions,
+          actionPopups,
           registry,
           errors: new Map(),
           queue: Promise.resolve(),

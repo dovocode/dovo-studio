@@ -14,12 +14,12 @@ export function EditChatImage({
   source,
   label,
   onEdit,
-  glass = false,
+  bordered = false,
 }: {
   source: ChatImageSource
   label: string
   onEdit?: () => void
-  glass?: boolean
+  bordered?: boolean
 }) {
   const uiText = useInterfaceText()
 
@@ -29,7 +29,7 @@ export function EditChatImage({
   return (
     <IconButton
       icon="edit"
-      variant={glass ? 'glass' : 'plain'}
+      variant={bordered ? 'bordered' : 'plain'}
       label={uiText('Edit and attach {value0}', { value0: label })}
       disabled={!connected || context.disabled || context.busy}
       onPress={() => {

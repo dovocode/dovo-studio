@@ -3,7 +3,7 @@ import { type ComponentRef, type Ref } from 'react'
 import { type TextInput, View } from 'react-native'
 import { previewPresets } from '@dovo/protocol'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { Glass } from '../../ui/layout/glass'
+import { Surface } from '../../ui/layout/surface'
 import { Text } from '../../ui/content/text'
 import { Field } from '../../ui/controls/field'
 import { IconButton } from '../../ui/controls/icon-button'
@@ -93,8 +93,7 @@ export function BrowserToolbar({
       }}
     >
       {context && <Text style={{ color: colors.muted, paddingHorizontal: 8 }}>{context}</Text>}
-      <Glass
-        solid
+      <Surface
         testID="Browser toolbar surface"
         style={{
           borderRadius: 28,
@@ -264,7 +263,7 @@ export function BrowserToolbar({
             }}
           />
         </View>
-      </Glass>
+      </Surface>
     </View>
   )
 }

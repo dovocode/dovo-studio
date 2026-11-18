@@ -1,13 +1,10 @@
 import type { Preview } from '@storybook/react-vite'
 import { useLayoutEffect } from 'react'
 import { dovoColors } from '@dovo/design'
-import { updateAppPreferences, useAppPreferences } from '@dovo/studio-core'
-import { startLiquidGlass } from '@dovo/studio-ui'
+import { updateAppPreferences } from '@dovo/studio-core'
 import '../src/catalog.css'
 
 function Theme({ mode, children }: { mode: 'light' | 'dark'; children: React.ReactNode }) {
-  const { highContrast } = useAppPreferences()
-  useLayoutEffect(() => startLiquidGlass(highContrast), [highContrast])
   useLayoutEffect(() => {
     // Production appearance hooks and catalog globals must resolve the same theme.
     // Run only when the toolbar mode changes so Appearance stories remain editable.

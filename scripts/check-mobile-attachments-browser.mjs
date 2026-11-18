@@ -223,8 +223,8 @@ try {
     assert.equal(imageBox.height, size.height - 60)
     assert.equal(await close.innerText(), '')
     assert.equal(await share.innerText(), '')
-    assert.equal(await close.getAttribute('data-variant'), 'glass')
-    assert.equal(await share.getAttribute('data-variant'), 'glass')
+    assert.equal(await close.getAttribute('data-variant'), 'bordered')
+    assert.equal(await share.getAttribute('data-variant'), 'bordered')
     assert.equal(await dialog.evaluate((node) => node.scrollWidth), size.width)
   }
   assert.equal(await imagePreview.getAttribute('data-max-zoom'), '4')
@@ -566,7 +566,7 @@ try {
   assert.equal(await dialog.count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile attachment rows: responsive geometry, bounded list, icon actions, fixed glass preview toolbar, responsive zoom viewport, native sharing, bounded ZIP browsing, folder navigation, file/image previews, draft attachment retry identity, stale-reply isolation, fallbacks, disabled/offline controls and draft preservation passed (browser adapters).',
+    'Mobile attachment rows: responsive geometry, bounded list, icon actions, fixed preview toolbar, responsive zoom viewport, native sharing, bounded ZIP browsing, folder navigation, file/image previews, draft attachment retry identity, stale-reply isolation, fallbacks, disabled/offline controls and draft preservation passed (browser adapters).',
   )
 } finally {
   await browser.close()

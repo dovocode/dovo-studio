@@ -202,7 +202,11 @@ try {
   const opened = await call('browsers', { action: 'open', url: pageURL + '/browser' })
   assert.ok(opened.id)
   assert.equal(opened.image, undefined)
-  assert.ok(opened.elements.some((element) => element.name === 'Prompt'))
+  assert.equal(opened.elements, undefined)
+  assert.match(opened.snapshot, /textbox "Prompt"/)
+  const elements = await call('browsers', { action: 'elements', id: opened.id })
+  assert.ok(elements.elements.some((element) => element.name === 'Prompt'))
+  assert.equal(elements.snapshot, undefined)
   const captured = await call('browsers', { action: 'screenshot', id: opened.id })
   assert.ok(captured.image)
   const listed = await call('browsers', { action: 'list' })
@@ -233,14 +237,31 @@ try {
     paired.id,
   )
   assert.equal(remoteBrowser.image, undefined)
-  assert.ok(remoteBrowser.elements.some((element) => element.name === 'Prompt'))
-  const keyed = await call(
+  assert.equal(remoteBrowser.elements, undefined)
+  const promptRef = /textbox "Prompt"[^\n]*\[ref=([^\]]+)\]/.exec(remoteBrowser.snapshot)?.[1]
+  assert.ok(promptRef)
+  const remoteElements = await call(
     'browsers',
-    { action: 'key', id: remoteBrowser.id, selector: 'textarea[aria-label="Prompt"]', key: 'H' },
+    { action: 'elements', id: remoteBrowser.id },
     200,
     paired.id,
   )
-  assert.ok(keyed.elements.some((element) => element.name === 'Prompt' && element.value === 'H'))
+  assert.ok(remoteElements.elements.some((element) => element.name === 'Prompt'))
+  const keyed = await call(
+    'browsers',
+    { action: 'key', id: remoteBrowser.id, selector: `ref=${promptRef}`, key: 'H' },
+    200,
+    paired.id,
+  )
+  assert.equal(keyed.elements, undefined)
+  assert.match(keyed.snapshot, /textbox "Prompt"/)
+  const afterKey = await call(
+    'browsers',
+    { action: 'elements', id: remoteBrowser.id },
+    200,
+    paired.id,
+  )
+  assert.ok(afterKey.elements.some((element) => element.name === 'Prompt' && element.value === 'H'))
   await call(
     'browsers',
     {

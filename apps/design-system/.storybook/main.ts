@@ -163,7 +163,6 @@ const config: StorybookConfig = {
       },
       { find: /^@expo\/ui\/swift-ui$/, replacement: mobileNativeBoundaries },
       { find: /^@expo\/ui\/swift-ui\/modifiers$/, replacement: mobileNativeBoundaries },
-      { find: /^expo-glass-effect$/, replacement: mobileNativeBoundaries },
     ]
     config.resolve.extensions = [
       '.web.mjs',

@@ -43,7 +43,7 @@ import Animated, {
   ReduceMotion,
 } from 'react-native-reanimated'
 import { HarnessIcon } from '../../agents/harness-icon'
-import { Glass } from '../../ui/layout/glass'
+import { Surface } from '../../ui/layout/surface'
 import { MessageAttachments } from '../conversation/components/message-attachments'
 import {
   ActivityIndicator,
@@ -1133,7 +1133,7 @@ export function Composer({
       )}
       <Animated.View layout={transition} testID="Composer surface">
         <ComposerActivity task={task} attached />
-        <Glass
+        <Surface
           testID="Composer input surface"
           style={{
             borderRadius: designTokens.radius.composer,
@@ -1773,7 +1773,7 @@ export function Composer({
               )}
             </View>
           )}
-        </Glass>
+        </Surface>
       </Animated.View>
       {!!dictation.state?.error && (
         <Text

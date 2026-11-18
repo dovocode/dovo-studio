@@ -77,7 +77,7 @@ export function ImageOcr({
         <ScanText className="size-3.5" />
       </Button>
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent data-fixed-material="" className="max-h-[85dvh] max-w-3xl overflow-auto">
+        <DialogContent className="max-h-[85dvh] max-w-3xl overflow-auto">
           <DialogTitle>Text from {file.name}</DialogTitle>
           <DialogDescription>
             Extracted on your Studio computer. Check the text before using it.

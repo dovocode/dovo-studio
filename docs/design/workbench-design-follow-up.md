@@ -1,8 +1,8 @@
 # Workbench design follow-up
 
 Keep the dense desktop layout and native mobile navigation. Improve how people find a decision,
-verify work, and return to their place. This list is scope, not a record of completed work. The
-composer redesign is out of scope.
+verify work, and return to their place. This list defines the scope. The composer and desktop
+navigation rail use solid fills and keep their existing layout and controls.
 
 | Area                            | Acceptance criteria                                                                                                                                                                                                                                                                                                                                                                                                                                           |
 | ------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

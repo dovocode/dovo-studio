@@ -2,7 +2,7 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { contentColumn } from './content-column'
 import { ValidationFields } from '../controls/validation-fields'
 import { SafeModal } from './safe-modal'
-import { Glass } from './glass'
+import { Surface } from './surface'
 import { designTokens } from '@dovo/design'
 import { NativeIcon, NativeMenuButton } from '../controls/native-icon'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -152,8 +152,7 @@ export function Sheet({
             onPress={close}
             style={{ position: 'absolute', inset: 0, backgroundColor: '#00000080' }}
           />
-          <Glass
-            solid
+          <Surface
             role="dialog"
             accessibilityLabel={title}
             accessibilityViewIsModal
@@ -194,7 +193,7 @@ export function Sheet({
               content
             )}
             {footer}
-          </Glass>
+          </Surface>
         </KeyboardAvoidingView>
       </SafeModal>
     )
@@ -350,7 +349,7 @@ export function Sheet({
             <IconButton
               label={uiText('Close')}
               icon="close"
-              variant="glass"
+              variant="bordered"
               disabled={busy}
               onPress={close}
             />

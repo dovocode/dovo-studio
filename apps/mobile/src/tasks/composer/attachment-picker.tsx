@@ -20,6 +20,7 @@ import {
   MAX_ATTACHMENT_BYTES,
   MAX_ATTACHMENTS,
   type Attachment,
+  type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { useAction } from '../../ui/controls/use-action'
@@ -57,6 +58,7 @@ export function useAttachmentPicker(
     requestAttachmentEffect,
     reviewAttachments,
     readRuntimeEffect,
+    localAttachmentDraft,
     refreshRuntimeEffect,
     finishAttachmentEffect,
   } = useRuntime()
@@ -72,7 +74,7 @@ export function useAttachmentPicker(
     scope: string
     files: Attachment[]
   } | null>(null)
-  const failedUploads = useRef(new Map<string, AttachmentAsset>())
+  const failedUploads = useRef(new Map<string, AttachmentAsset & { replaceId?: string }>())
   const [, setFailureVersion] = useState(0)
   const [pasting, setPasting] = useState(false)
   const scopeKey = JSON.stringify([
@@ -133,12 +135,28 @@ export function useAttachmentPicker(
       for (const uri of temporary) if (uri !== prepared?.uri) new File(uri).delete()
     }
   }
+  const readDraftGuard = () =>
+    readRuntimeEffect(
+      profile!,
+      '/api/attachments/draft-guard',
+      { taskId },
+      mutableStruct({ guard: Schema.String }),
+    )
+  // Saved drafts need their server guard before the editor or clipboard yields.
+  // A local draft can wait until we have a file to attach.
+  const captureDestination = () =>
+    mobileWorkflow(function* () {
+      if (editing || detached) return undefined
+      const local = localAttachmentDraft?.(taskId)
+      if (local) return { local }
+      return { guard: (yield* readDraftGuard()).guard }
+    })
   const uploadAssets = (
     assets: AttachmentAsset[],
     replaceId?: string,
     editChatImage = false,
     signal?: AbortSignal,
-    initialGuard?: string,
+    destination?: { local?: Task; guard?: string },
     initialGeneration?: number,
     requireCommitted = false,
   ) => {
@@ -161,23 +179,24 @@ export function useAttachmentPicker(
         : editing
           ? editing.files.length
           : saved.length
-      let guard =
-        !editing && !detached && assets.length
-          ? (initialGuard ??
-            (yield* readRuntimeEffect(
-              profile,
-              '/api/attachments/draft-guard',
-              { taskId },
-              mutableStruct({ guard: Schema.String }),
-            )).guard)
-          : null
-      const batch: { asset: AttachmentAsset; data: string; attachment: Attachment }[] = []
-      const rejected: string[] = []
+      const unconfirmed: AttachmentAsset[] = []
       for (const asset of assets) {
-        if (asset.id && saved.some((file) => file.id === asset.id)) {
-          clearFailedUpload(asset.id)
+        const id = asset.id
+        if (!id || !saved.some((file) => file.id === id)) {
+          unconfirmed.push(asset)
           continue
         }
+        // A committed upload can appear in the snapshot after its response was lost.
+        yield* finishAttachmentEffect(profile, id).pipe(
+          Effect.catch(() => Effect.sync(() => reviewAttachments(profile))),
+        )
+        clearFailedUpload(id)
+      }
+      const captured = destination ?? (unconfirmed.length ? yield* captureDestination() : undefined)
+      let guard = captured?.guard
+      const batch: { asset: AttachmentAsset; data: string; attachment: Attachment }[] = []
+      const rejected: string[] = []
+      for (const asset of unconfirmed) {
         if (count - (replaceId ? 1 : 0) + batch.length >= MAX_ATTACHMENTS) {
           rejected.push(`${asset.name}: attach up to 5 files per message.`)
           continue
@@ -218,6 +237,11 @@ export function useAttachmentPicker(
         )
       }
       if (!owns()) throw new Error('Attachment cancelled because the conversation changed.')
+      if (captured?.local && batch.length) {
+        if (localAttachmentDraft?.(taskId) !== captured.local)
+          throw new Error('The draft changed. Choose the attachment again.')
+        guard = (yield* readDraftGuard()).guard
+      }
       if (!editing && !detached && !replaceId && batch.length) {
         const done = new Promise<string | undefined>((resolve) => {
           complete = resolve
@@ -286,7 +310,7 @@ export function useAttachmentPicker(
           Effect.catch((cause) =>
             nativeEffect(async () => {
               rejected.push(`${item.attachment.name}: ${cause.message}`)
-              if (owns() && !editing && !detached && !replaceId) {
+              if (owns() && !editing && !detached) {
                 const previous = failedUploads.current.get(item.attachment.id)
                 const file = previous
                   ? new File(previous.uri)
@@ -298,6 +322,7 @@ export function useAttachmentPicker(
                   mimeType: item.attachment.mime,
                   id: item.attachment.id,
                   prepared: true,
+                  replaceId,
                 })
                 setFailureVersion((value) => value + 1)
               }
@@ -333,12 +358,12 @@ export function useAttachmentPicker(
       ),
     )
   }
-  const upload = (assets: AttachmentAsset[], editChatImage = false) => {
+  const upload = (assets: AttachmentAsset[], editChatImage = false, replaceId?: string) => {
     if (!connected) return Promise.reject(new Error('Reconnect to attach files.'))
     if (busy || uploading.current)
       return Promise.reject(new Error('Wait for the current attachment operation to finish.'))
     uploading.current = true
-    return run(() => uploadAssets(assets, undefined, editChatImage)).finally(() => {
+    return run(() => uploadAssets(assets, replaceId, editChatImage)).finally(() => {
       uploading.current = false
     })
   }
@@ -374,6 +399,8 @@ export function useAttachmentPicker(
     uploading.current = true
     return run(() =>
       mobileWorkflow(function* () {
+        const generation = ownership.current.generation
+        const destination = yield* captureDestination()
         const previous = yield* callEffect(
           '/api/attachments/read',
           { taskId, id },
@@ -385,6 +412,10 @@ export function useAttachmentPicker(
           yield* uploadAssets(
             [{ uri: file.uri, name: previous.attachment.name, mimeType: previous.attachment.mime }],
             id,
+            false,
+            undefined,
+            destination,
+            generation,
           )
         }).pipe(
           Effect.ensuring(
@@ -403,6 +434,8 @@ export function useAttachmentPicker(
     act(() =>
       mobileWorkflow(function* () {
         Keyboard.dismiss()
+        const generation = ownership.current.generation
+        const destination = yield* captureDestination()
         const result = yield* nativeEffect(async () => {
           if (source === 'files')
             return DocumentPicker.getDocumentAsync({ multiple: true, copyToCacheDirectory: true })
@@ -438,7 +471,8 @@ export function useAttachmentPicker(
               })) ?? [],
           }
         })
-        if (!result.canceled) yield* uploadAssets(result.assets)
+        if (!result.canceled)
+          yield* uploadAssets(result.assets, undefined, false, undefined, destination, generation)
       }),
     )
   }
@@ -464,15 +498,7 @@ export function useAttachmentPicker(
     const generation = ownership.current.generation
     void run(() =>
       mobileWorkflow(function* () {
-        const guard =
-          editing || detached
-            ? undefined
-            : (yield* readRuntimeEffect(
-                profile,
-                '/api/attachments/draft-guard',
-                { taskId },
-                mutableStruct({ guard: Schema.String }),
-              )).guard
+        const destination = yield* captureDestination()
         const image = yield* nativeEffect(() => Clipboard.getImageAsync({ format: 'png' }))
         if (!image) throw new Error('No image found on the clipboard.')
         if (!ownership.current.mounted || ownership.current.generation !== generation)
@@ -486,7 +512,7 @@ export function useAttachmentPicker(
             undefined,
             false,
             undefined,
-            guard,
+            destination,
             generation,
           )
         } finally {
@@ -508,7 +534,7 @@ export function useAttachmentPicker(
     })),
     retryUpload: (id: string) => {
       const asset = failedUploads.current.get(id)
-      if (asset) void upload([asset])
+      if (asset) void upload([asset], false, asset.replaceId)
     },
     discardFailedUpload: clearFailedUpload,
     waitForUploads: async (files: Attachment[] = []) => {

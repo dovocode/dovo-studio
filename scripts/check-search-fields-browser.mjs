@@ -75,11 +75,6 @@ function App(){const [value,setValue]=useState('a search'),[selected,setSelected
       contents:
         'export const accessibilityAddTraits=()=>{},accessibilityLabel=()=>{},background=()=>{},buttonBorderShape=()=>{},buttonStyle=()=>{},contentShape=()=>{},controlSize=()=>{},disabled=()=>{},frame=()=>{},tint=()=>{},shapes={circle:()=>{}};',
     },
-    {
-      path: 'expo-glass-effect',
-      contents:
-        'export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;',
-    },
   ],
 )
 const server = await createServer({

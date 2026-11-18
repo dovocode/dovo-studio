@@ -158,7 +158,7 @@ export function ComposerWorkspace({
               Link projects{task.linkedCheckouts?.length ? ` (${task.linkedCheckouts.length})` : ''}
             </Button>
             <Dialog open={linkingProjects} onOpenChange={setLinkingProjects}>
-              <DialogContent data-fixed-material="" className="max-h-[85vh] overflow-y-auto">
+              <DialogContent className="max-h-[85vh] overflow-y-auto">
                 <DialogTitle>Linked projects</DialogTitle>
                 <LinkedCheckoutEditor
                   value={task.linkedCheckouts ?? []}
@@ -469,7 +469,7 @@ export function ComposerWorkspace({
         </Popover.Root>
       )}
       <Dialog open={worktreePicker} onOpenChange={setWorktreePicker}>
-        <DialogContent data-fixed-material="" className="max-w-lg">
+        <DialogContent className="max-w-lg">
           <DialogTitle>Use an existing worktree</DialogTitle>
           <p className="text-xs text-muted-foreground">
             The new thread works in this checkout, including its uncommitted files. Only one thread

@@ -37,7 +37,6 @@ export function ComposerCommandDialog({
   return (
     <Dialog open={!!command} onOpenChange={(open) => !open && !busy && onClose()}>
       <DialogContent
-        data-fixed-material=""
         className="max-w-md"
         onOpenAutoFocus={(event) => {
           if (command === 'undo' && needsRefresh && connected && !busy) {

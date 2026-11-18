@@ -1,5 +1,7 @@
 import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotAvatar } from '../../bots/bot-avatar'
+import { router } from 'expo-router'
+import { WorkspaceTypeBadge } from '../../workspace/type-badge'
 import { NestedThreads } from './nested-threads'
 import type { NestedThread } from '@dovo/protocol'
 import { HarnessIcon } from '../../agents/harness-icon'
@@ -7,6 +9,8 @@ import { useCachedModelCatalog } from '../../agents/use-model-catalog'
 import { harnessNames } from '../creation/harness-choices'
 import {
   hasUnreadTaskActivity,
+  forgePullTarget,
+  pullRepositoryIdentity,
   pullStackLabel,
   taskPullLinks,
   taskPullStatusFor,
@@ -25,7 +29,6 @@ import {
   AlarmClock,
   CloudOff,
   FilePenLine,
-  GitBranch,
   MessageCircleQuestion,
   MessageCircleDashed,
   Pin,
@@ -36,8 +39,8 @@ import {
   type LucideIcon,
 } from 'lucide-react-native'
 import { Icon } from '../../ui/controls/icon'
-import { Glass } from '../../ui/layout/glass'
-import { Image, View, useWindowDimensions } from 'react-native'
+import { Surface } from '../../ui/layout/surface'
+import { Image, Linking, View, useWindowDimensions } from 'react-native'
 // Keep row presses in the pan recognizer's native gesture system so swipes cancel taps.
 import { Pressable } from 'react-native-gesture-handler'
 import { Text } from '../../ui/content/text'
@@ -52,6 +55,8 @@ import {
 import { PullRequestIcon, usePullRequestColor } from '../../ui/content/pull-request-icon'
 import { DeviceLabel } from './device-label'
 import { TaskRowMenu } from './task-row-menu'
+import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
+import { pullHref } from '../../shell/source-route'
 import { TaskSwipeActions } from './task-swipe-actions'
 import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
@@ -128,23 +133,43 @@ function TaskListRowView({
   const { fontScale } = useWindowDimensions()
   const rowElement = useRef<ComponentRef<typeof View>>(null)
   const subthreadAnchorElement = useRef<ComponentRef<typeof View>>(null)
+  const pullAnchorElement = useRef<ComponentRef<typeof View>>(null)
   const rowHeight = useRef(0)
   const [subthreadPosition, setSubthreadPosition] = useState<{
     left: number
     top: number
     offsetY: number
   } | null>(null)
+  const [pullPosition, setPullPosition] = useState<{
+    left: number
+    top: number
+    width: number
+    offsetY: number
+  } | null>(null)
   // Keep the independent 44-point control aligned with the inline metadata slot.
   const positionSubthreadControl = useCallback(() => {
     const row = rowElement.current
     if (!row) return
-    subthreadAnchorElement.current?.measureLayout(row, (x, y) => {
+    subthreadAnchorElement.current?.measureLayout(row, (x, y, width) => {
       const top = Math.max(0, Math.min(y - 12, rowHeight.current - 44))
-      const next = { left: Math.max(0, x - 12), top, offsetY: y + 10 - top - 22 }
+      const next = { left: Math.max(0, x + (width - 44) / 2), top, offsetY: y + 10 - top - 22 }
       setSubthreadPosition((current) =>
         current?.left === next.left && current.top === next.top && current.offsetY === next.offsetY
           ? current
           : next,
+      )
+    })
+    pullAnchorElement.current?.measureLayout(row, (left, y, width, height) => {
+      const middle = y + height / 2
+      const top = Math.max(0, Math.min(middle - 22, rowHeight.current - 44))
+      const offsetY = middle - top - 22
+      setPullPosition((previous) =>
+        previous?.left === left &&
+        previous.top === top &&
+        previous.width === width &&
+        previous.offsetY === offsetY
+          ? previous
+          : { left, top, width, offsetY },
       )
     })
   }, [])
@@ -164,6 +189,32 @@ function TaskListRowView({
     (a, b) => Number(b.url === task.pullStatus?.url) - Number(a.url === task.pullStatus?.url),
   )
   const pullStatus = pulls[0] ? taskPullStatusFor(task, pulls[0].url) : undefined
+  const [pullsOpen, setPullsOpen] = useState(false)
+  const [pullError, setPullError] = useState('')
+  const pullSheet = useRef<SheetHandle>(null)
+  const openPull = (url: string) => {
+    setPullError('')
+    const identity = repository && pullRepositoryIdentity(repository)
+    const target = forgePullTarget(url, identity ? [{ identity }] : [])
+    if (target) {
+      router.push(
+        pullHref(
+          owner.profile.id,
+          repository && identity === target.identity ? repository.id : target.url,
+          target.number,
+          target,
+        ),
+      )
+    } else {
+      void Linking.openURL(url).catch((error: unknown) =>
+        setPullError(error instanceof Error ? error.message : String(error)),
+      )
+    }
+  }
+  const viewPulls = () => {
+    if (pulls.length === 1) openPull(pulls[0]!.url)
+    else if (pulls.length > 1) setPullsOpen(true)
+  }
   const pullColor = usePullRequestColor(pullStatus?.state, pullStatus?.draft)
   const executionDevice = row.runtimeName
   const { modelName, catalog } = useCachedModelCatalog(agent, owner.profile)
@@ -223,7 +274,11 @@ function TaskListRowView({
     (task.execution === 'worktree' ? 'Worktree' : repository?.branch) ??
     'Project checkout'
   const icon = projectIcon(displayProject)
-  const StatusIcon = inputLabel ? MessageCircleQuestion : (statusIcons[state] ?? CircleDashed)
+  const StatusIcon = !row.online
+    ? CloudOff
+    : inputLabel
+      ? MessageCircleQuestion
+      : (statusIcons[state] ?? CircleDashed)
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
   const childRows = useMemo(() => {
@@ -250,12 +305,10 @@ function TaskListRowView({
   const titleHeight = Math.ceil((dense ? 18 : 20) * fontScale)
   const metadataHeight = Math.max(16, Math.ceil(16 * fontScale))
   const rowGap = dense ? 3 : 4
-  const hasFooter = !general
-  const contentHeight =
-    metadataHeight + titleHeight + (hasFooter ? metadataHeight : 0) + rowGap * (hasFooter ? 2 : 1)
+  const contentHeight = metadataHeight + titleHeight + rowGap
   const openRowHeight = (dense ? 16 : 20) + contentHeight
   const headerTop = (openRowHeight - contentHeight) / 2
-  const badgeSize = 16
+  const badgeSize = settled ? 16 : 24
   const contextSize = dense ? 11 : 12
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
   const metadataText = { ...contextText, opacity: highContrast ? 1 : 0.94 }
@@ -286,7 +339,7 @@ function TaskListRowView({
         {icon ? (
           <Image source={{ uri: icon }} style={{ width: badgeSize, height: badgeSize }} />
         ) : (
-          <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
+          <Text style={{ color: '#fff', fontSize: settled ? 8 : 11, fontWeight: '700' }}>
             {projectIconInitials(displayProject, row.projectName || 'P')}
           </Text>
         )}
@@ -296,6 +349,12 @@ function TaskListRowView({
     <BotAvatar avatar={task.bot.avatar} name={task.title} size={badgeSize} />
   ) : (
     projectImage
+  )
+  const leadingBadge = (
+    <View style={{ width: badgeSize, height: badgeSize, flexShrink: 0, position: 'relative' }}>
+      {projectBadge}
+      {showTypeIndicator && <WorkspaceTypeBadge kind="thread" />}
+    </View>
   )
   const subthreadControl = childCount > 0 && (
     <Pressable
@@ -342,7 +401,7 @@ function TaskListRowView({
       testID="Subthread anchor"
       collapsable={false}
       onLayout={positionSubthreadControl}
-      style={{ width: 20, height: 20 }}
+      style={{ width: !settled && !car && pulls.length ? 44 : 20, height: 20 }}
     />
   )
   const pullIndicators = (
@@ -367,6 +426,41 @@ function TaskListRowView({
       )}
     </>
   )
+  const pullShortcut = !settled && !car && pulls.length > 0 && pullPosition && (
+    <Pressable
+      accessibilityRole="button"
+      accessibilityLabel={
+        pulls.length === 1
+          ? uiText('Open PR #{value0}: {value1}', {
+              value0: pulls[0]!.number,
+              value1: pulls[0]!.title,
+            })
+          : uiText('Linked pull requests')
+      }
+      disabled={disabled || selectionActive}
+      onPress={viewPulls}
+      style={{
+        position: 'absolute',
+        left: pullPosition.left,
+        top: pullPosition.top,
+        width: pullPosition.width,
+        height: 44,
+        alignItems: 'center',
+        justifyContent: 'center',
+      }}
+    >
+      <View
+        style={{
+          flexDirection: 'row',
+          alignItems: 'center',
+          gap: 3,
+          transform: [{ translateY: pullPosition.offsetY }],
+        }}
+      >
+        {pullIndicators}
+      </View>
+    </Pressable>
+  )
   const terminalIndicator = owner.activeTerminals > 0 && (
     <SquareTerminal
       size={12}
@@ -376,25 +470,6 @@ function TaskListRowView({
         value1: owner.activeTerminals === 1 ? '' : 's',
       })}
     />
-  )
-  const executionIcons = (
-    <View
-      testID="thread-execution"
-      style={{ flexDirection: 'row', alignItems: 'center', gap: 4, maxWidth: '40%' }}
-    >
-      {terminalIndicator}
-      {pullIndicators}
-      {subthreadAnchor}
-      {showDevice && (
-        <DeviceLabel
-          runtimeIcon={owner.runtimeIcon}
-          task={task}
-          runtimeHost={row.runtimeName}
-          size={contextSize}
-        />
-      )}
-      {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
-    </View>
   )
   const titleText = (
     <Text
@@ -410,17 +485,14 @@ function TaskListRowView({
       {task.title}
     </Text>
   )
-  const title =
-    !task.bot && showTypeIndicator ? (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-        <Icon name={task.bot ? 'bot' : 'chat'} size={14} color={colors.muted} />
-        {titleText}
-      </View>
-    ) : (
-      titleText
-    )
+  const title = titleText
 
-  const statusIndicator = (inputLabel || state !== 'Review') && (
+  const visibleStatus = settled
+    ? inputLabel || age
+    : row.online
+      ? inputLabel || uiText(state)
+      : uiText('Offline')
+  const statusIndicator = (!settled || inputLabel || state !== 'Review') && (
     <View
       testID="Thread status"
       accessibilityLabel={inputLabel || status}
@@ -433,7 +505,7 @@ function TaskListRowView({
       }}
     >
       <StatusIcon size={12} color={stateColor} />
-      {!!(inputLabel || age) && (
+      {!!visibleStatus && (
         <Text
           numberOfLines={1}
           style={{
@@ -443,7 +515,7 @@ function TaskListRowView({
             opacity: stateColor === colors.muted ? metadataText.opacity : 1,
           }}
         >
-          {inputLabel || age}
+          {visibleStatus}
         </Text>
       )}
     </View>
@@ -458,14 +530,13 @@ function TaskListRowView({
       }}
     >
       {(selected || current) && (
-        <Glass
-          solid
+        <Surface
           pointerEvents="none"
           tinted
           style={{ position: 'absolute', top: 0, right: 0, bottom: 0, left: 0, borderRadius: 12 }}
         >
           {null}
-        </Glass>
+        </Surface>
       )}
       {(selected || current) && (
         <View
@@ -520,7 +591,7 @@ function TaskListRowView({
               justifyContent: 'center',
             }}
           >
-            {projectBadge}
+            {leadingBadge}
           </Pressable>
         )}
         <Pressable
@@ -553,10 +624,14 @@ function TaskListRowView({
                     name: 'select',
                     label: selected ? uiText('Deselect task') : uiText('Select task'),
                   },
+                  ...(pulls.length && !settled && !selectionActive
+                    ? [{ name: 'linked-pulls', label: uiText('Linked pull requests') }]
+                    : []),
                 ]
           }
           onAccessibilityAction={({ nativeEvent }) => {
             if (!disabled && !car && nativeEvent.actionName === 'select') onSelect()
+            if (!disabled && !car && nativeEvent.actionName === 'linked-pulls') viewPulls()
           }}
           disabled={disabled}
           onPress={onOpen}
@@ -571,6 +646,7 @@ function TaskListRowView({
             paddingVertical: 6,
             paddingLeft: settled ? 0 : 12,
             paddingRight: 12,
+            gap: settled ? 0 : 8,
             opacity: pressed ? 0.55 : 1,
           })}
         >
@@ -597,88 +673,109 @@ function TaskListRowView({
               style={{ flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', gap: 8 }}
             >
               {title}
-              {general ? (
-                executionIcons
-              ) : (
-                <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
-                  {terminalIndicator}
-                  {pullIndicators}
-                  {subthreadAnchor}
-                </View>
-              )}
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+                {terminalIndicator}
+                {pullIndicators}
+                {subthreadAnchor}
+                {general && agent && <HarnessIcon provider={agent.provider} size={12} />}
+                {general && showDevice && (
+                  <DeviceLabel
+                    runtimeIcon={owner.runtimeIcon}
+                    task={task}
+                    runtimeHost={row.runtimeName}
+                  />
+                )}
+              </View>
               {statusIndicator}
             </View>
           ) : (
-            <View style={{ flex: 1, minWidth: 0, gap: rowGap }}>
-              <View
-                testID={task.bot ? 'Bot identity' : 'Thread project'}
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  height: metadataHeight,
-                  gap: 6,
-                  paddingRight: car ? 0 : 32,
-                }}
-              >
+            <>
+              <View testID={task.bot ? 'Bot identity icon' : 'Thread project icon'}>
+                {leadingBadge}
+              </View>
+              <View style={{ flex: 1, minWidth: 0, gap: rowGap }}>
                 <View
-                  testID={task.bot ? 'Bot identity icon' : 'Thread project icon'}
-                  style={{ width: badgeSize, flexShrink: 0 }}
+                  style={{
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    height: titleHeight,
+                    gap: 6,
+                    paddingRight: car ? 0 : 32,
+                  }}
                 >
-                  {projectBadge}
+                  {title}
+                  {statusIndicator}
                 </View>
-                <Text numberOfLines={1} style={[styles.muted, { flex: 1, ...metadataText }]}>
-                  {projectName}
-                </Text>
-                {task.pinned && <Pin size={12} color={colors.muted} />}
-                {statusIndicator}
-              </View>
-              <View
-                style={{
-                  flexDirection: 'row',
-                  alignItems: 'center',
-                  height: titleHeight,
-                  gap: 6,
-                  paddingRight: !car && general && childCount > 0 ? 44 : 0,
-                }}
-              >
-                {title}
-                {general && executionIcons}
-                {general && row.reachability === 'offline' && (
-                  <CloudOff size={12} color={colors.muted} accessibilityLabel={uiText('Offline')} />
-                )}
-              </View>
-              {hasFooter && (
                 <View
                   testID="Thread metadata"
                   style={{
                     flexDirection: 'row',
                     alignItems: 'center',
                     height: metadataHeight,
-                    gap: 6,
-                    paddingRight: !car && childCount > 0 ? (!showDevice && !agent ? 44 : 32) : 0,
+                    gap: 5,
+                    paddingRight:
+                      !car && (pulls.length > 0 || childCount > 0)
+                        ? !pulls.length && !showDevice && !agent
+                          ? 44
+                          : 32
+                        : 0,
                   }}
                 >
                   <View
+                    testID={task.bot ? 'Bot identity' : 'Thread project'}
                     style={{
-                      flex: 1,
-                      minWidth: 0,
                       flexDirection: 'row',
                       alignItems: 'center',
+                      flex: 1,
+                      minWidth: 0,
                       gap: 4,
                     }}
                   >
-                    <GitBranch size={12} color={colors.muted} />
                     <Text
                       numberOfLines={1}
-                      ellipsizeMode="middle"
-                      style={[styles.muted, { flexShrink: 1, ...metadataText }]}
+                      style={[
+                        styles.muted,
+                        { flexShrink: 1, maxWidth: general ? '100%' : '42%', ...metadataText },
+                      ]}
                     >
-                      {branch}
+                      {projectName}
                     </Text>
+                    {!general && (
+                      <>
+                        <Text style={[styles.muted, metadataText]}>·</Text>
+                        <Text
+                          numberOfLines={1}
+                          ellipsizeMode="middle"
+                          style={[styles.muted, { flex: 1, minWidth: 0, ...metadataText }]}
+                        >
+                          {branch}
+                        </Text>
+                      </>
+                    )}
                   </View>
+                  {task.pinned && <Pin size={12} color={colors.muted} />}
                   {terminalIndicator}
-                  {pullIndicators}
+                  {!car && pulls.length > 0 ? (
+                    <View
+                      ref={pullAnchorElement}
+                      collapsable={false}
+                      onLayout={positionSubthreadControl}
+                      style={{
+                        minWidth: 44,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        gap: 3,
+                        opacity: pullPosition ? 0 : 1,
+                      }}
+                      importantForAccessibility="no-hide-descendants"
+                    >
+                      {pullIndicators}
+                    </View>
+                  ) : (
+                    pullIndicators
+                  )}
                   {subthreadAnchor}
+                  {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
                   {showDevice && !car && (
                     <DeviceLabel
                       runtimeIcon={owner.runtimeIcon}
@@ -687,25 +784,18 @@ function TaskListRowView({
                       size={contextSize}
                     />
                   )}
-                  {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
-                  {row.reachability === 'offline' && (
-                    <CloudOff
-                      size={12}
-                      color={colors.muted}
-                      accessibilityLabel={uiText('Offline')}
-                    />
-                  )}
                 </View>
-              )}
-            </View>
+              </View>
+            </>
           )}
         </Pressable>
+        {pullShortcut}
         {subthreadControl}
         {!car && !settled && (
           <View style={{ position: 'absolute', right: 0, top: 0 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
-              contentOffsetY={headerTop + metadataHeight / 2 - 22}
+              contentOffsetY={headerTop + titleHeight / 2 - 22}
               task={task}
               actions={actions}
               disabled={disabled}
@@ -729,10 +819,34 @@ function TaskListRowView({
           searching={searching}
         />
       )}
-      {!!actions.error && (
+      {(actions.error || pullError) && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>
-          {actions.error}
+          {actions.error || pullError}
         </Text>
+      )}
+      {pullsOpen && (
+        <Sheet
+          ref={pullSheet}
+          title={uiText('Linked pull requests')}
+          onClose={() => setPullsOpen(false)}
+        >
+          {pulls.map((pull) => (
+            <Pressable
+              key={pull.url}
+              accessibilityRole="button"
+              accessibilityLabel={uiText('Open PR #{value0}: {value1}', {
+                value0: pull.number,
+                value1: pull.title,
+              })}
+              onPress={() => pullSheet.current?.dismiss(() => openPull(pull.url))}
+              style={{ minHeight: 44, justifyContent: 'center' }}
+            >
+              <Text>
+                #{pull.number} · {pull.title}
+              </Text>
+            </Pressable>
+          ))}
+        </Sheet>
       )}
     </View>
   )

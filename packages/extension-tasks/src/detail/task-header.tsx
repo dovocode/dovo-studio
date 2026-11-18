@@ -11,6 +11,7 @@ import {
   projectDisplayName,
   taskParentReference,
   taskThreadInputSummary,
+  taskPullStatusFor,
 } from '@dovo/protocol'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
@@ -18,6 +19,10 @@ import {
   useStudioHost,
   encodeWorkTarget,
   issueLabel,
+  providers,
+  acpHarnessName,
+  resolveTaskAgent,
+  resolveScopedAgents,
   type Task,
   type StudioThreadReference,
 } from '@dovo/studio-core'
@@ -42,7 +47,16 @@ import {
   Workflow,
   Phone,
 } from 'lucide-react'
-import { HeaderContent, Button, IconButton, ProjectIcon, DropdownMenu, cn } from '@dovo/studio-ui'
+import {
+  HeaderContent,
+  Button,
+  IconButton,
+  ProjectIcon,
+  DropdownMenu,
+  AgentAvatar,
+  PullRequestIcon,
+  cn,
+} from '@dovo/studio-ui'
 import { taskPresentation } from '../list/task-presentation'
 import { retainTaskOwner } from '../list/task-collection'
 import { TaskContextMenu } from './task-context-menu'
@@ -172,6 +186,19 @@ export function TaskHeader({
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot,
   })
+  const agent = resolveTaskAgent(
+    task,
+    resolveScopedAgents(snapshot?.defaults, task.bot ? undefined : repo, workspace.agents),
+  )
+  const provider = task.turns?.at(-1)?.provider ?? agent?.provider
+  const harness =
+    (agent && agent.provider === provider
+      ? acpHarnessName(agent, snapshot?.acpInstallations ?? [])
+      : undefined) ??
+    (provider && providers[provider].name)
+  const primaryPull = linkedPulls[0]
+  const pullStatus = primaryPull && taskPullStatusFor(task, primaryPull.url)
+  const failedChecks = pullStatus?.state === 'open' && pullStatus.checks === 'failed'
   const owner = retainTaskOwner(undefined, {
     runtimeId: activeRuntimeId,
     address: connection?.address,
@@ -181,6 +208,51 @@ export function TaskHeader({
     snapshot,
   })
   const uiText = useInterfaceText()
+  const harnessContext = provider && (
+    <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={harness || undefined}>
+      <AgentAvatar provider={provider} className="size-3.5 shrink-0" />
+      <span className="truncate">{harness}</span>
+    </span>
+  )
+  const machineContext = (
+    <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={executionHost}>
+      <RuntimeIcon icon={snapshot?.runtimeIcon} className="size-3.5 shrink-0" />
+      <span className="truncate">{executionHost ?? 'Selected computer'}</span>
+    </span>
+  )
+  const pullContext = primaryPull && (
+    <Button
+      variant="ghost"
+      size="sm"
+      className={cn(
+        'h-6 shrink-0 gap-1 px-1.5 text-[0.6875rem]',
+        failedChecks && 'text-destructive',
+      )}
+      aria-label={
+        linkedPulls.length > 1 ? uiText('Linked pull requests') : `PR #${primaryPull.number}`
+      }
+      title={failedChecks ? uiText('Checks failed') : primaryPull.title}
+      onClick={() => {
+        if (linkedPulls.length > 1) onSurface('linked-pulls')
+        else if (
+          !onPullLink?.(primaryPull.url) &&
+          !host.openPullLink?.(primaryPull.url, {
+            runtimeId: activeRuntimeId ?? undefined,
+            repositoryId: task.repositoryId,
+          })
+        ) {
+          if (host.openExternalLink) void host.openExternalLink(primaryPull.url)
+          else window.open(primaryPull.url, '_blank', 'noopener,noreferrer')
+        }
+      }}
+    >
+      <PullRequestIcon size={13} state={pullStatus?.state} draft={pullStatus?.draft} />
+      {linkedPulls.length > 1
+        ? uiText('{value0} PRs', { value0: linkedPulls.length })
+        : `#${primaryPull.number}`}
+      {failedChecks && <span>{uiText('Checks failed')}</span>}
+    </Button>
+  )
   const inputLabel =
     connected && !task.archived && !task.archivedAt
       ? threadInputLabel(taskThreadInputSummary(snapshot, task.id), uiText)
@@ -190,7 +262,8 @@ export function TaskHeader({
   const terminals =
     snapshot?.terminals.filter((session) => session.taskId === task.id && !session.exited).length ??
     0
-  const sideAttention = sideThreadAttentionTarget(useSideThreadAttention(), task.id)?.kind
+  const attention = useSideThreadAttention()
+  const sideAttention = sideThreadAttentionTarget(attention, task.id, attention.peers)?.kind
   const surfaces = [
     ['chat', 'Chat', MessageSquare, 0],
     ['files', 'Files', Files, 0],
@@ -368,6 +441,27 @@ export function TaskHeader({
                 {titleMenu}
               </h1>
             </nav>
+            {!task.bot && (
+              <div className="studio-thread-header-context items-center gap-2 text-[0.6875rem] text-muted-foreground">
+                {pullContext}
+                {harnessContext}
+                {machineContext}
+                {hasDiff && task.files.length > 0 && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-6 shrink-0 gap-1 px-1.5 text-[0.6875rem]"
+                    aria-label={uiText('Review {value0} changed files', {
+                      value0: task.files.length,
+                    })}
+                    onClick={() => onSurface('changes')}
+                  >
+                    <FileCode2 size={13} />
+                    {task.files.length}
+                  </Button>
+                )}
+              </div>
+            )}
             {actions}
           </header>
         </HeaderContent>
@@ -401,6 +495,7 @@ export function TaskHeader({
               <>
                 {forkSourceButton}
                 <TaskPullStatus task={task} onPullLink={onPullLink} />
+                {harnessContext}
                 {!repo?.kind && (
                   <TaskBranchMenu
                     task={task}

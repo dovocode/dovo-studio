@@ -15,6 +15,7 @@ import {
   forgeRepositorySchema,
   gitRemoteIdentity,
   forgePullTarget,
+  forgePullIdentity,
   forgeLabels,
   pullLineCommentSchema,
   type ForgeRepositoryPage,
@@ -458,7 +459,35 @@ export class ForgePullRequests {
     url: string,
     accountRepositoryId?: string,
     connectionId?: string,
+    checkoutDirectory?: string,
   ): Promise<{ repositoryId: string; source?: WatchSource }> {
+    if (checkoutDirectory) {
+      const scope = await this.sourceContext(checkoutDirectory)
+      const connection = scope.connection ?? {
+        provider: scope.provider,
+        baseUrl: `https://${scope.host}`,
+      }
+      const identity = forgePullIdentity(connection, scope.repository)
+      const target = forgePullTarget(url, [{ provider: scope.provider, identity }])
+      if (
+        !identity ||
+        !target ||
+        target.provider !== scope.provider ||
+        target.identity !== identity
+      )
+        throw new HttpError(409, 'The checkout’s forge source does not match this PR repository')
+      return {
+        repositoryId: `external:${opaqueIdentity([scope.provider, connection.baseUrl, scope.repository.toLowerCase()])}`,
+        source: {
+          url,
+          repository: `${scope.host}/${scope.repository}`,
+          checkoutDirectory,
+          connectionId: scope.connection?.id,
+          readerIdentity: scope.readerIdentity,
+          destination: scope.destination,
+        },
+      }
+    }
     const origin = accountRepositoryId
       ? this.store.get().repositories.find((repo) => repo.id === accountRepositoryId)
       : undefined
@@ -501,6 +530,31 @@ export class ForgePullRequests {
     }
   }
   watchReader(source: WatchSource) {
+    if (source.checkoutDirectory) {
+      const cwd = source.checkoutDirectory
+      const prepare = () =>
+        this.guard(cwd, {
+          connectionId: source.connectionId,
+          expectedReaderIdentity: source.readerIdentity,
+          expectedDestination: source.destination,
+        })
+      return {
+        identity: async () => (await prepare()).destination,
+        feedback: async (_cwd: string, number: number) => {
+          const scope = await prepare()
+          return this.tagDetail(
+            await this.operation(cwd, scope, { kind: 'feedback', number }, pullDetailSchema),
+            scope,
+          )
+        },
+        act: async (input: PullAction) => {
+          const scope = await prepare()
+          guardSource(scope, input)
+          return this.operation(cwd, scope, { kind: 'act', input }, pullActionResultSchema)
+        },
+        context: async () => ({ cwd, scope: await prepare() }),
+      }
+    }
     const target = this.urlTarget(
       source.url,
       source.connectionId,

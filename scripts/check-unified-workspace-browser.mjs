@@ -148,7 +148,7 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
       path: '../browser/browser-pane',
       importer: root + '/packages/extension-tasks/src/unified/',
       contents: `import {useEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
-import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';import {Globe2} from 'lucide-react';
+import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';
 import {SnoozeDialog} from '${root}/packages/extension-tasks/src/dialogs/snooze-dialog';
 import {readSharedBrowserTabs,saveSharedBrowserTabs} from '${root}/packages/extension-tasks/src/browser/shared-browser-tabs';
 import {isPrivateBrowserProfile,wakeBrowserTab,settleBrowserTab,snoozeBrowserTab} from '@dovo/protocol';
@@ -163,7 +163,7 @@ useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorks
 useEffect(()=>{const req=control.lifecycleRequest;if(!req)return;setTabs(previous=>previous.map(tab=>tab.id!==req.tabId?tab:req.action==='pin'||req.action==='unpin'?{...wakeBrowserTab(tab),pinned:req.action==='pin'}:req.action==='settle'?settleBrowserTab(tab):req.action==='snooze'?snoozeBrowserTab(tab,req.until):wakeBrowserTab(tab)));control.onLifecycleHandled?.(req.requestId)},[control.lifecycleRequest?.requestId]);
 useEffect(()=>{if(!control.newTabRequest||opened.current===control.newTabRequest)return;opened.current=control.newTabRequest;const id='page-'+control.newTabRequest;setTabs(previous=>[...previous,{id,url:'',title:'New page',kind:'remote',profileId:'default'}]);control.onSelect(id)},[control.newTabRequest]);
 useEffect(()=>{if(!openLink)return;const id='link-'+openLink.id;setTabs(previous=>[...previous,{id,url:openLink.url,title:openLink.url,kind:'remote',profileId:'default'}]);window.openedUrls.push(openLink.url);control.onSelect(id);onLinkOpened()},[openLink?.id]);
-return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} titleIcon={!target.pinnedTile?<span aria-hidden="true" data-workspace-kind-icon className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"><Globe2 className="size-3.5"/></span>:undefined} pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
+return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} workspaceType pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
     },
   ],
 )
@@ -804,18 +804,15 @@ try {
     }
   }
   assert.equal(await pinnedSection.getByRole('button', { name: /More|ellipsis/i }).count(), 0)
-  for (const row of await page
-    .getByRole('complementary')
-    .locator('[data-workspace-kind]:not([data-pinned-page])')
-    .all()) {
+  for (const row of await page.getByRole('complementary').locator('[data-workspace-kind]').all()) {
     const icon = row.locator('[data-workspace-kind-icon]')
     assert.equal(await icon.count(), 1, 'Each mixed row has one type icon')
     assert.equal(
       await icon.evaluate((element) =>
-        element.parentElement.classList.contains('studio-thread-card-title'),
+        element.parentElement.matches('.studio-thread-project-icon, .studio-browser-tab-favicon'),
       ),
       true,
-      'The type icon belongs to the title rather than floating over the row',
+      'The type badge belongs to the leading icon',
     )
   }
   if (process.env.DOVO_WORKSPACE_SCREENSHOTS) {
@@ -827,27 +824,17 @@ try {
         .filter({ has: page.locator('[data-workspace-kind-icon]') })
         .all()) {
         const geometry = await row.locator('[data-workspace-kind-icon]').evaluate((icon) => {
-          const text = icon.nextElementSibling.getBoundingClientRect()
-          const box = icon.getBoundingClientRect()
-          const style = getComputedStyle(icon)
+          const badge = icon.getBoundingClientRect()
+          const leading = icon.parentElement.getBoundingClientRect()
           return {
-            center: box.y + box.height / 2 - text.y - text.height / 2,
-            gap: text.x - box.right,
-            width: box.width,
-            position: style.position,
-            background: style.backgroundColor,
-            shadow: style.boxShadow,
+            width: badge.width,
+            right: badge.right - leading.right,
+            bottom: badge.bottom - leading.bottom,
           }
         })
-        assert.ok(Math.abs(geometry.center) <= 1, 'Type icons align with the title')
-        assert.ok(
-          geometry.gap >= 4 && geometry.gap <= 8,
-          'Type icons have a consistent gap from the title',
-        )
-        assert.equal(geometry.width, 14)
-        assert.equal(geometry.position, 'static')
-        assert.equal(geometry.background, 'rgba(0, 0, 0, 0)')
-        assert.equal(geometry.shadow, 'none')
+        assert.equal(geometry.width, 13)
+        assert.ok(geometry.right >= 1 && geometry.right <= 4)
+        assert.ok(geometry.bottom >= 1 && geometry.bottom <= 3)
       }
     }
     await checkTypeIconAlignment()
@@ -883,7 +870,7 @@ try {
     await assertCenteredFavicons()
     const idleUnifiedPins = await unifiedPinGeometry()
     assert.ok(
-      idleUnifiedPins.every((tile) => tile.height === 56),
+      idleUnifiedPins.every((tile) => tile.height === 40),
       'Unified pins match browser density',
     )
     await page.evaluate(() =>
@@ -1102,7 +1089,7 @@ try {
       await tile
         .locator('[data-browser-tab-select]')
         .evaluate((button) => button.getBoundingClientRect().height),
-      54,
+      38,
     )
     assert.ok(nextGridRow.y > tileBounds.y, 'Five fixture pages wrap in the compact grid')
     assert.ok(

@@ -70,6 +70,8 @@ import {
   promoteTab,
   moveBrowserTab,
   browserAddress,
+  browserTabProjectName,
+  browserTabSite,
   recordPage,
   recentTabs,
   visitTab,
@@ -843,6 +845,14 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
         : `${runtime.profiles.find((profile) => profile.id === tab.runtimeId)?.name ?? 'Unavailable computer'} · ${tab.profileId}`
   const matches = (tab: BrowserTab) =>
     `${tab.title} ${tab.url} ${describe(tab)}`.toLowerCase().includes(query.trim().toLowerCase())
+  const tabMetadata = (tab: BrowserTab) =>
+    [
+      browserTabSite(tab),
+      browserTabProjectName(tab, runtime.overviews) ||
+        (tab.profileId === 'device' || tab.profileId === 'default' ? '' : tab.profileId),
+    ]
+      .filter(Boolean)
+      .join(' · ')
   const list = (tabs: BrowserTab[], kind: 'tabs' | 'saved' | 'bookmarks') =>
     tabs.filter(matches).map((tab) => (
       <View
@@ -1761,7 +1771,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                     setTabCategory(value)
                 }}
               />
-              <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 12 }}>
+              <View style={{ gap: 4 }}>
                 {recentTabs(state.tabs)
                   .filter((tab) => browserTabCategory(tab, clock) === visibleTabCategory)
                   .filter(matches)
@@ -1769,57 +1779,76 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                     <View
                       key={tab.id}
                       style={{
-                        width: '47%',
-                        borderRadius: 18,
-                        borderWidth: tab.id === active.id ? 2 : 1,
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        borderRadius: 10,
+                        borderWidth: 1,
                         borderColor: tab.id === active.id ? colors.accent : colors.border,
                         backgroundColor: colors.surface,
-                        overflow: 'hidden',
                       }}
                     >
-                      <View
-                        style={{
-                          flexDirection: 'row',
-                          alignItems: 'center',
-                          justifyContent: 'space-between',
-                          paddingLeft: 12,
-                        }}
-                      >
-                        <Icon
-                          name={tab.pinned ? 'pin' : 'web'}
-                          size={18}
-                          color={tab.pinned ? colors.accent : colors.muted}
-                        />
-                        <IconButton
-                          label={`${tab.pinned ? uiText('Unpin') : uiText('Close')} ${tab.title || uiText('tab')}`}
-                          icon={tab.pinned ? 'unpin' : 'close'}
-                          disabled={busy}
-                          onPress={() =>
-                            tab.pinned
-                              ? change((state) => togglePinnedTab(state, tab.id))
-                              : void act(() => close(tab))
-                          }
-                        />
-                      </View>
                       <Pressable
                         accessibilityRole="button"
                         accessibilityLabel={uiText('Open {value0}', {
                           value0: tab.title || tab.url || 'New tab',
                         })}
+                        accessibilityHint={[describe(tab), tab.url].filter(Boolean).join(' · ')}
                         accessibilityState={{ selected: tab.id === active.id }}
                         onPress={() => open(tab)}
-                        style={{ minHeight: 116, padding: 12, gap: 8 }}
+                        style={{
+                          flex: 1,
+                          minWidth: 0,
+                          minHeight: 44,
+                          flexDirection: 'row',
+                          gap: 8,
+                          alignItems: 'center',
+                          paddingHorizontal: 10,
+                          paddingVertical: 5,
+                        }}
                       >
-                        <Text numberOfLines={2} style={styles.text}>
-                          {tab.title || uiText('New tab')}
-                        </Text>
-                        <Text numberOfLines={2} style={styles.muted}>
-                          {tab.url || uiText('Search or enter address')}
-                        </Text>
-                        <Text numberOfLines={1} style={[styles.muted, { fontSize: 11 }]}>
-                          {describe(tab)}
-                        </Text>
+                        <View
+                          style={{
+                            width: 24,
+                            height: 24,
+                            borderRadius: 7,
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            backgroundColor: colors.background,
+                          }}
+                        >
+                          <Icon
+                            name={tab.pinned ? 'pin' : 'web'}
+                            size={15}
+                            color={tab.pinned ? colors.accent : colors.muted}
+                          />
+                        </View>
+                        <View style={{ flex: 1, minWidth: 0, gap: 2 }}>
+                          <Text numberOfLines={1} style={styles.text}>
+                            {tab.title || uiText('New tab')}
+                          </Text>
+                          <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
+                            <Text
+                              numberOfLines={1}
+                              style={[styles.muted, { fontSize: 11, flex: 1 }]}
+                            >
+                              {tabMetadata(tab) || uiText('Search or enter address')}
+                            </Text>
+                            {tab.kind === 'remote' && (
+                              <Icon name="device" size={12} color={colors.muted} />
+                            )}
+                          </View>
+                        </View>
                       </Pressable>
+                      <IconButton
+                        label={`${tab.pinned ? uiText('Unpin') : uiText('Close')} ${tab.title || uiText('tab')}`}
+                        icon={tab.pinned ? 'unpin' : 'close'}
+                        disabled={busy}
+                        onPress={() =>
+                          tab.pinned
+                            ? change((state) => togglePinnedTab(state, tab.id))
+                            : void act(() => close(tab))
+                        }
+                      />
                     </View>
                   ))}
               </View>

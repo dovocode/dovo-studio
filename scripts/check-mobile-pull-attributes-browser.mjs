@@ -72,10 +72,6 @@ stubs.push(
     contents: stubs.find((stub) => stub.path === '../../../ui/theme').contents,
   },
   {
-    path: 'expo-glass-effect',
-    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
-  },
-  {
     path: 'lucide-react-native',
     contents:
       'export const Box=()=>null,CodeXml=()=>null,FileText=()=>null,FlaskConical=()=>null,Settings=()=>null;',

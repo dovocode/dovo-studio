@@ -1,5 +1,5 @@
 /// <reference types="node" />
-import { afterEach, expect, it } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { rm } from 'node:fs/promises'
 import { createAcpAdapter } from './acp.js'
 import { providerFixture } from '../shared/provider-fixture.js'
@@ -10,6 +10,9 @@ import {
   listAcpSessions,
   deleteAcpSession,
 } from './acp-connection.js'
+import { defaultTaskHarness, taskFamilyRunToken, toolPresentation } from '@dovo/protocol'
+import { startRuntime } from '../../../index.js'
+import { fixture as runtimeFixture } from '../../../testing/fixture.js'
 import { acpModels } from '../../catalogs/acp.js'
 
 const dirs: string[] = []
@@ -32,6 +35,10 @@ const send=m=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...m})+'\n');
 const reply=(id,result)=>send({id,result});const update=update=>send({method:'session/update',params:{sessionId:'s',update}});
 const configOptions=[{configId:'model',type:'select',name:'Model',category:'model',currentValue:'a',options:[{value:'a',name:'A'},{value:'b',name:'B'}]},{configId:'mode',type:'select',name:'Mode',category:'mode',currentValue:'code',options:[{value:'code',name:'Code'},{value:'plan',name:'Plan'}]},{configId:'toggle',type:'boolean',name:'Toggle',currentValue:false}];
 let pending;
+const background=[{type:'terminal',terminalId:'background'}];
+const cancelBackground=mode.startsWith('cancel-background');
+const announce=()=>update({sessionUpdate:'terminal_update',terminalId:'background'});
+const chunk=text=>update({sessionUpdate:'terminal_output_chunk',terminalId:'background',data:Buffer.from(text).toString('base64')});
 const complete=()=>{update({sessionUpdate:'agent_message_chunk',messageId:'a',content:{type:'text',text:'draft'}});update({sessionUpdate:'agent_message',messageId:'a',content:[{type:'text',text:'Final answer'}]});update({sessionUpdate:'state_update',state:'idle',stopReason:mode==='error'?'error':'end_turn',...(mode==='error'?{error:{code:-32000,message:'Provider failed after acceptance'}}:{})});};
 readline.createInterface({input:process.stdin}).on('line',line=>{
 const m=JSON.parse(line);messages.push(m);fs.writeFileSync(process.env.TEST_RECORD,JSON.stringify(messages));
@@ -42,17 +49,50 @@ if(m.method==='initialize'){
  reply(m.id,{protocolVersion:2,info:{name:'fixture-v2',version:'1'},capabilities:{session:{delete:{},mcp:{stdio:{},http:{}}}},authMethods:[{type:'agent',methodId:'browser',name:'Browser'},{type:'agent',methodId:'cached_token',name:'Cached'},{type:'terminal',methodId:'terminal',name:'Terminal',args:['login'],env:[{name:'LOGIN_MODE',value:'interactive'}]}]});
 }else if(m.method==='auth/login' && mode==='auth-error')send({id:m.id,error:{code:-32022,message:'Authentication failed',data:{supported:[1]}}});
 else if(m.method==='session/new')reply(m.id,mode.startsWith('v1')?{sessionId:'s'}:{sessionId:'s',configOptions,availableCommands:[{type:'prompt',name:'compact',description:'Compact'}]});
-else if(m.method==='session/resume'){update({sessionUpdate:'agent_message',messageId:'old',content:[{type:'text',text:'old history'}]});update({sessionUpdate:'state_update',state:mode==='busy'?'running':'idle',stopReason:'end_turn'});reply(m.id,{configOptions});if(mode==='busy')setTimeout(()=>update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn'}),40)}
+else if(m.method==='session/resume'){update({sessionUpdate:'agent_message',messageId:'old',content:[{type:'text',text:'old history'}]});
+if(mode==='busy-output') { announce(); chunk('Before snapshot. '); }
+update({sessionUpdate:'state_update',state:mode.startsWith('busy')?'running':'idle',stopReason:'end_turn',...(mode==='busy-output'?{background}:{})});
+if(mode==='busy-output') {
+ update({sessionUpdate:'agent_message_chunk',messageId:'resumed',content:{type:'text',text:'Resumed '}});
+ chunk('After snapshot. ');
+ setTimeout(()=>{
+   update({sessionUpdate:'agent_message',messageId:'resumed',content:[{type:'text',text:'Resumed answer'}]});
+   update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn',background});
+ },40);
+}
+reply(m.id,{configOptions});
+if(mode==='busy-input') {
+ send({id:'resumed-permission',method:'session/request_permission',params:{sessionId:'s',title:'Continue build',subject:{type:'command',command:'pnpm build',cwd:process.cwd()},options:[{optionId:'yes',name:'Allow',kind:'allow_once'},{optionId:'no',name:'Reject',kind:'reject_once'}]}})
+}
+if(mode==='busy')setTimeout(()=>update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn'}),40)}
 else if(m.method==='session/set_config_option')reply(m.id,{configOptions});
 else if(m.method==='session/prompt'){
  if(mode.startsWith('v1')){update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'v1 reply'}});reply(m.id,{stopReason:'end_turn'});return}
+ if(cancelBackground) { announce(); chunk('Before Stop. '); update({sessionUpdate:'state_update',state:'running',background}); }
+ if(mode==='cancel-background-held'){pending=m.id;return}
  update({sessionUpdate:'state_update',state:'running'});update({sessionUpdate:'user_message',messageId:'u',content:[]});reply(m.id,{messageId:'u'});
- if(mode==='hold'||mode==='stubborn')return;
+ if(mode==='hold'||mode==='stubborn'||mode==='cancel-background')return;
+ if(mode==='stream-error'||mode==='stream-exit'){
+   for(const text of ['first'.padEnd(1100,'x'),'last'])update({sessionUpdate:'terminal_output_chunk',terminalId:'t',data:Buffer.from(text).toString('base64')});
+   if(mode==='stream-exit'){setTimeout(()=>process.exit(1),5);return}
+   update({sessionUpdate:'state_update',state:'idle',stopReason:'error',error:{code:-32000,message:'Interrupted'}});return;
+ }
  if(mode==='permission'){send({id:'p',method:'session/request_permission',params:{sessionId:'s',title:'Run build',subject:{type:'command',command:'pnpm build',cwd:process.cwd()},options:[{optionId:'yes',name:'Allow',kind:'allow_once'},{optionId:'no',name:'Reject',kind:'reject_once'}]}});return}
  if(mode==='form'){send({id:'form',method:'elicitation/create',params:{sessionId:'s',mode:'form',message:'Choose',requestedSchema:{type:'object',properties:{name:{type:'string',title:'Name'}},required:['name']}}});return}
  setTimeout(complete,40);
-}else if(m.id==='p'||m.id==='form')complete();
-else if(m.method==='session/cancel' && mode!=='stubborn')update({sessionUpdate:'state_update',state:'idle',stopReason:'cancelled'});
+}else if(m.id==='resumed-permission'){
+ send({id:'resumed-form',method:'elicitation/create',params:{sessionId:'s',mode:'form',message:'Choose',requestedSchema:{type:'object',properties:{name:{type:'string',title:'Name'}},required:['name']}}})
+}else if(m.id==='resumed-form')update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn'});
+else if(m.id==='p'||m.id==='form')complete();
+else if(m.method==='session/cancel' && mode!=='stubborn'){
+ if(pending){
+  send({id:pending,error:{code:-32800,message:'Prompt withdrawn'}});
+  setTimeout(()=>{update({sessionUpdate:'state_update',state:'idle',stopReason:'cancelled',background});chunk('After Stop.');},40);
+  return;
+ }
+ update({sessionUpdate:'state_update',state:'idle',stopReason:'cancelled'});
+ if(mode==='cancel-background') setTimeout(()=>chunk('After Stop.'),40);
+}
 else if(m.method==='session/list')reply(m.id,{sessions:[{sessionId:'s',cwd:process.cwd()}]});
 else if(m.id!==undefined)reply(m.id,{});
 });
@@ -67,6 +107,41 @@ else if(m.id!==undefined)reply(m.id,{});
     ...f,
     adapter,
     launch: { command: process.execPath, args: [f.script], env: f.run.agent.env },
+  }
+}
+
+async function withRuntime(
+  f: Awaited<ReturnType<typeof fixture>>,
+  check: (
+    services: Awaited<ReturnType<typeof startRuntime>>['services'],
+    taskId: string,
+  ) => Promise<void>,
+) {
+  const workspace = await runtimeFixture()
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'acp-v2-lifecycle-fixture-owner-token',
+    port: 0,
+  })
+  try {
+    const services = runtime.services
+    services.store.update(() => workspace.workspace)
+    vi.spyOn(services.agents, 'get').mockResolvedValue({
+      ...f.adapter,
+      run: (run) => f.adapter.run({ ...run, acpLaunch: f.launch }),
+    })
+    const task = services.tasks.create({
+      title: 'ACP v2 lifecycle',
+      repositoryId: 'repo',
+      agentId: '',
+      objective: 'First prompt',
+      harness: defaultTaskHarness('acp'),
+    })
+    await check(services, task.id)
+  } finally {
+    await f.adapter.dispose?.()
+    await runtime.close()
+    await workspace.cleanup()
   }
 }
 
@@ -99,6 +174,18 @@ it('keeps the accepted prompt failed if the agent later reports an error', async
   expect(f.output.join('')).toBe('Final answer')
 })
 
+it.each(['stream-exit', 'stream-error'])(
+  'retains the last terminal receipt after %s',
+  async (mode) => {
+    const f = await fixture(mode)
+    await expect(f.adapter.run(f.run)).rejects.toThrow()
+    const receipt = f.events.filter(({ name }) => name === 'tool_call_update').at(-1)
+    expect(
+      toolPresentation(JSON.stringify({ event: receipt?.value }), 'Agent terminal').output,
+    ).toBe('first'.padEnd(1100, 'x') + 'last')
+  },
+)
+
 it('confirms cancellation through idle before closing the owned process', async () => {
   const f = await fixture('hold')
   const controller = new AbortController()
@@ -106,6 +193,69 @@ it('confirms cancellation through idle before closing the owned process', async 
   f.run.onPromptAccepted = () => controller.abort()
   await f.adapter.run(f.run)
   expect((await f.messages()).some((m) => m.method === 'session/cancel')).toBe(true)
+})
+
+it.each(['cancel-background', 'cancel-background-held'])(
+  'keeps independent ACP v2 work running when Tasks cancels the foreground turn (%s)',
+  async (mode) => {
+    const f = await fixture(mode)
+    await withRuntime(f, async (services, id) => {
+      const { tasks, store } = services
+      const { done } = await tasks.start(id)
+      const cancelled = done.catch(() => undefined)
+      await vi.waitFor(() =>
+        expect(store.taskSummary(id).subagents?.[0]).toMatchObject({
+          kind: 'background',
+          status: 'working',
+        }),
+      )
+      tasks.cancel(id)
+      await cancelled
+      expect(store.taskSummary(id).status).toBe('cancelled')
+      await vi.waitFor(() =>
+        expect(store.taskSummary(id).subagents?.[0]).toMatchObject({
+          status: 'working',
+          result: 'Before Stop. After Stop.',
+        }),
+      )
+      expect((await f.messages()).map((message) => message.method)).toContain('session/cancel')
+      expect((await f.messages()).map((message) => message.method)).not.toContain('session/close')
+      await tasks.stopAgents(id, taskFamilyRunToken(store.get().tasks, id))
+      expect((await f.messages()).map((message) => message.method)).toContain('session/close')
+      expect(store.taskSummary(id).subagents?.[0].status).toBe('stopped')
+    })
+  },
+)
+
+it('saves live resume output on the earlier turn and keeps pre-snapshot history out', async () => {
+  const f = await fixture('busy-output')
+  await withRuntime(f, async ({ tasks, store }, id) => {
+    await (
+      await tasks.start(id)
+    ).done
+    const firstTurnId = store.task(id).turns?.at(-1)?.id
+    await f.adapter.releaseTask?.(id)
+    await (
+      await tasks.start(id)
+    ).done
+    const task = store.task(id)
+    const secondTurnId = task.turns?.at(-1)?.id
+    expect(secondTurnId).not.toBe(firstTurnId)
+    expect(task.messages.filter((message) => message.text.includes('Resumed'))).toEqual([
+      expect.objectContaining({ role: 'assistant', turnId: firstTurnId, text: 'Resumed answer' }),
+    ])
+    expect(task.messages.some((message) => message.text.includes('old history'))).toBe(false)
+    expect(
+      task.messages.filter(
+        (message) => message.turnId === secondTurnId && message.role === 'assistant',
+      ),
+    ).toEqual([expect.objectContaining({ text: 'Final answer' })])
+    expect(task.subagents?.[0]).toMatchObject({
+      kind: 'background',
+      status: 'working',
+      result: 'Before snapshot. After snapshot. ',
+    })
+  })
 })
 
 it('resumes without duplicating retained history or completing from the initial idle snapshot', async () => {
@@ -230,6 +380,35 @@ it('waits for resumed foreground work before sending a new prompt', async () => 
   expect(activities).toContain('Waiting for the existing ACP foreground work to finish')
   expect(f.output.join('')).toBe('Final answer')
 })
+
+it.each(['ask', 'read-only'] as const)(
+  'routes resumed foreground interactions under %s policy before sending the next prompt',
+  async (permission) => {
+    const f = await fixture('busy-input')
+    f.run.sessionId = 's'
+    f.run.agent.permission = permission
+    const approvals: string[] = []
+    f.run.approve = async (title) => {
+      approvals.push(title)
+      return 'approve'
+    }
+    f.run.ask = async () => ({ '0': ['Dominic'] })
+    await f.adapter.run(f.run)
+    const messages = await f.messages()
+    expect(messages.find((m) => m.id === 'resumed-permission')?.result).toEqual({
+      outcome: { outcome: 'selected', optionId: permission === 'ask' ? 'yes' : 'no' },
+    })
+    expect(approvals).toEqual(permission === 'ask' ? ['Continue build'] : [])
+    expect(messages.find((m) => m.id === 'resumed-form')?.result).toEqual({
+      action: 'accept',
+      content: { name: 'Dominic' },
+    })
+    expect(messages.findIndex((m) => m.id === 'resumed-form')).toBeLessThan(
+      messages.findIndex((m) => m.method === 'session/prompt'),
+    )
+    expect(f.output.join('')).toBe('Final answer')
+  },
+)
 
 it('deletes new temporary sessions after completing their work', async () => {
   const f = await fixture()

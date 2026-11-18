@@ -31,7 +31,7 @@ export const Icon=({name,size=20,color,filled})=>{const Glyph={stack:Layers,chec
 export const IconButton=({label,onPress,onLongPress,disabled})=>{const press=useRef({});return <button aria-label={label} disabled={disabled} onPointerDown={()=>{press.current.held=false;press.current.timer=setTimeout(()=>{press.current.held=true;onLongPress?.()},500)}} onPointerUp={()=>clearTimeout(press.current.timer)} onPointerCancel={()=>clearTimeout(press.current.timer)} onClick={()=>{if(!press.current.held)onPress()}} style={{width:44,height:44,padding:0,flexShrink:0}}/>};
 export const Action=({label,onPress,disabled})=><button onPointerDown={event=>event.preventDefault()} disabled={disabled} onClick={onPress} style={{minWidth:44,minHeight:44}}>{label}</button>;
 export const Image=({source,style})=><img src={source?.uri} style={style}/>;
-export const Glass=({style,...props})=><View {...props} style={[{backgroundColor:'#242424'},style]}/>;
+export const Surface=({style,...props})=><View {...props} style={[{backgroundColor:'#242424'},style]}/>;
 export const Choice=({label,value,items,onChange,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={e=>onChangeText(e.target.value)}/>;
@@ -46,10 +46,6 @@ const stubs = [
   {
     path: '@expo/ui/swift-ui/modifiers',
     contents: `export const accessibilityAddTraits=()=>null,accessibilityLabel=()=>null,background=()=>null,buttonBorderShape=()=>null,buttonStyle=()=>null,contentShape=()=>null,controlSize=()=>null,disabled=value=>({disabled:value}),frame=()=>null,shapes={circle:()=>null},tint=()=>null;`,
-  },
-  {
-    path: 'expo-glass-effect',
-    contents: `export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
   },
   {
     path: './native-icon',
@@ -139,7 +135,7 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(
     '../../ui/controls/action',
     '../../ui/controls/choice',
     '../../ui/controls/field',
-    '../../ui/layout/glass',
+    '../../ui/layout/surface',
     '../../ui/layout/sheet',
     '../../ui/theme',
     '../ui/theme',
@@ -747,11 +743,18 @@ try {
     /High reasoning, Fast mode/,
   )
   await page.evaluate(() => window.setTurnSettings(null))
-  for (const name of ['Steer with queued message 1', 'Actions for queued message 1']) {
+  for (const name of [
+    'Remove queued message 1',
+    'Steer with queued message 1',
+    'Actions for queued message 1',
+  ]) {
     const bounds = await page.getByRole('button', { name, exact: true }).boundingBox()
     assert.ok(bounds && bounds.width >= 44 && bounds.height >= 44)
     assert.ok(bounds.x >= 0 && bounds.x + bounds.width <= 320)
   }
+  await page.getByRole('button', { name: 'Remove queued message 1', exact: true }).click()
+  await page.waitForFunction(() => window.calls.at(-1)?.input?.action === 'remove')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.messageId), 'queued')
   const pauseQueue = page.getByRole('button', { name: 'Pause queue', exact: true })
   assert.equal(await pauseQueue.isEnabled(), true)
   const pauseBounds = await pauseQueue.boundingBox()

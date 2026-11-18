@@ -194,6 +194,7 @@ address.oninput = () => {
   addressEdited = true
 }
 let intentionallyClosed = false
+let manualReconnect = false
 let browserSessionEnded = false
 // Wi-Fi/VPN drops recover on their own; the user only acts after retries run out.
 let retryTimer: ReturnType<typeof setTimeout> | undefined
@@ -204,7 +205,8 @@ function cancelReconnect() {
   retryTimer = undefined
 }
 function scheduleReconnect() {
-  if (intentionallyClosed || retryTimer || retryAttempt >= maxRetries) return false
+  if (intentionallyClosed || manualReconnect || retryTimer || retryAttempt >= maxRetries)
+    return false
   const delay = Math.min(1000 * 2 ** retryAttempt, 15000)
   retryAttempt++
   connectionStatus('connecting')
@@ -274,12 +276,9 @@ function notice(message: string, error = false, action?: NoticeAction) {
 function enabled(value: boolean) {
   online = value
   connectionStatus(value ? 'online' : 'offline')
-  if (window.ReactNativeWebView)
-    window.ReactNativeWebView.postMessage(
-      JSON.stringify({ channel: 'dovo-browser', type: 'connection', online: value }),
-    )
-  else
-    window.parent.postMessage({ channel: 'dovo-browser', type: 'connection', online: value }, '*')
+  const connection = { channel: 'dovo-browser', type: 'connection', online: value, manualReconnect }
+  if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(JSON.stringify(connection))
+  else window.parent.postMessage(connection, '*')
   for (const button of starters.querySelectorAll('button')) button.disabled = !value
   clearInterval(performanceTimer)
   performanceTimer = undefined
@@ -427,10 +426,12 @@ async function decodeImage(blob: Blob) {
   }
 }
 function connect(url: string) {
+  if (!window.ReactNativeWebView && document.hidden) return
   screenshotReady = false
   const target = new URL(url)
   if (!['ws:', 'wss:'].includes(target.protocol)) throw new Error('Invalid browser connection')
   intentionallyClosed = false
+  manualReconnect = false
   browserSessionEnded = false
   nativeTouch = false
   requestedSize = ''
@@ -458,6 +459,8 @@ function connect(url: string) {
   }
   next.onclose = (event) => {
     if (socket !== next) return
+    manualReconnect = event.code === 1008
+    if (manualReconnect) cancelReconnect()
     enabled(false)
     if (browserSessionEnded) return
     // 1000: the host ended the session. 1008: invalid ticket or revoked device.
@@ -821,6 +824,7 @@ window.addEventListener('message', (event) => {
   }
 })
 function reconnectBrowser() {
+  manualReconnect = false
   retryAttempt = 0
   cancelReconnect()
   notice(simulator ? 'Connecting to device…' : 'Connecting to host browser…')
@@ -1157,18 +1161,21 @@ editor.onblur = () => {
   keyboardOpen = false
   keyboard.setAttribute('aria-pressed', 'false')
 }
-window.addEventListener('pagehide', () => {
+function suspend() {
+  cancelReconnect()
   // Disconnect synchronously so suspended documents cannot accept stale input.
   const previous = socket
   socket = undefined
   enabled(false)
   previous?.close()
-})
+}
+window.addEventListener('pagehide', suspend)
 // Backgrounding disconnects the stream; the app obtains a fresh one-use ticket on return.
 document.addEventListener('visibilitychange', () => {
   if (window.ReactNativeWebView) return
-  if (document.hidden) socket?.close()
-  else if (!online && !intentionallyClosed && !browserSessionEnded) bridge('reconnect')
+  if (document.hidden) suspend()
+  else if (!online && !intentionallyClosed && !manualReconnect && !browserSessionEnded)
+    bridge('reconnect')
 })
 enabled(false)
 connectionStatus('connecting')

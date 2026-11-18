@@ -1374,6 +1374,9 @@ async function checkComposerSend() {
     )
     const preview = await row.locator('span[title]').last().boundingBox()
     assert.ok(preview.width > 40, 'Hidden queue controls consumed the message preview')
+    const remove = row.getByRole('button', { name: 'Remove queued message 1', exact: true })
+    assert.equal(await remove.evaluate((el) => el.checkVisibility({ opacityProperty: true })), true)
+    const removeBefore = await remove.boundingBox()
     const before = await steer.boundingBox()
     assert.equal(await steer.evaluate((el) => getComputedStyle(el).opacity), '1')
     await row.hover()
@@ -1381,6 +1384,8 @@ async function checkComposerSend() {
       () => getComputedStyle(document.querySelector('[data-queue-actions]')).opacity === '1',
     )
     assert.deepEqual(await steer.boundingBox(), before, 'Steer moved when queue actions appeared')
+    assert.deepEqual(await remove.boundingBox(), removeBefore)
+    await remove.click({ trial: true })
     const rowBounds = await row.boundingBox()
     assert.ok(
       before.x + before.width <= rowBounds.x + rowBounds.width,

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react'
 import { AccessibilityInfo, Platform } from 'react-native'
 
 /** Resolve once above navigation so new controls use the known system preferences. */
-export function useGlassAccessibility() {
+export function useAppearanceAccessibility() {
   const [reduceTransparency, setReduceTransparency] = useState(true)
   const [highContrast, setHighContrast] = useState(false)
   useEffect(() => {
@@ -25,7 +25,7 @@ export function useGlassAccessibility() {
       .then((value) => {
         if (active && !transparencyChanged) setReduceTransparency(value)
       })
-      .catch(() => console.warn('Could not read Reduce Transparency; using opaque controls.'))
+      .catch(() => console.warn('Could not read the system Reduce Transparency setting.'))
     void AccessibilityInfo.isDarkerSystemColorsEnabled()
       .then((value) => {
         if (active && !contrastChanged) setHighContrast(value)

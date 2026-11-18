@@ -194,7 +194,7 @@ export function AttachmentArchive({
             <IconButton
               label={path ? uiText('Back to archive folder') : uiText('Parent archive folder')}
               icon="back"
-              variant="glass"
+              variant="bordered"
               onPress={() => {
                 if (path) setPath(null)
                 else
@@ -215,14 +215,14 @@ export function AttachmentArchive({
           <IconButton
             label={current ? uiText('Share selected file') : uiText('Share ZIP')}
             icon="share"
-            variant="glass"
+            variant="bordered"
             disabled={!connected || busy}
             onPress={share}
           />
           <IconButton
             label={uiText('Close archive')}
             icon="close"
-            variant="glass"
+            variant="bordered"
             onPress={close}
           />
         </View>

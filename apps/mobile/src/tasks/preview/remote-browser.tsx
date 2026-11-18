@@ -116,7 +116,7 @@ function RemoteBrowserContent({
   const [preset, setPreset] = useApplicationState('fill')
   const [landscape, setLandscape] = useApplicationState(false)
 
-  const { connection, profile, profiles, readEffect } = useRuntime()
+  const { connected, connection, profile, profiles, readEffect } = useRuntime()
   const browserOwner = profile?.name ?? uiText('Unavailable computer')
   const loopbackHint = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
     ? uiText('Local address on {value0}', { value0: browserOwner })
@@ -158,7 +158,9 @@ function RemoteBrowserContent({
       }
   }
   const pending = useRef(false)
+  const waitingForRuntime = useRef(false)
   const ready = useRef(false)
+  const manualReconnect = useRef(false)
   const sessionEnded = useRef(false)
   const [ended, setEnded] = useApplicationState(false)
   const presentation = useRef(expanded)
@@ -193,11 +195,17 @@ function RemoteBrowserContent({
       mobileWorkflow(function* () {
         if (
           !connection ||
+          manualReconnect.current ||
           !visible.current ||
           pending.current ||
           AppState.currentState === 'background'
         )
           return
+        if (!connected) {
+          waitingForRuntime.current = true
+          return
+        }
+        waitingForRuntime.current = false
         const version = current.current
         pending.current = true
         post({ type: 'appearance', theme: appearance.current })
@@ -287,8 +295,14 @@ function RemoteBrowserContent({
     resume.current = connect
   })
   useLayoutEffect(() => {
-    if (foreground && !online && ready.current && !sessionEnded.current) void resume.current()
-  }, [foreground, online])
+    if (!connected && pending.current) {
+      current.current++
+      pending.current = false
+      waitingForRuntime.current = true
+    }
+    if (connected && waitingForRuntime.current && ready.current && !sessionEnded.current)
+      void resume.current()
+  }, [connected])
   useLayoutEffect(() => {
     visible.current = active
     if (!active) {
@@ -390,6 +404,25 @@ function RemoteBrowserContent({
               return
             }
             if (
+              message &&
+              typeof message === 'object' &&
+              'channel' in message &&
+              message.channel === 'dovo-browser' &&
+              'type' in message &&
+              message.type === 'connection' &&
+              'online' in message &&
+              typeof message.online === 'boolean'
+            ) {
+              if ('manualReconnect' in message && message.manualReconnect === true)
+                manualReconnect.current = true
+              setOnline(message.online)
+              if (message.online) {
+                sessionEnded.current = false
+                setEnded(false)
+              }
+              return
+            }
+            if (
               !deviceId &&
               message &&
               typeof message === 'object' &&
@@ -470,6 +503,9 @@ function RemoteBrowserContent({
               const state = decodeResult(remoteBrowserMessageSchema, message)
               if (state.success && state.data.type === 'closed') {
                 if (!deviceId) {
+                  current.current++
+                  pending.current = false
+                  waitingForRuntime.current = false
                   sessionEnded.current = true
                   setEnded(true)
                   setOnline(false)
@@ -482,19 +518,6 @@ function RemoteBrowserContent({
                 stateCallback.current?.(state.data)
                 lastAddress.current = state.data.url === 'about:blank' ? '' : state.data.url
                 if (!editing.current) setAddress(lastAddress.current)
-                return
-              }
-              if (
-                'type' in message &&
-                message.type === 'connection' &&
-                'online' in message &&
-                typeof message.online === 'boolean'
-              ) {
-                setOnline(message.online)
-                if (message.online) {
-                  sessionEnded.current = false
-                  setEnded(false)
-                }
                 return
               }
             }
@@ -539,7 +562,11 @@ function RemoteBrowserContent({
               )
             } else {
               ready.current = true
-              void connect()
+              if (parsed.data.type === 'reconnect') {
+                manualReconnect.current = false
+                sessionEnded.current = false
+              }
+              if (!sessionEnded.current) void connect()
             }
           }}
         />

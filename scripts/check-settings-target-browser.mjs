@@ -40,7 +40,6 @@ try {
       '../connection/provider': nativeRuntime,
       '../../runtime/connection/provider': nativeRuntime,
       'react-native': controls,
-      'expo-glass-effect': `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>false,isLiquidGlassAvailable=()=>false;`,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
     }
     const built = await build({

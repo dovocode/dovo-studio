@@ -349,6 +349,13 @@ export function MessageQueue({
               const reorderIndex = confirmed.findIndex((item) => item.id === message.id)
               const source = messageSourceFor(message)
               const pendingMessage = pendingMessages.find((item) => item.message.id === message.id)
+              const removeDisabled =
+                !connected ||
+                busy ||
+                !!task.archived ||
+                !!task.archivedAt ||
+                !!pendingMessage ||
+                !!message.steering
               const paused = message.paused || task.queuePaused
               const blockedBy =
                 firstPaused >= 0 && firstPaused < index ? firstPaused + 1 : undefined
@@ -638,13 +645,7 @@ export function MessageQueue({
                         title: uiText('Remove'),
                         label: uiText('Remove queued message {value0}', { value0: index + 1 }),
                         icon: 'close',
-                        disabled:
-                          !connected ||
-                          busy ||
-                          task.archived ||
-                          !!task.archivedAt ||
-                          !!pendingMessage ||
-                          !!message.steering,
+                        disabled: removeDisabled,
                         onPress: () => change('remove', message.id),
                       },
                       {
@@ -657,6 +658,12 @@ export function MessageQueue({
                         },
                       },
                     ]}
+                  />
+                  <IconButton
+                    icon="trash"
+                    label={uiText('Remove queued message {value0}', { value0: index + 1 })}
+                    disabled={removeDisabled}
+                    onPress={() => change('remove', message.id)}
                   />
                   <IconButton
                     icon="steer"

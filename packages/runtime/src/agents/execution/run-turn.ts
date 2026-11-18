@@ -9,6 +9,7 @@ import { goalCommand, goalCommandText } from '@dovo/protocol'
 import { ToolLoopGuard, ToolLoopStop } from './tool-loop.js'
 import { skillContext } from './skill-context.js'
 import { HookEvents, type HookTool } from './hook-events.js'
+import { verifiedGitUpdates } from '../../scm/tasks/external-git-updates.js'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import { requireImportedPiSession } from '../providers/pi/session-import.js'
 import { noStudioTools, type StudioTools } from '@dovo/protocol'
@@ -82,7 +83,7 @@ import type { Questions } from './questions.js'
 import { createHash, randomUUID } from 'node:crypto'
 import type { McpApps } from '../../mcp-apps/bridge.js'
 import { taskToolsServer } from '../../agent-tools/config.js'
-import type { Activity } from '../../storage/activity.js'
+import type { Activity, RetainedToolOutput } from '../../storage/activity.js'
 import type { Commands } from '../../storage/commands.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
 import type { GitService } from '../../scm/git/git.js'
@@ -829,6 +830,7 @@ export class TaskTurnRunner {
           controller.abort(new TurnStoreFailure(error))
         })
         const seenTools = new Set<string>()
+        const retainedOutputs = new Map<string, RetainedToolOutput>()
         const textOffset = () =>
           (this.store.taskMessage(id, assistantId)?.text.length ?? 0) + buffer.length
         const reasoningOffsets = new Map<string, { offset: number; messageId: string }>()
@@ -960,6 +962,7 @@ export class TaskTurnRunner {
           )
         }
         const commandEvents = new HookEvents(agent.provider, sessionId)
+        const pendingGitUpdates = new Set<Promise<void>>()
         const toolLoop = new ToolLoopGuard()
         const tokens = turnTokenCounter(agent.provider, () => this.store.taskSummary(id).sessionId)
         const tokenField = () => {
@@ -1120,7 +1123,7 @@ export class TaskTurnRunner {
               : []),
             sandboxes
               ? sandboxInstructions(cwd, sandboxSettings)
-              : `Project working directory: ${JSON.stringify(cwd)}. Run project commands, including git and gh, from this checkout. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for GitHub operations in the repository linked to this checkout; do not target another repository unless the user explicitly requests it.`,
+              : `Project working directory: ${JSON.stringify(cwd)}. Run project commands from the checkout they affect. Configured Git executable: ${JSON.stringify(commands.git)}; GitHub CLI executable: ${JSON.stringify(commands.gh)}. Use gh for this repository. For an authorized PR follow-up in another repository this thread updated, verify its checkout, remote and account first. Other repositories require an explicit request.`,
             linked.length
               ? `Additional linked checkouts on this machine (authorized for this thread): ${JSON.stringify(linked.map((item) => ({ id: item.id, repositoryId: item.repositoryId, project: this.store.get().repositories.find((repo) => repo.id === item.repositoryId)?.name, path: item.directory, access: item.access, branch: item.branch })))}. Run commands in the appropriate checkout. Read-only links are reference material: do not modify them. Keep commits and pull requests separate for each repository. Primary-project defaults remain authoritative; read each linked repository's instructions before working there.`
               : '',
@@ -1406,6 +1409,8 @@ export class TaskTurnRunner {
                   })
                 },
                 onSubagentEvent: (name, payload, ownerSessionId) => {
+                  const acpBackground = name === 'dovo/acp/background'
+                  const acpSessionMessage = name === 'dovo/acp/message'
                   // The registry checks the closing identity itself. An old session
                   // can close after recovery has cleared/replaced this local owner.
                   if (name === 'dovo/session/closed' && ownerSessionId)
@@ -1421,6 +1426,7 @@ export class TaskTurnRunner {
                       id,
                       { sessionId: ownerSessionId },
                       controller.signal.aborted ? 'cancelled' : 'interrupted',
+                      retainedOutputs,
                     )
                     if (taskToolsToken) runCredentials(this.store).revoke(taskToolsToken)
                     if (toolBinding) {
@@ -1437,17 +1443,72 @@ export class TaskTurnRunner {
                     (current.activeRunId &&
                       current.activeRunId !== turnId &&
                       name !== 'dovo/session/closed') ||
-                    (controller.signal.aborted && name !== 'dovo/session/closed')
+                    (controller.signal.aborted && name !== 'dovo/session/closed' && !acpBackground)
                   )
                     return
-                  if (name === 'dovo/session/message') {
+                  const acpEventTurn = () =>
+                    providerOpen && !promptAccepted ? turns.at(-1) : { id: turnId, assistantId }
+                  if (name === 'dovo/acp/tool') {
+                    const previous = acpEventTurn()
+                    const tool = toolEvent(agent.provider, 'tool_call_update', payload)
+                    if (nativeSessionOpen && tool)
+                      this.activity?.add('tool', id, tool.title, {
+                        ...tool,
+                        turnId: previous?.id,
+                        messageId: previous?.assistantId,
+                        providerTool: true,
+                        providerSessionId: ownerSessionId,
+                        event: safeReasoningEvent(payload),
+                      })
+                    return
+                  }
+                  if (name === 'dovo/session/message' || acpSessionMessage) {
                     if (!nativeSessionOpen) return
                     const message = decodeResult(
                       Schema.Struct({ id: Schema.String, text: Schema.String }),
                       payload,
                     ).data
-                    if (!message?.text) return
-                    const messageId = `native-message:${message.id}`
+                    if (!message || (!acpSessionMessage && !message.text)) return
+                    const messageId = acpSessionMessage
+                      ? `acp-message:${JSON.stringify([ownerSessionId, message.id])}`
+                      : `native-message:${message.id}`
+                    if (acpSessionMessage) {
+                      const priorTurnId = acpEventTurn()?.id
+                      this.store.updateTaskHistory(id, (task) => {
+                        const existing = task.messages.find((entry) => entry.id === messageId)
+                        if (existing?.text === message.text) return task
+                        if (existing)
+                          return {
+                            ...task,
+                            messages: task.messages.map((entry) =>
+                              entry === existing ? { ...entry, text: message.text } : entry,
+                            ),
+                          }
+                        if (!message.text) return task
+                        const before = task.messages.findIndex((entry) => entry.turnId === turnId)
+                        const messages = [...task.messages]
+                        messages.splice(
+                          priorTurnId !== turnId && before >= 0 ? before : messages.length,
+                          0,
+                          {
+                            id: messageId,
+                            turnId: priorTurnId,
+                            role: 'assistant',
+                            text: message.text,
+                            createdAt: new Date().toISOString(),
+                          },
+                        )
+                        return {
+                          ...task,
+                          lastViewedTurnId: undefined,
+                          consumedMessageIds: [
+                            ...new Set([...(task.consumedMessageIds ?? []), messageId]),
+                          ],
+                          messages,
+                        }
+                      })
+                      return
+                    }
                     this.store.updateTaskHistory(id, (task) =>
                       task.messages.some((entry) => entry.id === messageId)
                         ? task
@@ -1628,7 +1689,7 @@ export class TaskTurnRunner {
                     }),
                   }))
                 },
-                onEvent: (name, payload) => {
+                onEvent: (name, payload, retainedOutput) => {
                   if (!acceptsProviderEvents()) return
                   if (name === 'dovo/opencode/capabilities') {
                     const value = decodeResult(
@@ -1774,11 +1835,49 @@ export class TaskTurnRunner {
                   if (tool || subagents !== current) meaningfulEvent = true
                   if (tool) acceptPrompt()
                   if (tool) {
+                    if (retainedOutput)
+                      retainedOutputs.set(tool.toolId, {
+                        turnId,
+                        sessionId: nativeSessionId,
+                        read: retainedOutput,
+                      })
+                    else retainedOutputs.delete(tool.toolId)
                     for (const event of commandEvents.accept(name, payload)) {
                       if (toolLoop.accept(event)) controller.abort(new ToolLoopStop())
-                      if (event.event === 'tool-complete' && event.data.tool?.kind === 'command')
+                      if (event.event === 'tool-complete' && event.data.tool?.kind === 'command') {
+                        if (
+                          pullRequestBabysittingEnabled &&
+                          configured.permission !== 'read-only' &&
+                          !sandboxes &&
+                          !task.example
+                        ) {
+                          const pending = verifiedGitUpdates(this.git, turnId, cwd, event.data.tool)
+                            .then((receipts) => {
+                              this.store.saveExternalGitReceipts(
+                                id,
+                                receipts.filter(
+                                  (receipt) =>
+                                    !linked.some(
+                                      (link) =>
+                                        link.access === 'read-only' &&
+                                        link.directory === receipt.cwd,
+                                    ),
+                                ),
+                              )
+                            })
+                            .catch((error: unknown) => {
+                              this.activity?.add(
+                                'task',
+                                id,
+                                `Could not verify Git update: ${errorMessage(error)}`,
+                              )
+                            })
+                          pendingGitUpdates.add(pending)
+                          void pending.finally(() => pendingGitUpdates.delete(pending))
+                        }
                         for (const listener of this.commandListeners)
                           listener({ taskId: id, turnId, tool: event.data.tool })
+                      }
                     }
                   }
                   if (tool && buffer) flush()
@@ -2000,6 +2099,7 @@ export class TaskTurnRunner {
             if (action.attemptId === turnId && action.kind === 'answer')
               this.store.providerActions.transition(action.id, 'completed')
           const captured = yield* checkpoint()
+          yield* runtimeOperation(() => Promise.all(pendingGitUpdates))
           const review = yield* (
             captureGit
               ? runtimeOperation(() => this.git.changes(cwd))
@@ -2090,7 +2190,7 @@ export class TaskTurnRunner {
                 !(controller.signal.reason instanceof ToolLoopStop)
               const status = cancelled ? ('cancelled' as const) : ('failed' as const)
               progress.flush()
-              this.activity?.finishProviderTools(id, { turnId }, status)
+              this.activity?.finishProviderTools(id, { turnId }, status, retainedOutputs)
               this.store.updateTaskHistory(id, (t) => ({
                 ...t,
                 runPhase: 'finalizing',

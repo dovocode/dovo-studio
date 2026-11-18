@@ -10,7 +10,10 @@ import {
   taskPullStatusFor,
   gitRemoteIdentity,
   pullRepositoryIdentity,
+  pullOverviewScope,
   threadPullLink,
+  type PullSummary,
+  type PullDetail,
   type Repository,
 } from '@dovo/protocol'
 import { Effect } from 'effect'
@@ -18,8 +21,10 @@ import { startPolling } from '@dovo/client-runtime'
 import { checkOutcome, verifyPullUrl, type TaskSummary } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { archiveTask, taskIsBusy } from '../../agents/tasks/housekeeping.js'
+import { editedLinkedCheckouts } from './edited-linked-checkouts.js'
 
 type PullStatus = NonNullable<TaskSummary['pullStatus']>
+type PullPage = Awaited<ReturnType<Services['pullCache']['list']>>
 type WatcherServices = Pick<
   Services,
   | 'sandboxes'
@@ -390,7 +395,7 @@ export class TaskPullWatcher {
       this.pending.delete(work)
     }
   }
-  private async refreshLinkedPulls(task: TaskSummary) {
+  private async refreshLinkedPulls(task: TaskSummary, discovered?: Map<string, PullDetail>) {
     const links = taskPullLinks(task)
     if (!links.length) return
     const repositories = this.s.store.get().repositories
@@ -402,13 +407,17 @@ export class TaskPullWatcher {
             !repo.kind &&
             repo.id === task.repositoryId &&
             pullRepositoryIdentity(repo) === identity,
-        ) ?? repositories.find((repo) => !repo.kind && pullRepositoryIdentity(repo) === identity)
-      const detail = await this.s.pullCache.status(
-        repository?.path ?? link.url,
-        link.number,
-        false,
-        true,
-      )
+        ) ??
+        repositories.find(
+          (repo) =>
+            !repo.kind &&
+            task.linkedCheckouts?.some((checkout) => checkout.repositoryId === repo.id) &&
+            pullRepositoryIdentity(repo) === identity,
+        ) ??
+        repositories.find((repo) => !repo.kind && pullRepositoryIdentity(repo) === identity)
+      const detail =
+        discovered?.get(link.url) ??
+        (await this.s.pullCache.status(repository?.path ?? link.url, link.number, false, true))
       verifyPullUrl(link.url, detail.pull.url)
       const failed = detail.checks.filter((check) => checkOutcome(check.status) === 'failed')
       const checks = failed.length
@@ -466,19 +475,193 @@ export class TaskPullWatcher {
         ),
       }))
   }
+  private async discoverBranchPulls(
+    task: TaskSummary,
+    openForRepository: (cwd: string, find: (pull: PullSummary) => boolean) => Promise<PullPage>,
+    branchDetails: Map<string, Promise<PullDetail>>,
+  ) {
+    if (
+      task.example ||
+      task.archived ||
+      task.archivedAt ||
+      task.settledAt ||
+      !this.s.preferences.get().autoLinkPullRequests
+    )
+      return
+    const receipts = this.s.store.externalGitReceipts(task.id)
+    const edited =
+      task.history.linkedCheckpoints?.length &&
+      task.linkedCheckouts?.some((link) => link.access === 'edit')
+        ? editedLinkedCheckouts(this.s.store.task(task.id))
+        : []
+    if (!edited.length && !receipts.length) return
+    const discovered = new Map<string, PullDetail>()
+    const repositories = this.s.store.get().repositories
+    const belongsToThreadProject = (current: TaskSummary, identity: string) =>
+      this.s.store
+        .get()
+        .repositories.some(
+          (repo) =>
+            (repo.gitIdentity === identity || pullRepositoryIdentity(repo) === identity) &&
+            (repo.id === current.repositoryId ||
+              current.linkedCheckouts?.some((checkout) => checkout.repositoryId === repo.id)),
+        )
+    const linked = edited.flatMap(({ checkout, branch }) => {
+      const repository = repositories.find(
+        (repo) => repo.id === checkout.repositoryId && repo.id !== task.repositoryId && !repo.kind,
+      )
+      const identity = repository && pullRepositoryIdentity(repository)
+      if (!repository || !identity) return []
+      return [
+        {
+          cwd: repository.path,
+          identity,
+          headIdentity: repository.gitIdentity ?? identity,
+          branch,
+          sha: undefined,
+          isCurrent: (_current: TaskSummary) => {
+            const currentRepository = this.s.store
+              .get()
+              .repositories.find((repo) => repo.id === repository.id)
+            return (
+              !!currentRepository &&
+              pullOverviewScope([currentRepository]) === pullOverviewScope([repository]) &&
+              editedLinkedCheckouts(this.s.store.task(task.id)).some(
+                (edit) =>
+                  edit.checkout.id === checkout.id &&
+                  edit.checkout.repositoryId === checkout.repositoryId &&
+                  edit.branch === branch,
+              )
+            )
+          },
+        },
+      ]
+    })
+    const external = receipts.flatMap((receipt) => {
+      if (belongsToThreadProject(task, receipt.repositoryIdentity)) return []
+      return [
+        {
+          cwd: receipt.cwd,
+          identity: receipt.repositoryIdentity,
+          headIdentity: receipt.repositoryIdentity,
+          branch: receipt.branch,
+          sha: receipt.sha,
+          isCurrent: (current: TaskSummary) =>
+            !belongsToThreadProject(current, receipt.repositoryIdentity) &&
+            this.s.store
+              .externalGitReceipts(task.id)
+              .some(
+                (latest) =>
+                  latest.repositoryIdentity === receipt.repositoryIdentity &&
+                  latest.branch === receipt.branch &&
+                  latest.sha === receipt.sha &&
+                  latest.cwd === receipt.cwd,
+              ),
+        },
+      ]
+    })
+    for (const { cwd, identity, headIdentity, branch, sha, isCurrent } of [
+      ...linked,
+      ...external,
+    ]) {
+      if (this.stopping || !this.s.preferences.get().autoLinkPullRequests) break
+      const matches = (pull: PullSummary) => {
+        const link = threadPullLink(pull.url)
+        return (
+          !!link?.repositoryUrl &&
+          gitRemoteIdentity(link.repositoryUrl) === identity &&
+          pullMatchesCheckoutBranch(pull, branch)
+        )
+      }
+      try {
+        const page = await openForRepository(cwd, matches)
+        const candidates = page.pulls.filter(matches)
+        if (candidates.length !== 1) continue
+        const [candidate] = candidates
+        if (
+          !candidate ||
+          discovered.has(candidate.url) ||
+          task.ignoredPullRequestUrls?.includes(candidate.url) ||
+          taskPullLinks(task).some((link) => link.url === candidate.url)
+        )
+          continue
+        // Several receipt revisions can refer to the same PR. Read its current head once
+        // per checkout path during this refresh and match each receipt against that head.
+        const key = JSON.stringify([cwd, candidate.number, candidate.url, candidate.destination])
+        let pending = branchDetails.get(key)
+        if (!pending) {
+          pending = this.s.pullCache.status(cwd, candidate.number, false, true)
+          branchDetails.set(key, pending)
+        }
+        const detail = await pending
+        verifyPullUrl(candidate.url, detail.pull.url)
+        if (
+          this.stopping ||
+          detail.stale ||
+          detail.refreshError ||
+          (candidate.destination && detail.destination !== candidate.destination) ||
+          detail.pull.state !== 'open' ||
+          !matches(detail.pull) ||
+          gitRemoteIdentity(detail.pull.repositoryUrl) !== identity ||
+          (sha && detail.pull.headSha !== sha) ||
+          (detail.pull.headCloneUrl && gitRemoteIdentity(detail.pull.headCloneUrl) !== headIdentity)
+        )
+          continue
+        const current = this.s.store.get().tasks.find((value) => value.id === task.id)
+        if (!current || current.archived || current.settledAt || !isCurrent(current)) continue
+        this.attach(task, detail.pull)
+        discovered.set(detail.pull.url, detail)
+      } catch {
+        // An unavailable forge or a mismatched PR leaves the thread unchanged.
+      }
+    }
+    return discovered
+  }
   private async refreshTasks(taskId?: string, force = false) {
     const workspace = this.s.store.get()
-    const openPulls = new Map<string, Awaited<ReturnType<Services['pullCache']['list']>>>()
+    const openPulls = new Map<string, PullPage>()
+    const branchDetails = new Map<string, Promise<PullDetail>>()
+    const refreshedStale = new Set<string>()
+    const openForRepository = async (
+      cwd: string,
+      find?: (pull: PullSummary) => boolean,
+      refreshStale = false,
+    ) => {
+      let open = openPulls.get(cwd) ?? (await this.s.pullCache.list(cwd, 'open', 1, force, true))
+      if (open.stale && refreshStale && !refreshedStale.has(cwd)) {
+        refreshedStale.add(cwd)
+        open = await this.s.pullCache.list(cwd, 'open', 1, true, true)
+      }
+      openPulls.set(cwd, open)
+      // Keep pages already fetched for other tasks that work in this repository.
+      while (find && open.hasMore && !open.pulls.some(find)) {
+        const next = await this.s.pullCache.list(cwd, 'open', open.page + 1, force, true)
+        open = {
+          ...next,
+          pulls: [...open.pulls, ...next.pulls],
+          stale: open.stale || next.stale,
+          refreshError: open.refreshError || next.refreshError,
+        }
+        openPulls.set(cwd, open)
+        if (!next.pulls.length) break
+      }
+      return open
+    }
     const confirmations = new Map<string, Awaited<ReturnType<Services['pullCache']['status']>>>()
     for (const task of workspace.tasks) {
       if (this.stopping) return
       if (taskId && task.id !== taskId) continue
+      const discovered = await this.discoverBranchPulls(task, openForRepository, branchDetails)
+      const latest = discovered?.size
+        ? this.s.store.get().tasks.find((item) => item.id === task.id)
+        : task
       if (
-        !task.example &&
-        !task.archivedAt &&
-        (task.pullRequest || task.linkedPullRequests?.length)
+        latest &&
+        !latest.example &&
+        !latest.archivedAt &&
+        (latest.pullRequest || latest.linkedPullRequests?.length)
       )
-        await this.refreshLinkedPulls(task)
+        await this.refreshLinkedPulls(latest, discovered)
       if (
         task.example ||
         task.archivedAt ||
@@ -507,26 +690,13 @@ export class TaskPullWatcher {
         )
         const commandPull = this.commandPulls.get(task.id) ?? remembered
         if (!task.pullRequest && !task.checkoutBranch && !commandPull) continue
-        let open = openPulls.get(repo.path)
-        if (!open) {
-          open = await this.s.pullCache.list(repo.path, 'open', 1, force, true)
-          const preferences = this.s.preferences.get()
-          if (open.stale && (this.shouldSettle(task) || preferences.archiveOnPullMerge))
-            open = await this.s.pullCache.list(repo.path, 'open', 1, true, true)
-          openPulls.set(repo.path, open)
-        }
-        // A task with only a branch may have a pull request beyond the first page.
-        // Keep pages already fetched for this repository so other tasks reuse them.
-        if (task.checkoutBranch && !task.pullRequest && !task.pullStatus?.number)
-          while (
-            open.hasMore &&
-            !open.pulls.some((pull) => pullMatchesCheckoutBranch(pull, task.checkoutBranch))
-          ) {
-            const next = await this.s.pullCache.list(repo.path, 'open', open.page + 1, force, true)
-            open = { ...next, pulls: [...open.pulls, ...next.pulls] }
-            openPulls.set(repo.path, open)
-            if (!next.pulls.length) break
-          }
+        const open = await openForRepository(
+          repo.path,
+          task.checkoutBranch && !task.pullRequest && !task.pullStatus?.number
+            ? (pull) => pullMatchesCheckoutBranch(pull, task.checkoutBranch)
+            : undefined,
+          this.shouldSettle(task) || this.s.preferences.get().archiveOnPullMerge,
+        )
         const branchMatches = open.pulls.filter((pull) =>
           pullMatchesCheckoutBranch(pull, task.checkoutBranch),
         )

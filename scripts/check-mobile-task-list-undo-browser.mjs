@@ -25,10 +25,6 @@ const stubs = [
   { path: 'react-native', contents: native },
   { path: 'react-native-gesture-handler', contents: native },
   {
-    path: 'expo-glass-effect',
-    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
-  },
-  {
     path: 'lucide-react-native',
     contents: `const Icon=()=>null;export {Icon as Pause,Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Network,Icon as Save,Icon as SquareTerminal};`,
   },
@@ -63,7 +59,7 @@ const stubs = [
     importer: mobile + 'ui/content/pull-request-icon.tsx',
     contents: controls,
   },
-  { path: '../theme', importer: mobile + 'ui/layout/glass.tsx', contents: controls },
+  { path: '../theme', importer: mobile + 'ui/layout/surface.tsx', contents: controls },
   {
     path: './device-label',
     importer: mobile + 'tasks/list/task-list-row.tsx',

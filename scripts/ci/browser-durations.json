@@ -76,7 +76,7 @@
     "test:jira-workspace:browser": 10.2,
     "test:lifecycle-hooks:browser": 6.8,
     "test:linked-projects:browser": 7.1,
-    "test:liquid-glass:browser": 12,
+    "test:solid-surfaces:browser": 12,
     "test:manual-model:browser": 42,
     "test:mcp-apps:browser": 3.5,
     "test:mermaid:browser": 66.1,

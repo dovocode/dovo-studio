@@ -772,6 +772,12 @@ Use the paperclip in the desktop/web composer to attach up to five files, 5 MB e
 or pasting an image works too. iOS and Android use the native file picker. Uploads require a runtime
 connection; attachment drafts live on the host and appear on paired devices. File-only messages are
 supported. Queued messages retain their files; the runtime deduplicates repeated upload/message IDs.
+You can attach an image before sending the first message. Mobile saves the new thread on the
+selected computer after you accept a valid attachment. Cancelling the editor or pasting an empty
+clipboard leaves the draft local. If another device sends an existing draft while the file picker is
+open, the attachment goes to connection status for review. If an upload fails, retry or remove the
+file before sending. On desktop and web, the composer saves pending text before opening the image
+editor.
 
 Desktop/web and mobile optimize large PNG, JPEG, WebP and HEIC/HEIF images locally before upload.
 Images up to 50 MB can be resized to a maximum 2048-pixel edge and compressed below 3.75 MB to leave

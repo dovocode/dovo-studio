@@ -3,6 +3,7 @@ import { mutableStruct, mutableArray, minValue, maxValue } from '../shared/schem
 import { agentSchema } from '../workspace.js'
 import { connectionSchema } from './connection/runtime.js'
 import { studioToolsSchema } from './studio-tools.js'
+import { threadParentSchema } from '../tasks/thread-watches.js'
 
 /** Private client-to-local-runtime registration. Never include connections in tool output. */
 export const studioPeerRegistrationSchema = mutableStruct({
@@ -30,3 +31,11 @@ export const studioForwardPolicySchema = mutableStruct({
   studioTools: studioToolsSchema,
 })
 export type StudioForwardPolicy = typeof studioForwardPolicySchema.Type
+export const studioThreadCallerSchema = mutableStruct({
+  ...threadParentSchema.fields,
+  bot: Schema.optional(Schema.Boolean),
+  coordinationDepth: Schema.optional(
+    Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })),
+  ),
+})
+export type StudioThreadCaller = typeof studioThreadCallerSchema.Type

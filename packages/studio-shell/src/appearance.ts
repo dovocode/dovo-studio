@@ -1,4 +1,3 @@
-import { startLiquidGlass } from '@dovo/studio-ui'
 import { useLayoutEffect } from 'react'
 import {
   useAppPreferences,
@@ -35,9 +34,6 @@ export function useAppearance(onWindowColors?: (colors: WindowColors) => unknown
       onWindowColors?.({ background: colors.sidebar, symbol: colors['muted-foreground'] }),
     ).catch((error: unknown) => console.warn('Could not update window colours', error))
   }, [colors, onWindowColors])
-  // The controller owns observers, SVG filters and pending map decodes.
-  // Recreate it when contrast changes and release it when the shell unmounts.
-  useLayoutEffect(() => startLiquidGlass(highContrast), [highContrast])
   useLayoutEffect(() => {
     const root = document.documentElement
     root.style.setProperty('--app-font-family', fontStack(appFontFamily, systemAppFont))

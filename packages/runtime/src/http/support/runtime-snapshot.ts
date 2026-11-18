@@ -80,7 +80,7 @@ function pagedWorkspace(
   const previous = pages?.get(key)
   const now = Date.now()
   if (previous && now < previous.expires) return previous
-  const page = settledSummaryPage(workspace.tasks, limit, selected, now)
+  const page = settledSummaryPage(workspace.tasks, limit, selected, now, runtimeId)
   const expires = workspace.tasks.reduce((expiry, task) => {
     const until = task.snoozedUntil ? Date.parse(task.snoozedUntil) : 0
     return until > now ? Math.min(expiry, until) : expiry

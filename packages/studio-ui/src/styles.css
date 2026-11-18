@@ -191,7 +191,6 @@
   border-bottom: 0;
   border-radius: 16px 16px 0 0;
   background: var(--card);
-  background-image: var(--studio-surface-sheen);
 }
 .studio-chat-image-edit {
   position: absolute;
@@ -202,13 +201,6 @@
   border-radius: 999px;
   background-color: var(--popover);
   box-shadow: var(--studio-surface-shadow);
-}
-.studio-composer .studio-chat-image-edit {
-  background-color: var(--studio-floating-fill);
-  background-image: var(--studio-surface-sheen);
-  -webkit-backdrop-filter: var(--studio-surface-filter);
-  backdrop-filter: var(--studio-surface-filter);
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
 }
 @media (hover: hover) and (pointer: fine) {
   .studio-chat-image-edit {
@@ -715,8 +707,6 @@ textarea {
   border-radius: 50%;
   background-color: var(--studio-floating-fill, var(--popover));
   background-image: var(--studio-surface-sheen);
-  -webkit-backdrop-filter: var(--studio-surface-filter);
-  backdrop-filter: var(--studio-surface-filter);
   box-shadow: none;
   -webkit-app-region: no-drag;
 }
@@ -946,6 +936,15 @@ textarea {
   min-width: 0;
   padding: 0 12px 0 16px;
   background: var(--background);
+  container-type: inline-size;
+}
+.studio-thread-header-context {
+  display: none;
+}
+@container (min-width: 740px) {
+  .studio-thread-header-context {
+    display: flex;
+  }
 }
 .studio-task-thread-header :is(button, a) {
   -webkit-app-region: no-drag;
@@ -1397,7 +1396,7 @@ textarea {
   box-shadow: none;
 }
 .studio-browser-sidebar .studio-browser-tab {
-  margin-bottom: 5px;
+  margin-bottom: 2px;
 }
 .studio-browser-tab:not([data-active]):is(:hover, :focus-within) {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
@@ -1422,8 +1421,8 @@ textarea {
 .studio-browser-tab:not([data-pinned]) {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) minmax(0, max-content);
-  column-gap: 8px;
-  padding: 6px 4px 6px 8px;
+  column-gap: 6px;
+  padding: 0 4px 0 8px;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-select {
   grid-column: 1 / -1;
@@ -1438,10 +1437,13 @@ textarea {
   grid-column: 2 / span 2;
   grid-row: 1;
   align-self: center;
+  line-height: 1rem;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-profile {
   grid-column: 2;
   grid-row: 2;
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-activity {
   grid-column: 3;
@@ -1454,7 +1456,7 @@ textarea {
 }
 /* Compact browser pins show the page first. Identity stays in the tooltip and accessible name. */
 .studio-browser-tab[data-pinned] {
-  height: 56px;
+  height: 40px;
   margin-bottom: 0;
   padding: 0;
   border-radius: 12px;
@@ -1538,7 +1540,7 @@ textarea {
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-actions {
   position: absolute;
-  top: 6px;
+  top: 1px;
   right: 4px;
   display: none;
 }
@@ -1551,15 +1553,12 @@ textarea {
 .studio-browser-tab:not([data-pinned]):is(:hover, :focus-within) .studio-browser-tab-actions {
   display: flex;
 }
-.studio-browser-tab:not([data-pinned]):is(:hover, :focus-within) .studio-browser-tab-title {
+.studio-browser-tab:not([data-pinned]):has(.studio-browser-tab-actions) .studio-browser-tab-title {
   padding-right: var(--studio-browser-actions-width);
 }
 @media (hover: none) {
   .studio-browser-tab:not([data-pinned]) .studio-browser-tab-actions {
     display: flex;
-  }
-  .studio-browser-tab:not([data-pinned]) .studio-browser-tab-title {
-    padding-right: var(--studio-browser-actions-width);
   }
 }
 .studio-browser-tab-favicon > :is(img, svg) {
@@ -2877,7 +2876,23 @@ a.studio-project-row:hover {
 
 /* The disclosure stays outside the thread button while following its metadata slot. */
 .studio-thread-row {
-  anchor-scope: --studio-subthread;
+  anchor-scope: --studio-subthread, --studio-thread-pr;
+}
+.studio-thread-pr-control {
+  display: none;
+}
+@supports (left: anchor(--studio-thread-pr center)) {
+  .studio-thread-pr-anchor {
+    anchor-name: --studio-thread-pr;
+    visibility: hidden;
+  }
+  .studio-thread-pr-control {
+    display: inline-flex;
+    position: absolute;
+    left: anchor(--studio-thread-pr center);
+    top: anchor(--studio-thread-pr center);
+    transform: translate(-50%, -50%);
+  }
 }
 .studio-subthread-anchor {
   anchor-name: --studio-subthread;
@@ -3042,9 +3057,9 @@ a.studio-project-row:hover {
 @media (hover: hover) {
   [data-queue-actions] {
     position: absolute;
-    right: 44px;
+    right: 74px;
     top: 50%;
-    max-width: calc(100% - 56px);
+    max-width: calc(100% - 86px);
     transform: translateY(-50%);
   }
 }
@@ -3208,7 +3223,7 @@ a.studio-project-row:hover {
   gap: 12px;
 }
 
-/* The active workspace gets a small glass tile. Tool icons keep their quiet marker. */
+/* The active workspace uses a filled tile. Tool icons use an accent color. */
 .studio .studio-tools-navigation .studio-navigation-item[aria-pressed='true'] {
   border-color: transparent;
   background: transparent;
@@ -3220,9 +3235,8 @@ a.studio-project-row:hover {
   .studio-navigation-item[aria-current='page'] {
   border-radius: 11px;
   border-color: color-mix(in srgb, var(--primary) 24%, transparent);
-  background-color: color-mix(in srgb, var(--primary) 10%, var(--studio-floating-fill));
-  background-image: var(--studio-surface-sheen);
-  box-shadow: var(--studio-control-rim), var(--studio-glow);
+  background: var(--selection);
+  box-shadow: none;
   color: var(--primary);
 }
 :root[data-high-contrast='true']
@@ -3584,10 +3598,6 @@ a.studio-project-row:hover {
   }
   .studio-navigation[aria-label='Main navigation'] {
     border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
-    background: var(--studio-navigation-fill);
-    -webkit-backdrop-filter: var(--studio-navigation-filter);
-    backdrop-filter: var(--studio-navigation-filter);
-    box-shadow: none;
   }
   .studio-header-layout[data-compact='false']
     .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
@@ -3870,6 +3880,56 @@ a.studio-project-row:hover {
   line-height: var(--dovo-type-row-line);
   font-weight: var(--dovo-type-row-weight);
 }
+.studio-task-sidebar .studio-thread-card.studio-thread-row-two-line,
+.studio-thread-card.studio-thread-row-two-line {
+  min-height: 2.625rem;
+  padding-block: 0.3125rem;
+  column-gap: 0.375rem;
+}
+.studio-thread-card.studio-thread-row-two-line .studio-thread-project-icon {
+  width: 1.5rem;
+  height: 1.5rem;
+}
+.studio-thread-card.studio-thread-row-two-line .studio-thread-card-body {
+  gap: 0;
+  container-type: inline-size;
+}
+.studio-thread-card.studio-thread-row-two-line .studio-thread-card-title {
+  line-height: 1rem;
+}
+.studio-thread-card.studio-thread-row-two-line
+  :is(.studio-thread-status, .studio-thread-card-context) {
+  font-size: 0.6875rem;
+  line-height: 0.875rem;
+}
+.studio-thread-checkout-project {
+  max-width: 38%;
+}
+@container (max-width: 180px) {
+  .studio-thread-row-two-line .studio-thread-status-icon {
+    display: none;
+  }
+  .studio-thread-card-context:has(.studio-thread-pr-anchor) .studio-thread-checkout-project {
+    display: none;
+  }
+}
+.studio-workspace-type-badge {
+  position: absolute;
+  right: -0.1875rem;
+  bottom: -0.125rem;
+  display: inline-grid;
+  place-items: center;
+  width: 0.8125rem;
+  height: 0.8125rem;
+  border: 1px solid var(--border);
+  border-radius: 0.25rem;
+  background: var(--sidebar);
+  color: var(--foreground);
+}
+.studio-workspace-type-badge > svg {
+  width: 0.5625rem;
+  height: 0.5625rem;
+}
 
 /* System colors must keep selected icons and their markers visible. */
 @media (forced-colors: active) {
@@ -3920,40 +3980,26 @@ a.studio-project-row:hover {
   opacity: 1;
 }
 
-/* Preserve the existing composer and main navigation. */
+/* Composer and main navigation use solid palette fills. */
 .studio-composer,
 .task-composer .studio-composer,
 .dark .task-composer .studio-composer {
   border-radius: var(--dovo-radius-composer);
-  border-color: var(--studio-glass-edge);
-  background-color: var(--studio-glass-fill);
-  background-image: var(--studio-glass-sheen);
-  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  border-color: var(--border);
+  background: var(--card);
+  box-shadow: none;
 }
 .studio-composer:focus-within,
 .task-composer .studio-composer:focus-within,
 .dark .task-composer .studio-composer:focus-within {
   border-color: color-mix(in srgb, var(--primary) 55%, var(--border));
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  box-shadow: none;
 }
 .studio-header-corner {
-  background-color: var(--studio-glass-fill);
-  background-image: var(--studio-glass-sheen);
-  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
+  background: var(--card);
 }
-@media (min-width: 768px) {
-  .studio-navigation[aria-label='Main navigation'] {
-    border-color: var(--studio-glass-edge);
-    background-color: var(--studio-navigation-fill);
-    background-image: var(--studio-glass-sheen);
-    -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-    backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
-  }
+.studio-navigation[aria-label='Main navigation'] {
+  background: var(--sidebar);
 }
 .studio-selected-surface,
 .studio-filter-selected,
@@ -3970,18 +4016,6 @@ a.studio-project-row:hover {
   box-shadow: none;
 }
 
-/* A composer inside a glass dialog is a flat inset, not another glass layer. */
-.dovo-dialog-content .studio-composer,
-.dovo-dialog-content .studio-composer:focus-within,
-.dark .dovo-dialog-content .studio-composer,
-.dark .dovo-dialog-content .studio-composer:focus-within {
-  background-color: var(--card);
-  background-image: none;
-  -webkit-backdrop-filter: none;
-  backdrop-filter: none;
-  box-shadow: none;
-}
-
 /* The brand and sidebar toggle share one header material. */
 .studio-sidebar-brand-row .studio-sidebar-toggle[data-slot='button'] {
   background-image: none;
@@ -3989,16 +4023,6 @@ a.studio-project-row:hover {
   backdrop-filter: none;
 }
 
-:root
-  .studio-navigation[aria-label='Main navigation']
-  .studio-navigation-item[aria-current='page'] {
-  border-color: var(--studio-glass-edge);
-  background-color: color-mix(in srgb, var(--primary) 10%, var(--studio-glass-fill));
-  background-image: var(--studio-glass-sheen);
-  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  box-shadow: var(--studio-surface-rim);
-}
 :root
   :is(
     .studio-nav-selected,

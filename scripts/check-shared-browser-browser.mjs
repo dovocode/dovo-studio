@@ -2126,6 +2126,7 @@ try {
       ),
     )
   await preview.getByRole('button', { name: 'Open in new tab', exact: true }).waitFor()
+  assert.equal(await preview.getByText(/^Link preview\s*·/).count(), 0)
   await page.locator('[data-browser-preview-background] img').waitFor()
   const remoteOpenerAddress = await page
     .locator('[data-browser-preview-background]')
@@ -2549,8 +2550,8 @@ try {
     await page
       .locator(`[data-browser-tab-id="${sourceBeforeOpen.id}"] .studio-browser-tab-profile`)
       .textContent(),
-    'This computer · Local Work',
-    'Regular tabs show readable names for nondefault profiles',
+    'example.com·Local Work',
+    'Regular tabs show the site and a readable name for a nondefault profile',
   )
   await page.evaluate(async () => {
     window.openedLinks.push('http://localhost:3000/new-window')
@@ -2956,6 +2957,7 @@ try {
   await page.evaluate(async () => {
     window.createdTabs.push({
       key: 'native-extension-tab',
+      active: false,
       url: 'http://localhost:3000/extension-opened',
       profileId: 'default',
     })
@@ -2970,6 +2972,13 @@ try {
     (await persisted()).tabs.find((tab) => tab.url.endsWith('/extension-opened')).profileId,
     'default',
   )
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some((call) => call.action === 'show' && call.key === 'native-extension-tab'),
+    ),
+    false,
+    'A background extension tab keeps the current page selected',
+  )
   await recent.getByRole('button', { name: /^localhost:3000\/extension-opened Local/ }).click()
   await page.waitForFunction(() =>
     window.calls.some(
@@ -2982,6 +2991,7 @@ try {
   await page.evaluate(async () => {
     window.createdTabs.push({
       key: 'native-extension-options',
+      active: true,
       url: 'chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/options.html',
       profileId: 'local-work',
     })
@@ -2994,7 +3004,7 @@ try {
     false,
     'Extension pages are session-only',
   )
-  await optionsTab.click()
+  // A foreground extension page opens as a normal tab, including when link previews are enabled.
   await page.waitForFunction(() =>
     window.calls.some(
       (call) =>
@@ -3003,6 +3013,7 @@ try {
         call.profileId === 'local-work',
     ),
   )
+  assert.equal(await preview.isVisible(), false, 'The extension setup page is a full tab')
   await page.evaluate(async () => {
     window.closedTabs.push('native-extension-options')
     await window.pollBrowser()
@@ -4080,8 +4091,8 @@ try {
     await compactSidebar
       .locator('[data-browser-tab-id="compact-4"] .studio-browser-tab-profile')
       .textContent(),
-    'This computer',
-    'Default regular tabs show readable machine identity without redundant profile initials',
+    'example.test',
+    'Default regular tabs show the site without repeating the local computer name',
   )
   await controlsPage.evaluate(() =>
     window.setCleanup({
@@ -4106,7 +4117,7 @@ try {
     )
   const idlePinGeometry = await pinnedGeometry()
   assert.ok(
-    idlePinGeometry.every((tile) => tile.height === 56),
+    idlePinGeometry.every((tile) => tile.height === 40),
     'Pinned cards keep a fixed height',
   )
   await controlsPage.evaluate(async () => {
@@ -4361,13 +4372,12 @@ try {
     await close.evaluate((button) => getComputedStyle(button.parentElement).display),
     'none',
   )
-  assert.equal(
-    await currentRow
+  const titleActionPadding = () =>
+    currentRow
       .locator('.studio-browser-tab-title')
-      .evaluate((element) => getComputedStyle(element).paddingRight),
-    '0px',
-    'Hidden actions do not reserve title space',
-  )
+      .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingRight))
+  const idlePadding = await titleActionPadding()
+  assert.ok(idlePadding > 0, 'Reserve a fixed slot for tab actions')
   await currentRow.focus()
   await close.waitFor({ state: 'visible' })
   await controlsPage.keyboard.press('Tab')
@@ -4378,12 +4388,7 @@ try {
   )
   await currentRow.hover()
   await close.waitFor({ state: 'visible' })
-  assert.ok(
-    await currentRow
-      .locator('.studio-browser-tab-title')
-      .evaluate((element) => parseFloat(getComputedStyle(element).paddingRight) > 0),
-    'Visible actions make room for their controls',
-  )
+  assert.equal(await titleActionPadding(), idlePadding, 'Visible actions keep the title in place')
   assert.equal(
     await close.evaluate((button) => getComputedStyle(button.parentElement).opacity),
     '1',

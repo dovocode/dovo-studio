@@ -40,15 +40,15 @@ narrow viewports before shipping component changes.
 Studio takes its surface styling from [Opaline](https://opaline.buildlab.in/installation/): soft
 edge highlights, frosted menus and dialogs, rounded actions and restrained depth. Keep the selected
 Studio palette. Shared tokens use 10px field corners, 16px cards and a 4px spacing scale. Text
-actions use capsule shapes. Keep thread rows, including pinned threads, at their current compact
-height and spacing. Desktop and mobile thread rows show a status icon and time without a visible
-status label. Keep the full status in the accessible name and desktop tooltip. Read review rows stay
-quiet.
+actions use capsule shapes.
 
-Desktop and web thread rows follow T3 Code's sidebar hierarchy. The first line has the project icon,
-project name and status. The title and branch use the full width below it. Branch text uses the UI
-font and smaller, muted text. Runtime and provider icons stay at the right. Settled rows keep their
-compact layout. Existing selection, hover controls and keyboard navigation remain available.
+Non-settled thread rows have two lines and a leading project icon. Put the title and status on the
+first line. Put the project, branch, linked PR shortcut, harness icon and computer icon on the
+second line. Keep the title and project visible in the tooltip and accessible details when space is
+limited. A single PR shortcut opens that PR on its owning computer. A count opens the linked PR
+list. Keep native mobile controls at least 44 points high and use the compact settled row for
+settled threads. The selected thread exposes the full machine and harness names in the header or
+Thread info.
 
 Branch truncation adapts T3's `MiddleTruncate` at
 [`8ee7183e6c8a`](https://github.com/pingdotgg/t3code/blob/8ee7183e6c8a1c22a6698f4909ef7e2a423bec3a/apps/web/src/components/ui/middle-truncate.tsx).
@@ -57,10 +57,9 @@ ellipsis directly against the suffix. Resizing refits the text without changing 
 tooltip, accessible label or copy text. The MIT notice is included in **Settings → About → Open
 source notices**.
 
-Unified sidebar and overview rows put one small type icon beside the title. Use the same 14px size
-and 6px gap for Thread, Browser and Terminal. Keep the icon in the title's normal layout. Project
-icons and favicons stay on the context line. Avoid floating badges and separate icon boxes. Pinned
-browser tiles keep their centered favicons.
+Unified shows a type badge at the bottom right of the leading project icon or favicon for a thread,
+browser tab or terminal. The badge also appears on pinned browser tiles. Keep the type in the row's
+accessible identity.
 
 Build and check the real sidebar with synthetic runtime data. Add the preview variable to save
 light, dark and narrow examples:
@@ -73,12 +72,11 @@ DOVO_SIDEBAR_PREVIEWS=/tmp/dovo-sidebar-t3-previews node scripts/check-sidebar-r
 node scripts/check-desktop-audit-layout-browser.mjs
 ```
 
-Pinned browser tabs use 56px cards and a 24px favicon at the exact center. Status and activity stay
-in the corners. Computer and profile details stay in the tooltip and accessible name. Do not add an
-identity badge row to the cards. Activity icons wrap and use only the space they need. Empty
-activity slots do not reserve space. Regular tab titles use the full row until hover or keyboard
-focus shows actions. Touch devices keep those actions visible. The desktop activity bar has a 6px
-left inset, which matches the gap to the sidebar.
+Pinned browser tabs use 40px tiles and a centered 24px favicon on desktop and web. Status and
+activity stay in the corners. Regular tabs show the title above the site and linked project or
+profile. Computer and session details stay available in the accessible name and tab details. Reserve
+a fixed slot for tab actions so the text does not move on hover or focus. Touch devices keep those
+actions visible. The desktop activity bar has a 6px left inset.
 
 Work areas use the palette's solid background. Give titles, body text and metadata distinct weights.
 Use spacing between groups and inset dividers within related rows. Keep icons compact and provide a
@@ -86,22 +84,20 @@ visible keyboard focus indicator. Maintain comfortable touch targets. Use a text
 that start work or change state. Keep the title and action in the same place through loading and
 refresh. Preserve the active item and the user's position when returning from details.
 
-On desktop and web, `packages/web-ui/src/theme.css` owns the solid dialog and menu styles.
-`packages/studio-ui/src/styles.css` owns collection and workbench layouts. Reserve the optical
-material for the existing composer and icon-only navigation, including their portalled controls.
-Keep the Gradients and Glow preferences. Higher contrast, Reduce Transparency and forced colors make
-those optical surfaces opaque. See [Liquid glass](liquid-glass.md) for the source license and
-checks.
+On desktop and web, `packages/web-ui/src/theme.css` owns the dialog and menu styles.
+`packages/studio-ui/src/styles.css` owns collection and workbench layouts. Use solid palette fills
+for the composer, navigation, and overlays. Keep the Gradients and Glow preferences for the
+appearance effects they still control. See [Surface materials](liquid-glass.md) for checks.
 
 UI SDK supplies the shared desktop and web checkbox, switch, collection filter and review tab
 behavior. Use the Dovo components so typography, focus styles and form contracts stay consistent.
 Use native controls on mobile. Keep menus and sheets small enough to reach every action with a
 keyboard or larger text.
 
-Native iOS retains the composer material and native navigation gestures. Use solid native surfaces
-for browser controls, reading panes, change summaries and settings actions. Use the same grouping
-and control sizes on Android. Sticky settings actions name the scope and keep save and discard
-available while the form scrolls.
+Use solid native surfaces for the composer, browser controls, reading panes, change summaries, and
+settings actions. Keep the native navigation gestures. Use the same grouping and control sizes on
+Android. Sticky settings actions name the scope and keep save and discard available while the form
+scrolls.
 
 Collection and detail routes consume the native safe areas once. Browser adapters check these edge
 choices and draft retention. Verify inset sizes, larger text, gestures and screen reader behavior on

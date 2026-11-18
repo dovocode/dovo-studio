@@ -21,11 +21,13 @@ import {
   browserTabCategory,
   browserTabKeepsAwake,
   runtimeComputerName,
+  taskDisplayProject,
   type BrowserTabState,
 } from '@dovo/protocol'
+import { WorkspaceTypeBadge } from '../unified/workspace-type-badge'
 import { BrowserFavicon } from './browser-favicon'
 import { useBrowserProfileDetails } from './browser-profile-label'
-import type { DragEventHandler, ReactNode } from 'react'
+import type { DragEventHandler } from 'react'
 import type { BrowserTab } from './shared-browser-tabs'
 
 export function BrowserTabRow({
@@ -51,7 +53,7 @@ export function BrowserTabRow({
   onError,
   disabled = false,
   pinnedTile = !!tab.pinned,
-  titleIcon,
+  workspaceType,
 }: {
   tab: BrowserTab
   active: boolean
@@ -77,7 +79,7 @@ export function BrowserTabRow({
   disabled?: boolean
   /** Pinned tabs use normal rows in a mixed overview and tiles in the pinned grid. */
   pinnedTile?: boolean
-  titleIcon?: ReactNode
+  workspaceType?: boolean
   reorder?: {
     dragging: boolean
     edge?: 'before' | 'after'
@@ -88,18 +90,9 @@ export function BrowserTabRow({
     onMove: (direction: 'previous' | 'next') => void
   }
 }) {
-  const { runtimes } = useWorkspace()
+  const { activeRuntimeId, runtimes, workspace } = useWorkspace()
   const { name: profile, emoji } = useBrowserProfileDetails(tab)
   const showProfile = tab.profileId !== 'default'
-  const words = profile.trim().split(/\s+/)
-  const initials = (
-    words.length > 1
-      ? words
-          .slice(0, 2)
-          .map((word) => word[0])
-          .join('')
-      : profile.slice(0, 2)
-  ).toUpperCase()
   const owner = runtimes.find((entry) => entry.profile.id === tab.runtimeId)
   const computer =
     tab.kind === 'web'
@@ -113,35 +106,31 @@ export function BrowserTabRow({
   const keepsAwake = category === 'active' && tab.kind === 'web' && browserTabKeepsAwake(tab)
   const menuItem =
     'flex cursor-pointer items-center gap-2 rounded px-2 py-1.5 text-xs outline-none focus:bg-accent data-[disabled]:opacity-50'
+  const site = URL.parse(tab.url)?.host.replace(/^www\./, '') || tab.url
+  const linked = tab.thread
+  const threadWorkspace =
+    linked &&
+    (linked.runtimeId === activeRuntimeId
+      ? workspace
+      : runtimes.find((runtime) => runtime.profile.id === linked.runtimeId)?.snapshot?.workspace)
+  const linkedThread = linked && threadWorkspace?.tasks.find((task) => task.id === linked.id)
+  const project =
+    linkedThread && taskDisplayProject(linkedThread, threadWorkspace?.repositories ?? [])
+  const projectName = project && project.kind !== 'scratch' ? project.name : ''
+  const context = projectName || (showProfile ? profile : '')
   const identity = (
-    <span
-      className={cn(
-        'studio-browser-tab-profile flex min-w-0 items-center text-muted-foreground',
-        pinnedTile
-          ? 'absolute inset-x-0 bottom-0 justify-center gap-0.5 text-[8px] leading-none'
-          : 'gap-1 text-xs leading-4',
+    <span className="studio-browser-tab-profile flex min-w-0 items-center gap-1 text-muted-foreground">
+      <span className={cn('min-w-0 truncate', context && 'max-w-[65%] shrink-0')}>{site}</span>
+      {context && (
+        <>
+          {site && <span aria-hidden="true">·</span>}
+          {!projectName && emoji && <span aria-hidden="true">{emoji}</span>}
+          <span className="min-w-0 truncate">{context}</span>
+        </>
       )}
-      aria-label={`${computer} · ${profile}`}
-    >
-      <span className="studio-browser-tab-identity" title={computer}>
-        <RuntimeIcon
-          icon={owner?.snapshot?.runtimeIcon}
-          className="size-2 shrink-0"
-          aria-hidden="true"
-        />
-      </span>
-      {(emoji || (pinnedTile && showProfile)) && (
-        <span
-          className={cn('studio-browser-tab-identity overflow-hidden', emoji && 'text-[9px]')}
-          title={`${profile} · ${computer}`}
-        >
-          {emoji ?? initials}
-        </span>
-      )}
-      {!pinnedTile && (
-        <span className="min-w-0 truncate" title={`${computer} · ${profile}`}>
-          {computer}
-          {showProfile && ` · ${profile}`}
+      {tab.kind === 'remote' && (
+        <span className="ml-auto shrink-0" title={computer}>
+          <RuntimeIcon icon={owner?.snapshot?.runtimeIcon} className="size-3" aria-hidden="true" />
         </span>
       )}
     </span>
@@ -219,7 +208,7 @@ export function BrowserTabRow({
               )
             }}
             aria-current={active ? 'page' : undefined}
-            aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}${tab.detached ? ' · Open in detached window' : ''}`}
+            aria-label={`${title} ${tab.kind === 'web' ? 'Local' : 'Remote'} · ${computer} · ${profile}${projectName ? ` · ${projectName}` : ''}${tab.detached ? ' · Open in detached window' : ''}`}
             onClick={onSelect}
             title={`${title}\n${tab.url}\n${computer} · ${profile}${tab.detached ? '\nOpen in detached window' : ''}${studioId ? `\nStudio ID: ${studioId}` : ''}${tab.snoozedUntil && category === 'snoozed' ? `\nWakes ${new Date(tab.snoozedUntil).toLocaleString()}` : ''}`}
             className={`studio-browser-tab-select min-w-0 text-left text-xs ${pinnedTile ? 'flex h-14 w-full flex-none items-center justify-center px-2 py-2' : ''}`}
@@ -254,6 +243,7 @@ export function BrowserTabRow({
                 )}
               >
                 <BrowserFavicon tab={tab} />
+                {workspaceType && <WorkspaceTypeBadge kind="browser" />}
                 {badge !== undefined && (
                   <span
                     aria-label={badge === 'unread' ? 'Unread activity' : `${badge} unread`}
@@ -287,14 +277,7 @@ export function BrowserTabRow({
             </span>
             {!pinnedTile && (
               <>
-                {titleIcon ? (
-                  <span className="studio-thread-card-title flex min-w-0 flex-1 items-center gap-1.5">
-                    {titleIcon}
-                    <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
-                  </span>
-                ) : (
-                  <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
-                )}
+                <span className="studio-browser-tab-title min-w-0 truncate">{title}</span>
                 {identity}
               </>
             )}
@@ -337,6 +320,12 @@ export function BrowserTabRow({
         <ContextMenu.Content className="studio-menu-surface studio-row-menu studio-browser-tab-menu z-50 min-w-48 rounded-2xl border bg-[var(--studio-floating-fill)] p-1 text-popover-foreground">
           <ContextMenu.Label className="max-w-64 truncate px-2 py-1.5 text-xs text-muted-foreground">
             {title}
+          </ContextMenu.Label>
+          <ContextMenu.Label
+            className="max-w-64 truncate px-2 pb-1.5 text-[10px] text-muted-foreground"
+            title={`${computer} · ${profile}`}
+          >
+            {computer} · {profile}
           </ContextMenu.Label>
           {studioId && (
             <>

@@ -191,6 +191,154 @@ async function smartFixture(state: 'closed' | 'merged' = 'closed') {
   return { runtime, s, task, list, detail, watcher: new TaskPullWatcher(s) }
 }
 
+it('finds edited linked PRs on later pages and keeps them separate from the General thread lifecycle', async () => {
+  const f = await smartFixture('merged')
+  const repository = f.s.store.get().repositories.find((repo) => repo.id === 'repo')!
+  const general = {
+    id: 'general',
+    name: 'General',
+    path: repository.path + '/general',
+    kind: 'scratch',
+    branch: '',
+  } as const
+  f.s.store.update((workspace) => ({
+    ...workspace,
+    repositories: [...workspace.repositories, general],
+  }))
+  const tasks = ['dovo/fix-7', 'dovo/fix-8', 'dovo/fix-7', 'dovo/fix-7'].map((branch, index) => {
+    const task = f.s.tasks.create({
+      title: branch,
+      agentId: 'agent',
+      repositoryId: general.id,
+      objective: '',
+    })
+    f.s.store.updateTaskHistory(task.id, (current) => ({
+      ...current,
+      linkedCheckouts: [
+        {
+          id: 'linked',
+          repositoryId: repository.id,
+          execution: 'main',
+          access: index === 3 ? 'read-only' : 'edit',
+        },
+      ],
+      turns: [
+        {
+          id: 'turn',
+          assistantId: 'reply',
+          agentId: 'agent',
+          provider: 'codex',
+          model: '',
+          status: 'completed',
+          startedAt: new Date().toISOString(),
+          checkpoint: {
+            before: '',
+            files: [],
+            omitted: [],
+            linked: [
+              {
+                checkoutId: 'linked',
+                repositoryId: repository.id,
+                directory: repository.path,
+                branch,
+                before: 'before',
+                after: index === 2 ? 'before' : 'after',
+                files:
+                  index === 2
+                    ? []
+                    : [{ path: 'hello.txt', before: 'old', after: 'new', viewed: false }],
+                omitted: [],
+              },
+            ],
+          },
+        },
+      ],
+    }))
+    return task
+  })
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, example: true }))
+  const pull8 = {
+    ...pull('open', null),
+    number: 8,
+    head: 'dovo/fix-8',
+    url: 'https://github.com/o/r/pull/8',
+  }
+  f.list.mockImplementation(async (_cwd, _state, page) => ({
+    pulls: [page === 1 ? pull8 : pull('open', null)],
+    page,
+    hasMore: page === 1,
+  }))
+  const detail = await f.s.pullCache.status(repository.path, 7)
+  f.detail.mockImplementation(async (_cwd, number) => ({
+    ...detail,
+    pull: { ...detail.pull, ...(number === 7 ? pull('open', null) : pull8) },
+  }))
+  f.s.preferences.save({ archiveOnPullMerge: true, autoLinkPullRequests: false })
+  await f.watcher.refresh()
+  expect(f.list).not.toHaveBeenCalled()
+  f.s.preferences.save({ autoLinkPullRequests: true })
+  f.s.store.updateTask(tasks[1]!.id, (task) => ({ ...task, ignoredPullRequestUrls: [pull8.url] }))
+
+  await f.watcher.refresh()
+
+  expect(f.list.mock.calls.map(([, , page]) => page)).toEqual([1, 2])
+  expect(f.s.store.task(tasks[0]!.id)).toMatchObject({
+    linkedPullRequests: [{ number: 7 }],
+    pullStatuses: [{ number: 7, state: 'open' }],
+  })
+  expect(f.s.store.task(tasks[0]!.id).pullStatus).toBeUndefined()
+  expect(f.s.store.task(tasks[1]!.id).linkedPullRequests).toBeUndefined()
+  expect(f.s.store.task(tasks[2]!.id).linkedPullRequests).toBeUndefined()
+  expect(f.s.store.task(tasks[3]!.id).linkedPullRequests).toBeUndefined()
+  f.detail.mockResolvedValue(detail)
+  f.list.mockResolvedValue({ pulls: [], page: 1, hasMore: false })
+
+  await f.watcher.refresh()
+
+  const merged = f.s.store.task(tasks[0]!.id)
+  expect(merged.pullStatuses).toMatchObject([{ number: 7, state: 'merged' }])
+  expect(merged.archivedAt).toBeUndefined()
+  expect(merged.archived).not.toBe(true)
+})
+
+it('links an unlinked PR only when the recorded push matches its exact head', async () => {
+  const f = await smartFixture()
+  const cwd = '/external-checkout'
+  const repositoryUrl = 'https://github.com/o/external'
+  const summary = { ...pull('open', null), url: repositoryUrl + '/pull/7' }
+  const detail = await f.s.pullCache.status(cwd, 7)
+  f.s.store.updateTask(f.task.id, (task) => ({ ...task, checkoutBranch: undefined }))
+  const receipt = {
+    repositoryIdentity: 'github.com/o/external',
+    branch: summary.head,
+    cwd,
+    sha: 'c'.repeat(40),
+    turnId: 'turn',
+    recordedAt: new Date().toISOString(),
+  }
+  f.s.store.saveExternalGitReceipts(f.task.id, [{ ...receipt, sha: 'd'.repeat(40) }, receipt])
+  f.list.mockResolvedValue({ pulls: [summary], page: 1, hasMore: false })
+  f.detail.mockResolvedValue({ ...detail, pull: { ...detail.pull, ...summary, repositoryUrl } })
+  f.detail.mockClear()
+
+  await f.watcher.refresh()
+  expect(f.detail).toHaveBeenCalledTimes(1)
+  expect(f.s.store.task(f.task.id).linkedPullRequests).toBeUndefined()
+  f.detail.mockResolvedValue({
+    ...detail,
+    pull: { ...detail.pull, ...summary, repositoryUrl, headSha: 'c'.repeat(40) },
+  })
+
+  await f.watcher.refresh()
+  expect(f.detail).toHaveBeenCalledTimes(2)
+  expect(f.list).toHaveBeenLastCalledWith(cwd, 'open', 1, false, true)
+  expect(f.s.store.task(f.task.id)).toMatchObject({
+    linkedPullRequests: [{ url: summary.url }],
+    pullStatuses: [{ url: summary.url, state: 'open' }],
+  })
+  expect(f.s.store.task(f.task.id).pullStatus).toBeUndefined()
+})
+
 it.each(['manual', 'polling'] as const)(
   'drains a delayed %s refresh before disposal and prevents new cycles',
   async (mode) => {

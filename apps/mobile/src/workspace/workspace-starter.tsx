@@ -38,7 +38,7 @@ import { addTab, browserAddress, visitTab, type BrowserTab } from '../browser/br
 import { ThreadStartModes } from '../tasks/creation/thread-start-modes'
 import { Sheet } from '../ui/layout/sheet'
 import { contentColumn } from '../ui/layout/content-column'
-import { Glass } from '../ui/layout/glass'
+import { Surface } from '../ui/layout/surface'
 import { ScreenHeader } from '../ui/layout/screen-header'
 import { Choice } from '../ui/controls/choice'
 import { Action } from '../ui/controls/action'
@@ -674,7 +674,7 @@ export function WorkspaceStarter({
         </View>
       </ScrollView>
       <View style={{ ...contentColumn.form, padding: 12, gap: 10 }}>
-        <Glass
+        <Surface
           testID="Workspace input surface"
           style={{
             borderRadius: designTokens.radius.composer,
@@ -821,7 +821,7 @@ export function WorkspaceStarter({
               onPress={() => void submit()}
             />
           </View>
-        </Glass>
+        </Surface>
         <View style={{ gap: 12 }}>
           <Text accessibilityRole={reason ? 'alert' : undefined} style={styles.muted}>
             {reason

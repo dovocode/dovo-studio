@@ -29,6 +29,8 @@ export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
+export const Keyboard={dismiss:()=>{}};
+export const Linking={openURL:async url=>{window.externalUrl=url}};
 export const AccessibilityInfo={announceForAccessibility:message=>window.announcements?.push(message),sendAccessibilityEvent:(node,event)=>{if(event==='focus')node.focus()}};
 export const Alert={alert:(title,message,buttons)=>{window.alerts.push({title,message});buttons?.find(button=>button.style!=='cancel')?.onPress?.()}};
 export const Icon=({name})=><i data-icon={name}/>;
@@ -66,10 +68,6 @@ const stubs = [
   },
   { path: 'react-native-gesture-handler', contents: controls },
   { path: 'react-native', contents: controls },
-  {
-    path: 'expo-glass-effect',
-    contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
-  },
   {
     path: 'lucide-react-native',
     contents: `const Icon=({color,accessibilityLabel,size=12,style})=><svg width={size} height={size} aria-label={accessibilityLabel} style={{color,flexShrink:0,transform:style?.transform?.map(value=>'translateY('+value.translateY+'px)').join(' ')}}/>;export {Icon as Pause,Icon as GitMerge,Icon as GitPullRequest,Icon as GitPullRequestClosed,Icon as GitPullRequestDraft,Icon as Archive,Icon as CircleCheck,Icon as CircleDashed,Icon as CircleStop,Icon as CircleX,Icon as AlarmClock,Icon as CloudOff,Icon as FilePenLine,Icon as GitBranch,Icon as GitFork,Icon as MessageCircleQuestion,Icon as MessageCircle,Icon as MessageCircleDashed,Icon as Pin,Icon as Save,Icon as SquareTerminal,Icon as Network};`,
@@ -203,12 +201,13 @@ for (const [path, importer] of [
   ['../../ui/content/text', 'tasks/list/'],
   ['../../ui/controls/icon', 'tasks/list/'],
   ['../../ui/theme', 'tasks/list/'],
+  ['../../ui/layout/sheet', 'tasks/list/'],
   ['../../ui/content/text', 'tasks/detail/lifecycle-actions.tsx'],
   ['../../ui/controls/action', 'tasks/detail/lifecycle-actions.tsx'],
   ['../../ui/theme', 'tasks/detail/lifecycle-actions.tsx'],
   ['../theme', 'ui/content/pull-request-icon.tsx'],
   ['../theme', 'ui/content/empty-state.tsx'],
-  ['../theme', 'ui/layout/glass.tsx'],
+  ['../theme', 'ui/layout/surface.tsx'],
   ['./text', 'ui/content/empty-state.tsx'],
   ['../controls/icon', 'ui/content/empty-state.tsx'],
 ])
@@ -228,7 +227,7 @@ stubs.push({
 })
 const workspaceControls =
   controls +
-  `export const SearchField=SettingsSearchField;export const Choice=SettingsChoice;export const Glass=View;`
+  `export const SearchField=SettingsSearchField;export const Choice=SettingsChoice;export const Surface=View;`
 for (const path of [
   '../ui/content/text',
   '../ui/controls/icon',
@@ -419,7 +418,7 @@ try {
           sizes.every(
             (size, index) =>
               size &&
-              (index === 4 || index === 3
+              (index === 4
                 ? size.height < sizes[0].height
                 : Math.abs(size.height - sizes[0].height) < 0.5),
           ),
@@ -475,24 +474,22 @@ try {
               '0.06',
             )
           }
-          if (id === 'task-1') {
-            const execution = await row.getByTestId('thread-execution').boundingBox()
-            assert.ok(
-              Math.abs(title.y + title.height / 2 - execution.y - execution.height / 2) < 1,
-              'Projectless execution metadata shares the title line',
-            )
-          }
           const project = await row
             .getByText(id === 'task-1' ? 'No Project' : 'Project', { exact: true })
             .boundingBox()
           const projectIcon = await row.getByTestId('Thread project icon').boundingBox()
           assert.ok(
-            Math.abs(projectIcon.y + projectIcon.height / 2 - project.y - project.height / 2) < 1,
-            'Project icons stay inline with their names at every text size',
+            Math.abs(
+              projectIcon.y +
+                projectIcon.height / 2 -
+                sizes[ids.indexOf(id)].y -
+                sizes[ids.indexOf(id)].height / 2,
+            ) < 2,
+            'Project icons center across both lines at every text size',
           )
-          assert.ok(projectIcon.x + projectIcon.width <= project.x)
+          assert.ok(projectIcon.x + projectIcon.width <= title.x)
           assert.ok(
-            project.y + project.height <= title.y,
+            title.y + title.height <= project.y + 1,
             JSON.stringify({ id, width, scale, project, title }),
           )
         }
@@ -574,8 +571,8 @@ try {
         const touch = await toggle.boundingBox()
         assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
         assert.ok(
-          provider.y >= project.y + project.height,
-          'Comfortable execution indicators follow the project and title',
+          Math.abs(provider.y + provider.height / 2 - project.y - project.height / 2) < 2,
+          'Comfortable execution indicators share the project metadata line',
         )
         assert.equal(touch.width, 44)
         assert.equal(touch.height, 44)
@@ -677,7 +674,7 @@ try {
             if (await runtimeIcon.count()) {
               const runtime = await runtimeIcon.boundingBox()
               assert.ok(icon.x + icon.width <= runtime.x, 'Subthreads precede runtime')
-              assert.ok(runtime.x + runtime.width <= indicator.x, 'Runtime precedes harness')
+              assert.ok(indicator.x + indicator.width <= runtime.x, 'Harness precedes runtime')
             }
             const touch = await toggle.boundingBox()
             const menu = await page.getByTestId(/Task .*parent.* actions/).boundingBox()
@@ -700,6 +697,15 @@ try {
         }
       }
     }
+    const pullShortcut = page.getByRole('button', { name: 'Open PR #42: PR', exact: true })
+    const pullBounds = await pullShortcut.boundingBox()
+    assert.equal(pullBounds.height, 44)
+    assert.ok(pullBounds.width >= 44)
+    await pullShortcut.click()
+    const route = await page.evaluate(() => window.routes.at(-1))
+    assert.equal(route.pathname, '/pulls/pr/[runtimeId]/[repositoryId]/[number]')
+    assert.equal(route.params.number, '42')
+    assert.equal(route.params.runtimeId, 'http://mobile-owner.lan:8787')
     await page.evaluate(() => {
       window.showDevices(false)
       window.setListPreferences({ threadDensity: 'comfortable' })
@@ -773,13 +779,13 @@ try {
   }
   assert.equal(
     await densityTitle.evaluate((el) => el.parentElement.parentElement.children.length),
-    3,
-    'Compact follows desktop project/status, title and checkout hierarchy',
+    2,
+    'Compact follows desktop title/status and checkout hierarchy',
   )
   assert.equal(
-    await densityTitle.evaluate((el) => el.parentElement.children.length),
-    1,
-    'Compact gives the title its own line',
+    await densityTitle.evaluate((el) => el.parentElement.lastElementChild.dataset.testid),
+    'Thread status',
+    'Compact puts status beside the title',
   )
   const historyInput = page.getByRole('textbox', { name: 'Search threads', exact: true })
   assert.equal(await historyInput.isVisible(), true, 'Search stays visible in the header')
@@ -1177,10 +1183,9 @@ try {
     assert.equal(style.weight, '500')
     const metadataOpacity = () =>
       title.evaluate((element) =>
-        [
-          element.parentElement.previousElementSibling,
-          element.parentElement.nextElementSibling,
-        ].map((row) => Number(getComputedStyle(row).opacity)),
+        [element.parentElement, element.parentElement.nextElementSibling].map((row) =>
+          Number(getComputedStyle(row).opacity),
+        ),
       )
     assert.deepEqual(
       await metadataOpacity(),
@@ -1490,15 +1495,8 @@ try {
   await page.getByRole('button', { name: /^Working,/ }).click()
   await page.getByTestId('Task running').waitFor()
   const groupedStatus = page.getByTestId('Task running').getByTestId('Thread status')
-  assert.ok(
-    !/Working/.test(await groupedStatus.innerText()),
-    'Grouped status keeps only the indicator and elapsed time',
-  )
+  assert.equal(await groupedStatus.innerText(), 'Working')
   assert.match(await groupedStatus.getAttribute('aria-label'), /^Working/)
-  assert.ok(
-    (await groupedStatus.innerText()).trim().length > 0,
-    'Working elapsed time remains visible',
-  )
   await page.evaluate(() => {
     const task = window.snapshot.workspace.tasks[0]
     window.setListPreferences({
@@ -1566,17 +1564,16 @@ try {
     ),
     true,
   )
-  assert.doesNotMatch(
+  assert.equal(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    /Working/,
+    'Working',
   )
   const waitingStatus = page.getByTestId('Task waiting').getByTestId('Thread status')
-  assert.doesNotMatch(await waitingStatus.innerText(), /Waiting/)
-  assert.match(await waitingStatus.innerText(), /\d+m/)
+  assert.equal(await waitingStatus.innerText(), 'Waiting')
   await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
-  assert.doesNotMatch(
+  assert.equal(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    /Working/,
+    'Working',
   )
   await page.evaluate(() =>
     window.setListPreferences({
@@ -1733,8 +1730,7 @@ try {
     await indicator.waitFor()
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.equal(await indicator.locator('svg').count(), 1)
-    if (status === 'draft') assert.equal(await indicator.innerText(), '')
-    else assert.match(await indicator.innerText(), /^\d+[mhd]$/)
+    assert.equal(await indicator.innerText(), state)
   }
   assert.deepEqual(errors, [])
 

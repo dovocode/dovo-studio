@@ -1,11 +1,21 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { EventEmitter } from 'node:events'
 import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
+const { EventEmitter } = await vi.hoisted(() => import('node:events'))
+
 const f = vi.hoisted(() => {
+  class PopupWindow extends EventEmitter {
+    webContents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
+    isDestroyed = () => false
+    setHasShadow = vi.fn()
+    destroy = vi.fn(() => {
+      this.isDestroyed = () => true
+      this.emit('closed')
+    })
+  }
   const toId = (bytes: Buffer | string) =>
     createHash('sha256')
       .update(bytes)
@@ -47,6 +57,7 @@ const f = vi.hoisted(() => {
     }
   }
   return {
+    PopupWindow,
     toId,
     sessions,
     fakeSession,
@@ -68,6 +79,7 @@ const f = vi.hoisted(() => {
         session: unknown
         modulePath: string
         createTab: Function
+        selectTab: (contents: Electron.WebContents) => void
         removeTab: Function
         createWindow: Function
         requestPermissions: (extension: unknown, request: unknown) => Promise<boolean>
@@ -75,12 +87,14 @@ const f = vi.hoisted(() => {
       addTab: ReturnType<typeof vi.fn>
       selectTab: ReturnType<typeof vi.fn>
       removeTab: ReturnType<typeof vi.fn>
+      emit: InstanceType<typeof EventEmitter>['emit']
       api: { browserAction: { activateClick: ReturnType<typeof vi.fn> } }
     }>,
   }
 })
 vi.mock('electron', () => ({
   app: { getPath: () => f.userData },
+  BrowserWindow: f.PopupWindow,
   dialog: { showOpenDialog: f.dialog, showMessageBox: f.review },
   session: {
     fromPartition: (partition: string) => {
@@ -91,8 +105,7 @@ vi.mock('electron', () => ({
   },
 }))
 vi.mock('electron-chrome-extensions', () => ({
-  ElectronChromeExtensions: class {
-    on = vi.fn<(...args: unknown[]) => void>()
+  ElectronChromeExtensions: class extends EventEmitter {
     addTab = vi.fn<(...args: unknown[]) => void>()
     selectTab = vi.fn<(...args: unknown[]) => void>()
     removeTab = vi.fn<(...args: unknown[]) => void>()
@@ -107,6 +120,7 @@ vi.mock('electron-chrome-extensions', () => ({
       browserAction: { activateClick: vi.fn<(details: unknown) => void>() },
     }
     constructor(public options: never) {
+      super()
       f.instances.push(this as never)
     }
   },
@@ -135,6 +149,7 @@ const window = {
 } as never
 const tabs = {
   create: vi.fn<ExtensionTabHost['create']>(async () => [{}, {}] as never),
+  select: vi.fn<ExtensionTabHost['select']>(),
   close: vi.fn<ExtensionTabHost['close']>(),
   find: vi.fn<ExtensionTabHost['find']>(() => undefined),
   window: vi.fn<ExtensionTabHost['window']>(() => undefined),
@@ -192,6 +207,26 @@ it('refuses commands and stays unloaded while the experimental browser is disabl
   await expect(extensions.handle(window, { action: 'list', profileId: 'work' })).rejects.toThrow(
     'Enable experimental Browser',
   )
+})
+
+it('closes the open action popup when its extension is disabled', async () => {
+  choose(await fixture('Fixture'))
+  const manager = createBrowserExtensions(tabs)
+  const result = await manager.handle(window, { action: 'install', profileId: 'work' })
+  const id = result?.installed
+  if (!id) throw new Error('Fixture did not install')
+  const popup = new f.PopupWindow()
+  const parent = new f.PopupWindow()
+  f.instances[0].emit('browser-action-popup-created', {
+    browserWindow: popup,
+    parent,
+    extensionId: id,
+  })
+
+  await manager.handle(window, { action: 'disable', profileId: 'work', id })
+
+  expect(popup.destroy).toHaveBeenCalledOnce()
+  expect(parent.listenerCount('focus')).toBe(0)
 })
 
 it('reviews and preserves nativeMessaging in a managed copy, leaving the chosen folder untouched', async () => {
@@ -428,6 +463,9 @@ it('connects library tab and window requests to Dovo tabs, refusing extension wi
   const { options } = f.instances[0]!
   await options.createTab({ url: 'https://example.com/' })
   expect(tabs.create).toHaveBeenCalledWith('work', { url: 'https://example.com/' })
+  const tab = { id: 1 } as Electron.WebContents
+  options.selectTab(tab)
+  expect(tabs.select).toHaveBeenCalledWith('work', tab)
   const contents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
   options.removeTab(contents)
   expect(tabs.close).toHaveBeenCalledWith(contents)

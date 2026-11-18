@@ -254,7 +254,7 @@ export function ServerImage({
           >
             {(taskId || 'taskId' in source) && (
               <EditChatImage
-                glass
+                bordered
                 source={
                   'reference' in source
                     ? {
@@ -271,7 +271,7 @@ export function ServerImage({
             <IconButton
               label={uiText('Close image')}
               icon="close"
-              variant="glass"
+              variant="bordered"
               onPress={() => setPreview(false)}
             />
           </View>

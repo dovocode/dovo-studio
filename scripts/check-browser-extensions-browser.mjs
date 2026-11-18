@@ -130,7 +130,7 @@ try {
   await dialog.getByText('Previously removed access: nativeMessaging.', { exact: false }).waitFor()
   await dialog.getByRole('alert').filter({ hasText: 'Extension manifest could not load' }).waitFor()
   assert.equal(
-    await row('Broken helper').getByRole('button', { name: 'Open popup' }).isEnabled(),
+    await row('Broken helper').getByRole('button', { name: 'Open extension' }).isEnabled(),
     false,
   )
 
@@ -155,7 +155,7 @@ try {
     id: 'a'.repeat(32),
   })
   assert.equal(
-    await row('Work helper').getByRole('button', { name: 'Open popup' }).isEnabled(),
+    await row('Work helper').getByRole('button', { name: 'Open extension' }).isEnabled(),
     false,
   )
   await row('Work helper').getByRole('button', { name: 'Enable', exact: true }).click()
@@ -208,7 +208,7 @@ try {
   await show()
   await row('Work helper').getByRole('button', { name: 'Unpin from toolbar', exact: true }).click()
   await row('Work helper').getByRole('button', { name: 'Pin to toolbar', exact: true }).waitFor()
-  const popup = row('Work helper').getByRole('button', { name: 'Open popup' })
+  const popup = row('Work helper').getByRole('button', { name: 'Open extension' })
   const bounds = await page
     .getByRole('button', { name: 'Extensions', exact: true, includeHidden: true })
     .boundingBox()
@@ -238,7 +238,7 @@ try {
     window.failAction = 'open'
   })
   await show()
-  await row('Work helper').getByRole('button', { name: 'Open popup' }).click()
+  await row('Work helper').getByRole('button', { name: 'Open extension' }).click()
   await dialog.getByRole('alert').filter({ hasText: 'Fixture open failed' }).waitFor()
   assert.equal(await dialog.isVisible(), true)
 

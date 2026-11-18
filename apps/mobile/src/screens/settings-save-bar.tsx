@@ -16,7 +16,7 @@ import { View, ScrollView, Pressable } from 'react-native'
 import { SettingsAction } from './settings-controls'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
-import { Glass } from '../ui/layout/glass'
+import { Surface } from '../ui/layout/surface'
 
 export const SettingsFooterContext = createContext<((footer: ReactNode) => void) | null>(null)
 export const SettingsSaveScope = createContext<{ label: string; online: boolean } | null>(null)
@@ -105,8 +105,7 @@ export function SettingsSaveBar({
           paddingVertical: 8,
         }}
       >
-        <Glass
-          solid
+        <Surface
           testID="Settings save surface"
           style={{ borderRadius: designTokens.radius.overlay, padding: 12, gap: 4 }}
         >
@@ -223,7 +222,7 @@ export function SettingsSaveBar({
               </InterfaceText>
             </Text>
           )}
-        </Glass>
+        </Surface>
       </View>
     ),
     [

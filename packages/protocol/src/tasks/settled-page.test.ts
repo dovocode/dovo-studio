@@ -22,6 +22,28 @@ const task = (id: string): Task => ({
   messages: [],
   files: [],
 })
+it('retains a local Bot caller but not an unrelated thread with a remote caller’s ID', () => {
+  const call = {
+    ...task('1'),
+    botMention: {
+      runtimeId: 'owner',
+      botId: 'bot',
+      sourceTaskId: '0',
+      sourceMessageId: 'input',
+      sourceRuntimeId: 'owner',
+    },
+  }
+  const rows = (sourceRuntimeId: string) =>
+    settledSummaryPage(
+      [task('0'), { ...call, botMention: { ...call.botMention, sourceRuntimeId } }],
+      0,
+      [],
+      Date.now(),
+      'owner',
+    ).tasks.map((item) => item.id)
+  expect(rows('owner')).toEqual(['0', '1'])
+  expect(rows('different-runtime')).toEqual(['1'])
+})
 it('retains routine workers and mention copies beyond the settled summary page', () => {
   const worker = { ...task('0'), botJob: { botId: 'bot', runId: 'run' } }
   const copy = {

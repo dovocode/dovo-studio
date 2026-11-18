@@ -7,10 +7,12 @@ import { Schema } from 'effect'
 import {
   mutableStruct,
   bringBackSideThreadResultSchema,
-  sideThreadAttention,
+  sideThreadRequest,
+  type SideThreadRequest,
   sideThreadAttentionTarget,
   responses,
   threadChildren,
+  sideThreadPeers,
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
@@ -58,7 +60,7 @@ export function AgentSideChats({
         runtimeIdentity: snapshot?.runtimeId,
         tasks: snapshot?.workspace.tasks ?? [],
       },
-      ...(overviews ?? []).flatMap((source) =>
+      ...sideThreadPeers(overviews ?? [], snapshot?.runtimeId).flatMap((source) =>
         source.profile.id !== profile?.id && source.snapshot
           ? [
               {
@@ -72,10 +74,26 @@ export function AgentSideChats({
     ],
     { id: task.id, runtimeId: profile?.id ?? null, runtimeIdentity: snapshot?.runtimeId },
   )
-  const open = (id: string, runtimeId: string | null | undefined, runtimeIdentity?: string) => {
+  const open = (
+    id: string,
+    runtimeId: string | null | undefined,
+    runtimeIdentity?: string,
+    target?: SideThreadRequest,
+  ) => {
     if (!runtimeId || !current()) return
     sheet.current?.dismiss(() => {
-      if (current()) router.push(taskHref(runtimeId, id, undefined, undefined, runtimeIdentity))
+      if (current())
+        router.push(
+          taskHref(
+            runtimeId,
+            id,
+            target?.kind === 'input' ? target.requestId : undefined,
+            undefined,
+            runtimeIdentity,
+            undefined,
+            target?.kind === 'approval' ? target.requestId : undefined,
+          ),
+        )
     })
   }
   return (
@@ -146,7 +164,11 @@ export function AgentSideChats({
       )}
       {children.map(({ task: child, runtimeId, runtimeIdentity, mention, mentionSourceTitle }) => {
         const local = runtimeId === profile?.id && runtimeIdentity === snapshot?.runtimeId
-        const attention = local ? sideThreadAttention(snapshot, child.id) : undefined
+        const source = local
+          ? snapshot
+          : overviews?.find((entry) => entry.profile.id === runtimeId)?.snapshot
+        const target = sideThreadRequest(source, child.id)
+        const attention = target?.kind
         const label =
           attention === 'approval'
             ? 'Needs approval'
@@ -171,7 +193,7 @@ export function AgentSideChats({
               secondary
               label={`${child.title} · ${label}`}
               disabled={!profile || action.busy}
-              onPress={() => open(child.id, runtimeId, runtimeIdentity)}
+              onPress={() => open(child.id, runtimeId, runtimeIdentity, target)}
             />
             <ChildThreadName
               key={JSON.stringify([runtimeId, child.id])}
@@ -182,19 +204,12 @@ export function AgentSideChats({
             {child.botConversation && (
               <Text style={styles.muted}>{uiText('Saved Bot conversation')}</Text>
             )}
-            {mention && (
-              <>
-                <Text style={styles.muted}>
-                  {mentionSourceTitle
-                    ? uiText('Saved from {value0}', { value0: mentionSourceTitle })
-                    : uiText('Bot mention copy')}
-                </Text>
-                <Action
-                  secondary
-                  label={uiText('Open source thread')}
-                  onPress={() => open(mention.sourceTaskId, runtimeId, runtimeIdentity)}
-                />
-              </>
+            {mention && !mention.sourceRuntimeId && (
+              <Text style={styles.muted}>
+                {mentionSourceTitle
+                  ? uiText('Saved from {value0}', { value0: mentionSourceTitle })
+                  : uiText('Bot mention copy')}
+              </Text>
             )}
             {unused && !child.archivedAt && (
               <Action
@@ -324,9 +339,9 @@ export function SideThreadActions({ task, onReview }: { task: Task; onReview?: (
 export function SideChatAttention({ task }: { task: Task }) {
   const uiText = useInterfaceText()
 
-  const { snapshot, profile } = useRuntime()
+  const { snapshot, profile, overviews } = useRuntime()
   const { styles } = useTheme()
-  const target = sideThreadAttentionTarget(snapshot, task.id)
+  const target = sideThreadAttentionTarget(snapshot, task.id, overviews)
   if (!target || !profile) return null
   return (
     <View
@@ -351,11 +366,11 @@ export function SideChatAttention({ task }: { task: Task }) {
         onPress={() =>
           router.push(
             taskHref(
-              profile.id,
+              target.owner?.runtimeId ?? profile.id,
               target.id,
               target.kind === 'input' ? target.requestId : undefined,
               undefined,
-              snapshot?.runtimeId,
+              target.owner?.runtimeIdentity ?? snapshot?.runtimeId,
               undefined,
               target.kind === 'approval' ? target.requestId : undefined,
             ),

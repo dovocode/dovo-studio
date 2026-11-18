@@ -234,6 +234,22 @@ it('checks task ownership and credentials before launching, isolates browser tic
     }),
   )
   expect((await invalidAck)[0]).toBe(1008)
+  const stalledTicket = (await (await call('task')).json()).ticket
+  const stalled = new WebSocket(
+    `ws://127.0.0.1:${runtime.port}/ws/browser?ticket=${stalledTicket}&frames=binary-v1`,
+  )
+  await once(stalled, 'open')
+  await vi.waitFor(() => expect(attach).toHaveBeenCalledTimes(3))
+  const delivered = once(stalled, 'message')
+  attach.mock.calls[2][1]({ type: 'frame', width: 1, height: 1, data: Buffer.from('frame') })
+  await delivered
+  const clock = vi.spyOn(performance, 'now').mockReturnValue(performance.now() + 11000)
+  try {
+    expect((await once(stalled, 'close'))[0]).toBe(1013)
+  } finally {
+    clock.mockRestore()
+    stalled.terminate()
+  }
   // An input waiting behind navigation rechecks trust when it eventually executes.
   expect(() => input.mock.calls[0][2]?.()).toThrow(/disconnected|revoked/i)
 })

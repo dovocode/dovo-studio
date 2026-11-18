@@ -152,12 +152,17 @@ export class LinkedCheckouts {
       signal?.throwIfAborted()
       const repo = this.store.get().repositories.find((item) => item.id === link.repositoryId)
       if (!repo) throw new HttpError(404, 'Linked project no longer exists')
-      const root = repo.kind
-        ? await repositoryPath(repo.path)
-        : (await this.git.inspect(repo.path)).path
+      const checkout = repo.kind ? undefined : await this.git.inspect(repo.path)
+      const root = checkout?.path ?? (await repositoryPath(repo.path))
       signal?.throwIfAborted()
       if (link.execution === 'main') {
-        resolved.push({ ...link, directory: root, name: repo.name, git: !repo.kind })
+        resolved.push({
+          ...link,
+          directory: root,
+          name: repo.name,
+          git: !repo.kind,
+          branch: checkout?.branch,
+        })
         continue
       }
       const records = worktreeRecords(

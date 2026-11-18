@@ -29,10 +29,12 @@ without checking the applied patch and its fixture.
   verifies a real nested fixture ad hoc. Replace this patch when upstream offers equivalent
   scheduling.
 - **electron-chrome-extensions 4.10.0:** return the caller's tab from `tabs.getCurrent`, leaving
-  popups and background workers without a tab. Let preferred-size events size action popups instead
-  of resetting their viewport to 25 pixels after load; responsive extensions such as Proton Pass
-  otherwise retain the collapsed dimensions. Apply to both CommonJS and ESM. Verify with
-  `node apps/desktop/scripts/check-browser-extensions-native.mjs --proton`.
+  popups and background workers without a tab. Ignore URL fragments in `tabs.query`. Preserve the
+  active tab when adding a background tab, and ask Studio to select the tab when an extension calls
+  `tabs.update` with `active: true`. Let preferred-size events size action popups. Proton Pass
+  depends on this to size its viewport. Apply to CommonJS and ESM. Verify with
+  `node apps/desktop/scripts/check-browser-extensions-native.mjs` and the optional `--1password` and
+  `--proton` runs.
 - **werift 0.27.0:** retain the opt-in `setLocalDescription(description, { trickle: true })` path so
   answers start ICE checks while discovery continues. Also retain one-time ICE failure completion
   when all pairs fail before end-of-candidates. Upstream now preserves multiple TURN transports,

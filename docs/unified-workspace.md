@@ -56,10 +56,12 @@ An additional **Hide normal modes** preference can hide those choices while Unif
 is off by default. Disabling Unified restores the normal modes. Its sidebar mixes browser pages,
 threads and standalone terminals, with search, computer and type filters under **Filter workspace**.
 Threads render the same `TaskRow` component as Threads, with its project icon, title, branch and
-status. Pages render the Browser workspace's `BrowserTabRow`, including its favicon, title,
-computer/profile label, unread badge and media indicators. Unified adds no extra thread or browser
-type icon. Standalone terminals share their row with Terminals. Pinned pages use the same browser
-tile component, icon size and selection styling as Browser, above pinned thread and terminal rows.
+status. Pages render the Browser workspace's `BrowserTabRow`, including its favicon, title, site and
+linked project or profile, unread badge and media indicators. Unified adds a type badge to the
+leading icon of a thread, page or terminal. Standalone terminals share their row with Terminals.
+Pinned pages use the same browser tile component and selection styling as Browser, with the type
+badge on the favicon.
+
 The overview uses the same row components; pinned pages use a normal tab row there. The overview
 centers the routing input, with compact creation actions. The shared input appears only on
 **Workspace home**, which shows a mixed **Continue working** list and retains open views and drafts.

@@ -4,6 +4,9 @@ import { taskToolsServer } from '../agent-tools/config.js'
 import { WebSocket } from 'ws'
 import { once } from 'node:events'
 import { tmpdir } from 'node:os'
+import { writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { fixture } from '../testing/fixture.js'
 import { Schema } from 'effect'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
@@ -561,6 +564,41 @@ it('rechecks revoked credentials in delayed browser work', async () => {
   expect(
     (await post('/api/previews/browser/agent', { taskId, command: { action: 'snapshot' } })).status,
   ).toBe(401)
+})
+
+it('records a Git commit from a run-owned terminal check in an external checkout', async () => {
+  const { s, taskId, otherId, runId, post } = await setup()
+  const primary = await fixture()
+  const external = await fixture()
+  cleanups.push(primary.cleanup, external.cleanup)
+  s.store.update((workspace) => ({ ...workspace, repositories: primary.workspace.repositories }))
+  s.store.updateTask(taskId, (task) => ({ ...task, repositoryId: 'repo' }))
+  s.preferences.save({ enablePullRequestBabysitting: true })
+  vi.spyOn(s.checkouts, 'selectedDirectory').mockResolvedValue(primary.directory)
+  await s.git.command(external.directory, [
+    'remote',
+    'add',
+    'origin',
+    'https://github.com/example/external.git',
+  ])
+  await s.git.command(external.directory, ['checkout', '-b', 'fix-popup'])
+  await writeFile(join(external.directory, 'hello.txt'), 'updated by the agent terminal')
+  const result = await post('/api/terminals/run', {
+    taskId,
+    newTerminal: true,
+    check: true,
+    waitMs: 10000,
+    command: `git -C "${external.directory}" commit -am "Update popup"`,
+  })
+  expect(result.status).toBe(200)
+  expect(await result.json()).toMatchObject({ exitCode: 0 })
+  const sha = (await s.git.command(external.directory, ['rev-parse', 'HEAD'])).trim()
+  await vi.waitFor(() =>
+    expect(s.store.externalGitReceipts(taskId)).toEqual([
+      expect.objectContaining({ branch: 'fix-popup', sha, turnId: runId }),
+    ]),
+  )
+  expect(s.store.externalGitReceipts(otherId)).toEqual([])
 })
 
 it('allows run-owned terminal tickets and input, then rejects revoked WebSocket input', async () => {

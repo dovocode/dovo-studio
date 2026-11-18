@@ -1,5 +1,5 @@
 import type { TaskMetadata } from './task-summary.js'
-import { botParentLink, mentionSourceTitle } from './thread-parent.js'
+import { botInvocationParent, mentionSourceTitle } from './thread-parent.js'
 
 type ChildMetadata = Pick<
   TaskMetadata,
@@ -12,6 +12,7 @@ type ChildMetadata = Pick<
   | 'botMention'
   | 'botConversation'
   | 'forkedFrom'
+  | 'replica'
 > &
   Partial<Pick<TaskMetadata, 'title'>>
 
@@ -33,26 +34,31 @@ export function threadChildren<T extends ChildMetadata>(
     .flatMap((source) => {
       const local = isLocal(source)
       return source.tasks.flatMap((task) => {
-        const link = botParentLink(task)
+        const invocation = botInvocationParent(
+          task,
+          task.replica?.ownerRuntimeId ?? source.runtimeIdentity,
+        )
+        const sideCall =
+          invocation?.threadId === parent.id &&
+          !invocation.subthread &&
+          (parent.runtimeIdentity && invocation.runtimeIdentity
+            ? invocation.runtimeIdentity === parent.runtimeIdentity
+            : !task.botMention?.sourceRuntimeId && local)
         const botChild =
-          link?.botId === parent.id &&
+          (task.botConversation?.botId ?? task.botJob?.botId) === parent.id &&
           (!parentTask || !!parentTask.bot) &&
-          (link.runtimeIdentity === undefined
-            ? local
-            : link.runtimeIdentity === parent.runtimeIdentity)
+          local
         if (local && task.id === parent.id) return []
-        if (!botChild && !(local && task.sideThread?.parentTaskId === parent.id)) return []
+        if (!sideCall && !botChild && !(local && task.sideThread?.parentTaskId === parent.id))
+          return []
         return [
           {
             task,
             runtimeId: source.runtimeId,
             runtimeIdentity: source.runtimeIdentity,
-            mention: botChild && link.runtimeIdentity !== undefined ? task.botMention : undefined,
-            mentionSourceTitle: botChild
-              ? mentionSourceTitle(
-                  task,
-                  (id) => source.tasks.find((candidate) => candidate.id === id)?.title,
-                )
+            mention: sideCall ? task.botMention : undefined,
+            mentionSourceTitle: sideCall
+              ? mentionSourceTitle(task, () => parentTask?.title)
               : undefined,
           },
         ]

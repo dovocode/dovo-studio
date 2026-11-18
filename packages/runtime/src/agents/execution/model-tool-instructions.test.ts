@@ -117,9 +117,12 @@ it('selects one PR policy and preserves opt-outs, manual merge and remaining wor
   expect(automatic).toContain('Reread only to resolve uncertainty or verify a requested outcome.')
   expect(automatic).toContain('including the final newline')
   expect(automatic).toContain(
-    'input/navigation return fresh state; use it without another snapshot.',
+    'Input/navigation return fresh accessibility refs; verify from that state.',
   )
-  expect(automatic).toContain('verify from the returned state.')
+  expect(automatic).toContain('elements reads DOM details without replacing refs.')
+  expect(automatic).toContain(
+    'Link PRs this thread created or updated, including in other checkouts.',
+  )
   // Bound functional guidance below the original 9233-character full profile. Not a token estimate.
   const code = automatic.split('\n\n').find((line) => line.startsWith('Code mode:')) ?? ''
   expect(code).toContain('Every call keeps access and approval checks.')

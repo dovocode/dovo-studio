@@ -10,6 +10,7 @@ export async function runToolCode(options: {
   call: (call: CodeCall, signal: AbortSignal) => Promise<unknown>
   signal: AbortSignal
   timeoutMs?: number
+  retainResult?: (value: unknown) => unknown
 }): Promise<CodeExecution> {
   if (Buffer.byteLength(options.code) > 100_000) throw new Error('Code exceeds 100 KB')
   options.signal.throwIfAborted()
@@ -19,11 +20,16 @@ export async function runToolCode(options: {
   runtime.setMemoryLimit(64 * 1024 * 1024)
   runtime.setMaxStackSize(512 * 1024)
   const context = runtime.newContext()
+  const parseJson = context
+    .getProp(context.global, 'JSON')
+    .consume((json) => context.getProp(json, 'parse'))
   const controller = new AbortController()
   const signal = AbortSignal.any([options.signal, controller.signal])
   const deferred = new Set<QuickJSDeferredPromise>()
+  const ready: Array<() => void> = []
   const output: unknown[] = []
   let outputBytes = 0,
+    inputBytes = 0,
     calls = 0,
     active = 0,
     jobs = 0,
@@ -71,32 +77,43 @@ export async function runToolCode(options: {
     if (closed || !script) return
     try {
       if (cpuMs >= 2000 || jobs >= 10_000) throw new Error('Tool code exceeded its CPU budget')
+      // Let the guest consume each result before copying the next one into its bounded heap.
+      const deliver = ready.shift()
+      if (deliver) run(deliver)
       const result = run(() => runtime.executePendingJobs(100))
       if (result.error) {
-        const error = new Error(`Tool code failed: ${JSON.stringify(context.dump(result.error))}`)
-        result.dispose()
-        throw error
+        try {
+          throw new Error(`Tool code failed: ${JSON.stringify(context.dump(result.error))}`)
+        } finally {
+          result.dispose()
+        }
       }
       jobs += result.value
       result.dispose()
       const state = context.getPromiseState(script)
       if (state.type === 'fulfilled') {
-        const value: unknown = context.dump(state.value)
-        state.value.dispose()
-        if (!active && !runtime.hasPendingJob()) {
-          if (failure) throw failure
-          bounded(value)
-          closed = true
-          resolveExecution({ result: value, output, calls })
-          return
+        try {
+          if (!active && !runtime.hasPendingJob()) {
+            if (failure) throw failure
+            const value: unknown = context.dump(state.value)
+            bounded(value)
+            closed = true
+            resolveExecution({ result: value, output, calls })
+            return
+          }
+        } finally {
+          state.value.dispose()
         }
       } else if (state.type === 'rejected') {
-        failure = new Error(`Tool code failed: ${JSON.stringify(context.dump(state.error))}`)
-        state.error.dispose()
+        try {
+          failure ??= new Error(`Tool code failed: ${JSON.stringify(context.dump(state.error))}`)
+        } finally {
+          state.error.dispose()
+        }
         // Wait for started calls to settle. Do not claim that a side effect was undone.
         if (!active) throw failure
       }
-      if (runtime.hasPendingJob()) schedule()
+      if (ready.length || runtime.hasPendingJob()) schedule()
       else if (!active) throw new Error('Tool code is waiting on a promise that cannot settle')
     } catch (error) {
       stop(error instanceof Error ? error : new Error(String(error)))
@@ -125,33 +142,72 @@ export async function runToolCode(options: {
       const promise = context.newPromise()
       deferred.add(promise)
       active++
+      const enqueue = (settle: () => void) => {
+        if (closed) return
+        ready.push(() => {
+          try {
+            settle()
+          } finally {
+            active--
+            deferred.delete(promise)
+            promise.dispose()
+          }
+        })
+        schedule()
+      }
       void Promise.resolve()
         .then(() => options.call(call, signal))
         .then(
-          (value) => {
-            if (closed) return
-            const handle = context.newString(bounded(value))
-            promise.resolve(handle)
-            handle.dispose()
-          },
-          (error: unknown) => {
-            if (closed) return
-            const handle = context.newError(error instanceof Error ? error.message : String(error))
-            promise.reject(handle)
-            handle.dispose()
-          },
+          (value) =>
+            enqueue(() => {
+              let json = JSON.stringify(value ?? null)
+              let bytes = Buffer.byteLength(json)
+              let recoveryId: string | undefined
+              const readsResult = call.source === 'harness' && call.name === 'read_tool_result'
+              if (inputBytes + bytes > MAX_BYTES && options.retainResult && !readsResult) {
+                const reference = options.retainResult(value)
+                if (
+                  reference &&
+                  typeof reference === 'object' &&
+                  'resultId' in reference &&
+                  typeof reference.resultId === 'string' &&
+                  /^[a-f\d]{8}-(?:[a-f\d]{4}-){3}[a-f\d]{12}$/i.test(reference.resultId)
+                )
+                  recoveryId = reference.resultId
+                json = bounded(reference)
+                bytes = Buffer.byteLength(json)
+              }
+              if (inputBytes + bytes > MAX_BYTES) {
+                let message = 'Code mode input limit reached.'
+                if (readsResult) message += ' Read the next chunk in a fresh code call.'
+                else if (recoveryId)
+                  message += ` The tool completed. Run tools.harness.read_tool_result({resultId:${JSON.stringify(recoveryId)}}) in a fresh code call.`
+                else message += ' The tool completed. Inspect the current state before retrying.'
+                context.newError(message).consume((handle) => promise.reject(handle))
+                return
+              }
+              inputBytes += bytes
+              // Parse before settling the promise. Parsing near-limit values in an async job can
+              // leave QuickJS objects alive at runtime disposal.
+              context.newString(json).consume((handle) => {
+                context
+                  .unwrapResult(context.callFunction(parseJson, context.undefined, handle))
+                  .consume((value) => promise.resolve(value))
+              })
+            }),
+          (error: unknown) =>
+            enqueue(() => {
+              context
+                .newError(error instanceof Error ? error.message : String(error))
+                .consume((handle) => promise.reject(handle))
+            }),
         )
-        .catch((error: unknown) => stop(error instanceof Error ? error : new Error(String(error))))
-        .finally(() => {
-          active--
-          schedule()
-        })
       return promise.handle
     })
     .consume((handle) => context.setProp(context.global, '__call', handle))
   try {
     const source = `
-const invoke = async (source,name,args,server) => JSON.parse(await __call(JSON.stringify({source,name,arguments:args,server})));
+const invoke = async (source,name,args,server) => await __call(JSON.stringify({source,name,arguments:args,server}));
 const namespace = (source,server) => new Proxy(Object.create(null), {get:(_,name)=>name==='then'?undefined:args=>invoke(source,String(name),args,server)});
 globalThis.tools = Object.freeze({dovo:namespace('dovo'),harness:namespace('harness'),mcp:new Proxy(Object.create(null),{get:(_,server)=>namespace('mcp',String(server))}),search:args=>invoke('catalog','search',args)});
 globalThis.print = (...values) => __print(JSON.stringify(values));
@@ -169,10 +225,13 @@ globalThis.data = result => {
   } finally {
     closed = true
     clearTimeout(timeout)
+    ready.length = 0
     options.signal.removeEventListener('abort', abort)
     controller.abort()
     for (const promise of deferred) promise.dispose()
+    deferred.clear()
     script?.dispose()
+    parseJson.dispose()
     context.dispose()
     runtime.dispose()
   }

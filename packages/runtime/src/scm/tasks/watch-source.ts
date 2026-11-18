@@ -5,6 +5,7 @@ export const watchSourceSchema = z.object({
   url: z.string(),
   repository: z.string(),
   accountRepositoryId: z.string().optional(),
+  checkoutDirectory: z.string().optional(),
   connectionId: z.string().optional(),
   readerIdentity: z.string(),
   destination: z.string(),

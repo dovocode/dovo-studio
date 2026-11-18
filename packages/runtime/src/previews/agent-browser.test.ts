@@ -84,9 +84,12 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
     expect(page).toMatchObject({ title: 'Agent browser test', url: `${url}/` })
     expect('snapshot' in page && page.snapshot).toContain('Hello browser')
     expect(page).not.toHaveProperty('image')
-    expect(page).toMatchObject({
+    expect(page).toMatchObject({ snapshotTruncated: false })
+    expect(page).not.toHaveProperty('elements')
+    const elements = await browsers.agentCommand('task-a', { action: 'elements' }, authorize)
+    expect(elements).not.toHaveProperty('snapshot')
+    expect(elements).toMatchObject({
       elementsTruncated: false,
-      snapshotTruncated: false,
       elements: expect.arrayContaining([
         expect.objectContaining({ selector: '#name', name: 'Name', value: '' }),
         expect.objectContaining({ name: 'Active', checked: true }),
@@ -102,8 +105,9 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
         }),
       ]),
     })
+    expect(JSON.stringify(elements)).not.toContain('secret-password')
     expect(JSON.stringify(page)).not.toContain('secret-password')
-    expect(JSON.stringify(page)).not.toContain('hidden-secret')
+    expect(JSON.stringify(elements)).not.toContain('hidden-secret')
     expect(JSON.stringify(page)).not.toContain('Hidden action')
     expect(await browsers.activeMedia('missing')).toBe(false)
     expect(await browsers.activeMedia('agent-browser:task-a')).toBe(false)
@@ -132,7 +136,7 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
       { action: 'fill', selector: '#name', text: 'Updated' },
       authorize,
     )
-    const current = await browsers.agentCommand('task-a', { action: 'snapshot' }, authorize)
+    const current = await browsers.agentCommand('task-a', { action: 'elements' }, authorize)
     const save =
       'elements' in current && current.elements.find((element) => element.name === 'Save')
     if (!save) throw new Error('Missing Save element')
@@ -164,7 +168,8 @@ it('uses managed Chromium to inspect and interact with HTTP pages in isolated ta
       { action: 'fill', selector: `ref=${nameRef}`, text: 'From tree' },
       authorize,
     )
-    expect(refFilled).toMatchObject({
+    expect(refFilled).not.toHaveProperty('elements')
+    expect(await browsers.agentCommand('task-a', { action: 'elements' }, authorize)).toMatchObject({
       elements: expect.arrayContaining([
         expect.objectContaining({ name: 'Name', value: 'From tree' }),
       ]),

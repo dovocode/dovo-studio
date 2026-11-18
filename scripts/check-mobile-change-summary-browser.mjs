@@ -44,10 +44,6 @@ function App(){const [expanded,setExpanded]=useState(false),[kind,setKind]=useSt
     { path: '../theme', importer: `${mobile}/ui/content`, contents: theme },
     { path: '../theme', importer: `${mobile}/ui/layout`, contents: theme },
     {
-      path: 'expo-glass-effect',
-      contents: `import {View} from 'react-native';export const GlassView=View;export const isGlassEffectAPIAvailable=()=>true;export const isLiquidGlassAvailable=()=>true;`,
-    },
-    {
       path: './text',
       importer: `${mobile}/ui/content`,
       contents: `export const Text=({children,style,numberOfLines})=><span style={{...((Array.isArray(style)?Object.assign({},...style):style)||{}),...(numberOfLines===1?{whiteSpace:'nowrap',overflow:'hidden',textOverflow:'ellipsis'}:{})}}>{children}</span>;`,

@@ -481,47 +481,6 @@ export function MessageQueue({
                     <GripVertical size={12} />
                   </IconButton>
                 )}
-                {queue.length > 1 && (
-                  <div className="absolute right-12 z-20 flex shrink-0 rounded bg-background opacity-0 transition-opacity group-hover/queue-row:opacity-100 group-focus-within/queue-row:opacity-100 [@media(hover:none)]:static [@media(hover:none)]:opacity-100">
-                    <IconButton
-                      label={`Move queued message ${index + 1} earlier`}
-                      className="size-6"
-                      disabled={
-                        !canMove(message.id) ||
-                        confirmed.findIndex((item) => item.id === message.id) <= 0 ||
-                        !canMove(
-                          confirmed[confirmed.findIndex((item) => item.id === message.id) - 1]?.id,
-                        )
-                      }
-                      onClick={() => {
-                        const source = confirmed.findIndex((item) => item.id === message.id)
-                        void act('move', message.id, { beforeMessageId: confirmed[source - 1].id })
-                      }}
-                    >
-                      <ArrowUp size={12} />
-                    </IconButton>
-                    <IconButton
-                      label={`Move queued message ${index + 1} later`}
-                      className="size-6"
-                      disabled={
-                        !canMove(message.id) ||
-                        confirmed.findIndex((item) => item.id === message.id) >=
-                          confirmed.length - 1 ||
-                        !canMove(
-                          confirmed[confirmed.findIndex((item) => item.id === message.id) + 1]?.id,
-                        )
-                      }
-                      onClick={() => {
-                        const source = confirmed.findIndex((item) => item.id === message.id)
-                        void act('move', message.id, {
-                          beforeMessageId: confirmed[source + 2]?.id ?? null,
-                        })
-                      }}
-                    >
-                      <ArrowDown size={12} />
-                    </IconButton>
-                  </div>
-                )}
                 <div className="flex min-w-0 flex-1 flex-col gap-0.5 [@media(hover:none)]:min-w-20">
                   {source && source.kind !== 'user' && (
                     <div className="flex min-w-0 [&>*]:font-medium [&>*]:text-foreground">
@@ -583,6 +542,51 @@ export function MessageQueue({
                   data-queue-actions
                   className={`pointer-events-none relative z-10 flex shrink-0 flex-wrap justify-end items-center gap-0.5 rounded-md bg-muted p-0.5 group-hover/queue-row:pointer-events-auto group-focus-within/queue-row:pointer-events-auto [@media(hover:none)]:order-last [@media(hover:none)]:basis-full [@media(hover:none)]:pointer-events-auto ${rowActionClass}`}
                 >
+                  {queue.length > 1 && (
+                    <>
+                      <IconButton
+                        label={`Move queued message ${index + 1} earlier`}
+                        className="size-6"
+                        disabled={
+                          !canMove(message.id) ||
+                          confirmed.findIndex((item) => item.id === message.id) <= 0 ||
+                          !canMove(
+                            confirmed[confirmed.findIndex((item) => item.id === message.id) - 1]
+                              ?.id,
+                          )
+                        }
+                        onClick={() => {
+                          const source = confirmed.findIndex((item) => item.id === message.id)
+                          void act('move', message.id, {
+                            beforeMessageId: confirmed[source - 1].id,
+                          })
+                        }}
+                      >
+                        <ArrowUp size={12} />
+                      </IconButton>
+                      <IconButton
+                        label={`Move queued message ${index + 1} later`}
+                        className="size-6"
+                        disabled={
+                          !canMove(message.id) ||
+                          confirmed.findIndex((item) => item.id === message.id) >=
+                            confirmed.length - 1 ||
+                          !canMove(
+                            confirmed[confirmed.findIndex((item) => item.id === message.id) + 1]
+                              ?.id,
+                          )
+                        }
+                        onClick={() => {
+                          const source = confirmed.findIndex((item) => item.id === message.id)
+                          void act('move', message.id, {
+                            beforeMessageId: confirmed[source + 2]?.id ?? null,
+                          })
+                        }}
+                      >
+                        <ArrowDown size={12} />
+                      </IconButton>
+                    </>
+                  )}
                   {watchMessage(message) && (
                     <IconButton
                       label={`View queued update ${index + 1}`}
@@ -648,22 +652,6 @@ export function MessageQueue({
                   </IconButton>
 
                   <IconButton
-                    label={`Remove queued message ${index + 1}`}
-                    className="size-6"
-                    disabled={
-                      !connected ||
-                      busy ||
-                      task.archived ||
-                      !!task.archivedAt ||
-                      !!message.steering ||
-                      pendingIds.has(message.id)
-                    }
-                    onClick={() => void act('remove', message.id)}
-                  >
-                    <Trash2 size={12} />
-                  </IconButton>
-
-                  <IconButton
                     label={`Cancel queued message ${index + 1} and return it to the composer`}
                     className="size-6"
                     disabled={
@@ -680,6 +668,21 @@ export function MessageQueue({
                     <X size={12} />
                   </IconButton>
                 </div>
+                <IconButton
+                  label={`Remove queued message ${index + 1}`}
+                  className="size-6 shrink-0"
+                  disabled={
+                    !connected ||
+                    busy ||
+                    task.archived ||
+                    !!task.archivedAt ||
+                    !!message.steering ||
+                    pendingIds.has(message.id)
+                  }
+                  onClick={() => void act('remove', message.id)}
+                >
+                  <Trash2 size={12} />
+                </IconButton>
                 <IconButton
                   label={`Steer with queued message ${index + 1}`}
                   title={

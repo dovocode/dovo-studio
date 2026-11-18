@@ -1243,6 +1243,28 @@ const workspaceShow = {
   workspaceBrowser: true,
   bounds: { x: 0, y: 0, width: 400, height: 300 },
 }
+it('handles interrupted JSON formatting when the tab view loses its WebContents', async () => {
+  const call = handler()
+  await call(event, workspaceShow)
+  const formatting = Promise.withResolvers<void>()
+  mocks.contents.executeJavaScriptInIsolatedWorld.mockReturnValueOnce(formatting.promise)
+  listener('did-finish-load')?.()
+  await call(event, { action: 'close', key: workspaceShow.key })
+  mocks.contents.isDestroyed.mockReturnValue(true)
+  const detachedContents = vi.fn(() => undefined)
+  Object.defineProperty(mocks.view, 'webContents', { get: detachedContents })
+  try {
+    formatting.reject(new Error('Render frame was disposed before the request completed'))
+    await new Promise<void>((resolve) => setImmediate(resolve))
+    expect(detachedContents).not.toHaveBeenCalled()
+  } finally {
+    Object.defineProperty(mocks.view, 'webContents', {
+      value: mocks.contents,
+      writable: true,
+      configurable: true,
+    })
+  }
+})
 it('fits an owned fullscreen view, restores its bounds and exits when hidden', async () => {
   const call = handler()
   await call(event, workspaceShow)
@@ -2168,7 +2190,9 @@ it('releases a self-closed tab once and can recreate its native view', async () 
     expect(mocks.extensions.removeTab).toHaveBeenCalledOnce()
     expect(mocks.window.webContents.focus).toHaveBeenCalledOnce()
     expect(mocks.contents.close).not.toHaveBeenCalled()
-    expect(await call(event, { action: 'status', key: workspaceShow.key })).toMatchObject({
+    expect(
+      await call(event, { action: 'status', key: workspaceShow.key, tabCount: 1 }),
+    ).toMatchObject({
       closedTabs: [workspaceShow.key],
     })
     expect(await call(event, { action: 'status', key: workspaceShow.key })).toBeUndefined()
@@ -2284,13 +2308,22 @@ it('opens extension tabs hidden for adoption and only for web or own extension p
   const [contents, window] = await host.create('work', { url: page })
   expect([contents, window]).toEqual([mocks.contents, mocks.window])
   expect(mocks.contents.loadURL).toHaveBeenCalledWith(page)
+  expect(await call(event, { action: 'status', key: 'thread-preview' })).toBeUndefined()
   const status = (await call(event, { action: 'status', key: 'shared' })) as {
-    createdTabs: { key: string; url: string; profileId: string }[]
+    createdTabs: { key: string; url: string; profileId: string; active: boolean }[]
   }
   expect(status.createdTabs).toEqual([
-    { key: expect.stringMatching(/^extension-tab:/), url: page, profileId: 'work' },
+    { key: expect.stringMatching(/^extension-tab:/), url: page, profileId: 'work', active: true },
   ])
   expect(await call(event, { action: 'status', key: 'shared' })).not.toHaveProperty('createdTabs')
+  host.select('personal', contents)
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 2 })).not.toHaveProperty(
+    'focusedTabKey',
+  )
+  host.select('work', contents)
+  expect(await call(event, { action: 'status', key: 'shared', tabCount: 2 })).toMatchObject({
+    focusedTabKey: status.createdTabs[0]!.key,
+  })
   mocks.contents.loadURL.mockClear()
   const created = mocks.create.mock.calls.length
   await call(event, {
@@ -2301,6 +2334,10 @@ it('opens extension tabs hidden for adoption and only for web or own extension p
   })
   expect(mocks.create).toHaveBeenCalledTimes(created)
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+  host.select('work', contents)
+  expect(
+    await call(event, { action: 'status', key: status.createdTabs[0]!.key, tabCount: 2 }),
+  ).not.toHaveProperty('focusedTabKey')
   await expect(
     call(event, { ...workspaceShow, profileId: 'work', key: 'other', url: page }),
   ).rejects.toThrow('HTTP or HTTPS')
@@ -2317,11 +2354,69 @@ it('closes tabs an extension removes and reports them once to the window', async
   await call(event, { ...workspaceShow, profileId: 'work' })
   host.close(mocks.contents as never)
   expect(mocks.contents.close).toHaveBeenCalledOnce()
+  expect(await call(event, { action: 'status', key: 'thread-preview' })).toBeUndefined()
   await call(event, { ...workspaceShow, key: 'next', profileId: 'work' })
   await expect(call(event, { action: 'status', key: 'next' })).resolves.toMatchObject({
     closedTabs: ['shared'],
   })
   expect(await call(event, { action: 'status', key: 'next' })).not.toHaveProperty('closedTabs')
+})
+
+it('restores an evicted extension page only for its original workspace tab and loaded profile', async () => {
+  vi.useFakeTimers()
+  const target = workspaceTarget(2)
+  registrations.push(
+    registerBrowser('/app/index.html', undefined, undefined, {
+      create: async () => target as never,
+      list: () => [target as never],
+    }),
+  )
+  const call = mocks.handle.mock.calls.at(-1)![1]
+  const host = mocks.extensions.host!
+  const page = 'chrome-extension://abcdefghijklmnopabcdefghijklmnop/welcome.html'
+  mocks.extensions.ownsUrl.mockImplementation((profile, url) => profile === 'work' && url === page)
+  const work = { ...workspaceShow, profileId: 'work' }
+  await call(event, work)
+  await host.create('work', { url: page })
+  const status = (await call(event, { action: 'status', key: work.key, tabCount: 2 })) as {
+    createdTabs: { key: string }[]
+  }
+  const setup = { ...work, key: status.createdTabs[0]!.key, url: page }
+  await call(event, setup)
+  await call(event, work)
+  await vi.advanceTimersByTimeAsync(5 * 60_000)
+  expect(mocks.contents.close).toHaveBeenCalledOnce()
+
+  await expect(call(event, { ...setup, profileId: 'personal' })).rejects.toThrow('HTTP or HTTPS')
+  await expect(call(event, { ...setup, workspaceBrowser: false })).rejects.toThrow('HTTP or HTTPS')
+  await expect(call(event, { ...setup, key: 'other' })).rejects.toThrow('HTTP or HTTPS')
+  await expect(call(event, { ...setup, url: page + '?other' })).rejects.toThrow('HTTP or HTTPS')
+  mocks.windowFor = target
+  await expect(call(event, setup)).rejects.toThrow('HTTP or HTTPS')
+  mocks.windowFor = undefined
+  mocks.extensions.ownsUrl.mockReturnValueOnce(false)
+  await expect(call(event, setup)).rejects.toThrow('HTTP or HTTPS')
+
+  mocks.contents.loadURL.mockClear()
+  await call(event, setup)
+  expect(mocks.contents.loadURL).toHaveBeenCalledExactlyOnceWith(page)
+  await call(event, work)
+  await vi.advanceTimersByTimeAsync(5 * 60_000)
+  await call(event, {
+    action: 'move-tab',
+    key: setup.key,
+    tab: { id: 'setup', url: page, title: 'Setup', kind: 'web', profileId: 'work' },
+    targetWindowId: target.id,
+  })
+  await expect(call(event, setup)).rejects.toThrow('HTTP or HTTPS')
+  mocks.windowFor = target
+  mocks.contents.loadURL.mockClear()
+  await call(event, setup)
+  expect(mocks.contents.loadURL).toHaveBeenCalledExactlyOnceWith(page)
+  await call(event, work)
+  await vi.advanceTimersByTimeAsync(5 * 60_000)
+  await call(event, { action: 'close', key: setup.key })
+  await expect(call(event, setup)).rejects.toThrow('HTTP or HTTPS')
 })
 
 it('finds only shared-browser tabs of the requested profile for extension popups', async () => {
@@ -2414,14 +2509,24 @@ it('names extension tabs in the source profile scope so the pane adopts them as 
   await call(event, { ...workspaceShow, key: 'studio:browser:tab-1', profileId: 'work' })
   await call(event, { ...workspaceShow, key: 'studio:browser:tab-2', profileId: 'personal' })
   await host.create('work', { url: 'https://example.com/work' })
-  await host.create('personal', { url: 'https://example.com/personal' })
+  await host.create('personal', { url: 'https://example.com/personal', active: false })
   const status = (await call(event, { action: 'status', key: 'studio:browser:tab-2' })) as {
-    createdTabs: { key: string; url: string; profileId: string }[]
+    createdTabs: { key: string; url: string; profileId: string; active: boolean }[]
   }
   const id = /^studio:browser:[0-9a-f-]{36}$/
   expect(status.createdTabs).toEqual([
-    { key: expect.stringMatching(id), url: 'https://example.com/work', profileId: 'work' },
-    { key: expect.stringMatching(id), url: 'https://example.com/personal', profileId: 'personal' },
+    {
+      key: expect.stringMatching(id),
+      url: 'https://example.com/work',
+      profileId: 'work',
+      active: true,
+    },
+    {
+      key: expect.stringMatching(id),
+      url: 'https://example.com/personal',
+      profileId: 'personal',
+      active: false,
+    },
   ])
   const [work] = status.createdTabs
   mocks.contents.loadURL.mockClear()
@@ -2437,13 +2542,17 @@ it('still reports window tab events when an extension closed the very tab being 
   await call(event, { ...workspaceShow, profileId: 'work' })
   await expect(call(event, { action: 'status', key: 'missing' })).resolves.toBeUndefined()
   host.close(mocks.contents as never)
-  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toEqual({
+  await expect(
+    call(event, { action: 'status', key: 'shared', tabCount: 1 }),
+  ).resolves.toMatchObject({
     url: '',
     back: false,
     forward: false,
     closedTabs: ['shared'],
   })
-  await expect(call(event, { action: 'status', key: 'shared' })).resolves.toBeUndefined()
+  await expect(
+    call(event, { action: 'status', key: 'shared', tabCount: 1 }),
+  ).resolves.not.toHaveProperty('closedTabs')
   await expect(call(event, { action: 'reload', key: 'shared' })).resolves.toBeUndefined()
 })
 
@@ -3093,10 +3202,9 @@ it.each(['window', 'page'] as const)(
     }
     expect(target.webContents.focus).toHaveBeenCalledTimes(close === 'page' ? 1 : 0)
     expect(mocks.window.webContents.focus).not.toHaveBeenCalled()
-    const closedTabEvent = expect.objectContaining({ closedTabs: ['moving-key'] })
-    await expect(call(event, { action: 'status', key: 'moving-key' })).resolves.toEqual(
-      close === 'page' ? closedTabEvent : undefined,
-    )
+    const state = await call(event, { action: 'status', key: 'moving-key', tabCount: 1 })
+    if (close === 'page') expect(state).toMatchObject({ closedTabs: ['moving-key'] })
+    else expect(state).not.toHaveProperty('closedTabs')
     expect(mocks.contents.close).toHaveBeenCalledTimes(close === 'page' ? 0 : 1)
     mocks.contents.isDestroyed.mockReturnValue(false)
   },

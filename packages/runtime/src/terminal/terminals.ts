@@ -6,6 +6,7 @@ import {
   terminalTitleSchema,
   updateTerminalSchema,
   STUDIO_TERMINAL_SCOPE,
+  redactCredentialText,
 } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
 import { defaultShell, shellArguments } from './shell.js'
@@ -20,7 +21,7 @@ import { processEnvironment } from '../process.js'
 import { HttpError } from '../errors.js'
 import { canSleepTerminal, stopUnixTerminal } from './stop-terminal.js'
 import { TerminalMetadata } from './metadata.js'
-import { isDeepStrictEqual } from 'node:util'
+import { isDeepStrictEqual, stripVTControlCharacters } from 'node:util'
 import {
   TerminalRecovery,
   recoveryCommand,
@@ -90,6 +91,7 @@ type Session = {
   launch: AcpLaunch
   info: TerminalInfo
   process?: pty.IPty
+  exited?: Promise<void>
   recovery?: TerminalRecoveryRecord
   output: RetainedOutput
   readonly buffer: string
@@ -204,6 +206,74 @@ export class Terminals {
       checkoutId,
       repositoryId,
     )
+  }
+  createCheck(taskId: string, cwd: string, command: string, title?: string, checkoutId?: string) {
+    // Use a noninteractive shell so the PTY exit belongs to this command, not a shell prompt.
+    const args =
+      process.platform === 'win32'
+        ? [
+            '-NoLogo',
+            '-NoProfile',
+            '-NonInteractive',
+            '-Command',
+            `$global:LASTEXITCODE = 0; & {\n${command}\n}; if (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit $LASTEXITCODE`,
+          ]
+        : ['-c', command]
+    return this.createCommand(
+      taskId,
+      cwd,
+      { command: defaultShell(), args, env: {} },
+      title ?? 'Command check',
+      checkoutId,
+    )
+  }
+  async checkSummary(id: string, waitMs: number, signal: AbortSignal) {
+    signal.throwIfAborted()
+    const session = this.get(id)
+    if (waitMs && !session.info.exited)
+      await new Promise<void>((resolve) => {
+        const done = () => {
+          clearTimeout(timer)
+          session.listeners.delete(onData)
+          signal.removeEventListener('abort', done)
+          resolve()
+        }
+        const onData = () => {
+          if (session.info.exited) done()
+        }
+        const timer = setTimeout(done, waitMs)
+        session.listeners.add(onData)
+        signal.addEventListener('abort', done, { once: true })
+      })
+    signal.throwIfAborted()
+    const output = redactCredentialText(stripVTControlCharacters(session.buffer))
+    const failedTests = new Set<string>()
+    if (session.info.exited && session.info.exitCode !== 0)
+      for (const line of output.split(/\r?\n/).reverse()) {
+        const name =
+          /^\s*(?:FAIL(?:ED)?\s+|--- FAIL:\s+|not ok\s+(?:\d+\s+-?\s*)?|[×✗]\s+)(\S.*)/.exec(
+            line,
+          )?.[1]
+        if (name) failedTests.add(name.trim().slice(0, 200))
+        if (failedTests.size === 12) break
+      }
+    return {
+      id,
+      running: !session.info.exited,
+      exitCode: session.info.exitCode,
+      outputTail: output.slice(-3000),
+      outputTruncated: output.length > 3000,
+      ...(failedTests.size ? { failedTests: [...failedTests] } : {}),
+    }
+  }
+  onCheckExit(id: string, report: (exitCode: number | undefined, tail: string) => void) {
+    const session = this.get(id)
+    void session.exited
+      ?.then(() => {
+        const tail = redactCredentialText(stripVTControlCharacters(session.buffer.slice(-3000)))
+        report(session.info.exitCode, tail)
+      })
+      .catch((error: unknown) => console.error('Could not record terminal check result', error))
   }
   createCommand(
     taskId: string,
@@ -602,6 +672,7 @@ export class Terminals {
     const exited = new Promise<void>((resolve) => {
       resolveExit = resolve
     })
+    session.exited = exited
     this.exits.add(exited)
     this.activity?.add('terminal', id, 'Shell started', {
       taskId,

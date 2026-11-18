@@ -596,6 +596,7 @@ it('captures, previews, undoes and redoes both repositories without changing the
   expect(turn?.checkpoint?.linked?.[0]).toMatchObject({
     repositoryName: 'Backend',
     checkoutId: 'backend-link',
+    branch: 'main',
     files: [
       expect.objectContaining({
         path: 'hello.txt',

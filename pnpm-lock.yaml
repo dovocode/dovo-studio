@@ -212,7 +212,7 @@ overrides:
 patchedDependencies:
   '@electron/osx-sign@1.3.3': 7a8f2d1bc1316e60aa980ae24664a889c8652f70525b9734ea054784455b03d9
   braces@3.0.3: de064a4d75e634c66eb99d727b5ba9bf2034053a255d342706578a7e2894abea
-  electron-chrome-extensions@4.10.0: b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab
+  electron-chrome-extensions@4.10.0: 62c8af5d12dfaf7d095e7cc8db5e0fc2d18586917b95355c2942620a1e972a38
   expo-libghostty@0.8.1: 654fcf73ca6ef3a9a7dc8bb2dcd9d8d4b4d275fb1a14e6f265bb82d1fa83a2e1
   expo-modules-autolinking@58.1.0: ad6bc6b2ca4f96b5a82d1f3669da9619293b758dafa948c548249f92c7094be0
   ghostty-web@0.4.0: 5e5b87535821fd4454a1a68fed7e71c3fdf6d12c79539f331a0d5392ffa60c3a
@@ -492,7 +492,7 @@ importers:
         version: 4.1.4
       electron-chrome-extensions:
         specifier: 4.10.0
-        version: 4.10.0(patch_hash=b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab)(supports-color@8.1.1)
+        version: 4.10.0(patch_hash=62c8af5d12dfaf7d095e7cc8db5e0fc2d18586917b95355c2942620a1e972a38)(supports-color@8.1.1)
       electron-updater:
         specifier: ^6.8.11
         version: 6.8.11(supports-color@8.1.1)
@@ -641,9 +641,6 @@ importers:
       expo-font:
         specifier: ~58.0.12
         version: 58.0.12(expo@58.0.25)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
-      expo-glass-effect:
-        specifier: ~58.0.5
-        version: 58.0.5(expo@58.0.25)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
       expo-image-manipulator:
         specifier: ~58.0.16
         version: 58.0.16(expo@58.0.25)(react-native@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(@react-native/metro-config@0.88.1(@babel/core@7.29.13(supports-color@8.1.1))(supports-color@8.1.1))(@types/react@19.3.0)(react@19.3.1)(supports-color@8.1.1))(react@19.3.1)
@@ -15556,7 +15553,7 @@ snapshots:
       - electron-builder-squirrel-windows
       - supports-color
 
-  electron-chrome-extensions@4.10.0(patch_hash=b335250c197edbdc7c90ff7a3f20f759b13f66d48ec59057b5f284c849d0feab)(supports-color@8.1.1):
+  electron-chrome-extensions@4.10.0(patch_hash=62c8af5d12dfaf7d095e7cc8db5e0fc2d18586917b95355c2942620a1e972a38)(supports-color@8.1.1):
     dependencies:
       debug: 4.4.3(supports-color@8.1.1)
     transitivePeerDependencies:

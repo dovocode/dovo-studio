@@ -6,7 +6,7 @@ import { nativeTodoSummary, responses, type Task } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Icon } from '../../ui/controls/icon'
 import { Text } from '../../ui/content/text'
-import { Glass } from '../../ui/layout/glass'
+import { Surface } from '../../ui/layout/surface'
 import { useTheme } from '../../ui/theme'
 import { useTaskConversation } from '../conversation/state/provider'
 import { NativeTodos } from '../conversation/components/native-todos'
@@ -203,7 +203,7 @@ function QueuedActivity({ task, attached = false }: { task: Task; attached?: boo
       </Pressable>
     </View>
   )
-  const Surface = attached ? View : Glass
+  const ActivitySurface = attached ? View : Surface
   return (
     <View
       accessibilityLabel={uiText('Composer activity')}
@@ -213,7 +213,7 @@ function QueuedActivity({ task, attached = false }: { task: Task; attached?: boo
         marginBottom: attached ? -1 : 8,
       }}
     >
-      <Surface
+      <ActivitySurface
         style={{
           borderRadius: attached ? 16 : 12,
           ...(attached ? { borderBottomLeftRadius: 0, borderBottomRightRadius: 0 } : {}),
@@ -268,7 +268,7 @@ function QueuedActivity({ task, attached = false }: { task: Task; attached?: boo
             />
           </View>
         )}
-      </Surface>
+      </ActivitySurface>
     </View>
   )
 }

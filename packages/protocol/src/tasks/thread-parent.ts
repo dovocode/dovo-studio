@@ -1,12 +1,36 @@
 import type { TaskMetadata } from './task-summary.js'
+import { SCRATCH_PROJECT_ID } from '../workspace.js'
+import type { ThreadWatchSummary } from './thread-watches.js'
 
-export function botParentLink(
-  task: Pick<TaskMetadata, 'botConversation' | 'botMention' | 'botJob'>,
-): { botId: string; runtimeIdentity?: string } | undefined {
-  if (task.botConversation) return task.botConversation
-  if (task.botMention)
-    return { botId: task.botMention.botId, runtimeIdentity: task.botMention.runtimeId }
-  return task.botJob
+export function botProjectThread(
+  callerIsBot: boolean | undefined,
+  repositoryId: string | undefined,
+) {
+  return !!callerIsBot && !!repositoryId && repositoryId !== SCRATCH_PROJECT_ID
+}
+
+export function spawnedThreadWatch(caller: Pick<TaskMetadata, 'bot'>, watch: ThreadWatchSummary) {
+  return (
+    watch.relation === 'spawned' &&
+    !watch.steering &&
+    !(caller.bot && watch.snapshot?.projectKind === 'project') &&
+    !botProjectThread(!!caller.bot, watch.snapshot?.repositoryId)
+  )
+}
+
+export function botInvocationParent(
+  task: Pick<TaskMetadata, 'botMention'>,
+  ownerIdentity?: string,
+) {
+  const invocation = task.botMention
+  if (!invocation) return undefined
+  const runtimeIdentity = invocation.sourceRuntimeId ?? ownerIdentity
+  return {
+    threadId: invocation.sourceTaskId,
+    runtimeIdentity,
+    subthread:
+      invocation.sourceTaskId === invocation.botId && runtimeIdentity === invocation.runtimeId,
+  }
 }
 
 export function mentionSourceTitle(
@@ -15,7 +39,11 @@ export function mentionSourceTitle(
 ) {
   if (!task.botMention) return undefined
   const id = task.botMention.sourceTaskId
-  return lookup(id) || (task.forkedFrom?.taskId === id ? task.forkedFrom.title : undefined)
+  return (
+    lookup(id) ||
+    task.botMention.sourceTitle ||
+    (task.forkedFrom?.taskId === id ? task.forkedFrom.title : undefined)
+  )
 }
 
 /** Resolve only navigation provenance. This never grants access to the referenced runtime. */
@@ -30,19 +58,34 @@ export function taskParentReference(
     tasks: readonly TaskMetadata[]
   }[] = [],
 ) {
-  const botLink = botParentLink(task)
-  if (botLink) {
-    const identity = botLink.runtimeIdentity
+  const invocation = botInvocationParent(task, task.replica?.ownerRuntimeId ?? runtimeIdentity)
+  if (
+    invocation &&
+    (invocation.threadId !== (task.replica?.threadId ?? task.id) ||
+      invocation.runtimeIdentity !== (task.replica?.ownerRuntimeId ?? runtimeIdentity))
+  ) {
+    const identity = invocation.runtimeIdentity
     const local = identity === undefined || identity === runtimeIdentity
     const source = local
       ? { runtimeId, tasks }
       : sources.find((source) => source.runtimeIdentity === identity)
-    const parent = source?.tasks.find((parent) => parent.id === botLink.botId)
+    return {
+      runtimeId: source ? source.runtimeId : (identity ?? null),
+      runtimeIdentity: identity,
+      threadId: invocation.threadId,
+      title:
+        mentionSourceTitle(task, (id) => source?.tasks.find((parent) => parent.id === id)?.title) ??
+        'Parent thread',
+    }
+  }
+  const botId = task.botConversation?.botId ?? task.botJob?.botId
+  if (botId) {
+    const parent = tasks.find((parent) => parent.id === botId)
     if (!parent || parent.bot)
       return {
-        runtimeId: source ? source.runtimeId : (identity ?? null),
-        runtimeIdentity: identity ?? runtimeIdentity,
-        threadId: botLink.botId,
+        runtimeId,
+        runtimeIdentity,
+        threadId: botId,
         title: parent?.title ?? 'Bot',
       }
   }
@@ -55,13 +98,27 @@ export function taskParentReference(
         tasks.find((parent) => parent.id === task.sideThread?.parentTaskId)?.title ??
         'Parent thread',
     }
-  if (task.spawnParent)
+  if (task.spawnParent) {
+    const owner = task.spawnParent
+    const source =
+      owner.runtimeId === runtimeIdentity
+        ? tasks
+        : sources.find((source) => source.runtimeIdentity === owner.runtimeId)?.tasks
+    if (
+      owner.steering ||
+      botProjectThread(
+        !!source?.find((parent) => parent.id === owner.threadId)?.bot,
+        task.repositoryId,
+      )
+    )
+      return undefined
     return {
-      runtimeId: task.spawnParent.runtimeId,
-      runtimeIdentity: task.spawnParent.runtimeId,
-      threadId: task.spawnParent.threadId,
-      title: task.spawnParent.title ?? 'Parent thread',
+      runtimeId: owner.runtimeId,
+      runtimeIdentity: owner.runtimeId,
+      threadId: owner.threadId,
+      title: owner.title ?? 'Parent thread',
     }
+  }
   if (!task.delegation) {
     // Existing targeted children predate the durable backlink. Infer only explicit saved ownership.
     for (const source of [{ runtimeId, runtimeIdentity, tasks }, ...sources])
@@ -69,7 +126,8 @@ export function taskParentReference(
         if (
           owner.threadWatches?.some(
             (watch) =>
-              watch.relation === 'spawned' &&
+              spawnedThreadWatch(owner, watch) &&
+              !botProjectThread(!!owner.bot, task.repositoryId) &&
               (watch.snapshot?.runtimeId
                 ? watch.snapshot.runtimeId === (task.replica?.ownerRuntimeId ?? runtimeIdentity) &&
                   watch.threadId === (task.replica?.threadId ?? task.id)

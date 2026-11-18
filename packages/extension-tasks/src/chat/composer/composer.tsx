@@ -222,6 +222,7 @@ export function Composer({
   const [dictating, setDictating] = useState(false)
   const sendingRequest = useRef(false)
   const [fileDrag, setFileDrag] = useState(false)
+  const composerDraft = useComposerDraft(task, temporary, editing?.controller)
   const attachments = useAttachments(
     task,
     editing && snapshot?.fullTurnSettingsSupported
@@ -245,6 +246,8 @@ export function Composer({
             ),
         }
       : undefined,
+    undefined,
+    composerDraft.flush,
   )
   const editingChatImage = useChatImageUploader(
     (file) => attachments.upload([file], undefined, true),
@@ -256,7 +259,6 @@ export function Composer({
       (!editing || !!snapshot?.fullTurnSettingsSupported),
   )
   const sending = submitBusy || machineMoving || asideCreating || dictating || editingChatImage
-  const composerDraft = useComposerDraft(task, temporary, editing?.controller)
   const asideScope = JSON.stringify([activeRuntimeId, task.id])
   const asideCurrent = useSideThreadSource(asideScope)
   const askAside = useCommittedCallback(async () => {

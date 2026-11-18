@@ -501,6 +501,7 @@ async function runDesktopBrowserCommand(
         else await browserScript(cdp, `window.scrollBy(0, ${JSON.stringify(command.deltaY)})`)
         break
       case 'snapshot':
+      case 'elements':
       case 'screenshot':
         break
     }
@@ -518,6 +519,14 @@ async function runDesktopBrowserCommand(
       title: page.title,
     }
     if (command.action === 'evaluate') return { ...details, result: scriptResult }
+    if (command.action === 'elements')
+      return {
+        ...details,
+        ...decode(
+          browserObservationSchema,
+          await browserScript(cdp, `(${readBrowserObservation.toString()})()`),
+        ),
+      }
     if (command.action === 'screenshot') {
       const screenshot = decode(
         screenshotSchema,
@@ -541,10 +550,6 @@ async function runDesktopBrowserCommand(
       ...details,
       snapshot: snapshot.slice(0, 32000),
       snapshotTruncated: snapshot.length > 32000,
-      ...decode(
-        browserObservationSchema,
-        await browserScript(cdp, `(${readBrowserObservation.toString()})()`),
-      ),
     }
   } finally {
     cdp.close()

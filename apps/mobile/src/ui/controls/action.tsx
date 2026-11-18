@@ -34,7 +34,7 @@ export function Action(props: ActionProps) {
         color={(props.destructive ?? destructive.test(props.label)) ? colors.error : undefined}
         variant={
           props.label === uiText('Back') || props.label === uiText('Back to PRs')
-            ? 'glass'
+            ? 'bordered'
             : secondary
               ? 'plain'
               : 'filled'

@@ -58,17 +58,10 @@
 }
 :root {
   --studio-glow-strength: 0.5;
-  /* The composer and main navigation retain their current material. */
   --studio-surface-sheen: none;
-  --studio-glass-sheen: linear-gradient(145deg, #ffffff12, transparent 55%, #ffffff08);
   --studio-surface-rim: inset 0 1px 0 #ffffff50;
   --studio-surface-shadow: 0 14px 40px -14px #00000070;
   --studio-floating-fill: var(--popover);
-  --studio-navigation-fill: var(--sidebar);
-  --studio-glass-fill: var(--card);
-  --studio-dialog-fill: var(--card);
-  --studio-glass-edge: #d7e8ff45;
-  --studio-navigation-filter: var(--studio-surface-filter);
   --studio-navigation-light: radial-gradient(
     ellipse at 12% 0%,
     color-mix(in srgb, var(--primary) calc(12% * var(--studio-glow-strength)), transparent),
@@ -76,7 +69,6 @@
   );
   --studio-page-background: var(--studio-navigation-light) 0 0 / 100vw 100vh no-repeat fixed
     var(--background);
-  --studio-surface-filter: blur(8px) saturate(1.6);
   --studio-control-rim: none;
   --studio-inset-fill: color-mix(in srgb, var(--background) 70%, var(--card));
   --studio-inset-shadow: none;
@@ -115,10 +107,9 @@
 }
 /* Dovo fallback before React mounts; Appearance applies the selected palette before paint. */
 :root[data-theme='light'] {
-  --studio-glass-sheen: linear-gradient(145deg, #ffffff55, transparent 55%, #ffffff22);
   --studio-surface-rim: inset 0 1px 0 #ffffffd0;
   --studio-surface-shadow: 0 14px 40px -14px #35446440;
-  --studio-glass-edge: #ffffffb8;
+
   color-scheme: light;
   --background: var(--dovo-background);
   --foreground: var(--dovo-foreground);
@@ -177,7 +168,6 @@
 :root[data-theme-gradients='false'] .studio-destructive-accent {
   --studio-selected-gradient: none;
   --studio-surface-sheen: none;
-  --studio-glass-sheen: none;
   --studio-navigation-light: none;
 }
 :root[data-theme-glow='0'],
@@ -190,27 +180,10 @@
   --studio-navigation-light: none;
 }
 
-/* Navigation blurs once per surface. Dense rows and their controls do not blur. */
-@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
-  :root {
-    --studio-floating-fill: color-mix(in srgb, var(--popover) 72%, transparent);
-    --studio-navigation-fill: color-mix(in srgb, var(--sidebar) 65%, transparent);
-    --studio-glass-fill: color-mix(in srgb, var(--card) 68%, transparent);
-    --studio-dialog-fill: color-mix(in srgb, var(--card) 56%, transparent);
-  }
-}
 :root[data-high-contrast='true'] {
   --studio-surface-sheen: none;
   --studio-surface-rim: 0 0 0 transparent;
-  --studio-floating-fill: var(--popover);
-  --studio-navigation-fill: var(--sidebar);
-  --studio-glass-fill: var(--card);
-  --studio-dialog-fill: var(--card);
-  --studio-glass-edge: var(--border);
-  --studio-glass-sheen: none;
-  --studio-navigation-filter: none;
   --studio-navigation-light: none;
-  --studio-surface-filter: none;
   --studio-control-rim: none;
   --studio-inset-shadow: none;
   --studio-capsule-shadow: none;
@@ -219,15 +192,7 @@
   :root:root {
     --studio-surface-sheen: none;
     --studio-surface-rim: 0 0 0 transparent;
-    --studio-floating-fill: var(--popover);
-    --studio-navigation-fill: var(--sidebar);
-    --studio-glass-fill: var(--card);
-    --studio-dialog-fill: var(--card);
-    --studio-glass-edge: var(--border);
-    --studio-glass-sheen: none;
-    --studio-navigation-filter: none;
     --studio-navigation-light: none;
-    --studio-surface-filter: none;
     --studio-control-rim: none;
     --studio-inset-shadow: none;
     --studio-capsule-shadow: none;
@@ -251,15 +216,7 @@
 .dovo-dialog-content {
   --dialog-field: var(--card);
   --dialog-inset: color-mix(in srgb, var(--card) 95%, var(--foreground) 5%);
-  border-color: var(--studio-glass-edge);
   border-radius: var(--dovo-radius-overlay);
-  background-color: var(--studio-dialog-fill);
-  background-image: var(--studio-glass-sheen);
-  -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-  box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
-}
-.dovo-dialog-content:not([data-fixed-material]) {
   border-color: var(--border);
   background-color: var(--card);
   background-image: none;
@@ -385,17 +342,10 @@
     box-shadow: none;
   }
   :where(.studio-menu-surface) {
-    border-color: var(--studio-glass-edge);
     border-radius: var(--dovo-radius-overlay);
-    background-color: var(--studio-floating-fill);
-    background-image: var(--studio-glass-sheen);
-    -webkit-backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
-    backdrop-filter: var(--studio-glass-refraction, var(--studio-surface-filter));
+    background-color: var(--popover);
     color: var(--foreground);
-    box-shadow: var(--studio-surface-rim), var(--studio-surface-shadow);
-  }
-  :where(.studio-menu-surface:not([data-fixed-material])) {
-    --studio-floating-fill: var(--popover);
+
     border-color: var(--border);
     background-image: none;
     -webkit-backdrop-filter: none;
@@ -479,38 +429,4 @@
   [data-slot='select-trigger']
 ):not([aria-invalid='true']) {
   border-color: var(--control-edge);
-}
-
-/* Only these surfaces keep optical effects. Their accessibility fallbacks remain opaque. */
-:is(
-  .studio-navigation[aria-label='Main navigation'],
-  .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-  .studio-composer,
-  .studio-header-corner,
-  [data-fixed-material]
-) {
-  --studio-glass-refraction: var(--studio-surface-filter);
-}
-:root[data-high-contrast='true']
-  :is(
-    .studio-navigation[aria-label='Main navigation'],
-    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-    .studio-composer,
-    .studio-header-corner,
-    [data-fixed-material]
-  ) {
-  -webkit-backdrop-filter: none !important;
-  backdrop-filter: none !important;
-}
-@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
-  :is(
-    .studio-navigation[aria-label='Main navigation'],
-    .studio-navigation[aria-label='Main navigation'] .studio-navigation-item[aria-current='page'],
-    .studio-composer,
-    .studio-header-corner,
-    [data-fixed-material]
-  ) {
-    -webkit-backdrop-filter: none !important;
-    backdrop-filter: none !important;
-  }
 }

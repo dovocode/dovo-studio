@@ -150,23 +150,14 @@ try {
       await field.focus()
       const focused = await field.evaluate((el) => {
         const form = el.closest('form')
-        const probe = document.createElement('span')
-        probe.style.boxShadow = 'var(--studio-surface-rim), var(--studio-surface-shadow)'
-        form.append(probe)
-        const materialShadow = getComputedStyle(probe).boxShadow
-        probe.remove()
         return {
           boxShadow: getComputedStyle(form).boxShadow,
-          materialShadow,
-          border: getComputedStyle(form).borderTopColor,
+          backdropFilter: getComputedStyle(form).backdropFilter,
           outline: getComputedStyle(el).outlineStyle,
         }
       })
-      assert.equal(
-        focused.boxShadow,
-        focused.materialShadow,
-        'Composer keeps only the neutral glass shadow without an added focus glow',
-      )
+      assert.equal(focused.boxShadow, 'none', 'Composer focus does not add a shadow')
+      assert.equal(focused.backdropFilter, 'none', 'Composer stays solid when focused')
       assert.equal(focused.outline, 'none', 'Composer textarea must not add a second focus ring')
       const button = page.getByRole('button', { name: 'Send task', exact: true })
       await button.focus()

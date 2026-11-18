@@ -686,13 +686,16 @@ export const linkedPullRequestSchema = mutableStruct({
 export const taskSchema = mutableStruct({
   /** An isolated automation worker owned by a Bot, never the coordinator itself. */
   botJob: Schema.optional(mutableStruct({ botId: Schema.String, runId: Schema.String })),
-  /** Navigation and submission receipt only. The copy stays on the sending computer. */
+  /** A saved Bot invocation. Human mentions copy the source on its computer. */
   botMention: Schema.optional(
     mutableStruct({
       runtimeId: Schema.String,
       botId: Schema.String,
       sourceTaskId: Schema.String,
       sourceMessageId: Schema.String,
+      /** Agent calls execute on the Bot's computer and record the caller separately. */
+      sourceRuntimeId: Schema.optional(Schema.String),
+      sourceTitle: Schema.optional(Schema.String),
     }),
   ),
   /** Saved coordinator conversation, owned by the same Bot on this computer. */

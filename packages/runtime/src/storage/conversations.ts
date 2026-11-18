@@ -394,6 +394,7 @@ export class Conversations {
     taskId: string,
     before: string | undefined,
     historyRevision: number | undefined,
+    includeTurns = true,
   ): ConversationPage | undefined {
     let end = Number.MAX_SAFE_INTEGER
     if (before !== undefined) {
@@ -418,11 +419,13 @@ export class Conversations {
     )
       .reverse()
       .map((row) => decode(messageSchema, JSON.parse(row.value)))
-    const turns = decode(
-      valuesSchema,
-      this.db
-        .prepare(
-          `SELECT value FROM (
+    const turns = !includeTurns
+      ? []
+      : decode(
+          valuesSchema,
+          this.db
+            .prepare(
+              `SELECT value FROM (
             SELECT item.value, item.ordinal FROM conversation_items AS item
             WHERE task_id = ? AND kind = 'turn' AND item_id IN (SELECT value FROM json_each(?))
             UNION
@@ -431,14 +434,16 @@ export class Conversations {
             WHERE entry.task_id = ? AND entry.kind = 'turn'
               AND entry.assistant_id IN (SELECT value FROM json_each(?))
           ) ORDER BY ordinal`,
-        )
-        .all(
-          taskId,
-          JSON.stringify(messages.flatMap((message) => (message.turnId ? [message.turnId] : []))),
-          taskId,
-          JSON.stringify(messages.map((message) => message.id)),
-        ),
-    ).map((row) => decode(turnSchema, JSON.parse(row.value)))
+            )
+            .all(
+              taskId,
+              JSON.stringify(
+                messages.flatMap((message) => (message.turnId ? [message.turnId] : [])),
+              ),
+              taskId,
+              JSON.stringify(messages.map((message) => message.id)),
+            ),
+        ).map((row) => decode(turnSchema, JSON.parse(row.value)))
     return conversationWindowPage({ messages, turns, historyRevision })
   }
   /** `searchTaskMessages` over stored history. Every matching task is listed; hits are bounded. */

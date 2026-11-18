@@ -205,7 +205,7 @@ try {
     assert.equal(
       await style('[data-test="sidebar-brand"]', 'backgroundImage'),
       'none',
-      'Sidebar brand stays flat above its glass pane',
+      'Sidebar brand uses a plain fill',
     )
     assert.equal(
       await style('[data-test="window-browser"]', 'boxShadow'),

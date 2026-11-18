@@ -4,6 +4,7 @@ import { effectivePermissionPolicy } from '@dovo/protocol'
 import { isAbsolute, relative } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
+import { verifiedGitUpdates } from '../../scm/tasks/external-git-updates.js'
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
@@ -29,6 +30,19 @@ import { quoteTerminalPaths } from '../../terminal/file-paths.js'
 import { resolveTerminalShell, terminalShells } from '../../terminal/shell.js'
 import { workspaceTerminalCheckout } from '../../terminal/workspace-checkout.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
+const waitTime = Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20000 })))
+function terminalSummary(
+  request: IncomingMessage,
+  read: (
+    signal: AbortSignal,
+  ) => ReturnType<import('../../terminal/terminals.js').Terminals['checkSummary']>,
+) {
+  const controller = new AbortController()
+  const abort = () => controller.abort(new HttpError(409, 'Terminal summary request cancelled'))
+  if (request.socket.destroyed) abort()
+  request.socket.once('close', abort)
+  return read(controller.signal).finally(() => request.socket.off('close', abort))
+}
 function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: string) {
   const seen = new Set<string>()
   let task = store.taskSummary(taskId)
@@ -223,10 +237,24 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           return s.terminals.create(taskId, cwd, checkoutId)
         })
       }
+      if (method === 'POST' && path === '/api/terminals/summary') {
+        const { id, waitMs } = decode(
+          mutableStruct({ id: idSchema, waitMs: waitTime }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* runtimeOperation(async () => {
+          authenticateRuntimeOperation(s, token)
+          const result = await terminalSummary(request, (signal) =>
+            s.terminals.checkSummary(id, waitMs ?? 0, signal),
+          )
+          authenticateRuntimeOperation(s, token)
+          return result
+        })
+      }
       if (method === 'POST' && path === '/api/terminals/run') {
         // Chat code blocks reuse an open terminal. Agent tools request a fresh one so a
         // foreground program in the user's terminal never receives a shell command as input.
-        const { taskId, command, newTerminal, checkoutId, title, codeMode } = decode(
+        const { taskId, command, newTerminal, checkoutId, title, codeMode, check, waitMs } = decode(
           mutableStruct({
             taskId: idSchema,
             checkoutId: Schema.optional(idSchema),
@@ -234,9 +262,13 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
             newTerminal: Schema.optional(Schema.Boolean),
             codeMode: Schema.optional(Schema.Boolean),
             title: Schema.optional(terminalTitleSchema),
+            check: Schema.optional(Schema.Boolean),
+            waitMs: waitTime,
           }),
           yield* serviceResult(body(request)),
         )
+        if ((check && !newTerminal) || (waitMs !== undefined && !check))
+          throw new HttpError(400, 'A command check uses a new terminal')
         const task = yield* runtimeOperation(() => s.store.taskSummary(taskId))
         const repo = yield* runtimeOperation(() =>
           s.store.get().repositories.find((r) => r.id === task.repositoryId),
@@ -322,17 +354,20 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
             }
             await prepareThreadTerminal(s, taskId, cwd)
             authorize()
-            return s.terminals.create(taskId, cwd, checkoutId)
+            return check
+              ? s.terminals.createCheck(taskId, cwd, command, title, checkoutId)
+              : s.terminals.create(taskId, cwd, checkoutId)
           }))
-        if (title !== undefined)
+        if (title !== undefined && !check)
           terminal = yield* runtimeOperation(() => {
             authorize()
             return s.terminals.update({ id: terminal.id, title })
           })
-        yield* runtimeOperation(() => {
-          authorize()
-          s.terminals.input(terminal.id, `${command.replace(/\r?\n/g, '\r')}\r`)
-        })
+        if (!check)
+          yield* runtimeOperation(() => {
+            authorize()
+            s.terminals.input(terminal.id, `${command.replace(/\r?\n/g, '\r')}\r`)
+          })
         if (newTerminal) {
           const current = s.store.task(taskId)
           const turn = [...(current.turns ?? [])]
@@ -347,21 +382,74 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
                     (entry.id === turn.assistantId || entry.turnId === turn.id),
                 )
             : undefined
-          yield* runtimeOperation(() =>
+          const record = (
+            status: 'running' | 'completed' | 'failed',
+            output: string,
+            exitCode?: number,
+          ) =>
             s.activity.add('tool', taskId, 'Terminal command', {
               turnId: turn?.id ?? '',
               ...(message ? { messageId: message.id, textOffset: message.text.length } : {}),
               toolId: `terminal:${terminal.id}`,
-              status: 'completed',
+              status,
+              exitCode,
               terminalCommand: true,
               presentation: {
                 kind: 'command',
                 title: command,
                 input: command,
-                output: 'Started in terminal.',
+                output,
               },
-            }),
-          )
+            })
+          yield* runtimeOperation(() => {
+            record(check ? 'running' : 'completed', 'Started in terminal.')
+            if (check) {
+              const owner = isRunToken(token) ? s.runCredentials.authenticate(token) : undefined
+              const cwd = s.terminals.get(terminal.id).directory
+              s.terminals.onCheckExit(terminal.id, (exitCode, tail) => {
+                record(exitCode === 0 ? 'completed' : 'failed', tail, exitCode)
+                if (
+                  exitCode !== 0 ||
+                  !owner ||
+                  owner.readOnly ||
+                  owner.signal.aborted ||
+                  owner.taskId !== taskId ||
+                  !owner.pullRequestWatching ||
+                  !s.preferences.get().enablePullRequestBabysitting
+                )
+                  return
+                void verifiedGitUpdates(s.git, owner.runId, cwd, {
+                  id: terminal.id,
+                  name: 'terminal_run',
+                  kind: 'command',
+                  status: 'completed',
+                  input: command,
+                  output: tail,
+                })
+                  .then((receipts) => {
+                    if (owner.signal.aborted || !s.preferences.get().enablePullRequestBabysitting)
+                      return
+                    s.store.saveExternalGitReceipts(
+                      taskId,
+                      receipts.filter(
+                        (receipt) =>
+                          !owner.codeDirectories?.linked.some(
+                            (link) => link.access === 'read-only' && link.path === receipt.cwd,
+                          ),
+                      ),
+                    )
+                  })
+                  .catch((error: unknown) => {
+                    if (owner.signal.aborted) return
+                    s.activity.add(
+                      'task',
+                      taskId,
+                      `Could not verify terminal Git update: ${errorMessage(error)}`,
+                    )
+                  })
+              })
+            }
+          })
         }
         yield* runtimeOperation(() =>
           s.activity.add(
@@ -375,6 +463,14 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
           ),
         )
         if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
+        if (check)
+          return yield* runtimeOperation(async () => {
+            const result = await terminalSummary(request, (signal) =>
+              s.terminals.checkSummary(terminal.id, waitMs ?? 10000, signal),
+            )
+            authenticateRuntimeOperation(s, token)
+            return result
+          })
         return terminal
       }
       if (method === 'POST' && path === '/api/terminals/quote-paths') {

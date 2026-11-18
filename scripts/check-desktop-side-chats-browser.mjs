@@ -149,7 +149,7 @@ const built = await build({
           if(path==='/api/tasks/side-thread/bring-back'){const source=window.saved.find(task=>task.id===input.id);const turn=source.turns.at(-1);const receiptId=source.id+':'+turn.id;const text='[Side thread: '+source.title+' ('+source.id+'), completed turn '+turn.id+']\\n'+${JSON.stringify(handoffMetadata + '\n\n')}+source.messages.at(-1).text;const target=source.sideThread.parentTaskId;if(!window.serverDrafts.has(receiptId)){if(input.expectedDraft!==window.saved.find(task=>task.id===target).draft)throw Error('The parent draft changed');window.serverDrafts.set(receiptId,text)}if(window.loseHandoff){window.loseHandoff=false;setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));throw Error('Connection lost')}if(window.markBroughtBack)setWorkspace(current=>({...current,tasks:current.tasks.map(task=>task.id===source.id?{...task,sideThread:{...task.sideThread,broughtBackThrough:turn.id}}:task)}));return {id:target,receiptId,text}};
           return {ok:true};
         };
-        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',switchRuntime:async()=>{},runtimes,runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView key={mount} entityId={route.entity} pullTarget={route.pullTarget} navigationKey={route.key}/></WorkspaceValueProvider>
+        return <WorkspaceValueProvider value={{workspace,setWorkspace,snapshot,activeRuntimeId:'mac',switchRuntime:async()=>{},runtimes,runtimeRegistry:{profiles:[]},connected:true,connection:{address:'http://runtime',token:'token'},request,flush:async()=>{},readCache:{read:async()=>null},refreshRuntimes:async()=>{}}}><TasksView key={mount} entityId={route.entity} threadRequest={route.threadRequest} pullTarget={route.pullTarget} navigationKey={route.key}/></WorkspaceValueProvider>
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -571,7 +571,7 @@ try {
   )
   // Started side chats offer no discard; normal deletion remains their way out.
   assert.equal(await childRow.getByRole('button', { name: /^Discard/ }).count(), 0)
-  // Existing routine workers and saved mentions are children, with no side-chat handoff actions.
+  // Routine workers and calls to other Bots appear with the caller, with no handoff actions.
   await page.evaluate(() => {
     window.setTask('parent', (task) => ({ ...task, bot: { role: 'Coordinator' } }))
     const base = window.saved.find((task) => task.id === 'other')
@@ -591,9 +591,9 @@ try {
           id: 'mention-copy',
           title: 'Saved mention',
           botMention: {
-            runtimeId: 'runtime-mac',
-            botId: 'parent',
-            sourceTaskId: 'other',
+            runtimeId: 'runtime-linux',
+            botId: 'remote-bot',
+            sourceTaskId: 'parent',
             sourceMessageId: 'mention',
           },
         },
@@ -611,7 +611,9 @@ try {
         snapshot: {
           runtimeId: 'runtime-linux',
           questions: [],
-          approvals: [],
+          approvals: [
+            { id: 'remote-approval', taskId: 'remote-copy', title: 'Approve remote build' },
+          ],
           defaults: {},
           workspace: {
             version: 1,
@@ -623,11 +625,12 @@ try {
               {
                 ...base,
                 id: 'remote-copy',
-                title: 'Remote saved mention',
+                title: 'Remote Bot call',
                 botMention: {
-                  runtimeId: 'runtime-mac',
-                  botId: 'parent',
-                  sourceTaskId: 'remote-source',
+                  runtimeId: 'runtime-linux',
+                  botId: 'remote-bot',
+                  sourceTaskId: 'parent',
+                  sourceRuntimeId: 'runtime-mac',
                   sourceMessageId: 'mention',
                 },
               },
@@ -637,7 +640,7 @@ try {
       },
     ])
   })
-  for (const title of ['Routine worker', 'Saved mention', 'Remote saved mention']) {
+  for (const title of ['Routine worker', 'Saved mention', 'Remote Bot call']) {
     const row = panel
       .locator('li')
       .filter({ has: page.getByRole('button', { name: title, exact: true }) })
@@ -645,25 +648,46 @@ try {
     assert.equal(await row.getByRole('button', { name: /^Bring back/ }).count(), 0)
     assert.equal(await row.getByRole('button', { name: /^Discard/ }).count(), 0)
   }
-  await panel.getByText('Saved from Linux source thread', { exact: true }).waitFor()
-  await panel
-    .locator('li')
-    .filter({ hasText: 'Saved from Linux source thread' })
-    .getByRole('button', { name: 'Open source thread', exact: true })
-    .click()
-  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
+  const remoteApproval = {
     runtimeId: 'linux',
     runtimeIdentity: 'runtime-linux',
-    threadId: 'remote-source',
-    title: 'Linux source thread',
-  })
-  await panel.getByRole('button', { name: 'Remote saved mention', exact: true }).click()
+    threadId: 'remote-copy',
+    title: 'Remote Bot call',
+    threadRequest: { id: 'remote-copy', kind: 'approval', requestId: 'remote-approval' },
+  }
+  await panel.getByRole('button', { name: 'Open approval in Remote Bot call' }).click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), remoteApproval)
+  await page
+    .locator('[data-side-chat-attention-banner="approval"]')
+    .getByRole('button', { name: 'Open approval' })
+    .click()
+  assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), remoteApproval)
+  await panel.getByRole('button', { name: 'Remote Bot call', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.navigations.at(-1)), {
     runtimeId: 'linux',
     runtimeIdentity: 'runtime-linux',
     threadId: 'remote-copy',
-    title: 'Remote saved mention',
+    title: 'Remote Bot call',
   })
+  // Simulate the shell opening the owning runtime and verify the receipt gains focus in its primary pane.
+  await page.evaluate(() => {
+    window.setRequests({
+      questions: [],
+      approvals: [{ id: 'remote-approval', taskId: 'remote-copy', title: 'Approve remote build' }],
+    })
+    window.setWorkspace((current) => ({
+      ...current,
+      tasks: [{ ...current.tasks[0], id: 'remote-copy', title: 'Remote Bot call', bot: undefined }],
+    }))
+    window.setRoute((current) => ({
+      key: current.key + 1,
+      entity: 'remote-copy',
+      threadRequest: { id: 'remote-copy', kind: 'approval', requestId: 'remote-approval' },
+    }))
+  })
+  await page.waitForFunction(
+    () => document.activeElement?.getAttribute('data-request-id') === 'remote-approval',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Desktop agent side chats: real TasksView lists and embeds full child threads beside the parent, keeps legacy questions reachable, notes committed-only provenance compactly, ignores inherited history, creates unsent drafts, gates Bring back and appends its exact handoff once through the parent composer, keeping unsaved edits across a lost response, retry and repeated receipt, returns from a standalone side chat, blocks nested side chats, opens a PR handoff task with the PR beside its full chat, replaces only untouched repeated PR context, restores a side chat only with its parent across selection and remount, surfaces and focuses side chat and delegated approvals and questions, explains unavailable Bring back and confirms its result, and discards never-started drafts only on request.',

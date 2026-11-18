@@ -25,7 +25,7 @@ export type MenuAction = {
   onPress: () => void
 }
 
-/** Compact actions beside a control, outside scroll/Glass clipping and above the keyboard. */
+/** Compact actions beside a control, outside clipped scroll areas and above the keyboard. */
 export function ActionMenu({
   label,
   anchor,

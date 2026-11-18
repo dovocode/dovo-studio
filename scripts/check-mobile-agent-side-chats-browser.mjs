@@ -365,7 +365,7 @@ try {
       (read) => read.path.endsWith('/file-preview') && read.input.path === 'large.bin',
     ),
   )
-  // Routine workers and remote mention copies open their own thread and cannot be discarded as side drafts.
+  // Routine workers and remote Bot calls open their own thread and cannot be discarded as side drafts.
   await page.evaluate(() => {
     window.runtime.snapshot.runtimeId = 'runtime-mac'
     window.changeParent({ bot: { role: 'Coordinator' } })
@@ -381,18 +381,20 @@ try {
         profile: { id: 'linux' },
         snapshot: {
           runtimeId: 'runtime-linux',
+          approvals: [{ id: 'remote-approval', taskId: 'remote-copy' }],
+          questions: [],
           workspace: {
             tasks: [
               {
                 id: 'remote-copy',
-                title: 'Remote saved mention',
+                title: 'Remote Bot call',
                 status: 'review',
                 createdAt: '2026-11-15T08:00:00Z',
-                forkedFrom: { taskId: 'source', title: 'Saved Linux source title' },
                 botMention: {
-                  runtimeId: 'runtime-mac',
-                  botId: 'parent',
-                  sourceTaskId: 'source',
+                  runtimeId: 'runtime-linux',
+                  botId: 'target',
+                  sourceTaskId: 'parent',
+                  sourceRuntimeId: 'runtime-mac',
                   sourceMessageId: 'mention',
                 },
               },
@@ -402,9 +404,10 @@ try {
                 status: 'review',
                 createdAt: '2026-11-15T08:00:00Z',
                 botMention: {
-                  runtimeId: 'other-runtime',
-                  botId: 'parent',
-                  sourceTaskId: 'source',
+                  runtimeId: 'runtime-linux',
+                  botId: 'target',
+                  sourceTaskId: 'parent',
+                  sourceRuntimeId: 'other-runtime',
                   sourceMessageId: 'mention',
                 },
               },
@@ -422,10 +425,18 @@ try {
     0,
   )
   assert.equal(await page.getByRole('button', { name: /Unrelated mention/ }).count(), 0)
-  await page.getByText('Saved from Saved Linux source title', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Remote saved mention · review', exact: true }).click()
+  await page.getByRole('button', { name: 'Remote Bot call · Needs approval', exact: true }).click()
   assert.equal(await page.evaluate(() => window.routes.at(-1).params.runtimeId), 'linux')
   assert.equal(await page.evaluate(() => window.routes.at(-1).params.taskId), 'remote-copy')
+  assert.equal(await page.evaluate(() => window.routes.at(-1).params.approvalId), 'remote-approval')
+  await page.evaluate(() => window.show('attention'))
+  await page.getByRole('button', { name: 'Open approval' }).click()
+  assert.deepEqual(await page.evaluate(() => window.routes.at(-1).params), {
+    runtimeId: 'linux',
+    runtimeIdentity: 'runtime-linux',
+    taskId: 'remote-copy',
+    approvalId: 'remote-approval',
+  })
   assert.deepEqual(errors, [])
   console.log(
     'Mobile full-agent side chats, retry IDs, bring-back guards and revision-bound PR handoff passed',

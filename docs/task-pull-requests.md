@@ -19,7 +19,10 @@ With the flag enabled, writable harness sessions receive `dovo_task pull_request
   repository; choosing another PR replaces only that repository’s watch.
 - `action: "status"` returns all watches and their refresh errors. Optional `repositoryId` or `url`
   selects a particular project or PR.
-- `action: "stop"` stops all watches, or only those selected by `repositoryId` or `url`.
+- `action: "stop"` stops all watches and pending registrations, or only those selected by
+  `repositoryId` or `url`. A stopped PR remains stopped across runtime restarts and when a different
+  PR replaces the active watch in the same repository. Use `action: "watch"` with the stopped PR's
+  URL to restart it.
 
 Registration verifies the URL against the selected forge account and records existing comments as
 its baseline. Dovo then checks every two minutes, reusing credential-scoped caches and the existing
@@ -50,6 +53,13 @@ Automatic settlement or archiving on PR closure waits for active monitoring to e
 retired agent turns are rejected, including registrations still waiting on a forge read. Agents are
 instructed to use this tool for requested ongoing monitoring and finish their turn, rather than
 keeping their own polling loop alive. Creating a PR alone does not start a watch.
+
+For automatic fixes in a repository the thread updated, enable **PR babysitting** on the owning
+computer. This also covers verified Git commits and pushes from checkouts outside the linked
+projects. Automatic registration uses that checkout's verified forge account when one checkout can
+supply the PR. Unlinking a PR cancels any automatic babysitting registration still in progress.
+Manual registration of a new PR still inherits the thread's forge account. See
+[PR babysitting](github-integration.md#pr-babysitting).
 
 ## Linking and lifecycle
 

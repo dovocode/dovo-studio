@@ -6,7 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { ScrollView, View, useColorScheme } from 'react-native'
 import type { ReactNode } from 'react'
 import { MobileThemeContext, createMobileTheme } from '../src/ui/theme'
-import { useGlassAccessibility } from '../src/ui/use-glass-accessibility'
+import { useAppearanceAccessibility } from '../src/ui/use-appearance-accessibility'
 
 function NativePreview({
   children,
@@ -16,7 +16,7 @@ function NativePreview({
   fullscreen?: boolean
 }) {
   const mode = useColorScheme() === 'light' ? 'light' : 'dark'
-  const accessibility = useGlassAccessibility()
+  const accessibility = useAppearanceAccessibility()
   const theme = createMobileTheme('dovo', mode, undefined, accessibility)
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>

@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { runToolCode } from './code-runtime.js'
+import { CodeResults } from './code-results.js'
 
 const signal = new AbortController().signal
 it('composes tools across namespaces and returns only selected output', async () => {
@@ -33,6 +34,61 @@ it('does not expose host filesystem, network, modules or environment', async () 
     },
   })
   expect(result.result).toEqual(Array(5).fill('undefined'))
+})
+it('retains excess parallel tool results before they can fill the QuickJS heap', async () => {
+  const text = 'a'.repeat(2_500_000)
+  const result = await runToolCode({
+    signal,
+    code: `
+const results = await Promise.all(Array.from({length:4},()=>tools.dovo.studio_threads({})));
+return results.map(result=>result.text?.length??result.retained);`,
+    call: async () => ({ text }),
+    retainResult: () => ({ retained: true }),
+  })
+  expect(result.result).toEqual([text.length, true, true, true])
+})
+it('charges compact previews to the cumulative guest input budget', async () => {
+  const result = await runToolCode({
+    signal,
+    code: `
+      await tools.dovo.example({ fill: true });
+      await tools.dovo.example({ fill: true });
+      await tools.dovo.example({});
+      try { await tools.dovo.example({}); return 'over budget' }
+      catch (error) { return error.message }
+    `,
+    call: async (call) =>
+      'x'.repeat(
+        call.arguments && typeof call.arguments === 'object' && 'fill' in call.arguments
+          ? 2 * 1024 * 1024 - 2500
+          : 10_000,
+      ),
+    retainResult: () => ({ retained: true, preview: 'x'.repeat(4096) }),
+  })
+  expect(result.result).toEqual(expect.stringContaining('Code mode input limit reached'))
+})
+it('parses a result near the 4 MiB limit and disposes the runtime', async () => {
+  const bytes = 4 * 1024 * 1024 - 5000
+  const result = await runToolCode({
+    signal,
+    code: `return (await tools.dovo.example({})).length`,
+    call: async () => 'x'.repeat(bytes),
+  })
+  expect(result.result).toBe(bytes)
+})
+it('reports the recovery ID when a retained preview cannot fit in the guest', async () => {
+  const store = new CodeResults()
+  const value = { text: 'retained data'.repeat(1000) }
+  const execution = runToolCode({
+    signal,
+    code: `await tools.dovo.fill({}); await tools.dovo.complete({});`,
+    call: async (call) => (call.name === 'fill' ? 'x'.repeat(4 * 1024 * 1024 - 1024) : value),
+    retainResult: (result) => store.retain('thread', result, 0, 0),
+  })
+  await expect(execution).rejects.toThrow(/read_tool_result.*resultId/)
+  const message = await execution.catch((error: Error) => error.message)
+  const resultId = /[0-9a-f-]{36}/.exec(String(message))?.[0]
+  expect(store.read('thread', { resultId }, 0).text).toBe(JSON.stringify(value).slice(0, 8192))
 })
 it('propagates nested failures and supports explicit recovery', async () => {
   const options = {

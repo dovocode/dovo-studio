@@ -58,14 +58,17 @@ export function retainActivityEvents(previous: Event[], next: Event[]): Event[] 
 type Tool = Event & {
   startedAt?: string
   status: string
+  toolId?: string
+  sourceEventId?: string
   turnId?: string
   messageId?: string
   inputPayload?: string
+  inputEventId?: string
   textOffset?: number
 }
 
 // Claude can send several calls in one message and return their results individually.
-function splitCalls(event: Event, payload?: unknown): Event[] {
+function splitCalls(event: Event, payload?: unknown): (Event & { sourceEventId?: string })[] {
   if (payload === undefined)
     try {
       payload = JSON.parse(event.payload)
@@ -84,6 +87,7 @@ function splitCalls(event: Event, payload?: unknown): Event[] {
     return {
       ...event,
       id: `${event.id}:${id}`,
+      sourceEventId: event.id,
       summary: typeof block.name === 'string' ? block.name : 'Tool result',
       payload: JSON.stringify({
         ...envelope,
@@ -114,8 +118,11 @@ export function recentTools(events: Event[]): Tool[] {
       return {
         ...event,
         key:
-          tool.success && tool.data.toolId ? `${tool.data.turnId}:${tool.data.toolId}` : event.id,
+          tool.success && tool.data.toolId
+            ? JSON.stringify([event.scope, tool.data.turnId, tool.data.toolId])
+            : event.id,
         status: tool.success ? tool.data.status : 'recorded',
+        toolId: tool.success ? tool.data.toolId : undefined,
         turnId: tool.success ? tool.data.turnId : undefined,
         messageId: tool.success ? tool.data.messageId : undefined,
         textOffset: tool.success ? tool.data.textOffset : undefined,
@@ -144,6 +151,9 @@ export function recentTools(events: Event[]): Tool[] {
             : (previous.startedAt ?? previous.time),
         summary,
         inputPayload: pending(event.status) ? event.payload : previous.inputPayload,
+        inputEventId: pending(event.status)
+          ? (event.sourceEventId ?? event.id)
+          : previous.inputEventId,
         textOffset: pending(event.status)
           ? (event.textOffset ?? previous.textOffset)
           : previous.textOffset,
@@ -154,12 +164,6 @@ export function recentTools(events: Event[]): Tool[] {
     }
   }
   const result = [...tools.values()]
-  const commandKey = (tool: Tool) =>
-    JSON.stringify([
-      tool.scope,
-      tool.turnId ?? '',
-      toolPresentation(tool.payload, tool.summary, tool.inputPayload).input,
-    ])
   const commands = new Set(
     result
       .filter((tool) => {
@@ -174,37 +178,47 @@ export function recentTools(events: Event[]): Tool[] {
   if (!commands.size) return result
   // The runtime records the actual command even when a harness wraps the MCP call in JS.
   // Keep that command card instead of a second card for the direct transport invocation.
-  return result.filter((tool) => {
+  return result.filter((tool) => !commands.has(terminalWrapperKey(tool) ?? ''))
+}
+
+function commandKey(tool: Tool) {
+  return JSON.stringify([
+    tool.scope,
+    tool.turnId ?? '',
+    toolPresentation(tool.payload, tool.summary, tool.inputPayload).input,
+  ])
+}
+
+/** A direct terminal_run wrapper can share its recorded command's card. */
+export function terminalWrapperKey(tool: Tool): string | undefined {
+  if (['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status)) return
+  for (const payload of [tool.payload, tool.inputPayload]) {
+    if (!payload) continue
+    let envelope: Record<string, unknown>
+    try {
+      envelope = object(JSON.parse(payload))
+    } catch {
+      continue
+    }
+    if (envelope.terminalCommand === true) continue
+    const event = object(envelope.event)
+    const item = object(event.item)
+    const blocks = decodeResult(mutableArray(record), object(event.message).content).data ?? []
+    const names = [
+      tool.summary,
+      item.tool,
+      object(object(event.properties).part).tool,
+      ...blocks.map((block) => block.name),
+    ]
     if (
-      ['failed', 'error', 'cancelled', 'interrupted'].includes(tool.status) ||
-      !commands.has(commandKey(tool))
-    )
-      return true
-    return ![tool.payload, tool.inputPayload].some((payload) => {
-      if (!payload) return false
-      let envelope: Record<string, unknown>
-      try {
-        envelope = object(JSON.parse(payload))
-      } catch {
-        return false
-      }
-      if (envelope.terminalCommand === true) return false
-      const event = object(envelope.event)
-      const item = object(event.item)
-      const blocks = decodeResult(mutableArray(record), object(event.message).content).data ?? []
-      const names = [
-        tool.summary,
-        item.tool,
-        object(object(event.properties).part).tool,
-        ...blocks.map((block) => block.name),
-      ]
-      return names.some(
+      names.some(
         (name) =>
           typeof name === 'string' &&
           /^(?:mcp__dovo_task__|dovo_task[./_])?terminal_run$/i.test(name),
       )
-    })
-  })
+    )
+      return commandKey(tool)
+  }
 }
 
 /** Compact thread activity retains identity, status, commands and app references, never raw provider data. */
@@ -295,6 +309,7 @@ export function createRecentTools() {
         old.startedAt === tool.startedAt &&
         old.status === tool.status &&
         old.inputPayload === tool.inputPayload &&
+        old.inputEventId === tool.inputEventId &&
         old.textOffset === tool.textOffset &&
         old.messageId === tool.messageId
         ? old

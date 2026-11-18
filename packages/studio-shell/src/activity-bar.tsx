@@ -246,7 +246,6 @@ export function ActivityBar({
             </Popover.Trigger>
             <Popover.Portal>
               <Popover.Content
-                data-fixed-material=""
                 side="right"
                 sideOffset={10}
                 className="studio-menu-surface z-50 w-80 max-w-[calc(100vw-4rem)] rounded-2xl border bg-[var(--studio-floating-fill)] p-4 text-popover-foreground"

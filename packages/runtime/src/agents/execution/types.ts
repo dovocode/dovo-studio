@@ -10,6 +10,8 @@ export type AgentSteer = (input: AgentInput) => Promise<void>
 export type NativeAgentSession = {
   /** Stop one native child, or all children owned by this session, and await cleanup. */
   stop: (id?: string) => Promise<void>
+  /** The provider handles foreground cancellation separately from a session stop. */
+  foregroundCancellation?: true
   readThread?: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
 }
 export type ApprovalDecision = 'approve' | 'session' | 'always' | 'deny'
@@ -64,7 +66,9 @@ export interface AgentRun {
   onTextReplace?: (text: string, previousLength: number) => void
   onTextBoundary?: () => void
   onActivity: (text: string) => void
-  onEvent?: (name: string, payload: unknown) => void
+  /** A progress receipt can supply its complete display output if this execution stops
+   * before its final receipt. The reader must return only data accepted at this event. */
+  onEvent?: (name: string, payload: unknown, retainedOutput?: () => string) => void
   /** Session-owned native-agent metadata; may arrive after the parent provider turn ends. */
   onSubagentEvent?: (name: string, payload: unknown, sessionId?: string) => void
   onNativeSession?: (session: NativeAgentSession, sessionId: string) => void

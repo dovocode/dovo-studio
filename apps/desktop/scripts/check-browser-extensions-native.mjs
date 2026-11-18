@@ -9,9 +9,11 @@
  * Covers a small MV3 fixture, not arbitrary extensions: review before load, nativeMessaging
  * permission review, content script and popup messaging, tabs/windows/storage/action APIs, extension tab
  * adoption, runtime permission prompts, profile isolation, opt-out stopping workers, restart
- * persistence and removal. Run after upgrading electron-chrome-extensions or Electron.
+ * persistence and removal with an open popup. Run after upgrading electron-chrome-extensions
+ * or Electron.
  *
- * Usage: node apps/desktop/scripts/check-browser-extensions-native.mjs [--keep]
+ * Pass --1password to check the signed 1Password extension in a clean profile.
+ * Usage: node apps/desktop/scripts/check-browser-extensions-native.mjs [--keep] [--1password]
  * Linux without a display needs `xvfb-run`. The Chromium sandbox must be available.
  */
 import { spawnSync } from 'node:child_process'
@@ -35,6 +37,7 @@ const keep = process.argv.includes('--keep')
 const websites = process.argv.includes('--websites')
 const store = process.argv.includes('--store')
 const proton = process.argv.includes('--proton')
+const onePassword = process.argv.includes('--1password')
 const work = mkdtempSync(join(tmpdir(), 'dovo-browser-extensions-native-'))
 // Keep native image dependencies in their installed packages rather than bundling their loaders.
 symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction')
@@ -241,7 +244,81 @@ app.whenReady().then(async () => {
       throw new Error('The content script never reported back.')
     }
 
-    if (run === '1') {
+    if (process.env.SMOKE_1PASSWORD === '1') {
+      stage('1Password toolbar setup')
+      const profileId = 'one-password-proof'
+      const key = 'studio:browser:one-password-tab'
+      const id = 'aeblfdkhhhdcdjpifhhbdiojplfjncoa'
+      const origin = 'chrome-extension://' + id
+      const extensionSession = session.fromPartition(workspacePartition(profileId))
+      // 1Password replaces its manifest popup with a setup action in the signed-out state.
+      // Wait for the worker's real action change rather than assuming the manifest still applies.
+      let actionReady = false
+      extensionSession.serviceWorkers.on('console-message', (_event, details) => {
+        if (details.message.startsWith('browserAction.setPopup (result)')) actionReady = true
+      })
+      await show(key, profileId)
+      if (run === '1') {
+        const installed = await call('extensions', {
+          action: 'installStore',
+          profileId,
+          url: 'https://chromewebstore.google.com/detail/1password/' + id,
+        })
+        assert.equal(installed.installed, id)
+      }
+      const catalog = await call('extensions', { action: 'list', profileId })
+      const extension = catalog.extensions.find((item: { id: string }) => item.id === id)
+      assert.ok(extension?.loaded)
+      for (let attempt = 0; attempt < 150 && !actionReady; attempt++) await wait(100)
+      assert.ok(actionReady, '1Password did not initialize its signed-out toolbar action.')
+      const click = () => call('extensions', {
+        action: 'open',
+        profileId,
+        id,
+        key,
+        anchor: { x: 800, y: 8, width: 32, height: 32 },
+      })
+      await click()
+      let setup: { key: string; url: string; profileId: string; active?: boolean } | undefined
+      for (let attempt = 0; attempt < 100 && !setup; attempt++) {
+        const state = await call('browser', { action: 'status', key, tabCount: 1 })
+        setup = state?.createdTabs?.find((tab: { url: string }) => tab.url.startsWith(origin + '/app/'))
+        if (!setup) await wait(100)
+      }
+      assert.ok(setup, '1Password did not open its setup tab.')
+      assert.equal(setup.profileId, profileId)
+      assert.equal(setup.active, true, 'The toolbar action must foreground the setup tab.')
+      await show(setup.key, profileId, setup.url)
+      const setupView = studio.contentView.children.find(view =>
+        'webContents' in view && view.webContents.getURL() === setup.url)
+      assert.ok(setupView?.getVisible(), 'The setup tab must be visible.')
+      const setupContents = setupView.webContents
+      let content = ''
+      for (let attempt = 0; attempt < 100; attempt++) {
+        content = await setupContents.executeJavaScript('document.body?.innerText || ""')
+        if (/Welcome to 1Password|Get started|Continue/i.test(content)) break
+        await wait(100)
+      }
+      assert.match(content, /Welcome to 1Password|Get started|Continue/i)
+      await show(key, profileId)
+      await call('browser', { action: 'status', key, tabCount: 2 })
+      await click()
+      let focusedTabKey: string | undefined
+      for (let attempt = 0; attempt < 100 && !focusedTabKey; attempt++) {
+        const state = await call('browser', { action: 'status', key, tabCount: 2 })
+        assert.ok(!state?.createdTabs?.some((tab: { url: string }) => tab.url === setup.url))
+        focusedTabKey = state?.focusedTabKey
+        if (!focusedTabKey) await wait(100)
+      }
+      assert.equal(focusedTabKey, setup.key, 'Clicking again must select the existing setup tab.')
+      for (let index = 0; index < 5; index++) await show(key + '-idle-' + index, profileId)
+      assert.ok(setupContents.isDestroyed(), 'The inactive-view limit must release setup.')
+      await show(setup.key, profileId, setup.url)
+      const restoredView = studio.contentView.children.find(view =>
+        'webContents' in view && view.webContents.getURL() === setup.url)
+      assert.ok(restoredView?.getVisible(), 'Selecting the setup tab must reload its page.')
+      report.onePassword = { version: extension.version, setupUrl: setup.url }
+    } else if (run === '1') {
       stage('show work')
       await work_.cookies.set({url:page,name:'icon',value:'work'})
       await show(tab, 'work')
@@ -582,10 +659,11 @@ app.whenReady().then(async () => {
       const popupWindow = BrowserWindow.getAllWindows().find((window) => !before.has(window))!
       popupWindow.emit('blur')
       assert.equal(popupWindow.isDestroyed(), true, 'Popup must dismiss when focus moves outside Studio.')
-      const status = await call('browser', { action: 'status', key: tab })
+      const status = await call('browser', { action: 'status', key: tab, tabCount: 1 })
       const created = status?.createdTabs?.[0]
       assert.ok(created, 'The extension-created tab was not reported.')
       assert.equal(created.profileId, 'work')
+      assert.equal(created.active, true, 'chrome.tabs.create defaults to a foreground tab.')
       assert.equal(created.url, \`chrome-extension://\${extension.id}/page.html\`)
       await show(created.key, 'work', created.url)
       const adopted = await call('browser', { action: 'status', key: created.key })
@@ -595,6 +673,22 @@ app.whenReady().then(async () => {
       const extensionContents = webContents.getAllWebContents().find(contents => contents.getURL() === created.url)!
       const api = (source: string) => extensionContents.executeJavaScript(source, true)
       const workerAPI = (namespace: string, method: string, args: unknown[] = []) => api('chrome.runtime.sendMessage('+JSON.stringify({browserAPI:{namespace,method,args}})+')')
+      const backgroundUrl = created.url + '?mode=background'
+      await workerAPI('tabs', 'create', [{ url: backgroundUrl + '#example', active: false }])
+      const browserStatus = () => call('browser', { action: 'status', key: created.key, tabCount: 2 })
+      const backgroundTab = (await browserStatus())?.createdTabs?.[0]
+      assert.equal(backgroundTab?.active, false, 'An explicitly inactive tab stays in the background.')
+      const tabs = (query: object) => workerAPI('tabs', 'query', [query])
+      for (let attempt = 0; attempt < 100; attempt++) {
+        if ((await tabs({ url: backgroundUrl })).value?.length) break
+        await wait(100)
+      }
+      assert.deepEqual((await tabs({ url: backgroundUrl })).value.map((tab: {url: string}) => tab.url), [backgroundUrl + '#example'])
+      assert.deepEqual((await tabs({ url: [created.url + '?mode=*'] })).value.map((tab: {url: string}) => tab.url), [backgroundUrl + '#example'])
+      assert.deepEqual((await tabs({ url: created.url + '?mode=different' })).value, [])
+      assert.equal((await tabs({ active: true, currentWindow: true })).value[0]?.url, created.url)
+      assert.equal((await browserStatus()).focusedTabKey, undefined)
+      await call('browser', { action: 'close', key: backgroundTab.key })
       assert.equal(await api('chrome.identity.getRedirectURL("callback")'), 'https://'+extension.id+'.chromiumapp.org/callback')
       assert.equal(await api('typeof chrome.identity.getAuthToken'), 'undefined')
       const auth = await workerAPI('identity','launchWebAuthFlow',[{url:page+'auth?id='+extension.id,interactive:false}])
@@ -716,6 +810,7 @@ app.whenReady().then(async () => {
         else await wait(100)
       }
       assert.ok(reconnect, 'Restarted extension must connect to its desktop helper.')
+      const reconnectPopup = BrowserWindow.getAllWindows().find((window) => !beforePopup.has(window))!
       if(process.platform!=='win32') assert.deepEqual(reconnect.nativeEcho,{echo:{text:'Dovo naïve 🔑'}})
       assert.equal(prompts.filter((prompt)=>prompt.detail?.includes('Desktop helper:')).length,0,'Helper approval must survive restart for this profile.')
       const removed = await call('extensions', {
@@ -724,6 +819,7 @@ app.whenReady().then(async () => {
         id: listed.extensions[0].id,
       })
       assert.deepEqual(removed.extensions, [])
+      assert.equal(reconnectPopup.isDestroyed(), true, 'Removing an extension must close its open action popup.')
       assert.equal(work_.extensions.getAllExtensions().length, 0)
       const copies = readdirSync(
         join(work, 'user-data', 'browser-extensions', 'profiles', 'work', 'installed'),
@@ -875,6 +971,7 @@ for (const run of ['1', '2']) {
         SMOKE_WEBSITES: websites ? '1' : '0',
         SMOKE_STORE: store ? '1' : '0',
         SMOKE_PROTON: proton ? '1' : '0',
+        SMOKE_1PASSWORD: onePassword ? '1' : '0',
         DOVO_SETTINGS_PATH: join(work, 'settings.json'),
         VITE_DEV_SERVER_URL: '',
         ELECTRON_ENABLE_LOGGING: '',

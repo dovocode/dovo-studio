@@ -11,6 +11,8 @@ import {
   settleBrowserTab,
   snoozeBrowserTab,
   browserTabCategory,
+  taskDisplayProject,
+  type RuntimeOverview,
 } from '@dovo/protocol'
 
 const short = Schema.String.pipe(Schema.check(Schema.isMaxLength(200)))
@@ -37,6 +39,18 @@ const tabSchema = Schema.Union([
   mutableStruct({ ...common, kind: Schema.Literal('remote'), profileId: short, runtimeId: short }),
 ])
 export type BrowserTab = Schema.Schema.Type<typeof tabSchema>
+export function browserTabSite(tab: BrowserTab) {
+  return tab.url ? new URL(tab.url).host.replace(/^www\./, '') : ''
+}
+export function browserTabProjectName(tab: BrowserTab, overviews: readonly RuntimeOverview[]) {
+  const link = tab.thread
+  if (!link) return ''
+  const workspace = overviews.find((owner) => owner.profile.id === link.runtimeId)?.snapshot
+    ?.workspace
+  const task = workspace?.tasks.find((entry) => entry.id === link.id)
+  const project = task && taskDisplayProject(task, workspace?.repositories ?? [])
+  return project && project.kind !== 'scratch' ? project.name : ''
+}
 const bounded = (limit: number) =>
   mutableArray(tabSchema).pipe(Schema.check(Schema.isMaxLength(limit)))
 export const browserStateSchema = mutableStruct({

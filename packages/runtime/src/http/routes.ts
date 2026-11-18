@@ -23,7 +23,7 @@ import { pullPeerScopeSchema } from '../retrieval/pulls.js'
 import { requireLocalStudioUI, requireStudioPeerRegistration } from '../studio/local-ui.js'
 import { studioTool } from '../studio/tools.js'
 import { studioPeers, routedStudioTool } from '../studio/peers.js'
-import { studioForwardPolicySchema } from '@dovo/protocol'
+import { studioForwardPolicySchema, studioThreadCallerSchema } from '@dovo/protocol'
 import { studioSessions } from '../studio/ui-sessions.js'
 import { studioUIPollSchema } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
@@ -842,7 +842,12 @@ export function route(
       }
       if (
         method === 'POST' &&
-        ['/api/studio/tools', '/api/studio/forward', '/api/studio/forward-v2'].includes(path)
+        [
+          '/api/studio/tools',
+          '/api/studio/forward',
+          '/api/studio/forward-v2',
+          '/api/studio/forward-v3',
+        ].includes(path)
       ) {
         const input = decode(
           mutableStruct({
@@ -851,6 +856,7 @@ export function route(
             command: Schema.Unknown,
             runtimeId: Schema.optional(idSchema),
             policy: Schema.optional(studioForwardPolicySchema),
+            caller: Schema.optional(studioThreadCallerSchema),
           }),
           yield* serviceResult(body(request)),
         )
@@ -859,11 +865,19 @@ export function route(
         }
         // Separate endpoint prevents older runtimes silently ignoring a forwarded permission ceiling.
         // v2 also guarantees retry-safe thread creation and explicit permission increases.
-        if (path === '/api/studio/forward' || path === '/api/studio/forward-v2') {
+        if (path !== '/api/studio/tools') {
           if (input.runtimeId || input.part === 'ui')
             throw new HttpError(403, 'Forwarded Studio calls cannot target UI or another computer')
           return yield* serviceResult(
-            studioTool(s, input.taskId, input.part, input.command, authorize, input.policy),
+            studioTool(
+              s,
+              input.taskId,
+              input.part,
+              input.command,
+              authorize,
+              input.policy,
+              path === '/api/studio/forward' ? undefined : input.caller,
+            ),
           )
         }
         if (input.policy)

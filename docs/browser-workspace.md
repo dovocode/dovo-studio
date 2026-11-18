@@ -93,6 +93,9 @@ Desktop pages become visible when their DOM is ready, while images and other res
 loading. Tooltips appear above the page and return keyboard focus after dismissal, unless you click
 or type in Studio in the meantime. Menus and dialogs take focus normally.
 
+Desktop Browser formats JSON responses after they load. You can close the tab while formatting is in
+progress.
+
 Select page text and open **Browser options → Copy selection** to copy the literal selection, or
 **Add selection to thread…** to append a quotation, page title and URL to an existing thread draft.
 **Add page to thread…** appends the title and URL without requiring a selection. The destination can
@@ -128,12 +131,14 @@ sessions.
 
 Failed remote navigation retains the session and attempted address so **Reload page** can retry it.
 When the connection drops, the viewer retries on its own and shows **Reconnect** if it needs help.
-When the host confirms the session ended, choose **Open URL in a new session** to open the saved
-address, or **Open a new session** for a blank tab. These notices leave the streamed page at the
-same size. Reconnecting viewers receive any outstanding JavaScript dialog; disconnecting clears the
-viewer's old dialog. Agent inspection does not expire a session while a human viewer is attached.
-Private desktop preview profiles use memory-only storage, and self-closing pages release their
-native tab entries.
+Mobile previews wait for the paired computer to reconnect before requesting a new ticket. A stalled
+frame stream can reconnect automatically. After a policy close, switching back to the preview keeps
+it disconnected until you select **Reconnect**. When the host confirms the session ended, choose
+**Open URL in a new session** to open the saved address, or **Open a new session** for a blank tab.
+These notices leave the streamed page at the same size. Reconnecting viewers receive any outstanding
+JavaScript dialog; disconnecting clears the viewer's old dialog. Agent inspection does not expire a
+session while a human viewer is attached. Private desktop preview profiles use memory-only storage,
+and self-closing pages release their native tab entries.
 
 ## Picture-in-Picture and background pages
 
@@ -208,7 +213,8 @@ draft.
 On desktop, the opener stays in its original native browser view beneath the link preview. Opening
 the preview does not capture a screenshot or start a frame-image stream. The opener keeps its
 animation and draft. Clicking its background returns to the opener after the click finishes. The
-preview keeps normal browser input. Remote sessions retain their image fallback.
+preview keeps normal browser input. In a link preview dialog, the page starts directly below the
+navigation controls. Remote sessions retain their image fallback.
 
 ## Link routing
 
@@ -248,18 +254,21 @@ closes the affected native pages.
 This uses Electron with `electron-chrome-extensions` 4.10.0; supported APIs are a subset of Chrome.
 `nativeMessaging` connects to installed Chrome native helpers after explicit per-profile approval.
 Host registrations must allow the extension’s origin; helpers use bounded Chrome stdio framing.
-Turning Browser off or unloading the extension closes its helper connections. Store packages are
-downloaded over official Google HTTPS endpoints; the CRX3 developer signature and requested
-extension ID are verified before bounded ZIP extraction and permission review. Store extensions
-update manually by installing the same link again. Older copies with removed `nativeMessaging` must
-be reinstalled and reviewed to gain it. On macOS, 1Password also requires the signed Dovo Studio app
-in **1Password Settings → Browser → Add Browser**
+Turning Browser off or unloading the extension closes its toolbar popup and helper connections.
+Store packages are downloaded over official Google HTTPS endpoints; the CRX3 developer signature and
+requested extension ID are verified before bounded ZIP extraction and permission review. Store
+extensions update manually by installing the same link again. Older copies with removed
+`nativeMessaging` must be reinstalled and reviewed to gain it. On macOS, 1Password also requires the
+signed Dovo Studio app in **1Password Settings → Browser → Add Browser**
 ([1Password instructions](https://support.1password.com/additional-browsers/)). Dovo never
 impersonates Chrome or bypasses that approval. Native transport is tested, but a real 1Password
 desktop pairing has not been verified; general Chrome extension parity is not claimed. Unsupported
 APIs/permissions and load errors are reported by the extension manager. Extension-created tabs
-retain their native identity and profile, and native close events remove them from the tab list.
-Extension URL pages are session-only and are not restored from saved tabs.
+retain their native identity and profile. The browser selects a new tab unless the extension
+requests a background tab. The extension can also select an existing tab in the same profile. Native
+close events remove tabs from the list. If the browser releases an inactive extension page to save
+memory, select its tab to reload the page in the same profile while the extension is loaded.
+Extension URL pages are available only in the current app session.
 
 Host permission checks recognize narrower origins covered by existing wildcard web grants, including
 Proton Pass sign-in hosts under `https://*/*`. Optional narrower web grants still require review;
@@ -268,6 +277,17 @@ file access and undeclared scopes remain denied.
 signed Proton Pass store package into an isolated profile and checks its signed-out screen and
 same-profile sign-in tab before/after restart. It requires network access and does not verify an
 authenticated vault, autofill, passkeys or desktop-app pairing.
+
+When signed out of 1Password, click its toolbar button to open the setup tab. A click immediately
+after installation can show the extension's **Loading…** popup while its background worker starts.
+Close that popup and click the toolbar button again to open setup.
+
+`node apps/desktop/scripts/check-browser-extensions-native.mjs --1password` checks the signed
+1Password package in a clean profile with the Chromium sandbox enabled. It opens the signed-out
+setup tab from the toolbar once the extension initializes. It checks foreground selection and
+reopening the same tab after switching away. It also checks that selecting the setup tab reloads it
+after the browser releases its inactive page. The test runs after installation and after a restart.
+It does not cover a signed-in vault or desktop-app pairing.
 
 ## Website and call tab capture
 

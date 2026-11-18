@@ -65,15 +65,11 @@ const TooltipContent = React.forwardRef<
   const context = React.useContext(OpenContext)
   const native = useNativeTooltipContainer(context.open, context.close)
   if (native.enabled && !native.container) return null
-  const fixedMaterial = context.trigger?.current?.closest(
-    ".studio-composer, .startup-draft, .studio-navigation[aria-label='Main navigation'], [data-fixed-material]",
-  )
   return (
     <TooltipPrimitive.Portal container={native.container}>
       <TooltipPrimitive.Content
         ref={ref}
         sideOffset={sideOffset}
-        data-fixed-material={fixedMaterial ? '' : undefined}
         className={cn(
           'studio-tooltip studio-menu-surface z-50 overflow-hidden rounded-full border border-border/70 bg-[var(--studio-floating-fill)] px-3 py-1.5 text-xs text-popover-foreground',
           className,

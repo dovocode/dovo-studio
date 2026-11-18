@@ -159,6 +159,7 @@ export class ThreadWatch {
     policy?: StudioPolicy,
     relation: State['relation'] = 'linked',
     delegated = false,
+    steering = false,
   ) {
     const parent = this.s.store.taskSummary(parentId)
     const agent = resolveTaskAgent(parent, this.s.store.get().agents)
@@ -189,6 +190,7 @@ export class ThreadWatch {
       computerName,
       relation: previous?.relation ?? relation,
       delegated: previous?.delegated || delegated || undefined,
+      steering: previous?.steering || steering || undefined,
       status: 'watching',
       startedAt: new Date().toISOString(),
       stoppedAt: undefined,

@@ -303,7 +303,7 @@ export function MessageAttachments({
                 {preview && !removable && isImageAttachment(preview.attachment) && (
                   <EditChatImage
                     source={{ taskId, attachmentId: preview.attachment.id }}
-                    glass
+                    bordered
                     label={preview.attachment.name}
                     onEdit={() => setPreview(null)}
                   />
@@ -311,7 +311,7 @@ export function MessageAttachments({
                 <IconButton
                   label={uiText('Share file')}
                   icon="share"
-                  variant="glass"
+                  variant="bordered"
                   disabled={busy}
                   onPress={() =>
                     void act(() => {
@@ -333,7 +333,7 @@ export function MessageAttachments({
                 <IconButton
                   label={uiText('Close preview')}
                   icon="close"
-                  variant="glass"
+                  variant="bordered"
                   onPress={() => setPreview(null)}
                 />
               </View>

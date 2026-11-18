@@ -29,6 +29,10 @@ Claude's built-in command catalog before it sends the command. Codex uses the na
 API. Errors remain visible in the thread; Studio does not send unsupported commands as ordinary
 prompts. Goal commands do not replace an exhausted session during context recovery.
 
+For an ordinary message, Studio can retry once with saved conversation history if the provider
+reports that its context is full or the requested session is missing. Connection timeouts and
+session read errors keep the saved session ID available for the next attempt.
+
 Run the command and provider checks with:
 
 ```sh
@@ -52,6 +56,9 @@ message and image stay intact. Cancel leaves the draft unchanged. If a queued me
 edited, the new image joins that draft. Animated images are edited as a still frame. External image
 hosts must allow downloading the image (and browser access on desktop/web).
 
+If an edit to a draft image fails to upload, the original stays in the draft. Use the retry control
+to upload the edited file again. A successful retry replaces the original image.
+
 Running threads keep unread title styling, including while saving changes. Viewing a running chat
 does not mark it read; its completed response must be viewed first. A successful completed turn
 shows **Done** in the task list until you view its chat. Read status syncs across your connected
@@ -63,6 +70,8 @@ Right-click a desktop task (or press Shift+F10 on its row) for task actions, inc
 pinning, snooze, settle/reopen, read/unread, project filtering and copying task details. Marking the
 open chat unread closes its conversation so it stays unread until you open it again. Task actions
 target the computer that owns the thread, including in the unified list.
+
+Select the trash icon on a queued chat message to remove that message before delivery.
 
 While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop** stays available.
 

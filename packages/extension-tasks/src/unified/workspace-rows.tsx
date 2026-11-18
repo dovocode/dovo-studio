@@ -1,19 +1,9 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useId, type ReactNode } from 'react'
-import {
-  AlarmClock,
-  Check,
-  GitBranch,
-  FolderOpen,
-  Pin,
-  SquareTerminal,
-  MessageSquare,
-  Bot,
-  type LucideIcon,
-} from 'lucide-react'
+import { AlarmClock, Check, GitBranch, FolderOpen, Pin, SquareTerminal } from 'lucide-react'
 import type { Task } from '@dovo/studio-core'
-import { cn } from '@dovo/studio-ui'
+import { cn, ProjectIcon } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { type RuntimeSnapshot, type ThreadSearchFilter } from '@dovo/protocol'
+import { type Repository, type RuntimeSnapshot, type ThreadSearchFilter } from '@dovo/protocol'
 import type { BrowserTabTarget } from '../browser/browser-pane'
 import { TaskContextMenu } from '../detail/task-context-menu'
 import { TaskRow } from '../list/task-row'
@@ -26,6 +16,7 @@ import {
 } from './workspace-resource-menu'
 import { TerminalContextMenu, type TerminalContextActions } from '../terminal/terminal-context-menu'
 import type { TerminalStatusTone } from '../terminal/terminal-status'
+import { WorkspaceTypeBadge } from './workspace-type-badge'
 
 export type WorkspaceRowStatus = 'active' | 'snoozed' | 'settled'
 type RowShell = {
@@ -36,19 +27,6 @@ type RowShell = {
   onSelect: () => void
   /** The item's direct Pin / Settle / Snooze actions. */
   actions: WorkspaceResourceMenuProps
-}
-
-/** Type identity stays in the title's normal flow, including compact and wrapped rows. */
-function KindMark({ icon: Icon }: { icon: LucideIcon }) {
-  return (
-    <span
-      aria-hidden="true"
-      data-workspace-kind-icon
-      className="pointer-events-none inline-flex size-3.5 shrink-0 items-center justify-center text-muted-foreground"
-    >
-      <Icon className="size-3.5" strokeWidth={1.7} />
-    </span>
-  )
 }
 
 function LifecycleMark({ status }: { status: WorkspaceRowStatus }) {
@@ -90,7 +68,7 @@ function RowFrame({
       className={cn(
         'studio-workspace-row group/workspace relative min-w-0',
         !pinnedPage &&
-          'mb-[3px] [&:hover_.studio-thread-card-context:first-child]:pr-28 [&:focus-within_.studio-thread-card-context:first-child]:pr-28 has-[[data-state=open]]:[&_.studio-thread-card-context:first-child]:pr-28 [@media(hover:none)]:[&_.studio-thread-card-context:first-child]:pr-28',
+          'mb-[3px] [&:hover_.studio-thread-row-two-line_.studio-thread-card-title]:pr-28 [&:focus-within_.studio-thread-row-two-line_.studio-thread-card-title]:pr-28 has-[[data-state=open]]:[&_.studio-thread-row-two-line_.studio-thread-card-title]:pr-28 [@media(hover:none)]:[&_.studio-thread-row-two-line_.studio-thread-card-title]:pr-28',
       )}
     >
       <div className={cn('relative min-w-0', compact && '[&_.studio-thread-card-title]:pr-24')}>
@@ -219,7 +197,7 @@ export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
       )}
     >
       <TaskRow
-        titleIcon={<KindMark icon={task.bot ? Bot : MessageSquare} />}
+        workspaceType
         task={task}
         owner={owner}
         selected={selected}
@@ -283,9 +261,11 @@ export function WorkspacePageRow({
   )
 }
 
-/** The thread row's structure for a standalone shell, with its type beside the title. */
+/** The thread row structure for a standalone shell. */
 export function WorkspaceTerminalRow({
   project,
+  repository,
+  workspaceType,
   checkout,
   checkoutIsBranch,
   state,
@@ -305,6 +285,8 @@ export function WorkspaceTerminalRow({
 }: RowShell & {
   menu: TerminalContextActions
   project: string
+  repository?: Repository
+  workspaceType?: boolean
   checkout: string
   checkoutIsBranch: boolean
   /** Program-reported activity or the shared fallback label. */
@@ -351,37 +333,64 @@ export function WorkspaceTerminalRow({
           aria-current={selected ? 'true' : undefined}
           onClick={onSelect}
           className={cn(
-            'studio-thread-card mb-[3px] flex min-h-[68px] w-full min-w-0 items-start gap-2.5 rounded-xl border border-transparent px-2.5 py-2 text-left',
+            'studio-thread-card studio-thread-row-two-line mb-[3px] flex w-full min-w-0 items-center rounded-xl border border-transparent px-2.5 text-left',
             selected ? 'bg-accent/70 hover:bg-accent/80' : 'hover:bg-accent/40',
           )}
         >
-          <span className="studio-thread-card-body flex min-w-0 flex-1 flex-col items-stretch gap-0.5">
-            <span className="studio-thread-card-context flex min-w-0 items-center gap-1.5 text-xs leading-4 text-muted-foreground">
-              <FolderOpen className="size-4 shrink-0" aria-hidden="true" />
-              <span className="min-w-0 flex-1 truncate">{project}</span>
-              {pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+          <span
+            className="studio-thread-project-icon relative inline-flex shrink-0 items-center justify-center"
+            title={project}
+          >
+            {repository ? (
+              <ProjectIcon
+                repository={repository}
+                className="size-6 shrink-0 rounded-[7px] text-xs"
+              />
+            ) : (
+              <SquareTerminal
+                className="size-5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+            )}
+            {workspaceType && <WorkspaceTypeBadge kind="terminal" />}
+          </span>
+          <span className="studio-thread-card-body flex min-w-0 flex-1 flex-col items-stretch">
+            <span className="studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium text-foreground">
+              <span className="min-w-0 flex-1 truncate" title={title}>
+                {title}
+              </span>
               <LifecycleMark status={status} />
-              <span title={stateDetail} className={cn('shrink-0', toneClass)}>
+              <span
+                title={stateDetail}
+                className={cn(
+                  'min-w-0 max-w-[56%] shrink-0 truncate text-xs font-normal',
+                  toneClass,
+                )}
+              >
                 {offline ? 'Offline' : state}
               </span>
             </span>
-            <span
-              className={cn(
-                'studio-thread-card-title flex min-w-0 items-center gap-1.5 text-sm font-medium leading-5',
-                selected ? 'text-foreground' : 'text-foreground/75 hover:text-foreground',
+            <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs">
+              {project !== checkout && (
+                <>
+                  <span className="studio-thread-checkout-project truncate" title={project}>
+                    {project}
+                  </span>
+                  <span className="studio-thread-checkout-project" aria-hidden="true">
+                    ·
+                  </span>
+                </>
               )}
-            >
-              <KindMark icon={SquareTerminal} />
-              <span className="min-w-0 flex-1 truncate">{title}</span>
-            </span>
-            <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs leading-4 text-muted-foreground">
               {checkoutIsBranch ? (
                 <GitBranch className="size-3 shrink-0" />
               ) : (
                 <FolderOpen className="size-3 shrink-0" />
               )}
-              <span className="min-w-0 flex-1 truncate">{checkout}</span>
-              <RuntimeIcon icon={runtimeIcon} className="size-3.5 shrink-0" aria-label={computer} />
+              <span className="min-w-0 flex-1 truncate" title={checkout}>
+                {checkout}
+              </span>
+              {pinned && <Pin aria-label="Pinned" className="size-3 shrink-0" />}
+              <RuntimeIcon icon={runtimeIcon} className="size-3 shrink-0" aria-label={computer} />
             </span>
           </span>
         </button>

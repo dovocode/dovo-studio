@@ -382,7 +382,6 @@ try {
             const selected = getComputedStyle(el)
             const marker = getComputedStyle(el, '::before')
             return {
-              main: el.closest('[aria-label="Main navigation"]') !== null,
               background: selected.backgroundColor,
               image: selected.backgroundImage,
               shadow: selected.boxShadow,
@@ -452,9 +451,8 @@ try {
           effects.rails.every(
             (rail) =>
               rail.background !== 'rgba(0, 0, 0, 0)' &&
-              (rail.main
-                ? /gradient/.test(rail.image) && rail.shadow !== 'none'
-                : rail.image === 'none' && rail.shadow === 'none') &&
+              rail.image === 'none' &&
+              rail.shadow === 'none' &&
               rail.marker === effects.accent &&
               rail.markerWidth === '2px' &&
               rail.markerHeight === '16px' &&
@@ -463,7 +461,7 @@ try {
         id +
           ' ' +
           scheme +
-          ' main navigation keeps its material and both rails retain accent markers: ' +
+          ' both rails keep solid selection fills and accent markers: ' +
           JSON.stringify(effects.rails),
       )
       assert.equal(effects.threadEdgeWidth, '2px')
@@ -659,12 +657,12 @@ try {
   await ready()
   assert.equal(await glow.inputValue(), '0.5', 'Intermediate glow intensity survives reload')
   await setGlow(0)
-  assert.match(
+  assert.equal(
     await page
       .locator('[data-testid=effects] .studio-composer')
       .evaluate((el) => getComputedStyle(el).backgroundImage),
-    /linear-gradient/,
-    'Composer highlight remains when glow is disabled',
+    'none',
+    'Composer stays solid when glow is disabled',
   )
   await gradients.click()
   const checkFlatEffects = async () => {
@@ -720,11 +718,19 @@ try {
   await page.waitForFunction(
     () =>
       document.documentElement.dataset.themeGradients === 'true' &&
-      document.documentElement.dataset.themeGlow === '1' &&
-      getComputedStyle(
-        document.querySelector('[data-testid=effects] .studio-composer'),
-      ).backgroundImage.includes('linear-gradient'),
+      document.documentElement.dataset.themeGlow === '1',
   )
+  const effectsState = await page
+    .locator('[data-testid=effects] .studio-composer')
+    .evaluate((el) => {
+      const style = getComputedStyle(el)
+      return {
+        composer: style.backgroundImage,
+        workspaceGradient: style.getPropertyValue('--studio-navigation-light').trim(),
+      }
+    })
+  assert.equal(effectsState.composer, 'none')
+  assert.match(effectsState.workspaceGradient, /radial-gradient/)
   for (const scheme of ['light', 'dark']) {
     await mode(scheme === 'dark' ? 'Dark' : 'Light')
     await page.emulateMedia({ forcedColors: 'active' })

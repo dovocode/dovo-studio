@@ -6,7 +6,7 @@ import { Text } from '../content/text'
 import { Icon, type IconName } from './icon'
 import { IconButton } from './icon-button'
 import { useTheme, type MobileColors } from '../theme'
-import { Glass } from '../layout/glass'
+import { Surface } from '../layout/surface'
 
 const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   flexDirection: 'row',
@@ -18,7 +18,7 @@ const pillStyle = (pressed: boolean, colors: MobileColors): ViewStyle => ({
   backgroundColor: pressed ? colors.selection : 'transparent',
 })
 
-/** Floating status capsule. Native glass keeps an opaque accessibility fallback. */
+/** Floating status capsule with a solid palette fill. */
 export function Pill({
   label,
   icon,
@@ -45,9 +45,7 @@ export function Pill({
   const { colors } = useTheme()
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', maxWidth: '100%' }}>
-      <Glass
-        solid
-        interactive
+      <Surface
         style={{
           flexShrink: 1,
           borderRadius: designTokens.touchTarget / 2,
@@ -77,7 +75,7 @@ export function Pill({
           </Text>
           {children}
         </Pressable>
-      </Glass>
+      </Surface>
       {onDismiss && (
         <IconButton
           icon="close"

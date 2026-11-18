@@ -13,7 +13,7 @@ import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
-import { Glass } from '../../../ui/layout/glass'
+import { Surface } from '../../../ui/layout/surface'
 import { designTokens } from '@dovo/design'
 
 /** The agent's own review as a list; fix one finding or all of them. */
@@ -35,8 +35,7 @@ export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => voi
       ),
     )
   return (
-    <Glass
-      solid
+    <Surface
       style={{
         borderRadius: designTokens.radius.overlay,
         padding: 12,
@@ -95,6 +94,6 @@ export function ReviewFindings({ task, onOpen }: { task: Task; onOpen: () => voi
         onPress={() => fix(findings)}
       />
       {!!error && <Text style={styles.error}>{error}</Text>}
-    </Glass>
+    </Surface>
   )
 }

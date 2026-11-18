@@ -18,7 +18,7 @@ async function fixture(
   lifecycle = false,
   compactCommand = false,
   permissionKinds: string[] = [],
-  nativeChildren = false,
+  nativeChildren: boolean | 'replay' = false,
   mcpCapabilities: { acp?: boolean; http?: boolean } = {},
 ) {
   const cwd = await mkdtemp(join(tmpdir(), 'dovo-acp-run-'))
@@ -56,15 +56,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   writeFileSync(process.env.TEST_ACP_RECORD, JSON.stringify(messages))
   if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { mcpCapabilities: ${JSON.stringify(mcpCapabilities)}, loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {}, delete: {} }' : '{}'} } })
   if (input.method === 'session/new') respond(input.id, { sessionId: 'session', modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions })
-  if (input.method === 'session/load') { update('old'); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
-  if (input.method === 'session/resume') { if (${compactCommand}) commands(); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
+  if (input.method === 'session/load') { if (${nativeChildren === 'replay'}) native('running'); update('old'); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
+  if (input.method === 'session/resume') { if (${nativeChildren === 'replay'}) native('running'); if (${compactCommand}) commands(); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
   if (input.method === 'session/close') respond(input.id, {})
   if (input.method === 'session/delete') respond(input.id, {})
   if (input.method === 'session/set_mode') respond(input.id, {})
   if (input.method === 'session/set_config_option') respond(input.id, { configOptions })
-  if (input.method === 'session/prompt') { if (${nativeChildren}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
+  if (input.method === 'session/prompt') { if (${nativeChildren === true}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
   if (input.id === 'permission-' + permissionIndex && input.method === undefined) { permissionIndex++; if (permissionIndex < permissionKinds.length) requestPermission(); else respond(pendingPrompt, { stopReason: 'end_turn' }) }
-  if (input.method === 'session/prompt' && ${nativeChildren}) setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'native-approval',method:'session/request_permission',params:{sessionId:'native-child',toolCall:{toolCallId:'native-tool',kind:'execute',title:'Child command'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'reject',name:'Reject',kind:'reject_once'}]}})+'\\n'),30)
+  if (input.method === 'session/prompt' && ${!!nativeChildren}) setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'native-approval',method:'session/request_permission',params:{sessionId:'native-child',toolCall:{toolCallId:'native-tool',kind:'execute',title:'Child command'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'reject',name:'Reject',kind:'reject_once'}]}})+'\\n'),30)
   if (input.method === 'session/cancel' && input.params.sessionId === 'native-child') native('idle')
   if (input.method === 'session/cancel' && pendingPrompt !== undefined) respond(pendingPrompt, { stopReason: 'cancelled' })
 })`,
@@ -123,6 +123,22 @@ it('uses an advertised ACP compact command and reports completion', async () => 
     { type: 'text', text: '/compact' },
   ])
   expect(events).toContain('dovo/compaction/completed')
+})
+
+it('does not report a cancelled ACP compact command as complete', async () => {
+  const { cwd, launch } = await fixture(true, true, true)
+  const controller = new AbortController()
+  const events: string[] = []
+  const input = run(cwd, launch, {
+    sessionId: 'session',
+    compact: true,
+    signal: controller.signal,
+    onText: () => controller.abort(),
+    onEvent: (name) => events.push(name),
+  })
+  await acpAdapter.run(input.run)
+  expect(controller.signal.aborted).toBe(true)
+  expect(events).not.toContain('dovo/compaction/completed')
 })
 
 it('uses the installed launch, session mode and typed config values', async () => {
@@ -252,6 +268,58 @@ it('sends session/cancel and accepts the cancelled stop reason', async () => {
   const messages = JSON.parse(await readFile(record, 'utf8'))
   expect(messages.some((item: { method: string }) => item.method === 'session/cancel')).toBe(true)
 })
+
+it.each([true, false])(
+  'restores a child announced before resume/load returns (resume=%s)',
+  async (resume) => {
+    const f = await fixture(false, resume, false, [], 'replay')
+    const adapter = createAcpAdapter()
+    const events = vi.fn<NonNullable<AgentRun['onSubagentEvent']>>()
+    const approve = vi.fn<NonNullable<AgentRun['nativeAgentInteractions']>['approve']>(
+      async () => 'approve',
+    )
+    let control: Parameters<NonNullable<AgentRun['onNativeSession']>>[0] | undefined
+    const input = run(f.cwd, f.launch, {
+      taskId: 'restored-thread',
+      sessionId: 'session',
+      onSubagentEvent: events,
+      onNativeSession: (session) => {
+        control = session
+      },
+      nativeAgentInteractions: { approve, ask: async () => null },
+    })
+    try {
+      await adapter.run(input.run)
+      expect(input.output).toEqual(['new'])
+      expect(events).toHaveBeenCalledWith(
+        'subagent_update',
+        expect.objectContaining({
+          update: expect.objectContaining({
+            sessionId: 'native-child',
+            state: { state: 'running' },
+          }),
+        }),
+        'session',
+      )
+      await vi.waitFor(() => expect(approve).toHaveBeenCalledOnce())
+      await control?.stop('native-child')
+      await vi.waitFor(() =>
+        expect(events).toHaveBeenCalledWith(
+          'subagent_update',
+          expect.objectContaining({
+            update: expect.objectContaining({
+              sessionId: 'native-child',
+              state: { state: 'idle' },
+            }),
+          }),
+          'session',
+        ),
+      )
+    } finally {
+      await adapter.dispose?.()
+    }
+  },
+)
 
 it('keeps ACP child traffic and controls connected after the parent returns and under pressure', async () => {
   const f = await fixture(false, false, false, [], true)

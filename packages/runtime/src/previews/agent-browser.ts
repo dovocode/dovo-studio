@@ -7,7 +7,15 @@ export const agentBrowserCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('evaluate'), script: text }),
   mutableStruct({ action: Schema.Literal('navigate'), url: maxValue(text, 4096) }),
   mutableStruct({
-    action: Schema.Literals(['snapshot', 'screenshot', 'back', 'forward', 'reload', 'close']),
+    action: Schema.Literals([
+      'snapshot',
+      'elements',
+      'screenshot',
+      'back',
+      'forward',
+      'reload',
+      'close',
+    ]),
   }),
   mutableStruct({ action: Schema.Literal('click'), selector: text }),
   mutableStruct({

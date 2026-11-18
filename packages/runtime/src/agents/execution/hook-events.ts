@@ -19,6 +19,7 @@ export type HookTool = {
   name: string
   kind: 'command' | 'file' | 'search' | 'web' | 'tool'
   status: string
+  cwd?: string
   input?: unknown
   output?: unknown
 }
@@ -61,6 +62,7 @@ export class HookEvents {
         name: tool.name || previous?.name || 'Tool',
         kind: previous?.kind ?? tool.kind,
         input: tool.input ?? previous?.input,
+        cwd: tool.cwd ?? previous?.cwd,
       }
       const event = /failed|error|cancelled|interrupted/i.test(tool.status)
         ? 'tool-error'
@@ -86,6 +88,7 @@ export class HookEvents {
             name: text(block.name),
             kind: kind(text(block.name)),
             input: block.input,
+            cwd: text(object(block.input).workdir) || text(object(block.input).cwd) || undefined,
             status: 'running',
           })
         if (['completed', 'failed'].includes(claudeToolStatus(block) ?? ''))
@@ -122,6 +125,21 @@ export class HookEvents {
             (typeof item.exitCode === 'number' && item.exitCode !== 0) || item.error
               ? 'failed'
               : tool.status,
+          cwd:
+            text(item.cwd) ||
+            text(item.workdir) ||
+            text(data.cwd) ||
+            text(object(item.arguments).workdir) ||
+            text(object(item.arguments).cwd) ||
+            text(object(data.input).workdir) ||
+            text(object(data.input).cwd) ||
+            text(object(state.input).workdir) ||
+            text(object(state.input).cwd) ||
+            text(object(detail.arguments).cwd) ||
+            text(object(detail.arguments).workdir) ||
+            text(object(update.rawInput).cwd) ||
+            text(object(update.rawInput).workdir) ||
+            undefined,
           input:
             item.arguments ??
             item.args ??
@@ -139,8 +157,14 @@ export class HookEvents {
             item.result ??
             item.output ??
             item.aggregatedOutput ??
+            (item.stdout !== undefined || item.stderr !== undefined
+              ? { stdout: item.stdout, stderr: item.stderr }
+              : undefined) ??
             data.result ??
             data.output ??
+            (data.stdout !== undefined || data.stderr !== undefined
+              ? { stdout: data.stdout, stderr: data.stderr }
+              : undefined) ??
             state.output ??
             state.error ??
             update.rawOutput ??

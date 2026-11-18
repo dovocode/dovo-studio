@@ -357,6 +357,26 @@ export function updateSubagents(
         put(child, { result: text(part.text)?.slice(-64000) })
     }
   }
+  if ((provider === 'acp' || provider === 'grok') && method === 'dovo/acp/background') {
+    const id = text(event.id)
+    if (id && rootThreadId) {
+      const previous = current.find(
+        (entry) =>
+          entry.id === id && entry.sessionId === rootThreadId && entry.provider === provider,
+      )
+      const fields: Partial<Subagent> = {
+        kind: 'background',
+        name: text(event.title) ?? id,
+        result: text(event.output),
+        status: event.status === 'cancelled' ? 'stopped' : status(event.status),
+      }
+      if (
+        !previous ||
+        Object.entries(fields).some(([key, value]) => object(previous)[key] !== value)
+      )
+        put(id, fields)
+    }
+  }
   if (provider === 'acp') {
     const update = object(event.update)
     const child = update

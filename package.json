@@ -89,7 +89,7 @@
     "test:studio-tools:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-studio-tools-browser.mjs && node scripts/check-studio-peer-registration-browser.mjs",
     "test:ui-audit:browser": "node scripts/check-desktop-audit-layout-browser.mjs && node scripts/check-mobile-audit-navigation-browser.mjs",
     "test:ui-visuals:browser": "node scripts/check-layout-stability-browser.mjs && node scripts/check-mobile-sheet-layout-browser.mjs && node scripts/check-search-fields-browser.mjs && node scripts/check-ui-visuals-browser.mjs && node scripts/check-pipeline-list-browser.mjs && node scripts/check-pull-list-layout-browser.mjs",
-    "test:liquid-glass:browser": "pnpm --filter @dovo/design build && pnpm --filter @dovo/web-ui build && node scripts/check-liquid-glass-browser.mjs",
+    "test:solid-surfaces:browser": "pnpm --filter @dovo/design build && pnpm --filter @dovo/web-ui build && node scripts/check-solid-surfaces-browser.mjs",
     "test:ui-controls:browser": "pnpm --filter @dovo/desktop build && node scripts/check-ui-controls-browser.mjs && node scripts/check-shared-controls-appearance-browser.mjs",
     "test:composer-unification:browser": "pnpm --filter @dovo/desktop build && node scripts/check-composer-unification-browser.mjs && node scripts/check-composer-layout-browser.mjs",
     "test:mobile-startup-thread:browser": "node scripts/check-mobile-startup-thread-browser.mjs && node scripts/check-mobile-draft-transition-browser.mjs && node scripts/check-mobile-tabbar-browser.mjs && node scripts/check-mobile-quick-task-browser.mjs",

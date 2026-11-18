@@ -48,6 +48,7 @@ const allowed = new Set([
   '/api/device-hosts/forward',
   '/api/device-hosts/forward/stop',
   '/api/terminals/run',
+  '/api/terminals/summary',
   '/api/terminals/close',
   '/api/terminals/update',
   '/api/terminals/ticket',
@@ -87,7 +88,7 @@ export function authorizeRunRoute(
       denied()
     return grant
   }
-  if (path === '/api/terminals/ticket' || path === '/api/terminals/close') {
+  if (['/api/terminals/ticket', '/api/terminals/close', '/api/terminals/summary'].includes(path)) {
     authorizeRunTerminal(s, token, typeof input.id === 'string' ? input.id : '')
     return grant
   }
@@ -181,7 +182,10 @@ export function authorizeRunRoute(
       denied()
   } else if (path === '/api/previews/browser/agent') {
     const command = record(input.command)
-    if (grant.readOnly && !['snapshot', 'screenshot', 'close'].includes(String(command.action)))
+    if (
+      grant.readOnly &&
+      !['snapshot', 'elements', 'screenshot', 'close'].includes(String(command.action))
+    )
       denied()
   } else if (path === '/api/terminals/run') {
     if (

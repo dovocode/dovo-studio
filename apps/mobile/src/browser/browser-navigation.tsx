@@ -1,12 +1,12 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState, type ComponentRef, type Ref } from 'react'
 import { Pressable, TextInput, View } from 'react-native'
-import { Glass } from '../ui/layout/glass'
+import { Surface } from '../ui/layout/surface'
 import { IconButton } from '../ui/controls/icon-button'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 
-/** A single glass row leaves the page and native app tabs their own space. */
+/** A single navigation row leaves the page and native app tabs their own space. */
 export function BrowserNavigation({
   address,
   addressRef,
@@ -55,8 +55,7 @@ export function BrowserNavigation({
       accessibilityLabel={uiText('Browser navigation')}
       style={{ paddingHorizontal: 8, paddingVertical: 6 }}
     >
-      <Glass
-        solid
+      <Surface
         testID="Browser navigation surface"
         style={{
           borderRadius: 28,
@@ -158,7 +157,7 @@ export function BrowserNavigation({
             <Text style={{ color: colors.text, fontSize: 12, fontWeight: '600' }}>{tabs}</Text>
           </View>
         </Pressable>
-      </Glass>
+      </Surface>
     </View>
   )
 }

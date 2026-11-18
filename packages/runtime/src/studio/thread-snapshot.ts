@@ -2,6 +2,7 @@ import { nextQueuedMessage } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import {
   taskFamilyIds,
+  spawnedThreadWatch,
   mergeThreadWatchEntries,
   sumThreadWatchEntries,
   permissionPolicyReadOnly,
@@ -62,7 +63,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
       .get()
       .repositories.find((repository) => repository.id === item.repositoryId)
     const parent =
-      item.spawnParent ??
+      (item.spawnParent?.steering ? undefined : item.spawnParent) ??
       (item.delegation
         ? {
             runtimeId: s.runtimeId,
@@ -129,7 +130,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
     )
   for (const owner of tasks)
     for (const watch of s.threadWatch.list(owner.id)) {
-      if (watch.relation !== 'spawned' || !watch.snapshot) continue
+      if (!spawnedThreadWatch(owner, watch) || !watch.snapshot) continue
       const snapshot = watch.snapshot
       const identity =
         snapshot.runtimeId ?? (watch.runtimeId === 'local' ? s.runtimeId : watch.runtimeId)

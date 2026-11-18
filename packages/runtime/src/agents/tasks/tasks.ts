@@ -2733,9 +2733,9 @@ export class Tasks {
                       : yield* Effect.exit(
                           this.drainChildren(
                             id,
-                            run.controller.signal.aborted ||
-                              (this.store.taskSummary(id).status === 'failed' &&
-                                !run.preserveNativeSession)
+                            !run.preserveNativeSession &&
+                              (run.controller.signal.aborted ||
+                                this.store.taskSummary(id).status === 'failed')
                               ? undefined
                               : run.id,
                           ),
@@ -3017,9 +3017,15 @@ export class Tasks {
     attempt(() => runCredentials(this.store).revokeTask(id))
     attempt(() => this.disposeDelegation(id))
     attempt(() => this.stopChildren(id, undefined, reason))
-    void this.stopNativeFamily(id).catch((error: unknown) =>
-      console.error('Could not stop native agents:', error),
+    // ACP v2 confirms foreground cancellation over the connection. Closing the
+    // session here would also terminate its independent background work.
+    if (
+      !this.nativeSessions.get(id)?.control.foregroundCancellation ||
+      reason instanceof MemoryPressureStop
     )
+      void this.stopNativeFamily(id).catch((error: unknown) =>
+        console.error('Could not stop native agents:', error),
+      )
     this.steering.delete(id)
     attempt(() =>
       this.store.updateTask(
@@ -3291,6 +3297,8 @@ export class Tasks {
       (agent) => agent.source !== 'dovo' && (!childId || agent.id === childId),
     )
     if (!selected.length) return
+    if (childId && this.nativeSessions.get(taskId)?.control.foregroundCancellation)
+      throw new HttpError(409, 'Use Stop agents to stop ACP v2 background work for this session')
     const confirmed = this.nativeStopConfirmed(taskId, selected)
     const preparationErrors: unknown[] = []
     const prepare = (action: () => void) => {
@@ -4483,6 +4491,9 @@ export class Tasks {
       linkedCheckouts?: Task['linkedCheckouts']
       origin?: string
       messageSource?: MessageSource
+      botMention?: Task['botMention']
+      spawnParent?: Task['spawnParent']
+      coordinationDepth?: Task['coordinationDepth']
       worktreeIncludeChanges?: Task['worktreeIncludeChanges']
       existingWorktreePath?: Task['existingWorktreePath']
       checkoutBranch?: Task['checkoutBranch']

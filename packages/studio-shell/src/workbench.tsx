@@ -561,6 +561,7 @@ function WorkbenchContent({
             entityId: destination.threadId,
             threadParent: destination.parent,
             nativeAgentKey: destination.nativeAgentKey,
+            threadRequest: destination.threadRequest,
           },
           { replace: true },
         )
@@ -1220,6 +1221,7 @@ function WorkbenchContent({
                         <View
                           entityId={target.entityId}
                           nativeAgentKey={target.nativeAgentKey}
+                          threadRequest={target.threadRequest}
                           threadParent={parentThread}
                           pullTarget={target.pullTarget}
                           automationTarget={target.automationTarget}

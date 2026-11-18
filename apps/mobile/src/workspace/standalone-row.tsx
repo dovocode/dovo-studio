@@ -8,17 +8,21 @@ import { Icon } from '../ui/controls/icon'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useMobilePreferences } from '../runtime/preferences/app-preferences'
+import { browserTabSite } from '../browser/browser-state'
+import { WorkspaceTypeBadge } from './type-badge'
 import { useStandaloneActions } from './resource-actions'
 import type { WorkspaceItem } from './workspace-items'
 
 export function StandaloneRow({
   item,
   tile = false,
+  workspaceType = false,
   onOpen,
   onActions,
 }: {
   item: Exclude<WorkspaceItem, { kind: 'thread' }>
   tile?: boolean
+  workspaceType?: boolean
   onOpen: () => void
   onActions: () => void
 }) {
@@ -36,15 +40,26 @@ export function StandaloneRow({
         ? item.tab.favicon
         : undefined
       : projectIcon(repository)
-  const host = item.kind === 'browser' ? new URL(item.tab.url).hostname.replace(/^www\./, '') : ''
-  const context = item.kind === 'terminal' ? (repository?.name ?? 'Home folder') : host
-  const typeIcon = item.kind === 'terminal' ? 'terminal' : 'web'
+  const site = item.kind === 'browser' ? browserTabSite(item.tab) : ''
+  const context = item.kind === 'terminal' ? (repository?.name ?? 'Home folder') : site
+  const detail =
+    item.kind === 'terminal'
+      ? [context, item.terminal.checkoutBranch].filter(Boolean).join(' · ')
+      : [
+          site,
+          item.linkedProject ||
+            (item.tab.profileId === 'device' || item.tab.profileId === 'default'
+              ? ''
+              : item.tab.profileId),
+        ]
+          .filter(Boolean)
+          .join(' · ')
   const badge = (
-    <View style={{ position: 'relative', width: tile ? 34 : 16, height: tile ? 34 : 16 }}>
+    <View style={{ position: 'relative', width: tile ? 34 : 24, height: tile ? 34 : 24 }}>
       <View
         style={{
           flex: 1,
-          borderRadius: tile ? 10 : 4,
+          borderRadius: tile ? 10 : 7,
           overflow: 'hidden',
           alignItems: 'center',
           justifyContent: 'center',
@@ -54,17 +69,18 @@ export function StandaloneRow({
         {icon ? (
           <Image source={{ uri: icon }} style={{ width: '100%', height: '100%' }} />
         ) : item.kind === 'browser' ? (
-          <Text style={{ fontSize: tile ? 13 : 8, fontWeight: '700' }}>
-            {host.slice(0, 2).toUpperCase()}
+          <Text style={{ fontSize: tile ? 13 : 11, fontWeight: '700' }}>
+            {site.slice(0, 2).toUpperCase()}
           </Text>
         ) : repository ? (
-          <Text style={{ color: '#fff', fontSize: 8, fontWeight: '700' }}>
+          <Text style={{ color: '#fff', fontSize: 11, fontWeight: '700' }}>
             {projectIconInitials(repository)}
           </Text>
         ) : (
           <Icon name="terminal" size={tile ? 22 : 14} color={colors.muted} />
         )}
       </View>
+      {workspaceType && <WorkspaceTypeBadge kind={item.kind} />}
     </View>
   )
   const statusColor = item.offline
@@ -88,7 +104,7 @@ export function StandaloneRow({
       <Pressable
         testID={`Workspace ${item.kind} ${item.title}`}
         accessibilityRole="button"
-        accessibilityLabel={`${item.kind}: ${item.title}, ${context}, ${status}`}
+        accessibilityLabel={`${item.kind}: ${item.title}, ${item.detail}, ${status}`}
         accessibilityHint={uiText('Open. Long press for item actions.')}
         onPress={onOpen}
         onLongPress={onActions}
@@ -100,14 +116,14 @@ export function StandaloneRow({
           nativeEvent.actionName === 'longpress' ? onActions() : onOpen()
         }
         style={({ pressed }) => ({
-          padding: tile ? 12 : 10,
+          padding: tile ? 12 : dense ? 6 : 8,
           paddingHorizontal: 12,
           gap: dense ? 3 : 4,
-          minHeight: settled ? 44 : undefined,
+          minHeight: 44,
           opacity: pressed ? 0.55 : 1,
           width: tile ? 88 : undefined,
-          alignItems: tile ? 'center' : undefined,
-          flexDirection: settled ? 'row' : 'column',
+          alignItems: 'center',
+          flexDirection: tile ? 'column' : 'row',
         })}
       >
         {tile ? (
@@ -119,75 +135,45 @@ export function StandaloneRow({
           </>
         ) : (
           <>
-            <View
-              style={{
-                flexDirection: 'row',
-                gap: 6,
-                alignItems: 'center',
-                paddingRight: settled ? 0 : 32,
-              }}
-            >
-              {badge}
-              {!settled && (
+            {badge}
+            <View style={{ flex: 1, minWidth: 0, gap: 2, paddingRight: settled ? 0 : 32 }}>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 <Text
                   numberOfLines={1}
-                  style={{ color: colors.muted, flex: 1, fontSize: dense ? 11 : 12 }}
+                  style={{
+                    color: colors.text,
+                    fontSize: dense ? 15 : 16,
+                    fontWeight: '500',
+                    flex: 1,
+                  }}
                 >
-                  {context}
+                  {item.title}
                 </Text>
-              )}
-              {!settled && item.pinned && <Icon name="pin" size={12} color={colors.muted} />}
-              {!settled && (
-                <Text
-                  numberOfLines={1}
-                  style={{ color: statusColor, fontSize: dense ? 11 : 12, maxWidth: '45%' }}
-                >
-                  {status}
-                </Text>
-              )}
-            </View>
-            <View
-              style={{
-                flexDirection: 'row',
-                alignItems: 'center',
-                gap: 6,
-                flex: settled ? 1 : undefined,
-                minWidth: 0,
-              }}
-            >
-              <Icon name={typeIcon} size={14} color={colors.muted} />
-              <Text
-                numberOfLines={1}
-                style={{
-                  color: colors.text,
-                  fontSize: dense ? 15 : 16,
-                  lineHeight: dense ? 18 : 20,
-                  fontWeight: '500',
-                  flex: 1,
-                }}
-              >
-                {item.title}
-              </Text>
-            </View>
-            {settled ? (
-              <Text style={{ color: statusColor, fontSize: 11 }}>{status}</Text>
-            ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4 }}>
-                <Icon
-                  name={item.kind === 'terminal' ? 'changes' : 'web'}
-                  size={12}
-                  color={colors.muted}
-                />
+                {(item.kind === 'terminal' ||
+                  item.offline ||
+                  settled ||
+                  item.section === 'snoozed') && (
+                  <Text
+                    numberOfLines={1}
+                    style={{ color: statusColor, fontSize: 11, maxWidth: '45%' }}
+                  >
+                    {status}
+                  </Text>
+                )}
+              </View>
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 5 }}>
                 <Text
                   numberOfLines={1}
                   style={{ color: colors.muted, fontSize: dense ? 11 : 12, flex: 1 }}
                 >
-                  {item.kind === 'terminal'
-                    ? `${item.terminal.checkoutBranch ?? uiText('Shell')} · ${item.detail.split(' · ').at(-1)}`
-                    : item.detail}
+                  {detail}
                 </Text>
+                {item.pinned && <Icon name="pin" size={12} color={colors.muted} />}
+                {(item.kind === 'terminal' || item.tab.kind === 'remote') && (
+                  <Icon name="device" size={12} color={colors.muted} />
+                )}
               </View>
-            )}
+            </View>
           </>
         )}
       </Pressable>

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   artifactListSchema,
+  botInvocationParent,
+  botProjectThread,
   sideThreadAttentionTarget,
+  spawnedThreadWatch,
   taskSubagents,
   type Task,
 } from '@dovo/protocol'
@@ -63,18 +66,24 @@ export function TaskTools({
   const hasAgents = useMemo(
     () =>
       agentCount > 0 ||
-      task.threadWatches?.some((watch) => watch.relation === 'spawned') ||
-      workspace.tasks.some(
-        (child) =>
+      task.threadWatches?.some((watch) => spawnedThreadWatch(task, watch)) ||
+      workspace.tasks.some((child) => {
+        const call = botInvocationParent(child, snapshot?.runtimeId)
+        return (
+          (call?.subthread && call.threadId === task.id) ||
           child.delegation?.parentTaskId === task.id ||
           (child.spawnParent?.threadId === task.id &&
-            [activeRuntimeId, snapshot?.runtimeId].includes(child.spawnParent.runtimeId)),
-      ),
+            !child.spawnParent.steering &&
+            !botProjectThread(!!task.bot, child.repositoryId) &&
+            [activeRuntimeId, snapshot?.runtimeId].includes(child.spawnParent.runtimeId))
+        )
+      }),
     [task, workspace.tasks, activeRuntimeId, snapshot?.runtimeId, agentCount],
   )
   const linkedPullCount = taskPullLinks(task).length
   const sideChatCount = (task.sideChats?.length ?? 0) + childThreads.length
-  const sideAttention = sideThreadAttentionTarget(useSideThreadAttention(), task.id)?.kind
+  const attention = useSideThreadAttention()
+  const sideAttention = sideThreadAttentionTarget(attention, task.id, attention.peers)?.kind
   const artifactKey = JSON.stringify([activeRuntimeId, task.id])
   const [artifacts, setArtifacts] = useState<{ key: string; present: boolean }>()
   useEffect(() => {

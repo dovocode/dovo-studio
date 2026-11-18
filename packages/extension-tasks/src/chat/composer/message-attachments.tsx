@@ -238,10 +238,7 @@ export function MessageAttachments({
         </p>
       )}
       <Dialog open={!!preview} onOpenChange={(open) => !open && setPreview(null)}>
-        <DialogContent
-          data-fixed-material=""
-          className="max-h-[85dvh] max-w-[var(--chat-max)] overflow-auto"
-        >
+        <DialogContent className="max-h-[85dvh] max-w-[var(--chat-max)] overflow-auto">
           <DialogTitle>{preview?.attachment.name}</DialogTitle>
           <DialogDescription>
             {preview?.attachment.mime} · {preview && fileSizeLabel(preview.attachment.size)}

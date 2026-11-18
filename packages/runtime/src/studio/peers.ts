@@ -6,14 +6,21 @@ import {
   noStudioTools,
   parseStudioReference,
   studioThreadsCommandSchema,
+  botProjectThread,
   type ThreadWatchSummary,
 } from '@dovo/protocol'
-import { createHash } from 'node:crypto'
 import { Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
-import { requireStudioPart, studioReadAction, studioTool, type StudioPolicy } from './tools.js'
+import {
+  forwardedThreadScope,
+  requireStudioPart,
+  studioReadAction,
+  studioThreadCaller,
+  studioTool,
+  type StudioPolicy,
+} from './tools.js'
 
 type Registration = typeof studioPeerRegistrationSchema.Type
 type Session = Registration & { deviceId: string; seen: number; authorize: () => void }
@@ -168,9 +175,11 @@ export async function routedStudioTool(
     (part === 'threads' || part === 'browsers') && typeof decoded.id === 'string'
       ? parseStudioReference(decoded.id)
       : undefined
+  if (reference?.kind && reference.kind !== (part === 'threads' ? 'thread' : 'browser'))
+    throw new HttpError(400, 'The Studio reference kind does not match this tool')
   const input = reference ? { ...decoded, id: reference.id } : decoded
   const routedCommand = reference ? input : command
-  runtimeId ??= reference && reference.runtimeId !== 'local' ? reference.runtimeId : undefined
+  runtimeId ??= reference?.runtimeId
   if (policy?.readOnly && !studioReadAction(part, input.action))
     throw new HttpError(403, 'This agent has read-only Studio Tools access')
   if (runtimeId && part === 'ui')
@@ -195,13 +204,20 @@ export async function routedStudioTool(
       previous.delegated,
     )
   }
-  const computer =
-    studioComputer(s, runtimeId, taskId) ??
+  const resolveComputer = (id: string | undefined) =>
+    studioComputer(s, id, taskId) ??
     (durableSnapshot && policy?.readOnly && part === 'threads' && input.action === 'snapshot'
-      ? studioComputer(s, runtimeId, taskId, availablePeers(s, s.retrievalPeers.list()))
+      ? studioComputer(s, id, taskId, availablePeers(s, s.retrievalPeers.list()))
       : undefined)
+  const computer = resolveComputer(runtimeId)
   // An unavailable computer keeps the caller's ID, so its saved watches can still be stopped.
   const owner = computer?.id ?? runtimeId ?? 'local'
+  if (
+    reference &&
+    reference.runtimeId !== runtimeId &&
+    (resolveComputer(reference.runtimeId)?.id ?? reference.runtimeId) !== owner
+  )
+    throw new HttpError(409, 'The Studio reference and runtimeId select different computers')
   const owned = (threadId: string, peers = availablePeers(s)) =>
     s.threadWatch
       .list(taskId)
@@ -273,34 +289,85 @@ export async function routedStudioTool(
     readOnly: policy.readOnly,
     studioTools: { ...(policy.studioTools ?? noStudioTools()), ui: false },
   }
-  const scope = createHash('sha256')
-    .update(JSON.stringify([s.runtimeId, taskId]))
-    .digest('hex')
-  try {
-    const result = await runClientEffect(
-      createRuntimeClient(peer.connection).requestEffect(
-        part === 'threads' && (input.action === 'create' || input.allowPermissionIncrease === true)
-          ? '/api/studio/forward-v2'
-          : '/api/studio/forward',
-        { taskId: `paired:${scope}`, part, command: routedCommand, policy: forwardedPolicy },
-        Schema.Unknown,
-        { method: 'POST', timeoutMs: durableSnapshot ? 10000 : 120000 },
-      ),
-      signal,
+  const creating = part === 'threads' && input.action === 'create'
+  const sending = part === 'threads' && input.action === 'send'
+  const caller = creating || sending ? studioThreadCaller(s, taskId) : undefined
+  const steering =
+    creating &&
+    botProjectThread(
+      caller?.bot,
+      typeof input.repositoryId === 'string' ? input.repositoryId : undefined,
     )
+  try {
+    const client = createRuntimeClient(peer.connection)
+    const forward = (path: string, command: unknown) =>
+      runClientEffect(
+        client.requestEffect(
+          path,
+          {
+            taskId: forwardedThreadScope(s.runtimeId, taskId),
+            part,
+            command,
+            policy: forwardedPolicy,
+            caller,
+          },
+          Schema.Unknown,
+          { method: 'POST', timeoutMs: durableSnapshot ? 10000 : 120000 },
+        ),
+        signal,
+      )
+    const legacyPath =
+      creating || (part === 'threads' && input.allowPermissionIncrease === true)
+        ? '/api/studio/forward-v2'
+        : '/api/studio/forward'
+    let result: unknown
+    try {
+      result = await forward(sending ? '/api/studio/forward-v3' : legacyPath, routedCommand)
+    } catch (error) {
+      // Only a missing route proves the peer never accepted this send.
+      if (
+        !sending ||
+        !(error instanceof RuntimeRequestError) ||
+        error.status !== 404 ||
+        error.message !== 'Endpoint not found'
+      )
+        throw error
+      authorize()
+      requireStudioPart(s, part, policy)
+      // The legacy zero-time wait reads metadata without fetching message history or checkpoints.
+      const read = decode(
+        Schema.Struct({
+          thread: Schema.Struct({ id: Schema.String, bot: Schema.optional(Schema.Unknown) }),
+        }),
+        await forward('/api/studio/forward', { action: 'wait', id: input.id, timeoutMs: 0 }),
+      )
+      if (read.thread.id !== input.id)
+        throw new HttpError(409, 'The paired runtime returned a different thread')
+      if (read.thread.bot !== undefined)
+        throw new HttpError(409, 'Update this paired runtime before calling a Bot')
+      authorize()
+      requireStudioPart(s, part, policy)
+      result = await forward(legacyPath, routedCommand)
+    }
     authorize()
     requireStudioPart(s, part, policy)
     // Invalidate reads that began before the mutation; their old completion must not retire the new run.
     restartMonitor()
-    if (
-      part === 'threads' &&
-      input.action === 'create' &&
-      input.watch !== false &&
-      s.store.get().tasks.some((task) => task.id === taskId)
-    ) {
+    if (creating && input.watch !== false && caller) {
       const created = decode(Schema.Struct({ id: Schema.String }), result)
+      // A create receipt can return a thread whose watch already finished or was stopped.
+      if (owned(created.id).length) return result
       try {
-        s.threadWatch.watch(taskId, owner, created.id, peer.name, policy, 'spawned')
+        s.threadWatch.watch(
+          taskId,
+          owner,
+          created.id,
+          peer.name,
+          policy,
+          'spawned',
+          false,
+          steering,
+        )
       } catch (error) {
         // Creation already succeeded: keep its ID reviewable instead of suggesting a duplicate retry.
         return {

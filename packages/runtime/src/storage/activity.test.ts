@@ -6,6 +6,108 @@ import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
 import { recentTools, type Task } from '@dovo/protocol'
 
+it('keeps the first input and full duration when progress and completion fall on a later page', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const insert = db.prepare('INSERT INTO activity VALUES(?,?,?,?,?,?)')
+    const tool = (id: string, time: string, status: string) =>
+      insert.run(
+        id,
+        time,
+        'tool',
+        'task',
+        id,
+        JSON.stringify({ turnId: 'turn', toolId: 'call', status }),
+      )
+    tool('start', '2026-01-01T09:00:00Z', 'running')
+    for (let index = 0; index < 98; index++)
+      insert.run(String(index), '2026-01-01T09:00:05Z', 'agent', 'task', 'Other activity', '{}')
+    tool('progress', '2026-01-01T09:00:10Z', 'in_progress')
+    tool('finish', '2026-01-01T09:00:11Z', 'completed')
+
+    const page = log.overview(0, 'task')
+    expect(page.events[0]).toMatchObject({
+      id: 'finish',
+      inputEventId: 'start',
+      durationMs: 11000,
+    })
+    expect(page.before).toBe('100')
+    expect(log.overview(100, 'task').events).toEqual([])
+
+    // With identical times a call still belongs to exactly one page.
+    db.prepare("UPDATE activity SET time='2026-01-01T09:00:00Z'").run()
+    db.prepare("UPDATE activity SET id='-finish' WHERE id='finish'").run()
+    db.prepare("UPDATE activity SET id='001' WHERE id='start'").run()
+    const tied = [0, 100].flatMap((offset) => log.overview(offset, 'task').events)
+    expect(tied.filter((event) => event.kind === 'tool')).toMatchObject([
+      { id: '-finish', inputEventId: '001' },
+    ])
+  } finally {
+    db.close()
+  }
+})
+
+it('keeps one command across pages while retaining failed wrappers and calls from other turns and threads', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const command = 'pnpm test'
+    const insert = db.prepare('INSERT INTO activity VALUES(?,?,?,?,?,?)')
+    insert.run(
+      'receipt',
+      '2026-01-01T09:00:00Z',
+      'tool',
+      'task',
+      'Terminal command',
+      JSON.stringify({
+        turnId: 'turn',
+        toolId: 'terminal:1',
+        status: 'completed',
+        terminalCommand: true,
+        presentation: { kind: 'command', title: command, input: command, output: 'Run complete.' },
+      }),
+    )
+    for (let index = 0; index < 99; index++)
+      insert.run(String(index), '2026-01-01T09:00:05Z', 'agent', 'task', 'Other activity', '{}')
+    for (const [id, scope, turnId, status] of [
+      ['ok', 'task', 'turn', 'completed'],
+      ['failure', 'task', 'turn', 'failed'],
+      ['other-turn', 'task', 'other', 'completed'],
+      ['other-task', 'other', 'turn', 'completed'],
+    ])
+      insert.run(
+        id,
+        '2026-01-01T09:00:10Z',
+        'tool',
+        scope,
+        'terminal_run',
+        JSON.stringify({
+          turnId,
+          toolId: id,
+          status,
+          event: { item: { tool: 'terminal_run', arguments: { command } } },
+        }),
+      )
+
+    const commands = [0, 100]
+      .flatMap((offset) => log.overview(offset).events)
+      .filter((event) => event.kind === 'tool')
+    expect(commands.map((event) => event.id).sort()).toEqual([
+      'failure',
+      'other-task',
+      'other-turn',
+      'receipt',
+    ])
+    expect(commands.find((event) => event.id === 'receipt')).toMatchObject({
+      command,
+      preview: 'Run complete.',
+    })
+  } finally {
+    db.close()
+  }
+})
+
 it('ends only pending provider tools from the selected session, including older pages and split Claude calls', () => {
   const db = openDatabase(':memory:')
   try {
