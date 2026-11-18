@@ -175,25 +175,16 @@ try {
     await show('rows', { editable: true })
     const row = page.locator('.studio-thread-row')
     await page.mouse.move(width - 1, 699)
-    const titleWidth = await row
-      .locator('[data-thread-title]')
-      .evaluate((node) => node.getBoundingClientRect().width)
+    const metadata = row.locator('.studio-thread-card-context')
+    const before = await metadata.boundingBox()
     await row.hover()
-    assert.equal(
-      await row
-        .locator('[data-thread-title]')
-        .evaluate((node) => node.getBoundingClientRect().width),
-      titleWidth,
-      'Hover controls do not shorten the thread title',
-    )
-    assert.equal(
-      await row
-        .locator('.studio-thread-card-context')
-        .first()
-        .evaluate((node) => getComputedStyle(node).paddingRight),
-      '96px',
-      'Project metadata still makes room for hover controls',
-    )
+    const after = await metadata.boundingBox()
+    assert.deepEqual(after, before, 'Metadata stays in place when row actions appear')
+    const titleLine = row.locator('.studio-thread-card-title')
+    const actionBar = row.locator('.studio-thread-actions')
+    const status = await titleLine.locator('.studio-thread-status').boundingBox()
+    const actions = await actionBar.boundingBox()
+    assert.ok(status.x + status.width <= actions.x + 1, 'Row actions leave the status visible')
     await page.mouse.move(width - 1, 699)
   }
   for (const width of [240, 320, 390, 976]) {
@@ -224,7 +215,6 @@ try {
         await details.waitFor({ state: 'hidden' })
         continue
       }
-      const project = await row.getByText('Audit project', { exact: true }).boundingBox()
       const status = await row.locator('[data-thread-state="Draft"]').boundingBox()
       const provider = row.locator('[data-agent-avatar]')
       assert.equal(await provider.count(), 1)
@@ -237,8 +227,8 @@ try {
       assert.equal(await runtime.count(), 1)
       const runtimeBox = await runtime.boundingBox()
       assert.ok(
-        runtimeBox.x + runtimeBox.width <= providerBox.x,
-        'Harness follows the runtime machine',
+        providerBox.x + providerBox.width <= runtimeBox.x,
+        'Harness precedes the runtime machine',
       )
       assert.ok(
         Math.abs(providerBox.y + providerBox.height / 2 - runtimeBox.y - runtimeBox.height / 2) < 1,
@@ -249,27 +239,21 @@ try {
         'Active thread machine and harness appear below its title',
       )
       const toggle = row.getByRole('button', { name: 'Subthreads for Short title', exact: true })
-      const icon = await toggle.locator('svg').boundingBox()
-      assert.ok(Math.abs(icon.y + icon.height / 2 - runtimeBox.y - runtimeBox.height / 2) <= 1.5)
-      assert.ok(icon.x + icon.width <= runtimeBox.x, 'Subthreads precede the runtime machine')
-      const pull = await row.getByLabel('1 linked pull request', { exact: true }).boundingBox()
-      assert.ok(pull.x + pull.width <= icon.x, 'PRs precede subthreads')
       await contained(toggle, row)
-      const bounds = await toggle.boundingBox()
+      const childIcon = await toggle.locator('svg').boundingBox()
       assert.ok(
-        providerBox.x + providerBox.width <= bounds.x ||
-          bounds.x + bounds.width <= providerBox.x ||
-          providerBox.y + providerBox.height <= bounds.y ||
-          bounds.y + bounds.height <= providerBox.y,
-        'Provider and subthread controls do not overlap',
+        Math.abs(childIcon.y + childIcon.height / 2 - runtimeBox.y - runtimeBox.height / 2) <= 1.5,
       )
+      assert.ok(childIcon.x + childIcon.width <= providerBox.x, 'Subthreads precede the harness')
+      const pull = row
+        .locator('.studio-thread-card-context')
+        .getByLabel('1 linked pull request', { exact: true })
+      await contained(pull, row)
+      const pullBox = await pull.boundingBox()
+      assert.ok(pullBox.x + pullBox.width <= childIcon.x, 'PRs precede subthreads')
       assert.ok(
-        project.y + project.height <= title.y,
-        JSON.stringify({ width, archived, project, title }),
-      )
-      assert.ok(
-        status.y + status.height <= title.y,
-        JSON.stringify({ width, archived, status, title }),
+        status.y < title.y + title.height && title.y < status.y + status.height,
+        'Status and title share the top line',
       )
     }
   }
@@ -448,7 +432,7 @@ try {
       })
       assert.equal(contrast.titleOpacity, unread ? 1 : 0.85)
       assert.ok(contrast.title >= 4.5, JSON.stringify({ mode, unread, contrast }))
-      assert.deepEqual(contrast.metadataOpacity, [1, 1])
+      assert.deepEqual(contrast.metadataOpacity, [1])
       assert.ok(contrast.metadata >= 4.5, JSON.stringify({ mode, unread, contrast }))
       contrasts.push({ mode, unread, ...contrast })
     }
