@@ -337,7 +337,9 @@ try {
         .locator('.studio-agent-profile-header')
         .getByRole('heading', { name: 'Writer', exact: true })
         .waitFor()
-      await page
+      const saveActions = page.getByRole('group', { name: 'Settings save actions', exact: true })
+      await saveActions.getByText('Applies to Project on linux', { exact: true }).waitFor()
+      await saveActions
         .getByText(/^Writer · Renames to Project writer on save · .*Applies to new turns\.$/)
         .waitFor()
     }
@@ -732,9 +734,9 @@ try {
       })
       await environment.selectOption('mac')
       await environment.selectOption('linux')
-      const offline = page.getByText('linux is offline. Reconnect to edit or save.', {
-        exact: true,
-      })
+      const offline = page
+        .getByRole('status')
+        .filter({ hasText: /^linux offline · Viewing saved settings$/ })
       await offline.waitFor()
       await page
         .getByText('Profiles unavailable offline.', { exact: true })

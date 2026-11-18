@@ -399,9 +399,10 @@ export function SettingsSaveBar({
             status
           )}
         </div>
-        <p className="mt-0.5 text-[0.8125rem] leading-relaxed text-foreground/80">
-          {scope ? uiText('Applies to {value0}', { value0: scope.label }) : description}
-        </p>
+        <div className="mt-0.5 flex flex-wrap gap-x-3 text-[0.8125rem] leading-relaxed wrap-anywhere text-foreground/80">
+          {scope && <p>{uiText('Applies to {value0}', { value0: scope.label })}</p>}
+          <p>{description}</p>
+        </div>
       </div>
       <div className="ml-auto flex flex-wrap items-center gap-2">
         {children && (
