@@ -77,7 +77,7 @@ const built = await bundleBrowser(
     },
     {
       path: 'expo-router',
-      contents: 'export const router={push:()=>{}};',
+      contents: 'export const router={push:()=>{}};export const useLocalSearchParams=()=>({});',
     },
     {
       path: '../preferences/settings-target',

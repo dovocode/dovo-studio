@@ -66,6 +66,10 @@ Native widgets and Live Activity content use a separate SwiftUI serializer. They
 English. Provider messages and other runtime content can also remain in their source language. The
 translations have not had native-speaker review.
 
+The new workbench messages listed in `packages/studio-core/src/interface-copy-pending.json` use
+English until translations are ready. Move a message into all language catalogs and remove it from
+the list when its translations are ready.
+
 Check catalog coverage and placeholders with:
 
 ```sh

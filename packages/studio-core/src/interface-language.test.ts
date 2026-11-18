@@ -2,6 +2,16 @@ import { expect, it } from 'vite-plus/test'
 import { dictationLanguages, interfaceLanguages, resolveInterfaceLanguage } from '@dovo/protocol'
 import { interfaceDirection, interfaceText } from './interface-language'
 import catalog from './interface-catalog.json'
+import pending from './interface-copy-pending.json'
+
+it('uses English for explicitly tracked copy pending translation', () => {
+  expect(new Set(pending).size).toBe(pending.length)
+  for (const source of pending) {
+    expect(source.trim()).toBeTruthy()
+    expect(Object.hasOwn(catalog.en, source)).toBe(false)
+    expect(interfaceText(source, 'nl-NL')).toBe(source)
+  }
+})
 it('has a complete interface catalog for every ASR language and keeps speech independent', () => {
   expect(interfaceLanguages.map((item) => item.id)).toEqual(dictationLanguages.map(([id]) => id))
   const catalogs: Record<string, Record<string, string>> = catalog

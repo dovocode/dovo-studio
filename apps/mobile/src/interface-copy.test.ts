@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import { parse } from '@babel/parser'
 import { expect, it } from 'vite-plus/test'
 import catalog from '../../../packages/studio-core/src/interface-catalog.json'
+import pending from '../../../packages/studio-core/src/interface-copy-pending.json'
 
 const root = fileURLToPath(new URL('./', import.meta.url))
 function files(directory: string): string[] {
@@ -84,9 +85,15 @@ it('bundles every marked mobile message and prevents new untranslated JSX copy',
   const missing = new Set<string>()
   const unmarked: string[] = []
   const en: Readonly<Record<string, string>> = catalog.en
+  const pendingCopy = new Set(pending)
   const requireCopy = (value: unknown) => {
     const node = object(value)
-    if (node.type === 'StringLiteral' && typeof node.value === 'string' && !en[node.value])
+    if (
+      node.type === 'StringLiteral' &&
+      typeof node.value === 'string' &&
+      !Object.hasOwn(en, node.value) &&
+      !pendingCopy.has(node.value)
+    )
       missing.add(node.value)
   }
   for (const file of files(root)) {
