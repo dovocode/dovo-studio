@@ -5,7 +5,7 @@ import { exec } from '../process.js'
 import type { Workspace } from '@dovo/protocol'
 export async function fixture() {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-runtime-test-'))
-  await exec('git', ['init', '-q'], { cwd: directory })
+  await exec('git', ['init', '-q', '-b', 'main'], { cwd: directory })
   await exec('git', ['config', 'user.name', 'Dovo Test'], { cwd: directory })
   await exec('git', ['config', 'user.email', 'test@example.invalid'], { cwd: directory })
   await writeFile(join(directory, 'hello.txt'), 'original\n')
