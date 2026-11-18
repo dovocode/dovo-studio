@@ -235,6 +235,7 @@ function PullDetailContent({
   const scrollPositions = useRef(
     scrollCache.read(stateKey) ?? { overview: 0, changes: 0, checks: 0, review: 0 },
   )
+  // Hide the previous panel in the same commit so it cannot shift the restored scroll position.
   useLayoutEffect(() => {
     if (content.current) content.current.scrollTop = scrollPositions.current[tab]
   }, [tab, !!detail])
@@ -729,6 +730,7 @@ function PullDetailContent({
                 render={<section />}
                 id="pr-panel-review"
                 aria-labelledby="pr-tab-review"
+                hidden={tab !== 'review'}
               >
                 <PullCodeReviewPanel
                   key={JSON.stringify([
@@ -764,6 +766,7 @@ function PullDetailContent({
               id="pr-panel-overview"
               aria-labelledby="pr-tab-overview"
               className="space-y-5"
+              hidden={tab !== 'overview'}
             >
               <section className="flex flex-wrap items-center justify-between gap-3 rounded-lg border bg-card px-4 py-3">
                 <Button size="sm" variant="outline" onClick={() => selectTab('changes')}>
@@ -971,6 +974,7 @@ function PullDetailContent({
               id="pr-panel-checks"
               tabIndex={-1}
               aria-labelledby="pr-tab-checks"
+              hidden={tab !== 'checks'}
             >
               <PullStatus
                 reviewsReady={sections.discussion.ready}
@@ -1013,6 +1017,7 @@ function PullDetailContent({
               render={<section />}
               id="pr-panel-changes"
               aria-labelledby="pr-tab-changes"
+              hidden={tab !== 'changes'}
             >
               <PullSectionStatus label={uiText('Files')} section={sections.changes} />
               <PullSectionStatus label="Code discussion" section={sections.discussion} />

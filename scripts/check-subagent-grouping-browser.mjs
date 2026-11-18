@@ -24,6 +24,7 @@ export const SettingsPage=({title,description,children})=><section><h1>{title}</
 export const PageHeader=({title})=><h1>{title}</h1>;
 export const BotAvatar=()=>null;export const ContextMenu={Root:Tooltip,Trigger:Tooltip,Content:Tooltip,Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
+export const Platform={OS:'ios'};
 export const View=({children,accessibilityLabel,ref,onLayout})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,0)}));useLayoutEffect(()=>{onLayout?.({nativeEvent:{layout:{height:44}}})},[onLayout]);return <div aria-label={accessibilityLabel}>{children}</div>};
 export const ScrollView=View;export const Glass=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
@@ -150,7 +151,7 @@ async function bundle(contents) {
                 lifecycle:
                   'export const useTaskLifecycle=()=>({unread:false,error:"",enabled:true,busy:false});export const chooseSnoozeDuration=()=>{};',
                 'list-state':
-                  'import {useState,useRef} from "react";export const useTaskListView=()=>{const [view,setView]=useState(window.listView??{search:"",source:"all",project:"",sort:"newest"});return {view,setView,scrollOffset:useRef(0)}};',
+                  'import {useState,useRef} from "react";export const useTaskListView=()=>{const [view,setView]=useState(window.listView??{search:"",source:"all",project:"",sort:"newest"});return {view,setView,scrollOffset:useRef(0),messageResultFocus:useRef("")}};',
                 action:
                   'import {Effect} from "effect";export const useAction=()=>({busy:false,error:"",act:fn=>Effect.runPromise(fn())});',
                 scroll: 'export const useListScroll=()=>({retainPosition:()=>{}});',
