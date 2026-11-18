@@ -140,7 +140,8 @@ const mocks = {
     'export const ArtifactSharing=({artifact,onClose})=>onClose?<section role="dialog" aria-label="Share artifact"><p>{artifact.title} · Version {artifact.revision}</p><button onClick={onClose}>Close sharing</button></section>:null;',
   './artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   // Side-thread attention is outside the artifact navigation scenarios.
-  '../chat/thread/side-threads-panel': 'export const useSideThreadAttention=()=>null;',
+  '../chat/thread/side-threads-panel':
+    'export const useSideThreadAttention=()=>({workspace:{tasks:[]},approvals:[],questions:[],peers:[]});',
   './chat/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '../ui/content/artifact-shared-badge': 'export const ArtifactSharedBadge=()=>null;',
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
