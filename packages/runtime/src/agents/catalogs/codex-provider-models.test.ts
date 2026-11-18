@@ -20,6 +20,18 @@ const original = {
   serviceTiers: [{ id: 'priority', name: 'Priority' }],
 }
 async function fixture() {
+  const fetch = globalThis.fetch
+  let metadataStatus = 200
+  let metadata: unknown = { models: [] }
+  const metadataRequests: { url: string; init: RequestInit }[] = []
+  vi.spyOn(globalThis, 'fetch').mockImplementation((url, init) => {
+    const href = typeof url === 'string' ? url : url instanceof URL ? url.href : url.url
+    if (href.startsWith('https://raw.githubusercontent.com/')) {
+      metadataRequests.push({ url: href, init: init ?? {} })
+      return Promise.resolve(new Response(JSON.stringify(metadata), { status: metadataStatus }))
+    }
+    return fetch(url, init)
+  })
   const dir = await mkdtemp(join(tmpdir(), 'dovo-codex-provider-'))
   const requests: { url: string; authorization?: string; profile?: string }[] = []
   let status = 200
@@ -100,6 +112,11 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
     config,
     env,
     requests,
+    metadataRequests,
+    metadata: (value: unknown, status = 200) => {
+      metadata = value
+      metadataStatus = status
+    },
     load,
     reply: (code: number, value: unknown) => {
       status = code
@@ -122,6 +139,91 @@ it('discovers Terra as a normal model from the configured provider and preserves
     reasoning: [],
     serviceTiers: [],
   })
+})
+
+it('adds exact upstream reasoning metadata without forwarding provider credentials or changing native models', async () => {
+  const f = await fixture()
+  const levels = ['low', 'medium', 'high', 'xhigh', 'max', 'ultra']
+  f.metadata({
+    models: [
+      {
+        slug: 'gpt-6.1-terra',
+        default_reasoning_level: 'low',
+        supported_reasoning_levels: levels.map((effort) => ({ effort })),
+      },
+      {
+        slug: original.id,
+        default_reasoning_level: 'low',
+        supported_reasoning_levels: [{ effort: 'low' }],
+      },
+      {
+        slug: 'gpt-6.2-terra',
+        default_reasoning_level: 'high',
+        supported_reasoning_levels: [{ effort: 'high' }],
+      },
+    ],
+  })
+  const catalog = await f.load()
+  expect(catalog.models[0]).toMatchObject(original)
+  expect(catalog.models[1]).toMatchObject({
+    id: 'gpt-6.1-terra',
+    reasoning: levels.map((id) => ({ id, name: id })),
+    defaultReasoning: 'low',
+    serviceTiers: [],
+  })
+  expect(catalog.models).toHaveLength(2)
+  expect(f.metadataRequests).toHaveLength(1)
+  expect(f.metadataRequests[0]?.url).toBe(
+    'https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json',
+  )
+  const request = f.metadataRequests[0]!.init
+  expect([...new Headers(request.headers).entries()]).toEqual([['accept', 'application/json']])
+  expect(request.redirect).toBe('error')
+})
+
+it('does not infer reasoning from a different model or advertise an unsupported default', async () => {
+  const f = await fixture()
+  f.metadata({
+    models: [
+      {
+        slug: 'gpt-6.2-terra',
+        default_reasoning_level: 'high',
+        supported_reasoning_levels: [{ effort: 'high' }],
+      },
+    ],
+  })
+  expect((await f.load()).models[1]).toMatchObject({ reasoning: [] })
+  f.metadata({
+    models: [
+      {
+        slug: 'gpt-6.1-terra',
+        default_reasoning_level: 'high',
+        supported_reasoning_levels: [{ effort: 'low' }],
+      },
+    ],
+  })
+  expect((await f.load()).models[1]).toMatchObject({ reasoning: [{ id: 'low', name: 'low' }] })
+  expect((await f.load()).models[1]?.defaultReasoning).toBeUndefined()
+})
+
+it.each([503, 200])(
+  'keeps discovered IDs when upstream metadata fails with HTTP %s or invalid data',
+  async (status) => {
+    const f = await fixture()
+    f.metadata({ models: [{ slug: 'gpt-6.1-terra' }] }, status)
+    const warning = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect((await f.load()).models[1]).toMatchObject({ id: 'gpt-6.1-terra', reasoning: [] })
+    expect(warning).toHaveBeenCalledWith(
+      'Could not refresh Codex reasoning metadata; keeping discovered provider models.',
+    )
+  },
+)
+
+it('skips public metadata when the proxy has no additional models', async () => {
+  const f = await fixture()
+  f.reply(200, { data: [{ id: original.id }] })
+  expect((await f.load()).models).toHaveLength(1)
+  expect(f.metadataRequests).toHaveLength(0)
 })
 
 it.each(['apikey', 'chatgpt'] as const)('uses the configured CODEX_HOME %s login', async (mode) => {
@@ -181,6 +283,7 @@ it.each(['default', 'explicit-file', 'explicit-url', 'older-app-server'])(
     if (mode === 'older-app-server') f.env.FIXTURE_OLD_CODEX = '1'
     expect((await f.load()).models).toHaveLength(1)
     expect(f.requests).toHaveLength(0)
+    expect(f.metadataRequests).toHaveLength(0)
   },
 )
 

@@ -49,9 +49,47 @@ const providerModels = Schema.Struct({
     }),
   ).pipe(Schema.check(Schema.isMaxLength(10000))),
 })
+const reasoningMetadata = Schema.Struct({
+  models: Schema.Array(
+    Schema.Struct({
+      slug: Schema.String,
+      default_reasoning_level: Schema.String,
+      supported_reasoning_levels: Schema.Array(Schema.Struct({ effort: Schema.String })),
+    }),
+  ),
+})
+
+// Exact upstream IDs supply capabilities, never the capabilities of a similar model.
+// Fetch public metadata separately so provider credentials cannot reach GitHub.
+async function supplementReasoning(models: ModelCatalog['models']): Promise<void> {
+  if (!models.length) return
+  try {
+    const { models: metadata } = decode(
+      reasoningMetadata,
+      await catalogJson(
+        'https://raw.githubusercontent.com/openai/codex/main/codex-rs/models-manager/models.json',
+        4_000_000,
+        { redirect: 'error', signal: AbortSignal.timeout(5000) },
+      ),
+    )
+    const byId = new Map(metadata.map((model) => [model.slug, model]))
+    for (const model of models) {
+      const entry = byId.get(model.id)
+      if (!entry) continue
+      model.reasoning = entry.supported_reasoning_levels.map(({ effort }) => ({
+        id: effort,
+        name: effort,
+      }))
+      if (model.reasoning.some(({ id }) => id === entry.default_reasoning_level))
+        model.defaultReasoning = entry.default_reasoning_level
+    }
+  } catch {
+    console.warn('Could not refresh Codex reasoning metadata; keeping discovered provider models.')
+  }
+}
 
 // A proxy can serve several vendors/modalities. Supplement only versioned families already
-// advertised by Codex (e.g. gpt-5.6-terra -> gpt-6.1-terra), without guessing capabilities.
+// advertised by Codex (e.g. gpt-5.6-terra -> gpt-6.1-terra).
 const family = (id: string) => {
   const match = /^([a-z][a-z-]*)-\d+(?:\.\d+)?(-[a-z][a-z0-9-]*)?$/i.exec(id)
   return match ? `${match[1]}:${match[2] ?? ''}` : undefined
@@ -131,6 +169,7 @@ export async function codexProviderModels(
         serviceTiers: [],
       })
     }
+    await supplementReasoning(additional)
     return [...models, ...additional]
   } catch {
     // Do not log request/decoding errors: configuration and auth-file errors can contain secrets.
