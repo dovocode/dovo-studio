@@ -556,19 +556,19 @@ try {
   const readCard = readTitle.locator('xpath=ancestor::button[1]')
   const readMetadata = readCard.locator('.studio-thread-card-context [data-thread-copy]').first()
   const readStatus = readCard.locator('.studio-thread-status')
-  const readIcon = readStatus.locator('svg')
-  for (const card of [readCard, unreadTitle.locator('xpath=ancestor::button[1]')]) {
-    const status = card.locator('.studio-thread-status')
-    assert.equal(
-      await status.evaluate((el) => getComputedStyle(el).color),
-      await status.locator('svg').evaluate((el) => getComputedStyle(el).color),
-      'Status time inherits the same semantic color as its icon',
-    )
+  const unreadStatus = unreadTitle
+    .locator('xpath=ancestor::button[1]')
+    .locator('.studio-thread-status')
+  assert.equal(
+    await unreadStatus.evaluate((el) => getComputedStyle(el).color),
+    await unreadStatus.locator('svg').evaluate((el) => getComputedStyle(el).color),
+    'Unread completion time inherits the same semantic color as its icon',
+  )
+  for (const status of [readStatus, unreadStatus])
     assert.equal(await status.evaluate((el) => getComputedStyle(el).opacity), '1')
-  }
   assert.equal(await readMetadata.evaluate((el) => getComputedStyle(el).color), metadataColor)
   assert.equal(await readStatus.evaluate((el) => getComputedStyle(el).filter), 'grayscale(0.5)')
-  assert.equal(await readIcon.evaluate((el) => getComputedStyle(el).filter), 'none')
+  assert.equal(await readStatus.locator('svg').count(), 0)
   assert.equal(
     await readCard
       .locator('.studio-thread-project-icon')
@@ -898,8 +898,6 @@ try {
     )
   })
   for (const [status, state, tone] of [
-    ['review', 'Review', 'attention'],
-    ['done', 'Finished', 'success'],
     ['failed', 'Failed', 'danger'],
     ['cancelled', 'Stopped', 'neutral'],
     ['draft', 'Draft', 'neutral'],
@@ -942,6 +940,18 @@ try {
         1,
       )
     }
+  }
+  for (const status of ['review', 'done']) {
+    const indicator = page
+      .locator('.studio-thread-card')
+      .filter({ has: page.getByText('State ' + status, { exact: true }) })
+      .locator('.studio-thread-status')
+    await indicator.waitFor()
+    assert.equal(await indicator.getAttribute('aria-label'), '5m ago')
+    assert.equal(await indicator.getAttribute('title'), '5m ago')
+    assert.equal(await indicator.innerText(), '5m')
+    assert.equal(await indicator.locator('.studio-thread-status-icon').count(), 0)
+    assert.equal(await indicator.getAttribute('data-tone'), 'neutral')
   }
   const longBranch = 'dovo/look-further-into-opportunities-to-make-studio-more-like-t3-ece7c019'
   await page.evaluate(

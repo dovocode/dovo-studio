@@ -1246,18 +1246,20 @@ try {
         ['Project', 'Done', 'success'],
         ['Mobile app', 'Working', 'active'],
         ['Runtime', 'Done', 'success'],
-        ['Draft PR', 'Finished', 'success'],
+        ['Draft PR', '', 'neutral'],
       ]) {
         const row = page.locator('.studio-thread-row').filter({
           has: page.getByText(project, { exact: true }),
         })
         const status = row.locator('.studio-thread-card-title .studio-thread-status')
         assert.equal(await status.count(), 1)
-        assert.equal((await status.getAttribute('aria-label')).split(' · ')[0], label)
         const age = (await status.innerText()).trim()
+        const statusLabel = await status.getAttribute('aria-label')
+        if (label) assert.equal(statusLabel.split(' · ')[0], label)
+        else assert.equal(statusLabel, `${age} ago`)
         if (label === 'Working') assert.equal(age, '')
         else assert.match(age, /^\d+[mhd]$/)
-        assert.equal(await status.locator('svg').count(), 1)
+        assert.equal(await status.locator('svg').count(), label ? 1 : 0)
         assert.equal(await status.getAttribute('data-tone'), tone)
       }
       assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
