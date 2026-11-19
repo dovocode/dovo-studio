@@ -6,6 +6,7 @@ import {
   harnessChoiceId,
   applyTurnSettings,
   modelCatalogChoices,
+  modelReasoningLevels,
   type Agent,
   type TurnSettings,
   type Task,
@@ -43,10 +44,7 @@ export function TurnModelControls({
   const models = modelCatalogChoices(catalog?.models ?? []).filter(
     (m) => !m.hidden || m.id === selected.model,
   )
-  const model =
-    catalog?.models.find((m) => m.id === selected.model) ??
-    (!selected.model ? catalog?.models.find((m) => m.isDefault) : undefined)
-  const efforts = model?.reasoning ?? catalog?.reasoning ?? []
+  const efforts = modelReasoningLevels(catalog, selected.model)
   const update = (change: Partial<Pick<TurnSettings, 'model' | 'reasoning'>>) =>
     onChange({ ...agentTurnSettings(selected), ...change })
   return (

@@ -65,6 +65,25 @@ it('persists only model/reasoning/harness display fields, never ACP settings or 
   })
 })
 
+it('keeps only available speed choices when caching a restricted catalog', () => {
+  const cached = modelCatalogPresentation({
+    models: [
+      {
+        id: 'm',
+        name: 'Model',
+        serviceTiers: [
+          { id: 'priority', name: 'Fast' },
+          { id: 'flex', name: 'Flex' },
+        ],
+      },
+    ],
+    reasoning: [],
+    codex: { daybreakPrograms: [], fastModeBlocked: true },
+  })
+  expect(cached.models[0]?.serviceTiers).toEqual([{ id: 'flex', name: 'Flex' }])
+  expect(cached.codex).toBeUndefined()
+})
+
 it('keeps durable runtime identity across address/token/profile aliases and separates live restarts', () => {
   const agent = defaultTaskHarness('codex')
   const first = modelCatalogCacheScope('profile-a', connection, snapshot, agent)

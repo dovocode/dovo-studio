@@ -22,6 +22,7 @@ import {
   modelPreferenceKey,
   runtimeDefaultsSchema,
   daybreakChoices,
+  modelReasoningLevels,
   modelServiceTiers,
   selectedCatalogModel,
   modelDisplayName,
@@ -83,10 +84,7 @@ export function ModelSettings({
           Number(preferences[preferenceKey(a.id)]?.favorite ?? false),
       ),
     selected = selectedCatalogModel(catalog, agent.model),
-    efforts =
-      selected?.reasoning ??
-      (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
-      []
+    efforts = modelReasoningLevels(catalog, agent.model)
   const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
   return (
     <View

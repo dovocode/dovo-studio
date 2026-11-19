@@ -76,6 +76,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
       config = updatedConfig ?? config
     }
     const legacy = legacyAcpModels(session)
+    let legacyModel = legacy?.currentModelId
     const configured = options(config, 'model')
     const models = configured.length
       ? configured
@@ -98,11 +99,14 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
           'model discovery',
         )
       ).configOptions
+      if (acpModelOption(config)?.currentValue !== agent.model)
+        throw new Error(`ACP did not apply ${modelOption.name}: ${agent.model}`)
     }
     if (agent.model && !modelOption) {
       if (!legacy?.availableModels.some((model) => model.modelId === agent.model))
         throw new Error('ACP agent does not offer the selected model')
-      if (legacy.currentModelId !== agent.model)
+      if (legacyModel !== agent.model) {
+        updatedConfig = undefined
         await acpControl(
           connection,
           connection.rpc.request('session/set_model', {
@@ -111,8 +115,12 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
           }),
           'model selection',
         )
+        legacyModel = agent.model
+        config = updatedConfig ?? config
+      }
     }
     for (const [configId, value] of Object.entries(agent.acpConfig ?? {})) {
+      if (agent.model && acpModelOption(config)?.id === configId) continue
       const option = config?.find((item) => item.id === configId)
       if (!option) throw new Error(`ACP configuration ${configId} is unavailable`)
       if (option.type === 'boolean') {
@@ -151,7 +159,7 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
         ).configOptions
       }
     }
-    const currentModel = acpModelOption(config)?.currentValue ?? legacy?.currentModelId
+    const currentModel = acpModelOption(config)?.currentValue ?? legacyModel
     const currentReasoning = config?.find(
       (option) => option.category === 'thought_level' && option.type === 'select',
     )?.currentValue

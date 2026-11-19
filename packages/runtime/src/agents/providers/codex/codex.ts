@@ -4,13 +4,13 @@ import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol
 import { updateSubagents } from '../../execution/subagents.js'
 import { decodeResult, decode } from '@dovo/protocol'
 import { codexMcpServers } from '../../configuration/mcp-settings.js'
-import { isImageAttachment, serviceTierValue } from '@dovo/protocol'
+import { isFastServiceTier, isImageAttachment, serviceTierValue } from '@dovo/protocol'
 import {
   supportsCodexDaybreak,
   supportsCodexInstantInterrupt,
   supportsCodexNativeAgents,
 } from '../../configuration/codex-modes.js'
-import { codexAuthenticated, codexModels } from '../../catalogs/codex.js'
+import { codexAuthenticated, codexModels, codexTurnDefaults } from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { OwnedProcessShutdownError, stopOwnedChild } from '../../execution/stop-owned-child.js'
@@ -27,8 +27,12 @@ import { readCodexThread } from './codex-thread.js'
 import { nativeWait } from '../shared/native.js'
 import { isContextRejection } from '../../execution/handover.js'
 import { codexRateLimitUpdates } from './codex-rate-limits.js'
-import { codexGoal } from './codex-goal.js'
+import { codexGoal, codexGoalStatus } from './codex-goal.js'
 import { CUA_SERVER_NAME } from '../../../computer-use/cua.js'
+
+// Codex reports completion before it checks for more goal work. An active
+// saved goal alone does not guarantee that it will start another turn.
+const goalHandoffMs = 2000
 const turnInput = (input: Pick<AgentInput, 'prompt' | 'attachments'>) => [
   {
     type: 'text',
@@ -273,6 +277,9 @@ export function createCodexAdapter(): AgentAdapter {
       let submitted = false
       let awaitingTurn = false
       let activeTurnId: string | undefined
+      let goalStatus: typeof codexGoalStatus.Type | undefined
+      let goalHandoff: ReturnType<typeof setTimeout> | undefined
+      const followsGoal = !run.ephemeral && run.tools !== 'none' && !run.compact
       const pendingNotifications: { method: string; params: unknown }[] = []
       let pendingBytes = 0
       let admitTurn: () => void = () => {}
@@ -287,6 +294,34 @@ export function createCodexAdapter(): AgentAdapter {
         resolveTurn = resolve
         rejectTurn = reject
       })
+      const finishTurn = (error?: Error) => {
+        turnFinished = true
+        run.onNativeTurnEnd?.()
+        if (error) rejectTurn(error)
+        else resolveTurn()
+      }
+      const waitForGoalTurn = (initial = false) => {
+        goalHandoff = setTimeout(() => {
+          goalHandoff = undefined
+          finishTurn(
+            initial ? new Error('Codex saved the goal but did not start a turn') : undefined,
+          )
+        }, goalHandoffMs)
+      }
+      const bindSteer = (expectedTurnId: string) => {
+        run.onSteer?.(async (input) => {
+          run.signal.throwIfAborted()
+          if (turnFinished || goalHandoff || activeTurnId !== expectedTurnId)
+            throw new Error('This Codex turn has ended')
+          promptAccepted = true
+          await rpc.sendRequest('turn/steer', {
+            threadId,
+            expectedTurnId,
+            clientUserMessageId: input.id,
+            input: turnInput(input),
+          })
+        })
+      }
       // Attach a rejection handler immediately; the turn may fail during initialization.
       void completed.catch(() => {})
       transport.rejectTransport = rejectTurn
@@ -358,10 +393,11 @@ export function createCodexAdapter(): AgentAdapter {
         if (!run.compact && !native) {
           const root =
             !threadId || typeof scope?.threadId !== 'string' || scope.threadId === threadId
-          const execution = method.startsWith('item/')
+          const execution = method.startsWith('item/') || typeof scope?.turnId === 'string'
           if (root && execution && awaitingTurn) await Promise.race([admission, completed])
           if (
             turnFinished ||
+            (root && execution && goalHandoff) ||
             run.signal.aborted ||
             (root && execution && !submitted) ||
             (root &&
@@ -488,6 +524,37 @@ export function createCodexAdapter(): AgentAdapter {
               : undefined
         const root =
           !threadId || typeof value.data.threadId !== 'string' || value.data.threadId === threadId
+        if (followsGoal && threadId && value.data.threadId === threadId) {
+          if (method === 'thread/goal/cleared') goalStatus = undefined
+          if (method === 'thread/goal/updated') {
+            const goal = decodeResult(object, value.data.goal).data
+            const status = decodeResult(codexGoalStatus, goal?.status)
+            if (status.success) goalStatus = status.data
+          }
+          if (
+            goalHandoff &&
+            goalStatus !== 'active' &&
+            (method === 'thread/goal/cleared' || method === 'thread/goal/updated')
+          ) {
+            clearTimeout(goalHandoff)
+            goalHandoff = undefined
+            finishTurn()
+          }
+        }
+        if (!run.compact && root && execution && goalHandoff) {
+          if (
+            method !== 'turn/started' ||
+            value.data.threadId !== threadId ||
+            !nativeTurn ||
+            nativeTurn === activeTurnId
+          )
+            return
+          clearTimeout(goalHandoff)
+          goalHandoff = undefined
+          activeTurnId = nativeTurn
+          run.onTextBoundary?.()
+          bindSteer(nativeTurn)
+        }
         if (!run.compact && root && activeTurnId && nativeTurn && nativeTurn !== activeTurnId)
           return
         emitEvent(method, params)
@@ -521,8 +588,6 @@ export function createCodexAdapter(): AgentAdapter {
           }
         }
         if (method === 'turn/completed') {
-          turnFinished = true
-          run.onNativeTurnEnd?.()
           run.onSteer?.(undefined)
           const turn = decodeResult(
             mutableStruct({
@@ -538,22 +603,24 @@ export function createCodexAdapter(): AgentAdapter {
             value.data.turn,
           )
           // An unreadable completion must still settle the turn, or the task runs until its limit.
-          if (!turn.success) rejectTurn(new Error('Codex sent an unreadable turn/completed event'))
+          if (!turn.success) finishTurn(new Error('Codex sent an unreadable turn/completed event'))
           else if (turn.data.status === 'completed') {
-            if (!run.compact || (compacted && compactStarted)) resolveTurn()
-          } else rejectTurn(new Error(turn.data.error?.message ?? `Turn ${turn.data.status}`))
+            if (followsGoal && goalStatus === 'active') waitForGoalTurn()
+            else if (!run.compact || (compacted && compactStarted)) finishTurn()
+          } else finishTurn(new Error(turn.data.error?.message ?? `Turn ${turn.data.status}`))
         }
       }
       transport.consumeNotification = consumeNotification
-      const abort = () => {
-        void stopOwnedChild(child)
-        rejectTurn(new Error('Task cancelled'))
+      const replayPending = () => {
+        for (const event of pendingNotifications.splice(0))
+          consumeNotification(event.method, event.params)
+        pendingBytes = 0
       }
+      const abort = () => rejectTurn(new Error('Task cancelled'))
       run.signal.addEventListener('abort', abort, {
         once: true,
       })
       const timeout = setTimeout(() => {
-        void stopOwnedChild(child)
         rejectTurn(new Error('Codex initialization timed out'))
       }, 30000)
       if (!reusable) rpc.listen()
@@ -585,6 +652,14 @@ export function createCodexAdapter(): AgentAdapter {
         } catch {
           // Older app servers may not expose account limits.
         }
+        const startsGoal = run.goal?.action === 'set' || run.goal?.action === 'resume'
+        if (run.goal && !startsGoal && run.sessionId) {
+          // Resuming a saved Codex thread can wake its active goal.
+          await codexGoal(request, run.sessionId, run.goal, acceptPrompt, run.onText)
+          turnFinished = true
+          succeeded = true
+          return
+        }
         const program = run.tools === 'none' ? undefined : run.agent.cyberAccessProgram
         if (program && !supportsCodexDaybreak(initialized))
           throw new Error(
@@ -593,6 +668,9 @@ export function createCodexAdapter(): AgentAdapter {
         const tier = serviceTierValue(run.agent.serviceTier)
         const config = {
           ...providerConfig,
+          ...(startsGoal && run.agent.reasoning
+            ? { model_reasoning_effort: run.agent.reasoning }
+            : {}),
           ...(supportsCodexInstantInterrupt(initialized)
             ? { 'features.instant_interrupt': true }
             : {}),
@@ -610,7 +688,7 @@ export function createCodexAdapter(): AgentAdapter {
                 ],
               }
             : {}),
-          ...(['priority', 'fast'].includes(tier)
+          ...(isFastServiceTier(tier)
             ? {
                 'features.fast_mode': true,
               }
@@ -630,6 +708,8 @@ export function createCodexAdapter(): AgentAdapter {
                 }
               : {}),
         }
+        submitted = startsGoal
+        awaitingTurn = startsGoal
         const response = await request(run.sessionId ? 'thread/resume' : 'thread/start', {
           ...(run.sessionId
             ? {
@@ -781,16 +861,51 @@ export function createCodexAdapter(): AgentAdapter {
             threadId: thread.id,
             daybreakEnabled: !!program && program !== 'standard',
           })
-        clearTimeout(timeout)
-        let goalPrompt: string | undefined
-        if (run.goal) {
-          goalPrompt = await codexGoal(request, thread.id, run.goal, acceptPrompt, run.onText)
-          if (!goalPrompt) {
-            resolveTurn()
-            succeeded = true
-            return
+        let model = run.agent.model || undefined
+        let effort = run.agent.reasoning || undefined
+        if (run.sessionId && !run.compact) {
+          const saved = decode(
+            mutableStruct({
+              model: Schema.optional(Schema.String),
+              reasoningEffort: Schema.optional(Schema.NullOr(Schema.String)),
+            }),
+            response,
+          )
+          if ((!model && saved.model) || (!effort && saved.reasoningEffort)) {
+            ;({ model, effort } = await codexTurnDefaults(request, run.cwd, model ?? '', effort))
+            if (!effort && saved.reasoningEffort)
+              run.onActivity('Codex did not report a default reasoning level for this model')
           }
-          run.onTextBoundary?.()
+          if (
+            startsGoal &&
+            saved.model &&
+            ((model && model !== saved.model) || (effort && effort !== saved.reasoningEffort))
+          ) {
+            // Goal commands start their own turn and cannot use turn/start settings.
+            await request('thread/settings/update', {
+              threadId: thread.id,
+              model,
+              effort,
+              serviceTier: tier,
+            }).catch((error: unknown) => {
+              if (!(error instanceof ResponseError && error.code === -32601)) throw error
+            })
+          }
+        }
+        clearTimeout(timeout)
+        if (run.goal) {
+          goalStatus = await codexGoal(request, thread.id, run.goal, acceptPrompt, run.onText)
+          if (startsGoal && goalStatus === 'active') {
+            waitForGoalTurn(true)
+            awaitingTurn = false
+            replayPending()
+            admitTurn()
+            await completed
+          } else {
+            turnFinished = true
+          }
+          succeeded = true
+          return
         }
         if (run.compact) {
           await request('thread/compact/start', { threadId: thread.id })
@@ -842,18 +957,15 @@ export function createCodexAdapter(): AgentAdapter {
                       },
               }
             : {}),
-          ...(run.agent.reasoning
-            ? {
-                effort: run.agent.reasoning,
-              }
-            : {}),
+          model,
+          effort,
           serviceTier: tier,
           ...(program
             ? {
                 cyberAccessProgram: program,
               }
             : {}),
-          input: turnInput(goalPrompt ? { ...run, prompt: goalPrompt } : run),
+          input: turnInput(run),
         })
         acceptPrompt()
         const turn = decodeResult(
@@ -871,22 +983,15 @@ export function createCodexAdapter(): AgentAdapter {
         // Admit requests received before the start acknowledgement before replaying terminal events.
         // Cancelled questions still return their protocol-level empty answer below.
         await Promise.resolve()
-        for (const event of pendingNotifications.splice(0))
-          consumeNotification(event.method, event.params)
-        pendingBytes = 0
-        if (!turnFinished && turn.success && turn.data.turn.status === 'inProgress') {
-          const expectedTurnId = turn.data.turn.id
-          run.onSteer?.(async (input) => {
-            promptAccepted = true
-            run.signal.throwIfAborted()
-            await rpc.sendRequest('turn/steer', {
-              threadId: thread.id,
-              expectedTurnId,
-              clientUserMessageId: input.id,
-              input: turnInput(input),
-            })
-          })
-        }
+        replayPending()
+        if (
+          !turnFinished &&
+          !goalHandoff &&
+          turn.success &&
+          turn.data.turn.status === 'inProgress' &&
+          activeTurnId === turn.data.turn.id
+        )
+          bindSteer(activeTurnId)
         await completed
         succeeded = true
       } catch (error) {
@@ -907,6 +1012,7 @@ export function createCodexAdapter(): AgentAdapter {
       } finally {
         run.onSteer?.(undefined)
         clearTimeout(timeout)
+        clearTimeout(goalHandoff)
         run.signal.removeEventListener('abort', abort)
         transport.consumeNotification = undefined
         transport.rejectTransport = undefined

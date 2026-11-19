@@ -17,9 +17,9 @@ function fixture() {
   }
 }
 
-it('sets a native goal with user provenance and returns a work prompt', async () => {
+it('sets a native goal with user provenance and returns its status', async () => {
   const f = fixture()
-  expect(await f.run({ action: 'set', objective: 'Fix tests' })).toContain('Fix tests')
+  expect(await f.run({ action: 'set', objective: 'Fix tests' })).toBe('active')
   expect(f.request).toHaveBeenCalledExactlyOnceWith('thread/goal/set', {
     threadId: 'thread',
     objective: 'Fix tests',
@@ -47,7 +47,7 @@ it.each(['get', 'clear', 'pause'] as const)('does not start model work for %s', 
 
 it('resumes without replacing the objective or resetting usage', async () => {
   const f = fixture()
-  expect(await f.run({ action: 'resume' })).toContain('Fix tests')
+  expect(await f.run({ action: 'resume' })).toBe('active')
   expect(f.request).toHaveBeenLastCalledWith('thread/goal/set', {
     threadId: 'thread',
     status: 'active',

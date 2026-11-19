@@ -61,7 +61,11 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (input.method === 'session/close') respond(input.id, {})
   if (input.method === 'session/delete') respond(input.id, {})
   if (input.method === 'session/set_mode') respond(input.id, {})
-  if (input.method === 'session/set_config_option') respond(input.id, { configOptions })
+  if (input.method === 'session/set_config_option') {
+    const option = configOptions.find(option => option.id === input.params.configId)
+    if (option && !(option.id === 'model' && process.env.TEST_IGNORE_ACP_MODEL)) option.currentValue = input.params.value
+    respond(input.id, { configOptions })
+  }
   if (input.method === 'session/prompt') { if (${nativeChildren === true}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
   if (input.id === 'permission-' + permissionIndex && input.method === undefined) { permissionIndex++; if (permissionIndex < permissionKinds.length) requestPermission(); else respond(pendingPrompt, { stopReason: 'end_turn' }) }
   if (input.method === 'session/prompt' && ${!!nativeChildren}) setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'native-approval',method:'session/request_permission',params:{sessionId:'native-child',toolCall:{toolCallId:'native-tool',kind:'execute',title:'Child command'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'reject',name:'Reject',kind:'reject_once'}]}})+'\\n'),30)
@@ -147,6 +151,7 @@ it('uses the installed launch, session mode and typed config values', async () =
   const input = run(cwd, launch, {
     onTextBoundary: () => boundaries.push(input.output.join('').length),
   })
+  input.run.agent.acpConfig = { ...input.run.agent.acpConfig, model: 'a' }
   await acpAdapter.run(input.run)
   expect(input.output).toEqual(['new'])
   expect(boundaries).toEqual([3])
@@ -167,6 +172,14 @@ it('uses the installed launch, session mode and typed config values', async () =
     messages.find((item: { method: string }) => item.method === 'initialize').params
       .clientCapabilities.terminal,
   ).toBe(true)
+})
+
+it('fails before prompting when the ACP agent leaves the requested model unchanged', async () => {
+  const { cwd, launch, record } = await fixture()
+  const input = run(cwd, { ...launch, env: { ...launch.env, TEST_IGNORE_ACP_MODEL: '1' } })
+  await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Model: b')
+  const calls = JSON.parse(await readFile(record, 'utf8'))
+  expect(calls.map((call: { method: string }) => call.method)).not.toContain('session/prompt')
 })
 
 it('does not append replayed messages while loading a session', async () => {

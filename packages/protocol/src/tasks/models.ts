@@ -177,12 +177,25 @@ export function serviceTierValue(value: string | undefined) {
 export function selectedCatalogModel(catalog: ModelCatalog | null | undefined, model: string) {
   return catalog?.models.find((entry) => (model ? entry.id === model : entry.isDefault))
 }
+export function modelReasoningLevels(catalog: ModelCatalog | null | undefined, model: string) {
+  const selected = selectedCatalogModel(catalog, model)
+  return (
+    selected?.reasoning ?? (!model || selected?.isDefault ? catalog?.reasoning : undefined) ?? []
+  )
+}
+
+export function isFastServiceTier(tier: string | undefined) {
+  return tier === 'fast' || tier === 'priority'
+}
+
 export function modelServiceTiers(
   catalog: ModelCatalog | null | undefined,
   model: string,
   saved?: string,
-) {
-  const tiers = selectedCatalogModel(catalog, model)?.serviceTiers ?? []
+): Array<{ id: string; name: string; description?: string; disabled?: boolean }> {
+  const tiers = (selectedCatalogModel(catalog, model)?.serviceTiers ?? []).filter(
+    (tier) => !catalog?.codex?.fastModeBlocked || !isFastServiceTier(tier.id),
+  )
   return [
     {
       id: 'default',
@@ -196,6 +209,7 @@ export function modelServiceTiers(
             id: saved,
             name: `${saved} (saved)`,
             description: 'Not advertised by the current harness',
+            disabled: true,
           },
         ]
       : []),

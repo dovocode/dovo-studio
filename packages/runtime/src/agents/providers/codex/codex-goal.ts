@@ -2,18 +2,20 @@ import { decode, mutableStruct, type GoalCommand } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { ResponseError } from 'vscode-jsonrpc/node'
 
+export const codexGoalStatus = Schema.Literals([
+  'active',
+  'paused',
+  'blocked',
+  'usageLimited',
+  'budgetLimited',
+  'complete',
+])
+
 const goalResponse = mutableStruct({
   goal: Schema.NullOr(
     mutableStruct({
       objective: Schema.String,
-      status: Schema.Literals([
-        'active',
-        'paused',
-        'blocked',
-        'usageLimited',
-        'budgetLimited',
-        'complete',
-      ]),
+      status: codexGoalStatus,
       tokensUsed: Schema.Number,
       timeUsedSeconds: Schema.Number,
     }),
@@ -27,7 +29,7 @@ export async function codexGoal(
   command: GoalCommand,
   accepted: () => void,
   text: (value: string) => void,
-): Promise<string | undefined> {
+): Promise<typeof codexGoalStatus.Type | undefined> {
   const call = async (method: string, params: object) => {
     try {
       return await request(method, params)
@@ -69,7 +71,5 @@ export async function codexGoal(
   text(
     `Goal ${goal.status}: ${goal.objective}\nUsage: ${goal.tokensUsed.toLocaleString('en-US')} tokens · ${goal.timeUsedSeconds}s`,
   )
-  return command.action === 'set' || command.action === 'resume'
-    ? `Continue working toward this goal: ${goal.objective}`
-    : undefined
+  if (command.action === 'set' || command.action === 'resume') return goal.status
 }

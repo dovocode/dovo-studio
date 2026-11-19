@@ -33,7 +33,8 @@ const fs=require('node:fs'), readline=require('node:readline');const messages=[]
 const mode=process.env.TEST_MODE;
 const send=m=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...m})+'\n');
 const reply=(id,result)=>send({id,result});const update=update=>send({method:'session/update',params:{sessionId:'s',update}});
-const configOptions=[{configId:'model',type:'select',name:'Model',category:'model',currentValue:'a',options:[{value:'a',name:'A'},{value:'b',name:'B'}]},{configId:'mode',type:'select',name:'Mode',category:'mode',currentValue:'code',options:[{value:'code',name:'Code'},{value:'plan',name:'Plan'}]},{configId:'toggle',type:'boolean',name:'Toggle',currentValue:false}];
+const configOptions=[{configId:'model',type:'select',name:'Model',...(mode==='categoryless-model'?{}:{category:'model'}),currentValue:'a',options:[{value:'a',name:'A'},{value:'b',name:'B'}]},{configId:'mode',type:'select',name:'Mode',category:'mode',currentValue:'code',options:[{value:'code',name:'Code'},{value:'plan',name:'Plan'}]},{configId:'toggle',type:'boolean',name:'Toggle',currentValue:false}];
+if(mode==='categoryless-model')configOptions.push({configId:'thought',type:'select',name:'Effort',category:'thought_level',currentValue:'low',options:[{value:'low',name:'Low'},{value:'high',name:'High'}]});
 let pending;
 const background=[{type:'terminal',terminalId:'background'}];
 const cancelBackground=mode.startsWith('cancel-background');
@@ -65,7 +66,11 @@ if(mode==='busy-input') {
  send({id:'resumed-permission',method:'session/request_permission',params:{sessionId:'s',title:'Continue build',subject:{type:'command',command:'pnpm build',cwd:process.cwd()},options:[{optionId:'yes',name:'Allow',kind:'allow_once'},{optionId:'no',name:'Reject',kind:'reject_once'}]}})
 }
 if(mode==='busy')setTimeout(()=>update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn'}),40)}
-else if(m.method==='session/set_config_option')reply(m.id,{configOptions});
+else if(m.method==='session/set_config_option'){
+ const option=configOptions.find(option=>option.configId===m.params.configId);
+ if(option&&mode!=='ignore-config')option.currentValue=m.params.value;
+ reply(m.id,{configOptions});
+}
 else if(m.method==='session/prompt'){
  if(mode.startsWith('v1')){update({sessionUpdate:'agent_message_chunk',content:{type:'text',text:'v1 reply'}});reply(m.id,{stopReason:'end_turn'});return}
  if(cancelBackground) { announce(); chunk('Before Stop. '); update({sessionUpdate:'state_update',state:'running',background}); }
@@ -148,13 +153,12 @@ async function withRuntime(
 it('waits beyond the prompt acknowledgment, replaces messages, and reuses a v2 session', async () => {
   const f = await fixture()
   f.run.taskId = 'thread'
-  const accepted = Promise.withResolvers<void>()
   let completed = false
-  f.run.onPromptAccepted = () => accepted.resolve()
+  const accepted = new Promise<void>((resolve) => (f.run.onPromptAccepted = resolve))
   const running = f.adapter.run(f.run).then(() => {
     completed = true
   })
-  await accepted.promise
+  await accepted
   expect(completed).toBe(false)
   await running
   expect(f.output.join('')).toBe('Final answer')
@@ -178,7 +182,7 @@ it.each(['stream-exit', 'stream-error'])(
   'retains the last terminal receipt after %s',
   async (mode) => {
     const f = await fixture(mode)
-    await expect(f.adapter.run(f.run)).rejects.toThrow()
+    await expect(f.adapter.run(f.run)).rejects.toBeInstanceOf(Error)
     const receipt = f.events.filter(({ name }) => name === 'tool_call_update').at(-1)
     expect(
       toolPresentation(JSON.stringify({ event: receipt?.value }), 'Agent terminal').output,
@@ -310,6 +314,40 @@ it('uses typed config IDs for model, mode, and boolean configuration', async () 
     { sessionId: 's', configId: 'model', type: 'id', value: 'b' },
     { sessionId: 's', configId: 'toggle', type: 'boolean', value: true },
   ])
+})
+
+it('discovers and uses a categoryless ACP v2 model with model-specific reasoning', async () => {
+  const f = await fixture('categoryless-model')
+  const catalog = await acpModels({ ...f.run.agent, provider: 'acp', model: 'b' }, f.launch)
+  expect(catalog.models).toEqual([
+    { id: 'a', name: 'A', isDefault: false },
+    { id: 'b', name: 'B', isDefault: true, defaultReasoning: 'low' },
+  ])
+  await f.adapter.run({
+    ...f.run,
+    agent: {
+      ...f.run.agent,
+      model: 'b',
+      reasoning: 'high',
+      acpConfig: { model: 'a', thought: 'low' },
+    },
+  })
+  expect(f.output.join('')).toBe('Final answer')
+  expect(
+    (await f.messages()).filter(({ method }) => method === 'session/set_config_option'),
+  ).toEqual([
+    expect.objectContaining({ params: expect.objectContaining({ configId: 'model', value: 'b' }) }),
+    expect.objectContaining({
+      params: expect.objectContaining({ configId: 'thought', value: 'high' }),
+    }),
+  ])
+})
+
+it('does not prompt when ACP v2 acknowledges a model change but keeps the old model', async () => {
+  const f = await fixture('ignore-config')
+  f.run.agent.model = 'b'
+  await expect(f.adapter.run(f.run)).rejects.toThrow('ACP did not apply Model: b')
+  expect((await f.messages()).map(({ method }) => method)).not.toContain('session/prompt')
 })
 
 it.each(['v1', 'v1-error'])(

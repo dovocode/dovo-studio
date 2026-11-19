@@ -9,6 +9,7 @@ import {
   modelCatalogChoices,
   modelDiscoveryInput,
   modelCatalogSchema,
+  modelReasoningLevels,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
@@ -117,6 +118,50 @@ it('discovers Fast for the default model without assuming priority and preserves
   expect(serviceTierValue('')).toBe('default')
   expect(serviceTierValue(undefined)).toBe('default')
 })
+it('keeps Flex available under a Fast restriction and disables unavailable saved tiers', () => {
+  const catalog = decode(modelCatalogSchema, {
+    models: [
+      {
+        id: 'model',
+        name: 'Model',
+        isDefault: true,
+        serviceTiers: [
+          { id: 'priority', name: 'Fast' },
+          { id: 'flex', name: 'Flex' },
+        ],
+      },
+    ],
+    reasoning: [],
+    codex: { daybreakPrograms: [], fastModeBlocked: true },
+  })
+  expect(modelServiceTiers(catalog, '', 'priority')).toMatchObject([
+    { id: 'default' },
+    { id: 'flex' },
+    { id: 'priority', disabled: true },
+  ])
+  expect(modelServiceTiers(catalog, 'custom', 'flex').at(-1)).toMatchObject({
+    id: 'flex',
+    disabled: true,
+  })
+})
+
+it('uses the default model effort only for that model and preserves explicit per-model choices', () => {
+  const levels = [{ id: 'high', name: 'High' }]
+  const catalog = decode(modelCatalogSchema, {
+    models: [
+      { id: 'default-model', name: 'Default', isDefault: true },
+      { id: 'other', name: 'Other', reasoning: [{ id: 'low', name: 'Low' }] },
+      { id: 'unknown', name: 'Unknown' },
+    ],
+    reasoning: levels,
+  })
+  expect(modelReasoningLevels(catalog, '')).toEqual(levels)
+  expect(modelReasoningLevels(catalog, 'default-model')).toEqual(levels)
+  expect(modelReasoningLevels(catalog, 'other')).toEqual([{ id: 'low', name: 'Low' }])
+  expect(modelReasoningLevels(catalog, 'unknown')).toEqual([])
+  expect(modelReasoningLevels(catalog, 'custom')).toEqual([])
+})
+
 it('only offers advertised Daybreak programs, retaining unavailable saved selections visibly', () => {
   const catalog = decode(modelCatalogSchema, {
     models: [],

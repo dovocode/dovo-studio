@@ -1020,12 +1020,16 @@ export function createClaudeAdapter(): AgentAdapter {
           goalInput.close()
         }
         let compacted = false
+        let completed = false
         for await (const message of stream) {
           if (message.type === 'system' && message.subtype === 'init')
             capabilities.unanswered =
               message.capabilities?.includes('ask_user_question_unanswered_v1') ?? false
           handleMessage(run, message, () => (compacted = true))
+          if (message.type === 'result') completed = true
         }
+        run.signal.throwIfAborted()
+        if (!completed) throw new Error('Claude connection ended before the result')
         if (run.compact && !compacted)
           throw new Error('Claude did not report a completed compaction')
       } finally {

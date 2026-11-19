@@ -1,5 +1,5 @@
 import { mutableArray, mutableStruct } from '@dovo/protocol'
-import { decode } from '@dovo/protocol'
+import { decode, isFastServiceTier } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { withCatalogRpc } from './rpc.js'
@@ -37,6 +37,60 @@ const pageSchema = mutableStruct({
   ),
   nextCursor: Schema.optional(Schema.NullOr(Schema.String)),
 })
+
+type CodexRequest = (method: string, params: object) => Promise<unknown>
+
+async function* codexModelRows(request: CodexRequest) {
+  let cursor: string | null | undefined
+  const seen = new Set<string>()
+  do {
+    const page = decode(
+      pageSchema,
+      await request('model/list', {
+        limit: 100,
+        includeHidden: true,
+        ...(cursor ? { cursor } : {}),
+      }),
+    )
+    yield* page.data
+    cursor = page.nextCursor
+    if (cursor && seen.has(cursor)) throw new Error('Model discovery returned a repeated page')
+    if (cursor) seen.add(cursor)
+  } while (cursor)
+}
+
+const configuredDefaults = mutableStruct({
+  config: Schema.optional(
+    mutableStruct({
+      model: Schema.optional(Schema.NullOr(Schema.String)),
+      model_reasoning_effort: Schema.optional(Schema.NullOr(Schema.String)),
+    }),
+  ),
+})
+
+/** A loaded thread can retain the last turn's model and effort when fields are omitted. */
+export async function codexTurnDefaults(
+  request: CodexRequest,
+  cwd: string,
+  model: string,
+  effort: string | undefined,
+) {
+  const { config } = decode(
+    configuredDefaults,
+    await request('config/read', { cwd, includeLayers: false }).catch((error: unknown) => {
+      if (error instanceof ResponseError && error.code === -32601) return {}
+      throw error
+    }),
+  )
+  const selectedModel = model || config?.model || undefined
+  const selectedEffort = effort || config?.model_reasoning_effort || undefined
+  if (selectedModel && selectedEffort) return { model: selectedModel, effort: selectedEffort }
+  for await (const row of codexModelRows(request)) {
+    if (selectedModel ? row.model === selectedModel : row.isDefault)
+      return { model: row.model, effort: selectedEffort ?? row.defaultReasoningEffort }
+  }
+  return { model: selectedModel, effort: selectedEffort }
+}
 /** Ask the configured app-server, so separate CODEX_HOME and API-key logins
  * and custom providers are checked with the same configuration used to run a conversation. */
 export async function codexAuthenticated(agent: AgentDiscovery): Promise<boolean> {
@@ -128,54 +182,37 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
         }),
       )
       const models: ModelCatalog['models'] = []
-      let cursor: string | null | undefined,
-        reasoning: ModelCatalog['reasoning'] = []
-      const seen = new Set<string>()
-      do {
-        const page = decode(
-          pageSchema,
-          await rpc.sendRequest('model/list', {
-            limit: 100,
-            includeHidden: true,
-            ...(cursor
-              ? {
-                  cursor,
-                }
-              : {}),
-          }),
-        )
-        for (const model of page.data) {
-          const efforts = model.supportedReasoningEfforts.map((e) => ({
-            id: e.reasoningEffort,
-            name: e.reasoningEffort,
-          }))
-          models.push({
-            id: model.model,
-            name: model.displayName,
-            description: model.description,
-            isDefault: model.isDefault,
-            hidden: model.hidden,
-            specialty: model.modelSpecialty ?? undefined,
-            defaultReasoning: model.defaultReasoningEffort,
-            defaultServiceTier: model.defaultServiceTier ?? undefined,
-            // Older Codex catalogs used additionalSpeedTiers. Modern IDs are authoritative:
-            // e.g. priority is the app-server ID, even when the CLI flag is named fast.
-            serviceTiers: (
-              model.serviceTiers ??
-              model.additionalSpeedTiers?.map((id) => ({
-                id,
-                name: id === 'fast' ? 'Fast' : id,
-                description: id === 'fast' ? 'Faster responses, increased usage' : undefined,
-              }))
-            )?.filter((tier) => !fastModeBlocked || !['fast', 'priority'].includes(tier.id)),
-            reasoning: efforts,
-          })
-          if (model.isDefault) reasoning = efforts
-        }
-        cursor = page.nextCursor
-        if (cursor && seen.has(cursor)) throw new Error('Model discovery returned a repeated page')
-        if (cursor) seen.add(cursor)
-      } while (cursor)
+      let reasoning: ModelCatalog['reasoning'] = []
+      for await (const model of codexModelRows((method, params) =>
+        rpc.sendRequest(method, params),
+      )) {
+        const efforts = model.supportedReasoningEfforts.map((e) => ({
+          id: e.reasoningEffort,
+          name: e.reasoningEffort,
+        }))
+        models.push({
+          id: model.model,
+          name: model.displayName,
+          description: model.description,
+          isDefault: model.isDefault,
+          hidden: model.hidden,
+          specialty: model.modelSpecialty ?? undefined,
+          defaultReasoning: model.defaultReasoningEffort,
+          defaultServiceTier: model.defaultServiceTier ?? undefined,
+          // Older Codex catalogs used additionalSpeedTiers. Modern IDs are authoritative:
+          // e.g. priority is the app-server ID, even when the CLI flag is named fast.
+          serviceTiers: (
+            model.serviceTiers ??
+            model.additionalSpeedTiers?.map((id) => ({
+              id,
+              name: id === 'fast' ? 'Fast' : id,
+              description: id === 'fast' ? 'Faster responses, increased usage' : undefined,
+            }))
+          )?.filter((tier) => !fastModeBlocked || !isFastServiceTier(tier.id)),
+          reasoning: efforts,
+        })
+        if (model.isDefault) reasoning = efforts
+      }
       const daybreakPrograms =
         supportsCodexDaybreak(initialized) && account.account?.type === 'chatgpt'
           ? models.flatMap((model) => {

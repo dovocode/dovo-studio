@@ -112,7 +112,21 @@ try {
   await waitRequests(1)
   await page.evaluate(() => window.harness('opencode'))
   await waitRequests(2)
-  await finish(0, catalog('gpt-5.1-sol', 'GPT-5.1 Sol'))
+  await finish(0, {
+    models: [
+      {
+        id: 'gpt-5.1-sol',
+        name: 'GPT-5.1 Sol',
+        isDefault: true,
+        serviceTiers: [
+          { id: 'priority', name: 'Fast' },
+          { id: 'flex', name: 'Flex' },
+        ],
+      },
+    ],
+    reasoning: [],
+    codex: { fastModeBlocked: true, daybreakPrograms: [] },
+  })
   if (await page.getByRole('option', { name: '5.1 Sol', exact: true }).count())
     throw new Error('Late Codex response leaked into OpenCode')
   await finish(
@@ -161,6 +175,10 @@ try {
   await page.reload()
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByRole('option', { name: '5.1 Sol', exact: true }).waitFor({ state: 'attached' })
+  const speed = page.getByRole('combobox', { name: 'Speed', exact: true })
+  await speed.selectOption('flex')
+  if (await speed.locator('option[value="priority"]:enabled').count())
+    throw new Error('Managed Fast restriction must disable Fast')
   await page.evaluate(() => window.harness('opencode'))
   await page
     .getByRole('option', { name: 'Updated Host Model', exact: true })
@@ -212,7 +230,7 @@ try {
       const selected = await page.evaluate((index) => window.requests[index].input, before + 1)
       if (selected.model !== id) throw new Error('Grok reasoning discovery lost the selected model')
       await finish(before + 1, {
-        models: [{ id, name }],
+        models: [{ id, name, isDefault: true }],
         reasoning: [{ id: high, name: 'High' }],
       })
     }

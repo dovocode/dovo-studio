@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
+import { isFastServiceTier, selectPermissionPreset, permissionPolicyLabel } from '@dovo/protocol'
 import { useState, type ComponentProps, type ReactNode } from 'react'
 import {
   Check,
@@ -352,7 +352,7 @@ export function ComposerSettingsControls({
             ? modelSelectionDifficulty || 'auto'
             : value.reasoning || selected?.defaultReasoning || ''
         }
-        fast={!automatic && ['priority', 'fast'].includes(value.serviceTier ?? '')}
+        fast={!automatic && isFastServiceTier(value.serviceTier)}
       />
     </div>
   )

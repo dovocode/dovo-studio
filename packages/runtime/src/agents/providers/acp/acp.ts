@@ -513,6 +513,8 @@ export function createAcpAdapter(): AgentAdapter {
                 'model selection',
               )
               configOptions = updated.configOptions
+              if (acpModelOption(configOptions)?.currentValue !== run.agent.model)
+                throw new Error(`ACP did not apply ${model.name}: ${run.agent.model}`)
             }
           }
           if (run.agent.reasoning) {
@@ -532,10 +534,20 @@ export function createAcpAdapter(): AgentAdapter {
                 'reasoning selection',
               )
             ).configOptions
+            if (
+              configOptions?.find((updated) => updated.id === option.id)?.currentValue !==
+              run.agent.reasoning
+            )
+              throw new Error(`ACP did not apply ${option.name}: ${run.agent.reasoning}`)
           }
           for (const [configId, value] of Object.entries(run.agent.acpConfig ?? {})) {
             const option = configOptions?.find((item) => item.id === configId)
             if (!option) throw new Error(`ACP configuration ${configId} is unavailable`)
+            if (
+              (run.agent.model && acpModelOption(configOptions)?.id === configId) ||
+              (run.agent.reasoning && option.category === 'thought_level')
+            )
+              continue
             if (restrictive && option.category === 'mode')
               throw new Error('ACP mode configuration cannot override read-only execution')
             if (option.type === 'boolean') {

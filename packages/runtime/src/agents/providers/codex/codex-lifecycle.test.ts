@@ -2,7 +2,7 @@ import { ChildProcess } from 'node:child_process'
 import * as processes from 'node:child_process'
 import { PassThrough } from 'node:stream'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import type { AgentRun } from '../../execution/types'
+import type { AgentRun, AgentSteer } from '../../execution/types'
 import * as owned from '../../execution/stop-owned-child'
 import { createCodexAdapter } from './codex'
 
@@ -18,7 +18,10 @@ afterEach(async () => {
   vi.mocked(processes.spawn).mockReset()
 })
 
-function fixture(errors: Record<string, { code: number; message: string }> = {}) {
+function fixture(
+  errors: Record<string, { code: number; message: string }> = {},
+  responses: Record<string, object> = {},
+) {
   const child = new ChildProcess()
   const input = new PassThrough()
   const output = new PassThrough()
@@ -28,6 +31,11 @@ function fixture(errors: Record<string, { code: number; message: string }> = {})
   const stop = vi.spyOn(owned, 'stopOwnedChild').mockResolvedValue(undefined)
   const spawn = vi.mocked(processes.spawn).mockReturnValue(child)
   const send = (value: object) => output.write(JSON.stringify(value) + '\n')
+  const notify = (method: string, params: object, threadId = 'thread') =>
+    send({ method, params: { threadId, ...params } })
+  const complete = (id: string, status = 'completed') =>
+    notify('turn/completed', { turn: { id, status } })
+  const goal = (status: string) => notify('thread/goal/updated', { goal: { status } })
   const started = vi.fn<() => void>()
   const requests: Array<{ method: string; params: unknown }> = []
   input.on('data', (data: Buffer) => {
@@ -53,7 +61,7 @@ function fixture(errors: Record<string, { code: number; message: string }> = {})
                 },
               }
             : {}
-    send({ id: message.id, result })
+    send({ id: message.id, result: responses[message.method] ?? result })
     if (message.method === 'turn/start') started()
   })
   const controller = new AbortController()
@@ -79,7 +87,22 @@ function fixture(errors: Record<string, { code: number; message: string }> = {})
   }
   const adapter = createCodexAdapter()
   adapters.push(adapter)
-  return { child, input, output, stop, spawn, send, started, controller, run, adapter, requests }
+  return {
+    child,
+    input,
+    output,
+    stop,
+    spawn,
+    send,
+    notify,
+    complete,
+    goal,
+    started,
+    controller,
+    run,
+    adapter,
+    requests,
+  }
 }
 
 it.each([-32600, -32601])(
@@ -118,28 +141,178 @@ it.each(['get', 'clear', 'pause'] as const)(
     const f = fixture()
     await f.adapter.run({ ...f.run, sessionId: 'thread', goal: { action } })
     expect(f.started).not.toHaveBeenCalled()
+    expect(f.requests.some((request) => request.method === 'thread/resume')).toBe(false)
     expect(f.requests.some((request) => request.method.startsWith('thread/goal/'))).toBe(true)
     expect(f.run.onText).toHaveBeenCalled()
   },
 )
 
-it('sets a native goal before starting work and uses its objective as the prompt', async () => {
+it.each(['set', 'resume'] as const)(
+  'follows the turn Codex starts after goal %s',
+  async (action) => {
+    const f = fixture()
+    const result = f.adapter.run({
+      ...f.run,
+      sessionId: action === 'resume' ? 'thread' : undefined,
+      goal: action === 'set' ? { action, objective: 'Fix tests' } : { action },
+    })
+    try {
+      await vi.waitFor(() =>
+        expect(f.requests.some(({ method }) => method === 'thread/goal/set')).toBe(true),
+      )
+      f.notify('turn/started', { turn: { id: 'goal-turn', status: 'inProgress' } })
+      f.notify('item/agentMessage/delta', { turnId: 'goal-turn', delta: 'Goal output' })
+      f.goal('complete')
+      f.complete('goal-turn')
+      await vi.waitFor(() => expect(f.run.onText).toHaveBeenCalledWith('Goal output'))
+      await result
+      expect(f.started).not.toHaveBeenCalled()
+    } finally {
+      f.controller.abort()
+      await result.catch(() => {})
+    }
+  },
+)
+
+it('streams successive Codex goal turns and keeps questions and steering with the current turn', async () => {
   const f = fixture()
-  const result = f.adapter.run({ ...f.run, goal: { action: 'set', objective: 'Fix tests' } })
-  await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
-  const set = f.requests.findIndex((request) => request.method === 'thread/goal/set')
-  const start = f.requests.findIndex((request) => request.method === 'turn/start')
-  expect(set).toBeGreaterThan(-1)
-  expect(start).toBeGreaterThan(set)
-  expect(f.requests[start].params).toMatchObject({
-    input: [{ type: 'text', text: 'Continue working toward this goal: Fix tests' }],
-  })
-  f.send({
-    method: 'turn/completed',
-    params: { threadId: 'thread', turn: { id: 'turn', status: 'completed' } },
-  })
-  await result
+  let steer: AgentSteer | undefined
+  f.run.onSteer = (value) => {
+    steer = value
+  }
+  f.run.onNativeTurnEnd = vi.fn<() => void>()
+  f.run.ask = vi.fn<AgentRun['ask']>().mockResolvedValue(null)
+  const result = f.adapter.run({ ...f.run, sessionId: 'thread' })
+  try {
+    await vi.waitFor(() => expect(steer).toBeTypeOf('function'))
+    const initialSteer = steer!
+    f.goal('active')
+    f.complete('turn')
+    f.notify('turn/started', { turn: { id: 'child-turn' } }, 'child')
+    f.notify('thread/goal/cleared', {}, 'child')
+    f.notify('item/agentMessage/delta', { turnId: 'turn', delta: 'Late output' })
+    f.notify('turn/started', { turn: { id: 'goal-1', status: 'inProgress' } })
+    f.send({
+      id: 'question',
+      method: 'item/tool/requestUserInput',
+      params: {
+        threadId: 'thread',
+        turnId: 'goal-1',
+        itemId: 'question',
+        questions: [{ id: 'choice', header: 'Choice', question: 'Which way?', options: null }],
+      },
+    })
+    await vi.waitFor(() => expect(f.run.ask).toHaveBeenCalledOnce())
+    expect(f.run.onNativeTurnEnd).not.toHaveBeenCalled()
+    expect(f.run.onText).not.toHaveBeenCalled()
+    expect(f.stop).not.toHaveBeenCalled()
+    await expect(initialSteer({ id: 'stale', prompt: 'Old turn' })).rejects.toThrow('has ended')
+    await steer!({ id: 'steer', prompt: 'Goal turn' })
+    expect(f.requests.find(({ method }) => method === 'turn/steer')?.params).toMatchObject({
+      expectedTurnId: 'goal-1',
+    })
+    f.complete('goal-1')
+    f.notify('turn/started', { turn: { id: 'goal-2', status: 'inProgress' } })
+    f.complete('goal-1')
+    f.goal('complete')
+    f.notify('item/agentMessage/delta', { turnId: 'goal-2', delta: 'Final goal answer' })
+    f.complete('goal-2')
+    await result
+    expect(f.run.onText).toHaveBeenCalledExactlyOnceWith('Final goal answer')
+    expect(f.run.onNativeTurnEnd).toHaveBeenCalledOnce()
+    expect(f.started).toHaveBeenCalledOnce()
+  } finally {
+    f.controller.abort()
+    await result.catch(() => {})
+  }
 })
+
+it.each(['handoff', 'continuation'] as const)('can Stop during a goal %s', async (phase) => {
+  const f = fixture()
+  let steer: AgentSteer | undefined
+  f.run.onSteer = (value) => {
+    steer = value
+  }
+  const result = f.adapter.run(f.run)
+  void result.catch(() => {})
+  await vi.waitFor(() => expect(steer).toBeTypeOf('function'))
+  const initialSteer = steer
+  f.goal('active')
+  f.complete('turn')
+  await vi.waitFor(() => expect(steer).toBeUndefined())
+  if (phase === 'continuation')
+    f.notify('turn/started', { turn: { id: 'goal-turn', status: 'inProgress' } })
+  await vi.waitFor(() =>
+    expect(typeof steer).toBe(phase === 'continuation' ? 'function' : 'undefined'),
+  )
+  expect(steer).not.toBe(initialSteer)
+  f.controller.abort()
+  await expect(result).rejects.toThrow('Task cancelled')
+  expect(f.stop).toHaveBeenCalledExactlyOnceWith(f.child)
+})
+
+it('settles when Codex keeps a goal active without starting a continuation', async () => {
+  const f = fixture()
+  const result = f.adapter.run(f.run)
+  await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
+  f.goal('active')
+  f.complete('turn')
+  await result
+  expect(f.started).toHaveBeenCalledOnce()
+})
+
+it.each([
+  { model: 'chosen', reasoning: 'low', expected: { model: 'chosen', effort: 'low' } },
+  { model: 'chosen', reasoning: '', expected: { model: 'chosen', effort: 'medium' } },
+  { model: '', reasoning: '', expected: { model: 'configured', effort: 'high' } },
+])(
+  'applies $expected.model and $expected.effort to a loaded Codex thread',
+  async ({ model, reasoning, expected }) => {
+    const f = fixture(
+      {},
+      {
+        'thread/resume': { thread: { id: 'thread' }, model: 'previous', reasoningEffort: 'xhigh' },
+        'config/read': { config: { model: 'configured', model_reasoning_effort: null } },
+        'model/list': {
+          data: [
+            {
+              model: 'chosen',
+              displayName: 'Chosen',
+              description: '',
+              isDefault: false,
+              defaultReasoningEffort: 'medium',
+              supportedReasoningEfforts: [],
+            },
+            {
+              model: 'configured',
+              displayName: 'Configured',
+              description: '',
+              isDefault: true,
+              defaultReasoningEffort: 'high',
+              supportedReasoningEfforts: [],
+            },
+          ],
+        },
+      },
+    )
+    const result = f.adapter.run({
+      ...f.run,
+      sessionId: 'thread',
+      agent: { ...f.run.agent, model, reasoning },
+    })
+    void result.catch(() => {})
+    try {
+      await vi.waitFor(() => expect(f.started).toHaveBeenCalledOnce())
+      expect(f.requests.find(({ method }) => method === 'turn/start')?.params).toMatchObject({
+        ...expected,
+        serviceTier: 'default',
+      })
+    } finally {
+      f.complete('turn')
+      await result
+    }
+  },
+)
 
 it.each(['eof', 'read-error', 'write-error', 'write-close'] as const)(
   'fails an active completed wait after %s while the child remains alive',

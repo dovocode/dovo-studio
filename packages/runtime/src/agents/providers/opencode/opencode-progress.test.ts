@@ -1,6 +1,6 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import sharp from 'sharp'
 import { OpenCode, type JobInfo } from '@opencode/client'
 import type { AgentRun } from '../../execution/types.js'
@@ -71,6 +71,8 @@ async function fixture() {
       response.setHeader('Content-Type', 'application/json')
       const json = (value: unknown) => response.end(JSON.stringify(value))
       if (path === '/api/info') return json({ version })
+      if (path === '/api/model/default')
+        return json({ data: { providerID: 'configured', modelID: 'default/model' } })
       if (path === '/api/session/session' && request.method === 'GET')
         return json({ data: { tokens: 0, cost: 0 } })
       if (path === '/api/session/active') return json({ data: {} })
@@ -233,6 +235,39 @@ const shell: JobInfo = {
   time: { started: 1 },
 }
 
+it.each([undefined, 'session'])(
+  'uses the project default model with the selected variant for session %s',
+  async (sessionId) => {
+    const f = await fixture()
+    const running = opencodeV2Adapter.run({
+      ...f.run,
+      sessionId,
+      agent: { ...f.run.agent, model: '', reasoning: 'high' },
+    })
+    void running.catch(() => {})
+    try {
+      await Promise.race([f.prompted.promise, running])
+      expect(
+        f.calls.find(({ path }) => path === '/api/model/default')?.query.get('location[directory]'),
+      ).toBe(f.run.cwd)
+      expect(
+        f.calls.find(
+          ({ path }) => path === (sessionId ? '/api/session/session/model' : '/api/session'),
+        )?.body,
+      ).toMatchObject({
+        model: { providerID: 'configured', id: 'default/model', variant: 'high' },
+      })
+      f.emit('session.execution.started', { sessionID: 'session' })
+      f.emit('session.execution.succeeded', { sessionID: 'session' })
+      await running
+    } finally {
+      f.controller.abort()
+      await running.catch(() => {})
+      await f.close()
+    }
+  },
+)
+
 it('restores missed completion and text from durable events without resending work', async () => {
   const f = await fixture()
   const text: string[] = []
@@ -263,6 +298,68 @@ it('restores missed completion and text from durable events without resending wo
     expect(f.calls.filter((call) => call.path.endsWith('/prompt'))).toHaveLength(1)
     expect(f.calls.some((call) => call.path.endsWith('/interrupt'))).toBe(false)
   } finally {
+    await f.close()
+  }
+})
+
+it('restores all goal executions that finished while the event stream was offline', async () => {
+  const f = await fixture()
+  const text = vi.fn<AgentRun['onText']>()
+  f.run.onText = text
+  const running = opencodeV2Adapter.run(f.run)
+  void running.catch(() => {})
+  try {
+    await f.prompted.promise
+    f.emit('session.execution.started', { sessionID: 'session' })
+    await vi.waitFor(() =>
+      expect(f.events.some(({ name }) => name === 'session.execution.started')).toBe(true),
+    )
+    f.disconnect()
+    f.emit('session.execution.succeeded', { sessionID: 'session' })
+    f.emit('session.execution.started', { sessionID: 'session' })
+    f.emit('session.text.ended', {
+      sessionID: 'session',
+      assistantMessageID: 'goal-answer',
+      ordinal: 0,
+      text: 'Goal finished.',
+    })
+    f.emit('session.execution.succeeded', { sessionID: 'session' })
+    await running
+    expect(text).toHaveBeenCalledExactlyOnceWith('Goal finished.')
+    expect(f.calls.filter(({ path }) => path.endsWith('/prompt'))).toHaveLength(1)
+  } finally {
+    f.controller.abort()
+    await running.catch(() => {})
+    await f.close()
+  }
+})
+
+it('settles an idle goal paused while disconnected without waiting for another execution', async () => {
+  const f = await fixture()
+  const running = opencodeV2Adapter.run(f.run)
+  void running.catch(() => {})
+  try {
+    await f.prompted.promise
+    const goal = { objective: 'Finish work', status: 'active', rounds: 1 }
+    f.goal = goal
+    f.emit('session.execution.started', { sessionID: 'session' })
+    f.emit('session.execution.succeeded', { sessionID: 'session' })
+    await vi.waitFor(() =>
+      expect(f.events).toContainEqual({
+        name: 'dovo/opencode/goal',
+        payload: { ...goal, sessionId: 'session' },
+      }),
+    )
+    f.disconnect()
+    f.goal = { ...goal, status: 'paused' }
+    await running
+    expect(f.events).toContainEqual({
+      name: 'dovo/opencode/goal',
+      payload: { ...goal, status: 'paused', sessionId: 'session' },
+    })
+  } finally {
+    f.controller.abort()
+    await running.catch(() => {})
     await f.close()
   }
 })

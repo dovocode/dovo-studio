@@ -80,6 +80,45 @@ it('checks native goal support before sending the command and renders local outp
   mocks.query.mockReset()
 })
 
+it('reports a closed one-off Claude stream as a failure when the result is missing', async () => {
+  mocks.query.mockImplementation(() => ({
+    async *[Symbol.asyncIterator]() {
+      yield {
+        type: 'stream_event',
+        event: {
+          type: 'content_block_delta',
+          delta: { type: 'text_delta', text: 'Partial output' },
+        },
+        session_id: 'session',
+      }
+    },
+    close: vi.fn<() => void>(),
+  }))
+  const onText = vi.fn<AgentRun['onText']>()
+  await expect(
+    claudeAdapter.run({
+      agent: {
+        id: 'agent',
+        name: 'Claude',
+        provider: 'claude',
+        permission: 'ask',
+        endpoint: '',
+        model: '',
+        instructions: '',
+      },
+      cwd: '/tmp',
+      prompt: 'Check the task',
+      signal: new AbortController().signal,
+      onSession: () => {},
+      onActivity: () => {},
+      onText,
+      approve: async () => 'deny',
+      ask: async () => null,
+    }),
+  ).rejects.toThrow('Claude connection ended before the result')
+  expect(onText).toHaveBeenCalledExactlyOnceWith('Partial output')
+})
+
 it('keeps Claude proxy instances separate from local MCP and native tools', async () => {
   const observed: Options[] = []
   const mcpConfigs: unknown[] = []

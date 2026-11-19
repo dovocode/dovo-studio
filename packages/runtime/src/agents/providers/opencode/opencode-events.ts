@@ -17,6 +17,7 @@ export async function* opencodeEvents(
 ): AsyncGenerator<
   | V2Event
   | SessionEventDurable
+  | { type: 'dovo/replay/completed' }
   | { id: string; created: number; type: 'form.created'; data: { form: FormInfo } }
 > {
   let cursor: number | undefined
@@ -42,21 +43,27 @@ export async function* opencodeEvents(
             throw new Error(
               'OpenCode disconnected before its execution identity was received. Review the session before retrying.',
             )
-          // Refresh jobs/goals/checklist before replaying a possible terminal event.
+          // Refresh jobs and checklist before replaying a possible terminal event.
           yield event
           if (current.submitted && !current.parentFinished) {
             let count = 0
+            let synced = false
             for await (const saved of api.experimental.session.log(
               { sessionID, after: cursor, follow: false },
               { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
             )) {
-              if (saved.type === 'log.synced') continue
+              if (saved.type === 'log.synced') {
+                if (saved.aggregateID === sessionID) synced = true
+                continue
+              }
               if (++count > 2000) throw new Error('OpenCode recovery exceeds the event limit.')
               if (saved.data.sessionID !== sessionID || saved.durable.seq <= (cursor ?? -1))
                 continue
               yield saved
               cursor = saved.durable.seq
             }
+            if (!synced) throw new Error('OpenCode disconnected before confirming session recovery')
+            yield { type: 'dovo/replay/completed' }
           }
           if (current.submitted) {
             // Child requests can arrive while disconnected, including after the parent ends.

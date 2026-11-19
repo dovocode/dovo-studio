@@ -21,6 +21,8 @@ import {
   planModeIssue,
   selectedCatalogModel,
   serviceTierValue,
+  isFastServiceTier,
+  modelReasoningLevels,
 } from '@dovo/protocol'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
@@ -209,12 +211,12 @@ export function Composer({
         minimal: 'Minimal',
         none: 'None',
       }[reasoning] ??
-      (selectedModel?.reasoning ?? modelCatalog?.reasoning)?.find(
+      modelReasoningLevels(modelCatalog, composerAgent?.model ?? '').find(
         (effort) => effort.id === reasoning,
       )?.name ??
       reasoning)
     : 'Default'
-  const fastMode = ['priority', 'fast'].includes(serviceTierValue(composerAgent?.serviceTier))
+  const fastMode = isFastServiceTier(serviceTierValue(composerAgent?.serviceTier))
   const { activeId: stashRuntimeId } = useRuntime()
   const checkoutEditable = !task.bot && engineCheckoutEditable
   const checkoutAction = useAction()

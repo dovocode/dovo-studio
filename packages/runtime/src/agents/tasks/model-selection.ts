@@ -8,6 +8,7 @@ import {
   modelCatalogSchema,
   modelDiscoveryInput,
   modelPreferenceKey,
+  modelReasoningLevels,
   mutableStruct,
   providerSchema,
   resolveTaskAgent,
@@ -333,7 +334,9 @@ export class ModelSelection {
               name: `${agent.name} · ${model.name}`,
               description: model.description,
               specialty: model.specialty,
-              reasoning: model.reasoning ?? catalog.reasoning ?? [],
+              reasoning: catalog.acp
+                ? modelReasoningLevels(catalog, model.id)
+                : (model.reasoning ?? catalog.reasoning),
               harness: {
                 ...base,
                 model: model.id,

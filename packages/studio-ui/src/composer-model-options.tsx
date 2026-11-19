@@ -2,9 +2,11 @@ import {
   automaticDifficultyChoices,
   acpModelSetting,
   changeModelSettings,
+  modelReasoningLevels,
   modelServiceTiers,
   selectedCatalogModel,
   serviceTierValue,
+  isFastServiceTier,
   daybreakChoices,
   decode,
   taskHarnessSchema,
@@ -42,10 +44,8 @@ export function ComposerEffortColumn({
   modes?: boolean
 }) {
   const selected = selectedCatalogModel(catalog, value.model)
-  const efforts = selected?.reasoning ?? catalog?.reasoning ?? []
-  const current = automatic
-    ? difficulty || 'auto'
-    : value.reasoning || selected?.defaultReasoning || ''
+  const efforts = modelReasoningLevels(catalog, value.model)
+  const current = automatic ? difficulty || 'auto' : (value.reasoning ?? '')
   const choices = automatic
     ? automaticDifficultyChoices
     : [
@@ -309,7 +309,6 @@ export function ComposerPickerSpeed({
   disabled: boolean
 }) {
   if (value.provider !== 'codex') return null
-  const selected = selectedCatalogModel(catalog, value.model)
   const tiers = modelServiceTiers(catalog, value.model, value.serviceTier)
   if (tiers.length < 2) return null
   return (
@@ -330,19 +329,14 @@ export function ComposerPickerSpeed({
               aria-checked={checked}
               title={tier.description}
               data-value={tier.id}
-              disabled={
-                disabled ||
-                (tier.id !== 'default' &&
-                  (!selected?.serviceTiers?.some((item) => item.id === tier.id) ||
-                    catalog?.codex?.fastModeBlocked === true))
-              }
+              disabled={disabled || tier.disabled}
               className={cn(
                 'flex min-h-7 items-center gap-1 rounded-md px-2 text-xs outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-40',
                 checked ? 'bg-background text-foreground shadow-sm' : 'text-muted-foreground',
               )}
               onClick={() => void onChange({ ...value, serviceTier: tier.id })}
             >
-              {['priority', 'fast'].includes(tier.id) && <Zap className="size-3" />}
+              {isFastServiceTier(tier.id) && <Zap className="size-3" />}
               {tier.name}
             </button>
           )

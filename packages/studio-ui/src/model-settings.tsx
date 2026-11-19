@@ -16,6 +16,7 @@ import {
   type RuntimeDefaults,
   daybreakChoices,
   modelServiceTiers,
+  modelReasoningLevels,
   selectedCatalogModel,
   serviceTierValue,
   type ModelCatalog,
@@ -108,10 +109,7 @@ export function ModelSettings({
           Number(preferences[preferenceKey(a.id)]?.favorite ?? false),
       ),
     selected = selectedCatalogModel(catalog, agent.model)
-  const efforts =
-    selected?.reasoning ??
-    (!agent.model || ['acp', 'grok'].includes(agent.provider) ? catalog?.reasoning : []) ??
-    []
+  const efforts = modelReasoningLevels(catalog, agent.model)
   const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
   const discoveryStatus = loading
     ? 'Loading provider models…'
@@ -287,7 +285,7 @@ export function ModelSettings({
               }
             >
               {modelServiceTiers(catalog, agent.model, agent.serviceTier).map((tier) => (
-                <option key={tier.id} value={tier.id}>
+                <option key={tier.id} value={tier.id} disabled={tier.disabled}>
                   {tier.name}
                 </option>
               ))}

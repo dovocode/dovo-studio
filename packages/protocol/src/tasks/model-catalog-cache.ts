@@ -3,6 +3,7 @@ import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils.js'
 import type { RuntimeConnection, RuntimeSnapshot } from '../runtime/connection/runtime.js'
 import { decode } from '../shared/schema.js'
 import {
+  isFastServiceTier,
   modelCatalogSchema,
   modelDiscoveryInput,
   type AgentDiscovery,
@@ -12,7 +13,16 @@ import {
 /** Display metadata is never evidence of authentication, permissions or account entitlements. */
 export function modelCatalogPresentation(catalog: ModelCatalog): ModelCatalog {
   return decode(modelCatalogSchema, {
-    models: catalog.models,
+    models: catalog.codex?.fastModeBlocked
+      ? catalog.models.map((model) =>
+          model.serviceTiers
+            ? {
+                ...model,
+                serviceTiers: model.serviceTiers.filter(({ id }) => !isFastServiceTier(id)),
+              }
+            : model,
+        )
+      : catalog.models,
     reasoning: catalog.reasoning,
     ...(catalog.harness ? { harness: catalog.harness } : {}),
   })

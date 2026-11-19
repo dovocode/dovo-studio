@@ -13,7 +13,7 @@ import { OpenCode } from '@opencode/client'
 import { opencodeHeaders, opencodeAddress } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
-import type { AgentAdapter, AgentRun } from '../../execution/types.js'
+import type { AgentAdapter } from '../../execution/types.js'
 import { OpenCodeClientCache } from './client-cache.js'
 
 const clients = new OpenCodeClientCache<ReturnType<typeof OpenCode.make>>()
@@ -25,17 +25,6 @@ const client = (address: string, env?: Record<string, string>, active = false) =
   return active
     ? clients.acquire(key, create)
     : { value: clients.get(key, create), release: () => {} }
-}
-
-function modelOf(run: AgentRun) {
-  const slash = run.agent.model.indexOf('/')
-  if (slash < 1 || slash === run.agent.model.length - 1)
-    throw new Error('Choose an OpenCode provider/model')
-  return {
-    providerID: run.agent.model.slice(0, slash),
-    id: run.agent.model.slice(slash + 1),
-    ...(run.agent.reasoning ? { variant: run.agent.reasoning } : {}),
-  }
 }
 
 export const opencodeV2Adapter: AgentAdapter = {
@@ -157,13 +146,27 @@ export const opencodeV2Adapter: AgentAdapter = {
                 ? 'allow'
                 : 'ask',
         })
+      const { model: requestedModel, reasoning: variant } = run.agent
+      const usesModel = !run.goal || run.goal.action === 'set' || run.goal.action === 'resume'
+      let model: { providerID: string; id: string; variant?: string } | undefined
+      if (requestedModel) {
+        const slash = requestedModel.indexOf('/')
+        if (slash < 1 || slash === requestedModel.length - 1)
+          throw new Error('Choose an OpenCode provider/model')
+        model = { providerID: requestedModel.slice(0, slash), id: requestedModel.slice(slash + 1) }
+      } else if (usesModel && (run.sessionId || variant)) {
+        const resolved = await api.model.default({ location }, { signal: run.signal })
+        if (!resolved.data) throw new Error('OpenCode has no default model for this project')
+        model = { providerID: resolved.data.providerID, id: resolved.data.modelID }
+      }
+      if (model && variant) model.variant = variant
       const sessionID =
         run.sessionId ??
         (
           await api.session.create(
             {
               title: 'Dovo Studio task',
-              ...(run.agent.model ? { model: modelOf(run) } : {}),
+              ...(model ? { model } : {}),
               location,
               permissions,
             },
@@ -181,8 +184,7 @@ export const opencodeV2Adapter: AgentAdapter = {
           )
         }
         await api.session.update({ sessionID, permissions }, { signal: run.signal })
-        if (run.agent.model)
-          await api.session.switchModel({ sessionID, model: modelOf(run) }, { signal: run.signal })
+        if (model) await api.session.switchModel({ sessionID, model }, { signal: run.signal })
       }
       if (run.sessionId && !run.compact) {
         try {
@@ -296,6 +298,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       let submitted = false
       let executionFinished = false
       let recoveringText = false
+      let replaying = false
       const emitTool = (id: string, status: 'running' | 'completed' | 'error', output?: string) => {
         run.onEvent?.('message.part.updated', {
           properties: {
@@ -345,15 +348,19 @@ export const opencodeV2Adapter: AgentAdapter = {
           () => ({ submitted, parentFinished, children: native.activeSessions() }),
           (text) => run.onActivity(text),
         )) {
+          if (event.type === 'dovo/replay/completed') {
+            replaying = false
+            if (supportsGoals) await goal.read()
+            if (executionFinished && !goal.active) resolveDone()
+            continue
+          }
           native.update(event.type, event)
           if (event.type === 'server.connected') {
             if (submitted) {
               recoveringText = true
+              replaying = !parentFinished
               await jobs.refresh()
-              if (supportsGoals) {
-                await goal.read()
-                await recoverTodos()
-              }
+              if (supportsGoals) await recoverTodos()
             }
             resolveConnected()
             continue
@@ -402,7 +409,7 @@ export const opencodeV2Adapter: AgentAdapter = {
               } catch {
                 await goal.read()
               }
-              if (executionFinished && !goal.active) resolveDone()
+              if (!replaying && executionFinished && !goal.active) resolveDone()
             }
             continue
           }
@@ -515,9 +522,13 @@ export const opencodeV2Adapter: AgentAdapter = {
               break
             case 'session.execution.succeeded':
               cancelInteractions(sessionID)
-              executionFinished = true
-              if (supportsGoals) await goal.read()
-              if (!run.compact && !goal.active) resolveDone()
+              if (!run.compact) {
+                executionFinished = true
+                // A current goal snapshot may describe work after this replayed execution.
+                if (replaying) break
+                if (supportsGoals) await goal.read()
+                if (!goal.active) resolveDone()
+              }
               break
             case 'session.execution.failed':
               if (!run.compact) rejectDone(new Error(event.data.error.message))

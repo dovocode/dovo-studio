@@ -9,13 +9,16 @@ On desktop, open **Reasoning and speed** beside the model to find **Service Tier
 **Daybreak** submenu. Access has its own picker. Mobile, custom agent and task settings expose the
 same options under model settings:
 
+- **Provider default** for reasoning uses the Codex configuration or the selected model's advertised
+  default. Studio reports when Codex supplies neither value for a model on a resumed thread.
 - **Speed → Standard** uses `serviceTier: "default"`. This explicitly clears Fast on a resumed
   thread and its next turn.
 - **Speed → Fast** uses the exact service tier ID advertised by the installed harness, with its own
   description. In Codex 0.155.1 the advertised ID is `priority`; the CLI configuration name is
   `fast`. Dovo does not substitute one for the other or hardcode a speed/price multiplier. The run's
   configuration enables `features.fast_mode` without modifying your global `config.toml`. Managed
-  restrictions still apply.
+  restrictions still apply. A policy that disables Fast leaves other advertised tiers, such as Flex,
+  available.
 - **Daybreak → Automatic** omits the per-turn override and lets Codex choose its normal treatment.
 - **Daybreak → Off** explicitly sends `cyberAccessProgram: "standard"`.
 - **Daybreak Blue / Red** sends `cyberAccessProgram: "daybreakBlue"` / `"daybreakRed"` on

@@ -4,8 +4,8 @@ import { Pressable, View } from 'react-native'
 import {
   modelCatalogChoices,
   changeModelSettings,
+  modelReasoningLevels,
   modelServiceTiers,
-  selectedCatalogModel,
   serviceTierValue,
   isNamedModelId,
   modelDisplayName,
@@ -92,8 +92,7 @@ function ComputerModelPicker({
   const savedAgents = choices.filter((choice) => choice.id.startsWith('agent:'))
   const search = query.trim().toLowerCase()
   const computer = profile?.name || 'this computer'
-  const selectedModel = selectedCatalogModel(catalog, agent.model)
-  const efforts = selectedModel?.reasoning ?? catalog?.reasoning ?? []
+  const efforts = modelReasoningLevels(catalog, agent.model)
   const customChoice =
     providers.find((choice) => choice.id === filter) ??
     providers.find((choice) => choice.id === selection)
@@ -339,7 +338,7 @@ function ComputerModelPicker({
           <ChoiceControl
             row
             label={uiText('Reasoning level')}
-            value={agent.reasoning || selectedModel?.defaultReasoning || ''}
+            value={agent.reasoning ?? ''}
             disabled={disabled}
             items={[
               { id: '', name: uiText('Provider default') },
@@ -358,13 +357,7 @@ function ComputerModelPicker({
               label={uiText('Speed')}
               value={serviceTierValue(agent.serviceTier)}
               disabled={disabled}
-              items={modelServiceTiers(catalog, agent.model, agent.serviceTier).map((tier) => ({
-                ...tier,
-                disabled:
-                  tier.id !== 'default' &&
-                  (!selectedModel?.serviceTiers?.some((item) => item.id === tier.id) ||
-                    catalog?.codex?.fastModeBlocked === true),
-              }))}
+              items={modelServiceTiers(catalog, agent.model, agent.serviceTier)}
               onChange={(serviceTier) => choose(selection, { ...agent, serviceTier })}
             />
           )}
