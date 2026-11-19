@@ -131,6 +131,9 @@ windows and requires an installed Electron binary and a desktop session. Browser
 
 ## Address-bar search
 
+In the desktop and web address bars, use the arrow keys to select a suggestion and Enter to open it.
+While an input method is composing text, these keys and Escape stay available to that input method.
+
 Each browser profile has a **Default search engine** in Settings → Browser. Choose Google (the
 default), DuckDuckGo, Kagi, or a custom HTTP/HTTPS URL containing `%s`. Search terms are URL-encoded
 before replacing each `%s`, including in path-based search URLs. Templates without a placeholder,
@@ -196,7 +199,7 @@ revokes subsequent calls and event delivery. Private profiles do not run extensi
 History records HTTP/HTTPS visits and titles from native shared-browser tabs, with per-profile
 persistent storage. It supports search, visits, adding/removing URLs, time-range/all deletion and
 visit events. Extension/OAuth pages and thread previews are excluded. This store is separate from
-the renderer's existing recent-page library.
+the renderer's recent-page library. **History → Clear history** clears both stores on this desktop.
 
 Downloads use Electron's real DownloadItems and per-profile persistent records. Supported methods:
 `download`, `search`, `pause`, `resume`, `cancel`, `erase`, `removeFile`, `show`, `open`,

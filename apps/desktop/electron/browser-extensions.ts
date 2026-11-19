@@ -12,9 +12,15 @@ import {
 } from '@dovo/protocol'
 import { ElectronChromeExtensions } from 'electron-chrome-extensions'
 import crxPreload from 'electron-chrome-extensions/preload?raw'
-import { app, BrowserWindow, dialog, session, type BaseWindow } from 'electron'
+import { app, BrowserWindow, dialog, session, webContents, type BaseWindow } from 'electron'
 import { createHash, randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
+import {
+  changedExtensionAccess,
+  changedRuntimeGrants,
+  compareExtensionVersions,
+  extensionVersion,
+} from './browser-extension-updates.js'
 import { chromeStoreId, downloadStoreExtension, unpackStoreExtension } from './browser-web-store.js'
 import {
   copyFile,
@@ -45,6 +51,8 @@ export const workspacePartition = (profileId: string) =>
 const PROFILE = /^[a-zA-Z0-9_-]{1,100}$/
 const EXTENSION = /^[a-p]{32}$/
 const DIRECTORY = /^[0-9a-f-]{36}$/
+const UPDATE_INTERVAL = 6 * 60 * 60_000
+const UPDATE_SWEEP_INTERVAL = 15 * 60_000
 const MAX_ENTRIES = 10_000
 const MAX_BYTES = 256 * 1024 * 1024
 const MAX_MANIFEST_BYTES = 1024 * 1024
@@ -104,6 +112,16 @@ const registrySchema = mutableStruct({
       enabled: Schema.Boolean,
       pinned: Schema.optional(Schema.Boolean),
       removedPermissions: mutableArray(Schema.String),
+      // Only a verified Store install may create this field. Old records and folders
+      // can have the very same public key and therefore cannot be enrolled by ID.
+      storeUpdates: Schema.optional(
+        mutableStruct({
+          automatic: Schema.Boolean,
+          checkedAt: Schema.optional(Schema.Number),
+          pendingVersion: Schema.optional(Schema.String),
+          error: Schema.optional(Schema.String),
+        }),
+      ),
     }),
   ),
 })
@@ -116,6 +134,7 @@ type Profile = {
   registry: Registry
   errors: Map<string, string>
   queue: Promise<unknown>
+  grants: ReturnType<typeof attachExtensionPermissionChecks>
   native: ReturnType<typeof attachNativeMessaging>
   browserAPIs: ReturnType<typeof attachExtensionBrowserAPIs>
   actionPopups: Map<string, BrowserWindow>
@@ -306,6 +325,10 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   const profiles = new Map<string, Promise<Profile>>()
   /** Profiles whose extensions are loaded; tab hooks run synchronously against these only. */
   const ready = new Map<string, Profile>()
+  let disposed = false
+  let updateTimer: NodeJS.Timeout | undefined
+  let updateController = new AbortController()
+  let sweeping = false
   let preloads: Promise<string> | undefined
   const profileRoot = (profileId: string) => join(root, 'profiles', profileId)
   const installed = (profileId: string, directory: string) =>
@@ -354,6 +377,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       throw new Error('Dovo could not save the extension list, so nothing changed.')
     }
     profile.registry = next
+    scheduleUpdates()
   }
   const withRecords = (records: Installed[]): Registry => ({ version: 1, extensions: records })
   const load = async (profile: Profile, record: Installed) => {
@@ -367,7 +391,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         throw new Error('The managed extension copy changed its identity.')
       }
       // Browser may have been turned off while Electron was loading it.
-      if (!enabled()) profile.session.extensions.removeExtension(extension.id)
+      if (!enabled() || disposed) profile.session.extensions.removeExtension(extension.id)
     } catch (error) {
       profile.errors.set(
         record.id,
@@ -384,6 +408,8 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
   }
 
   const open = (profileId: string) => {
+    if (isPrivateBrowserProfile(profileId))
+      throw new Error('Private profiles do not run browser extensions.')
     if (!PROFILE.test(profileId)) throw new Error('Invalid browser profile.')
     let pending = profiles.get(profileId)
     if (!pending) {
@@ -404,7 +430,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           requestPermissions: (extension, request) =>
             requestPermissions(profileId, extension, request),
         })
-        attachExtensionPermissionChecks(extensions)
+        const grants = attachExtensionPermissionChecks(extensions)
         const actionPopups = new Map<string, BrowserWindow>()
         // The library's native child window is the overlay: keep it anchored and within Studio.
         extensions.on('browser-action-popup-created', (raw: unknown) => {
@@ -492,6 +518,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           window: () => tabs.window(profileId),
         })
         const profile: Profile = {
+          grants,
           native,
           browserAPIs,
           id: profileId,
@@ -502,9 +529,10 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
           errors: new Map(),
           queue: Promise.resolve(),
         }
-        if (enabled())
+        if (enabled() && !disposed)
           for (const record of registry.extensions) if (record.enabled) await load(profile, record)
         ready.set(profileId, profile)
+        scheduleUpdates()
         return profile
       })()
       profiles.set(profileId, pending)
@@ -552,6 +580,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       name: name.slice(0, 200),
       version: version.slice(0, 50),
       enabled: record.enabled,
+      ...(record.storeUpdates ? { storeUpdates: record.storeUpdates } : {}),
       pinned: !!record.pinned,
       loaded: !!loaded,
       ...(title ? { title: title.slice(0, 200) } : {}),
@@ -660,6 +689,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     window: BrowserWindow,
     directory: string,
     manifest: { [key: string]: unknown },
+    changes?: string[],
   ) => {
     const permissions = strings(manifest.permissions)
     const optional = strings(manifest.optional_permissions)
@@ -681,6 +711,7 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         ? `${values.slice(0, 20).join(', ')} and ${values.length - 20} more`
         : values.join(', ')
     const detail = [
+      ...(changes ? [`Changed access:\n${changes.join('\n')}`] : []),
       `Permissions: ${list(permissions) || 'none'}`,
       ...(optional.length ? [`Optional permissions: ${list(optional)}`] : []),
       `Site access: ${list(sites) || 'none'}`,
@@ -695,20 +726,34 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     const { response } = await dialog.showMessageBox(window, {
       type: 'warning',
       title: 'Review browser extension',
-      message: `Add “${(await displayName(directory, manifest)).slice(0, 100)}” to this browser profile?`,
+      message: changes
+        ? `Update “${(await displayName(directory, manifest)).slice(0, 100)}” and allow the changed access?`
+        : `Add “${(await displayName(directory, manifest)).slice(0, 100)}” to this browser profile?`,
       detail: detail.slice(0, 4000),
-      buttons: ['Add extension', 'Cancel'],
+      buttons: [changes ? 'Update extension' : 'Add extension', 'Cancel'],
       defaultId: 1,
       cancelId: 1,
       noLink: true,
     })
     return response === 0
   }
-  const installFolder = async (profile: Profile, window: BrowserWindow, source: string) => {
-    requireEnabled()
-    const manifest = await readManifest(source)
-    if (manifest.manifest_version !== 3)
-      throw new Error('Dovo supports Manifest V3 extensions only.')
+  const installFolder = async (
+    profile: Profile,
+    source: string,
+    options: {
+      reviewWindow?: BrowserWindow
+      storeId?: string
+      signal?: AbortSignal
+      beforeReplace?: () => Promise<boolean>
+    },
+  ) => {
+    const { reviewWindow, storeId, signal } = options
+    const requireActive = () => {
+      signal?.throwIfAborted()
+      if (disposed) throw new Error('Browser extensions have stopped.')
+      requireEnabled()
+    }
+    requireActive()
     const directory = randomUUID()
     const staging = join(profileRoot(profile.id), 'installed', `.${directory}.staging`)
     const target = installed(profile.id, directory)
@@ -716,10 +761,12 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
     try {
       await copyTree(source, staging, { entries: 0, bytes: 0 })
       const copy = await readManifest(staging)
+      if (copy.manifest_version !== 3) throw new Error('Dovo supports Manifest V3 extensions only.')
       const removedPermissions: string[] = []
-      if (!(await review(window, staging, copy))) return
+      if (storeId) extensionVersion(copy.version)
+      if (reviewWindow && !(await review(reviewWindow, staging, copy))) return
       // Browser can be turned off while the folder picker or review is open.
-      requireEnabled()
+      requireActive()
       await rename(staging, target)
       // A manifest key keeps one identity across installs: replace that copy, keeping its storage.
       const key = copy.key
@@ -727,50 +774,71 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         typeof key === 'string'
           ? profile.registry.extensions.find((r) => r.id === keyId(key))
           : undefined
+      const activate = previous?.enabled ?? true
+      if (storeId && previous?.storeUpdates) {
+        // An explicit reinstall can repair a missing or damaged managed copy.
+        const current =
+          profile.session.extensions.getExtension(previous.id)?.version ??
+          (await readManifest(installed(profile.id, previous.directory))
+            .then((manifest) => extensionVersion(manifest.version))
+            .catch((error: unknown) => {
+              if (!reviewWindow) throw error
+              return undefined
+            }))
+        if (current && compareExtensionVersions(copy.version, current) < 0)
+          throw new Error('The Store returned an older version of this extension.')
+      }
+      if (options.beforeReplace && !(await options.beforeReplace())) return
+      requireActive()
       if (previous) unload(profile, previous.id)
-      const restorePrevious = async () => {
-        if (previous?.enabled && enabled()) await load(profile, previous)
-      }
-      let extension: Electron.Extension
+      let id = previous?.id
+      let loaded: Electron.Extension | undefined
       try {
-        extension = await profile.session.extensions.loadExtension(target)
-      } catch (error) {
-        await restorePrevious()
-        throw new Error(
-          `This extension could not be loaded: ${error instanceof Error ? error.message.slice(0, 300) : 'unknown error'}`,
-        )
-      }
-      if (!enabled()) {
-        profile.session.extensions.removeExtension(extension.id)
-        requireEnabled()
-      }
-      if (!previous && profile.registry.extensions.some((r) => r.id === extension.id)) {
-        profile.session.extensions.removeExtension(extension.id)
-        throw new Error('This extension is already installed in this browser profile.')
-      }
-      try {
+        if (activate) {
+          try {
+            loaded = await profile.session.extensions.loadExtension(target)
+          } catch (error) {
+            throw new Error(
+              `This extension could not be loaded: ${error instanceof Error ? error.message.slice(0, 300) : 'unknown error'}`,
+            )
+          }
+          id = loaded.id
+        }
+        requireActive()
+        if (!id || (storeId && id !== storeId) || (previous && previous.id !== id))
+          throw new Error('The managed extension copy changed its identity.')
+        if (!previous && profile.registry.extensions.some((record) => record.id === id))
+          throw new Error('This extension is already installed in this browser profile.')
         await saveRegistry(
           profile,
           withRecords([
             ...profile.registry.extensions.filter((r) => r !== previous),
             {
-              id: extension.id,
+              id,
               directory,
-              enabled: true,
+              enabled: activate,
               removedPermissions,
               pinned: previous?.pinned,
+              ...(storeId
+                ? {
+                    storeUpdates: {
+                      automatic: previous?.storeUpdates?.automatic ?? true,
+                      checkedAt: Date.now(),
+                    },
+                  }
+                : {}),
             },
           ]),
         )
-      } catch {
-        profile.session.extensions.removeExtension(extension.id)
-        await restorePrevious()
-        throw new Error('Dovo could not save the extension list, so the extension was not added.')
+      } catch (error) {
+        if (loaded) unload(profile, loaded.id)
+        if (previous?.enabled && enabled() && !disposed) await load(profile, previous)
+        throw error
       }
       committed = true
       if (previous)
         await rm(installed(profile.id, previous.directory), { recursive: true, force: true })
-      return extension.id
+      return id
     } finally {
       await rm(staging, { recursive: true, force: true })
       if (!committed) await rm(target, { recursive: true, force: true })
@@ -786,22 +854,214 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
         properties: ['openDirectory'],
       })
       if (choice.canceled || !choice.filePaths[0]) return
-      return installFolder(profile, window, choice.filePaths[0])
+      return installFolder(profile, choice.filePaths[0], { reviewWindow: window })
     }
     const id = chromeStoreId(storeUrl)
+    const bytes = await downloadStoreExtension(id, process.versions.chrome)
+    return withStorePackage(id, bytes, (source) =>
+      installFolder(profile, source, { reviewWindow: window, storeId: id }),
+    )
+  }
+
+  async function withStorePackage<T>(
+    id: string,
+    bytes: Buffer,
+    use: (source: string) => Promise<T>,
+  ) {
     const source = await mkdtemp(join(tmpdir(), 'dovo-web-store-'))
     try {
-      const bytes = await downloadStoreExtension(id, process.versions.chrome)
-      requireEnabled()
       const key = await unpackStoreExtension(bytes, id, source)
       const manifest = await readManifest(source)
       // Packed IDs come from the verified developer key, not the temporary extraction path.
       manifest.key = key
       await writeFile(join(source, 'manifest.json'), JSON.stringify(manifest, null, 2))
-      return await installFolder(profile, window, source)
+      return await use(source)
     } finally {
       await rm(source, { recursive: true, force: true })
     }
+  }
+
+  async function saveUpdateState(
+    profile: Profile,
+    current: Installed,
+    state: NonNullable<Installed['storeUpdates']>,
+  ) {
+    await saveRegistry(
+      profile,
+      withRecords(
+        profile.registry.extensions.map((record) =>
+          record === current ? { ...current, storeUpdates: state } : record,
+        ),
+      ),
+    )
+  }
+
+  function inUse(profile: Profile, id: string) {
+    if (
+      profile.actionPopups.has(id) ||
+      profile.native.connected(id) ||
+      profile.browserAPIs.signingIn(id)
+    )
+      return true
+    return webContents
+      .getAllWebContents()
+      .some(
+        (contents) =>
+          !contents.isDestroyed() &&
+          contents.session === profile.session &&
+          ['window', 'browserView', 'webview'].includes(contents.getType()) &&
+          contents.getURL().startsWith(`chrome-extension://${id}/`),
+      )
+  }
+
+  async function checkUpdate(profile: Profile, record: Installed, window?: BrowserWindow) {
+    if (!record.storeUpdates)
+      throw new Error('Only verified Chrome Web Store installs can check for updates.')
+    if (!record.enabled) throw new Error('Enable this extension before checking for updates.')
+    const signal = updateController.signal
+    // A user can remove, disable, replace or opt out while the network request runs.
+    const currentRecord = () => {
+      const current = profile.registry.extensions.find((r) => r.id === record.id)
+      if (
+        !disposed &&
+        !signal.aborted &&
+        enabled() &&
+        current?.directory === record.directory &&
+        current.enabled &&
+        current.storeUpdates &&
+        (window || current.storeUpdates.automatic)
+      )
+        return current
+    }
+    const remember = async (error?: string) => {
+      await change(profile, async () => {
+        const current = currentRecord()
+        if (current?.storeUpdates)
+          await saveUpdateState(profile, current, {
+            ...current.storeUpdates,
+            checkedAt: Date.now(),
+            // A manual probe uses the installed version. A background probe can
+            // instead ask for something newer than the release awaiting review.
+            pendingVersion: window && !error ? undefined : current.storeUpdates.pendingVersion,
+            error,
+          })
+      })
+    }
+    try {
+      const previous = await readManifest(installed(profile.id, record.directory))
+      const version = extensionVersion(previous.version)
+      const requestedVersion = (!window && record.storeUpdates.pendingVersion) || version
+      const bytes = await downloadStoreExtension(
+        record.id,
+        process.versions.chrome,
+        requestedVersion,
+        signal,
+      )
+      if (!bytes) {
+        await remember()
+        return
+      }
+      if (!currentRecord()) return
+      await withStorePackage(record.id, bytes, async (source) => {
+        const next = await readManifest(source)
+        if (next.manifest_version !== 3)
+          throw new Error('Dovo supports Manifest V3 extensions only.')
+        if (compareExtensionVersions(next.version, requestedVersion) <= 0) {
+          await remember()
+          return
+        }
+        const changes = changedExtensionAccess(previous, next)
+        await change(profile, async () => {
+          const current = currentRecord()
+          const settings = current?.storeUpdates
+          if (!current || !settings) return
+          await installFolder(profile, source, {
+            storeId: record.id,
+            signal,
+            beforeReplace: async () => {
+              // Read live grants after staging, immediately before unloading. An
+              // extension may request or revoke access while the package downloads.
+              const runtimeChanges = () =>
+                changedRuntimeGrants(previous, next, profile.grants(record.id))
+              const effective = runtimeChanges()
+              const reviewChanges = [...changes, ...effective]
+              if (
+                reviewChanges.length &&
+                (!window ||
+                  !(await review(window, source, next, reviewChanges)) ||
+                  JSON.stringify(runtimeChanges()) !== JSON.stringify(effective))
+              ) {
+                if (currentRecord())
+                  await saveUpdateState(profile, current, {
+                    automatic: settings.automatic,
+                    checkedAt: Date.now(),
+                    pendingVersion: extensionVersion(next.version),
+                  })
+                return false
+              }
+              return !!currentRecord() && (!!window || !inUse(profile, record.id))
+            },
+          })
+        })
+      })
+    } catch (error) {
+      if (signal.aborted || disposed) return
+      await remember(
+        error instanceof Error ? error.message.slice(0, 500) : 'The extension update failed.',
+      )
+    }
+  }
+
+  function scheduleUpdates(delay = 60_000) {
+    if (
+      disposed ||
+      sweeping ||
+      updateTimer ||
+      !enabled() ||
+      ![...ready.values()].some((p) =>
+        p.registry.extensions.some((r) => r.enabled && r.storeUpdates?.automatic),
+      )
+    )
+      return
+    updateTimer = setTimeout(() => {
+      updateTimer = undefined
+      void sweepUpdates().catch((error) =>
+        console.error('Browser extension update check failed.', error),
+      )
+    }, delay)
+    updateTimer.unref()
+  }
+
+  async function sweepUpdates() {
+    sweeping = true
+    const signal = updateController.signal
+    try {
+      for (const profile of ready.values()) {
+        for (const id of profile.registry.extensions.map((record) => record.id)) {
+          if (disposed || signal.aborted || !enabled()) return
+          const record = profile.registry.extensions.find((item) => item.id === id)
+          if (
+            record?.enabled &&
+            record.storeUpdates?.automatic &&
+            Date.now() - (record.storeUpdates.checkedAt ?? 0) >= UPDATE_INTERVAL &&
+            !inUse(profile, record.id)
+          )
+            await checkUpdate(profile, record).catch((error) =>
+              console.error('Could not save the extension update status.', error),
+            )
+        }
+      }
+    } finally {
+      sweeping = false
+      scheduleUpdates(UPDATE_SWEEP_INTERVAL)
+    }
+  }
+
+  function stopUpdates() {
+    clearTimeout(updateTimer)
+    updateTimer = undefined
+    updateController.abort()
+    updateController = new AbortController()
   }
 
   return {
@@ -816,6 +1076,8 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
      */
     sync: async () => {
       const on = enabled()
+      if (!on) stopUpdates()
+      else scheduleUpdates()
       const profiles = await opened()
       // Stopping never waits behind a queued install or its open dialogs.
       if (!on) for (const profile of profiles) unloadAll(profile)
@@ -830,6 +1092,8 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
       return on
     },
     dispose: async () => {
+      disposed = true
+      stopUpdates()
       for (const profile of await opened()) {
         unloadAll(profile)
         profile.browserAPIs.dispose()
@@ -887,6 +1151,10 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
             )
       const record = profile.registry.extensions.find((r) => r.id === command.id)
       if (!record) throw new Error('This extension is not installed in this browser profile.')
+      if (command.action === 'checkUpdate') {
+        await checkUpdate(profile, record, window)
+        return result(profile)
+      }
       if (command.action === 'open') {
         const contents = tabs.find(window, command.key, command.profileId)
         if (!contents) throw new Error('Open a page in this browser profile first.')
@@ -923,7 +1191,17 @@ export function createBrowserExtensions(tabs: ExtensionTabHost) {
               ),
             ),
           )
-        else if (command.action === 'remove') await remove(profile, current)
+        else if (
+          command.action === 'enableAutoUpdates' ||
+          command.action === 'disableAutoUpdates'
+        ) {
+          if (!current.storeUpdates)
+            throw new Error('Only verified Store installs support automatic updates.')
+          await saveUpdateState(profile, current, {
+            ...current.storeUpdates,
+            automatic: command.action === 'enableAutoUpdates',
+          })
+        } else if (command.action === 'remove') await remove(profile, current)
         else await toggle(profile, current, command.action === 'enable')
         return result(profile)
       })

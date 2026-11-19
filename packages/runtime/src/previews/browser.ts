@@ -30,6 +30,7 @@ import { browserTree, browserLocator } from './browser-targets.js'
 import { browserInteraction } from './browser-interaction.js'
 import { BrowserUploads } from './browser-uploads.js'
 import { BrowserDownloads } from './browser-downloads.js'
+import { readBrowserCertificate } from './browser-certificate.js'
 import { BrowserTransferStorage } from './browser-transfer-storage.js'
 import { decode, decodeResult } from '@dovo/protocol'
 import { join } from 'node:path'
@@ -93,6 +94,8 @@ type Session = {
   profileId?: string
   uploads: BrowserUploads
   downloads?: BrowserDownloads
+  certificateDocumentId?: string
+  certificate?: ReturnType<typeof readBrowserCertificate>
   logs: { time: string; kind: string; message: string }[]
   release: () => Promise<void>
   page: Page
@@ -752,8 +755,13 @@ export class RemoteBrowsers {
       )
       let faviconDocument = ''
       await session.cdp.send('Page.enable')
+      const { frameTree } = await session.cdp.send('Page.getFrameTree')
+      session.certificateDocumentId = frameTree.frame.loaderId
+      session.state.certificateDocumentId = session.certificateDocumentId
       session.cdp.on('Page.frameNavigated', ({ frame }) => {
         if (frame.parentId) return
+        session.certificateDocumentId = frame.loaderId
+        session.certificate = undefined
         faviconLoader.reset()
         faviconDocument = ''
         session.favicon = undefined
@@ -1030,6 +1038,7 @@ export class RemoteBrowsers {
       }))
       session.state = {
         type: 'state',
+        certificateDocumentId: session.certificateDocumentId,
         createdTabs: session.state.createdTabs,
         url:
           session.failedNavigation ??
@@ -1429,6 +1438,25 @@ export class RemoteBrowsers {
     authorize()
     await session?.downloads?.remove(id)
   }
+  async certificate(resourceId: string, documentId: string, authorize: () => void) {
+    const session = await this.sessions.get(resourceId)
+    authorize()
+    if (!session || session.closing || session.loading || session.failedNavigation)
+      throw new HttpError(409, 'No loaded page certificate is available.')
+    if (documentId !== session.certificateDocumentId)
+      throw new HttpError(409, 'The page changed. Open site information again.')
+    const cached = (session.certificate ??= readBrowserCertificate(session.page, documentId))
+    try {
+      const result = await cached
+      authorize()
+      if (session.certificate !== cached || session.closing)
+        throw new HttpError(409, 'The page changed. Open site information again.')
+      return result
+    } catch (error) {
+      if (session.certificate === cached) session.certificate = undefined
+      throw error
+    }
+  }
   async input(
     taskId: string,
     input: RemoteBrowserInput,
@@ -1776,6 +1804,7 @@ export class RemoteBrowsers {
         return {
           id: identity.alias ?? id,
           kind: identity.kind,
+          certificateSupported: true,
           ...(owner && owner !== STUDIO_BROWSER_SCOPE ? { taskId: owner } : {}),
           ...(identity.tabId ? { tabId: identity.tabId } : {}),
           ...(identity.profileId ? { profileId: identity.profileId } : {}),
@@ -1787,6 +1816,19 @@ export class RemoteBrowsers {
         }
       }),
     )
+  }
+  async studioCertificate(id: string, authorize: () => void) {
+    const resource = this.resolveStudioSession(id) ?? id
+    this.requireAgentAccessible(resource)
+    const session = await this.sessions.get(resource)
+    authorize()
+    if (!session) throw new HttpError(404, 'Browser session not found')
+    if (!session.certificateDocumentId)
+      throw new HttpError(409, 'This tab has no loaded page certificate.')
+    return {
+      ok: true as const,
+      certificate: await this.certificate(resource, session.certificateDocumentId, authorize),
+    }
   }
   async studioLogs(id: string) {
     const resource = this.resolveStudioSession(id) ?? id

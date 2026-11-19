@@ -2,7 +2,11 @@ import { browserProfileIdSchema } from './browser-profiles.js'
 import { mutableArray, mutableStruct, uuidSchema } from '../../shared/schema.js'
 import { minValue, maxValue } from '../../shared/schema.js'
 import { Schema, Effect } from 'effect'
-import { previewDeviceSchema, browserNavigationHistorySchema } from './previews.js'
+import {
+  previewDeviceSchema,
+  browserNavigationHistorySchema,
+  browserPageCertificateSchema,
+} from './previews.js'
 export const remoteBrowserViewportSchema = mutableStruct({
   width: maxValue(
     minValue(
@@ -112,6 +116,11 @@ export const remoteBrowserInputSchema = Schema.Union([
   }),
 ])
 export type RemoteBrowserInput = Schema.Schema.Type<typeof remoteBrowserInputSchema>
+export const remoteBrowserCertificateRequestSchema = mutableStruct({
+  type: Schema.Literal('certificateRequest'),
+  requestId: uuidSchema,
+  documentId: maxValue(minValue(Schema.String, 1), 256),
+})
 export const BROWSER_UPLOAD_MAX_BYTES = 50 * 1024 * 1024
 export const BROWSER_UPLOAD_CHUNK_BYTES = 64 * 1024
 export const BROWSER_UPLOAD_MAX_FILES = 5
@@ -236,6 +245,14 @@ export const remoteBrowserInteractionSchema = mutableStruct({
   editable: Schema.Boolean,
 })
 export const remoteBrowserMessageSchema = Schema.Union([
+  mutableStruct({
+    type: Schema.Literal('certificate'),
+    requestId: uuidSchema,
+    result: Schema.Union([
+      browserPageCertificateSchema,
+      mutableStruct({ error: maxValue(Schema.String, 2000) }),
+    ]),
+  }),
   remoteBrowserDownloadSchema,
   mutableStruct({ type: Schema.Literal('downloadRemoved'), id: uuidSchema }),
   mutableStruct({
@@ -272,6 +289,8 @@ export const remoteBrowserMessageSchema = Schema.Union([
   }),
   mutableStruct({
     type: Schema.Literal('state'),
+    /** This host can inspect the currently loaded document's certificate. */
+    certificateDocumentId: Schema.optional(maxValue(Schema.String, 256)),
     createdTabs: Schema.optional(
       mutableArray(mutableStruct({ id: Schema.String, url: Schema.String })),
     ),

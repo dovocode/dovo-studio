@@ -145,9 +145,12 @@
         border-color: var(--accent);
         box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 12%, transparent);
       }
-      #navigation > svg {
+      #siteInfo {
+        padding: 0;
+        border-radius: 50%;
+      }
+      #siteInfo svg {
         width: 15px;
-        padding: 0 9px;
         box-sizing: content-box;
         height: 15px;
         color: var(--muted);
@@ -478,6 +481,23 @@
         padding: 20px;
         box-shadow: 0 20px 60px var(--shadow);
       }
+      #certificateBody {
+        max-height: 60vh;
+        overflow: auto;
+        overflow-wrap: anywhere;
+        user-select: text;
+      }
+      #certificateBody details {
+        margin-top: 12px;
+      }
+      #certificateBody dt {
+        margin-top: 8px;
+        color: var(--muted);
+      }
+      #certificateBody dd {
+        margin: 2px 0;
+        white-space: pre-wrap;
+      }
       dialog::backdrop {
         background: #0006;
       }
@@ -622,9 +642,6 @@
         #navigation {
           height: 48px;
         }
-        #navigation > svg {
-          padding: 0 14px;
-        }
         #address {
           font-size: 16px;
         }
@@ -647,16 +664,18 @@
   <body>
     <header id="browserBar" aria-label="Browser toolbar">
       <form id="navigation" aria-label="Browser address">
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="1.6"
-          aria-hidden="true"
-        >
-          <circle cx="12" cy="12" r="9" />
-          <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z" />
-        </svg>
+        <button id="siteInfo" type="button" aria-label="Site information" title="Site information">
+          <svg
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="1.6"
+            aria-hidden="true"
+          >
+            <circle cx="12" cy="12" r="9" />
+            <path d="M3 12h18M12 3c5 5 5 13 0 18-5-5-5-13 0-18Z" />
+          </svg>
+        </button>
         <input
           id="address"
           aria-label="Host browser URL"
@@ -787,6 +806,13 @@
         <footer>
           <button id="cancelDialog" value="cancel">Cancel</button><button value="accept">OK</button>
         </footer>
+      </form>
+    </dialog>
+    <dialog id="certificateDialog" aria-labelledby="certificateTitle">
+      <h2 id="certificateTitle">Site information</h2>
+      <div id="certificateBody" aria-live="polite"></div>
+      <form method="dialog">
+        <footer><button>Close</button></footer>
       </form>
     </dialog>
     <dialog id="uploadDialog" aria-labelledby="uploadTitle">

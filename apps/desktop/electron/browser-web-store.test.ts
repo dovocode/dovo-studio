@@ -108,3 +108,14 @@ it('restricts redirects to HTTPS store download hosts and bounds response sizes'
   expect(url.hostname).toBe('clients2.google.com')
   expect(url.searchParams.get('x')).toBe(`id=${id}&uc`)
 })
+
+it('sends the installed Chrome version and accepts a no-update response without downloading a package', async () => {
+  const request = vi.fn<typeof fetch>().mockResolvedValue(new Response(null, { status: 204 }))
+  vi.stubGlobal('fetch', request)
+  await expect(
+    downloadStoreExtension(id, '145.0.0.0', '1.0.12.3', new AbortController().signal),
+  ).resolves.toBeUndefined()
+  const url = request.mock.calls[0][0]
+  expect(url instanceof URL && url.searchParams.get('x')).toBe(`id=${id}&v=1.0.12.3&uc`)
+  expect(request).toHaveBeenCalledTimes(1)
+})

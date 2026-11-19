@@ -30,6 +30,7 @@ export type RemoteBrowserControls = {
   capture: () => Promise<string | undefined>
   viewport: (preset: string, landscape: boolean) => void
   reconnect: () => void
+  certificate: () => void
   performance: () => void
 }
 export function RemoteBrowser({
@@ -117,6 +118,7 @@ export function RemoteBrowser({
           post({ type: 'snapshot', id })
         }),
       reconnect: () => post({ type: 'reconnect' }),
+      certificate: () => post({ type: 'certificate' }),
       performance: () => post({ type: 'performance' }),
       viewport: (preset, landscape) => post({ type: 'viewport', preset, landscape }),
     }),

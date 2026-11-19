@@ -278,7 +278,8 @@ export function DesktopFollowUp({ name }: { name: string | null }) {
           onClose={close}
           onOpen={noop}
           onRemoveBookmark={noop}
-          onClearHistory={noop}
+          localProfileHistory
+          onClearHistory={async () => {}}
           onReopen={noop}
         />
       )

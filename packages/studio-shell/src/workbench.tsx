@@ -83,6 +83,7 @@ type WorkbenchProps = {
   openBrowserWindow?: StudioHostApi['openBrowserWindow']
   onBrowserMediaChange?: StudioHostApi['onBrowserMediaChange']
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
+  onBrowserPreviewInput?: StudioHostApi['onBrowserPreviewInput']
   defaultBrowser?: StudioHostApi['defaultBrowser']
   browser?: StudioHostApi['browser']
   browserFrames?: StudioHostApi['browserFrames']
@@ -223,6 +224,7 @@ function WorkbenchContent({
   browserPageOnly,
   openBrowserWindow,
   onBrowserWorkspaceFocus,
+  onBrowserPreviewInput,
   onBrowserMediaChange,
   openBrowserLink,
   accountStorage,
@@ -813,6 +815,7 @@ function WorkbenchContent({
       browserExtensions,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
+      onBrowserPreviewInput,
       onBrowserMediaChange,
       browserWindowId,
       browserPageOnly,
@@ -845,6 +848,7 @@ function WorkbenchContent({
       browserExtensions,
       onBrowserContextAction,
       onBrowserWorkspaceFocus,
+      onBrowserPreviewInput,
       onBrowserMediaChange,
       browserWindowId,
       browserPageOnly,

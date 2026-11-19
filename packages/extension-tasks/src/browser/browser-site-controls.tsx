@@ -1,7 +1,6 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useRef, useState } from 'react'
+import { useRef, useState, type Ref } from 'react'
 import {
-  SlidersHorizontal,
   LockKeyhole,
   Globe2,
   Mic,
@@ -25,7 +24,12 @@ import {
 } from 'lucide-react'
 import { useStudioHost } from '@dovo/studio-core'
 import { Button, IconButton, Popover } from '@dovo/studio-ui'
-import type { BrowserCommand, BrowserSitePermissions } from '@dovo/protocol'
+import {
+  browserCertificateEntries,
+  type BrowserCommand,
+  type BrowserPageCertificate,
+  type BrowserSitePermissions,
+} from '@dovo/protocol'
 
 const controls = [
   { permission: 'notifications', label: 'Notifications', Icon: Bell },
@@ -56,17 +60,26 @@ const controls = [
 export function BrowserSiteControls({
   tabKey,
   url,
+  documentRevision,
   profileName,
+  triggerRef,
 }: {
   tabKey: string
   url: string
+  documentRevision: number
   profileName: string
+  triggerRef?: Ref<HTMLButtonElement>
 }) {
   const uiText = useInterfaceText()
 
   const { browser } = useStudioHost()
   const [open, setOpen] = useState(false)
   const [state, setState] = useState<BrowserSitePermissions>()
+  const [snapshot, setSnapshot] = useState<{
+    revision: number
+    certificate: BrowserPageCertificate
+  }>()
+  const certificate = snapshot?.revision === documentRevision ? snapshot.certificate : undefined
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const [confirmClear, setConfirmClear] = useState(false)
@@ -85,7 +98,11 @@ export function BrowserSiteControls({
     setError('')
     try {
       const result = await browser(command)
-      if (result?.sitePermissions) setState(result.sitePermissions)
+      if (command.action === 'site-certificate') {
+        if (!result?.certificate || result.certificate.origin !== command.origin)
+          throw new Error('Certificate details are unavailable for this page.')
+        setSnapshot({ revision: documentRevision, certificate: result.certificate })
+      } else if (result?.sitePermissions) setState(result.sitePermissions)
       else
         throw new Error('Website controls are unavailable. Update the desktop app and try again.')
     } catch (cause) {
@@ -102,17 +119,19 @@ export function BrowserSiteControls({
       onOpenChange={(value) => {
         setOpen(value)
         setConfirmClear(false)
-        if (value) void call({ action: 'site-permissions', key: tabKey })
+        setSnapshot(undefined)
+        if (value && browser) void call({ action: 'site-permissions', key: tabKey })
       }}
     >
       <Popover.Trigger asChild>
         <IconButton
+          ref={triggerRef}
           type="button"
           label="Website permissions and site data"
-          disabled={!browser || !page}
+          disabled={!page}
           className="size-8 shrink-0 rounded-full"
         >
-          <SlidersHorizontal size={15} />
+          {page?.protocol === 'https:' ? <LockKeyhole size={15} /> : <Globe2 size={15} />}
         </IconButton>
       </Popover.Trigger>
       <Popover.Portal>
@@ -126,112 +145,151 @@ export function BrowserSiteControls({
             <h2 className="truncate text-sm font-medium">{page?.host}</h2>
             <p className="text-xs text-muted-foreground">{profileName}</p>
           </div>
-          <div className="flex items-center gap-2 text-xs text-muted-foreground">
-            {page?.protocol === 'https:' ? <LockKeyhole size={14} /> : <Globe2 size={14} />}
-            {page?.protocol === 'https:' ? 'Connection is encrypted' : 'HTTP connection'}
-          </div>
-          <div className="space-y-3" aria-busy={busy}>
-            {controls
-              .filter(
-                ({ permission }) =>
-                  permission === 'notifications' ||
-                  permission === 'automatic-pip' ||
-                  (state?.origin === page?.origin && state?.requested?.includes(permission)),
-              )
-              .map(({ permission, label, Icon }) => (
-                <div key={permission} className="flex items-center gap-2">
-                  <Icon size={15} className="shrink-0 text-muted-foreground" />
-                  <label htmlFor={`${tabKey}-${permission}`} className="flex-1 text-sm">
-                    {label}
-                  </label>
-                  <select
-                    id={`${tabKey}-${permission}`}
-                    aria-label={`${label} permission`}
-                    className="min-w-0 rounded border bg-background px-1.5 py-1 text-xs"
-                    disabled={busy || !state || !page}
-                    value={state?.permissions[permission] ?? 'ask'}
-                    onChange={(event) => {
-                      const value = event.target.value
-                      if (value === 'ask' || value === 'allow' || value === 'block')
-                        void call({
-                          action: 'set-site-permission',
-                          origin: page!.origin,
-                          key: tabKey,
-                          permission,
-                          setting: value,
-                        })
-                    }}
-                  >
-                    {permission !== 'automatic-pip' && <option value="ask">Ask every time</option>}
-                    <option value="allow">Allow</option>
-                    <option value="block">Block</option>
-                  </select>
-                  {(permission === 'camera' ||
-                    permission === 'microphone' ||
-                    permission === 'notifications') && (
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="ghost"
-                      disabled={busy || !state || !page}
-                      aria-label={`Request ${label.toLowerCase()} permission`}
-                      onClick={() => {
-                        setOpen(false)
-                        void call({
-                          action: 'request-site-permission',
-                          origin: page!.origin,
-                          key: tabKey,
-                          permission,
-                        })
-                      }}
-                    >
-                      Ask
-                    </Button>
-                  )}
-                </div>
-              ))}
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Reload to stop existing access. Automatic PiP requires a call window from the site.
-          </p>
-          <div className="border-t pt-3">
-            {confirmClear ? (
+          {page?.protocol === 'https:' ? (
+            browser ? (
               <div className="space-y-2">
-                <p className="text-xs">Clear cookies and site data? This may sign you out.</p>
-                <div className="flex gap-2">
-                  <Button
-                    type="button"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => {
-                      void call({ action: 'clear-site-data', key: tabKey, origin: page!.origin })
-                      setConfirmClear(false)
-                    }}
-                  >
-                    Clear site data
-                  </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  disabled={busy}
+                  onClick={() => {
+                    if (certificate) setSnapshot(undefined)
+                    else void call({ action: 'site-certificate', key: tabKey, origin: page.origin })
+                  }}
+                  aria-expanded={!!certificate}
+                >
+                  <LockKeyhole size={14} />
+                  {certificate ? 'Hide certificate' : 'View certificate'}
+                </Button>
+                {certificate && <CertificateChain certificate={certificate} />}
+              </div>
+            ) : (
+              <p className="text-xs text-muted-foreground">
+                Your web browser manages this connection.{' '}
+                <a href={page.href} target="_blank" rel="noopener noreferrer" className="underline">
+                  Open the website in a tab
+                </a>{' '}
+                to view its certificate.
+              </p>
+            )
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              HTTP connection. This page has no TLS certificate.
+            </p>
+          )}
+          {browser && (
+            <>
+              <div className="space-y-3" aria-busy={busy}>
+                {controls
+                  .filter(
+                    ({ permission }) =>
+                      permission === 'notifications' ||
+                      permission === 'automatic-pip' ||
+                      (state?.origin === page?.origin && state?.requested?.includes(permission)),
+                  )
+                  .map(({ permission, label, Icon }) => (
+                    <div key={permission} className="flex items-center gap-2">
+                      <Icon size={15} className="shrink-0 text-muted-foreground" />
+                      <label htmlFor={`${tabKey}-${permission}`} className="flex-1 text-sm">
+                        {label}
+                      </label>
+                      <select
+                        id={`${tabKey}-${permission}`}
+                        aria-label={`${label} permission`}
+                        className="min-w-0 rounded border bg-background px-1.5 py-1 text-xs"
+                        disabled={busy || !state || !page}
+                        value={state?.permissions[permission] ?? 'ask'}
+                        onChange={(event) => {
+                          const value = event.target.value
+                          if (value === 'ask' || value === 'allow' || value === 'block')
+                            void call({
+                              action: 'set-site-permission',
+                              origin: page!.origin,
+                              key: tabKey,
+                              permission,
+                              setting: value,
+                            })
+                        }}
+                      >
+                        {permission !== 'automatic-pip' && (
+                          <option value="ask">Ask every time</option>
+                        )}
+                        <option value="allow">Allow</option>
+                        <option value="block">Block</option>
+                      </select>
+                      {(permission === 'camera' ||
+                        permission === 'microphone' ||
+                        permission === 'notifications') && (
+                        <Button
+                          type="button"
+                          size="sm"
+                          variant="ghost"
+                          disabled={busy || !state || !page}
+                          aria-label={`Request ${label.toLowerCase()} permission`}
+                          onClick={() => {
+                            setOpen(false)
+                            void call({
+                              action: 'request-site-permission',
+                              origin: page!.origin,
+                              key: tabKey,
+                              permission,
+                            })
+                          }}
+                        >
+                          Ask
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Reload to stop existing access. Automatic PiP requires a call window from the site.
+              </p>
+              <div className="border-t pt-3">
+                {confirmClear ? (
+                  <div className="space-y-2">
+                    <p className="text-xs">Clear cookies and site data? This may sign you out.</p>
+                    <div className="flex gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        disabled={busy}
+                        onClick={() => {
+                          void call({
+                            action: 'clear-site-data',
+                            key: tabKey,
+                            origin: page!.origin,
+                          })
+                          setConfirmClear(false)
+                        }}
+                      >
+                        Clear site data
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => setConfirmClear(false)}
+                      >
+                        {uiText('Cancel')}
+                      </Button>
+                    </div>
+                  </div>
+                ) : (
                   <Button
                     type="button"
                     size="sm"
                     variant="ghost"
-                    onClick={() => setConfirmClear(false)}
+                    disabled={busy}
+                    onClick={() => setConfirmClear(true)}
                   >
-                    {uiText('Cancel')}
+                    Cookies and site data…
                   </Button>
-                </div>
+                )}
               </div>
-            ) : (
-              <Button
-                type="button"
-                size="sm"
-                variant="ghost"
-                disabled={busy}
-                onClick={() => setConfirmClear(true)}
-              >
-                Cookies and site data…
-              </Button>
-            )}
-          </div>
+            </>
+          )}
           {error && (
             <p role="alert" className="text-xs text-destructive">
               {error}
@@ -240,5 +298,48 @@ export function BrowserSiteControls({
         </Popover.Content>
       </Popover.Portal>
     </Popover.Root>
+  )
+}
+
+function CertificateChain({ certificate }: { certificate: BrowserPageCertificate }) {
+  return (
+    <section aria-label="Certificate chain" className="space-y-2 text-xs">
+      <p className="text-muted-foreground">
+        {[certificate.protocol, certificate.cipher].filter(Boolean).join(' · ')}
+      </p>
+      {'leaf' in certificate && (
+        <p>Chromium did not provide the certificate chain for this page.</p>
+      )}
+      {browserCertificateEntries(certificate).map((item, index) => (
+        <details
+          key={item.fingerprint256 ?? index}
+          open={index === 0}
+          className="rounded-md border p-2"
+        >
+          <summary className="cursor-pointer font-medium">
+            {index === 0 ? 'Site certificate' : `Issuer certificate ${index}`}
+          </summary>
+          <dl className="mt-2 space-y-1.5">
+            {[
+              ['Subject', item.subject],
+              ['Issuer', item.issuer],
+              ['Valid from', item.validFrom],
+              ['Valid until', item.validTo],
+              ['Subject alternative names', item.subjectAltName],
+              ['Serial number', item.serialNumber],
+              ['SHA-256 fingerprint', item.fingerprint256],
+            ].map(
+              ([label, value]) =>
+                value && (
+                  <div key={label}>
+                    <dt className="text-muted-foreground">{label}</dt>
+                    <dd className="select-text whitespace-pre-line break-all">{value}</dd>
+                  </div>
+                ),
+            )}
+          </dl>
+        </details>
+      ))}
+    </section>
   )
 }

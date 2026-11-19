@@ -12,6 +12,7 @@ const built = await bundleBrowser(
       contents: `
 import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {CommandPalette} from '../studio-shell/src/command-palette';
+import {Dialog,DialogContent,DialogTitle} from '@dovo/studio-ui';
 window.executed=[];
 const definitions=[
   {id:'workspace',title:'Open workspace',aliases:['thread','thread']},
@@ -22,8 +23,8 @@ const definitions=[
   {id:'terminal',title:'Toggle terminal',aliases:['shell','console']},
   {id:'appearance',title:'Open Appearance',aliases:['fonts typography themes']},
 ];
-function App(){const[open,setOpen]=useState(false),[commands,setCommands]=useState(definitions);window.setCommands=setCommands;
-return <><button onClick={()=>setOpen(true)}>Open commands</button><main className="studio-main" tabIndex={-1}>Workspace</main><CommandPalette open={open} onOpenChange={setOpen} commands={commands.map(command=>({...command,run:()=>window.executed.push(command.id)}))}/></>}
+function App(){const[open,setOpen]=useState(false),[commands,setCommands]=useState(definitions),[appearance,setAppearance]=useState(false);window.setCommands=setCommands;
+return <><button onClick={()=>setOpen(true)}>Open commands</button><main className="studio-main" tabIndex={-1}>Workspace</main><CommandPalette open={open} onOpenChange={setOpen} commands={commands.map(command=>({...command,run:()=>{window.executed.push(command.id);if(command.id==='appearance')setAppearance(true)}}))}/><Dialog modal={false} open={appearance} onOpenChange={setAppearance}><DialogContent><DialogTitle>Appearance</DialogTitle><input aria-label="Font size"/></DialogContent></Dialog></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -177,6 +178,18 @@ try {
   await options.filter({ hasText: /^Toggle terminal$/ }).click()
   await input.waitFor({ state: 'detached' })
   assert.deepEqual(await page.evaluate(() => window.executed), ['new', 'new', 'terminal'])
+  await opener.click()
+  await input.fill('fonts')
+  await input.press('Enter')
+  await input.waitFor({ state: 'detached' })
+  // Radix schedules the closing palette's focus restoration after it unmounts.
+  await page.evaluate(
+    () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+  )
+  assert.ok(
+    await page.evaluate(() => document.activeElement?.getAttribute('aria-label') === 'Font size'),
+    'The opened dialog retains keyboard focus',
+  )
   assert.deepEqual(errors, [])
   console.log(
     'Command palette: trimmed/case-insensitive aliases, stable title-first ranking, duplicate-match suppression, keyboard/mouse execution, IME, empty results and focus restoration passed.',

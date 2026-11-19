@@ -306,6 +306,7 @@ export const snapshotSchema = mutableStruct({
   automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
   automationStartupRetrySupported: Schema.optional(Schema.Literal(true)),
   browserTimezoneSupported: Schema.optional(Schema.Literal(true)),
+  browserCertificatesSupported: Schema.optional(Schema.Literal(true)),
   localBrowserPreviewSupported: Schema.optional(Schema.Literal(true)),
   linearKeySource: Schema.optional(linearKeySourceSchema),
   linearIssuesSupported: Schema.optional(Schema.Literal(true)),

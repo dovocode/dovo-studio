@@ -1,4 +1,5 @@
 import { createBrowserUploadPicker } from './browser-upload-viewer'
+import { createBrowserCertificateViewer } from './browser-certificate-viewer'
 import { createBrowserDownloads } from './browser-download-viewer'
 import { decode } from './shared/schema.js'
 // Browser-only entry point, bundled into a self-contained canvas viewer by build-browser-viewer.mjs.
@@ -150,6 +151,15 @@ const dialogValue = element('dialogValue', HTMLInputElement)
 const cancelDialog = element('cancelDialog', HTMLButtonElement)
 let discardDialog: (() => void) | undefined
 let socket: WebSocket | undefined
+const certificate = createBrowserCertificateViewer(
+  element('siteInfo', HTMLButtonElement),
+  element('certificateDialog', HTMLDialogElement),
+  element('certificateBody', HTMLDivElement),
+  (requestId, documentId) => {
+    if (socket?.readyState === WebSocket.OPEN)
+      socket.send(JSON.stringify({ type: 'certificateRequest', requestId, documentId }))
+  },
+)
 const downloads = createBrowserDownloads({
   send(message) {
     if (simulator || socket?.readyState !== WebSocket.OPEN) return false
@@ -297,6 +307,7 @@ function enabled(value: boolean) {
   element('go', HTMLButtonElement).disabled = !value
   element('close', HTMLButtonElement).disabled = !value
   if (!value) {
+    certificate.update(undefined)
     downloads.disconnect()
     uploadPicker.disconnect()
     discardDialog?.()
@@ -562,6 +573,8 @@ function connect(url: string) {
           blob: new Blob([bytes], { type: 'image/jpeg' }),
           receivedAt: performance.now(),
         })
+      } else if (message.type === 'certificate') {
+        certificate.show(message.requestId, message.result)
       } else if (message.type === 'download') {
         if (!simulator) downloads.offer(message)
       } else if (message.type === 'downloadRemoved') {
@@ -585,6 +598,7 @@ function connect(url: string) {
         linkPreview.hidden = !message.href
         editableFocus(message.editable)
       } else if (message.type === 'state') {
+        if (!simulator) certificate.update(message)
         reload.setAttribute('aria-busy', String(message.loading))
         nativeTouch = message.touch === true
         primaryModifier = message.primaryModifier
@@ -715,6 +729,10 @@ window.addEventListener('message', (event) => {
     } catch {
       notice('Invalid browser input.', true)
     }
+    return
+  }
+  if ('type' in message && message.type === 'certificate') {
+    if (!simulator) certificate.open()
     return
   }
   if ('type' in message && message.type === 'performance') {

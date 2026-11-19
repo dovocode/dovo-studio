@@ -7,6 +7,7 @@ import {
   remoteBrowserInputSchema,
   remoteBrowserUploadSchema,
   remoteBrowserDownloadCommandSchema,
+  remoteBrowserCertificateRequestSchema,
   simulatorInputSchema,
 } from '@dovo/protocol'
 import type { BrowserFrame, BrowserOutput } from '../../previews/browser.js'
@@ -280,6 +281,25 @@ export function attachBrowserSocket(
         windowStart = Date.now()
       }
       if (++count > (simulatorId ? 200 : 400)) throw new Error('Too many browser commands')
+      const certificate = !simulatorId && decodeResult(remoteBrowserCertificateRequestSchema, value)
+      if (certificate && certificate.success) {
+        const { requestId, documentId } = certificate.data
+        void services.browsers.certificate(resourceId, documentId, authorize).then(
+          (result) => send({ type: 'certificate', requestId, result }),
+          (error) =>
+            send({
+              type: 'certificate',
+              requestId,
+              result: {
+                error:
+                  error instanceof HttpError
+                    ? error.message
+                    : 'Could not read the loaded certificate.',
+              },
+            }),
+        )
+        return
+      }
       const download = !simulatorId && decodeResult(remoteBrowserDownloadCommandSchema, value)
       if (download && download.success) {
         const command = download.data

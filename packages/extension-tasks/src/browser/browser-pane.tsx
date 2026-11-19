@@ -23,7 +23,7 @@ import { BrowserLibrary } from './browser-library'
 import {
   readSharedBrowserTabs,
   readSharedBrowserLibrary,
-  saveSharedBrowserLibrary,
+  updateSharedBrowserLibrary,
   SHARED_BROWSER_LIBRARY_KEY,
   saveSharedBrowserTabs,
   recentBrowserTabs,
@@ -34,6 +34,7 @@ import {
   rememberBrowserVisit,
   type BrowserTabs,
   type BrowserTab,
+  type BrowserLibraryState,
 } from './shared-browser-tabs'
 import { SharedBrowserActions } from './shared-browser-actions'
 import { BrowserThreadPanel } from './browser-thread-panel'
@@ -77,6 +78,7 @@ import {
   type RefObject,
 } from 'react'
 import {
+  Globe2,
   Home,
   ChevronDown,
   ArrowLeft,
@@ -442,7 +444,7 @@ function BrowserContent({
     shared ? readSharedBrowserTabs(storageWindowId) : {},
   )
   const saved = savedTabs.get(scope) ?? restored.state
-  const [library] = useApplicationState(() =>
+  const [library, setLibrary] = useApplicationState(() =>
     shared ? readSharedBrowserLibrary() : { bookmarks: [], visits: [], error: undefined },
   )
   const initialUrl =
@@ -527,10 +529,9 @@ function BrowserContent({
     settled: false,
   })
   const [snoozingTab, setSnoozingTab] = useState<BrowserTab | null>(null)
-  const [bookmarks, setBookmarks] = useApplicationState<BrowserTab[]>(() => library.bookmarks)
+  const { bookmarks, visits } = library
   const [libraryView, setLibraryView] = useState<'bookmarks' | 'history' | null>(null)
   const [closed, setClosed] = useApplicationState<BrowserTab[]>(() => saved?.closed ?? [])
-  const [visits, setVisits] = useApplicationState<BrowserTab[]>(() => library.visits)
   const [openedTabs, setOpenedTabs] = useApplicationState(() => new Set([activeTab]))
   const currentTabs = useRef(tabs)
   currentTabs.current = tabs
@@ -906,6 +907,7 @@ function BrowserContent({
   const editing = useRef(false)
   const addressField = useRef<HTMLInputElement>(null)
   const openerAddressField = useRef<HTMLInputElement>(null)
+  const siteInfoTrigger = useRef<HTMLButtonElement>(null)
   const starterAddressField = useRef<HTMLInputElement>(null)
   const newTabMenuSource = useRef('')
   useEffect(() => {
@@ -1043,29 +1045,10 @@ function BrowserContent({
         key: nativeKey(tab.id),
         tab: { ...tab, title: tab.title.slice(0, 4096) },
       }))
-  const lastLibrary = useRef({ bookmarks, visits })
-  useEffect(() => {
-    if (!shared) return
-    const prior = lastLibrary.current
-    if (prior.bookmarks === bookmarks && prior.visits === visits) return
-    const latest = readSharedBrowserLibrary()
-    if (latest.error) {
-      setError(latest.error)
-      return
-    }
-    const merged = {
-      bookmarks: prior.bookmarks === bookmarks ? latest.bookmarks : bookmarks,
-      visits: prior.visits === visits ? latest.visits : visits,
-    }
-    try {
-      saveSharedBrowserLibrary(merged)
-      lastLibrary.current = merged
-      setBookmarks(merged.bookmarks)
-      setVisits(merged.visits)
-    } catch {
-      setError('Could not save bookmarks and history. Keep this window open.')
-    }
-  }, [shared, bookmarks, visits])
+  const changeLibrary = (update: (state: BrowserLibraryState) => BrowserLibraryState) =>
+    void updateSharedBrowserLibrary(update).then(setLibrary, (cause) =>
+      setError(`Could not save bookmarks and history. ${String(cause)}`),
+    )
   useEffect(() => {
     if (!shared) return
     const changed = (event: StorageEvent) => {
@@ -1075,16 +1058,17 @@ function BrowserContent({
         setError(latest.error)
         return
       }
-      lastLibrary.current = latest
-      setBookmarks(latest.bookmarks)
-      setVisits(latest.visits)
+      setLibrary(latest)
     }
     window.addEventListener('storage', changed)
     return () => window.removeEventListener('storage', changed)
   }, [shared])
   useEffect(() => {
-    if (shared && /^https?:\/\//i.test(selectedTab.url))
-      setVisits((previous) => rememberBrowserVisit(previous, selectedTab))
+    if (shared && selectedTab.url && restorableTab(selectedTab))
+      changeLibrary((state) => ({
+        ...state,
+        visits: rememberBrowserVisit(state.visits, selectedTab),
+      }))
   }, [
     shared,
     selectedTab.id,
@@ -1208,6 +1192,24 @@ function BrowserContent({
       run: detachBrowser,
     })
   }, [shared, browser, openBrowserWindow, registerCommand, detachBrowser, paneVisible])
+  const showSiteInformation = useCommittedCallback(() => {
+    if (mode === 'remote') remote.current?.certificate()
+    else {
+      if (!siteInfoTrigger.current) flushSync(() => setOptionsOpen(true))
+      siteInfoTrigger.current?.click()
+    }
+  })
+  const siteInfoAvailable =
+    !!websiteOrigin && (mode === 'web' || (mode === 'remote' && remoteOnline))
+  useEffect(() => {
+    if (!shared || !paneVisible || !siteInfoAvailable) return
+    return registerCommand({
+      id: 'browser.site-information',
+      title: 'View website information',
+      aliases: ['Site information', 'Website certificate', 'TLS certificate', 'Site permissions'],
+      run: showSiteInformation,
+    })
+  }, [shared, paneVisible, siteInfoAvailable, registerCommand, showSiteInformation])
   const loadDevices = async () => {
     const hosts = await request(
       '/api/device-hosts',
@@ -1986,15 +1988,14 @@ function BrowserContent({
   const bookmarked = bookmarks.some((tab) => browserPageKey(tab) === browserPageKey(selectedTab))
   const toggleBookmark = () => {
     if (!selectedTab.url || !restorableTab(selectedTab)) return
-    if (!bookmarked && bookmarks.length >= 100) {
-      setError('Remove a bookmark before saving more than 100 pages.')
-      return
-    }
-    setBookmarks((previous) =>
-      bookmarked
-        ? previous.filter((tab) => browserPageKey(tab) !== browserPageKey(selectedTab))
-        : [...previous, { ...selectedTab }],
-    )
+    changeLibrary((state) => {
+      const others = state.bookmarks.filter(
+        (tab) => browserPageKey(tab) !== browserPageKey(selectedTab),
+      )
+      if (!bookmarked && others.length >= 100)
+        throw new Error('Remove a bookmark before saving more than 100 pages.')
+      return { ...state, bookmarks: bookmarked ? others : [...others, { ...selectedTab }] }
+    })
   }
   const tabShortcut = (key: 't' | 'w' | 'd', shift: boolean) => {
     if (key === 't') {
@@ -2541,6 +2542,17 @@ function BrowserContent({
           )}
           {mode === 'remote' && (
             <div className="space-y-2">
+              <Popover.Close asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={!remoteOnline || !/^https?:\/\//i.test(url)}
+                  onClick={() => remote.current?.certificate()}
+                >
+                  Site information
+                </Button>
+              </Popover.Close>
               <Button
                 type="button"
                 variant="ghost"
@@ -3077,32 +3089,42 @@ function BrowserContent({
         }}
       />
     )
-    const siteControls = (
-      <>
-        {tab.pinned && tab.homeUrl && (
-          <IconButton
-            label="Return to tab home"
-            type="button"
-            className="size-8 shrink-0"
-            disabled={busy}
-            onClick={() => returnHome(tab)}
-          >
-            <Home size={15} />
-          </IconButton>
-        )}
-        {mode === 'web' && (
-          <BrowserSiteControls
-            key={`${browserKey}:${history.url || url}`}
-            tabKey={browserKey}
-            url={history.url || url}
-            profileName={
-              profiles.find((profile) => profile.id === profileId)?.name ??
-              (isPrivateBrowserProfile(profileId) ? 'Private' : 'Unavailable profile')
-            }
-          />
-        )}
-      </>
+    const homeControl = tab.pinned && tab.homeUrl && (
+      <IconButton
+        label="Return to tab home"
+        type="button"
+        className="size-8 shrink-0"
+        disabled={busy}
+        onClick={() => returnHome(tab)}
+      >
+        <Home size={15} />
+      </IconButton>
     )
+    const siteInformation = /^https?:/.test(history.url || url) ? (
+      mode === 'web' ? (
+        <BrowserSiteControls
+          triggerRef={opener ? undefined : siteInfoTrigger}
+          key={`${browserKey}:${history.url || url}`}
+          documentRevision={opener ? 0 : pageRevision}
+          tabKey={browserKey}
+          url={history.url || url}
+          profileName={
+            profiles.find((profile) => profile.id === profileId)?.name ??
+            (isPrivateBrowserProfile(profileId) ? 'Private' : 'Unavailable profile')
+          }
+        />
+      ) : !opener && mode === 'remote' ? (
+        <IconButton
+          type="button"
+          label="Website certificate"
+          disabled={!remoteOnline}
+          className="size-8 shrink-0"
+          onClick={() => remote.current?.certificate()}
+        >
+          <Globe2 size={15} />
+        </IconButton>
+      ) : undefined
+    ) : undefined
     const secondaryControls = (
       <>
         {mode === 'remote' && (
@@ -3220,6 +3242,7 @@ function BrowserContent({
           !opener && selectedTab.previewOf ? 'Link preview navigation' : 'Browser navigation'
         }
         onPointerDownCapture={opener ? restorePreviewOpener : undefined}
+        data-browser-opener-toolbar={opener ? nativeKey(selectedTab.id) : undefined}
         onFocusCapture={opener ? restorePreviewOpener : undefined}
         onSubmit={(event) => {
           event.preventDefault()
@@ -3254,10 +3277,11 @@ function BrowserContent({
             >
               <RotateCw size={15} />
             </IconButton>
-            {!compact && siteControls}
+            {!compact && homeControl}
             <div className="studio-browser-address relative z-20 flex min-w-0 flex-1 items-center">
               <BrowserAddressInput
                 value={input}
+                siteInfo={!compact && siteInformation ? siteInformation : undefined}
                 search={
                   (websiteProfile ?? tabProfiles.find((profile) => profile.id === 'default'))
                     ?.search
@@ -3337,7 +3361,8 @@ function BrowserContent({
               compact && (
                 <>
                   {historyButton('forward')}
-                  {siteControls}
+                  {homeControl}
+                  {mode === 'web' && siteInformation}
                   {secondaryControls}
                 </>
               ),
@@ -3570,6 +3595,7 @@ function BrowserContent({
       preview={
         selectedTab.previewOf
           ? {
+              key: browserKey,
               title: selectedTab.url.replace(/^https?:\/\//, '').split('/')[0] || 'Link',
               placement: previewPlacement,
               background: previewBackground,
@@ -3707,11 +3733,18 @@ function BrowserContent({
           onOpen={openSavedPage}
           onReopen={reopenTab}
           onRemoveBookmark={(tab) =>
-            setBookmarks((previous) =>
-              previous.filter((item) => browserPageKey(item) !== browserPageKey(tab)),
-            )
+            changeLibrary((state) => ({
+              ...state,
+              bookmarks: state.bookmarks.filter(
+                (item) => browserPageKey(item) !== browserPageKey(tab),
+              ),
+            }))
           }
-          onClearHistory={() => setVisits([])}
+          localProfileHistory={!!browser}
+          onClearHistory={async () => {
+            await browser?.({ action: 'clear-history', key: browserKey })
+            setLibrary(await updateSharedBrowserLibrary((state) => ({ ...state, visits: [] })))
+          }}
         />
       )}
       {!!pendingWindows.length && (
@@ -4346,6 +4379,7 @@ function BrowserLayout({
   devices: boolean
   children: React.ReactNode
   preview?: {
+    key: string
     title: string
     placement: PreviewPlacement
     background: BrowserPreviewBackground | null
@@ -4358,10 +4392,22 @@ function BrowserLayout({
   }
 }) {
   const sidebarState = useNavigationSidebar()
+  const { onBrowserPreviewInput } = useStudioHost()
+  const currentPreview = useRef(preview)
+  currentPreview.current = preview
+  const previewKey = preview?.key
   useEffect(() => {
-    const slot = preview?.backgroundRef.current
-    if (slot && preview) return onNativeBrowserBackgroundClick(slot, preview.onReturnToOpener)
-  }, [preview])
+    const slot = currentPreview.current?.backgroundRef.current
+    if (slot && previewKey)
+      return onNativeBrowserBackgroundClick(
+        slot,
+        () => {
+          if (currentPreview.current?.key === previewKey) currentPreview.current.onReturnToOpener()
+        },
+        previewKey,
+        onBrowserPreviewInput,
+      )
+  }, [previewKey, onBrowserPreviewInput])
   return (
     <section
       className="@container/browser relative flex h-full min-h-0 min-w-0"
@@ -4384,7 +4430,6 @@ function BrowserLayout({
               data-browser-preview-background
               aria-label="Return to opener"
               title={preview.background?.url || preview.background?.title}
-              onClick={preview.onReturnToOpener}
               className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-background text-left focus-visible:outline-2 focus-visible:outline-ring"
             >
               {preview.background?.image && (

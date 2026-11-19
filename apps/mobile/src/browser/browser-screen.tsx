@@ -2,6 +2,7 @@ import { BrowserTimezoneSettings } from './browser-timezone-settings'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useBrowserWorkspace } from './browser-workspace'
+import { BrowserCertificateSheet } from './browser-certificate-sheet'
 import { BrowserNavigation } from './browser-navigation'
 import * as Clipboard from 'expo-clipboard'
 import { randomUUID } from 'expo-crypto'
@@ -151,6 +152,7 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
   } | null>(null)
   const [websiteReload, setWebsiteReload] = useState(0)
   const [library, setLibrary] = useState<'tabs' | 'bookmarks' | 'history' | null>(null)
+  const [certificateFor, setCertificateFor] = useState('')
   const [optionsOpen, setOptionsOpen] = useState(false)
   const [pageActionsOpen, setPageActionsOpen] = useState(false)
   const [query, setQuery] = useState('')
@@ -207,6 +209,18 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
       return undefined
     }
   })()
+  const certificatePage = native.status?.tabs.find(
+    (tab) => tab.tabId === active.id && tab.profileId === active.profileId,
+  )
+  const certificateKey = JSON.stringify([
+    active.kind,
+    active.id,
+    active.profileId,
+    active.url,
+    certificatePage?.certificateDocumentId,
+    certificatePage?.loadState,
+  ])
+  useEffect(() => setCertificateFor(''), [certificateKey])
   useEffect(() => setCustomization(null), [websiteOrigin])
   const websiteProfiles = active.kind === 'local' ? preferences.browserProfiles : profiles
   const websiteProfile = websiteProfiles.find((profile) => profile.id === active.profileId)
@@ -1482,6 +1496,15 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
           />
         </Sheet>
       )}
+      {certificateFor === certificateKey && active.kind === 'local' && websiteOrigin && (
+        <BrowserCertificateSheet
+          tabId={active.id}
+          documentId={certificatePage?.certificateDocumentId ?? undefined}
+          origin={websiteOrigin}
+          nativeAvailable={nativeAvailable}
+          onClose={() => setCertificateFor('')}
+        />
+      )}
       {optionsOpen && (
         <Sheet
           ref={optionsSheet}
@@ -1507,6 +1530,15 @@ export function BrowserScreen({ unified = false }: { unified?: boolean }) {
                 disabled={!active.url || nativeOpening}
                 onPress={() => optionsSheet.current?.dismiss(() => setPageActionsOpen(true))}
               />
+              {websiteOrigin && (
+                <Action
+                  secondary
+                  label={uiText('Site information')}
+                  onPress={() =>
+                    optionsSheet.current?.dismiss(() => setCertificateFor(certificateKey))
+                  }
+                />
+              )}
               <Action
                 secondary
                 label={uiText('Bookmarks')}

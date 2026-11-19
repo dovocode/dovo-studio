@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import * as store from './browser-web-store'
 
 const { EventEmitter } = await vi.hoisted(() => import('node:events'))
 
@@ -10,8 +11,8 @@ const f = vi.hoisted(() => {
   class PopupWindow extends EventEmitter {
     webContents = Object.assign(new EventEmitter(), { isDestroyed: () => false })
     isDestroyed = () => false
-    setHasShadow = vi.fn()
-    destroy = vi.fn(() => {
+    setHasShadow = vi.fn<(on: boolean) => void>()
+    destroy = vi.fn<() => void>(() => {
       this.isDestroyed = () => true
       this.emit('closed')
     })
@@ -62,6 +63,18 @@ const f = vi.hoisted(() => {
     sessions,
     fakeSession,
     userData: '',
+    grants: vi.fn<() => { permissions: string[]; origins: string[] } | undefined>(() => ({
+      permissions: [],
+      origins: [],
+    })),
+    pages: vi.fn<
+      () => Array<{
+        isDestroyed: () => boolean
+        session: unknown
+        getType: () => string
+        getURL: () => string
+      }>
+    >(() => []),
     enabled: true,
     unifiedEnabled: false,
     zoom: vi.fn<() => number>(() => 1),
@@ -94,6 +107,7 @@ const f = vi.hoisted(() => {
 })
 vi.mock('electron', () => ({
   app: { getPath: () => f.userData },
+  webContents: { getAllWebContents: f.pages },
   BrowserWindow: f.PopupWindow,
   dialog: { showOpenDialog: f.dialog, showMessageBox: f.review },
   session: {
@@ -116,7 +130,7 @@ vi.mock('electron-chrome-extensions', () => ({
       },
     }
     api = {
-      permissions: { getAll: vi.fn<() => undefined>() },
+      permissions: { getAll: f.grants },
       browserAction: { activateClick: vi.fn<(details: unknown) => void>() },
     }
     constructor(public options: never) {
@@ -126,7 +140,7 @@ vi.mock('electron-chrome-extensions', () => ({
   },
 }))
 vi.mock('./browser-native-messaging', () => ({
-  attachNativeMessaging: () => ({ close: vi.fn<() => void>() }),
+  attachNativeMessaging: () => ({ connected: () => false, close: vi.fn<() => void>() }),
 }))
 vi.mock('electron-chrome-extensions/preload?raw', () => ({ default: '/* crx preload */' }))
 vi.mock('@dovo/protocol/local-settings', () => ({
@@ -157,6 +171,7 @@ const tabs = {
 const PNG = Buffer.from('89504e470d0a1a0a0000000d4948445200000001000000010806000000', 'hex')
 beforeEach(async () => {
   vi.clearAllMocks()
+  f.grants.mockReturnValue({ permissions: [], origins: [] })
   root = await mkdtemp(join(tmpdir(), 'dovo-browser-extensions-'))
   f.userData = join(root, 'user-data')
   f.enabled = true
@@ -166,6 +181,8 @@ beforeEach(async () => {
 })
 afterEach(async () => {
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+  vi.useRealTimers()
   await rm(root, { recursive: true, force: true })
 })
 async function fixture(name: string, manifest: object = {}) {
@@ -894,4 +911,272 @@ it('enables browser extensions when only unified workspace is opted in', async (
   await expect(
     extensions.handle(window, { action: 'list', profileId: 'work' }),
   ).resolves.toMatchObject({ extensions: [] })
+})
+
+it('retains a disabled extension and its toolbar pin on replacement without running its code', async () => {
+  const key = Buffer.from('disabled fixture key').toString('base64')
+  const manager = createBrowserExtensions(tabs)
+  choose(await fixture('First', { key }))
+  const result = await manager.handle(window, { action: 'install', profileId: 'work' })
+  const id = result!.installed!
+  await manager.handle(window, { action: 'disable', profileId: 'work', id })
+  await manager.handle(window, { action: 'pin', profileId: 'work', id })
+  workSession().extensions.loadExtension.mockClear()
+  choose(await fixture('Second', { key, version: '2' }))
+  await expect(
+    manager.handle(window, { action: 'install', profileId: 'work' }),
+  ).resolves.toMatchObject({
+    extensions: [{ id, enabled: false, loaded: false, pinned: true, version: '2' }],
+  })
+  expect(workSession().extensions.loadExtension).not.toHaveBeenCalled()
+})
+
+it('denies private browser extension commands before opening a session', async () => {
+  await expect(
+    createBrowserExtensions(tabs).handle(window, {
+      action: 'list',
+      profileId: 'private-00000000-0000-4000-8000-000000000001',
+    }),
+  ).rejects.toThrow(/Private profiles/)
+  expect(f.sessions.size).toBe(0)
+})
+
+/** Archive identity and extraction use actual signed packages in browser-web-store.test.ts. */
+function mockStore() {
+  const key = Buffer.from('verified Store fixture public key')
+  const id = f.toId(key)
+  const request = vi.fn<typeof fetch>()
+  vi.stubGlobal('fetch', request)
+  vi.spyOn(store, 'unpackStoreExtension').mockImplementation(async (bytes, storeId, target) => {
+    expect(storeId).toBe(id)
+    await writeFile(join(target, 'manifest.json'), bytes)
+    return key.toString('base64')
+  })
+  const release = (version: string, manifest: object = {}) =>
+    new Response(
+      JSON.stringify({ name: 'Store fixture', version, manifest_version: 3, ...manifest }),
+    )
+  request.mockResolvedValueOnce(release('1.0'))
+  const manager = createBrowserExtensions(tabs)
+  const install = async () =>
+    manager.handle(window, { action: 'installStore', profileId: 'work', url: id })
+  const run = async (action: string) => manager.handle(window, { action, profileId: 'work', id })
+  return { id, key, manager, install, release, request, run }
+}
+
+it('updates a verified Store extension, keeping the installed version on download and load failures', async () => {
+  const { id, manager, install, release, request, run } = mockStore()
+  try {
+    await expect(install()).resolves.toMatchObject({
+      extensions: [{ id, storeUpdates: { automatic: true } }],
+    })
+    await run('pin')
+    const original = workSession().extensions.loadExtension
+    request.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await expect(run('checkUpdate')).resolves.toMatchObject({ extensions: [{ version: '1.0' }] })
+    expect(original).toHaveBeenCalledTimes(1)
+    request.mockRejectedValueOnce(new Error('Offline'))
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [{ version: '1.0', loaded: true, storeUpdates: { error: 'Offline' } }],
+    })
+    original.mockRejectedValueOnce(new Error('incompatible'))
+    request.mockResolvedValueOnce(release('1.9'))
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [
+        {
+          version: '1.0',
+          loaded: true,
+          storeUpdates: { error: expect.stringContaining('incompatible') },
+        },
+      ],
+    })
+    request.mockResolvedValueOnce(release('1.10.0.1'))
+    const updated = await run('checkUpdate')
+    expect(updated).toMatchObject({
+      extensions: [
+        {
+          id,
+          loaded: true,
+          enabled: true,
+          pinned: true,
+          version: '1.10.0.1',
+          storeUpdates: { automatic: true },
+        },
+      ],
+    })
+    expect(updated?.extensions[0]?.storeUpdates?.error).toBeUndefined()
+    expect(await installedCopies('work')).toHaveLength(1)
+    request.mockResolvedValueOnce(release('1.9'))
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [{ version: '1.10.0.1' }],
+    })
+    expect(f.review).toHaveBeenCalledTimes(1)
+  } finally {
+    await manager.dispose()
+  }
+})
+
+it('automatically updates with existing access and keeps the old version during permission review', async () => {
+  vi.useFakeTimers()
+  const { id, manager, install, release, request, run } = mockStore()
+  try {
+    await install()
+    const tick = async () => {
+      vi.setSystemTime(Date.now() + 7 * 60 * 60_000)
+      await vi.advanceTimersByTimeAsync(15 * 60_000)
+    }
+    const profile = workSession()
+    f.pages.mockReturnValue([
+      {
+        isDestroyed: () => false,
+        session: profile,
+        getType: () => 'browserView',
+        getURL: () => `chrome-extension://${id}/options.html`,
+      },
+    ])
+    await tick()
+    expect(request).toHaveBeenCalledTimes(1)
+    f.pages.mockReturnValue([])
+    request.mockResolvedValueOnce(release('2'))
+    await tick()
+    await vi.waitFor(async () => expect((await run('list'))?.extensions[0]?.version).toBe('2'))
+    expect(f.review).toHaveBeenCalledTimes(1)
+    const manifest = {
+      host_permissions: ['https://*.example.com/*'],
+      optional_permissions: ['nativeMessaging'],
+    }
+    request.mockResolvedValueOnce(release('3', manifest))
+    await tick()
+    await vi.waitFor(async () =>
+      expect((await run('list'))?.extensions[0]).toMatchObject({
+        version: '2',
+        loaded: true,
+        storeUpdates: { pendingVersion: '3' },
+      }),
+    )
+    expect(f.review).toHaveBeenCalledTimes(1)
+    request.mockResolvedValueOnce(release('3', manifest))
+    f.review.mockResolvedValueOnce({ response: 1 })
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [{ version: '2', storeUpdates: { pendingVersion: '3' } }],
+    })
+    expect(f.review.mock.calls.at(-1)?.[1].detail).toContain('Optional permission: nativeMessaging')
+    request.mockRejectedValueOnce(new Error('Offline'))
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [{ version: '2', storeUpdates: { pendingVersion: '3', error: 'Offline' } }],
+    })
+    request.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    expect((await run('checkUpdate'))?.extensions[0]?.storeUpdates?.pendingVersion).toBeUndefined()
+    request.mockResolvedValueOnce(release('3', manifest))
+    await expect(run('checkUpdate')).resolves.toMatchObject({
+      extensions: [{ version: '3', loaded: true }],
+    })
+    await run('disableAutoUpdates')
+    const count = request.mock.calls.length
+    await tick()
+    expect(request).toHaveBeenCalledTimes(count)
+    await run('enableAutoUpdates')
+    request.mockResolvedValueOnce(new Response(null, { status: 204 }))
+    await tick()
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(count + 1))
+  } finally {
+    await manager.dispose()
+  }
+})
+
+it('requires a verified Store reinstall to enroll a keyed folder and drops enrollment on folder replacement', async () => {
+  const { key, id, install, manager, run } = mockStore()
+  try {
+    const source = await fixture('Folder', { key: key.toString('base64') })
+    choose(source)
+    await run('install')
+    await expect(run('checkUpdate')).rejects.toThrow(/verified Chrome Web Store/)
+    await expect(install()).resolves.toMatchObject({
+      extensions: [{ id, storeUpdates: { automatic: true } }],
+    })
+    choose(source)
+    await run('install')
+    expect((await run('list'))?.extensions[0]?.storeUpdates).toBeUndefined()
+  } finally {
+    await manager.dispose()
+  }
+})
+
+it('allows removing the extension during a slow check without reinstalling it afterwards', async () => {
+  const { manager, install, release, request, run } = mockStore()
+  let answer!: (response: Response) => void
+  try {
+    await install()
+    request.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          answer = resolve
+        }),
+    )
+    const checking = run('checkUpdate')
+    await vi.waitFor(() => expect(answer).toBeDefined())
+    await run('remove')
+    answer(release('2'))
+    await expect(checking).resolves.toMatchObject({ extensions: [] })
+    expect(await installedCopies('work')).toEqual([])
+  } finally {
+    await manager.dispose()
+  }
+})
+
+it('cancels a pending update when Browser is turned off and retains the old version on return', async () => {
+  const { manager, install, request, run } = mockStore()
+  let signal: AbortSignal | null | undefined
+  try {
+    await install()
+    request.mockImplementationOnce(
+      (_url, init) =>
+        new Promise((_resolve, reject) => {
+          signal = init?.signal
+          signal?.addEventListener('abort', () => reject(signal?.reason), { once: true })
+        }),
+    )
+    const checking = run('checkUpdate')
+    await vi.waitFor(() => expect(signal).toBeDefined())
+    f.enabled = false
+    await manager.sync()
+    await checking
+    expect(signal?.aborted).toBe(true)
+    expect(workSession().loaded.size).toBe(0)
+    f.enabled = true
+    await manager.sync()
+    await expect(run('list')).resolves.toMatchObject({
+      extensions: [{ version: '1.0', loaded: true, storeUpdates: { automatic: true } }],
+    })
+  } finally {
+    await manager.dispose()
+  }
+})
+
+it('keeps revoked required access and optional grants until the user reviews their reset', async () => {
+  vi.useFakeTimers()
+  const { manager, install, request, run, release } = mockStore()
+  const manifest = { permissions: ['history'], optional_permissions: ['downloads'] }
+  request.mockReset().mockResolvedValueOnce(release('1', manifest))
+  try {
+    await install()
+    f.grants.mockReturnValue({ permissions: ['downloads'], origins: [] })
+    request.mockResolvedValueOnce(release('2', manifest))
+    vi.setSystemTime(Date.now() + 7 * 60 * 60_000)
+    await vi.advanceTimersByTimeAsync(60_000)
+    await vi.waitFor(async () =>
+      expect((await run('list'))?.extensions[0]).toMatchObject({
+        version: '1',
+        storeUpdates: { pendingVersion: '2' },
+      }),
+    )
+    expect(f.review).toHaveBeenCalledTimes(1)
+    request.mockResolvedValueOnce(release('2', manifest))
+    await expect(run('checkUpdate')).resolves.toMatchObject({ extensions: [{ version: '2' }] })
+    const detail = f.review.mock.calls.at(-1)?.[1].detail
+    expect(detail).toContain('Previously removed access will be granted again: history')
+    expect(detail).toContain('Optional access will need approval again: downloads')
+  } finally {
+    await manager.dispose()
+  }
 })

@@ -40,6 +40,7 @@ const commands = [
   },
   { name: 'studio_browsers', command: { action: 'snapshot', id: 'tab-42' } },
   { name: 'studio_browsers', command: { action: 'elements', id: 'tab-42' } },
+  { name: 'studio_browsers', command: { action: 'certificate', id: 'tab-42' } },
   { name: 'studio_ui', command: { action: 'theme-set', sessionId: 'ui-42', mode: 'dark' } },
   { name: 'studio_diagnostics', command: { action: 'health' } },
   { name: 'studio_diagnostics', command: { action: 'event', id: 'event-42', offset: 8000 } },

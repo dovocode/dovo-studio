@@ -56,6 +56,8 @@ const server = createServer((request,response) => {
     "await sender.setLocalDescription(await sender.createOffer());await gathered(sender);await receiver.setRemoteDescription(sender.localDescription);" +
     "await receiver.setLocalDescription(await receiver.createAnswer());await gathered(receiver);await sender.setRemoteDescription(receiver.localDescription)})();" +
     "navigator.mediaSession.setActionHandler('enterpictureinpicture',async()=>{const child=await documentPictureInPicture.requestWindow({width:420,height:280,disallowReturnToOpener:!!window.disallowReturn});child.document.body.append(document.getElementById('call'));child.addEventListener('pagehide',()=>{window.closedWhileHidden=document.hidden;if(!document.hidden)document.body.append(child.document.getElementById('call'))},{once:true})});</script>")
+  else if (request.url === '/draft-form') response.end('<!doctype html><script>window.addEventListener("message",event=>{if(event.source===document.querySelector("iframe").contentWindow)window.draftState=event.data})</script><iframe src="http://localhost:'+port+'/draft-field"></iframe>')
+  else if (request.url === '/draft-field') response.end('<!doctype html><textarea></textarea><script>const field=document.querySelector("textarea");window.addEventListener("message",event=>{if(event.data==="focus-draft"){field.focus();field.dispatchEvent(new InputEvent("input",{bubbles:true}))}else if(event.data==="read-draft")parent.postMessage(field.value,"*")});field.oninput=()=>parent.postMessage(field.value,"*");parent.postMessage("ready","*")</script>')
   else if (request.url === '/frame') response.end('<!doctype html><p>frame world</p>')
   else response.end('<!doctype html><p>Hello <b>world</b> world</p><p hidden>world hidden</p><div id="shadow"></div><iframe src="http://localhost:'+port+'/frame"></iframe><script>document.getElementById("shadow").attachShadow({mode:"open"}).innerHTML="<p>shadow world</p>"</script>')
 })
@@ -337,6 +339,41 @@ try {
   await call({action:'sleep',key:'workspace-live'})
   await destroyed
   assert.equal(liveContents.isDestroyed(),true)
+  const showDraftTab = (key:string,url:string) => call({action:'show',key,url,workspaceBrowser:true,bounds:{x:0,y:40,width:1000,height:760}})
+  await showDraftTab('form-draft',origin+'/draft-form')
+  const draftView = studio.contentView.children.find(child => child instanceof WebContentsView && child.webContents.getURL()===origin+'/draft-form') as WebContentsView
+  const draftPage = draftView.webContents
+  const waitForDraftState = async (state:string) => {
+    for(let i=0;i<150;i++) {
+      if(await draftPage.executeJavaScript('window.draftState')===state) return
+      await wait(20)
+    }
+    assert.fail('The form frame reported '+JSON.stringify(await draftPage.executeJavaScript('window.draftState'))+' instead of '+JSON.stringify(state))
+  }
+  await waitForDraftState('ready')
+  draftPage.focus()
+  await draftPage.executeJavaScript('document.querySelector("iframe").contentWindow.postMessage("focus-draft","*")')
+  await waitForDraftState('')
+  const draftProtected = async () => (await call({action:'tab-activity',key:'activity'})).protectedKeys.includes('form-draft')
+  assert.equal(await draftProtected(),false,'Script-generated input does not keep a tab alive')
+  draftPage.debugger.attach('1.3')
+  try {
+    const {targetInfos} = await draftPage.debugger.sendCommand('Target.getTargets')
+    const target = targetInfos.find(item=>item.type==='iframe' && item.url.endsWith('/draft-field'))
+    assert.ok(target,'Chromium isolated the form iframe')
+    const {sessionId} = await draftPage.debugger.sendCommand('Target.attachToTarget',{targetId:target.targetId,flatten:true})
+    await draftPage.debugger.sendCommand('Input.insertText',{text:'unsent reply'},sessionId)
+  } finally { draftPage.debugger.detach() }
+  await waitForDraftState('unsent reply')
+  assert.ok(await draftProtected(),'Trusted typing in the iframe protects the tab')
+  for(let i=0;i<6;i++) await showDraftTab('form-pressure-'+i,origin+'/frame?'+i)
+  assert.equal(draftPage.isDestroyed(),false,'Inactive tab pressure keeps the live form')
+  await draftPage.executeJavaScript('window.draftState=null;document.querySelector("iframe").contentWindow.postMessage("read-draft","*")')
+  await waitForDraftState('unsent reply')
+  const slept = new Promise<void>(resolve=>draftPage.once('destroyed',()=>resolve()))
+  await call({action:'sleep',key:'form-draft'})
+  await slept
+  assert.equal(draftPage.isDestroyed(),true,'Explicit sleep still releases an edited page')
   writeFileSync(join(work,'result.json'),JSON.stringify({ok:true}))
   console.log('Native browser page tools: find, JSON, zoom, print/PDF, downloads, unthrottled PiP guests and incoming WebRTC video pixels across repeated opens and hidden main windows, workspace detach/return and sleep passed.')
 } catch(error) {

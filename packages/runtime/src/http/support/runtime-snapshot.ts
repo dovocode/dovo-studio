@@ -337,6 +337,7 @@ export function runtimeSnapshot(
       automationStepInputsSupported: true,
       automationStartupRetrySupported: true,
       browserTimezoneSupported: true,
+      browserCertificatesSupported: true,
       localBrowserPreviewSupported: true,
       linearKeySource,
       linearIssuesSupported: linearKeySource !== 'none' ? true : undefined,

@@ -10,7 +10,10 @@ vi.mock('electron', () => ({
   BrowserWindow: class {},
   shell: {},
 }))
-import { attachExtensionBrowserAPIs } from './browser-extension-browser-apis'
+import {
+  attachExtensionBrowserAPIs,
+  clearLocalBrowserHistory,
+} from './browser-extension-browser-apis'
 import { downloadFilename } from './browser-downloads'
 import { extensionRedirectURL, isExtensionAuthRedirect } from './browser-identity'
 type Extension = { id: string; name: string }
@@ -88,6 +91,26 @@ it('validates API input and rejects unsupported download options instead of chan
   ).toThrow('header')
   expect(() => call('downloads.pause', 99)).toThrow('Invalid download ID')
   adapter.dispose()
+})
+it('clears extension-visible visits in open and inactive local profiles from the library', () => {
+  const work = fixture('work')
+  const inactive = fixture('personal')
+  const page = { url: 'https://example.com/private-work' }
+  work.call('history.addUrl', page)
+  inactive.call('history.addUrl', page)
+  inactive.adapter.dispose()
+  clearLocalBrowserHistory()
+  expect(work.call('history.getVisits', page)).toEqual([])
+  expect(work.sendEvent).toHaveBeenCalledWith('allowed', 'history.onVisitRemoved', {
+    allHistory: true,
+    urls: [],
+  })
+  const reopened = fixture('personal')
+  expect(reopened.call('history.search', { text: '', startTime: 0 })).toEqual([])
+  work.call('history.addUrl', { url: 'https://example.com/after-clear' })
+  expect(work.call('history.search', { text: '', startTime: 0 })).toHaveLength(1)
+  work.adapter.dispose()
+  reopened.adapter.dispose()
 })
 it('confines download names to Downloads, including existing symlinks', async () => {
   const root = join(f.root, 'Downloads'),

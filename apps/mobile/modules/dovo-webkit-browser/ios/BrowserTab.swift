@@ -1,3 +1,5 @@
+import CryptoKit
+import Security
 import UIKit
 import WebKit
 
@@ -16,6 +18,8 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
   private(set) var lastError: String?
   private var observations: [NSKeyValueObservation] = []
   private var updateScheduled = false
+  private var certificateOrigin: String?
+  private(set) var certificateDocumentId: String?
   private var closed = false
   private var appActive = UIApplication.shared.applicationState == .active
   private var processLost = false
@@ -73,6 +77,7 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     [
       "tabId": id,
       "instanceId": instanceId,
+      "certificateDocumentId": certificateDocumentId as Any,
       "profileId": profileId,
       "openerTabId": openerTabId as Any,
       "url": webView.url?.absoluteString as Any,
@@ -167,6 +172,51 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
     }
   }
 
+  /// Read only the current main-frame trust. Subresource challenges and fresh connections
+  /// can have different certificates even when they use the same hostname.
+  func certificate(documentId: String, expectedOrigin: String) throws -> [String: Any] {
+    guard !closed, !processLost, certificateDocumentId == documentId, !webView.isLoading, loadState == "loaded",
+      let origin = Self.httpsOrigin(webView.url), origin == certificateOrigin, origin == expectedOrigin,
+      let trust = webView.serverTrust, let chain = SecTrustCopyCertificateChain(trust) as? [SecCertificate],
+      !chain.isEmpty
+    else { throw BrowserError.notFound("No certificate is available for the current page.") }
+    let format = ISO8601DateFormatter()
+    let details: [[String: String]] = try chain.prefix(32).map { certificate in
+      guard let serial = SecCertificateCopySerialNumberData(certificate, nil) as Data?
+      else { throw BrowserError.notFound("WebKit did not return a certificate serial number.") }
+      let fingerprint = SHA256.hash(data: SecCertificateCopyData(certificate) as Data)
+      var fields = [
+        "subject": SecCertificateCopySubjectSummary(certificate) as String? ?? "",
+        "serialNumber": serial.map { String(format: "%02X", $0) }.joined(),
+        "fingerprint256": fingerprint.map { String(format: "%02X", $0) }.joined(separator: ":"),
+      ]
+      if let issuerName = SecCertificateCopyNormalizedIssuerSequence(certificate) as Data?,
+        let issuer = chain.first(where: { (SecCertificateCopyNormalizedSubjectSequence($0) as Data?) == issuerName }) {
+        fields["issuer"] = SecCertificateCopySubjectSummary(issuer) as String?
+      }
+      if #available(iOS 18.0, *) {
+        if let start = SecCertificateCopyNotValidBeforeDate(certificate) as Date? { fields["validFrom"] = format.string(from: start) }
+        if let end = SecCertificateCopyNotValidAfterDate(certificate) as Date? { fields["validTo"] = format.string(from: end) }
+      }
+      return fields
+    }
+    return ["origin": origin, "chain": details]
+  }
+
+  private static func httpsOrigin(_ url: URL?) -> String? {
+    guard let url, var parts = URLComponents(url: url, resolvingAgainstBaseURL: true),
+      parts.scheme?.lowercased() == "https", let host = parts.host, !host.isEmpty else { return nil }
+    parts.scheme = "https"
+    parts.host = host.lowercased()
+    parts.user = nil
+    parts.password = nil
+    if parts.port == 443 { parts.port = nil }
+    parts.path = ""
+    parts.query = nil
+    parts.fragment = nil
+    return parts.url?.absoluteString
+  }
+
   // MARK: WKNavigationDelegate
 
   func webView(
@@ -192,6 +242,18 @@ final class BrowserTab: NSObject, WKNavigationDelegate, WKUIDelegate {
       decisionHandler(.cancel)
       if mainFrame { engine?.emit("onExternalUrlBlocked", ["tabId": id, "url": String(url.absoluteString.prefix(BrowserLimits.maxUrlLength))]) }
     }
+  }
+
+  func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    certificateOrigin = nil
+    certificateDocumentId = nil
+    scheduleUpdate("certificate")
+  }
+
+  func webView(_ webView: WKWebView, didCommit navigation: WKNavigation!) {
+    certificateOrigin = Self.httpsOrigin(webView.url)
+    certificateDocumentId = certificateOrigin == nil ? nil : UUID().uuidString
+    scheduleUpdate("certificate")
   }
 
   func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {

@@ -3,6 +3,7 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { parse } from 'protobufjs'
 import { fromBuffer, type ZipFile, type Entry } from 'yauzl'
+import { extensionVersion } from './browser-extension-updates.js'
 import type { Readable } from 'node:stream'
 
 const ID = /^[a-p]{32}$/
@@ -183,16 +184,32 @@ export async function unpackStoreExtension(bytes: Buffer, id: string, target: st
   return key
 }
 
-export async function downloadStoreExtension(id: string, chromeVersion: string) {
+export function downloadStoreExtension(id: string, chromeVersion: string): Promise<Buffer>
+export function downloadStoreExtension(
+  id: string,
+  chromeVersion: string,
+  installedVersion: string,
+  cancel: AbortSignal,
+): Promise<Buffer | undefined>
+export async function downloadStoreExtension(
+  id: string,
+  chromeVersion: string,
+  installedVersion?: string,
+  cancel?: AbortSignal,
+): Promise<Buffer | undefined> {
   if (!ID.test(id)) throw new Error('Invalid Chrome Web Store ID.')
   let url = new URL('https://clients2.google.com/service/update2/crx')
   url.search = new URLSearchParams({
     response: 'redirect',
     acceptformat: 'crx3',
     prodversion: chromeVersion,
-    x: `id=${id}&uc`,
+    x:
+      installedVersion === undefined
+        ? `id=${id}&uc`
+        : `id=${id}&v=${extensionVersion(installedVersion)}&uc`,
   }).toString()
-  const signal = AbortSignal.timeout(60_000)
+  const timeout = AbortSignal.timeout(60_000)
+  const signal = cancel ? AbortSignal.any([timeout, cancel]) : timeout
   for (let redirects = 0; redirects <= 5; redirects++) {
     const response = await fetch(url, { redirect: 'manual', signal, credentials: 'omit' })
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -212,6 +229,7 @@ export async function downloadStoreExtension(id: string, chromeVersion: string) 
         throw new Error('The store redirected outside its download service.')
       continue
     }
+    if (installedVersion !== undefined && response.status === 204) return undefined
     if (!response.ok || !response.body) {
       await response.body?.cancel()
       throw new Error('This extension could not be downloaded from the Chrome Web Store.')

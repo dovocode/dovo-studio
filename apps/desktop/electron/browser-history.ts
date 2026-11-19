@@ -1,9 +1,16 @@
 import { app } from 'electron'
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import {
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
-import { isPrivateBrowserProfile } from '@dovo/protocol'
+import { browserProfileIdSchema, isPrivateBrowserProfile } from '@dovo/protocol'
 
 const visitSchema = Schema.Struct({
   visitId: Schema.String,
@@ -31,13 +38,33 @@ export const historyURL = (raw: string) => {
   return url.href
 }
 const describe = ({ visits: _visits, ...item }: Item): HistoryItem => item
+const historyDirectory = () => join(app.getPath('userData'), 'browser-history')
+
+/** Clear local profile visits without starting extensions in inactive profiles. */
+export function clearBrowserHistories(live: ReadonlyMap<string, { clear(): void }>) {
+  for (const history of live.values()) history.clear()
+  const directory = historyDirectory()
+  let files
+  try {
+    files = readdirSync(directory, { withFileTypes: true })
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') return
+    throw error
+  }
+  for (const file of files) {
+    if (!file.isFile() || !file.name.endsWith('.json')) continue
+    const profileId = file.name.slice(0, -5)
+    if (Schema.is(browserProfileIdSchema)(profileId) && !live.has(profileId))
+      unlinkSync(join(directory, file.name))
+  }
+}
 
 /** One store per browser profile. Previews and extension/OAuth pages are never recorded. */
 export function createBrowserHistory(
   profileId: string,
   emit: (event: string, value: unknown) => void,
 ) {
-  const directory = join(app.getPath('userData'), 'browser-history')
+  const directory = historyDirectory()
   const path = join(directory, `${profileId}.json`)
   let items: readonly Item[] = []
   if (!isPrivateBrowserProfile(profileId)) {
@@ -80,7 +107,7 @@ export function createBrowserHistory(
     save([...items.filter((item) => item.url !== url), item].slice(-50_000))
     emit('history.onVisited', describe(item))
   }
-  const removeRange = (start: number, end: number, allHistory = false) => {
+  const removeRange = (start: number, end: number) => {
     const removed: string[] = []
     const next: Item[] = []
     for (const item of items) {
@@ -102,7 +129,7 @@ export function createBrowserHistory(
         })
     }
     save(next)
-    emit('history.onVisitRemoved', { allHistory, urls: removed })
+    emit('history.onVisitRemoved', { allHistory: false, urls: removed })
   }
   const tracked = new Map<Electron.WebContents, () => void>()
   return {
@@ -130,7 +157,10 @@ export function createBrowserHistory(
       emit('history.onVisitRemoved', { allHistory: false, urls: [url] })
     },
     removeRange,
-    clear: () => removeRange(-Infinity, Infinity, true),
+    clear() {
+      save([])
+      emit('history.onVisitRemoved', { allHistory: true, urls: [] })
+    },
     attach(contents: Electron.WebContents) {
       if (tracked.has(contents)) return
       const record = (_event: Electron.Event, url: string) => {

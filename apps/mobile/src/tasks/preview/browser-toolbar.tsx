@@ -47,6 +47,7 @@ export function BrowserToolbar({
   onEditing,
   onCloseSession,
   onDiagnostics,
+  onSiteInfo,
   addressRef,
   mode: browserMode,
   onMode,
@@ -58,6 +59,7 @@ export function BrowserToolbar({
   addressRef?: Ref<ComponentRef<typeof TextInput>>
   onCloseSession?: () => void
   onDiagnostics?: () => void
+  onSiteInfo?: () => void
   address: string
   context?: string
   changed: boolean
@@ -169,6 +171,7 @@ export function BrowserToolbar({
               inset: 0,
               justifyContent: 'center',
               opacity: focused ? 0 : 1,
+              paddingLeft: onSiteInfo ? 44 : 0,
             }}
           >
             <Text
@@ -184,6 +187,11 @@ export function BrowserToolbar({
               {address ? addressLabel(address) : uiText('Enter website address')}
             </Text>
           </View>
+          {onSiteInfo && !focused && (
+            <View style={{ position: 'absolute', left: 0 }}>
+              <IconButton label={uiText('Site information')} icon="info" onPress={onSiteInfo} />
+            </View>
+          )}
         </View>
         <IconButton
           label={
@@ -250,6 +258,7 @@ export function BrowserToolbar({
                 disabled: !available || preset === 'fill',
               },
               ...(onDiagnostics ? [{ id: 'diagnostics', name: uiText('Connection details') }] : []),
+              ...(onSiteInfo ? [{ id: 'certificate', name: uiText('Site information') }] : []),
               ...(onCloseSession ? [{ id: 'close', name: uiText('Close browser session') }] : []),
             ]}
             onChange={(value) => {
@@ -260,6 +269,7 @@ export function BrowserToolbar({
               else if (value === 'mode') onMode?.(browserMode === 'remote' ? 'web' : 'remote')
               else if (value === 'expand') onExpand?.()
               else if (value === 'diagnostics') onDiagnostics?.()
+              else if (value === 'certificate') onSiteInfo?.()
               else if (value === 'close') onCloseSession?.()
               else if (previewPresets.some((item) => item.id === value)) onPreset(value)
             }}

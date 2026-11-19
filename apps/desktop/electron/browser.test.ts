@@ -166,6 +166,7 @@ const mocks = vi.hoisted(() => {
         (name: string, handler: (event: unknown, input: unknown) => Promise<unknown>) => void
       >(),
     create: vi.fn<(...args: unknown[]) => void>(),
+    clearLocalBrowserHistory: vi.fn<() => void>(),
     cdpCreate: vi.fn<typeof import('./browser-cdp').createBrowserCdp>(),
     extensions: {
       host: undefined as undefined | import('./browser-extensions').ExtensionTabHost,
@@ -236,6 +237,9 @@ vi.mock('./browser-extensions.js', async () => {
   }
 })
 vi.mock('./browser-cdp.js', () => ({ createBrowserCdp: mocks.cdpCreate }))
+vi.mock('./browser-extension-browser-apis.js', () => ({
+  clearLocalBrowserHistory: mocks.clearLocalBrowserHistory,
+}))
 vi.mock('./browser-language.js', () => ({
   websiteSearchUrl: mocks.searchUrl,
   websiteCustomization: () => '',
@@ -309,6 +313,12 @@ function handler() {
   if (!callback) throw new Error('Missing IPC handler')
   return callback
 }
+it('clears local profile histories without opening a tab', async () => {
+  const call = handler()
+  await call(event, { action: 'clear-history', key: 'library' })
+  expect(mocks.clearLocalBrowserHistory).toHaveBeenCalledOnce()
+  expect(mocks.create).not.toHaveBeenCalled()
+})
 it('rejects subframes and other pages before creating a browser', async () => {
   const call = handler()
   await expect(
@@ -871,6 +881,34 @@ it('retains hidden workspace call pages beyond the inactive-view limit and timeo
   expect(mocks.contents.close).toHaveBeenCalledTimes(8)
 })
 
+it.each(['navigate', 'sleep', 'close'])(
+  'retains edited pages across idle cleanup until %s',
+  async (action) => {
+    vi.useFakeTimers()
+    const call = handler()
+    await call(event, workspaceShow)
+    const edit = mocks.contents.ipc.on.mock.calls.find(
+      ([name]) => name === 'browser:form-edited',
+    )?.[1]
+    const protectedTabs = () => call(event, { action: 'tab-activity', key: 'activity' })
+    if (typeof edit === 'function') edit({ senderFrame: { detached: true } })
+    await expect(protectedTabs()).resolves.toHaveProperty('protectedKeys', [])
+    if (typeof edit === 'function') edit({ senderFrame: mocks.contents.mainFrame })
+    await call(event, { action: 'hide', key: 'shared' })
+    listener('did-start-navigation')?.({}, 'https://other.test', false, true)
+    listener('did-navigate-in-page')?.()
+    await vi.advanceTimersByTimeAsync(6 * 60_000)
+    expect(mocks.contents.close).not.toHaveBeenCalled()
+    await expect(protectedTabs()).resolves.toHaveProperty('protectedKeys', ['shared'])
+    if (action === 'navigate') {
+      listener('did-navigate')?.()
+      await vi.advanceTimersByTimeAsync(30_000)
+    } else await call(event, { action, key: 'shared' })
+    expect(mocks.contents.close).toHaveBeenCalledOnce()
+    await expect(protectedTabs()).resolves.toHaveProperty('protectedKeys', [])
+  },
+)
+
 it('keeps hidden views while an agent is connected and evicts them after it disconnects', async () => {
   vi.useFakeTimers()
   let connected = true
@@ -1121,7 +1159,12 @@ it('updates child frames and reports window hide/minimize/restore without treati
     minimized.mockReturnValue(false)
     emit('restore')
     expect(child.send).toHaveBeenLastCalledWith('browser:visibility', true)
-    expect(mocks.window.on.mock.calls.some(([event]) => event === 'blur')).toBe(false)
+    child.send.mockClear()
+    emit('blur')
+    expect(child.send).not.toHaveBeenCalled()
+    expect(mocks.window.webContents.send).toHaveBeenCalledWith('browser:preview-input', {
+      type: 'window-blur',
+    })
     child.detached = true
     child.send.mockClear()
     emit('hide')
@@ -3037,10 +3080,9 @@ it('raises the selected native view and returns input focus on a deliberate page
 
 it('prevents embedded sites from retaining window drag regions across navigation', async () => {
   await handler()(event, workspaceShow)
-  const ready = mocks.contents.on.mock.calls.find(([name]) => name === 'dom-ready')?.[1]
-  if (typeof ready !== 'function') throw new Error('Missing page readiness listener')
-  ready()
-  ready()
+  for (let load = 0; load < 2; load++)
+    for (const [eventName, listener] of mocks.contents.on.mock.calls)
+      if (eventName === 'dom-ready' && typeof listener === 'function') listener()
   expect(mocks.contents.insertCSS.mock.calls).toEqual([
     ['* { -webkit-app-region: no-drag !important; }', { cssOrigin: 'user' }],
     ['* { -webkit-app-region: no-drag !important; }', { cssOrigin: 'user' }],

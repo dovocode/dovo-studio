@@ -130,6 +130,7 @@ it('uses real Chromium page CDP to read a tree and target elements without scree
     await page.setContent(
       '<main><h1>Live page</h1><label>Name<input id="name"></label><label>Password<input type="password" value="secret-password"></label><button onclick="document.querySelector(\'output\').textContent=document.querySelector(\'input\').value">Save</button><button>Save</button><output></output></main>',
     )
+    await expect(call({ action: 'certificate' })).rejects.toThrow('Update the desktop app')
     const initial = await call({ action: 'snapshot' })
     expect(initial).not.toHaveProperty('image')
     expect(JSON.stringify(initial)).not.toContain('secret-password')

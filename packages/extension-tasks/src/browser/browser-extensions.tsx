@@ -40,6 +40,7 @@ export function BrowserExtensions({
   const [result, setResult] = useState<BrowserExtensionsResult>()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
+  const [updateNotice, setUpdateNotice] = useState<{ id: string; text: string }>()
   const [removeId, setRemoveId] = useState('')
   const pending = useRef(false)
   const generation = useRef(0)
@@ -48,11 +49,30 @@ export function BrowserExtensions({
     pending.current = true
     setBusy(true)
     setError('')
+    setUpdateNotice(undefined)
     const attempt = ++generation.current
     try {
       const next = await browserExtensions(command)
       if (attempt !== generation.current) return
       if (next) setResult(next)
+      if (command.action === 'checkUpdate') {
+        const item = next?.extensions.find((entry) => entry.id === command.id)
+        if (
+          item?.enabled &&
+          item.storeUpdates &&
+          !item.storeUpdates.pendingVersion &&
+          !item.storeUpdates.error
+        ) {
+          const previous = result?.extensions.find((entry) => entry.id === item.id)
+          setUpdateNotice({
+            id: item.id,
+            text:
+              previous?.version === item.version
+                ? 'Up to date.'
+                : `Updated to version ${item.version}.`,
+          })
+        }
+      }
       return true
     } catch (cause) {
       if (attempt === generation.current)
@@ -194,6 +214,9 @@ export function BrowserExtensions({
                     <Puzzle size={18} className="shrink-0 text-muted-foreground" />
                   )}
                   <span className="min-w-0 flex-1 truncate">{extension.name}</span>
+                  {extension.storeUpdates?.pendingVersion && (
+                    <span className="text-xs text-muted-foreground">Update needs review</span>
+                  )}
                   {!extension.enabled && (
                     <span className="text-xs text-muted-foreground">{uiText('Off')}</span>
                   )}
@@ -255,8 +278,7 @@ export function BrowserExtensions({
           <div className="max-h-[60vh] space-y-3 overflow-y-auto" aria-busy={busy}>
             <p className="text-sm text-muted-foreground">
               Paste a Chrome Web Store link or load an extension folder. Review its access before
-              installing in this profile. Desktop app connections require your approval. Store
-              extensions update when you install their link again.
+              installing in this profile. Desktop app connections require your approval.
             </p>
             {result?.capabilities.chromeWebStore && (
               <form
@@ -299,7 +321,12 @@ export function BrowserExtensions({
               </p>
             )}
             {result?.extensions.map((extension) => (
-              <div key={extension.id} className="space-y-2 rounded-lg border p-3">
+              <div
+                key={extension.id}
+                role="group"
+                aria-label={extension.name}
+                className="space-y-2 rounded-lg border p-3"
+              >
                 <div className="flex items-center gap-2">
                   {extension.icon ? (
                     <img src={extension.icon} alt="" className="size-6" />
@@ -333,6 +360,65 @@ export function BrowserExtensions({
                   <p className="text-xs text-muted-foreground">
                     Previously removed access: {extension.removedPermissions.join(', ')}. Reinstall
                     from the store to review and enable it.
+                  </p>
+                )}
+                {extension.storeUpdates ? (
+                  <div className="space-y-2">
+                    <label className="flex items-center gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        checked={extension.storeUpdates.automatic}
+                        disabled={busy}
+                        onChange={(event) =>
+                          void call({
+                            action: event.target.checked
+                              ? 'enableAutoUpdates'
+                              : 'disableAutoUpdates',
+                            profileId,
+                            id: extension.id,
+                          })
+                        }
+                      />
+                      Automatic updates
+                    </label>
+                    {extension.storeUpdates.pendingVersion && (
+                      <p className="text-xs text-muted-foreground">
+                        Version {extension.storeUpdates.pendingVersion} requests a change in access.
+                      </p>
+                    )}
+                    {extension.storeUpdates.error && (
+                      <p role="alert" className="text-xs text-destructive">
+                        {extension.storeUpdates.error}
+                      </p>
+                    )}
+                    {updateNotice?.id === extension.id && (
+                      <p role="status" className="text-xs text-muted-foreground">
+                        {updateNotice.text}
+                      </p>
+                    )}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        disabled={busy || !extension.enabled}
+                        onClick={() =>
+                          void call({ action: 'checkUpdate', profileId, id: extension.id })
+                        }
+                      >
+                        {extension.storeUpdates.pendingVersion
+                          ? 'Review update'
+                          : 'Check for update'}
+                      </Button>
+                      {extension.storeUpdates.checkedAt !== undefined && (
+                        <span className="text-xs text-muted-foreground">
+                          Last check {new Date(extension.storeUpdates.checkedAt).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Manual updates. Install the Store link again or load an updated folder.
                   </p>
                 )}
                 <div className="flex flex-wrap gap-2">

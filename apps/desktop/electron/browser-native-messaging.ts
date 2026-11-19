@@ -330,6 +330,7 @@ export function attachNativeMessaging(
     connect(event, randomUUID(), host, { message }),
   )
   return {
+    connected: (id: string) => [...ports.values()].some((port) => port.extensionId === id),
     close: (extensionId?: string) => {
       for (const port of ports.values())
         if (!extensionId || port.extensionId === extensionId) port.close()

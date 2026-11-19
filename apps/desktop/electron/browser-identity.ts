@@ -112,6 +112,7 @@ export function createBrowserIdentity(session: Electron.Session) {
         })
       })
     },
+    signingIn: (id: string) => [...pending.values()].some((flow) => flow.id === id),
     close(id: string) {
       for (const entry of [...pending.values()]) if (entry.id === id) entry.cancel()
     },

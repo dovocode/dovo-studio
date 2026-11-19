@@ -119,6 +119,7 @@ export interface StudioHostApi {
   onBrowserMediaChange?: (listener: () => void) => () => void
   /** Wake tab adoption immediately after a native browser-window handoff. */
   onBrowserWorkspaceFocus?: (listener: () => void) => () => void
+  onBrowserPreviewInput?: import('@dovo/protocol').BrowserPreviewInputBridge
   defaultBrowser?: import('@dovo/protocol').DefaultBrowserBridge
   browser?: import('@dovo/protocol').BrowserBridge
   browserFrames?: import('@dovo/protocol').BrowserFrameBridge
