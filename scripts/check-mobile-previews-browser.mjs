@@ -43,11 +43,17 @@ const keyboardListeners=new Map();
 export const Keyboard={isVisible:()=>window.keyboardVisible??false,addListener:(event,notify)=>{if(!keyboardListeners.has(event))keyboardListeners.set(event,new Set());keyboardListeners.get(event).add(notify);return {remove:()=>keyboardListeners.get(event).delete(notify)}}};
 window.keyboardListeners=keyboardListeners;
 window.setKeyboard=(visible,phase='Will')=>{window.keyboardVisible=visible;for(const notify of keyboardListeners.get('keyboard'+phase+(visible?'Show':'Hide'))??[])notify()};
-export const Platform={OS:'ios'};`,
+export const Platform={OS:'ios'};
+export const useWindowDimensions=()=>({width:390,height:844,scale:1,fontScale:1});`,
   },
   {
     path: 'react-native-screens/experimental',
     contents: `export const SafeAreaView=({edges,children})=><div data-safe-bottom={String(!!edges.bottom)}>{children}</div>;`,
+  },
+  {
+    path: '../../ui/layout/sheet',
+    importer: mobile + '/src/tasks/preview/local-browser-preview.tsx',
+    contents: `export const Sheet=({title,children,onClose})=><section role="dialog" aria-label={title}><button onClick={onClose}>Close preview</button>{children}</section>;`,
   },
   {
     path: 'react-native-webview',
