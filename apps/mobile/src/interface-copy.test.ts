@@ -53,9 +53,14 @@ function technical(text: string) {
     !/[a-zA-Z]{2}/.test(text) ||
     /^(?:https?:|file:|\/|\.\/|\$|#[\da-f]+$|20\d\d-)/i.test(text) ||
     /^(?:~\/|[A-Z][A-Z0-9]*_[A-Z0-9_]+$)/.test(text) ||
-    ['Dovo', 'GitHub', 'skills.sh', '15m, 1h, 4h, 1d', 'pnpm install --frozen-lockfile'].includes(
-      text,
-    )
+    [
+      'Dovo',
+      'GitHub',
+      'Linear',
+      'skills.sh',
+      '15m, 1h, 4h, 1d',
+      'pnpm install --frozen-lockfile',
+    ].includes(text)
   )
 }
 

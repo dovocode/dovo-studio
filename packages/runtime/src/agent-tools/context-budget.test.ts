@@ -178,7 +178,13 @@ it.each([false, true])(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 54 : 27)
+      expect(tools).toHaveLength(full ? 55 : 27)
+      const pipelineCi = tools.find((tool) => tool.name === 'pipeline_ci')
+      expect(!!pipelineCi).toBe(full)
+      const pipelineCiCharacters = pipelineCi ? JSON.stringify(pipelineCi).length + 1 : 0
+      const pipelineCiDescriptionCharacters = pipelineCi?.description?.length ?? 0
+      expect(pipelineCiCharacters).toBeLessThanOrEqual(850)
+      expect(pipelineCiDescriptionCharacters).toBeLessThanOrEqual(250)
       // The studio_automations dry run text has its own budget below.
       const dryRunText = ' dryRun tests automation with sample input; changes nothing.'
       const studioAutomations = tools.find((tool) => tool.name === 'studio_automations')
@@ -188,7 +194,8 @@ it.each([false, true])(
           (a2ui?.description?.length ?? 0) -
           (code?.description?.length ?? 0) -
           (vision?.description?.length ?? 0) -
-          (full ? dryRunText.length : 0),
+          (full ? dryRunText.length : 0) -
+          pipelineCiDescriptionCharacters,
       ).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
@@ -365,7 +372,8 @@ it.each([false, true])(
           workflowCharacters -
           helpCharacters -
           conversationCharacters -
-          themeCharacters,
+          themeCharacters -
+          pipelineCiCharacters,
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
@@ -378,6 +386,7 @@ it.each([false, true])(
           (workflow?.description?.length ?? 0) -
           (help?.description?.length ?? 0) -
           (conversation?.description?.length ?? 0) -
+          pipelineCiDescriptionCharacters -
           automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
