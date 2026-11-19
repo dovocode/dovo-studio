@@ -40,8 +40,8 @@ the current URL as the tab's home. Use the home button to return there. At narro
 find it in **Browser options**. Right-click the pin to edit its home URL. The pinned grid adapts to
 the sidebar width.
 
-**Thread for this tab** links only to threads on the tab's computer. New threads default to
-**No Project**. You can select a project before you create the thread. On desktop, choose **Use
+**Thread for this tab** links only to threads on the tab's computer. New threads default to **No
+Project**. You can select a project before you create the thread. On desktop, choose **Use
 {computer}** if that computer is not active before editing or creating its thread. The tab keeps its
 computer and profile. Restored links to another computer require choosing a matching thread.
 Device-local mobile tabs have no computer-owned thread panel; use a paired-computer tab for agent
