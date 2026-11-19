@@ -6,6 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
 const native = `
 export const Platform={OS:'ios'};
+export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};
 export const View=({children,accessibilityLabel})=><div aria-label={accessibilityLabel}>{children}</div>;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const Image=()=>null;
