@@ -1397,7 +1397,7 @@ try {
   await page.getByRole('button', { name: /^Working,/ }).click()
   await page.getByTestId('Task running').waitFor()
   const groupedStatus = page.getByTestId('Task running').getByTestId('Thread status')
-  assert.equal(await groupedStatus.innerText(), '1m')
+  assert.match(await groupedStatus.innerText(), /^1m \d+s$/)
   assert.match(await groupedStatus.getAttribute('aria-label'), /^Working/)
   await page.evaluate(() => {
     const task = window.snapshot.workspace.tasks[0]
@@ -1466,17 +1466,12 @@ try {
     ),
     true,
   )
-  assert.equal(
-    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    '1m',
-  )
+  const pinnedStatus = page.getByTestId('Task pinned-working').getByTestId('Thread status')
+  assert.match(await pinnedStatus.innerText(), /^\d+m \d+s$/)
   const waitingStatus = page.getByTestId('Task waiting').getByTestId('Thread status')
   assert.equal(await waitingStatus.innerText(), '10m')
   await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
-  assert.equal(
-    await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    '1m',
-  )
+  assert.match(await pinnedStatus.innerText(), /^\d+m \d+s$/)
   await page.evaluate(() =>
     window.setListPreferences({
       taskGrouping: 'status',
@@ -1639,10 +1634,14 @@ try {
         true,
         'Time precedes the status icon',
       )
-    assert.equal(
-      await indicator.innerText(),
-      status === 'draft' ? '' : status === 'running' ? '14h' : '5m',
-    )
+    if (status === 'running') {
+      const time = await indicator.innerText()
+      assert.match(time, /^14h 20m \d+s$/)
+      await indicator
+        .getByText(/^14h 20m \d+s$/)
+        .filter({ hasNotText: new RegExp(`^${time}$`) })
+        .waitFor()
+    } else assert.equal(await indicator.innerText(), status === 'draft' ? '' : '5m')
   }
   const completion = page.getByTestId('Task status-done').getByTestId('Thread status')
   await completion.getByText('5m', { exact: true }).waitFor()
