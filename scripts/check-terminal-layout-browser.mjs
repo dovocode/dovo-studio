@@ -27,12 +27,26 @@ const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
 const built = await bundleBrowser(
   {
     stdin: {
-      contents: `import React from 'react';import {createRoot} from 'react-dom/client';
+      contents: `import React,{useState} from 'react';import {createRoot} from 'react-dom/client';
 import {TerminalPane} from './packages/extension-tasks/src/terminal/terminal-pane';
+import {TerminalDock} from './packages/extension-tasks/src/terminal/terminal-dock';
 import {Group,Panel} from 'react-resizable-panels';
 const node=createRoot(document.getElementById('app'));
 function ScopedPane({anchor}) {return <div data-workspace-anchor={anchor} style={{height:380}}><TerminalPane taskId="studio:terminals" focusId={anchor} sessionScopeId={anchor} autoCreate={false} onClose={()=>{}} onNewSession={()=>window.newWorkspaceRequests.push(anchor)} onSessionsClosed={ids=>{window.closedEvents.push({anchor,ids});if(ids.includes(anchor)){window.hiddenAnchors.push(anchor);window.render()}}}/></div>}
-window.render=()=>node.render(window.mounted===false?null:window.twoScopes?<div>{(window.scopeAnchors??['scope-a','scope-b']).filter(id=>!window.hiddenAnchors.includes(id)).map(anchor=><ScopedPane key={anchor} anchor={anchor}/>)}</div>:<Group orientation="vertical" style={{height:'100vh'}}><Panel defaultSize="60%"><div>Conversation</div></Panel><Panel id="terminal" defaultSize="40%"><TerminalPane taskId={window.taskId??"task"} focusId={window.focusId??"session"} onOpenFile={file=>window.openedFiles.push(file)} onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/></Panel></Group>);window.render();`,
+function ThreadTerminal() {
+  const [side,setSide]=useState('bottom');
+  const [bottom,setBottom]=useState(null);
+  const [right,setRight]=useState(null);
+  return <>
+    <Group orientation="vertical" style={{height:'100vh'}}>
+      <Panel defaultSize="60%"><div>Conversation</div></Panel>
+      <Panel id="terminal" defaultSize="40%"><div ref={setBottom} data-terminal-dock="bottom" className="h-full"/></Panel>
+    </Group>
+    <div ref={setRight} data-terminal-dock="right" hidden={side!=='right'} style={{position:'fixed',right:0,top:0,width:440,height:'100vh'}}/>
+    <TerminalDock target={side==='bottom'?bottom:right} dock={{side,onMove:()=>setSide(side==='bottom'?'right':'bottom')}} taskId={window.taskId??"task"} focusId={window.focusId??"session"} onOpenFile={file=>window.openedFiles.push(file)} onClose={()=>{}} onAddSelection={(taskId,text)=>window.insertions.push({taskId,text})}/>
+  </>;
+}
+window.render=()=>node.render(window.mounted===false?null:window.twoScopes?<div>{(window.scopeAnchors??['scope-a','scope-b']).filter(id=>!window.hiddenAnchors.includes(id)).map(anchor=><ScopedPane key={anchor} anchor={anchor}/>)}</div>:<ThreadTerminal/>);window.render();`,
       loader: 'tsx',
       resolveDir: root,
     },
@@ -224,6 +238,37 @@ try {
   await page.waitForFunction(() =>
     window.sockets[0]?.sent.some((message) => message.type === 'resize'),
   )
+  const canvas = await terminal.locator('.dovo-terminal-canvas').elementHandle()
+  assert.ok(canvas)
+  for (const side of ['right', 'bottom']) {
+    await terminal.getByRole('button', { name: `Move terminal to ${side} pane` }).click()
+    await page
+      .locator(`[data-terminal-dock="${side}"]`)
+      .getByRole('region', { name: 'Terminal', exact: true })
+      .waitFor()
+    assert.equal(
+      await canvas.evaluate(
+        (node, dock) =>
+          node.closest('[data-terminal-dock]')?.getAttribute('data-terminal-dock') === dock,
+        side,
+      ),
+      true,
+      'The same terminal canvas moves with the pane',
+    )
+    assert.deepEqual(
+      await page.evaluate(() => [window.sockets.length, window.terminals.length]),
+      [1, 1],
+      'Docking retains the open connection and renderer',
+    )
+    assert.equal(
+      await terminal
+        .getByRole('button', { name: /^Move terminal to (bottom|right) pane$/ })
+        .evaluate((button) => button.ownerDocument.activeElement === button),
+      true,
+      'Docking restores focus to the same action',
+    )
+  }
+  await canvas.dispose()
   const header = terminal.locator('header')
   const before = await header.boundingBox()
   const screen = await terminal.locator('.dovo-terminal-canvas').boundingBox()
@@ -937,7 +982,7 @@ try {
 
   assert.deepEqual(errors, [])
   console.log(
-    'Terminal: tab/split rename, failed-save draft, automatic title, retained shell connection, scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration, wrapped file locations, standalone anchor isolation, delayed split membership, partial/successful close events and legacy split restoration passed.',
+    'Terminal: dock moves with retained renderer, socket and focus, tab/split rename, failed-save draft, automatic title, scrollback, fixed tab bar, parent scroll containment, typing, resizing, copy/paste, select-all, jump, clipboard errors, connection/exited guards stale paste isolation, split focus/orientation/shortcuts/cap, layout restoration, wrapped file locations, standalone anchor isolation, delayed split membership, partial/successful close events and legacy split restoration passed.',
   )
 } finally {
   await browser.close()

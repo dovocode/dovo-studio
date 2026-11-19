@@ -172,9 +172,10 @@
   container: composer / inline-size;
   padding: 0 var(--studio-chat-gutter) 1.5rem;
 }
+/* Messages share the composer's column, so bubbles and text line up with its edges. */
 .studio-conversation-content {
   max-width: calc(var(--chat-max) + 2 * var(--studio-chat-gutter));
-  padding-inline: calc(var(--studio-chat-gutter) + 12px);
+  padding-inline: var(--studio-chat-gutter);
 }
 .studio-pipeline-progress {
   background-image: var(--studio-surface-sheen);
@@ -992,6 +993,7 @@ textarea {
 }
 .studio-titlebar-parent {
   display: inline-flex;
+  flex-shrink: 0;
   min-width: 0;
   max-width: min(32%, 200px);
   color: var(--muted-foreground);
@@ -3578,7 +3580,7 @@ a.studio-project-row:hover {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
 
-/* Keep the existing main navigation rail and give lists a solid background. */
+/* Give workspace lists a solid background. */
 @media (min-width: 768px) {
   .studio {
     background: var(--studio-page-background);
@@ -3594,9 +3596,6 @@ a.studio-project-row:hover {
     border-radius: 14px;
     overflow: hidden;
   }
-  .studio-navigation[aria-label='Main navigation'] {
-    border-color: color-mix(in srgb, var(--foreground) 7%, transparent);
-  }
   .studio-header-layout[data-compact='false']
     .studio-body:has(> .studio-navigation[aria-label='Main navigation'])
     .studio-overview-pane {
@@ -3610,11 +3609,11 @@ a.studio-project-row:hover {
   }
 }
 
-@media (min-width: 768px) {
-  .studio-navigation[aria-label='Main navigation'] {
-    width: calc(var(--studio-navigation-width) - 6px);
-    margin: 6px 0 6px 6px;
-    border-radius: 14px;
+@media (min-width: 768px) and (forced-colors: none) {
+  .studio-body > .studio-navigation[aria-label='Main navigation'] {
+    padding-block: 16px;
+    border: 0;
+    background: transparent;
   }
 }
 
@@ -4095,4 +4094,558 @@ a.studio-project-row:hover {
 .studio-thread-tools-panel .studio-browser-header {
   background: transparent;
   box-shadow: none;
+}
+
+.studio-settings-dialog {
+  border-radius: 22px;
+  background: var(--card);
+}
+.studio-settings-dialog .dovo-dialog-close-anchor {
+  top: 16px;
+  inset-inline: 16px;
+}
+.studio-settings-dialog .studio-navigation-sidebar {
+  border-inline-end: 1px solid var(--border);
+  background: var(--sidebar);
+}
+
+@media (min-width: 768px) {
+  /* Panes sit on a canvas one clear step darker than the pane, in every palette. Bubbles and the
+     composer step the other way so they read on the pane. */
+  .studio {
+    --studio-work-pane-radius: 16px;
+    --studio-work-pane-gap: 6px;
+    --studio-work-pane-border: color-mix(in srgb, var(--foreground) 10%, var(--card));
+    --studio-work-canvas: color-mix(in srgb, var(--background) 55%, #000);
+    --studio-page-background: var(--studio-navigation-light) 0 0 / 100vw 100vh no-repeat fixed
+      var(--studio-work-canvas);
+  }
+  :root[data-theme='light'] .studio {
+    --studio-work-canvas: color-mix(in srgb, var(--background) 94%, var(--foreground));
+  }
+  :root[data-high-contrast='true'] .studio {
+    --studio-work-canvas: var(--background);
+  }
+
+  .studio .studio-work-pane .is-user .dovo-message-content {
+    background-color: color-mix(in srgb, var(--foreground) 8%, var(--card));
+  }
+
+  .studio .studio-work-pane .task-composer .studio-composer {
+    background-color: color-mix(in srgb, var(--foreground) 4%, var(--card));
+  }
+
+  .studio
+    :is(
+      .studio-work-pane,
+      .studio-page-pane,
+      .studio-terminal-work-pane,
+      .studio-browser-work-pane,
+      .studio-thread-tools-panel
+    ) {
+    border: 1px solid var(--studio-work-pane-border);
+    border-radius: var(--studio-work-pane-radius);
+    background: var(--card);
+  }
+
+  .studio :is(.studio-work-pane, .studio-terminal-work-pane) {
+    overflow: hidden;
+  }
+
+  .studio .studio-thread-stack {
+    width: auto;
+    margin: var(--studio-work-pane-gap);
+  }
+
+  .studio .studio-terminal-resize {
+    border-block: 2px solid transparent;
+    background-clip: content-box;
+  }
+
+  .studio
+    :is(
+      .studio-page-pane,
+      .studio-terminal-work-pane,
+      .studio-browser-work-pane,
+      .studio-thread-tools-panel
+    ) {
+    margin: var(--studio-work-pane-gap);
+  }
+
+  .studio .studio-page-pane + .studio-page-pane {
+    margin-top: 0;
+  }
+
+  .studio .studio-pane-header,
+  .studio .studio-browser-header .studio-pane-header {
+    --studio-pane-shoulder-radius: 12px;
+    --studio-pane-shoulder-fill: var(--card);
+    background:
+      linear-gradient(
+        to bottom,
+        transparent 0 calc(100% - 5px),
+        var(--studio-pane-shoulder-fill) calc(100% - 5px)
+      ),
+      var(--studio-page-background, var(--background));
+    border-bottom-color: transparent;
+  }
+
+  .studio .studio-browser-toolbar.studio-pane-header > .studio-browser-address {
+    max-width: min(38rem, 75%);
+  }
+
+  .studio .studio-pane-header > .studio-titlebar-heading {
+    flex: 0 1 auto;
+  }
+
+  .studio .studio-pane-header > .studio-pane-shoulder {
+    position: relative;
+    align-self: stretch;
+    flex: 1 1 var(--studio-pane-shoulder-radius);
+    min-width: 0;
+    margin-block-start: 5px;
+    margin-inline: 5px;
+    border-start-start-radius: var(--studio-pane-shoulder-radius);
+    border-start-end-radius: var(--studio-pane-shoulder-radius);
+    background: var(--studio-pane-shoulder-fill);
+    pointer-events: none;
+  }
+
+  .studio .studio-pane-shoulder::before,
+  .studio .studio-pane-shoulder::after {
+    position: absolute;
+    inset-block-end: 5px;
+    width: var(--studio-pane-shoulder-radius);
+    height: var(--studio-pane-shoulder-radius);
+    content: '';
+  }
+
+  .studio .studio-pane-shoulder::before {
+    inset-inline-end: 100%;
+    background: radial-gradient(
+      circle at top left,
+      transparent var(--studio-pane-shoulder-radius),
+      var(--studio-pane-shoulder-fill) calc(var(--studio-pane-shoulder-radius) + 0.5px)
+    );
+  }
+
+  .studio .studio-pane-shoulder::after {
+    inset-inline-start: 100%;
+    background: radial-gradient(
+      circle at top right,
+      transparent var(--studio-pane-shoulder-radius),
+      var(--studio-pane-shoulder-fill) calc(var(--studio-pane-shoulder-radius) + 0.5px)
+    );
+  }
+
+  .studio .studio-pane-shoulder:dir(rtl)::before,
+  .studio .studio-pane-shoulder:dir(rtl)::after {
+    transform: scaleX(-1);
+  }
+}
+
+@media (forced-colors: active) {
+  .studio .studio-pane-header,
+  .studio .studio-browser-header .studio-pane-header {
+    border-bottom-color: CanvasText;
+    background: Canvas;
+  }
+
+  .studio .studio-pane-header > .studio-pane-shoulder {
+    background: transparent;
+  }
+
+  .studio .studio-pane-shoulder::before,
+  .studio .studio-pane-shoulder::after {
+    content: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .studio .studio-thread-pane-frame:has(> .studio-task-thread-header) {
+    --studio-thread-pane-top: var(--studio-header-height, 52px);
+  }
+
+  .studio .studio-thread-pane-body {
+    column-gap: var(--studio-work-pane-gap);
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header {
+    margin-inline: var(--studio-work-pane-gap);
+    border-radius: var(--studio-work-pane-radius) var(--studio-work-pane-radius) 0 0;
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header ~ .studio-thread-stack {
+    margin-block-start: 0;
+  }
+
+  .studio
+    .studio-thread-pane-frame
+    > .studio-task-thread-header
+    ~ .studio-thread-stack
+    [data-conversation-boundary] {
+    border-start-start-radius: 0;
+    border-start-end-radius: 0;
+  }
+
+  .studio .studio-thread-pane-frame .studio-work-pane,
+  .studio .studio-thread-tools-panel {
+    border-color: transparent;
+  }
+
+  .studio .studio-thread-pane-frame .studio-terminal-resize {
+    min-height: var(--studio-work-pane-gap);
+  }
+
+  .studio .studio-thread-tools-panel [aria-label='Project files'] {
+    background: var(--card);
+  }
+
+  .studio-header-layout[data-inline-header='true']
+    .studio:is([data-platform='win32'], [data-platform='linux'])
+    .studio-thread-pane-body
+    > .studio-thread-tools-panel {
+    margin-block-start: max(var(--studio-work-pane-gap), env(titlebar-area-height, 0px));
+  }
+  .studio .studio-thread-list-pane {
+    border-color: transparent;
+    background: color-mix(in srgb, var(--sidebar) 45%, transparent);
+  }
+
+  .studio .studio-thread-list-pane .studio-thread-sidebar-controls {
+    border-bottom-color: transparent;
+  }
+
+  .studio .studio-thread-tools-panel [aria-label='Terminal tabs and controls'] {
+    --studio-pane-shoulder-fill: var(--card);
+    background: var(--card);
+  }
+
+  .studio
+    .studio-thread-tools-panel
+    [aria-label='Terminal tabs and controls']
+    > .studio-pane-shoulder {
+    visibility: hidden;
+  }
+}
+
+@container (max-width: 540px) {
+  .studio-thread-pane-frame
+    .studio-task-thread-header
+    [data-thread-info-trigger]
+    > :is([data-thread-info-branch], [data-thread-info-state], .text-border) {
+    display: none;
+  }
+}
+
+/* Pane tabs mark the active tab with text weight, not a filled pill. Secondary tab and header
+   controls appear on hover or keyboard focus. Touch screens and forced colors always show them. */
+@media (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .studio .studio-tab-reveal,
+  .studio .studio-header-reveal {
+    opacity: 0;
+    transition: opacity 120ms ease-out;
+  }
+  .studio .studio-pane-tab:is(:hover, :focus-within) .studio-tab-reveal,
+  .studio .studio-pane-header:is(:hover, :focus-within) .studio-header-reveal,
+  .studio :is(.studio-tab-reveal, .studio-header-reveal):focus-visible {
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .studio :is(.studio-tab-reveal, .studio-header-reveal) {
+    transition: none;
+  }
+}
+
+@media (min-width: 768px) {
+  .studio .studio-task-sidebar:has(.studio-thread-list-pane) {
+    background: transparent;
+  }
+
+  .studio:has(.studio-thread-list-pane) > .studio-header-corner {
+    background: transparent;
+    border-bottom-color: transparent;
+  }
+
+  .studio .studio-task-sidebar:has(.studio-thread-list-pane) .studio-sidebar-brand-row,
+  .studio .studio-thread-list-pane,
+  .studio .studio-thread-tools-panel:has(> .studio-pane-header) {
+    background: transparent;
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header [data-thread-project] {
+    display: none;
+  }
+
+  .studio .studio-thread-list-pane .studio-thread-search:not(:has(button)) input {
+    padding-inline-end: 8px;
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-titlebar-heading {
+    max-width: 46%;
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header,
+  .studio .studio-thread-stack [aria-label='Terminal tabs and controls'],
+  .studio .studio-thread-tools-panel > .studio-pane-header {
+    --studio-pane-shoulder-radius: var(--studio-work-pane-radius);
+    background: var(--studio-page-background, var(--background));
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder,
+  .studio .studio-thread-stack [aria-label='Terminal tabs and controls'] > .studio-pane-shoulder {
+    min-width: var(--studio-pane-shoulder-radius);
+  }
+
+  .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder::before,
+  .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder::after,
+  .studio
+    .studio-thread-stack
+    [aria-label='Terminal tabs and controls']
+    > .studio-pane-shoulder::before,
+  .studio
+    .studio-thread-stack
+    [aria-label='Terminal tabs and controls']
+    > .studio-pane-shoulder::after {
+    inset-block-end: 0;
+  }
+
+  .studio
+    .studio-thread-pane-frame
+    > .studio-task-thread-header
+    ~ .studio-thread-stack
+    [data-conversation-boundary],
+  .studio .studio-thread-tools-panel > [role='tabpanel'] {
+    border-radius: var(--studio-work-pane-radius);
+    background: var(--card);
+  }
+
+  .studio .studio-thread-tools-panel > .studio-pane-header {
+    min-height: calc(var(--studio-header-height, 52px) - var(--studio-work-pane-gap) - 1px);
+  }
+
+  .studio .studio-thread-stack [aria-label='Terminal tabs and controls'] {
+    min-height: 40px;
+    container-type: inline-size;
+  }
+}
+
+@media (min-width: 768px) and (hover: hover) and (pointer: fine) and (forced-colors: none) {
+  .studio .studio-thread-stack [aria-label='Terminal tabs and controls'] {
+    position: relative;
+  }
+
+  .studio .studio-thread-stack [aria-label='Terminal tabs and controls'] > .studio-header-reveal {
+    position: absolute;
+    inset-inline-end: 2rem;
+    z-index: 1;
+    max-inline-size: 50%;
+    overflow-x: auto;
+    border-radius: 8px;
+    background: var(--card);
+    pointer-events: none;
+  }
+
+  .studio
+    .studio-thread-stack
+    [aria-label='Terminal tabs and controls']:is(:hover, :focus-within)
+    > .studio-header-reveal {
+    pointer-events: auto;
+  }
+}
+
+@container (max-width: 660px) {
+  .studio-thread-stack .studio-terminal-location {
+    display: none;
+  }
+}
+
+/* Desktop panes are separated by the canvas gutter. Keep control and resize boundaries. */
+@media (min-width: 768px) and (forced-colors: none) {
+  .studio
+    :is(
+      .studio-work-pane,
+      .studio-thread-tools-panel,
+      .studio-browser-work-pane,
+      .studio-terminal-work-pane,
+      .studio-thread-list-pane,
+      .studio-embedded-list,
+      .studio-page-pane,
+      .studio-browser-sidebar.studio-overview-pane,
+      [aria-label='Terminals workspace'] .studio-overview-pane,
+      [aria-label='Unified workspace'] .studio-overview-pane
+    ) {
+    border-width: 0;
+  }
+
+  .studio
+    :is(.studio-thread-stack, .studio-thread-tools-panel, .studio-terminal-work-pane)
+    :is(.studio-terminal-pane, .studio-terminal-pane-header),
+  .studio .studio-thread-pane-frame > .studio-task-thread-header,
+  .studio .studio-browser-header,
+  .studio .studio-pull-header,
+  .studio .studio-page-header:has(+ .studio-page-pane),
+  .studio:has(.studio-page-pane) .studio-window-header-content > .studio-page-header,
+  .studio .studio-embedded-list .studio-page-header[data-embedded] {
+    border-block-width: 0;
+  }
+
+  .studio:has(
+      :is(
+        .studio-thread-list-pane,
+        .studio-embedded-list,
+        .studio-page-pane,
+        .studio-browser-sidebar,
+        .studio-terminal-work-pane,
+        [aria-label='Unified workspace']
+      )
+    )
+    :is(.studio-header-corner, .studio-sidebar-brand-row > .studio-titlebar),
+  .studio:has(.studio-page-pane) > .studio-titlebar {
+    border-block-end-width: 0;
+  }
+}
+
+/* Workspace sidebars use the same canvas as Threads. */
+@media (min-width: 768px) {
+  .studio [data-browser-workspace] .studio-browser-sidebar {
+    background: transparent;
+    box-shadow: none;
+  }
+
+  .studio:has([data-browser-workspace]) .studio-sidebar-brand-row,
+  .studio [data-browser-workspace] .studio-browser-sidebar-library {
+    background: transparent;
+    border-block-end-color: transparent;
+  }
+
+  .studio [data-browser-workspace] .studio-browser-work-pane {
+    margin-block-start: 0;
+  }
+
+  .studio
+    [data-browser-workspace]
+    .studio-browser-work-pane
+    > :not([data-preview-overlay]):has([data-browser-starter]) {
+    background: var(--card);
+  }
+
+  .studio:has([data-browser-workspace]) .studio-browser-header .studio-pane-shoulder {
+    margin-block-end: -6px;
+  }
+
+  .studio:has([data-browser-workspace]) .studio-browser-header .studio-pane-shoulder::before,
+  .studio:has([data-browser-workspace]) .studio-browser-header .studio-pane-shoulder::after {
+    inset-block-end: 0;
+  }
+
+  .studio:has([data-browser-workspace]) > .studio-header-corner {
+    background: transparent;
+  }
+
+  .studio .studio-workspace-home {
+    margin: var(--studio-work-pane-gap);
+    border-radius: var(--studio-work-pane-radius);
+    background: var(--card);
+  }
+
+  .studio
+    :is([aria-label='Terminals workspace'], [aria-label='Unified workspace'])
+    .studio-overview-pane,
+  .studio:has([aria-label='Terminals workspace'], [aria-label='Unified workspace'])
+    > .studio-header-corner,
+  .studio:has([aria-label='Terminals workspace'], [aria-label='Unified workspace'])
+    .studio-sidebar-brand-row {
+    background: transparent;
+  }
+
+  .studio
+    :is([aria-label='Terminals workspace'], [aria-label='Unified workspace'])
+    .studio-thread-sidebar-controls {
+    border-bottom-color: transparent;
+  }
+
+  .studio .studio-terminal-work-pane > * > .studio-task-thread-header,
+  .studio .studio-terminal-work-pane .studio-task-thread-header {
+    border-bottom-width: 0;
+    background: transparent;
+  }
+
+  .studio [data-terminal-primary] .studio-terminal-pane-header {
+    border-bottom-width: 0;
+    padding-inline: 12px;
+    background: transparent;
+  }
+
+  .studio [data-terminal-primary] .studio-terminal-pane-header > .studio-pane-shoulder {
+    visibility: hidden;
+  }
+}
+
+@media (min-width: 768px) {
+  .studio .studio-terminal-work-pane:has(.studio-workspace-tools-main) {
+    background: transparent;
+  }
+
+  .studio .studio-workspace-tools-main > .studio-task-thread-header {
+    border-block-width: 0;
+    background: var(--studio-page-background, var(--background));
+  }
+
+  .studio .studio-workspace-tools-main > .studio-task-thread-header:has(+ .studio-workspace-home) {
+    margin-inline: var(--studio-work-pane-gap);
+  }
+
+  .studio .studio-workspace-tools-main > .studio-workspace-home {
+    margin-block-start: 0;
+  }
+
+  .studio .studio-workspace-tools-main > [data-terminal-primary] {
+    border-radius: var(--studio-work-pane-radius);
+    background: var(--card);
+  }
+
+  .studio .studio-workspace-tools-main > .studio-task-thread-header > .studio-pane-shoulder::before,
+  .studio .studio-workspace-tools-main > .studio-task-thread-header > .studio-pane-shoulder::after {
+    inset-block-end: 0;
+  }
+}
+
+/* Pull requests, Issues, Jira and Bots use the Threads canvas: the list sits on the canvas and
+   page content sits in one pane. */
+@media (min-width: 768px) {
+  .studio .studio-embedded-list,
+  .studio :has(> .studio-embedded-list) > .studio-sidebar-brand-row {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .studio .studio-embedded-list .studio-sidebar-controls {
+    border-bottom-color: transparent;
+  }
+
+  .studio:has(.studio-embedded-list, .studio-page-pane) > .studio-header-corner {
+    background: transparent;
+    border-bottom-color: transparent;
+  }
+
+  .studio .studio-pull-header,
+  .studio .studio-page-header:has(+ .studio-page-pane),
+  .studio:has(.studio-page-pane) .studio-window-header-content > .studio-page-header {
+    background: var(--studio-page-background, var(--background));
+  }
+
+  .studio :is(.studio-pull-header, .studio-page-header) + .studio-page-pane {
+    margin-block-start: 0;
+  }
+
+  /* A Bot's work strip continues the conversation pane below the thread header. */
+  .studio .studio-thread-pane-frame:has(> .studio-task-thread-header) .studio-bot-work-summary {
+    margin-inline: var(--studio-work-pane-gap);
+    border-bottom-color: color-mix(in srgb, var(--foreground) 6%, transparent);
+    border-start-start-radius: var(--studio-work-pane-radius);
+    border-start-end-radius: var(--studio-work-pane-radius);
+    background: var(--card);
+  }
 }

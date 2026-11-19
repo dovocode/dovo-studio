@@ -22,8 +22,11 @@ localStorage.setItem('dovo.runtime-registry.v1',JSON.stringify({version:1,active
 window.dovo={readRuntimeRegistry:async()=>JSON.stringify({version:1,activeId:profile.id,profiles:[profile]}),runtimeConnection:async()=>profile.connection};
 const task=createTask({title:'Mode switch thread',objective:'',agentId:'',repositoryId:'scratch'});
 task.messages=[{id:'first-message',role:'user',text:'Saved user message',createdAt:'2026-11-03T10:00:00.000Z'}];
-const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
-window.setPreferences=updateAppPreferences;
+const standalone={id:'standalone-shell',taskId:'studio:terminals',title:'Standalone shell',directory:'/tmp',exited:false,dormant:true};
+const projectShell={...standalone,id:'project-shell',title:'Project shell',directory:'/project',repositoryId:'project'};
+window.terminalTargets=[standalone,projectShell].map((session)=>JSON.stringify({runtimeId:profile.id,id:session.id}));
+const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''},{id:'project',name:'Project',path:'/project',branch:'main'}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[standalone,projectShell],runs:[],devices:[],pendingDevices:[]});
+window.setPreferences=updateAppPreferences;window.threadId=task.id;
 const threadTab={kind:'thread',runtimeId:profile.id,id:task.id};
 sessionStorage.setItem('dovo.unified-workspace.v1',JSON.stringify({tabs:[threadTab,{kind:'browser',runtimeId:'',id:'saved-page'}],active:JSON.stringify(['thread',profile.id,task.id])}));
 localStorage.setItem('dovo.shared-browser-tabs.v1',JSON.stringify({active:'saved-page',tabs:[{id:'saved-page',kind:'web',url:'http://example.lan',title:'Saved browser page',profileId:'default',pinned:true}]}));
@@ -36,6 +39,7 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/retrieval/peers')return Response.json({ok:true});
  if(path==='/api/mutations/status')return Response.json({version:1});
  if(path==='/api/tasks/waiting')return Response.json({dependencies:[]});
+ if(path==='/api/scm/changes')return Response.json({files:[]});
  if(path==='/api/tasks/viewed')return Response.json({ok:true});
  if(path==='/api/models')return Response.json({providers:[],models:[]});
  if(path==='/api/agents/availability')return Response.json([]);
@@ -114,6 +118,26 @@ try {
   await page.goto('http://workspace.lan')
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await view(page.getByRole('textbox', { name: 'Message thread', exact: true }))
+  const composer = page.getByRole('textbox', { name: 'Message thread', exact: true })
+  await composer.fill('Draft kept while settings are open')
+  const draft = await composer.elementHandle()
+  assert.ok(draft)
+  await page.evaluate(() => window.host.navigate({ viewId: 'general' }))
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
+  await view(settings)
+  await view(settings.getByRole('textbox', { name: 'Search settings', exact: true }))
+  assert.equal(await draft.evaluate((node) => node.isConnected), true)
+  await settings.getByRole('button', { name: 'Close', exact: true }).click()
+  await settings.waitFor({ state: 'hidden' })
+  await view(composer)
+  assert.equal(
+    await composer.evaluate((node) =>
+      node instanceof HTMLTextAreaElement ? node.value : node.textContent,
+    ),
+    'Draft kept while settings are open',
+  )
+  assert.equal(await draft.evaluate((node) => node === document.activeElement), true)
+  await composer.fill('')
   const botOverview = page.getByRole('button', { name: 'Bots', exact: true })
   assert.equal(await botOverview.count(), 0, 'Separate Bot overview starts hidden')
   for (const [botsInThreads, botsOverviewEnabled] of [
@@ -197,6 +221,122 @@ try {
   await mode('Threads').click()
   await page.evaluate(() => window.focusBrowserWorkspace())
   await view(page.getByRole('region', { name: 'Browser previews', exact: true }))
+  assert.equal(
+    await page.getByRole('tablist', { name: 'Browser tabs', exact: true }).count(),
+    0,
+    'Standalone Browser keeps page navigation in the sidebar',
+  )
+  await page.evaluate(() => window.host.navigate({ viewId: 'tasks', entityId: window.threadId }))
+  const tools = page.getByRole('navigation', { name: 'Thread tools', exact: true })
+  const openTools = () =>
+    page
+      .locator('.studio-task-thread-header')
+      .getByRole('button', { name: 'Thread tools', exact: true })
+      .click()
+  assert.equal(await page.locator('.studio-tools-navigation').count(), 0)
+  await openTools()
+  // The picker shows text labels; focusing its first item must not add a duplicate tooltip.
+  await tools.getByRole('button', { name: 'Show tools pane', exact: true }).focus()
+  await page.waitForTimeout(800)
+  assert.equal(await page.getByRole('tooltip').count(), 0, 'Thread tools menu has no tooltips')
+  await tools.getByRole('button', { name: 'Side chats', exact: true }).click()
+  const rightPane = page.getByRole('complementary', { name: 'Workspace tools', exact: true })
+  const rightTabs = rightPane.getByRole('tablist', { name: 'Right pane tabs', exact: true })
+  await rightPane.getByRole('button', { name: 'Add pane tab', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Files', exact: true }).click()
+  const filesTab = rightTabs.getByRole('tab', { name: 'Files', exact: true })
+  await filesTab.waitFor()
+  assert.equal(await filesTab.getAttribute('aria-selected'), 'true')
+  await rightPane
+    .locator('.studio-pane-header')
+    .getByRole('button', { name: 'Refresh files', exact: true })
+    .waitFor()
+  await filesTab.press('Control+Shift+ArrowLeft')
+  assert.deepEqual(await rightTabs.getByRole('tab').allTextContents(), ['Files', 'Side chats'])
+  const resize = rightPane.getByRole('separator', { name: 'Resize tools sidebar', exact: true })
+  const initialWidth = await resize.getAttribute('aria-valuenow')
+  await resize.press('ArrowRight')
+  const resizedWidth = await resize.getAttribute('aria-valuenow')
+  assert.notEqual(resizedWidth, initialWidth)
+  await rightPane.getByRole('button', { name: 'Hide right pane', exact: true }).click()
+  await openTools()
+  await tools.getByRole('button', { name: 'Show tools pane', exact: true }).click()
+  assert.deepEqual(await rightTabs.getByRole('tab').allTextContents(), ['Files', 'Side chats'])
+  assert.equal(await resize.getAttribute('aria-valuenow'), resizedWidth)
+
+  await page.getByRole('button', { name: 'Open thread workspace launcher', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'Terminal', exact: true }).click()
+  const terminal = page.getByRole('region', { name: 'Terminal', exact: true })
+  const moveRight = terminal.getByRole('button', {
+    name: 'Move terminal to right pane',
+    exact: true,
+  })
+  await moveRight.waitFor()
+  const dockedTerminal = await terminal.elementHandle()
+  assert.ok(dockedTerminal)
+  await moveRight.click()
+  await rightTabs.getByRole('tab', { name: 'Terminal', exact: true }).waitFor()
+  assert.equal(await dockedTerminal.evaluate((node) => node.isConnected), true)
+  await rightPane.getByRole('button', { name: 'Move terminal to bottom pane', exact: true }).click()
+  await moveRight.waitFor()
+  assert.equal(
+    await dockedTerminal.evaluate((node) => node.isConnected && !node.closest('aside')),
+    true,
+    'Docking preserves the mounted terminal',
+  )
+  const chooseDevTools = async () => {
+    await rightPane.getByRole('button', { name: 'Add pane tab', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'DevTools', exact: true }).click()
+  }
+  await chooseDevTools()
+  await rightPane.getByText('Open a local browser page to use DevTools.', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter((call) => call.browser === 'devtools').length),
+    0,
+  )
+  const browserAddress = rightPane.getByRole('textbox', {
+    name: 'New browser address',
+    exact: true,
+  })
+  await browserAddress.fill('http://example.lan/redirected')
+  await browserAddress.press('Enter')
+  await rightPane.getByRole('textbox', { name: 'Preview URL', exact: true }).waitFor()
+  await chooseDevTools()
+  await page.waitForFunction(
+    () => window.calls.filter((call) => call.browser === 'devtools').length === 1,
+  )
+  const workspaceTools = page.getByRole('button', { name: 'Workspace tools', exact: true })
+  await mode('Workspace').click()
+  await page.getByRole('button', { name: 'Workspace home', exact: true }).first().click()
+  await workspaceTools.click()
+  assert.equal(await page.getByRole('menuitem', { name: 'Changes', exact: true }).count(), 0)
+  await page.getByRole('menuitem', { name: 'Browser', exact: true }).click()
+  await rightPane.getByLabel('New browser address', { exact: true }).waitFor()
+  await rightPane.getByRole('button', { name: 'Hide right pane', exact: true }).click()
+  for (const hasCheckout of [false, true]) {
+    await page.evaluate(
+      (index) =>
+        window.host.navigate({ viewId: 'terminals', entityId: window.terminalTargets[index] }),
+      Number(hasCheckout),
+    )
+    await workspaceTools.click()
+    const changes = page.getByRole('menuitem', { name: 'Changes', exact: true })
+    assert.equal(await changes.count(), Number(hasCheckout))
+    if (hasCheckout) {
+      await changes.click()
+      await rightPane.getByText('No working tree changes.', { exact: true }).waitFor()
+      assert.ok(
+        await page.evaluate(() =>
+          window.calls.some(
+            (call) =>
+              call.path === '/api/scm/changes' &&
+              call.input.repositoryId === 'project' &&
+              !call.input.taskId,
+          ),
+        ),
+      )
+    } else await page.keyboard.press('Escape')
+  }
   assert.deepEqual(errors, [])
   assert.equal(
     await page.evaluate(() => window.extensionCreations),
@@ -213,7 +353,7 @@ try {
     'Runtime snapshots arrive throughout switching',
   )
   console.log(
-    'Actual Workbench: 72 mode switches with restored Unified threads/pages, snapshot updates, sidebar collapse, compact layout and thread info pass without React errors or extension reloads',
+    'Actual Workbench: mode switches, floating Settings, right-pane tabs, terminal docking and the Chrome DevTools action passed without React errors or extension reloads',
   )
 } finally {
   await browser.close()

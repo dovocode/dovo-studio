@@ -29,7 +29,7 @@ import {
 import { compareTasks, isSnoozed } from '@dovo/studio-core'
 import { SidebarHeader, ChoicePicker } from '@dovo/studio-ui'
 import { ProjectsMenu } from '@dovo/extension-scm/projects'
-import { Plus, ChevronDown, Monitor } from 'lucide-react'
+import { SquarePen, ChevronDown, Monitor } from 'lucide-react'
 import {
   useCallback,
   useDeferredValue,
@@ -877,17 +877,26 @@ export function TaskList({
       aria-label="Thread sidebar"
     >
       <SidebarHeader />
-      <div className="studio-overview-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+      <div className="studio-overview-pane studio-thread-list-pane flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
         <div className="studio-thread-sidebar-controls studio-sidebar-controls shrink-0 space-y-1.5 border-b border-border/40 px-3 pt-3 pb-2">
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             <SearchField
               aria-label="Search threads"
               value={query}
               onValueChange={setQuery}
-              placeholder="Search threads…"
+              placeholder={uiText('Search')}
               containerClassName="studio-thread-search flex-1"
               className="h-8 rounded-lg border-border/50 bg-background/40 text-xs shadow-none transition-colors placeholder:text-muted-foreground/70 hover:border-border focus-visible:border-ring md:text-xs"
             />
+            <div className="studio-thread-toolbar shrink-0 [&_button]:size-7">
+              <ProjectsMenu
+                compact
+                allDevices
+                value={projectId}
+                onChange={onProjectChange}
+                disabled={busy}
+              />
+            </div>
             <Button
               size="icon"
               variant="ghost"
@@ -897,7 +906,7 @@ export function TaskList({
               onClick={onNewThread}
               disabled={busy}
             >
-              <Plus className="size-4" aria-hidden="true" />
+              <SquarePen className="size-4" aria-hidden="true" />
             </Button>
           </div>
           <div
@@ -944,13 +953,6 @@ export function TaskList({
             )}
             <div className="studio-thread-toolbar flex shrink-0 items-center gap-1.5 [&_button]:size-7 [&_button]:text-muted-foreground [&_button:hover]:text-foreground">
               <SectionOrderDialog />
-              <ProjectsMenu
-                compact
-                allDevices
-                value={projectId}
-                onChange={onProjectChange}
-                disabled={busy}
-              />
             </div>
           </div>
         </div>

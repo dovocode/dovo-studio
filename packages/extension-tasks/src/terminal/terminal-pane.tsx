@@ -18,7 +18,16 @@ import {
 } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useEffect, useRef } from 'react'
-import { ChevronDown, Plus, X, Columns2, Rows2, Pencil } from 'lucide-react'
+import {
+  ChevronDown,
+  Plus,
+  X,
+  Columns2,
+  Rows2,
+  Pencil,
+  PanelBottom,
+  PanelRight,
+} from 'lucide-react'
 import { canChangeTaskCheckout, responses, useWorkspace } from '@dovo/studio-core'
 import { Button, IconButton, cn, ChoicePicker } from '@dovo/studio-ui'
 import { TerminalCloseDialog } from './terminal-close-dialog'
@@ -58,11 +67,16 @@ export function TerminalPane({
   onSessionsClosed,
   command,
   onCommandHandled,
+  dock,
+  inset = !!dock,
 }: {
   taskId: string
   command?: TerminalPaneCommand
   onCommandHandled?: (id: string) => void
   onClose: () => void
+  dock?: { side: 'bottom' | 'right'; onMove: () => void }
+  /** Paint the terminal with the pane color when it fills a workspace pane. Docked panes do. */
+  inset?: boolean
   /** Select this session, for example after a chat command ran in it. */
   focusId?: string
   visible?: boolean
@@ -79,6 +93,7 @@ export function TerminalPane({
   onSessionsClosed?: (ids: readonly string[]) => void
 }) {
   const uiText = useInterfaceText()
+  const DockIcon = dock?.side === 'right' ? PanelBottom : PanelRight
 
   const { snapshot, workspace, connected, request, connection, runtimes, activeRuntimeId } =
     useWorkspace()
@@ -417,7 +432,10 @@ export function TerminalPane({
   }, [connected, shellReady, taskId, sessions, focusId, visible])
   return (
     <section
-      className="flex h-full min-h-0 min-w-0 flex-col overflow-hidden border-t bg-background text-foreground"
+      className={cn(
+        'studio-terminal-pane flex h-full min-h-0 min-w-0 flex-col overflow-hidden text-foreground',
+        inset ? 'bg-card' : 'border-t bg-background',
+      )}
       aria-label={uiText('Terminal')}
       onKeyDownCapture={(event) => {
         if (
@@ -458,7 +476,7 @@ export function TerminalPane({
       )}
       <header
         aria-label={scopedSession ? 'Terminal controls' : 'Terminal tabs and controls'}
-        className="flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2"
+        className="studio-pane-header studio-terminal-pane-header flex h-8 shrink-0 items-center gap-1 overflow-x-auto border-b px-2"
       >
         {!scopedSession &&
           groups.map((tab, index) => {
@@ -467,15 +485,20 @@ export function TerminalPane({
               <div
                 key={tab.id}
                 data-terminal-tab
-                className={cn(
-                  'flex shrink-0 items-center rounded-md',
-                  tab.id === group?.id && 'studio-selected-surface',
-                )}
+                data-active={tab.id === group?.id || undefined}
+                className="studio-pane-tab flex shrink-0 items-center rounded-md"
               >
                 <Button
                   size="sm"
                   variant="ghost"
-                  className="h-6 px-2 text-[0.6875rem]"
+                  aria-current={tab.id === group?.id ? 'true' : undefined}
+                  title={`${computer} · ${checkoutLabel(session)}`}
+                  className={cn(
+                    'h-6 px-2 text-xs',
+                    tab.id === group?.id
+                      ? 'font-medium text-foreground'
+                      : 'font-normal text-muted-foreground hover:text-foreground',
+                  )}
                   onClick={() => focusPane(session.id)}
                 >
                   {tab.sessions.length > 1
@@ -488,7 +511,7 @@ export function TerminalPane({
                   {(rename) => (
                     <IconButton
                       label={`Rename ${session.title}`}
-                      className="size-6"
+                      className="studio-tab-reveal size-6"
                       disabled={!connected || busy}
                       onClick={rename}
                     >
@@ -498,7 +521,7 @@ export function TerminalPane({
                 </TerminalRename>
                 <IconButton
                   label={`Close terminal tab ${index + 1}`}
-                  className="size-6"
+                  className={cn('size-6', tab.id !== group?.id && 'studio-tab-reveal')}
                   disabled={!connected || busy}
                   onClick={() => askClose(tab.sessions)}
                 >
@@ -525,73 +548,91 @@ export function TerminalPane({
         >
           <Plus size={12} />
         </IconButton>
-        <span className="flex-1" />
-        <IconButton
-          label={`Split terminal left/right (${mac ? 'Cmd+D' : 'Ctrl+Shift+D'}, max 4 panes)`}
-          className="size-6"
-          disabled={!connected || !active || busy || !shellReady || splitLimit}
-          onClick={() => create('columns')}
-        >
-          <Columns2 size={12} />
-        </IconButton>
-        <IconButton
-          label={`Split terminal top/bottom (${mac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E'}, max 4 panes)`}
-          className="size-6"
-          disabled={!connected || !active || busy || !shellReady || splitLimit}
-          onClick={() => create('rows')}
-        >
-          <Rows2 size={12} />
-        </IconButton>
-        {group && group.sessions.length > 1 && (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[0.625rem]"
-              onClick={() => {
-                const next = nextTerminalPane(group.sessions, active?.id ?? '', 1)
-                if (next) focusPane(next)
-              }}
-            >
-              Next pane
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[0.625rem]"
-              onClick={() =>
-                setGroups((previous) =>
-                  previous.map((item) =>
-                    item.id === group.id
-                      ? { ...item, layout: layout === 'rows' ? 'columns' : 'rows' }
-                      : item,
-                  ),
-                )
+        <span className="studio-pane-shoulder flex-1" aria-hidden="true" />
+        {/* Layout controls and the location appear on hover or focus; touch shows them always. */}
+        <div className="studio-header-reveal flex shrink-0 items-center gap-1">
+          <IconButton
+            label={`Split terminal left/right (${mac ? 'Cmd+D' : 'Ctrl+Shift+D'}, max 4 panes)`}
+            className="size-6"
+            disabled={!connected || !active || busy || !shellReady || splitLimit}
+            onClick={() => create('columns')}
+          >
+            <Columns2 size={12} />
+          </IconButton>
+          <IconButton
+            label={`Split terminal top/bottom (${mac ? 'Cmd+Shift+D' : 'Ctrl+Shift+E'}, max 4 panes)`}
+            className="size-6"
+            disabled={!connected || !active || busy || !shellReady || splitLimit}
+            onClick={() => create('rows')}
+          >
+            <Rows2 size={12} />
+          </IconButton>
+          {group && group.sessions.length > 1 && (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[0.625rem]"
+                onClick={() => {
+                  const next = nextTerminalPane(group.sessions, active?.id ?? '', 1)
+                  if (next) focusPane(next)
+                }}
+              >
+                Next pane
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[0.625rem]"
+                onClick={() =>
+                  setGroups((previous) =>
+                    previous.map((item) =>
+                      item.id === group.id
+                        ? { ...item, layout: layout === 'rows' ? 'columns' : 'rows' }
+                        : item,
+                    ),
+                  )
+                }
+              >
+                {layout === 'rows' ? 'Side by side' : 'Stack panes'}
+              </Button>
+            </>
+          )}
+          {dock && (
+            <IconButton
+              label={
+                dock.side === 'bottom'
+                  ? 'Move terminal to right pane'
+                  : 'Move terminal to bottom pane'
               }
+              className="size-6 shrink-0"
+              onClick={dock.onMove}
             >
-              {layout === 'rows' ? 'Side by side' : 'Stack panes'}
-            </Button>
-          </>
-        )}
-        <IconButton label="Hide terminal pane" className="size-6" onClick={onClose}>
-          <ChevronDown size={12} />
-        </IconButton>
-        {active && (
-          <div className="ml-auto flex shrink-0 gap-2 px-2 text-xs text-muted-foreground">
-            <span>
+              <DockIcon size={12} />
+            </IconButton>
+          )}
+          {active && (
+            <span className="studio-terminal-location px-1 text-xs text-muted-foreground">
               {computer} · {checkoutLabel(active)}
             </span>
+          )}
+        </div>
+        {active && (active.exited || !connected) && (
+          <div className="flex shrink-0 gap-2 px-1 text-xs text-muted-foreground">
             {active.exited ? (
               <span role="status">
                 {active.exitCode == null
                   ? uiText('Process exited')
                   : uiText('Process exited ({value0})', { value0: active.exitCode })}
               </span>
-            ) : !connected ? (
+            ) : (
               <span role="status">{uiText('Computer offline · Input unavailable')}</span>
-            ) : null}
+            )}
           </div>
         )}
+        <IconButton label="Hide terminal pane" className="size-6 shrink-0" onClick={onClose}>
+          <ChevronDown size={12} />
+        </IconButton>
       </header>
       {!!sessions.length && (
         <div
@@ -680,6 +721,7 @@ export function TerminalPane({
                   </div>
                 ) : (
                   <TerminalSession
+                    inset={inset}
                     id={session.id}
                     focusRequest={focusRequest.id === session.id ? focusRequest.count : 0}
                     onOpenFile={

@@ -73,10 +73,10 @@ export function reconcileWorkspaceTabs(
   return tabs.length === state.tabs.length && active === state.active ? state : { tabs, active }
 }
 const storageKey = 'dovo.unified-workspace.v1'
-export function readWorkspaceTabs(): { state: WorkspaceTabs; error?: string } {
+export function readWorkspaceTabs(key = storageKey): { state: WorkspaceTabs; error?: string } {
   const empty: WorkspaceTabs = { tabs: [], active: '' }
   try {
-    const raw = sessionStorage.getItem(storageKey)
+    const raw = sessionStorage.getItem(key)
     if (!raw) return { state: empty }
     const result = decodeResult(stateSchema, JSON.parse(raw))
     if (!result.success) throw new Error('Invalid saved workspace tabs')
@@ -105,9 +105,9 @@ export function readWorkspaceTabs(): { state: WorkspaceTabs; error?: string } {
     }
   }
 }
-export function saveWorkspaceTabs(state: WorkspaceTabs) {
+export function saveWorkspaceTabs(state: WorkspaceTabs, key = storageKey) {
   // The browser owns creation; a reload must not restore an unfinished navigation request.
   const tabs = state.tabs.filter((tab) => tab.kind !== 'browser' || tab.id !== 'new')
   const active = tabs.some((tab) => workspaceTabKey(tab) === state.active) ? state.active : ''
-  sessionStorage.setItem(storageKey, JSON.stringify({ tabs, active }))
+  sessionStorage.setItem(key, JSON.stringify({ tabs, active }))
 }

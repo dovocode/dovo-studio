@@ -117,6 +117,8 @@ export function TaskHeader({
   projectPanelOpen,
   onProjectPanel,
   onCreate,
+  addControl,
+  toolsControl,
   onDeselect,
   onProjectDeleted,
   onOpenForkSource,
@@ -124,6 +126,8 @@ export function TaskHeader({
   projectPanelOpen: boolean
   onProjectPanel: () => void
   onCreate: () => void
+  addControl?: ReactNode
+  toolsControl?: ReactNode
   onDeselect: () => void
   onProjectDeleted?: () => void
   /** Opens the source thread at the message a fork was made from. */
@@ -444,15 +448,24 @@ export function TaskHeader({
       {!compact && (
         <HeaderContent>
           <header
-            className="studio-task-thread-header"
+            className="studio-task-thread-header studio-pane-header"
             data-sidebar={sidebarVisible}
             data-window-edge
             data-window-right-edge={windowRightEdge || undefined}
           >
             {!task.bot && <ProjectIcon repository={displayProject} className="size-4" />}
             <nav className="studio-titlebar-heading min-w-0 flex-1" aria-label="Thread breadcrumb">
-              {!task.bot && <span className="studio-titlebar-project">{projectName}</span>}
-              <span hidden={!!task.bot} className="studio-titlebar-divider" aria-hidden="true">
+              {!task.bot && (
+                <span className="studio-titlebar-project" data-thread-project>
+                  {projectName}
+                </span>
+              )}
+              <span
+                hidden={!!task.bot}
+                className="studio-titlebar-divider"
+                data-thread-project
+                aria-hidden="true"
+              >
                 /
               </span>
               {parentCrumb}
@@ -461,6 +474,8 @@ export function TaskHeader({
                 {titleMenu}
               </h1>
             </nav>
+            {addControl}
+            <span className="studio-pane-shoulder" aria-hidden="true" />
             {!task.bot && (
               <div className="studio-thread-header-context items-center gap-2 text-[0.6875rem] text-muted-foreground">
                 {pullContext}
@@ -483,6 +498,7 @@ export function TaskHeader({
               </div>
             )}
             {actions}
+            {toolsControl}
           </header>
         </HeaderContent>
       )}

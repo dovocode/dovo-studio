@@ -43,7 +43,7 @@ function BotWorkControls({
   return (
     <section
       aria-label={uiText('Bot work overview')}
-      className="flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs"
+      className="studio-bot-work-summary flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs"
     >
       <Button
         variant="outline"

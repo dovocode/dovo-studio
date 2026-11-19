@@ -213,16 +213,20 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         !action.startsWith('pull-') &&
         !['mid-scroll', 'agents-dirty', 'dense-row-menu'].includes(action)
       ) {
-        if (['terminal', 'unified'].includes(action))
+        if (['terminal', 'unified'].includes(action)) {
+          await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
           await page.getByRole('button', { name: 'Show bottom terminal', exact: true }).click()
+        }
         if (action === 'info') {
           const info = page.getByRole('button', { name: 'Show thread info', exact: true })
           if (await info.count()) await info.click()
-        } else if (action !== 'terminal')
+        } else if (action !== 'terminal') {
+          await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
           await page
             .getByRole('navigation', { name: 'Thread tools' })
             .getByRole('button', { name: action === 'unified' ? 'Files' : action, exact: true })
             .click()
+        }
       }
       await page.mouse.move(0, 0)
       if (['terminal', 'unified'].includes(action)) {
@@ -516,6 +520,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
         await page.setViewportSize({ width: 1440, height: 960 })
       }
       if (name === 'conversation') {
+        await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
         const files = page
           .getByRole('navigation', { name: 'Thread tools' })
           .getByRole('button', { name: 'Files', exact: true })

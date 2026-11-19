@@ -86,7 +86,7 @@ for (const [path, names] of [
   ['./browser/browser-pane', ['BrowserPane', 'DevicesPane']],
   ['./review/review-pane', ['ReviewPane']],
   ['./detail/task-files', ['TaskFiles']],
-  ['./terminal/terminal-pane', ['TerminalPane']],
+  ['./terminal/terminal-dock', ['TerminalDock']],
   ['./dialogs/task-search-dialog', ['TaskSearchDialog']],
   ['./task-creation/project-selection-dialog', ['ProjectSelectionDialog']],
   ['./chat/thread/side-question', ['SideQuestion']],

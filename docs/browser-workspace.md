@@ -8,6 +8,9 @@ Tabs retain their computer and profile when you switch the active runtime. New b
 starter address input in Browser and Unified. This also applies when a profile or private tab opens
 from the new-tab menu.
 
+On desktop and web, use the sidebar to switch Browser tabs. The address field sits in the workspace
+header where a thread shows its title.
+
 The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On
 mobile, the tab category picker hides **Snoozed** when no tabs are snoozed.
@@ -37,7 +40,8 @@ the current URL as the tab's home. Use the home button to return there. At narro
 find it in **Browser options**. Right-click the pin to edit its home URL. The pinned grid adapts to
 the sidebar width.
 
-**Thread for this tab** links only to threads on the tab's computer. On desktop, choose **Use
+**Thread for this tab** links only to threads on the tab's computer. New threads default to
+**No Project**. You can select a project before you create the thread. On desktop, choose **Use
 {computer}** if that computer is not active before editing or creating its thread. The tab keeps its
 computer and profile. Restored links to another computer require choosing a matching thread.
 Device-local mobile tabs have no computer-owned thread panel; use a paired-computer tab for agent

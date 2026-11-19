@@ -25,6 +25,7 @@ export function TerminalSession({
   onOpenFile,
   focusRequest = 0,
   readOnly = false,
+  inset = false,
 }: {
   id: string
   active: boolean
@@ -32,6 +33,7 @@ export function TerminalSession({
   onOpenFile?: (file: TerminalFileLink) => Promise<void>
   focusRequest?: number
   readOnly?: boolean
+  inset?: boolean
 }) {
   const uiText = useInterfaceText()
 
@@ -63,14 +65,15 @@ export function TerminalSession({
   const { terminalFontFamily, terminalFontSize } = useAppPreferences()
   const colors = useStudioTheme()
   const mode = useResolvedTheme()
+  const background = inset ? colors.card : colors.background
   const terminalTheme = useMemo(
     () => ({
-      background: colors.background,
+      background,
       foreground: colors.foreground,
       cursor: colors.primary,
-      cursorAccent: colors.background,
+      cursorAccent: background,
       selectionBackground: colors.selection,
-      black: colors.background,
+      black: background,
       brightBlack: colors['muted-foreground'],
       red: mode === 'dark' ? '#ff7e97' : '#ba2549',
       brightRed: mode === 'dark' ? '#ff7e97' : '#ba2549',
@@ -87,7 +90,7 @@ export function TerminalSession({
       white: colors.foreground,
       brightWhite: colors.foreground,
     }),
-    [colors, mode],
+    [background, colors, mode],
   )
   const terminalOptions = useMemo<BrowserTerminalOptions>(
     () => ({

@@ -16,6 +16,9 @@ operating system bindings. Editors, terminals and open dialogs keep their keys.
 The desktop thread launcher remains in General. Composer send and formatting keys remain in
 Conversation and the composer. Mobile keeps its existing native keyboard controls.
 
+On desktop and web, Settings opens in a floating panel over the current view. Close it to return to
+the same thread, workspace item, or overview.
+
 The desktop settings navigation groups **This app**, **Agents & tools**, **Tasks & projects**,
 **Computers** and **History**. Categories expand and collapse to keep the sidebar compact; the
 active page’s category opens automatically after navigation. Search reveals matching pages in every

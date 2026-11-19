@@ -26,6 +26,7 @@ import {
   useNavigationSidebar,
   cn,
 } from '@dovo/studio-ui'
+import { WorkspaceToolsFrame } from '../detail/workspace-tools-frame'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import { TerminalPane, type TerminalPaneCommand } from './terminal-pane'
 import { TerminalRename } from './terminal-rename'
@@ -35,7 +36,17 @@ import {
   type WorkspaceResourceMenuProps,
 } from '../unified/workspace-resource-menu'
 import { WorkspaceTerminalRow } from '../unified/workspace-rows'
+import {
+  closeWorkspaceTab,
+  openWorkspaceTab,
+  readWorkspaceTabs,
+  reconcileWorkspaceTabs,
+  saveWorkspaceTabs,
+  workspaceTabKey,
+} from '../unified/workspace-tabs'
 import { terminalStatus, type TerminalStatusTone } from './terminal-status'
+
+const terminalTabsStorage = 'dovo.terminals-workspace.v1'
 
 const statusColors: Record<TerminalStatusTone, string> = {
   muted: 'text-muted-foreground',
@@ -218,88 +229,111 @@ export function WorkspaceTerminalSurface({
         </div>
       </div>
     )
+  const repository = owner.snapshot?.workspace.repositories.find(
+    (repo) =>
+      repo.id === session.repositoryId &&
+      !repo.kind &&
+      session.execution !== 'worktree' &&
+      !!session.directory &&
+      session.directory === repo.path,
+  )
   return (
-    <WorkspaceScope profile={owner.profile}>
-      <HeaderContent enabled={!embedded}>
-        <header
-          className="studio-task-thread-header"
-          data-window-edge={!embedded || undefined}
-          data-window-right-edge={!embedded || undefined}
-        >
-          <Terminal className="size-4 shrink-0 text-muted-foreground" />
-          <div className="min-w-0 flex-1">
-            <TerminalRename key={targetKey} owner={owner} session={session} onError={reportError}>
-              {(rename) => (
-                <h1 className="min-w-0 text-sm font-medium">
-                  <button
-                    type="button"
-                    aria-label="Rename terminal"
-                    disabled={!owner.connected}
-                    className="group/title inline-flex max-w-full items-center gap-1.5 text-left"
-                    onClick={rename}
-                  >
-                    <span className="truncate">{session.title}</span>
-                    <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100" />
-                  </button>
-                </h1>
-              )}
-            </TerminalRename>
-            <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
-              <span className="truncate" title={session.directory}>
-                {terminalContext(session, owner.snapshot?.workspace)}
-              </span>
-              <span aria-hidden="true">·</span>
-              <Monitor className="size-3 shrink-0" />
-              <span className="truncate">{runtimeComputerName(owner)}</span>
-              {status && (
-                <span className={cn('shrink-0', statusColors[status.tone])}>· {status.label}</span>
-              )}
+    <WorkspaceToolsFrame
+      key={targetKey}
+      scope={targetKey}
+      checkout={repository ? { repositoryId: repository.id, profile: owner.profile } : undefined}
+    >
+      {(tools) => (
+        <WorkspaceScope profile={owner.profile}>
+          <HeaderContent enabled={!embedded}>
+            <header
+              className="studio-task-thread-header studio-pane-header"
+              data-window-edge={!embedded || undefined}
+              data-window-right-edge={!embedded || undefined}
+            >
+              <Terminal className="size-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 flex-1">
+                <TerminalRename
+                  key={targetKey}
+                  owner={owner}
+                  session={session}
+                  onError={reportError}
+                >
+                  {(rename) => (
+                    <h1 className="min-w-0 text-sm font-medium">
+                      <button
+                        type="button"
+                        aria-label="Rename terminal"
+                        disabled={!owner.connected}
+                        className="group/title inline-flex max-w-full items-center gap-1.5 text-left"
+                        onClick={rename}
+                      >
+                        <span className="truncate">{session.title}</span>
+                        <Pencil className="size-3 shrink-0 text-muted-foreground opacity-0 group-hover/title:opacity-100 group-focus-visible/title:opacity-100" />
+                      </button>
+                    </h1>
+                  )}
+                </TerminalRename>
+                <p className="flex items-center gap-1.5 truncate text-[11px] text-muted-foreground">
+                  <span className="truncate" title={session.directory}>
+                    {terminalContext(session, owner.snapshot?.workspace)}
+                  </span>
+                  <span aria-hidden="true">·</span>
+                  <Monitor className="size-3 shrink-0" />
+                  <span className="truncate">{runtimeComputerName(owner)}</span>
+                  {status && (
+                    <span className={cn('shrink-0', statusColors[status.tone])}>
+                      · {status.label}
+                    </span>
+                  )}
+                </p>
+                {status?.detail && (
+                  <p className="truncate text-xs text-muted-foreground" title={status.detail}>
+                    {status.detail}
+                  </p>
+                )}
+              </div>
+              <span className="studio-pane-shoulder" aria-hidden="true" />
+              <TerminalResourceActions owner={owner} session={session} onError={reportError} />
+              {tools}
+            </header>
+          </HeaderContent>
+          {error && (
+            <p role="alert" className="border-b p-2 text-xs text-destructive">
+              {error}
             </p>
-            {status?.detail && (
-              <p className="truncate text-xs text-muted-foreground" title={status.detail}>
-                {status.detail}
+          )}
+          <div className="relative min-h-0 min-w-0 flex-1 overflow-hidden" data-terminal-primary>
+            {owner.connected && !currentSession && (
+              <p
+                role="status"
+                className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-card p-2 text-xs text-muted-foreground"
+              >
+                {!owner.snapshot
+                  ? 'Loading terminal sessions…'
+                  : 'Waiting for terminal session… This workspace remains open.'}
               </p>
             )}
+            <TerminalPane
+              key={targetKey}
+              taskId={session.taskId}
+              command={command}
+              onCommandHandled={onCommandHandled}
+              focusId={session.id}
+              sessionScopeId={target.id}
+              repositoryId={session.repositoryId}
+              autoCreate={false}
+              inset
+              onClose={onHide}
+              onNewSession={onNew}
+              onSessionsClosed={(ids) => {
+                if (ids.includes(target.id)) onHide()
+              }}
+            />
           </div>
-          <TerminalResourceActions owner={owner} session={session} onError={reportError} />
-        </header>
-      </HeaderContent>
-      {error && (
-        <p role="alert" className="border-b p-2 text-xs text-destructive">
-          {error}
-        </p>
+        </WorkspaceScope>
       )}
-      <div
-        className="relative m-2 min-h-0 min-w-0 flex-1 overflow-hidden rounded-xl border border-border/60"
-        data-terminal-primary
-      >
-        {owner.connected && !currentSession && (
-          <p
-            role="status"
-            className="pointer-events-none absolute inset-x-0 bottom-0 z-10 bg-card p-2 text-xs text-muted-foreground"
-          >
-            {!owner.snapshot
-              ? 'Loading terminal sessions…'
-              : 'Waiting for terminal session… This workspace remains open.'}
-          </p>
-        )}
-        <TerminalPane
-          key={targetKey}
-          taskId={session.taskId}
-          command={command}
-          onCommandHandled={onCommandHandled}
-          focusId={session.id}
-          sessionScopeId={target.id}
-          repositoryId={session.repositoryId}
-          autoCreate={false}
-          onClose={onHide}
-          onNewSession={onNew}
-          onSessionsClosed={(ids) => {
-            if (ids.includes(target.id)) onHide()
-          }}
-        />
-      </div>
-    </WorkspaceScope>
+    </WorkspaceToolsFrame>
   )
 }
 
@@ -316,11 +350,27 @@ export function terminalContext(
 
 export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   const computers = useWorkspaceComputers()
-  const [selected, setSelected] = useApplicationState<TerminalTarget | undefined>(() =>
-    readTerminalTarget(entityId),
-  )
+  const [tabs, setTabs] = useApplicationState(() => {
+    const restored = reconcileWorkspaceTabs(readWorkspaceTabs(terminalTabsStorage).state, (tab) =>
+      tab.kind === 'terminal' ? 'unknown' : 'missing',
+    )
+    const linked = readTerminalTarget(entityId)
+    return linked ? openWorkspaceTab(restored, { ...linked, kind: 'terminal' }) : restored
+  })
+  const selected = tabs.tabs.find((tab) => workspaceTabKey(tab) === tabs.active)
   const [search, setSearch] = useState('')
   const [creating, setCreating] = useState(false)
+  const openTerminal = (target: TerminalTarget) => {
+    setTabs((current) => openWorkspaceTab(current, { ...target, kind: 'terminal' }))
+    setCreating(false)
+  }
+  useEffect(() => {
+    try {
+      saveWorkspaceTabs(tabs, terminalTabsStorage)
+    } catch {
+      // Private storage is optional. Keep tabs open in this window.
+    }
+  }, [tabs])
   const [terminalCommand, setTerminalCommand] = useState<{
     target: TerminalTarget
     command: TerminalPaneCommand
@@ -362,10 +412,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
   )
   useEffect(() => {
     const next = readTerminalTarget(entityId)
-    if (next) {
-      setSelected(next)
-      setCreating(false)
-    }
+    if (next) openTerminal(next)
   }, [entityId])
   return (
     <section className="flex min-h-0 min-w-0 flex-1" aria-label="Terminals workspace">
@@ -484,10 +531,9 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                                         ? 'snoozed'
                                         : 'active'
                                   }
-                                  onSelect={() => {
-                                    setSelected({ runtimeId: owner.profile.id, id: session.id })
-                                    setCreating(false)
-                                  }}
+                                  onSelect={() =>
+                                    openTerminal({ runtimeId: owner.profile.id, id: session.id })
+                                  }
                                   project={repository?.name ?? 'Home folder'}
                                   repository={repository}
                                   checkout={
@@ -511,8 +557,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                                     onError: setLifecycleError,
                                     onNew: () => setCreating(true),
                                     onCommand: (action) => {
-                                      setSelected({ runtimeId: owner.profile.id, id: session.id })
-                                      setCreating(false)
+                                      openTerminal({ runtimeId: owner.profile.id, id: session.id })
                                       setTerminalCommand({
                                         target: { runtimeId: owner.profile.id, id: session.id },
                                         command: { requestId: randomUUID(), action },
@@ -538,52 +583,59 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
         </ResizableSidebar>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {lifecycleError && (
-          <p role="alert" className="border-b p-2 text-xs text-destructive">
-            {lifecycleError}
-          </p>
-        )}
-        <Activity mode={selected && !creating ? 'visible' : 'hidden'}>
-          {selected && (
-            <WorkspaceTerminalSurface
-              target={selected}
-              command={
-                !creating &&
-                terminalCommand?.target.runtimeId === selected.runtimeId &&
-                terminalCommand.target.id === selected.id
-                  ? terminalCommand.command
-                  : undefined
-              }
-              onCommandHandled={() => setTerminalCommand(undefined)}
-              onHide={() => setSelected(undefined)}
-              onNew={() => setCreating(true)}
-              onLifecycleError={setLifecycleError}
-            />
+        <div className="studio-terminal-work-pane flex min-h-0 min-w-0 flex-1 flex-col">
+          {lifecycleError && (
+            <p role="alert" className="border-b p-2 text-xs text-destructive">
+              {lifecycleError}
+            </p>
           )}
-        </Activity>
-        <Activity mode={!selected || creating ? 'visible' : 'hidden'}>
-          <HeaderContent>
-            <header className="studio-task-thread-header" data-window-edge data-window-right-edge>
-              <Terminal className="size-4 text-muted-foreground" />
-              <h1 className="flex-1 text-sm font-medium">New terminal</h1>
-              {selected && (
-                <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
-                  Return to terminal
-                </Button>
-              )}
-            </header>
-          </HeaderContent>
-          <div className="flex min-h-0 flex-1 flex-col" data-terminal-starter>
-            <NewWorkspaceTerminal
-              key={starterVersion}
-              onOpen={(target) => {
-                setSelected(target)
-                setCreating(false)
-                setStarterVersion((value) => value + 1)
-              }}
-            />
-          </div>
-        </Activity>
+          {tabs.tabs.map((tab) => {
+            const key = workspaceTabKey(tab)
+            const visible = !creating && key === tabs.active
+            return (
+              <Activity key={key} mode={visible ? 'visible' : 'hidden'}>
+                <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                  <WorkspaceTerminalSurface
+                    target={tab}
+                    command={
+                      visible &&
+                      terminalCommand?.target.runtimeId === tab.runtimeId &&
+                      terminalCommand.target.id === tab.id
+                        ? terminalCommand.command
+                        : undefined
+                    }
+                    onCommandHandled={() => setTerminalCommand(undefined)}
+                    onHide={() => setTabs((current) => closeWorkspaceTab(current, key))}
+                    onNew={() => setCreating(true)}
+                    onLifecycleError={setLifecycleError}
+                  />
+                </div>
+              </Activity>
+            )
+          })}
+          <Activity mode={!selected || creating ? 'visible' : 'hidden'}>
+            <HeaderContent>
+              <header className="studio-task-thread-header" data-window-edge data-window-right-edge>
+                <Terminal className="size-4 text-muted-foreground" />
+                <h1 className="flex-1 text-sm font-medium">New terminal</h1>
+                {selected && (
+                  <Button size="sm" variant="ghost" onClick={() => setCreating(false)}>
+                    Return to terminal
+                  </Button>
+                )}
+              </header>
+            </HeaderContent>
+            <div className="flex min-h-0 flex-1 flex-col" data-terminal-starter>
+              <NewWorkspaceTerminal
+                key={starterVersion}
+                onOpen={(target) => {
+                  openTerminal(target)
+                  setStarterVersion((value) => value + 1)
+                }}
+              />
+            </div>
+          </Activity>
+        </div>
       </div>
     </section>
   )

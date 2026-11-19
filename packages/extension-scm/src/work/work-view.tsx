@@ -434,13 +434,14 @@ function WorkView({
           initialSelected={selected.id}
           initialSourceURL={selected.url}
           mode={mode}
+          pane
           connected={selectedSource.connected}
           onChanged={isJira ? refresh : undefined}
           onBack={closePreview}
         />
       </WorkspaceRuntimeScope>
     ) : (
-      <div className="p-5 text-sm">
+      <div className="studio-page-pane p-5 text-sm">
         <p>This source connection changed. Open the item again from the list.</p>
         <Button variant="ghost" onClick={closePreview}>
           <ArrowLeft className="size-4" />
@@ -471,7 +472,7 @@ function WorkView({
       >
         <SidebarHeader enabled={!!selected} />
         <div
-          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background'}`}
+          className={`flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${selected ? 'studio-overview-pane studio-embedded-list bg-sidebar' : 'studio-page-pane studio-page-surface bg-background'}`}
         >
           <div className="contents">
             <PageHeader

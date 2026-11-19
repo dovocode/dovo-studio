@@ -111,7 +111,7 @@ it('keeps valid saved choices, fills in new defaults and ignores invalid values'
     projectPanelOpen: true,
     themePalette: 'dovo',
     lastThreadId: 'saved-thread',
-    threadSidebarWidth: 280,
+    threadSidebarWidth: 188,
     toolsSidebarWidth: 420,
     sendWith: 'enter',
     textSize: 'default',

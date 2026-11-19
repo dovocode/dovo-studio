@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, type ReactElement } from 'react'
 import {
   artifactListSchema,
   botInvocationParent,
@@ -30,12 +30,43 @@ import {
   BookOpen,
   Brain,
   Workflow,
+  Wrench,
 } from 'lucide-react'
-import { Button, Tooltip, TooltipContent, TooltipTrigger, cn } from '@dovo/studio-ui'
+import {
+  Button,
+  IconButton,
+  Popover,
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  cn,
+} from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
+
+/** Icon-only navigation needs tooltips. The picker menu shows text labels, so it skips them. */
+function OptionalTooltip({
+  label,
+  enabled,
+  children,
+}: {
+  label: string
+  enabled: boolean
+  children: ReactElement
+}) {
+  if (!enabled) return children
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{children}</TooltipTrigger>
+      <TooltipContent side="left" sideOffset={10}>
+        {label}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
 
 export function TaskTools({
   task,
+  picker = false,
   surface,
   onSelect,
   hasDiff,
@@ -43,10 +74,12 @@ export function TaskTools({
   toolsExpanded = surface !== 'chat' && surface !== 'terminal',
   onTools,
   bottomTerminalOpen = false,
+  terminalDockedRight = false,
   onBottomTerminal,
   artifactsEnabled = false,
 }: {
   task: Task
+  picker?: boolean
   surface: TaskSurface
   onSelect: (surface: TaskSurface) => void
   hasDiff: boolean
@@ -54,9 +87,11 @@ export function TaskTools({
   toolsExpanded?: boolean
   onTools?: () => void
   bottomTerminalOpen?: boolean
+  terminalDockedRight?: boolean
   onBottomTerminal?: () => void
   artifactsEnabled?: boolean
 }) {
+  const [open, setOpen] = useState(false)
   const { workspace, snapshot, activeRuntimeId, request, connected } = useWorkspace()
   const childThreads = useThreadChildren(task.id)
   const agentCount = useMemo(
@@ -115,33 +150,51 @@ export function TaskTools({
     }
   }, [artifactKey, task.id, task.status, artifactsEnabled, connected, request])
   const hasArtifacts = artifactsEnabled && artifacts?.key === artifactKey && artifacts.present
-  return (
-    <nav className="studio-navigation studio-tools-navigation" aria-label="Thread tools">
-      <span className="studio-navigation-heading" aria-hidden="true">
-        {task.bot ? 'Bot' : 'Thread'}
-      </span>
-      <div data-tools-pane-control className="mb-3 shrink-0">
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label={toolsExpanded ? 'Hide tools pane' : 'Show tools pane'}
-              aria-pressed={toolsExpanded}
-              className="studio-navigation-item"
-              onClick={onTools ?? (() => onSelect(toolsExpanded ? 'chat' : 'files'))}
-            >
-              {toolsExpanded ? (
-                <PanelRightClose size={17} strokeWidth={1.7} />
-              ) : (
-                <PanelRightOpen size={17} strokeWidth={1.7} />
-              )}
-            </Button>
-          </TooltipTrigger>
-          <TooltipContent side="left" sideOffset={10}>
-            {toolsExpanded ? 'Hide tools pane' : 'Show tools pane'}
-          </TooltipContent>
-        </Tooltip>
+  const terminalActive = terminalDockedRight ? surface === 'terminal' : bottomTerminalOpen
+  const terminalLabel = terminalDockedRight
+    ? terminalActive
+      ? 'Hide right terminal'
+      : 'Show right terminal'
+    : terminalActive
+      ? 'Hide bottom terminal'
+      : 'Show bottom terminal'
+  const navigation = (
+    <nav
+      className={picker ? 'flex flex-col gap-1' : 'studio-navigation studio-tools-navigation'}
+      aria-label="Thread tools"
+    >
+      {!picker && (
+        <span className="studio-navigation-heading" aria-hidden="true">
+          {task.bot ? 'Bot' : 'Thread'}
+        </span>
+      )}
+      <div data-tools-pane-control className={picker ? 'border-b pb-1' : 'mb-3 shrink-0'}>
+        <OptionalTooltip
+          label={toolsExpanded ? 'Hide tools pane' : 'Show tools pane'}
+          enabled={!picker}
+        >
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={toolsExpanded ? 'Hide tools pane' : 'Show tools pane'}
+            aria-pressed={toolsExpanded}
+            className={
+              picker ? 'h-8 w-full justify-start gap-2 px-2 text-xs' : 'studio-navigation-item'
+            }
+            onClick={() => {
+              if (picker) setOpen(false)
+              if (onTools) onTools()
+              else onSelect(toolsExpanded ? 'chat' : 'files')
+            }}
+          >
+            {toolsExpanded ? (
+              <PanelRightClose size={17} strokeWidth={1.7} />
+            ) : (
+              <PanelRightOpen size={17} strokeWidth={1.7} />
+            )}
+            {picker && (toolsExpanded ? 'Hide tools pane' : 'Show tools pane')}
+          </Button>
+        </OptionalTooltip>
       </div>
       {(
         [
@@ -191,75 +244,92 @@ export function TaskTools({
       )
         .filter(({ tools }) => tools.length > 0)
         .map(({ label: groupLabel, tools }) => (
-          <div className="studio-tools-group" role="group" aria-label={groupLabel} key={groupLabel}>
+          <div
+            className={picker ? 'flex flex-col gap-0.5' : 'studio-tools-group'}
+            role="group"
+            aria-label={groupLabel}
+            key={groupLabel}
+          >
             {tools.map(([id, label, Icon, count]) => (
-              <Tooltip key={id}>
-                <TooltipTrigger asChild>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={
-                      id === 'terminal'
-                        ? bottomTerminalOpen
-                          ? 'Hide bottom terminal'
-                          : 'Show bottom terminal'
-                        : label
-                    }
-                    aria-description={
-                      [
-                        count > 0 ? `${count} ${label.toLowerCase()}` : '',
+              <OptionalTooltip
+                key={id}
+                enabled={!picker}
+                label={
+                  id === 'terminal' ? terminalLabel : count > 0 ? `${label} (${count})` : label
+                }
+              >
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  aria-label={id === 'terminal' ? terminalLabel : label}
+                  aria-description={
+                    [
+                      count > 0 ? `${count} ${label.toLowerCase()}` : '',
+                      id === 'side-chats' && sideAttention
+                        ? sideAttention === 'approval'
+                          ? 'Approval required'
+                          : 'Needs input'
+                        : '',
+                    ]
+                      .filter(Boolean)
+                      .join(' · ') || undefined
+                  }
+                  aria-pressed={id === 'terminal' ? terminalActive : surface === id}
+                  className={cn(
+                    picker
+                      ? 'relative h-8 w-full justify-start gap-2 px-2 text-xs aria-pressed:bg-accent'
+                      : 'studio-navigation-item',
+                    (id === 'terminal' ? terminalActive : surface === id) && 'is-active',
+                  )}
+                  onClick={() => {
+                    if (picker) setOpen(false)
+                    if (id === 'terminal' && onBottomTerminal) onBottomTerminal()
+                    else onSelect(id)
+                  }}
+                >
+                  <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+                  <span className={picker ? undefined : 'studio-navigation-label'}>{label}</span>
+                  {(count > 0 || (id === 'side-chats' && sideAttention)) && (
+                    <span
+                      data-tool-count
+                      data-attention={
+                        id === 'side-chats' && sideAttention ? sideAttention : undefined
+                      }
+                      aria-hidden="true"
+                      className={cn(
+                        'pointer-events-none absolute right-0.5 top-0.5 min-w-3 rounded px-0.5 text-center text-[0.5625rem] leading-3 tabular-nums',
                         id === 'side-chats' && sideAttention
-                          ? sideAttention === 'approval'
-                            ? 'Approval required'
-                            : 'Needs input'
-                          : '',
-                      ]
-                        .filter(Boolean)
-                        .join(' · ') || undefined
-                    }
-                    aria-pressed={id === 'terminal' ? bottomTerminalOpen : surface === id}
-                    className={cn(
-                      'studio-navigation-item',
-                      (id === 'terminal' ? bottomTerminalOpen : surface === id) && 'is-active',
-                    )}
-                    onClick={() =>
-                      id === 'terminal' && onBottomTerminal ? onBottomTerminal() : onSelect(id)
-                    }
-                  >
-                    <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
-                    <span className="studio-navigation-label">{label}</span>
-                    {(count > 0 || (id === 'side-chats' && sideAttention)) && (
-                      <span
-                        data-tool-count
-                        data-attention={
-                          id === 'side-chats' && sideAttention ? sideAttention : undefined
-                        }
-                        aria-hidden="true"
-                        className={cn(
-                          'pointer-events-none absolute right-0.5 top-0.5 min-w-3 rounded px-0.5 text-center text-[0.5625rem] leading-3 tabular-nums',
-                          id === 'side-chats' && sideAttention
-                            ? 'bg-status-warning/15 text-status-warning'
-                            : 'bg-background text-muted-foreground',
-                        )}
-                      >
-                        {count > 99 ? '99+' : count || '•'}
-                      </span>
-                    )}
-                  </Button>
-                </TooltipTrigger>
-                <TooltipContent side="left" sideOffset={10}>
-                  {id === 'terminal'
-                    ? bottomTerminalOpen
-                      ? 'Hide bottom terminal'
-                      : 'Show bottom terminal'
-                    : count > 0
-                      ? `${label} (${count})`
-                      : label}
-                </TooltipContent>
-              </Tooltip>
+                          ? 'bg-status-warning/15 text-status-warning'
+                          : 'bg-background text-muted-foreground',
+                      )}
+                    >
+                      {count > 99 ? '99+' : count || '•'}
+                    </span>
+                  )}
+                </Button>
+              </OptionalTooltip>
             ))}
           </div>
         ))}
     </nav>
+  )
+  if (!picker) return navigation
+  return (
+    <Popover.Root open={open} onOpenChange={setOpen}>
+      <Popover.Trigger asChild>
+        <IconButton label="Thread tools" className="size-7 shrink-0" title="Thread tools">
+          <Wrench size={15} aria-hidden="true" />
+        </IconButton>
+      </Popover.Trigger>
+      <Popover.Portal>
+        <Popover.Content
+          align="end"
+          sideOffset={6}
+          className="studio-menu-surface z-50 w-48 max-h-[var(--radix-popover-content-available-height)] overflow-auto rounded-xl border bg-popover p-1"
+        >
+          {navigation}
+        </Popover.Content>
+      </Popover.Portal>
+    </Popover.Root>
   )
 }

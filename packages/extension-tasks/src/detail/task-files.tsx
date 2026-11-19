@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+import type { RightPaneFile } from './right-pane-tabs'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ProjectSpreadsheet } from './project-spreadsheet'
 import { isSpreadsheet } from '@dovo/protocol'
@@ -5,7 +7,7 @@ import { createRuntimeClient, taskFileShareSchema, markdownMediaKind } from '@do
 import { ProjectImagePreview } from './project-image-preview'
 import { ProjectFileBrowser } from './project-file-browser'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useCallback, useEffect, useMemo, useRef, useSyncExternalStore } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react'
 import { getFiletypeFromFileName } from '@pierre/diffs'
 import { preloadStudioHighlighter, useDiffOptions } from '@dovo/studio-ui/code-themes'
 import { Editor } from '@pierre/diffs/edit'
@@ -15,7 +17,7 @@ import {
   type EditorFactory,
   type FileOptions,
 } from '@pierre/diffs/react'
-import { RefreshCw, FolderOpen, FileText, Maximize2, Minimize2, X } from 'lucide-react'
+import { RefreshCw, FolderOpen, FileText, ListTree, Maximize2, Minimize2, X } from 'lucide-react'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button, IconButton } from '@dovo/studio-ui'
 import { ResizableSidebar } from './resizable-sidebar'
@@ -27,6 +29,7 @@ const createEditor: EditorFactory<undefined, undefined> = (type, options, key) =
 let nextEditorOwner = 0
 
 const setDraft = drafts.set.bind(drafts)
+const lineSelectionHint = 'Drag line numbers or Shift-click for a range · Click + for one line'
 
 function HighlightedFile({
   draftKey,
@@ -39,7 +42,10 @@ function HighlightedFile({
   readOnly,
   focusedLine,
   focusRevision,
+  actionsTarget,
 }: {
+  /** Pane header slot. When set, the file actions join the pane header instead of a second row. */
+  actionsTarget?: HTMLElement | null
   focusedLine?: number
   focusRevision: number
   readOnly: boolean
@@ -171,101 +177,121 @@ function HighlightedFile({
         })
     }
   }
-  return (
+  const fileActions = (
     <>
-      <div className="flex min-h-9 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs text-muted-foreground">
-        <span className="min-w-0 flex-1 truncate font-mono">
-          {path}
-          {draft ? ' •' : ''}
-        </span>
-        {selection && onReference && (
+      {selection && onReference && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[0.625rem]"
+          onMouseDown={(event) => event.preventDefault()}
+          onClick={() => {
+            onReference(
+              formatCodeReference(path, selection.start, selection.end, displayedContents),
+            )
+            setSelection(null)
+          }}
+        >
+          Add reference to composer
+        </Button>
+      )}
+      {!editing && draft ? (
+        <>
           <Button
             size="sm"
-            variant="outline"
+            variant="ghost"
             className="h-6 px-2 text-[0.625rem]"
-            onMouseDown={(event) => event.preventDefault()}
+            disabled={draft.saving}
             onClick={() => {
-              onReference(
-                formatCodeReference(path, selection.start, selection.end, displayedContents),
-              )
-              setSelection(null)
+              setDraft(draftKey, null)
+              setEditRevision((value) => value + 1)
             }}
           >
-            Add reference to composer
+            Discard
           </Button>
-        )}
-        {!editing && draft ? (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[0.625rem]"
-              disabled={draft.saving}
-              onClick={() => {
-                setDraft(draftKey, null)
-                setEditRevision((value) => value + 1)
-              }}
-            >
-              Discard
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[0.625rem]"
-              disabled={draft.saving}
-              onClick={() => void persist()}
-            >
-              {draft.saving ? 'Saving…' : draft.error ? 'Retry save' : 'Save draft'}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              className="h-6 px-2 text-[0.625rem]"
-              disabled={draft.saving || readOnly}
-              onClick={startEditing}
-            >
-              Resume editing
-            </Button>
-          </>
-        ) : editing ? (
-          <>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="h-6 px-2 text-[0.625rem]"
-              onClick={() => {
-                setDraft(draftKey, null)
-                stopEditing()
-                setEditRevision((value) => value + 1)
-              }}
-            >
-              {uiText('Cancel')}
-            </Button>
-            <Button
-              size="sm"
-              variant="default"
-              className="h-6 px-2 text-[0.625rem]"
-              onClick={() => {
-                stopEditing()
-                void persist()
-                setEditRevision((value) => value + 1)
-              }}
-            >
-              {uiText('Save')}
-            </Button>
-          </>
-        ) : (
           <Button
             size="sm"
             variant="outline"
             className="h-6 px-2 text-[0.625rem]"
-            disabled={readOnly || !!selection || !canEdit}
+            disabled={draft.saving}
+            onClick={() => void persist()}
+          >
+            {draft.saving ? 'Saving…' : draft.error ? 'Retry save' : 'Save draft'}
+          </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="h-6 px-2 text-[0.625rem]"
+            disabled={draft.saving || readOnly}
             onClick={startEditing}
           >
-            {uiText('Edit')}
+            Resume editing
           </Button>
-        )}
-      </div>
+        </>
+      ) : editing ? (
+        <>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-6 px-2 text-[0.625rem]"
+            onClick={() => {
+              setDraft(draftKey, null)
+              stopEditing()
+              setEditRevision((value) => value + 1)
+            }}
+          >
+            {uiText('Cancel')}
+          </Button>
+          <Button
+            size="sm"
+            variant="default"
+            className="h-6 px-2 text-[0.625rem]"
+            onClick={() => {
+              stopEditing()
+              void persist()
+              setEditRevision((value) => value + 1)
+            }}
+          >
+            {uiText('Save')}
+          </Button>
+        </>
+      ) : (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 px-2 text-[0.625rem]"
+          disabled={readOnly || !!selection || !canEdit}
+          title={actionsTarget ? lineSelectionHint : undefined}
+          onClick={startEditing}
+        >
+          {uiText('Edit')}
+        </Button>
+      )}
+    </>
+  )
+  return (
+    <>
+      {actionsTarget ? (
+        createPortal(
+          <>
+            {draft && (
+              <span className="px-1 text-xs text-muted-foreground" title="Unsaved draft">
+                •<span className="sr-only">Unsaved draft</span>
+              </span>
+            )}
+            {fileActions}
+          </>,
+          actionsTarget,
+        )
+      ) : (
+        <div className="flex min-h-9 shrink-0 items-center gap-2 border-b bg-background px-4 text-xs text-muted-foreground">
+          <span className="min-w-0 flex-1 truncate font-mono">
+            {path}
+            {draft ? ' •' : ''}
+          </span>
+          {fileActions}
+        </div>
+      )}
       {(drafts.pressure || (!editing && !canEdit)) && (
         <p role="alert" className="border-b px-4 py-2 text-xs text-destructive">
           {draftPressureMessage}
@@ -312,13 +338,16 @@ function HighlightedFile({
           <p className="p-4 text-xs text-muted-foreground">Loading file…</p>
         )}
       </div>
-      <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
-        {editing
-          ? `Editing file · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}Z undo · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}F find`
-          : readOnly
-            ? 'Read-only preview · Files over 1 MB must be edited externally'
-            : 'Drag line numbers or Shift-click for a range · Click + for one line'}
-      </div>
+      {/* In a pane header the idle hint moves to the Edit button tooltip; status lines stay. */}
+      {(editing || readOnly || !actionsTarget) && (
+        <div className="border-t px-3 py-1 text-[0.625rem] text-muted-foreground">
+          {editing
+            ? `Editing file · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}Z undo · ${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}F find`
+            : readOnly
+              ? 'Read-only preview · Files over 1 MB must be edited externally'
+              : lineSelectionHint}
+        </div>
+      )}
     </>
   )
 }
@@ -326,6 +355,9 @@ function HighlightedFile({
 export function TaskFiles({
   task,
   reveal,
+  initialFile,
+  headerActionsTarget,
+  onFileSelected,
   onReference,
   onEditingChange,
   onClose,
@@ -334,6 +366,9 @@ export function TaskFiles({
 }: {
   task: Task
   reveal?: { path: string; line: number; checkoutId?: string; requestId: string }
+  initialFile?: RightPaneFile
+  headerActionsTarget?: HTMLElement | null
+  onFileSelected?: (file: RightPaneFile | null) => void
   onEditingChange?: (editing: boolean) => void
   onReference?: (text: string) => void
   onClose?: () => void
@@ -343,10 +378,14 @@ export function TaskFiles({
   const { request, connected, connection } = useWorkspace()
   const { openExternalLink } = useStudioHost()
   const [readError, setReadError] = useApplicationState('')
-  const [focusedLine, setFocusedLine] = useApplicationState<number | undefined>(undefined)
+  const [focusedLine, setFocusedLine] = useApplicationState<number | undefined>(initialFile?.line)
   const [focusRevision, setFocusRevision] = useApplicationState(0)
-  const [selected, setSelected] = useApplicationState('')
-  const [checkoutId, setCheckoutId] = useApplicationState<string | undefined>(undefined)
+  const [selected, setSelected] = useApplicationState(initialFile?.path ?? '')
+  const [showTree, setShowTree] = useApplicationState(false)
+  const treeVisible = !headerActionsTarget || !selected || showTree
+  const [checkoutId, setCheckoutId] = useApplicationState<string | undefined>(
+    initialFile?.checkoutId,
+  )
   const [preview, setPreview] = useApplicationState<{
     size?: number
     complete: boolean
@@ -362,6 +401,7 @@ export function TaskFiles({
     setFocusedLine(reveal.line)
     setFocusRevision((value) => value + 1)
     setFullRead(false)
+    onFileSelected?.({ path: reveal.path, line: reveal.line, checkoutId: reveal.checkoutId })
   }, [reveal?.requestId])
   const draftScope = JSON.stringify([
     connection?.runtimeId,
@@ -526,49 +566,74 @@ export function TaskFiles({
           setReadError(cause instanceof Error ? cause.message : String(cause))
       })
   }
+  const [fileActionsSlot, setFileActionsSlot] = useState<HTMLDivElement | null>(null)
+  const headerActions = (
+    <div className="ml-auto flex shrink-0 items-center gap-1">
+      {headerActionsTarget && (
+        <div ref={setFileActionsSlot} className="flex shrink-0 items-center gap-1" />
+      )}
+      {headerActionsTarget && selected && (
+        <IconButton
+          label={showTree ? 'Hide file tree' : 'Show file tree'}
+          aria-pressed={showTree}
+          className="size-7"
+          onClick={() => setShowTree(!showTree)}
+        >
+          <ListTree size={14} />
+        </IconButton>
+      )}
+      {checkoutId && (
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={() => {
+            setCheckoutId(undefined)
+            setSelected('')
+            onFileSelected?.(null)
+            setFocusedLine(undefined)
+            setFullRead(false)
+          }}
+        >
+          <span className={headerActionsTarget ? 'sr-only' : undefined}>Show primary checkout</span>
+          {headerActionsTarget && <FolderOpen size={14} aria-hidden />}
+        </Button>
+      )}
+      <IconButton
+        label="Refresh files"
+        className="size-7"
+        disabled={!connected || loading}
+        onClick={() => setRevision((value) => value + 1)}
+      >
+        <RefreshCw size={14} />
+      </IconButton>
+      {onExpand && (
+        <IconButton
+          label={expanded ? 'Restore side panel' : 'Expand viewer'}
+          aria-pressed={expanded}
+          className="size-7"
+          onClick={onExpand}
+        >
+          {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+        </IconButton>
+      )}
+    </div>
+  )
   return (
     <section className="flex h-full min-w-0 flex-col bg-background" aria-label="Project files">
-      <header className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
-        <FolderOpen size={16} className="text-muted-foreground" aria-hidden />
-        <h2 className="min-w-0 flex-1 truncate">Project files</h2>
-        {checkoutId && (
-          <Button
-            size="sm"
-            variant="ghost"
-            onClick={() => {
-              setCheckoutId(undefined)
-              setSelected('')
-              setFocusedLine(undefined)
-              setFullRead(false)
-            }}
-          >
-            Show primary checkout
-          </Button>
-        )}
-        <IconButton
-          label="Refresh files"
-          className="ml-auto size-7"
-          disabled={!connected || loading}
-          onClick={() => setRevision((value) => value + 1)}
-        >
-          <RefreshCw size={14} />
-        </IconButton>
-        {onExpand && (
-          <IconButton
-            label={expanded ? 'Restore side panel' : 'Expand viewer'}
-            aria-pressed={expanded}
-            className="size-7"
-            onClick={onExpand}
-          >
-            {expanded ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
-          </IconButton>
-        )}
-        {onClose && (
-          <IconButton label="Close viewer" className="size-7" onClick={onClose}>
-            <X size={14} />
-          </IconButton>
-        )}
-      </header>
+      {headerActionsTarget ? (
+        createPortal(headerActions, headerActionsTarget)
+      ) : (
+        <header className="studio-thread-tools-header flex h-12 shrink-0 items-center gap-2 border-b px-3 text-xs font-medium">
+          <FolderOpen size={16} className="text-muted-foreground" aria-hidden />
+          <h2 className="min-w-0 flex-1 truncate">Project files</h2>
+          {headerActions}
+          {onClose && (
+            <IconButton label="Close viewer" className="size-7" onClick={onClose}>
+              <X size={14} />
+            </IconButton>
+          )}
+        </header>
+      )}
       {delimitedText && !drafts.get(draftKey) && (
         <div className="border-b px-3 py-1">
           <Button
@@ -597,6 +662,7 @@ export function TaskFiles({
                   onClick={() => {
                     setSelected(path)
                     setFullRead(true)
+                    onFileSelected?.({ path, checkoutId })
                   }}
                 >
                   Recover draft: {path}
@@ -707,6 +773,7 @@ export function TaskFiles({
                   )}
                   <HighlightedFile
                     key={draftKey}
+                    actionsTarget={headerActionsTarget ? fileActionsSlot : undefined}
                     draftKey={draftKey}
                     onEditingChange={changedEditing}
                     onSavedElsewhere={refreshAfterSave}
@@ -757,16 +824,18 @@ export function TaskFiles({
         </div>
         <ResizableSidebar
           preference="projectFilesSidebarWidth"
-          resizable={!!selected}
+          resizable={treeVisible && !!selected}
           side="left"
           label="project file tree"
           maxFraction={0.4}
           maxWidth={640}
           aria-label="Project file tree"
           className={
-            selected
-              ? 'order-first flex min-h-0 flex-col border-r bg-background'
-              : 'order-first flex min-h-0 flex-1 flex-col bg-background'
+            !treeVisible
+              ? 'hidden'
+              : selected
+                ? 'order-first flex min-h-0 flex-col border-r bg-background'
+                : 'order-first flex min-h-0 flex-1 flex-col bg-background'
           }
         >
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-[inherit]">
@@ -782,6 +851,7 @@ export function TaskFiles({
                 setFullRead(false)
                 setFocusedLine(line)
                 setFocusRevision((value) => value + 1)
+                onFileSelected?.({ path, line, checkoutId })
               }}
             />
           </div>

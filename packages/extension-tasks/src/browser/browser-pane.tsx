@@ -144,6 +144,8 @@ import {
   HeaderContent,
   SidebarHeader,
   Toggle,
+  cn,
+  useCompactLayout,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
 import { copyBrowserSnapshot } from './browser-snapshot-clipboard'
@@ -255,6 +257,7 @@ function persistedBrowserTabs(
 }
 function BrowserToolbar({
   children,
+  className,
   ...props
 }: Omit<FormHTMLAttributes<HTMLFormElement>, 'children'> & {
   children: (compact: boolean) => ReactNode
@@ -277,7 +280,7 @@ function BrowserToolbar({
     <form
       {...props}
       ref={form}
-      className="studio-browser-toolbar flex min-w-0 shrink-0 items-center gap-1"
+      className={cn('studio-browser-toolbar flex min-w-0 shrink-0 items-center gap-1', className)}
       data-compact={compact}
       style={compact ? { paddingInline: 2, columnGap: 2 } : undefined}
     >
@@ -286,6 +289,8 @@ function BrowserToolbar({
   )
 }
 
+type DevToolsRequest = { id: string; onHandled: () => void }
+
 export function BrowserPane({
   taskId,
   onClose,
@@ -293,6 +298,8 @@ export function BrowserPane({
   onLinkOpened,
   shared = false,
   workspaceControl,
+  devToolsRequest,
+  paneScope,
 }: {
   taskId: string
   onClose?: () => void
@@ -300,6 +307,8 @@ export function BrowserPane({
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
+  devToolsRequest?: DevToolsRequest
+  paneScope?: string
 }) {
   return (
     <PreviewPane
@@ -310,6 +319,8 @@ export function BrowserPane({
       onLinkOpened={onLinkOpened}
       shared={shared}
       workspaceControl={workspaceControl}
+      devToolsRequest={devToolsRequest}
+      paneScope={paneScope}
     />
   )
 }
@@ -324,6 +335,8 @@ function PreviewPane({
   onLinkOpened,
   shared = false,
   workspaceControl,
+  devToolsRequest,
+  paneScope,
 }: {
   taskId: string
   onClose?: () => void
@@ -332,6 +345,8 @@ function PreviewPane({
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
+  devToolsRequest?: DevToolsRequest
+  paneScope?: string
 }) {
   const { connection } = useWorkspace()
   const { browserWindowId, threadWindow } = useStudioHost()
@@ -341,7 +356,7 @@ function PreviewPane({
   )
   const scope = shared
     ? sharedBrowserScope(storageWindowId)
-    : `${connection?.address ?? ''}:${taskId}`
+    : `${connection?.address ?? ''}:${taskId}${paneScope ? `:${paneScope}` : ''}`
   return (
     <BrowserContent
       key={`${scope}:${mode}`}
@@ -354,6 +369,8 @@ function PreviewPane({
       onLinkOpened={onLinkOpened}
       shared={shared}
       workspaceControl={workspaceControl}
+      devToolsRequest={devToolsRequest}
+      paneScope={paneScope}
     />
   )
 }
@@ -367,6 +384,8 @@ function BrowserContent({
   onLinkOpened,
   shared = false,
   workspaceControl,
+  devToolsRequest,
+  paneScope,
 }: {
   scope: string
   storageWindowId?: string
@@ -374,11 +393,15 @@ function BrowserContent({
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
+  devToolsRequest?: DevToolsRequest
+  paneScope?: string
   initialMode: 'remote' | 'devices'
   taskId: string
   onClose?: () => void
 }) {
   const uiText = useInterfaceText()
+  const compactLayout = useCompactLayout()
+  const addressInPaneHeader = shared && !workspaceControl && !compactLayout
 
   const store = useWorkspace()
   const { connection, request, connected, snapshot, runtimes, activeRuntimeId } = store,
@@ -393,6 +416,7 @@ function BrowserContent({
       registerCommand,
     } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
+  const threadPreview = !shared && !paneScope
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
   const preferences = useAppPreferences()
@@ -535,7 +559,10 @@ function BrowserContent({
   const currentTabs = useRef(tabs)
   currentTabs.current = tabs
   const selectedTab = tabs.find((tab) => tab.id === activeTab) ?? tabs[0]
-  const tabRuntimeId = selectedTab.kind === 'web' ? store.localRuntimeId : selectedTab.runtimeId
+  const tabRuntimeId =
+    selectedTab.kind === 'web'
+      ? (store.localRuntimeId ?? (paneScope ? activeRuntimeId : undefined))
+      : selectedTab.runtimeId
   useEffect(() => {
     if (!shared || !browser || !store.localRuntimeId) return
     setTabs((previous) =>
@@ -1168,6 +1195,34 @@ function BrowserContent({
       if (mount.current) setBusy(false)
     }
   }
+  const openDevTools = useCommittedCallback(() => {
+    if (browser) void act(() => browser({ action: 'devtools', key: browserKey }))
+  })
+  const handledDevTools = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!devToolsRequest || handledDevTools.current === devToolsRequest.id || !paneVisible || busy)
+      return
+    const localPage = !!browser && mode === 'web' && !!url && !selectedTab.detached
+    // Wait for the native browser's status before addressing its WebContents.
+    if (localPage && !history.url && !error) return
+    handledDevTools.current = devToolsRequest.id
+    devToolsRequest.onHandled()
+    if (localPage && history.url) openDevTools()
+    else if (!localPage) setError(uiText('Open a local browser page to use DevTools.'))
+  }, [
+    browser,
+    busy,
+    devToolsRequest,
+    error,
+    history.url,
+    mode,
+    openDevTools,
+    paneVisible,
+    selectedTab.detached,
+    setError,
+    uiText,
+    url,
+  ])
   const detachBrowser = useCommittedCallback(() => {
     if (!browser) return
     void act(async () => {
@@ -2651,7 +2706,7 @@ function BrowserContent({
                   <ChevronDown size={14} aria-hidden="true" />
                 </div>
               </div>
-              {!shared && browser && mode === 'web' && (
+              {threadPreview && browser && mode === 'web' && (
                 <Button
                   type="button"
                   variant={agentAccess ? 'secondary' : 'ghost'}
@@ -2670,7 +2725,7 @@ function BrowserContent({
                   Agent browser access
                 </Button>
               )}
-              {!shared && mode === 'web' && agentAccess && history.cdp && (
+              {threadPreview && mode === 'web' && agentAccess && history.cdp && (
                 <Button
                   type="button"
                   variant="ghost"
@@ -2702,7 +2757,7 @@ function BrowserContent({
                   <Camera size={14} /> Copy snapshot
                 </Button>
               )}
-              {!shared && mode === 'remote' && (
+              {threadPreview && mode === 'remote' && (
                 <Button
                   type="button"
                   size="sm"
@@ -2727,7 +2782,7 @@ function BrowserContent({
                       <Search size={17} /> <span>Find on page</span>
                     </Button>
                   </Popover.Close>
-                  {!shared && (
+                  {threadPreview && (
                     <Button
                       type="button"
                       size="sm"
@@ -2755,7 +2810,7 @@ function BrowserContent({
                     size="sm"
                     variant="ghost"
                     className="studio-browser-menu-action"
-                    onClick={() => void act(() => browser({ action: 'devtools', key: browserKey }))}
+                    onClick={openDevTools}
                   >
                     <CodeXml size={17} /> <span>Open DevTools</span>
                   </Button>
@@ -3144,7 +3199,7 @@ function BrowserContent({
             onBrowseStore={() => newTab('https://chromewebstore.google.com/', 'web', profileId)}
           />
         )}
-        {shared && !browserPageOnly && (
+        {(shared || paneScope) && !browserPageOnly && (
           <>
             <IconButton
               type="button"
@@ -3161,17 +3216,19 @@ function BrowserContent({
             >
               <MessageSquare size={15} />
             </IconButton>
-            <IconButton
-              type="button"
-              label="Customize website"
-              disabled={!websiteOrigin || !websiteProfile || isPrivateBrowserProfile(profileId)}
-              onClick={customizeWebsite}
-            >
-              <Paintbrush size={15} />
-            </IconButton>
+            {shared && (
+              <IconButton
+                type="button"
+                label="Customize website"
+                disabled={!websiteOrigin || !websiteProfile || isPrivateBrowserProfile(profileId)}
+                onClick={customizeWebsite}
+              >
+                <Paintbrush size={15} />
+              </IconButton>
+            )}
           </>
         )}
-        {!shared && mode !== 'devices' && (
+        {threadPreview && mode !== 'devices' && (
           <BrowserElementFeedback
             key={`${activeRuntimeId}:${taskId}:${browserKey}:${mode}`}
             taskId={taskId}
@@ -3214,8 +3271,40 @@ function BrowserContent({
         )}
       </>
     )
+    const navigationControls = (compact: boolean) => (
+      <>
+        {historyButton('back')}
+        {!compact && historyButton('forward')}
+        <IconButton
+          label={
+            mode !== 'remote' || remoteOnline
+              ? uiText('Reload')
+              : endedTab === tab.id
+                ? uiText('Open URL in a new session')
+                : uiText('Reconnect')
+          }
+          type="button"
+          className="size-8 shrink-0"
+          aria-busy={mode === 'remote' && remoteLoading}
+          disabled={busy || (mode !== 'remote' && !url)}
+          onClick={() =>
+            mode === 'remote'
+              ? remoteOnline
+                ? remote.current?.input({ type: 'reload' })
+                : remote.current?.reconnect()
+              : browser
+                ? void act(() => browser({ action: 'reload', key: browserKey }))
+                : setReload((value) => value + 1)
+          }
+        >
+          <RotateCw size={15} />
+        </IconButton>
+        {!compact && siteControls}
+      </>
+    )
     return (
       <BrowserToolbar
+        className={addressInPaneHeader ? 'studio-pane-header' : undefined}
         aria-label={
           !opener && selectedTab.previewOf ? 'Link preview navigation' : 'Browser navigation'
         }
@@ -3228,33 +3317,7 @@ function BrowserContent({
       >
         {(compact) => (
           <>
-            {historyButton('back')}
-            {!compact && historyButton('forward')}
-            <IconButton
-              label={
-                mode !== 'remote' || remoteOnline
-                  ? uiText('Reload')
-                  : endedTab === tab.id
-                    ? uiText('Open URL in a new session')
-                    : uiText('Reconnect')
-              }
-              type="button"
-              className="size-8 shrink-0"
-              aria-busy={mode === 'remote' && remoteLoading}
-              disabled={busy || (mode !== 'remote' && !url)}
-              onClick={() =>
-                mode === 'remote'
-                  ? remoteOnline
-                    ? remote.current?.input({ type: 'reload' })
-                    : remote.current?.reconnect()
-                  : browser
-                    ? void act(() => browser({ action: 'reload', key: browserKey }))
-                    : setReload((value) => value + 1)
-              }
-            >
-              <RotateCw size={15} />
-            </IconButton>
-            {!compact && siteControls}
+            {!addressInPaneHeader && navigationControls(compact)}
             <div className="studio-browser-address relative z-20 flex min-w-0 flex-1 items-center">
               <BrowserAddressInput
                 value={input}
@@ -3331,6 +3394,12 @@ function BrowserContent({
                 </div>
               )}
             </div>
+            {addressInPaneHeader && (
+              <>
+                <span className="studio-pane-shoulder" aria-hidden="true" />
+                {navigationControls(compact)}
+              </>
+            )}
             {!compact && secondaryControls}
             {browserOptions(
               pageActions,
@@ -3418,6 +3487,7 @@ function BrowserContent({
     )
   return (
     <BrowserLayout
+      standalone={shared && !workspaceControl && !browserPageOnly}
       devices={initialMode === 'devices'}
       header={
         <>
@@ -3521,7 +3591,10 @@ function BrowserContent({
         </>
       }
       threadPanel={
-        shared && !browserPageOnly && mode !== 'devices' && threadPanels.has(activeTab) ? (
+        (shared || paneScope) &&
+        !browserPageOnly &&
+        mode !== 'devices' &&
+        threadPanels.has(activeTab) ? (
           <BrowserThreadPanel
             key={selectedTab.id}
             runtimeId={tabRuntimeId}
@@ -3859,7 +3932,7 @@ function BrowserContent({
       )}
 
       {selectedTab.previewOf && <div className="@container/browser shrink-0">{navigation()}</div>}
-      {mode !== 'devices' && !shared && !browserPageOnly && !selectedTab.previewOf && (
+      {mode !== 'devices' && threadPreview && !browserPageOnly && !selectedTab.previewOf && (
         <p className="shrink-0 break-words border-b bg-card px-3 py-1 text-xs text-muted-foreground">
           Thread preview · {browserLocation} · {browserProfile}
         </p>
@@ -4331,6 +4404,7 @@ function BrowserTabGroup({
   )
 }
 function BrowserLayout({
+  standalone,
   header,
   sidebar,
   devices,
@@ -4339,6 +4413,7 @@ function BrowserLayout({
   threadPanel,
   editor,
 }: {
+  standalone: boolean
   header: React.ReactNode
   sidebar: React.ReactNode
   threadPanel?: React.ReactNode
@@ -4365,6 +4440,7 @@ function BrowserLayout({
   return (
     <section
       className="@container/browser relative flex h-full min-h-0 min-w-0"
+      data-browser-workspace={standalone || undefined}
       aria-label={devices ? 'Device previews' : 'Browser previews'}
     >
       {!sidebarState?.collapsed && sidebar}
@@ -4374,7 +4450,7 @@ function BrowserLayout({
       >
         {header}
         <div
-          className="@container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
+          className="studio-browser-work-pane @container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
           data-browser-viewport
         >
           {preview && (

@@ -15,6 +15,8 @@ export function ResizableSidebar({
   label,
   maxFraction,
   maxWidth,
+  savedWidth,
+  onWidthCommit,
   reservedWidth = 0,
   resizable = true,
   as: Element = 'aside',
@@ -27,6 +29,8 @@ export function ResizableSidebar({
   label: string
   maxFraction: number
   maxWidth: number
+  savedWidth?: number
+  onWidthCommit?: (width: number) => void
   reservedWidth?: number
   resizable?: boolean
   as?: 'aside' | 'div'
@@ -35,7 +39,7 @@ export function ResizableSidebar({
   const element = useRef<HTMLElement>(null)
   const drag = useRef<{ pointer: number; x: number; width: number } | null>(null)
   const [width, setWidth, currentWidth] = useApplicationState(
-    () => readAppPreferences()[preference],
+    () => savedWidth ?? readAppPreferences()[preference],
   )
   const [containerWidth, setContainerWidth] = useState<number | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -58,7 +62,10 @@ export function ResizableSidebar({
   const minimum = Math.min(180, maximum)
   const clamp = (value: number) => Math.max(minimum, Math.min(maximum, value))
   const visibleWidth = clamp(width)
-  const save = () => updateAppPreferences({ [preference]: currentWidth.current })
+  const save = () => {
+    updateAppPreferences({ [preference]: currentWidth.current })
+    onWidthCommit?.(currentWidth.current)
+  }
   return (
     <Element
       {...props}

@@ -414,7 +414,7 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
         >
           <SidebarHeader enabled={hasDetail} />
           <div
-            className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane bg-sidebar' : 'studio-page-surface bg-background'}`}
+            className={`@container/pr-list flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden ${hasDetail ? 'studio-overview-pane studio-embedded-list bg-sidebar' : 'studio-page-pane studio-page-surface bg-background'}`}
           >
             <PageHeader title={uiText('Pull requests')} embedded={hasDetail}>
               <Button

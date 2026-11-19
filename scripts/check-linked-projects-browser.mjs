@@ -35,7 +35,7 @@ try {
       '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
       '@dovo/studio-ui':
         controls +
-        `export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';export {LinkedCheckoutEditor} from '${root}/packages/studio-ui/src/linked-checkouts.tsx';`,
+        `export * as Popover from '@radix-ui/react-popover';export {PermissionPolicyFields,permissionPolicyUIIssue} from '${root}/packages/studio-ui/src/permission-policy-fields.tsx';export {LinkedCheckoutEditor} from '${root}/packages/studio-ui/src/linked-checkouts.tsx';`,
       'react-native': controls,
       'expo-crypto': `export const randomUUID=()=>crypto.randomUUID();`,
       '../../runtime/connection/provider': `export const useRuntime=()=>({connected:window.store.connected,snapshot:{workspace:window.store.workspace},call:window.store.request});`,

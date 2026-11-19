@@ -116,9 +116,10 @@ head and base. No live PR was created. Cross-host credential behavior has not be
 
 ## Terminal names
 
-On desktop and mobile, select the pencil beside a thread terminal tab to rename it. Each split pane
-also has a rename control beside its title. For a standalone terminal, use Rename in its actions.
-Select Use automatic title to let the shell and its programs set the title again.
+On desktop and mobile, select the pencil beside a thread terminal tab to rename it. With a mouse,
+the pencil appears when you point at the tab or focus it. Each split pane also has a rename control
+beside its title. For a standalone terminal, use Rename in its actions. Select Use automatic title
+to let the shell and its programs set the title again.
 
 Names stay on the terminal's host computer and survive session recovery. Renaming keeps the shell,
 connection, and output. A failed save keeps the entered name so you can retry.

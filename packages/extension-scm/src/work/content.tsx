@@ -70,6 +70,7 @@ export function WorkContent({
   active = true,
   onBack,
   preview = false,
+  pane = false,
   onChanged,
 }: {
   repositoryId?: string
@@ -86,6 +87,8 @@ export function WorkContent({
   active?: boolean
   onBack?: () => void
   preview?: boolean
+  /** Put the detail body in a desktop work pane below a header on the canvas. */
+  pane?: boolean
   onChanged?: () => void
 }) {
   const uiText = useInterfaceText()
@@ -740,7 +743,7 @@ export function WorkContent({
           </Button>
         </PageHeader>
       )}
-      <div className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+      <div className={`min-h-0 min-w-0 flex-1 overflow-y-auto ${pane ? 'studio-page-pane' : ''}`}>
         {!selected && collectionHeader}
         <div className="px-5 py-4">
           <div className="mb-4 flex flex-wrap items-center gap-2">

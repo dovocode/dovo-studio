@@ -38,7 +38,7 @@ export function PullReadinessPanel({
   return (
     <section
       aria-label="Pull request status"
-      className="@container/pr-readiness mb-4 overflow-hidden rounded-xl border bg-background/60"
+      className="@container/pr-readiness mb-4 overflow-hidden rounded-2xl border bg-card"
     >
       <div className="flex flex-wrap items-center gap-3 p-4">
         <span

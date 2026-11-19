@@ -47,6 +47,9 @@ import {
 } from '@dovo/studio-core'
 import {
   Button,
+  Dialog,
+  DialogContent,
+  DialogTitle,
   ErrorBoundary,
   TooltipProvider,
   StudioConfirmationProvider,
@@ -290,14 +293,17 @@ function WorkbenchContent({
       ? { viewId: browserWindowId ? 'browser' : 'tasks', entityId: threadWindow?.taskId }
       : visibleWorkspaceTarget({ viewId: extensions[0]?.views[0]?.id ?? '' }, workspaceModes),
   )
+  const [settingsTarget, setSettingsTarget] = useApplicationState<StudioNavigation | null>(null)
+  const settingsTrigger = useRef<HTMLElement | null>(null)
+  const main = useRef<HTMLElement | null>(null)
   const confirmSettingsNavigation = useConfirmSettingsNavigation()
   // Confirmation changes with computer scope; host navigation always uses the current guard.
   const settingsConfirmation = useRef(confirmSettingsNavigation)
   settingsConfirmation.current = confirmSettingsNavigation
   const threadSelections = useRef(new Map<string | null, string>())
   const botSelections = useRef(new Map<string | null, string>())
-  const settingsNavigation = useRef({ target, extensions })
-  settingsNavigation.current = { target, extensions }
+  const settingsNavigation = useRef({ target, settingsTarget, extensions })
+  settingsNavigation.current = { target, settingsTarget, extensions }
   const history = useRef<Array<{ target: StudioNavigation; runtimeId: string | null }>>([])
   const navigationAttempt = useRef(0)
   const mounted = useRef(true)
@@ -317,16 +323,19 @@ function WorkbenchContent({
   const currentProfiles = useRef(runtimeRegistry.profiles)
   currentProfiles.current = runtimeRegistry.profiles
   const [navigationKey, setNavigationKey] = useState(0)
-  const canLeave = useCallback(async () => {
-    const { target, extensions } = settingsNavigation.current
-    return (
-      !extensions.some((extension) =>
-        extension.views.some(
-          (view) => view.navigationGroup === 'settings' && view.id === target.viewId,
-        ),
-      ) || settingsConfirmation.current()
-    )
-  }, [])
+  const [settingsNavigationKey, setSettingsNavigationKey] = useState(0)
+  const canLeave = useCallback(
+    async () => !settingsNavigation.current.settingsTarget || settingsConfirmation.current(),
+    [],
+  )
+  const closeSettings = useCallback(async () => {
+    const attempt = ++navigationAttempt.current
+    if (!(await canLeave()) || !mounted.current || attempt !== navigationAttempt.current)
+      return false
+    settingsNavigation.current.settingsTarget = null
+    setSettingsTarget(null)
+    return true
+  }, [canLeave, setSettingsTarget])
   const commitNavigation = useCallback(
     (next: StudioNavigation, options?: { replace?: boolean }) => {
       if (browserWindowId && next.viewId !== 'browser') return false
@@ -334,7 +343,27 @@ function WorkbenchContent({
       // Keep existing links to the former device-only PR page working.
       if (next.viewId === 'pull-request-settings')
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
-      const { target } = settingsNavigation.current
+      const navigation = settingsNavigation.current
+      const { target, extensions } = navigation
+      if (
+        [appSettingsExtension, ...extensions].some((extension) =>
+          extension.views.some(
+            (view) => view.navigationGroup === 'settings' && view.id === next.viewId,
+          ),
+        )
+      ) {
+        if (!navigation.settingsTarget)
+          settingsTrigger.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null
+        navigation.settingsTarget = next
+        setSettingsTarget(next)
+        setSettingsNavigationKey((key) => key + 1)
+        return true
+      }
+      if (navigation.settingsTarget) {
+        navigation.settingsTarget = null
+        setSettingsTarget(null)
+      }
       if (next.viewId === 'tasks' && next.entityId) {
         const profile = currentProfiles.current.find(
           (profile) => profile.id === currentRuntime.current,
@@ -356,7 +385,7 @@ function WorkbenchContent({
       setNavigationKey((key) => key + 1)
       return true
     },
-    [updateTarget, browserWindowId],
+    [updateTarget, setSettingsTarget, browserWindowId],
   )
   const navigate = useCallback(
     async (next: StudioNavigation, options?: { replace?: boolean }) => {
@@ -374,6 +403,10 @@ function WorkbenchContent({
     [canLeave, commitNavigation],
   )
   const goBack = useCallback(async () => {
+    if (settingsNavigation.current.settingsTarget) {
+      await closeSettings()
+      return true
+    }
     const previous = history.current.at(-1)
     const attempt = ++navigationAttempt.current
     const runtimeId = currentRuntime.current
@@ -403,14 +436,15 @@ function WorkbenchContent({
         setSwitchError(cause instanceof Error ? cause.message : String(cause))
       return true
     }
-  }, [canLeave, updateTarget, switchRuntime, setSwitchError])
+  }, [canLeave, closeSettings, updateTarget, switchRuntime, setSwitchError])
   // Hiding normal modes moves a section landing there to the unified workspace. Pop-out windows
   // keep their dedicated view, and explicit item links still open.
   const fallbackTarget =
     browserWindowId || threadWindow ? target : visibleWorkspaceTarget(target, workspaceModes)
+  const settingsOpen = !!settingsTarget
   useEffect(() => {
-    if (fallbackTarget !== target) void navigate(fallbackTarget, { replace: true })
-  }, [fallbackTarget.viewId, target.viewId])
+    if (!settingsOpen && fallbackTarget !== target) void navigate(fallbackTarget, { replace: true })
+  }, [fallbackTarget.viewId, target.viewId, settingsOpen])
   const compact = useCompactLayout()
   const [collapsedSections, setCollapsedSections] = useApplicationState<Record<string, boolean>>({})
   const sidebarCollapsed =
@@ -717,7 +751,8 @@ function WorkbenchContent({
       onBrowserWorkspaceFocus?.(() => {
         // The native browser is shared by Browser and Unified. Redirects, popups and
         // page focus must stay with the workspace currently hosting that surface.
-        if (settingsNavigation.current.target.viewId === 'workspace') return
+        const { settingsTarget, target } = settingsNavigation.current
+        if (settingsTarget || target.viewId === 'workspace') return
         if (!browserWorkspaceEnabled) updateAppPreferences({ browserWorkspaceEnabled: true })
         void navigate({ viewId: 'browser' })
       }),
@@ -965,7 +1000,7 @@ function WorkbenchContent({
           })),
         )
       : undefined)
-  const inSettings = settingsViews.some((view) => view.id === target.viewId)
+  const SettingsView = settingsTarget && views.get(settingsTarget.viewId)
   const View = views.get(target.viewId)
   const navigationCommands = catalog.views
     .filter(
@@ -993,21 +1028,18 @@ function WorkbenchContent({
       <StudioToolsBridge />
       <StudioPairedComputersBridge />
       <SidebarHeaderLayout
-        collapsible={
-          inSettings ||
-          [
-            'tasks',
-            'browser',
-            'terminals',
-            'workspace',
-            'pulls',
-            'jobs',
-            'issues',
-            'jira',
-            'pipelines',
-            'artifacts',
-          ].includes(target.viewId)
-        }
+        collapsible={[
+          'tasks',
+          'browser',
+          'terminals',
+          'workspace',
+          'pulls',
+          'jobs',
+          'issues',
+          'jira',
+          'pipelines',
+          'artifacts',
+        ].includes(target.viewId)}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
         brand={
@@ -1040,11 +1072,7 @@ function WorkbenchContent({
             ) : (
               <TitleBar
                 platform={desktopPlatform}
-                section={
-                  inSettings
-                    ? 'Settings'
-                    : catalog.views.find((view) => view.id === target.viewId)?.title
-                }
+                section={catalog.views.find((view) => view.id === target.viewId)?.title}
                 online={runtimes.filter((runtime) => runtime.connected).length}
                 devices={runtimeRegistry.profiles.length}
                 onDevices={() =>
@@ -1081,13 +1109,14 @@ function WorkbenchContent({
                               ? showJira
                               : true,
                 )}
-                activeId={target.viewId}
+                activeId={settingsTarget?.viewId ?? target.viewId}
                 onSelect={(viewId) => {
                   navigateSection(viewId)
                 }}
               />
             )}
             <main
+              ref={main}
               className="studio-main"
               tabIndex={-1}
               onClickCapture={(event) => {
@@ -1193,53 +1222,96 @@ function WorkbenchContent({
               {(browserWorkspaceEnabled || unifiedWorkspaceEnabled) && browser && (
                 <BrowserMediaControls onIndicatorChange={setBrowserIndicator} />
               )}
-              {/* Settings get a grouped sidebar with search; other views use the full area. */}
-              <div
-                className={`flex min-h-0 min-w-0 flex-1 ${inSettings ? 'flex-col md:flex-row' : ''}`}
-              >
-                {inSettings && (
-                  <SettingsNav
-                    views={settingsViews}
-                    activeId={target.viewId}
-                    initialField={
-                      target.entityId?.startsWith('setting:') ? target.entityId.slice(8) : undefined
+              <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+                <ErrorBoundary key={target.viewId} diagnosticContext={{ viewId: target.viewId }}>
+                  <Suspense
+                    fallback={
+                      <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
                     }
-                    onSelect={(viewId) => navigate({ viewId })}
-                  />
-                )}
-                <div
-                  data-settings-content={inSettings ? '' : undefined}
-                  className="flex min-h-0 min-w-0 flex-1 flex-col"
-                >
-                  <ErrorBoundary key={target.viewId} diagnosticContext={{ viewId: target.viewId }}>
-                    <Suspense
-                      fallback={
-                        <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
-                      }
-                    >
-                      {ready && View ? (
-                        <View
-                          entityId={target.entityId}
-                          nativeAgentKey={target.nativeAgentKey}
-                          threadRequest={target.threadRequest}
-                          threadParent={parentThread}
-                          pullTarget={target.pullTarget}
-                          automationTarget={target.automationTarget}
-                          messageId={target.messageId}
-                          threadConnection={target.threadConnection}
-                          navigationKey={navigationKey}
-                        />
-                      ) : !ready ? (
-                        <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
-                      ) : (
-                        <div className="p-6 text-xs text-muted-foreground">
-                          This view is unavailable. Select another view from the sidebar.
-                        </div>
-                      )}
-                    </Suspense>
-                  </ErrorBoundary>
-                </div>
+                  >
+                    {ready && View ? (
+                      <View
+                        entityId={target.entityId}
+                        nativeAgentKey={target.nativeAgentKey}
+                        threadRequest={target.threadRequest}
+                        threadParent={parentThread}
+                        pullTarget={target.pullTarget}
+                        automationTarget={target.automationTarget}
+                        messageId={target.messageId}
+                        threadConnection={target.threadConnection}
+                        navigationKey={navigationKey}
+                      />
+                    ) : !ready ? (
+                      <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
+                    ) : (
+                      <div className="p-6 text-xs text-muted-foreground">
+                        This view is unavailable. Select another view from the sidebar.
+                      </div>
+                    )}
+                  </Suspense>
+                </ErrorBoundary>
               </div>
+              <Dialog
+                open={settingsOpen}
+                onOpenChange={(open) => {
+                  if (!open) void closeSettings()
+                }}
+              >
+                {settingsTarget && (
+                  <DialogContent
+                    aria-describedby={undefined}
+                    className="studio-settings-dialog flex h-[min(82dvh,840px)] w-[calc(100%-1.5rem)] max-w-6xl flex-col gap-0 overflow-hidden p-0"
+                    onCloseAutoFocus={(event) => {
+                      const trigger = settingsTrigger.current
+                      settingsTrigger.current = null
+                      event.preventDefault()
+                      const restore = trigger?.isConnected ? trigger : main.current
+                      restore?.focus({ preventScroll: true })
+                    }}
+                  >
+                    <DialogTitle className="flex h-14 shrink-0 items-center border-b px-5">
+                      {uiText('Settings')}
+                    </DialogTitle>
+                    <SidebarHeaderLayout brand={null} collapsible={false}>
+                      <div className="flex min-h-0 min-w-0 flex-1 flex-col md:flex-row">
+                        <SettingsNav
+                          showHeading={false}
+                          views={settingsViews}
+                          activeId={settingsTarget.viewId}
+                          initialField={
+                            settingsTarget.entityId?.startsWith('setting:')
+                              ? settingsTarget.entityId.slice(8)
+                              : undefined
+                          }
+                          onSelect={(viewId) => navigate({ viewId })}
+                        />
+                        <div data-settings-content className="flex min-h-0 min-w-0 flex-1 flex-col">
+                          <ErrorBoundary
+                            key={settingsTarget.viewId}
+                            diagnosticContext={{ viewId: settingsTarget.viewId }}
+                          >
+                            <Suspense
+                              fallback={
+                                <p className="p-6 text-xs text-muted-foreground">
+                                  Loading settings…
+                                </p>
+                              }
+                            >
+                              {SettingsView && (
+                                <SettingsView
+                                  entityId={settingsTarget.entityId}
+                                  threadConnection={settingsTarget.threadConnection}
+                                  navigationKey={settingsNavigationKey}
+                                />
+                              )}
+                            </Suspense>
+                          </ErrorBoundary>
+                        </div>
+                      </div>
+                    </SidebarHeaderLayout>
+                  </DialogContent>
+                )}
+              </Dialog>
               {!browserWindowId &&
                 connected &&
                 snapshot?.defaults &&

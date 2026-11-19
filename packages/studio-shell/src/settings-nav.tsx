@@ -138,10 +138,12 @@ export function SettingsNav({
   activeId,
   onSelect,
   initialField,
+  showHeading = true,
 }: {
   views: readonly StudioView[]
   activeId: string
   initialField?: string
+  showHeading?: boolean
   onSelect: (viewId: string) => boolean | void | Promise<boolean | void>
 }) {
   const uiText = useInterfaceText()
@@ -373,9 +375,11 @@ export function SettingsNav({
           <p className="mt-2 text-xs text-muted-foreground">{scopeLabel}</p>
         </div>
         <div className="shrink-0 px-1 md:px-1.5">
-          <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
-            {uiText('Settings')}
-          </h1>
+          {showHeading && (
+            <h1 className="mb-2 hidden px-1 text-base font-semibold tracking-tight md:block">
+              {uiText('Settings')}
+            </h1>
+          )}
           {/* Buttons and inputs inherit their font size (see studio-ui styles). */}
           <div className="relative text-[0.8125rem]">
             <Search

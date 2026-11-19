@@ -85,6 +85,7 @@ import {
   type TaskOwner,
 } from '../list/task-collection'
 import { buildThreadTree, threadDescendants } from '../list/thread-tree'
+import { WorkspaceToolsFrame } from '../detail/workspace-tools-frame'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
 import {
   NewWorkspaceTerminal,
@@ -1093,19 +1094,20 @@ function WorkspaceContent() {
                     <SlidersHorizontal className="size-3.5" />
                   </IconButton>
                 </div>
-                <div className="flex items-center gap-1">
+                <div className="@container flex items-center gap-1">
                   <button
                     type="button"
                     aria-label="Workspace home"
                     title="Show workspace home; open items stay open"
                     aria-current={!active ? 'page' : undefined}
                     className={cn(
-                      'min-w-0 flex-1 rounded px-1 text-left text-xs font-medium hover:text-foreground',
+                      'flex h-7 min-w-0 flex-1 items-center gap-1.5 rounded-md px-1.5 text-left text-xs font-medium outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring',
                       active ? 'text-muted-foreground' : 'text-foreground',
                     )}
                     onClick={showHome}
                   >
-                    Workspace
+                    <House className="size-3.5 shrink-0" aria-hidden="true" />
+                    <span className="hidden truncate @[13rem]:inline">Workspace</span>
                   </button>
                   {active && (
                     <IconButton
@@ -1329,7 +1331,10 @@ function WorkspaceContent() {
             </p>
           )}
           <Activity mode={creatingTerminal ? 'visible' : 'hidden'}>
-            <div className="flex min-h-0 flex-1 flex-col" data-terminal-starter>
+            <div
+              className="studio-workspace-home flex min-h-0 flex-1 flex-col"
+              data-terminal-starter
+            >
               <div className="flex h-10 shrink-0 items-center justify-end border-b px-3">
                 <Button size="sm" variant="ghost" onClick={() => setCreatingTerminal(false)}>
                   {active ? 'Return to work' : 'Return to workspace'}
@@ -1345,71 +1350,82 @@ function WorkspaceContent() {
             </div>
           </Activity>
           {/* Keep the Home draft mounted without taking space above an active workspace tab. */}
-          <div
-            hidden={!!active || creatingTerminal}
-            className={
-              active || creatingTerminal ? 'hidden' : 'flex min-h-0 flex-1 flex-col overflow-y-auto'
-            }
-          >
-            <WorkspaceInput
-              visible={!creatingTerminal}
-              active={active}
-              onOpen={open}
-              onBrowser={openBrowserLink}
-            >
-              <details
-                className="mx-auto mt-3 w-full max-w-[var(--chat-max)] text-xs text-muted-foreground"
-                data-workspace-browse
-              >
-                <summary className="mx-auto w-fit cursor-pointer rounded-md px-3 py-2 text-sm outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
-                  Browse workspace
-                </summary>
-                <div className="pt-4">
-                  <div className="mb-3 grid grid-cols-3 gap-2">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                      disabled={switching || !store.activeRuntimeId}
-                      onClick={() =>
-                        open({ kind: 'thread', runtimeId: store.activeRuntimeId ?? '', id: '' })
-                      }
+          <WorkspaceToolsFrame scope="unified-home" visible={!active && !creatingTerminal}>
+            {(tools) => (
+              <>
+                <header className="studio-task-thread-header studio-pane-header">
+                  <House size={16} aria-hidden="true" />
+                  <h1 className="studio-titlebar-heading">{uiText('Workspace')}</h1>
+                  <span className="studio-pane-shoulder" aria-hidden="true" />
+                  {tools}
+                </header>
+                <div className="studio-workspace-home flex min-h-0 flex-1 flex-col overflow-y-auto">
+                  <WorkspaceInput
+                    visible={!creatingTerminal}
+                    active={active}
+                    onOpen={open}
+                    onBrowser={openBrowserLink}
+                  >
+                    <details
+                      className="mx-auto mt-3 w-full max-w-[var(--chat-max)] text-xs text-muted-foreground"
+                      data-workspace-browse
                     >
-                      <MessageSquare className="size-3.5" />
-                      {uiText('New thread')}
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                      onClick={newBrowser}
-                    >
-                      <Globe2 className="size-3.5" />
-                      New browser
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
-                      onClick={() => setCreatingTerminal(true)}
-                    >
-                      <Terminal className="size-3.5" />
-                      New terminal
-                    </Button>
-                  </div>
+                      <summary className="mx-auto w-fit cursor-pointer rounded-md px-3 py-2 text-sm outline-none hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring">
+                        Browse workspace
+                      </summary>
+                      <div className="pt-4">
+                        <div className="mb-3 grid grid-cols-3 gap-2">
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                            disabled={switching || !store.activeRuntimeId}
+                            onClick={() =>
+                              open({
+                                kind: 'thread',
+                                runtimeId: store.activeRuntimeId ?? '',
+                                id: '',
+                              })
+                            }
+                          >
+                            <MessageSquare className="size-3.5" />
+                            {uiText('New thread')}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                            onClick={newBrowser}
+                          >
+                            <Globe2 className="size-3.5" />
+                            New browser
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="min-h-11 gap-2 rounded-xl border-border/60 text-xs text-muted-foreground"
+                            onClick={() => setCreatingTerminal(true)}
+                          >
+                            <Terminal className="size-3.5" />
+                            New terminal
+                          </Button>
+                        </div>
 
-                  {!!continueWorking.length && (
-                    <section aria-label="Continue working">
-                      <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
-                        Continue working
-                      </h2>
-                      {continueWorking.map((item) => renderResource(item))}
-                    </section>
-                  )}
+                        {!!continueWorking.length && (
+                          <section aria-label="Continue working">
+                            <h2 className="mb-2 px-1 text-xs font-medium text-muted-foreground">
+                              Continue working
+                            </h2>
+                            {continueWorking.map((item) => renderResource(item))}
+                          </section>
+                        )}
+                      </div>
+                    </details>
+                  </WorkspaceInput>
                 </div>
-              </details>
-            </WorkspaceInput>
-          </div>
+              </>
+            )}
+          </WorkspaceToolsFrame>
           <div
             id="workspace-content"
             role="region"
@@ -1421,6 +1437,7 @@ function WorkspaceContent() {
             tabIndex={-1}
             className={cn(
               'flex min-h-0 min-w-0 flex-1 flex-col',
+              active?.kind === 'terminal' && 'studio-terminal-work-pane',
               (!active || creatingTerminal) && 'hidden',
             )}
           >

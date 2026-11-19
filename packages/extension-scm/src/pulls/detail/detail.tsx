@@ -436,7 +436,7 @@ function PullDetailContent({
         </header>
       </HeaderContent>
       <div
-        className="min-h-0 max-h-[calc((100%-var(--studio-header-height,52px))/2)] shrink-0 overflow-y-auto overscroll-contain"
+        className="studio-page-pane min-h-0 max-h-[calc((100%-var(--studio-header-height,52px))/2)] shrink-0 overflow-y-auto overscroll-contain"
         aria-label="Pull request controls"
       >
         {!detail && (
@@ -526,7 +526,7 @@ function PullDetailContent({
             <div className="flex flex-wrap items-center border-b border-border/60">
               <TabsList
                 aria-label="PR detail sections"
-                className="flex min-w-0 shrink-0 gap-1 overflow-x-auto px-4 py-1"
+                className="flex min-w-0 flex-1 gap-1 overflow-x-auto px-3 py-1.5"
               >
                 {(
                   [
@@ -582,7 +582,7 @@ function PullDetailContent({
                               .join('. ') || undefined
                           : undefined
                       }
-                      className={`my-1 inline-flex shrink-0 items-center gap-2 rounded-md border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
+                      className={`inline-flex min-w-max flex-1 items-center justify-center gap-2 rounded-lg border px-2.5 py-1.5 text-xs font-medium ${tab === item.id ? 'studio-selected-surface forced-colors:outline forced-colors:outline-1' : 'border-transparent text-muted-foreground hover:bg-accent hover:text-foreground'}`}
                     >
                       <item.icon aria-hidden className="size-3.5" />
                       {item.label}
@@ -612,7 +612,7 @@ function PullDetailContent({
               scrollPositions.current[tab] = event.currentTarget.scrollTop
               scrollCache.write(stateKey, { ...scrollPositions.current })
             }}
-            className="min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
+            className="studio-page-pane min-h-0 min-w-0 flex-1 overflow-y-auto p-4 [container-type:size]"
             aria-label="Pull request content"
           >
             <PullReadinessPanel

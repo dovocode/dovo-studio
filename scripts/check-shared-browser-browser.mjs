@@ -56,6 +56,8 @@ window.renderBrowser=()=>root.render(<TooltipProvider><Fixture/></TooltipProvide
           '../view': 'export default function Thread(){return <div>Thread surface</div>}',
           '../list/task-row-actions':
             'export const useTaskActionStore=()=>({});export const taskActionClient=()=>({patch:async()=>{}})',
+          '../detail/workspace-tools-frame':
+            'export const WorkspaceToolsFrame=({children,visible=true})=><div hidden={!visible}>{children(null)}</div>',
           '../terminal/terminal-workspace': `import {useWorkspace} from '@dovo/studio-core';export const useWorkspaceComputers=()=>[...useWorkspace().runtimes];export const NewWorkspaceTerminal=()=>null;export const WorkspaceTerminalSurface=()=>null;export const terminalContext=()=>''`,
           './workspace-input':
             'export const WorkspaceInput=()=> <textarea aria-label="Workspace draft"/>',
@@ -237,6 +239,11 @@ async function captureBrowserSidebar(browser) {
   })
   const sidebar = preview.getByRole('complementary', { name: 'Recent browser tabs' })
   await sidebar.locator('[data-browser-tab-id="design-6"]').waitFor()
+  assert.equal(
+    await preview.getByRole('tablist', { name: 'Browser tabs', exact: true }).count(),
+    0,
+    'Standalone Browser keeps its tabs in the sidebar',
+  )
   const resize = preview.getByRole('separator', { name: 'Resize Browser tabs' })
   await resize.focus()
   await resize.press('ArrowRight')
@@ -3865,9 +3872,18 @@ try {
   const ownership = await browser.newPage({ viewport: { width: 1440, height: 900 } })
   ownership.on('pageerror', (error) => errors.push(error.message))
   await ownership.route('http://localhost/**', (route) =>
-    route.fulfill({ contentType: 'text/html', body: '<div id="app" style="height:900px"></div>' }),
+    route.fulfill({
+      contentType: 'text/html',
+      body: '<html class="dark"><body style="margin:0"><div id="app" style="height:900px"></div></body></html>',
+    }),
   )
   await ownership.goto('http://localhost/thread-ownership')
+  for (const file of readdirSync(root + 'apps/desktop/dist/assets').filter((file) =>
+    file.endsWith('.css'),
+  ))
+    await ownership.addStyleTag({
+      content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
+    })
   await ownership.evaluate(() =>
     localStorage.setItem(
       'dovo.shared-browser-tabs.v1',
@@ -3953,6 +3969,32 @@ try {
     'Local browser draft',
     'Remote editing preserves the local draft',
   )
+  await ownership.evaluate(() => {
+    window.fixtureStore.setWorkspace((workspace) => ({
+      ...workspace,
+      repositories: [
+        ...workspace.repositories,
+        { id: 'mac-scratch', kind: 'scratch', name: 'General', path: '/tmp' },
+      ],
+    }))
+  })
+  await ownership.getByRole('button', { name: 'Change thread', exact: true }).click()
+  const project = ownership.getByLabel('Project for tab thread')
+  assert.equal(await project.inputValue(), 'mac-scratch')
+  assert.equal(await project.locator('option:checked').textContent(), 'No Project')
+  await ownership.screenshot({ path: root + 'work/browser-no-project-picker.png' })
+  await ownership.getByRole('button', { name: 'Create thread for tab', exact: true }).click()
+  await ownership.waitForFunction(() => {
+    const task = window.fixtureStore.workspace.tasks[0]
+    const state = JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1'))
+    const tab = state.tabs.find((entry) => entry.id === 'owner-remote')
+    return (
+      task.repositoryId === 'mac-scratch' &&
+      tab.thread?.id === task.id &&
+      tab.thread.runtimeId === 'mac'
+    )
+  })
+  await ownership.screenshot({ path: root + 'work/browser-no-project-thread.png' })
   const ownerFrame = ownership.locator('iframe').first().contentFrame().locator('body')
   const shortcut = (frame, key, shift = false) =>
     frame.evaluate(
@@ -5161,6 +5203,13 @@ try {
           await toolbar.count(),
           1,
           'One live toolbar across header and sidebar handoffs',
+        )
+        assert.equal(
+          await toolbar
+            .locator(':scope > :first-child')
+            .evaluate((node) => node.classList.contains('studio-browser-address')),
+          true,
+          'The address field occupies the leading desktop title position',
         )
         const address = headerPage.getByRole('combobox', { name: 'Preview URL', exact: true })
         const box = await address.boundingBox()

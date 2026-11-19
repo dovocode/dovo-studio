@@ -75,8 +75,8 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,resizable=true,side})=><div style={resizable?{width:side==="right"?360:260,maxWidth:side==="right"?"45%":"30%",flexShrink:0}:undefined} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-tools': `export const TaskTools=({task,surface,onSelect})=>task.bot?<nav>{[['bot-settings','Settings'],['bot-mcp','MCP servers'],['bot-skills','Skills'],['bot-memory','Memory'],['bot-routines','Routines']].map(([id,label])=><button key={id} onClick={()=>onSelect(surface===id?'chat':id)}>{label}</button>)}</nav>:null;`,
-  './detail/task-header': `export const TaskHeader=({task,onSurface})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('side-chats')}>Open side chats</button></header>;`,
+  './detail/task-tools': `import {useState} from 'react';export const TaskTools=({task,onSelect})=>{const [open,setOpen]=useState(false);return <><button aria-label="Thread tools" onClick={()=>setOpen(!open)}>Tools</button>{open&&task.bot&&<nav>{[['bot-settings','Settings'],['bot-mcp','MCP servers'],['bot-skills','Skills'],['bot-memory','Memory'],['bot-routines','Routines']].map(([id,label])=><button key={id} onClick={()=>{setOpen(false);onSelect(id)}}>{label}</button>)}</nav>}</>};`,
+  './detail/task-header': `export const TaskHeader=({task,onSurface,toolsControl})=><header data-thread-header={task.id}>{task.title}<button onClick={()=>onSurface('side-chats')}>Open side chats</button>{toolsControl}</header>;`,
   './detail/task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
   '../chat/thread/chat-thread': `import {TaskEmptyState} from '../extension-tasks/src/task-creation/task-empty-state';export const ChatThread=({task,emptyState})=>task.status==='draft'&&!task.messages.length?(emptyState??<TaskEmptyState task={task}/>):<div className="min-h-0 flex-1 overflow-auto p-4" data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
@@ -90,7 +90,7 @@ for (const [path, names] of [
   ['./browser/browser-pane', ['BrowserPane', 'DevicesPane']],
   ['./review/review-pane', ['ReviewPane']],
   ['./detail/task-files', ['TaskFiles']],
-  ['./terminal/terminal-pane', ['TerminalPane']],
+  ['./terminal/terminal-dock', ['TerminalDock']],
   ['./dialogs/task-search-dialog', ['TaskSearchDialog']],
   ['./task-creation/project-selection-dialog', ['ProjectSelectionDialog']],
   ['../chat/composer/composer-activity', ['ComposerActivity']],
@@ -303,6 +303,11 @@ try {
     reducedMotion: 'reduce',
   })
   page.setDefaultTimeout(10000)
+  // Desktop Bot tools live in the header's Thread tools menu, which closes after each choice.
+  const botTool = async (name) => {
+    await page.getByRole('button', { name: 'Thread tools', exact: true }).click()
+    await page.getByRole('button', { name, exact: true }).click()
+  }
   const errors = []
   page.on('pageerror', (error) => {
     errors.push(error.message)
@@ -388,7 +393,7 @@ try {
   await page.evaluate(() => window.finishMentionFrames())
   await page.keyboard.insertText('Unsent Bot message')
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   assert.equal(await page.getByLabel('Bot project', { exact: true }).count(), 0)
   if (process.env.DOVO_BOT_STYLES) {
     for (const width of [1440, 960]) {
@@ -430,11 +435,11 @@ try {
     .getByRole('button', { name: 'Remove avatar', exact: true })
     .waitFor({ state: 'hidden' })
   await page.getByLabel('Bot role', { exact: true }).fill('Unsaved role')
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   assert.equal(await page.getByLabel('Bot role', { exact: true }).inputValue(), 'Unsaved role')
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await botTool('Skills')
   await page.getByRole('button', { name: 'Add skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page.waitForFunction(() =>
@@ -442,7 +447,7 @@ try {
       .find((t) => t.id === 'bot')
       .bot.resources?.skills.some((s) => s.name === 'bot-skill'),
   )
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByRole('combobox', { name: 'Automatic backup', exact: true }).click()
   await page.getByRole('option', { name: 'Backup · backup-model', exact: true }).click()
   await page.evaluate(() => (window.failUpdate = true))
@@ -463,15 +468,15 @@ try {
   await page.getByLabel('Bot role', { exact: true }).fill('Stale role draft')
   await page.evaluate(() => window.externalRole())
   await page.evaluate(() => window.remount())
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.evaluate(() => (window.noopResource = true))
-  await page.getByRole('button', { name: 'Skills', exact: true }).click()
+  await botTool('Skills')
   await page.getByRole('button', { name: 'Edit skill bot-skill', exact: true }).click()
   await page.getByRole('button', { name: 'Save fixture Bot skill', exact: true }).click()
   await page
     .getByRole('button', { name: 'Save fixture Bot skill', exact: true })
     .waitFor({ state: 'hidden' })
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.getByText('Bot revision changed. Draft kept.', { exact: true }).waitFor()
   assert.equal(
@@ -486,7 +491,7 @@ try {
   assert.equal(await composer().inputValue(), 'Unsent Bot message')
   await page.getByRole('button', { name: 'Resume Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Pause new work', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await botTool('Memory')
   await page.getByLabel('Memory key', { exact: true }).fill('release')
   await page.getByLabel('Memory note', { exact: true }).fill('Ship after checks pass')
   await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
@@ -497,15 +502,15 @@ try {
   await page.getByRole('button', { name: 'release', exact: true }).click()
   assert.equal(await page.getByLabel('Memory key', { exact: true }).isDisabled(), true)
   await page.getByLabel('Memory note', { exact: true }).fill('Edited memory draft')
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Memory', exact: true }).click()
+  await botTool('Settings')
+  await botTool('Memory')
   assert.equal(
     await page.getByLabel('Memory note', { exact: true }).inputValue(),
     'Edited memory draft',
   )
   await page.getByRole('button', { name: 'Save memory note', exact: true }).click()
   await page.getByText('Edited memory draft', { exact: true }).waitFor()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page
     .getByLabel('Settings panel', { exact: true })
     .getByRole('button', { name: 'Change Bot model', exact: true })
@@ -546,7 +551,7 @@ try {
     .getByRole('button')
     .first()
     .click()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByLabel('Bot role', { exact: true }).fill('Owner two role')
   await page.getByRole('button', { name: 'Save settings', exact: true }).click()
   await page.waitForFunction(
@@ -559,7 +564,7 @@ try {
     .getByRole('button')
     .first()
     .click()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await page.getByLabel('Bot role', { exact: true }).waitFor()
   await page.waitForFunction(
     () => document.querySelector('input[aria-label="Bot role"]')?.value === 'Owner one draft',
   )
@@ -592,11 +597,14 @@ try {
     window.route({ viewId: 'tasks', entityId: 'chat' })
   })
   await page.locator('textarea[data-task-id="chat"]').waitFor()
+  const threadTools = page.getByRole('button', { name: 'Thread tools', exact: true })
+  await threadTools.click()
   assert.equal(
     await page.getByRole('button', { name: 'Settings', exact: true }).count(),
     0,
     'Normal chats have no Bot controls',
   )
+  await threadTools.click()
   await page.evaluate(() => window.route({ viewId: 'bots' }))
   await page.getByRole('button', { name: 'New Bot', exact: true }).click()
   await page.getByLabel('Bot name', { exact: true }).fill('Build assistant')
@@ -605,7 +613,7 @@ try {
   await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).waitFor()
   await page.getByRole('button', { name: 'Retry creation', exact: true }).click()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByRole('heading', { name: 'Assistant', exact: true }).waitFor()
   const creates = await page.evaluate(() =>
     window.calls.filter((call) => call.path === '/api/bots/create'),
@@ -671,7 +679,7 @@ try {
   await page.getByLabel('Bot name', { exact: true }).fill('First run Bot')
   await page.getByLabel('Bot role', { exact: true }).fill('First assistant')
   await page.getByRole('button', { name: 'Create Bot', exact: true }).click()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByRole('heading', { name: 'Assistant', exact: true }).waitFor()
   const firstRun = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/bots/create').at(-1).input.createTask,
@@ -1459,8 +1467,12 @@ try {
       return false
     }
   })
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
-  await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
+  await page.waitForFunction(
+    () => document.querySelector('textarea[data-task-id]')?.dataset.taskId === window.deleteTarget,
+  )
+  const deleteBot = page.getByRole('button', { name: 'Delete Bot…', exact: true })
+  if (!(await deleteBot.isVisible())) await botTool('Settings')
+  await deleteBot.click()
   assert.equal(
     await page.evaluate(() => window.calls.filter((c) => c.path === '/api/tasks/lifecycle').length),
     0,
@@ -1506,7 +1518,7 @@ try {
     window.deferBotDelete = true
   })
   await page.locator('textarea[data-task-id="late-delete"]').waitFor()
-  await page.getByRole('button', { name: 'Settings', exact: true }).click()
+  await botTool('Settings')
   await page.getByRole('button', { name: 'Delete Bot…', exact: true }).click()
   await page.waitForFunction(() => typeof window.releaseBotDelete === 'function')
   await page.evaluate(() => window.route({ viewId: 'runtime' }))

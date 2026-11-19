@@ -110,8 +110,8 @@ try {
       { name, value },
     )
   }
-  await expectWidth('left', 280)
-  await expectWidth('right', 380)
+  await expectWidth('left', 188)
+  await expectWidth('right', 510)
   const icons = async () =>
     [
       await page.locator('#left-icons').boundingBox(),
@@ -132,7 +132,7 @@ try {
   await page.getByTestId('right').waitFor({ state: 'hidden' })
   await page.evaluate(() => window.toggleRight())
   await page.getByRole('button', { name: 'Browsers', exact: true }).click()
-  await expectWidth('right', 380)
+  await expectWidth('right', 510)
   const drag = async (name, delta) => {
     const box = await page.getByRole('separator', { name }).boundingBox()
     await page.mouse.move(box.x + box.width / 2, 200)
@@ -141,52 +141,52 @@ try {
     await page.mouse.up()
   }
   await drag('Resize thread sidebar', 100)
-  await expectWidth('left', 380)
+  await expectWidth('left', 288)
   const threadResize = page.getByRole('separator', { name: 'Resize thread sidebar' })
   await threadResize.focus()
   await page.keyboard.press('ArrowRight')
-  await expectWidth('left', 390)
+  await expectWidth('left', 298)
   await page.keyboard.press('ArrowLeft')
-  await expectWidth('left', 380)
+  await expectWidth('left', 288)
   await drag('Resize tools sidebar', -80)
-  await expectWidth('right', 460)
+  await expectWidth('right', 590)
   await page.waitForFunction(
-    () => window.saved().threadSidebarWidth === 380 && window.saved().toolsSidebarWidth === 460,
+    () => window.saved().threadSidebarWidth === 288 && window.saved().toolsSidebarWidth === 590,
   )
   await drag('Resize tools sidebar', 160)
-  await expectWidth('right', 300)
+  await expectWidth('right', 430)
   await page.getByRole('separator', { name: 'Resize tools sidebar' }).focus()
   await page.keyboard.press('ArrowLeft')
-  await expectWidth('right', 310)
+  await expectWidth('right', 440)
   const previousId = await page.getByTestId('left').getAttribute('id')
   await page.evaluate(() => window.mount())
   await page.waitForFunction(
     (id) => document.querySelector('[data-testid=left]').id !== id,
     previousId,
   )
-  await expectWidth('left', 380)
-  await expectWidth('right', 310)
+  await expectWidth('left', 288)
+  await expectWidth('right', 440)
   await page.evaluate(() => window.toggleLeft())
   await page.getByTestId('left').waitFor({ state: 'hidden' })
   await page.evaluate(() => window.toggleLeft())
-  await expectWidth('left', 380)
+  await expectWidth('left', 288)
   await page.evaluate(() => window.toggleRight())
   await page.getByTestId('right').waitFor({ state: 'hidden' })
   await page.evaluate(() => window.toggleRight())
-  await expectWidth('right', 310)
+  await expectWidth('right', 440)
   await page.getByRole('separator', { name: 'Resize thread sidebar' }).dblclick()
-  await expectWidth('left', 280)
+  await expectWidth('left', 188)
   await page.getByRole('separator', { name: 'Resize tools sidebar' }).dblclick()
-  await expectWidth('right', 380)
+  await expectWidth('right', 510)
   await page.setViewportSize({ width: 900, height: 800 })
-  await expectWidth('left', 280)
+  await expectWidth('left', 188)
   const remaining = await page
     .getByTestId('right')
     .evaluate((element) => element.parentElement.clientWidth)
   if ((await width('right')) > remaining * 0.48 + 1)
     throw new Error('Right sidebar exceeded narrow-window limit')
   await page.setViewportSize({ width: 1600, height: 800 })
-  await expectWidth('right', 380)
+  await expectWidth('right', 510)
   await page.evaluate(() => window.files())
   await expectWidth('right', 560)
   await page.evaluate(() => window.expand())
@@ -282,7 +282,7 @@ try {
   await projectWidth(256)
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
-    '280px default, both drag directions, iframe crossing, keyboard resize, remembered widths, reset, narrow windows, viewer expansion and fixed icon bars, diff and project file pane resize/persistence/reset, project narrow-window bounds, and file filtering verified.',
+    'Default widths, both drag directions, iframe crossing, keyboard resize, remembered widths, reset, narrow windows, viewer expansion and fixed icon bars, diff and project file pane resize/persistence/reset, project narrow-window bounds, and file filtering verified.',
   )
 } finally {
   await browser.close()

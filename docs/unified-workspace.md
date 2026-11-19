@@ -15,10 +15,51 @@ from removal, including when settled or snoozed. Sessions stay standalone, with 
 workspace's sidebar and context header and the terminal as the main content. These shells use the
 same Ghostty terminal and split controls as thread terminals. Each standalone workspace item shows
 its own shell and the peers created inside it; independent sessions keep separate split layouts.
-Standalone sessions use sidebar navigation without a horizontal terminal tab strip. **New terminal**
-opens the workspace starter; split controls add panes inside the selected session. Sessions run on
-their owning computer; hiding a pane or changing workspaces keeps the shell running. Closing a
-terminal inside the terminal pane terminates it and forgets its recovery record.
+Select a standalone session in the sidebar. **New terminal** opens the workspace starter. Split
+controls add panes inside the selected session. Sessions run on their owning computer. Hiding a pane
+or changing workspaces keeps the shell running. Closing a terminal inside the terminal pane
+terminates it and forgets its recovery record.
+
+## Tools beside a thread
+
+On desktop and web, open **Thread tools** at the top right of a thread to choose a tool. Use **+**
+in the pane header to add another tool. Select a tab to switch tools, drag tabs to reorder them, or
+close a tab when you finish with it. Drag the pane's left edge to change its width. Dovo remembers
+the tabs and width for each thread in the current window.
+
+On a new setup, the thread list starts narrow and the tools pane gets more room for code and
+previews. Drag either divider to adjust the layout. Saved widths still apply.
+
+Desktop pane frames use the canvas gap for separation. Resize handles and control focus outlines
+remain visible. Pull requests, Issues, Jira and Bots use the same layout. Their lists sit on the
+canvas, and page content sits in one pane below the page header.
+
+The **+** next to the thread title opens a launcher for a new thread or a workspace tool. The
+terminal's **+** creates a shell in the current terminal pane.
+
+The terminal opens below the conversation by default. Its toolbar lets you move it to the right pane
+and back. Moving the terminal keeps the shell running. These controls also work inside a thread
+opened in Unified Workspace.
+
+Unified Home and an open terminal also have a **Workspace tools** button at the top right. Use it to
+open Browser beside your work. A terminal in a project's main Git checkout also offers read-only
+**Changes** for that checkout. Files and device previews use the thread's context when you open a
+thread.
+
+In Browser, **Thread for this tab** can create a thread in **No Project**. The new thread belongs to
+the tab's computer. You can choose a different project on that computer before creating it.
+
+Each pane has one header row. The selected tab has bright text. Other tabs have dimmed text. The
+Files tab shows the open file's name, with **Edit**, file tree, refresh and expand controls in the
+same row. With a mouse, the terminal's split, move and location controls and the tab's rename button
+appear when you point at the header or move keyboard focus into it. On touch screens they always
+show. Point at a terminal tab to see its computer and checkout. Exit and offline notices always
+show.
+
+In the desktop app, choose **DevTools** from the right pane's **+** menu to inspect the current
+local browser page in Chrome DevTools. The inspector opens in its own window.
+
+## Standalone shell recovery
 
 Thread, Unified and Terminal starters share the same heading, project selection and composer design,
 including the minimal composer preference. Terminal replaces the model picker with its shell picker.
@@ -77,13 +118,14 @@ three-dot menu sits on the title line above the last metadata icon.
 The overview uses the same row components; pinned pages use a normal tab row there. The overview
 centers the routing input, with compact creation actions. The shared input appears only on
 **Workspace home**, which shows a mixed **Continue working** list and retains open views and drafts.
-Select items in the sidebar to work inside one workspace, without a horizontal tab strip. Hidden
-threads and terminals retain their UI state and pause their effects. Browser cleanup and tab
-synchronization continue while its page surface is hidden. Open workspace references restore when
-the window reloads. Hiding an item leaves its underlying page, thread or terminal available in the
-sidebar. Opening a thread selects its owning computer; remote terminal and browser connections
-remain scoped to their owners. Remote terminals use existing pairing, rather than direct SSH
-connections.
+Select a thread, page, or terminal in the sidebar to open it. Use the sidebar controls to create an
+item. Workspace home and each open terminal fill one pane. In a narrow sidebar, the house button
+opens **Workspace home**. Hidden threads and terminals retain their UI state and pause their
+effects. Browser cleanup and tab synchronization continue while its page surface is hidden. Open
+workspace references restore when the window reloads. Hiding an item leaves its underlying page,
+thread or terminal available in the sidebar. Opening a thread selects its owning computer; remote
+terminal and browser connections remain scoped to their owners. Remote terminals use existing
+pairing, rather than direct SSH connections.
 
 Unified uses the full Browser and Thread right-click menus. BrowserPane renders its own tab rows
 into Unified, so native window actions, home URL controls and dialogs use the same handlers. Pinned

@@ -57,7 +57,8 @@ export function ThreadInfoPanel({ children, title }: { children: ReactNode; titl
   const [maxHeight, setMaxHeight] = useState(480)
   const open = context?.open ?? true
   useLayoutEffect(() => {
-    const frame = panel.current?.parentElement
+    const element = panel.current
+    const frame = element?.parentElement
     if (!frame || !open) return
     const composer = frame.querySelector<HTMLElement>('.studio-composer')
     const measure = () => {
@@ -66,7 +67,7 @@ export function ThreadInfoPanel({ children, title }: { children: ReactNode; titl
         rect.bottom - 16,
         composer ? composer.getBoundingClientRect().top - 12 : Infinity,
       )
-      setMaxHeight(Math.max(0, Math.min(480, bottom - rect.top - 16)))
+      setMaxHeight(Math.max(0, Math.min(480, bottom - rect.top - element.offsetTop)))
     }
     const observer = new ResizeObserver(measure)
     observer.observe(frame)
@@ -82,7 +83,7 @@ export function ThreadInfoPanel({ children, title }: { children: ReactNode; titl
       aria-label="Thread info"
       aria-description={title}
       style={{
-        top: 16,
+        top: 'calc(var(--studio-thread-pane-top, 0px) + 16px)',
         right: 16,
         maxHeight,
         maxWidth: 'calc(100% - 32px)',

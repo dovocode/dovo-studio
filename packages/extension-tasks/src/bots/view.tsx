@@ -119,6 +119,7 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
       .toLowerCase()
       .includes(search.toLowerCase()),
   )
+  const showThread = !creating && !!current && current.source.runtimeId === store.activeRuntimeId
   return (
     <section aria-label={uiText('Bots')} className="flex min-h-0 min-w-0 flex-1">
       {!sidebar?.collapsed && (
@@ -128,61 +129,70 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
           label="Bots sidebar"
           maxFraction={0.4}
           maxWidth={480}
-          className="studio-task-sidebar flex min-h-0 flex-col border-r"
+          className="studio-task-sidebar flex min-h-0 flex-col"
         >
           <SidebarHeader />
-          <div className="grid shrink-0 gap-2 border-b p-3">
-            <div className="flex items-center justify-between gap-2">
-              <h1 className="text-sm font-semibold">{uiText('Bots')}</h1>
-              <Button size="sm" variant="ghost" disabled={!canCreate || busy} onClick={beginCreate}>
-                <Plus className="size-4" />
-                {uiText('New Bot')}
-              </Button>
-            </div>
-            <Input
-              aria-label="Search Bots"
-              placeholder="Search Bots…"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
-          <div className="min-h-0 flex-1 overflow-y-auto p-2">
-            {matches.map((entry) => (
-              <div key={entry.key} data-bot-row={entry.task.id} className="mb-2">
-                <TaskRow
-                  task={entry.task}
-                  owner={retainTaskOwner(undefined, entry.source)}
-                  selected={selected === entry.key && !creating}
-                  onSelect={() => void select(entry)}
-                  needsInput={entry.needsInput}
-                  terminals={0}
-                  thread={botThreads.get(entry.key)}
-                  editable={false}
-                  disabled={busy}
-                  titleIcon={
-                    <BotAvatar
-                      avatar={entry.task.bot?.avatar}
-                      name={entry.task.title}
-                      className="size-6 rounded-lg [&_svg]:size-3.5"
-                    />
-                  }
-                />
-                {entry.task.bot?.state === 'paused' && (
-                  <p className="px-3 py-1 text-xs text-muted-foreground">Paused</p>
-                )}
+          <div className="studio-overview-pane studio-embedded-list flex min-h-0 flex-1 flex-col overflow-hidden bg-sidebar">
+            <div className="studio-sidebar-controls grid shrink-0 gap-2 border-b p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h1 className="text-sm font-semibold">{uiText('Bots')}</h1>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  disabled={!canCreate || busy}
+                  onClick={beginCreate}
+                >
+                  <Plus className="size-4" />
+                  {uiText('New Bot')}
+                </Button>
               </div>
-            ))}
-            {!matches.length && (
-              <p className="p-3 text-xs text-muted-foreground">
-                {search
-                  ? 'No Bots match this search.'
-                  : 'Your ongoing assistants will appear here.'}
-              </p>
-            )}
+              <Input
+                aria-label="Search Bots"
+                placeholder="Search Bots…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto p-2">
+              {matches.map((entry) => (
+                <div key={entry.key} data-bot-row={entry.task.id} className="mb-2">
+                  <TaskRow
+                    task={entry.task}
+                    owner={retainTaskOwner(undefined, entry.source)}
+                    selected={selected === entry.key && !creating}
+                    onSelect={() => void select(entry)}
+                    needsInput={entry.needsInput}
+                    terminals={0}
+                    thread={botThreads.get(entry.key)}
+                    editable={false}
+                    disabled={busy}
+                    titleIcon={
+                      <BotAvatar
+                        avatar={entry.task.bot?.avatar}
+                        name={entry.task.title}
+                        className="size-6 rounded-lg [&_svg]:size-3.5"
+                      />
+                    }
+                  />
+                  {entry.task.bot?.state === 'paused' && (
+                    <p className="px-3 py-1 text-xs text-muted-foreground">Paused</p>
+                  )}
+                </div>
+              ))}
+              {!matches.length && (
+                <p className="p-3 text-xs text-muted-foreground">
+                  {search
+                    ? 'No Bots match this search.'
+                    : 'Your ongoing assistants will appear here.'}
+                </p>
+              )}
+            </div>
           </div>
         </ResizableSidebar>
       )}
-      <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+      <div
+        className={`flex min-h-0 min-w-0 flex-1 flex-col ${showThread ? '' : 'studio-page-pane overflow-hidden'}`}
+      >
         {error && (
           <p role="alert" className="border-b p-3 text-sm text-destructive">
             {error}
@@ -220,7 +230,7 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
               }
             }}
           />
-        ) : current && current.source.runtimeId === store.activeRuntimeId ? (
+        ) : showThread ? (
           <TasksView
             entityId={current.task.id}
             messageId={current.task.id === entityId ? messageId : undefined}

@@ -23,12 +23,31 @@ import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { TaskTools } from './detail/task-tools'
+import {
+  RightPaneTabs,
+  PaneAddMenu,
+  readRightPaneLayout,
+  rightPaneTabsToAdd,
+  reorderRightPaneTabs,
+  saveRightPaneLayout,
+  type RightPaneFile,
+  type RightPaneTab,
+} from './detail/right-pane-tabs'
 import { TaskAgents } from './detail/task-agents'
 import { NativeAgentThread } from './detail/native-agent-thread'
 import { LinkedProjects } from './detail/linked-projects'
 import { ThreadArtifacts } from './chat/artifacts'
 import { BrowserPane, DevicesPane } from './browser/browser-pane'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import {
+  Activity,
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import { X, Maximize2, Minimize2, Bot, FolderSymlink, FileDiff } from 'lucide-react'
 import { templateTaskFields } from '@dovo/protocol'
 import {
@@ -76,7 +95,7 @@ import {
   BackgroundRefreshNotice,
 } from './detail/background-refresh-notice'
 import { useCommittedCallback } from './detail/use-committed-callback'
-import { TerminalPane } from './terminal/terminal-pane'
+import { TerminalDock } from './terminal/terminal-dock'
 import { terminalSelectionIsCurrent } from './terminal/terminal-selection'
 import {
   collectTasks,
@@ -289,6 +308,16 @@ export default function TasksView({
   >([])
   const threadKey = taskCollectionKey(activeRuntimeId, task?.id ?? selectedId)
   const [threadSurfaces, setThreadSurfaces] = useApplicationState<Record<string, TaskSurface>>({})
+  const [threadPaneTabs, setThreadPaneTabs] = useApplicationState<
+    Record<string, readonly RightPaneTab[]>
+  >({})
+  const [threadPaneFiles, setThreadPaneFiles] = useApplicationState<
+    Record<string, RightPaneFile | null>
+  >({})
+  const [threadPaneWidths, setThreadPaneWidths] = useApplicationState<Record<string, number>>({})
+  const rightPaneId = useId()
+  const [fileHeaderActions, setFileHeaderActions] = useState<HTMLDivElement | null>(null)
+  const savedThreadPane = useMemo(() => readRightPaneLayout(threadKey), [threadKey])
   const [artifactSelection, setArtifactSelection] = useState<{
     threadKey: string
     id: string
@@ -332,11 +361,57 @@ export default function TasksView({
     checkoutId?: string
     requestId: string
   }>()
-  const surface = threadSurfaces[threadKey] ?? 'chat'
+  const surface = task?.replica
+    ? 'chat'
+    : (threadSurfaces[threadKey] ?? (compact ? 'chat' : savedThreadPane.active))
+  const savedTabs = threadPaneTabs[threadKey] ?? savedThreadPane.tabs
+  const savedWidth = threadPaneWidths[threadKey] ?? savedThreadPane.width
+  const savedFile =
+    (threadPaneFiles[threadKey] === undefined
+      ? savedThreadPane.file
+      : threadPaneFiles[threadKey]) ?? undefined
+  const recordSelectedFile = useCommittedCallback((file: RightPaneFile | null) => {
+    setThreadPaneFiles((current) => ({ ...current, [threadKey]: file }))
+    setFileReveal((current) => (current?.threadKey === threadKey ? undefined : current))
+  })
+  const rightTabs = useMemo(
+    () =>
+      surface !== 'chat' && !savedTabs.includes(surface) && (!compact || surface !== 'terminal')
+        ? [...savedTabs, surface]
+        : savedTabs,
+    [compact, savedTabs, surface],
+  )
+  useEffect(() => {
+    if (compact || !task || task.replica) return
+    if (savedTabs !== rightTabs)
+      setThreadPaneTabs((current) => ({ ...current, [threadKey]: rightTabs }))
+    // A PR preview requires its navigation target.
+    const restorableTabs = rightTabs.filter((tab) => tab !== 'pull-preview')
+    saveRightPaneLayout(threadKey, {
+      tabs: restorableTabs,
+      active: surface === 'pull-preview' ? 'chat' : surface,
+      file: restorableTabs.includes('files') ? savedFile : undefined,
+      width: savedWidth,
+    })
+  }, [
+    compact,
+    task?.id,
+    task?.replica,
+    rightTabs,
+    savedTabs,
+    savedFile,
+    savedWidth,
+    surface,
+    threadKey,
+  ])
+  const [browserDevToolsRequests, setBrowserDevToolsRequests] = useApplicationState<
+    Record<string, string | undefined>
+  >({})
+  const browserDevToolsRequest = browserDevToolsRequests[threadKey]
   const [browserPlacements, setBrowserPlacements] = useState<Record<string, PreviewPlacement>>({})
   const browserPlacement = browserPlacements[threadKey] ?? 'inline'
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
-  const toolsExpanded = surface !== 'chat' && surface !== 'terminal'
+  const toolsExpanded = surface !== 'chat' && (!compact || surface !== 'terminal')
   const fileViewer = surface === 'files' || surface === 'changes'
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
@@ -365,13 +440,18 @@ export default function TasksView({
       (task.execution !== 'worktree' || !!task.checkoutBranch || !!task.existingWorktreePath),
     refreshChanges,
   )
-  const lastToolSurface = useRef<TaskSurface>('files')
+  const lastToolSurface = useRef<RightPaneTab>('files')
   const setSurface = useCommittedCallback((next: TaskSurface) => {
     setThreadSurfaces((current) => ({ ...current, [threadKey]: next }))
   })
   const [terminalVisited, setTerminalVisited] = useApplicationState(false)
   const [bottomTerminalTaskId, setBottomTerminalTaskId] = useApplicationState('')
-  const bottomTerminalOpen = !compact && bottomTerminalTaskId === threadKey
+  const terminalDockedRight = !compact && savedTabs.includes('terminal')
+  const bottomTerminalOpen = !compact && !terminalDockedRight && bottomTerminalTaskId === threadKey
+  const [bottomTerminalSlot, setBottomTerminalSlot] = useState<HTMLDivElement | null>(null)
+  const [rightTerminalSlot, setRightTerminalSlot] = useState<HTMLDivElement | null>(null)
+  const terminalVisible = bottomTerminalOpen || surface === 'terminal'
+  const terminalTarget = compact || terminalDockedRight ? rightTerminalSlot : bottomTerminalSlot
   // The terminal a chat command just ran in, so the pane shows it.
   const [browserLink, setBrowserLink] = useState<{
     taskId: string
@@ -428,7 +508,8 @@ export default function TasksView({
       'side-chats',
     ] as const) {
       const focused = document.activeElement
-      if (focused instanceof HTMLElement && panes.current[id]?.contains(focused)) {
+      const pane = id === 'terminal' ? terminalTarget : panes.current[id]
+      if (focused instanceof HTMLElement && pane?.contains(focused)) {
         lastFocus.current[id] = focused
         // A toolbar click keeps focus on the toolbar. In-pane actions and shortcuts
         // move it out of content that is about to become hidden.
@@ -436,19 +517,44 @@ export default function TasksView({
       }
     }
     if (moveFocus) focusNext.current = next
-    if (!compact && next === 'terminal') {
+    if (!compact && next === 'terminal' && !terminalDockedRight) {
+      setTerminalVisited(true)
       setBottomTerminalTaskId(threadKey)
-      setSurface('chat')
       return
     }
-    if (next !== 'chat' && next !== 'terminal') {
-      lastToolSurface.current = next
-    }
+    if (next !== 'chat') lastToolSurface.current = next
     setSurface(next)
     if (next === 'terminal') {
       setTerminalVisited(true)
       setBottomTerminalTaskId('')
     }
+  })
+  const closeRightTab = useCommittedCallback((tab: RightPaneTab) => {
+    const index = rightTabs.indexOf(tab)
+    if (index === -1) return
+    const next = rightTabs.filter((item) => item !== tab)
+    setThreadPaneTabs((current) => ({ ...current, [threadKey]: next }))
+    if (tab === 'files') recordSelectedFile(null)
+    if (surface === tab) selectSurface(next[index] ?? next[index - 1] ?? 'chat', next.length === 0)
+  })
+  const addRightTab = useCommittedCallback((tab: RightPaneTab) => {
+    if (tab === 'terminal') {
+      lastToolSurface.current = tab
+      setTerminalVisited(true)
+      setBottomTerminalTaskId('')
+      setThreadPaneTabs((current) => ({
+        ...current,
+        [threadKey]: rightTabs.includes('terminal') ? rightTabs : [...rightTabs, 'terminal'],
+      }))
+      setSurface('terminal')
+    } else selectSurface(tab)
+  })
+  const moveTerminal = useCommittedCallback(() => {
+    if (terminalDockedRight) {
+      closeRightTab('terminal')
+      setBottomTerminalTaskId(threadKey)
+    } else addRightTab('terminal')
+    focusNext.current = 'terminal'
   })
   const [pullPreviews, setPullPreviews] = useApplicationState<
     Record<
@@ -560,9 +666,9 @@ export default function TasksView({
   useLayoutEffect(() => {
     const next = focusNext.current
     if (!next) return
-    focusNext.current = null
-    const pane = panes.current[next]
+    const pane = next === 'terminal' ? terminalTarget : panes.current[next]
     if (!pane) return
+    focusNext.current = null
     const previous = lastFocus.current[next]
     const focusable = (element: HTMLElement) =>
       !!element.getClientRects().length && !element.matches(':disabled')
@@ -575,7 +681,7 @@ export default function TasksView({
     ;(target ?? pane).focus({
       preventScroll: true,
     })
-  }, [surface, terminalVisited, bottomTerminalOpen])
+  }, [surface, terminalVisited, bottomTerminalOpen, terminalTarget])
   const showTerminal = useCommittedCallback((terminalId: string) => {
     setTerminalFocus(terminalId)
     selectSurface('terminal', true)
@@ -588,18 +694,23 @@ export default function TasksView({
   const toggleBottomTerminal = useCommittedCallback(() => {
     if (!task) return
     if (bottomTerminalOpen) setBottomTerminalTaskId('')
+    else if (terminalDockedRight) selectSurface(surface === 'terminal' ? 'chat' : 'terminal', true)
     else {
+      setTerminalVisited(true)
       setBottomTerminalTaskId(threadKey)
-      selectSurface('chat', true)
+      focusNext.current = 'terminal'
     }
   })
   useEffect(() => {
-    if (!compact && surface === 'terminal') selectSurface('terminal')
-  }, [compact, surface, selectSurface])
+    if (!compact && surface === 'terminal' && !savedTabs.includes('terminal')) {
+      setSurface('chat')
+      setBottomTerminalTaskId(threadKey)
+    }
+  }, [compact, surface, savedTabs, setSurface, setBottomTerminalTaskId, threadKey])
   useEffect(() => {
-    if (surface === 'changes' && !hasDiff && reviewTarget?.threadKey !== threadKey)
+    if (compact && surface === 'changes' && !hasDiff && reviewTarget?.threadKey !== threadKey)
       selectSurface('files')
-  }, [surface, hasDiff, selectSurface, reviewTarget?.threadKey, threadKey])
+  }, [compact, surface, hasDiff, selectSurface, reviewTarget?.threadKey, threadKey])
   const [projectId, setProjectId, projectRef] = useApplicationState(
     () => readTaskListViewState(host).projectId ?? '',
   )
@@ -1186,6 +1297,78 @@ export default function TasksView({
       }
       updateAppPreferences({ projectPanelOpen: open })
     }
+    const toolsControl = !compact && !temporary && (
+      <TaskTools
+        picker
+        task={task}
+        surface={surface}
+        onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
+        hasDiff={hasDiff}
+        toolsExpanded={toolsExpanded}
+        onTools={() => {
+          if (toolsExpanded) {
+            lastToolSurface.current = surface
+            selectSurface('chat', true)
+          } else {
+            selectSurface(
+              rightTabs.includes(lastToolSurface.current)
+                ? lastToolSurface.current
+                : (rightTabs.at(-1) ?? 'files'),
+            )
+          }
+        }}
+        bottomTerminalOpen={bottomTerminalOpen}
+        terminalDockedRight={terminalDockedRight}
+        onBottomTerminal={toggleBottomTerminal}
+        artifactsEnabled={!!snapshot?.artifactsEnabled}
+      />
+    )
+    const paneHeader = !compact && !temporary && !(fileViewer && viewerExpanded)
+    const header = native ? null : temporary ? (
+      <HeaderContent>
+        <header
+          className="studio-task-thread-header"
+          data-window-edge
+          data-window-right-edge={!splitTask || undefined}
+        >
+          {uiText('New thread')}
+        </header>
+      </HeaderContent>
+    ) : (
+      <TaskHeader
+        parentThread={task.id === entityId ? threadParent : undefined}
+        windowRightEdge={!splitTask}
+        onPullLink={(url) => openPullPreview(task, url)}
+        task={task}
+        toolsControl={toolsControl}
+        addControl={
+          <PaneAddMenu
+            label="Open thread workspace launcher"
+            addable={rightPaneTabsToAdd.filter((tab) => tab !== 'changes' || hasDiff)}
+            onAdd={(tab) => selectSurface(tab)}
+            onNewThread={() =>
+              void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)
+            }
+          />
+        }
+        projectPanelOpen={projectPanelOpen}
+        onProjectPanel={() => setProjectPanelOpen(!projectPanelOpen)}
+        onCreate={() => void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)}
+        onDeselect={deselectTask}
+        onProjectDeleted={() => setProjectId('scratch')}
+        onOpenForkSource={(taskId, messageId) => {
+          host.navigate({ viewId: 'tasks', entityId: taskId, messageId })
+        }}
+        surface={surface}
+        onSurface={(next) => {
+          if (next === 'terminal') setTerminalFocus('')
+          selectSurface(next)
+        }}
+        compact={compact}
+        sidebarVisible={sidebar}
+        hasDiff={hasDiff}
+      />
+    )
     return (
       <BackgroundRefreshProvider
         key={JSON.stringify([
@@ -1220,45 +1403,10 @@ export default function TasksView({
               onClose={() => setNativeThread(undefined)}
             />
           )}
-          {native ? null : temporary ? (
-            <HeaderContent>
-              <header
-                className="studio-task-thread-header"
-                data-window-edge
-                data-window-right-edge={!splitTask || undefined}
-              >
-                {uiText('New thread')}
-              </header>
-            </HeaderContent>
-          ) : (
-            <TaskHeader
-              parentThread={task.id === entityId ? threadParent : undefined}
-              windowRightEdge={!splitTask}
-              onPullLink={(url) => openPullPreview(task, url)}
-              task={task}
-              projectPanelOpen={projectPanelOpen}
-              onProjectPanel={() => setProjectPanelOpen(!projectPanelOpen)}
-              onCreate={() =>
-                void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)
-              }
-              onDeselect={deselectTask}
-              onProjectDeleted={() => setProjectId('scratch')}
-              onOpenForkSource={(taskId, messageId) => {
-                host.navigate({ viewId: 'tasks', entityId: taskId, messageId })
-              }}
-              surface={surface}
-              onSurface={(next) => {
-                if (next === 'terminal') setTerminalFocus('')
-                selectSurface(next)
-              }}
-              compact={compact}
-              sidebarVisible={sidebar}
-              hasDiff={hasDiff}
-            />
-          )}
+          {!paneHeader && header}
           <div
             className={cn(
-              'relative flex min-h-0 min-w-0 flex-1 overflow-hidden',
+              'studio-thread-pane-body relative flex min-h-0 min-w-0 flex-1 overflow-hidden',
               native && 'hidden',
             )}
           >
@@ -1271,11 +1419,13 @@ export default function TasksView({
               tabIndex={-1}
               className={cn(
                 'relative flex min-h-0 min-w-0 flex-1 flex-col',
+                paneHeader && 'studio-thread-pane-frame',
                 ((fileViewer && viewerExpanded) ||
                   (surface !== 'chat' && compact && !browserDetached)) &&
                   'hidden',
               )}
             >
+              {paneHeader && header}
               <ThreadInfoPanel title={task.title}>
                 {!temporary && projectPanelOpen && (
                   <TaskProjectPanel
@@ -1314,7 +1464,7 @@ export default function TasksView({
                 role="status"
                 aria-live="polite"
                 className={cn(
-                  'pointer-events-none absolute left-1/2 top-2 z-10 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1 text-xs shadow-sm transition-opacity motion-reduce:transition-none',
+                  'pointer-events-none absolute left-1/2 top-[calc(var(--studio-thread-pane-top,0px)+0.5rem)] z-10 -translate-x-1/2 rounded-md border bg-popover px-2.5 py-1 text-xs shadow-sm transition-opacity motion-reduce:transition-none',
                   transcriptNotice ? 'opacity-100' : 'opacity-0',
                 )}
               >
@@ -1364,15 +1514,18 @@ export default function TasksView({
                   onWorkers={() => selectSurface('agents', true)}
                 />
               )}
-              <ResizablePanelGroup orientation="vertical" className="min-h-0 flex-1">
+              <ResizablePanelGroup
+                orientation="vertical"
+                className="studio-thread-stack min-h-0 flex-1"
+              >
                 <ResizablePanel
                   id="thread"
-                  defaultSize={bottomTerminalOpen ? '65%' : '100%'}
+                  defaultSize={bottomTerminalOpen ? '61%' : '100%'}
                   minSize="30%"
                 >
                   <div
                     ref={primaryPane}
-                    className="relative h-full min-h-0"
+                    className="studio-work-pane relative h-full min-h-0"
                     data-conversation-boundary
                   >
                     <TaskConversation
@@ -1430,50 +1583,27 @@ export default function TasksView({
                 </ResizablePanel>
                 {bottomTerminalOpen && surface !== 'terminal' && (
                   <>
-                    <ResizableHandle className="bg-transparent hover:bg-border focus-visible:bg-border data-[separator=active]:bg-border" />
-                    <ResizablePanel id="bottom-terminal" defaultSize="35%" minSize="15%">
+                    <ResizableHandle className="studio-terminal-resize bg-transparent hover:bg-border focus-visible:bg-border data-[separator=active]:bg-border" />
+                    <ResizablePanel id="bottom-terminal" defaultSize="39%" minSize="15%">
                       <div
-                        ref={(element) => {
-                          if (!compact) panes.current.terminal = element
-                        }}
+                        ref={setBottomTerminalSlot}
                         tabIndex={-1}
-                        className="h-full min-h-0"
-                      >
-                        <TerminalPane
-                          key={`bottom:${task.id}`}
-                          taskId={task.id}
-                          focusId={terminalFocus}
-                          onOpenFile={(file) => {
-                            setFileReveal({ ...file, threadKey, requestId: randomUUID() })
-                            selectSurface('files', true)
-                          }}
-                          onAddSelection={(taskId, text) =>
-                            addTerminalSelection(threadKey, taskId, text)
-                          }
-                          onClose={() => setBottomTerminalTaskId('')}
-                        />
-                      </div>
+                        className="studio-work-pane h-full min-h-0"
+                      />
                     </ResizablePanel>
                   </>
                 )}
               </ResizablePanelGroup>
             </div>
             <ResizableSidebar
-              key={fileViewer || surface === 'artifacts' ? 'viewer' : 'tools'}
-              preference={
-                fileViewer || surface === 'artifacts' ? 'viewerSidebarWidth' : 'toolsSidebarWidth'
+              preference="toolsSidebarWidth"
+              savedWidth={savedWidth}
+              onWidthCommit={(width) =>
+                setThreadPaneWidths((current) => ({ ...current, [threadKey]: width }))
               }
               side="right"
               label="tools sidebar"
-              maxFraction={
-                surface === 'artifacts'
-                  ? 0.6
-                  : fileViewer
-                    ? surface === 'files'
-                      ? 0.4
-                      : 0.5
-                    : 0.48
-              }
+              maxFraction={0.6}
               maxWidth={960}
               resizable={
                 !compact &&
@@ -1497,7 +1627,53 @@ export default function TasksView({
                     )
               }
             >
+              {!compact && surface !== 'chat' && !browserDetached && (
+                <RightPaneTabs
+                  tabs={rightTabs}
+                  active={surface}
+                  addable={rightPaneTabsToAdd.filter(
+                    (tab) => !rightTabs.includes(tab) && (tab !== 'changes' || hasDiff),
+                  )}
+                  panelId={rightPaneId}
+                  detail={
+                    surface === 'files' && savedFile
+                      ? savedFile.path.split(/[\\/]/).at(-1)
+                      : undefined
+                  }
+                  detailTitle={surface === 'files' ? savedFile?.path : undefined}
+                  actionsRef={surface === 'files' ? setFileHeaderActions : undefined}
+                  onSelect={(tab) => selectSurface(tab)}
+                  onAdd={addRightTab}
+                  onDevTools={
+                    host.browser
+                      ? () => {
+                          const id = randomUUID()
+                          setBrowserDevToolsRequests((current) => ({ ...current, [threadKey]: id }))
+                          selectSurface('browser')
+                        }
+                      : undefined
+                  }
+                  onClose={closeRightTab}
+                  onReorder={(from, to) =>
+                    setThreadPaneTabs((current) => ({
+                      ...current,
+                      [threadKey]: reorderRightPaneTabs(rightTabs, from, to),
+                    }))
+                  }
+                  onHide={() => {
+                    lastToolSurface.current = surface
+                    selectSurface('chat', true)
+                  }}
+                />
+              )}
               <div
+                id={rightPaneId}
+                role={!compact && surface !== 'chat' && !browserDetached ? 'tabpanel' : undefined}
+                aria-labelledby={
+                  !compact && surface !== 'chat' && !browserDetached
+                    ? `${rightPaneId}-${surface}`
+                    : undefined
+                }
                 className={
                   browserDetached
                     ? 'contents'
@@ -1791,6 +1967,20 @@ export default function TasksView({
                       >
                         <BrowserPane
                           taskId={task.id}
+                          devToolsRequest={
+                            browserDevToolsRequest
+                              ? {
+                                  id: browserDevToolsRequest,
+                                  onHandled: () => {
+                                    setBrowserDevToolsRequests((current) =>
+                                      current[threadKey] === browserDevToolsRequest
+                                        ? { ...current, [threadKey]: undefined }
+                                        : current,
+                                    )
+                                  },
+                                }
+                              : undefined
+                          }
                           openLink={
                             browserLink?.taskId === task.id &&
                             (browserLink.runtimeId === undefined ||
@@ -1814,21 +2004,23 @@ export default function TasksView({
                     surface !== 'changes' && 'hidden',
                   )}
                 >
-                  {surface === 'changes' && (
-                    <ReviewPane
-                      key={`${task.id}:${reviewTarget?.threadKey === threadKey ? (reviewTarget.finding?.id ?? 'report') : ''}`}
-                      task={task}
-                      initialFinding={
-                        reviewTarget?.threadKey === threadKey ? reviewTarget.finding : undefined
-                      }
-                      initialTab={
-                        reviewTarget?.threadKey === threadKey && !reviewTarget.finding
-                          ? 'findings'
-                          : 'diff'
-                      }
-                      onReference={(text) => addCodeReference(task.id, text)}
-                      onEditingChange={setFileEditing}
-                    />
+                  {(surface === 'changes' || (!compact && rightTabs.includes('changes'))) && (
+                    <Activity mode={surface === 'changes' ? 'visible' : 'hidden'}>
+                      <ReviewPane
+                        key={`${task.id}:${reviewTarget?.threadKey === threadKey ? (reviewTarget.finding?.id ?? 'report') : ''}`}
+                        task={task}
+                        initialFinding={
+                          reviewTarget?.threadKey === threadKey ? reviewTarget.finding : undefined
+                        }
+                        initialTab={
+                          reviewTarget?.threadKey === threadKey && !reviewTarget.finding
+                            ? 'findings'
+                            : 'diff'
+                        }
+                        onReference={(text) => addCodeReference(task.id, text)}
+                        onEditingChange={setFileEditing}
+                      />
+                    </Activity>
                   )}
                 </div>
                 <div
@@ -1849,55 +2041,45 @@ export default function TasksView({
                       expanded={viewerExpanded}
                       task={task}
                       reveal={fileReveal?.threadKey === threadKey ? fileReveal : undefined}
+                      headerActionsTarget={
+                        surface === 'files' && !compact ? fileHeaderActions : null
+                      }
+                      initialFile={compact ? undefined : savedFile}
+                      onFileSelected={compact ? undefined : recordSelectedFile}
                       onEditingChange={setFileEditing}
                       onReference={(text) => addCodeReference(task.id, text)}
                     />
                   )}
                 </div>
                 <div
-                  ref={(element) => {
-                    if (compact) panes.current.terminal = element
-                  }}
+                  ref={setRightTerminalSlot}
                   tabIndex={-1}
                   className={cn('min-h-0 min-w-0 flex-1', surface !== 'terminal' && 'hidden')}
-                >
-                  {compact && terminalVisited && (
-                    <TerminalPane
-                      key={task.id}
-                      taskId={task.id}
-                      focusId={terminalFocus}
-                      onOpenFile={(file) => {
-                        setFileReveal({ ...file, threadKey, requestId: randomUUID() })
-                        selectSurface('files', true)
-                      }}
-                      visible={surface === 'terminal'}
-                      onAddSelection={(taskId, text) =>
-                        addTerminalSelection(threadKey, taskId, text)
-                      }
-                      onClose={() => selectSurface('chat', true)}
-                    />
-                  )}
-                </div>
+                />
               </div>
             </ResizableSidebar>
-            {!compact && !temporary && (
-              <TaskTools
-                task={task}
-                surface={surface}
-                onSelect={(next) => selectSurface(next === surface ? 'chat' : next)}
-                hasDiff={hasDiff}
-                toolsExpanded={toolsExpanded}
-                onTools={() => {
-                  if (toolsExpanded) {
-                    lastToolSurface.current = surface
-                    selectSurface('chat', true)
-                  } else {
-                    selectSurface(lastToolSurface.current)
-                  }
+            {(terminalVisited || terminalVisible || terminalDockedRight) && (
+              <TerminalDock
+                key={threadKey}
+                target={terminalTarget}
+                taskId={task.id}
+                focusId={terminalFocus}
+                visible={terminalVisible && !native}
+                dock={
+                  compact
+                    ? undefined
+                    : { side: terminalDockedRight ? 'right' : 'bottom', onMove: moveTerminal }
+                }
+                onOpenFile={(file) => {
+                  setFileReveal({ ...file, threadKey, requestId: randomUUID() })
+                  selectSurface('files', true)
                 }}
-                bottomTerminalOpen={bottomTerminalOpen}
-                onBottomTerminal={toggleBottomTerminal}
-                artifactsEnabled={!!snapshot?.artifactsEnabled}
+                onAddSelection={(taskId, text) => addTerminalSelection(threadKey, taskId, text)}
+                onClose={() => {
+                  if (terminalDockedRight) closeRightTab('terminal')
+                  else if (compact) selectSurface('chat', true)
+                  else setBottomTerminalTaskId('')
+                }}
               />
             )}
           </div>
@@ -1974,7 +2156,7 @@ export default function TasksView({
               <ResizablePanel id="split" defaultSize="36%" minSize="24%">
                 <section
                   aria-label={`Side by side: ${splitTask.title}`}
-                  className="flex h-full min-h-0 flex-col border-l"
+                  className="studio-work-pane flex h-full min-h-0 flex-col border-l"
                 >
                   <header className="studio-task-thread-header text-xs" data-window-right-edge>
                     <ProjectIcon

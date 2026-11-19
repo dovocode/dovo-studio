@@ -94,7 +94,9 @@ function OwnedBrowserThreadPanel({
   const [choosing, setChoosing] = useState(!matchingThread)
   const [query, setQuery] = useState('')
   const [error, setError] = useState('')
-  const [projectId, setProjectId] = useState('')
+  const [pickedProject, setProjectId] = useState<string>()
+  const projectId =
+    pickedProject ?? store.workspace.repositories.find((repo) => repo.kind === 'scratch')?.id ?? ''
   const [busy, setBusy] = useState(false)
   const entries = useMemo(
     () => collectTasks(taskSources(store)).filter((entry) => entry.source.runtimeId === runtimeId),

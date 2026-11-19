@@ -73,7 +73,7 @@ import {useState as useSidebarState} from 'react';export const useLeftSidebar=in
   './detail/resizable-sidebar':
     'export const ResizableSidebar=({children,className,label})=><div data-sidebar={label} className={className}>{children}</div>;',
   './detail/task-project-panel': 'export const TaskProjectPanel=()=>null;',
-  './detail/task-header': `export const TaskHeader=({task})=><header data-thread-header={task.id}>{task.title}</header>;`,
+  './detail/task-header': `export const TaskHeader=({task,toolsControl})=><header data-thread-header={task.id}>{task.title}{toolsControl}</header>;`,
   './detail/task-tools': `export const TaskTools=({onTools})=><button onClick={onTools}>Toggle tools</button>;`,
   '../chat/thread/chat-thread': `export const ChatThread=({task})=><div data-chat-id={task.id}>{task.messages.map(message=><p key={message.id}>{message.text}</p>)}</div>;`,
   '../chat/artifact-open-context': 'export const ArtifactOpenContext=({children})=>children;',
@@ -89,7 +89,7 @@ for (const [path, names] of [
   ['./browser/browser-pane', ['BrowserPane', 'DevicesPane']],
   ['./review/review-pane', ['ReviewPane']],
   ['./detail/task-files', ['TaskFiles']],
-  ['./terminal/terminal-pane', ['TerminalPane']],
+  ['./terminal/terminal-dock', ['TerminalDock']],
   ['./dialogs/task-search-dialog', ['TaskSearchDialog']],
   ['./task-creation/project-selection-dialog', ['ProjectSelectionDialog']],
   ['./chat/thread/side-question', ['SideQuestion']],

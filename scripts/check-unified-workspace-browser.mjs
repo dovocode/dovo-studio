@@ -135,6 +135,16 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
       contents: `export const ResizableSidebar=({children,className,label})=><aside aria-label={label} className={className} style={{width:280,flexShrink:0}}>{children}</aside>;`,
     },
     {
+      path: './resizable-sidebar',
+      importer: root + '/packages/extension-tasks/src/',
+      contents: `export const ResizableSidebar=({children,className,label})=><aside aria-label={label} className={className} style={{width:280,flexShrink:0}}>{children}</aside>;`,
+    },
+    {
+      path: '../files/saved-file-diff',
+      importer: root + '/packages/extension-tasks/src/detail/',
+      contents: 'export const CheckpointDiff=()=>null;',
+    },
+    {
       path: '../view',
       importer: root + '/packages/extension-tasks/src/unified/',
       contents: `import {useState,useEffect} from 'react';import {useWorkspace,useStudioHost} from '@dovo/studio-core';export default function Thread({entityId}){const [draft,setDraft]=useState('');const store=useWorkspace();const host=useStudioHost();if(window.threadHosts){window.threadHosts.add(host);window.threadPaneRenders++};useEffect(()=>{window.effects.push('show-thread:'+entityId);return()=>window.effects.push('hide-thread:'+entityId)},[entityId]);return <div data-thread={entityId} data-owner={store.activeRuntimeId}><input aria-label="Thread draft" value={draft} onChange={event=>setDraft(event.target.value)}/></div>}`,
@@ -146,7 +156,7 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
     },
     {
       path: '../browser/browser-pane',
-      importer: root + '/packages/extension-tasks/src/unified/',
+      importer: root + '/packages/extension-tasks/src/',
       contents: `import {useEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
 import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browser-tab-row';
 import {SnoozeDialog} from '${root}/packages/extension-tasks/src/dialogs/snooze-dialog';
@@ -2073,7 +2083,9 @@ try {
     .getByRole('complementary')
     .getByRole('button', { name: 'Hide Program custom name', exact: true })
     .click()
-  await page.getByLabel('Search workspace').fill('')
+  const workspaceSearch = page.getByLabel('Search workspace')
+  await workspaceSearch.selectText()
+  await workspaceSearch.press('Backspace')
   const activeThreads = page.getByRole('complementary').locator('[data-section="active"]')
   await activeThreads.locator(':scope > summary:not([aria-disabled="true"])').waitFor()
   if (!(await activeThreads.evaluate((section) => section.open)))
@@ -2761,6 +2773,11 @@ try {
     callsBeforeResume,
     'Returning to a completed launch opens the created shell without a duplicate',
   )
+  assert.equal(
+    await page.getByRole('tablist', { name: 'Open terminals', exact: true }).count(),
+    0,
+    'Terminals uses the sidebar to switch sessions',
+  )
   await page
     .getByRole('complementary')
     .locator('.studio-thread-card')
@@ -2955,7 +2972,7 @@ try {
 
   assert.deepEqual(errors, [])
   console.log(
-    'Unified workspace: sidebar navigation without horizontal tabs, pinned browser grid, retained drafts, lifecycle, remote ownership, HTTP, routing and terminal launcher passed.',
+    'Unified workspace: sidebar navigation, pinned browser grid, retained drafts, lifecycle, remote ownership, HTTP, routing and terminal launcher passed.',
   )
 } finally {
   await browser.close()
