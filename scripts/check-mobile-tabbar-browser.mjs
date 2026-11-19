@@ -30,6 +30,11 @@ for (const name of ['settings', 'issues', 'artifacts'])
 
 const stubs = [
   {
+    path: '../tasks/composer/dictation-provider',
+    importer: workbench,
+    contents: 'export const MobileDictationProvider=({children})=>children;',
+  },
+  {
     path: '../ui/content/open-link',
     importer: workbench,
     contents: `import {useNavigation} from './apps/mobile/src/shell/navigation';export function LinkBrowser(){const navigation=useNavigation();window.linkNavigation=navigation;return <output aria-label="Link navigation host">{String(navigation.focused)}</output>}`,
