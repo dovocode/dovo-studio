@@ -34,7 +34,7 @@ const remote={id:'remote',name:'Remote computer',connection:{address:'http://rem
 const profiles=[profile,remote];
 const initial=decode(snapshotSchema,{revision:1,runtimeId:'runtime',owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''}],tasks:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]});
 const remoteInitial=decode(snapshotSchema,{...initial,runtimeId:'remote-runtime',workspace:{...initial.workspace,tasks:[createTask({title:'Remote retained thread',objective:'',agentId:'',repositoryId:'scratch'})]}});
-window.calls=[];window.runtimeCalls=[];window.unexpectedRequests=[];window.switches=[];window.commands=new Map();window.registrations=0;window.disposals=0;
+window.calls=[];window.runtimeCalls=[];window.unexpectedRequests=[];window.switches=[];window.commands=new Map();window.threadRegistrations=0;window.threadDisposals=0;
 function App(){
  const [snapshots,setSnapshots,snapshotsRef]=useApplicationState({local:initial,remote:remoteInitial});
  const [activeRuntimeId,setActiveRuntimeId]=useApplicationState('local');
@@ -78,7 +78,18 @@ function App(){
  },[updateWorkspace,updateSnapshot,snapshotsRef]);
  const read=useCallback(async(profile,path,input,schema,method)=>decode(schema,await respond(profile,path,input,method)),[respond]);
  const readRuntimeEffect=useCallback((...args)=>Effect.promise(()=>read(...args)),[read]);
- const registerCommand=useCallback(command=>{if(window.commands.has(command.id))throw Error('Duplicate command: '+command.id);window.commands.set(command.id,command);window.registrations++;setPaletteVersion(value=>value+1);return ()=>{window.disposals++;window.commands.delete(command.id);setPaletteVersion(value=>value+1)}},[]);
+ const registerCommand=useCallback(command=>{
+   if(window.commands.has(command.id))throw Error('Duplicate command: '+command.id);
+   const isThreadCommand=command.id.startsWith('tasks.');
+   window.commands.set(command.id,command);
+   if(isThreadCommand)window.threadRegistrations++;
+   setPaletteVersion(value=>value+1);
+   return ()=>{
+     if(isThreadCommand)window.threadDisposals++;
+     window.commands.delete(command.id);
+     setPaletteVersion(value=>value+1);
+   };
+ },[]);
  // Like WorkspaceProvider's cached openProfile path, switch only after asynchronous flush/read.
  const switchRuntime=useCallback(async id=>{if(!profiles.some(profile=>profile.id===id))throw Error('Unknown runtime '+id);window.switches.push(id);await Promise.resolve();setActiveRuntimeId(id)},[setActiveRuntimeId]);
  const refreshRuntime=useCallback(async owner=>updateSnapshot(owner.id,current=>({...current})),[updateSnapshot]);
@@ -319,6 +330,10 @@ try {
   )
   await openBrowser.click()
   await page.locator('[data-browser-viewport]').waitFor()
+  await page.waitForFunction(() => window.commands.has('browser.site-information'))
+  assert.deepEqual(await page.evaluate(() => [...window.commands.keys()]), [
+    'browser.site-information',
+  ])
   await page.getByRole('button', { name: 'Workspace home', exact: true }).click()
   await page.getByRole('button', { name: 'Workspace destination', exact: true }).click()
   await page.getByRole('option', { name: 'Terminal', exact: true }).click()
@@ -397,9 +412,9 @@ try {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
-  const registrations = await page.evaluate(() => window.registrations)
+  const registrations = await page.evaluate(() => window.threadRegistrations)
   assert.equal(registrations, 32, 'Eight visible thread lifetimes each register four commands')
-  assert.equal(await page.evaluate(() => window.disposals), registrations)
+  assert.equal(await page.evaluate(() => window.threadDisposals), registrations)
   assert.equal(
     await page.evaluate(() => window.commands.size),
     0,
@@ -409,7 +424,7 @@ try {
   await page.evaluate(
     () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
   )
-  assert.equal(await page.evaluate(() => window.registrations), registrations)
+  assert.equal(await page.evaluate(() => window.threadRegistrations), registrations)
   const settle = () =>
     page.evaluate(
       () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
@@ -482,7 +497,10 @@ try {
       phase += ' → browser'
       await browserRow.locator('[data-browser-tab-select]').click()
       await page.locator('[data-browser-viewport]').waitFor({ state: 'visible' })
-      await assertCommands(0)
+      await assertCommands(1)
+      assert.deepEqual(await page.evaluate(() => [...window.commands.keys()]), [
+        'browser.site-information',
+      ])
       assert.equal(await page.evaluate(() => window.activeRuntimeId), runtimeId)
 
       phase += ' → local terminal'
@@ -529,12 +547,12 @@ try {
     'Thread selections exercise runtime adoption in both directions',
   )
   assert.equal(
-    await page.evaluate(() => window.registrations - window.disposals),
+    await page.evaluate(() => window.threadRegistrations - window.threadDisposals),
     0,
     'Every resumed TasksView releases its commands on Home',
   )
   assert.equal(
-    await page.evaluate(() => window.registrations),
+    await page.evaluate(() => window.threadRegistrations),
     registrations + 37 * 4,
     'Each visible thread lifetime registers once; header and snapshot updates do not churn commands',
   )
