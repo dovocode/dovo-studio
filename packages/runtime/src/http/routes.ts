@@ -62,6 +62,7 @@ import { linkedProjectsTool } from '../scm/tasks/linked-project-tools.js'
 import { agentInteraction } from '../agent-tools/interactions.js'
 import { secureInputTool } from '../agent-tools/secure-input-route.js'
 import { secureInputReplySchema } from '@dovo/protocol'
+import { agentPipeline } from '../scm/tasks/agent-pipeline.js'
 import { pipelineWatchRequestSchema } from '../scm/tasks/pipeline-watch.js'
 import { runtimeDiagnostics } from './diagnostics.js'
 import { cuaCheckRequest, cuaActionRequest } from '@dovo/protocol'
@@ -517,6 +518,12 @@ export function route(
             run.runId,
           ),
         )
+      }
+      if (method === 'POST' && path === '/api/agent/pipeline') {
+        if (!run?.pipelineWatching)
+          throw new HttpError(403, 'Pipeline tools require an active run with pipeline access.')
+        const input = yield* serviceResult(body(request, 4096))
+        return yield* runtimeOperation(() => agentPipeline(s, input, run.readOnly))
       }
       if (method === 'POST' && path === '/api/pipeline-watch') {
         if (!device.owner && !run)
@@ -1030,6 +1037,7 @@ export function route(
             !path.startsWith('/api/usage/hubs/') &&
             !path.endsWith('/enable-encrypted') &&
             !path.startsWith('/api/scm/project-transfer/') &&
+            !path.startsWith('/api/scm/linear/key/') &&
             ![
               '/api/tasks/answer',
               '/api/notifications/answer',
@@ -1225,6 +1233,27 @@ export function route(
             s.store.taskSummary(taskId)
           }),
         )
+      }
+      if (method === 'POST' && path === '/api/previews/browser/local-preview/ticket') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Open local previews from a paired human client.')
+        const input = yield* serviceResult(body(request, 8192))
+        const { taskId, tabId, profileId = 'default' } = decode(remoteBrowserOpenSchema, input)
+        const { origin } = decode(mutableStruct({ origin: maxValue(Schema.String, 200) }), input)
+        if (taskId !== STUDIO_BROWSER_SCOPE) s.store.taskSummary(taskId)
+        const resourceId = JSON.stringify(
+          profileId === 'default' ? [taskId, tabId ?? null] : [taskId, tabId ?? null, profileId],
+        )
+        const verified = yield* runtimeOperation(() => s.browsers.localPreviewOrigin(resourceId))
+        if (verified !== origin) throw new HttpError(409, 'The browser page changed.')
+        s.devices.authenticate(token)
+        return {
+          ticket: s.tickets.issue(
+            token,
+            JSON.stringify(['local-preview', resourceId, origin]),
+            taskId,
+          ),
+        }
       }
       if (method === 'POST' && path === '/api/previews/browser/open') {
         const {
@@ -2078,6 +2107,23 @@ export function route(
       if (path.startsWith('/api/review/')) return yield* reviewRoute(request, path)
       if (path.startsWith('/api/scm/project-transfer/'))
         return yield* projectTransferRoute(request, path, device.id, token)
+      if (
+        method === 'POST' &&
+        (path === '/api/scm/linear/key/save' || path === '/api/scm/linear/key/remove')
+      ) {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Change the Linear key from a paired human client.')
+        if (path.endsWith('/save')) {
+          const input = yield* serviceResult(body(request, 4096))
+          yield* runtimeOperation(() =>
+            s.linearSettings.save(input, () => {
+              s.devices.authenticate(token)
+            }),
+          )
+        } else s.linearSettings.remove()
+        s.store.update((workspace) => workspace)
+        return { source: s.linearSettings.source() }
+      }
       if (path.startsWith('/api/scm/')) return yield* scmRoute(request, path)
       throw new HttpError(404, 'Endpoint not found')
     }),

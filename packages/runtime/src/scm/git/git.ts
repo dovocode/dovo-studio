@@ -3,7 +3,7 @@ import { retrievalContext, retrievalLocal, type RetrievalHook } from '../../retr
 import {
   includedWorktreeFiles,
   copyWorktreeFiles,
-  sparseWorktreePatterns,
+  parseSparseWorktreePatterns,
 } from './worktree-include.js'
 import { worktreeRecords } from './worktree-records.js'
 import { workingGitStatus } from './working-status.js'
@@ -864,7 +864,6 @@ export class GitService {
     const files = await this.measureCheckout(root, 'include-files', () =>
       includedWorktreeFiles(root, signal),
     )
-    const sparse = await sparseWorktreePatterns(root)
     const reason = `dovo-creating ${randomUUID()}`
     let identity: Awaited<ReturnType<typeof lstat>> | undefined
     let canonical: string | undefined
@@ -883,6 +882,33 @@ export class GitService {
         root,
         async () => {
           await this.assertCheckoutAvailable(root)
+          const target = args.at(-1)
+          const ref = target && target !== directory ? target : 'HEAD'
+          const commit = (
+            await this.readCommand(
+              root,
+              ['rev-parse', '--verify', '--end-of-options', `${ref}^{commit}`],
+              { signal },
+            )
+          ).trim()
+          const entry = (
+            await this.readCommand(root, ['ls-tree', '-l', commit, '--', '.worktreesparse'], {
+              signal,
+            })
+          ).trim()
+          let sparse: string[] = []
+          if (entry) {
+            const patternFile =
+              /^100(?:644|755) blob ([a-f0-9]+) +([0-9]+)\t\.worktreesparse$/.exec(entry)
+            if (!patternFile || Number(patternFile[2]) > 32768)
+              throw new HttpError(400, '.worktreesparse must be a regular file of at most 32 KiB.')
+            sparse = parseSparseWorktreePatterns(
+              await this.readCommand(root, ['cat-file', 'blob', patternFile[1]], {
+                signal,
+                maxBuffer: 32768,
+              }),
+            )
+          }
           // Git accepts an empty folder. Creating it exclusively gives us an identity before
           // checkout hooks run, so a confirmed cancellation can clean only this attempt.
           try {
@@ -920,6 +946,12 @@ export class GitService {
               'The worktree registration changed during creation; its files were preserved.',
             )
           if (sparse.length) {
+            const checkedOutCommit = (await this.command(canonical, ['rev-parse', 'HEAD'])).trim()
+            if (checkedOutCommit !== commit)
+              throw new HttpError(
+                409,
+                'The target ref changed during worktree creation. Try again.',
+              )
             const checkout = canonical
             const ownership = new Map(preparationOwnership.getStore())
             ownership.set(checkout, reason)

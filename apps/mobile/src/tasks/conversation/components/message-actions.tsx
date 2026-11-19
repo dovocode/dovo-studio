@@ -37,6 +37,7 @@ import {
 import { router } from 'expo-router'
 import { modelCatalogSchema, resolveTaskAgent } from '@dovo/protocol'
 import { taskHref } from '../../../shell/task-route'
+import { QuoteSelection } from './quote-selection'
 import { requestMessageReveal } from '../message-reveal'
 
 type Feedback = '' | 'message' | 'code'
@@ -57,6 +58,7 @@ export function MessageActions({
   const { colors } = useTheme()
 
   const [feedback, setFeedback] = useState<Feedback>('')
+  const [quoting, setQuoting] = useState(false)
   const blocks = useMemo(() => (user ? [] : fencedCodeBlocks(text)), [text, user])
   const commands = useMemo(
     () =>
@@ -349,6 +351,25 @@ export function MessageActions({
             appendReply(responseReply({ id: messageId, text }))
           }}
         />
+      )}
+      {!user && !!messageId && !!text && (
+        <>
+          <ActionButton
+            testID="Quote selection"
+            label={uiText('Quote selection')}
+            hint={uiText('Select the part of this response to add to your draft.')}
+            icon="chat"
+            onPress={() => setQuoting(true)}
+          />
+          {quoting && (
+            <QuoteSelection
+              text={text}
+              messageId={messageId}
+              onQuote={appendReply}
+              onClose={() => setQuoting(false)}
+            />
+          )}
+        </>
       )}
       {!user && !!messageId && (
         <Pressable

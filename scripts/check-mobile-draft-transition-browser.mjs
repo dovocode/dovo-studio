@@ -48,6 +48,7 @@ const mocks = {
   '../../ui/content/open-link':
     'export const openAppLink=async()=>{};export const useOpenAppLink=()=>openAppLink;',
   '../../ui/controls/icon': 'export const Icon=()=>null;',
+  '../controls/icon': 'export const Icon=()=>null;',
   '../ui/controls/icon':
     'export const Icon=({name})=><span aria-label={name==="bot"?"Bot avatar":name}>{name}</span>;',
   '../ui/theme': 'export const useTheme=()=>({colors:{},styles:{}});',
@@ -74,6 +75,7 @@ const mocks = {
     export const useWindowDimensions=()=>({width:390,height:844});
   `,
   'react-native-safe-area-context': `export const useSafeAreaInsets=()=>({top:0,bottom:0});`,
+  'react-native-svg': `export default function Svg({children,width,height,viewBox,fill}){return <svg width={width} height={height} viewBox={viewBox} fill={fill}>{children}</svg>};export const Path=props=><path {...props}/>;`,
   '@dovo/protocol': `
     export * from '${root}packages/protocol/src/index.ts';
     export const watchRuntimeTask=(connection,id)=>{
@@ -104,7 +106,7 @@ const mocks = {
   '../../ui/controls/use-action': `export {useAction} from '${root}apps/mobile/src/ui/controls/use-action.ts';`,
   '../../ui/layout/sheet': `import {useImperativeHandle} from 'react';export const Sheet=({children,ref,onClose})=>{useImperativeHandle(ref,()=>({dismiss:after=>{onClose();after?.()}}));return <section>{children}</section>};export const useSheetNavigation=()=>navigate=>navigate();`,
   '../../ui/theme': `export const useTheme=()=>({colors:{},styles:{}});`,
-  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,titleMenuDisabled,buttons,leading,hidden,onBack,gestureEnabled,collapsedMenuGroups})=>{window.headerTitleMenuDisabled=!!titleMenuDisabled;window.headerCollapsedMenuGroups=collapsedMenuGroups;const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
+  '../../ui/layout/screen-header': `import {useState} from 'react';export const ScreenHeader=({title,titleContent,titleMenuDisabled,titleMenuContext,buttons,leading,hidden,onBack,gestureEnabled,collapsedMenuGroups})=>{window.headerTitleMenuDisabled=!!titleMenuDisabled;window.headerTitleMenuContext=titleMenuContext;window.headerCollapsedMenuGroups=collapsedMenuGroups;const [menu,setMenu]=useState(false);window.headerGestures=gestureEnabled;window.headerActions=buttons;return hidden?null:<header>{(window.os??'ios')==='ios'&&onBack?<button onClick={onBack}>Back</button>:leading}{titleContent??title}{buttons?.some(b=>b.overflow)&&<button onClick={()=>setMenu(true)}>Thread tools</button>}{buttons?.filter(b=>!b.overflow||menu).map(b=><button key={b.label} disabled={b.disabled} onClick={b.onPress}>{b.label}</button>)}</header>};`,
   '../../ui/content/markdown': `export const Markdown=({text})=><p data-native-prose>{text}</p>;`,
   '../files/task-files': 'export const TaskFiles=()=>null;',
   './task-agents': `export const TaskAgents=({task,onOpenThread})=><button onClick={()=>onOpenThread({taskId:task.id,agent:task.subagents[0]})}>Open native Claude thread</button>;`,
@@ -365,7 +367,8 @@ try {
     window.releaseMessage()
   })
   await page.waitForFunction(() => window.params.draft === undefined)
-  await page.getByLabel('No Project · a', { exact: true }).waitFor()
+  await page.getByLabel('No Project', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.headerTitleMenuContext.split(' · ').at(-1)), 'a')
   assert.ok(!(await page.locator('header').innerText()).includes('No project'))
   await page.waitForFunction(() => window.originalInput.value === '')
   assert.deepEqual(await page.evaluate(() => window.navigation.map((n) => n.kind)), [

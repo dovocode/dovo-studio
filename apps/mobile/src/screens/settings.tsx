@@ -279,7 +279,7 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           path: '/settings/source-control',
           group: 'Files & outputs',
           keywords:
-            'git accounts forge tokens repositories github bitbucket forgejo gitea azure devops',
+            'git accounts forge tokens repositories github bitbucket forgejo gitea azure devops linear api key',
         },
         {
           title: uiText('Automations'),

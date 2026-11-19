@@ -30,6 +30,7 @@ const mocks = {
   './work-form': `export const WorkForm=()=>null;`,
   './jira-issue-list': `export const JiraIssueList=()=>null;export const jiraIssueRowKey=()=>'';`,
   './pipeline-state': `export const PipelineState=()=>null;`,
+  './linear-issues': `export const LinearIssuesDialog=()=>null;export const LinearIssuesSheet=()=>null;`,
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }

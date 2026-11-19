@@ -100,6 +100,7 @@ export * from './runtime/cache/read-cache.js'
 export * from './automation/automations.js'
 export * from './scm/forges/forges.js'
 export * from './scm/forges/forge-work.js'
+export * from './scm/forges/linear.js'
 
 export * from './scm/forges/jira.js'
 export * from './scm/work/work-task.js'

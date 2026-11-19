@@ -7,8 +7,8 @@ import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
-  '@dovo/studio-core': `export * from '@dovo/protocol';export const readAppPreferences=()=>({savedFilterViews:[]});export const useAppPreferences=readAppPreferences;export const updateAppPreferences=()=>true;export const useStudioHost=()=>({navigate:()=>{}});export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:[],request:async()=>({})});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
-  '@dovo/studio-ui': `import {useState} from 'react';export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
+  '@dovo/studio-core': `export * from '@dovo/protocol';export const readAppPreferences=()=>({savedFilterViews:[]});export const useAppPreferences=readAppPreferences;export const updateAppPreferences=()=>true;export const useStudioHost=()=>({navigate:()=>{}});export {useLinearIssues} from '${root}packages/studio-core/src/scm/use-linear-issues';export const useWorkspace=()=>({activeRuntimeId:'a',runtimes:window.linearSources??[],request:async()=>({}),readRuntime:window.readLinear});export const WorkspaceRuntimeScope=({runtimeId,children})=><section data-owner={runtimeId}>{children}</section>;export const repositorySourceKey=(a,b)=>JSON.stringify([a,b]);export const formatDateTime=v=>v;`,
+  '@dovo/studio-ui': `import {useState} from 'react';export {EmptyState} from '${root}packages/studio-ui/src/components/empty-state';export const PageHeader=({title,children})=><header><h1>{title}</h1>{children}</header>;export const SidebarHeader=()=>null;export const useLeftSidebar=()=>[true,()=>{}];export const useCompactLayout=()=>false;export const Button=({children,size,variant,...props})=><button {...props}>{children}</button>;export const Dialog=({children,onOpenChange})=><div><button onClick={()=>onOpenChange(false)}>Close Linear preview</button>{children}</div>;export const DialogContent=({children})=><div role="dialog">{children}</div>;export const DialogTitle=({children})=><h2>{children}</h2>;export const Input=props=><input {...props}/>;export const ChoicePicker=({children,onValueChange,...props})=><select {...props} onChange={e=>onValueChange(e.target.value)}>{children}</select>;`,
   './work-sources': `export {workRemoteKey,matchesWorkSource} from '${root}packages/extension-scm/src/work/work-source-identity';export const jiraSourceKey=(a,b)=>JSON.stringify([a,'jira',b]);export const useIssueSources=()=>window.sources;`,
   './use-work-sources': `export const useWorkSources=()=>({sources:window.sources,pages:[{source:window.sources[0],reader:window.reader,items:[window.issue],options:{provider:'github',issues:true,pipelineActions:[]}}],busy:false,refresh:()=>{},more:async()=>{}});`,
   './jira-toolbar': `export const JiraToolbar=()=>null;`,
@@ -74,6 +74,32 @@ try {
   await page.setContent('<div id="app"></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  assert.equal(await page.getByRole('button', { name: 'Linear', exact: true }).count(), 0)
+  await page.evaluate(() => {
+    window.linearSources = [
+      {
+        profile: { id: 'a', name: 'Computer A', connection: { address: 'http://a', token: 'a' } },
+        snapshot: { linearIssuesSupported: true },
+      },
+    ]
+    window.linearReads = []
+    window.readLinear = async (profile, path, input) => {
+      window.linearReads.push({ profile: profile.id, path, input })
+      return {
+        items: [
+          {
+            id: 'linear-id',
+            identifier: 'DOV-42',
+            title: 'Fix the timer',
+            status: 'Open',
+            url: 'https://linear.app/dovo/issue/DOV-42',
+            description: 'Show seconds while working.',
+          },
+        ],
+      }
+    }
+    window.render()
+  })
   const connections = page.getByRole('button', { name: 'Connections', exact: true })
   await connections.waitFor()
   assert.equal(await connections.locator('svg.lucide-plug').count(), 1)
@@ -86,6 +112,25 @@ try {
     1,
     'Connection management and list filters have distinct controls',
   )
+  await page.getByRole('button', { name: 'Linear', exact: true }).click()
+  const linear = page.getByRole('dialog').filter({ hasText: 'Linear issues' })
+  await linear.getByText('DOV-42 · Open', { exact: true }).click()
+  await linear.getByText('Show seconds while working.').waitFor()
+  await linear.getByRole('textbox', { name: 'Search Linear issues' }).fill('DOV-42')
+  await linear.getByRole('button', { name: 'Search', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.linearReads.some((read) => read.input.search === 'DOV-42'),
+  )
+  await linear.getByText('DOV-42 · Open', { exact: true }).click()
+  assert.equal(
+    await linear.getByRole('link', { name: 'Open in Linear' }).getAttribute('href'),
+    'https://linear.app/dovo/issue/DOV-42',
+  )
+  await page.getByRole('button', { name: 'Close Linear preview' }).click()
+  await page.evaluate(() => {
+    window.linearSources = []
+    window.render()
+  })
   const issueState = page
     .getByRole('button', { name: /Fix issue/ })
     .locator('.studio-collection-status')

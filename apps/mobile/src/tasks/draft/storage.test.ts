@@ -23,6 +23,35 @@ function memoryStorage(values = new Map<string, string>()) {
 }
 
 describe('persistent draft ordering', () => {
+  it('finishes off-screen dictation in its original draft and preserves newer text', async () => {
+    const drafts = createDraftStorage(memoryStorage())
+    await drafts.write('runtime-a.thread-a', 'Original interim')
+    await drafts.write('runtime-b.thread-a', 'Other computer')
+    await runClientEffect(
+      drafts.finishDictationEffect(
+        'runtime-a.thread-a',
+        'Original',
+        'Original interim',
+        'Original final',
+        'final',
+      ),
+    )
+    expect(await drafts.read('runtime-a.thread-a')).toBe('Original final')
+    expect(await drafts.read('runtime-b.thread-a')).toBe('Other computer')
+
+    await drafts.write('runtime-a.thread-a', 'Newer edit')
+    await runClientEffect(
+      drafts.finishDictationEffect(
+        'runtime-a.thread-a',
+        'Original',
+        'Original interim',
+        'Original final',
+        'final',
+      ),
+    )
+    expect(await drafts.read('runtime-a.thread-a')).toBe('Newer edit\n\nfinal')
+  })
+
   it('keeps published typing when loading the prior disk record fails', async () => {
     const storage = memoryStorage()
     let fail = true

@@ -1,3 +1,4 @@
+import { linearKeySourceSchema } from '../../scm/forges/linear.js'
 import { managedPolicySummarySchema } from './managed-policy.js'
 import {
   projectDirectorySchema,
@@ -305,6 +306,9 @@ export const snapshotSchema = mutableStruct({
   automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
   automationStartupRetrySupported: Schema.optional(Schema.Literal(true)),
   browserTimezoneSupported: Schema.optional(Schema.Literal(true)),
+  localBrowserPreviewSupported: Schema.optional(Schema.Literal(true)),
+  linearKeySource: Schema.optional(linearKeySourceSchema),
+  linearIssuesSupported: Schema.optional(Schema.Literal(true)),
   sparseWorktreesSupported: Schema.optional(Schema.Literal(true)),
   pullFileLoadingSupported: Schema.optional(Schema.Literal(true)),
   usageRetentionSupported: Schema.optional(Schema.Literal(true)),

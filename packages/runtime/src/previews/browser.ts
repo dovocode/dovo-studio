@@ -10,6 +10,7 @@ import {
 } from './browser-favicon.js'
 import {
   selectedBrowserText,
+  isBrowserLoopbackAddress,
   readBrowserElementSnapshot,
   inspectBrowserElement,
   browserElementSnapshotSchema,
@@ -1353,6 +1354,17 @@ export class RemoteBrowsers {
     } finally {
       clearTimeout(timer)
     }
+  }
+  async localPreviewOrigin(resourceId: string) {
+    const session = await this.sessions.get(resourceId)
+    const current =
+      session && !session.closing && !session.page.isClosed() ? session.page.url() : ''
+    if (!isBrowserLoopbackAddress(current))
+      throw new HttpError(409, 'Open a localhost development page in this browser tab first.')
+    const url = new URL(current)
+    if (url.protocol !== 'http:' || url.username || url.password)
+      throw new HttpError(400, 'Local previews require an HTTP page without credentials.')
+    return url.origin
   }
   async selection(resourceId: string) {
     const session = await this.sessions.get(resourceId)

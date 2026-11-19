@@ -1,3 +1,4 @@
+import { LinearSettings } from './scm/work/linear-issues.js'
 import { DatabaseSpaceRecovery } from './storage/database-space.js'
 import { applyBotBackup } from './agents/tasks/bot-backup.js'
 import { applyPendingHarness } from './agents/tasks/pending-harness.js'
@@ -646,6 +647,7 @@ export function createServices(
     forges,
     forgeCli,
     forgeWork,
+    linearSettings: new LinearSettings(db),
     retrieval,
     retrievalPeers,
     stateReplication: new SharedStateReplication(db, defaults, runtimeId, retrievalPeers),
@@ -723,6 +725,7 @@ export interface Services {
   retrieval: SharedRetrieval
   retrievalPeers: RetrievalPeers
   forgeWork: ForgeWork
+  linearSettings: LinearSettings
   forges: ForgeConnections
   defaults: RuntimeDefaults
   titles: TitleGeneration

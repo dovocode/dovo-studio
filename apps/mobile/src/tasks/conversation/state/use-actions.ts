@@ -240,6 +240,9 @@ export function useConversationActions(task: Task) {
   }
   const dictation = useComposerDictation({
     taskId: task.id,
+    title: task.title,
+    editing: !!editing,
+    draftKey: storedDraft.key,
     draft: {
       ...storedDraft,
       text: editing?.draft.text ?? composerHistory.text,

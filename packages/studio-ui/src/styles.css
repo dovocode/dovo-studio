@@ -946,7 +946,7 @@ textarea {
     display: flex;
   }
 }
-.studio-task-thread-header :is(button, a) {
+.studio-task-thread-header :is(button, a, .studio-thread-header-icon) {
   -webkit-app-region: no-drag;
 }
 .studio-titlebar-identity > svg {

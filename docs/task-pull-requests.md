@@ -206,6 +206,8 @@ stops its watches. Removing a linked project or changing its access to read-only
 project’s watches; deleting the thread removes its watch records. Provider content is external data
 and does not override thread instructions.
 
+An hourglass marks Waiting threads. An alarm clock marks Snoozed threads.
+
 ## Project visibility in the PR overview
 
 Open **PRs → Filters → Projects in overview**. Set each project to **All PRs**, **My PRs**, or

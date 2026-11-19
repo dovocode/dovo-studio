@@ -133,6 +133,11 @@ const stubs = [
       'export const JiraIssueList=()=>null;export const jiraIssueRowKey=(s,id)=>JSON.stringify([s.key,id]);',
   },
   {
+    path: './linear-issues',
+    importer: root + 'packages/extension-scm/src/work/',
+    contents: 'export const LinearIssuesDialog=()=>null;',
+  },
+  {
     path: '../connections/jira-binding',
     importer: root + 'packages/extension-scm/src/work/',
     contents: 'export const JiraSourcesDialog=()=>null;',

@@ -12,8 +12,7 @@ import {
   responses,
   type DictationLanguage,
 } from '@dovo/protocol'
-import { useRuntime } from '../../runtime/connection/provider'
-import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
+import type { useRuntime } from '../../runtime/connection/provider'
 import type { DictationCallbacks, DictationState } from './dictation'
 
 type Session = {
@@ -23,6 +22,7 @@ type Session = {
   recorder?: AudioRecorder
   cancelled: boolean
   finishing: boolean
+  callbacks: DictationCallbacks
   timer?: ReturnType<typeof setTimeout>
   setup: Promise<void>
   stopped?: Promise<void>
@@ -32,18 +32,14 @@ type Session = {
   cancelRemote: () => Promise<unknown>
 }
 
-export function useRuntimeDictation(taskId: string, callbacks: DictationCallbacks) {
-  const { call, snapshot, connected, profile } = useRuntime()
-  const preferences = useMobilePreferences()
-  const runtimeId = snapshot?.runtimeId ?? profile?.connection.runtimeId
-  const selected = !!runtimeId && preferences.runtimeDictationIds.includes(runtimeId)
-  const scope = JSON.stringify([
-    runtimeId,
-    profile?.id,
-    profile?.connection.address,
-    profile?.connection.token,
-    taskId,
-  ])
+export type RuntimeSpeechInput = {
+  taskId: string
+  call: ReturnType<typeof useRuntime>['call']
+  ready: boolean
+  language: string
+}
+
+export function useRuntimeDictation() {
   const [state, setState] = useState<DictationState>({
     locale: '',
     isStarting: false,
@@ -55,8 +51,6 @@ export function useRuntimeDictation(taskId: string, callbacks: DictationCallback
     error: null,
   })
   const mounted = useRef(true)
-  const latest = useRef(callbacks)
-  latest.current = callbacks
   const active = useRef<Session | null>(null)
   const update = (patch: Partial<DictationState>) => {
     if (mounted.current) setState((current) => ({ ...current, ...patch }))
@@ -125,7 +119,7 @@ export function useRuntimeDictation(taskId: string, callbacks: DictationCallback
       if (session.cancelled) return
       const result = await session.transcribeRemote(data)
       if (!session.cancelled && active.current === session && mounted.current)
-        latest.current.onFinish(result.text)
+        session.callbacks.onFinish(result.text)
     } catch (cause) {
       if (!session.cancelled) update({ error: String(cause) })
     } finally {
@@ -137,15 +131,17 @@ export function useRuntimeDictation(taskId: string, callbacks: DictationCallback
       settle(session)
     }
   }
-  const start = async () => {
+  const start = async (input: RuntimeSpeechInput, callbacks: DictationCallbacks) => {
     if (active.current) return
-    const language = decodeResult(dictationLanguageSchema, preferences.dictationLanguage || 'auto')
+    const { taskId, call, ready } = input
+    const language = decodeResult(dictationLanguageSchema, input.language || 'auto')
     const session: Session = {
       id: randomUUID(),
       taskId,
       language: language.success ? language.data : 'auto',
       cancelled: false,
       finishing: false,
+      callbacks,
       setup: Promise.resolve(),
       cancelRemote: () => call('/api/dictation/cancel', { id: session.id }, responses.ok),
       transcribeRemote: (data) =>
@@ -164,7 +160,7 @@ export function useRuntimeDictation(taskId: string, callbacks: DictationCallback
     active.current = session
     update({ isStarting: true, error: null, permissionDenied: false })
     session.setup = (async () => {
-      if (!selected || !connected || !snapshot?.runtimeDictationSupported)
+      if (!ready)
         throw new Error(
           'Reconnect to the selected speech computer. Enable runtime dictation in Speech settings.',
         )
@@ -250,6 +246,6 @@ export function useRuntimeDictation(taskId: string, callbacks: DictationCallback
       subscription.remove()
       cancelCurrent()
     }
-  }, [scope, selected])
-  return { ...state, selected, start, stop, cancel, clearError: () => update({ error: null }) }
+  }, [])
+  return { ...state, start, stop, cancel, clearError: () => update({ error: null }) }
 }

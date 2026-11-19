@@ -1,3 +1,5 @@
+import { readLinearIssues } from '../../scm/work/linear-issues.js'
+import { linearIssueQuerySchema } from '@dovo/protocol'
 import { conditionalRead } from '../support/conditional-read.js'
 import { conditionalPullRead } from '../../scm/pulls/conditional-read.js'
 import {
@@ -82,6 +84,10 @@ export function scmRoute(request: IncomingMessage, path: string) {
     Effect.gen(function* () {
       const s = yield* RuntimeServices
       const method = request.method
+      if (method === 'POST' && path === '/api/scm/linear/issues/read') {
+        const input = decode(linearIssueQuerySchema, yield* serviceResult(body(request, 4096)))
+        return yield* runtimeOperation(() => readLinearIssues(input, s.linearSettings.key()))
+      }
       if (method === 'POST' && path === '/api/scm/repositories/delete') {
         return yield* deleteProjectEffect(s, yield* serviceResult(body(request)))
       }

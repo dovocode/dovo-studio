@@ -1,3 +1,4 @@
+import { LinearIssuesSheet } from './linear-issues'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { savedFilterScope, savedFilterSourceScope, type SavedFilterValues } from '@dovo/protocol'
 import { SavedFilterViews } from '../saved-filter-views'
@@ -88,6 +89,8 @@ export function WorkScreen({
   const { colors, styles } = useTheme()
 
   const { overviews, activeId } = useRuntime()
+  const linearSources = overviews.filter((entry) => entry.snapshot?.linearIssuesSupported)
+  const [showLinear, setShowLinear] = useApplicationState(false)
   const { focused, workTarget } = useNavigation()
   const sources = workSources(overviews, mode)
   const selected = sources.find((source) => source.key === repositoryId)
@@ -324,6 +327,15 @@ export function WorkScreen({
             disabled: busy || !connected || !focused,
             onPress: refresh,
           },
+          ...(mode === 'issues' && linearSources.length
+            ? ([
+                {
+                  icon: 'external',
+                  label: uiText('Linear issues'),
+                  onPress: () => setShowLinear(true),
+                },
+              ] satisfies HeaderAction[])
+            : []),
           ...(mode === 'issues'
             ? ([
                 {
@@ -349,6 +361,9 @@ export function WorkScreen({
             : []),
         ]}
       />
+      {showLinear && (
+        <LinearIssuesSheet sources={linearSources} onClose={() => setShowLinear(false)} />
+      )}
       <FlatList
         {...listScroll}
         testID="Work list"

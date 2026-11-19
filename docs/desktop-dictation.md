@@ -76,3 +76,11 @@ notices accompany the native executable under `Resources/dictation` (macOS) or `
 The native model test verifies English speech on its host, not Dutch coding accuracy or every
 supported desktop platform. Browser checks do not establish macOS permission prompts, signed helper
 execution or Windows installer behavior.
+
+## Switch threads during mobile dictation
+
+Start dictation in a thread. You can switch screens while the app stays in the foreground. Use
+**Finish dictation** in the notice to stop the recording. The transcript goes into the draft that
+started the recording. If you changed that draft while away, Dovo keeps your edits and appends the
+transcript. On-device capture stops when the app goes to the background. Runtime recording ends
+without uploading audio if the app goes to the background before you finish.

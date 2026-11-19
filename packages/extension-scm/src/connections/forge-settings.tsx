@@ -1,3 +1,4 @@
+import { LinearKeySettings } from './linear-key-settings'
 import { SettingsPage } from '@dovo/studio-ui'
 import { useRuntimeSources, WorkspaceScope } from '@dovo/studio-core'
 import { ForgeConnections } from './forge-connections'
@@ -23,6 +24,7 @@ export default function ForgeSettings() {
               </span>
             </h2>
             <ForgeConnections />
+            <LinearKeySettings />
           </section>
         </WorkspaceScope>
       ))}

@@ -40,6 +40,7 @@ export function BrowserToolbar({
   reloadDisabled = false,
   onKeyboard,
   onExternal,
+  externalLabel,
   available = true,
   onReconnect,
   reconnectLabel,
@@ -75,6 +76,7 @@ export function BrowserToolbar({
   reloadDisabled?: boolean
   onKeyboard?: () => void
   onExternal?: () => void
+  externalLabel?: string
   available?: boolean
   onReconnect?: () => void
   reconnectLabel?: string
@@ -215,7 +217,7 @@ export function BrowserToolbar({
                 ? [
                     {
                       id: 'external',
-                      name: uiText('Open in default browser'),
+                      name: externalLabel ?? uiText('Open in default browser'),
                       icon: 'external' as const,
                     },
                   ]

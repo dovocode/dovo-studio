@@ -81,6 +81,11 @@ authorized. Use the completion notification to continue. Use `pull_request_watch
 checks when enabled and authorized. Use `studio_threads watch` for an existing thread that will
 finish in the background.
 
+On a runtime with pipeline watching enabled, use `pipeline_ci` with `failed-logs` and a GitHub
+Actions run ID. Add the job ID for one job or the repository ID for an editable linked project. Use
+`retry-failed` when the user requests it. GitHub retries the failed jobs of the same run. Register
+that attempt with `pipeline_watch` if follow-up is required.
+
 New browser tabs use isolated profiles. Listing returns every live tab with its kind, title, URL and
 a unified Studio reference: the user's Browser-workspace tabs appear as `workspace` (remote runtime
 tabs, ID `workspace:<tabId>`) or `desktop` (desktop-local tabs, ID `desktop:<tabId>`, driven through

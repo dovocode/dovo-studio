@@ -71,6 +71,7 @@ export function NativeReferenceMessage({
   references,
   links,
   onLink,
+  onSelectionChange,
 }: NativeReferenceMessageProps) {
   const { colors } = useTheme()
   const { fontScale } = useWindowDimensions()
@@ -120,7 +121,7 @@ export function NativeReferenceMessage({
         linkColor={colors.accent}
         onLink={({ nativeEvent }) => onLink(nativeEvent.url)}
         onTextChange={() => {}}
-        onSourceSelection={() => {}}
+        onSourceSelection={({ nativeEvent }) => onSelectionChange?.(nativeEvent)}
         onSize={({ nativeEvent }) => setHeight(nativeEvent.height)}
         style={{ position: 'absolute', top: 0, left: 0, width: '100%', height }}
       />

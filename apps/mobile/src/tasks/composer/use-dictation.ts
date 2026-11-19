@@ -3,7 +3,7 @@ import { requireOptionalNativeModule } from 'expo'
 import type { ExpoSpeechRecognitionModule } from 'expo-speech-recognition'
 import type { Locale } from 'expo-localization'
 import { AppState, Platform } from 'react-native'
-import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
+import { useEffect, useSyncExternalStore } from 'react'
 import { createDictation, type DictationCallbacks, type DictationDriver } from './dictation'
 import { readMobilePreferences } from '../../runtime/preferences/app-preferences'
 
@@ -64,10 +64,8 @@ export function createMobileDictation(voiceProcessing = false) {
     voiceProcessing,
   )
 }
-export function useDictation(callbacks: DictationCallbacks) {
+export function useDictation() {
   const [dictation] = useApplicationState(createMobileDictation)
-  const currentCallbacks = useRef(callbacks)
-  currentCallbacks.current = callbacks
   const state = useSyncExternalStore(
     dictation.subscribe,
     dictation.getSnapshot,
@@ -85,10 +83,9 @@ export function useDictation(callbacks: DictationCallbacks) {
       dictation.dispose()
     }
   }, [dictation])
-  const start = useCallback(() => dictation.start(currentCallbacks.current), [dictation])
   return {
     ...state,
-    start,
+    start: (callbacks: DictationCallbacks) => dictation.start(callbacks),
     stop: dictation.stop,
     cancel: dictation.cancel,
     clearError: dictation.clearError,

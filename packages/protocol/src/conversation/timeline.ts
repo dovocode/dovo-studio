@@ -77,6 +77,56 @@ export function conversationTurns(task: Conversation): ConversationTurn[] {
   return groupConversationTurns(task, conversationMessageTurns(task))
 }
 
+export type HarnessHandoffMarker = {
+  provider: TaskTurn['provider']
+  previousProvider?: TaskTurn['provider']
+}
+
+const noHandoffs: {
+  before: ReadonlyMap<string, HarnessHandoffMarker>
+  latest?: HarnessHandoffMarker
+} = { before: new Map() }
+
+/** Place the saved handoff at its receipt time. Older turns show observed provider changes. */
+export function conversationHarnessHandoffs(
+  task: Conversation & Pick<Task, 'harnessHandoff'>,
+  hasEarlier: boolean,
+  groups?: readonly ConversationTurn[],
+): typeof noHandoffs {
+  const receipt = task.harnessHandoff
+  const receiptTime = Date.parse(receipt?.createdAt ?? '')
+  const firstProvider = task.turns?.[0]?.provider
+  if (!receipt && !task.turns?.some((turn) => turn.provider !== firstProvider)) return noHandoffs
+
+  const before = new Map<string, HarnessHandoffMarker>()
+  let previous: TaskTurn['provider'] | undefined
+  let pending = !!receipt && Number.isFinite(receiptTime)
+  const turns = groups ?? conversationTurns(task)
+  for (const group of turns) {
+    const message = group.messages[0]
+    if (!message) continue
+    const provider = group.turn?.provider
+    const time = Date.parse(message.createdAt ?? '')
+    const turnTime = Date.parse(group.turn?.startedAt ?? '')
+    if (
+      receipt &&
+      pending &&
+      (time >= receiptTime || (provider === receipt.provider && turnTime >= receiptTime))
+    ) {
+      // The receipt may be in an older page. Its first known boundary needs no duplicate divider.
+      if (!hasEarlier || group !== turns[0])
+        before.set(message.id, { provider: receipt.provider, previousProvider: previous })
+      pending = false
+    } else if (previous && provider && previous !== provider) {
+      before.set(message.id, { provider, previousProvider: previous })
+    }
+    previous = provider ?? previous
+  }
+  if (receipt && pending && (!hasEarlier || turns.length))
+    return { before, latest: { provider: receipt.provider, previousProvider: previous } }
+  return before.size ? { before } : noHandoffs
+}
+
 function groupConversationTurns(
   task: Conversation,
   owners: Map<string, TaskTurn>,

@@ -1,3 +1,4 @@
+import { LinearIssuesDialog } from './linear-issues'
 import { ToggleButton } from '@dovo/studio-ui/toggle-button'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { savedFilterScope } from '@dovo/protocol'
@@ -89,6 +90,8 @@ function WorkView({
   const uiText = useInterfaceText()
 
   const { activeRuntimeId, runtimes } = useWorkspace()
+  const linearSources = runtimes.filter((entry) => entry.snapshot?.linearIssuesSupported)
+  const [showLinear, setShowLinear] = useApplicationState(false)
   const host = useStudioHost()
   const { transition, style: detailStyle } = useDetailTransition()
   const [sidebarVisible] = useLeftSidebar()
@@ -486,6 +489,11 @@ function WorkView({
               >
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
               </Button>
+              {mode === 'issues' && linearSources.length > 0 && (
+                <Button size="sm" variant="ghost" onClick={() => setShowLinear(true)}>
+                  {uiText('Linear')}
+                </Button>
+              )}
               {mode === 'issues' && (
                 <Button
                   size="sm"
@@ -1084,6 +1092,9 @@ function WorkView({
             setPicking(false)
           }}
         />
+      )}
+      {showLinear && (
+        <LinearIssuesDialog sources={linearSources} onClose={() => setShowLinear(false)} />
       )}
       {settings && <JiraSourcesDialog onClose={() => setSettings(false)} onSaved={refresh} />}
       {createPage?.options && (

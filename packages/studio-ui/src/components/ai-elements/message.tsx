@@ -49,6 +49,7 @@ export const MessageResponse = memo(function MessageResponse({
   fileBaseURL,
   localFiles,
   referenceResources,
+  previewLink,
 }: {
   children: string
   isStreaming?: boolean
@@ -61,6 +62,7 @@ export const MessageResponse = memo(function MessageResponse({
     remoteImage?: (uri: string, alt: string) => ReactNode
   }
   referenceResources?: ComposerReferenceResources
+  previewLink?: (href: string, link: ReactNode) => ReactNode
 }) {
   const { themePalette, codeTheme, importedCodeThemes } = useAppPreferences()
   const referenced = useMemo(() => {
@@ -128,19 +130,20 @@ export const MessageResponse = memo(function MessageResponse({
             </a>
           )
         const path = props.href ? markdownURLLocalPath(props.href) : undefined
-        return path !== undefined && localFiles ? (
-          <button
-            type="button"
-            title={path}
-            className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-left text-xs font-medium text-primary hover:bg-muted"
-            onClick={() => localFiles.open(path)}
-          >
-            <FileTypeIcon path={path} />
-            <span className="wrap-anywhere">{props.children}</span>
-          </button>
-        ) : (
-          <defaultComponents.a {...props} />
-        )
+        if (path !== undefined && localFiles)
+          return (
+            <button
+              type="button"
+              title={path}
+              className="inline-flex max-w-full items-baseline gap-1 rounded-md border border-border/60 bg-muted/40 px-1.5 py-0.5 align-baseline text-left text-xs font-medium text-primary hover:bg-muted"
+              onClick={() => localFiles.open(path)}
+            >
+              <FileTypeIcon path={path} />
+              <span className="wrap-anywhere">{props.children}</span>
+            </button>
+          )
+        const link = <defaultComponents.a {...props} />
+        return props.href && previewLink ? previewLink(props.href, link) : link
       },
       img: ({ src, alt }: ComponentProps<'img'>) => {
         const path = typeof src === 'string' ? markdownURLLocalPath(src) : undefined
@@ -153,7 +156,7 @@ export const MessageResponse = memo(function MessageResponse({
         )
       },
     }),
-    [localFiles, referenced.chips],
+    [localFiles, previewLink, referenced.chips],
   )
   const props = {
     className: cn(

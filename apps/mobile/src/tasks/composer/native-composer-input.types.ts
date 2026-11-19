@@ -23,4 +23,5 @@ export type NativeReferenceMessageProps = {
   references: ComposerReference[]
   links: { start: number; end: number; url: string }[]
   onLink: (url: string) => void
+  onSelectionChange?: (selection: DraftSelection) => void
 }

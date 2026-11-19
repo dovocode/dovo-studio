@@ -9,6 +9,9 @@ import {
   threadPullLink,
   unassignedConversationTools,
   conversationMessageTurns,
+  conversationHarnessHandoffs,
+  providerDisplayName,
+  type HarnessHandoffMarker,
   conversationToolsByMessage,
   type PendingMessage,
   conversationPageSchema,
@@ -45,7 +48,8 @@ import {
   type ReactNode,
 } from 'react'
 import { TaskActivity, useTaskActivity } from './task-activity'
-import { Star, ChevronUp, ChevronDown, X } from 'lucide-react'
+import { Star, ChevronUp, ChevronDown, X, ArrowRightLeft } from 'lucide-react'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   Conversation,
   ConversationContent,
@@ -60,6 +64,28 @@ import { useWorkspaceSelector, sameWorkspaceFields, useStudioHost } from '@dovo/
 import { useCommittedCallback } from '../../detail/use-committed-callback'
 const emptyTools: ReturnType<typeof useTaskActivity>['tools'] = []
 const emptyCompactions: NonNullable<Task['compactions']> = []
+function HarnessHandoffDivider({ marker }: { marker?: HarnessHandoffMarker }) {
+  const uiText = useInterfaceText()
+  if (!marker) return null
+  const { provider, previousProvider } = marker
+  const name = providerDisplayName(provider)
+  return (
+    <div role="note" className="flex items-center gap-3 text-xs text-muted-foreground">
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+      <span className="inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1">
+        <ArrowRightLeft aria-hidden="true" className="size-3 shrink-0" />
+        {previousProvider && previousProvider !== provider
+          ? uiText('Harness switched from {value0} to {value1}', {
+              value0: providerDisplayName(previousProvider),
+              value1: name,
+            })
+          : uiText('Continued with {value0}', { value0: name })}
+      </span>
+      <span aria-hidden="true" className="h-px flex-1 bg-border" />
+    </div>
+  )
+}
+
 export function ChatThread({
   task: liveTask,
   onUseTemplate,
@@ -75,7 +101,10 @@ export function ChatThread({
   footer,
   emptyState,
 }: {
-  task: Pick<Task, 'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions'> & {
+  task: Pick<
+    Task,
+    'id' | 'messages' | 'turns' | 'status' | 'queue' | 'compactions' | 'harnessHandoff'
+  > & {
     archived?: Task['archived']
     autoProjectFallback?: Task['autoProjectFallback']
     historyBefore: Task['historyBefore']
@@ -308,6 +337,10 @@ export function ChatThread({
   const groups = useMemo(
     () => retainTurnKeys(conversationTurns(task)),
     [task.messages, task.turns, retainTurnKeys],
+  )
+  const handoffs = useMemo(
+    () => conversationHarnessHandoffs(task, history.hasMore, groups),
+    [groups, history.hasMore, task.harnessHandoff],
   )
   const retention = useRef({ groups, seeking: false, trim: history.trim })
   useEffect(() => {
@@ -615,6 +648,9 @@ export function ChatThread({
                         : undefined
                     }
                   >
+                    {handoffs.before.has(group.id) && (
+                      <HarnessHandoffDivider marker={handoffs.before.get(group.id)} />
+                    )}
                     <DeferredTurn
                       id={group.key}
                       pinned={
@@ -720,6 +756,7 @@ export function ChatThread({
                   </section>
                 ))}
               </div>
+              {handoffs.latest && <HarnessHandoffDivider marker={handoffs.latest} />}
               {fullTask?.threadActions
                 ?.filter(
                   (action) => !task.messages.some((message) => message.turnId === action.runId),

@@ -21,6 +21,7 @@ const mocks = {
   './pipeline-detail': `import {PipelineDetail as Real} from '${root}packages/extension-scm/src/work/pipeline-detail.tsx';export const PipelineDetail=props=>{window.workDetail=props.detail;return <Real {...props}/>};`,
   './use-work-sources': `import {useWorkSources as real} from '${root}packages/extension-scm/src/work/use-work-sources.ts';export const useWorkSources=(...args)=>{const result=real(...args);window.workResult=result;return result;};`,
   './jira-toolbar': `export const JiraToolbar=()=>null;`,
+  './linear-issues': `export const LinearIssuesDialog=()=>null;export const LinearIssuesSheet=()=>null;`,
   '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
   '../connections/source-picker': `export const SourcePicker=()=>null;`,
 }

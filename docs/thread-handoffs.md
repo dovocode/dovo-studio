@@ -8,6 +8,13 @@ with the saved conversation. While a turn runs, use the composer model controls 
 and switch harness**. Dovo does not stop a turn from the picker alone. Model changes within the
 current harness keep their existing behavior.
 
+The conversation shows a divider where the harness changes. When a switch finishes, the divider
+appears after the last message. The next request appears below it. Older turns show a divider where
+the recorded providers differ.
+
+The thread header shows icons for the harness and computer. On desktop and web, hover or focus each
+icon to see its name. On mobile, open **Thread actions** to see both names.
+
 Inline switches preserve the draft and earlier turns. Send or remove queued messages first. Clear
 draft turn overrides with **Use thread defaults** before switching. Runtime restrictions, such as
 active terminals and imported or child threads, still apply. Older runtimes keep the provider

@@ -167,7 +167,9 @@ includes preparation and execution. The overall run duration and time budget inc
 
 ### Sparse worktrees
 
-Create `.worktreesparse` in the project root. Use Git non-cone patterns, one per line. For example:
+Commit `.worktreesparse` at the root of the branch you plan to check out. Dovo reads that branch’s
+file when it creates a worktree. If the branch has no pattern file, Dovo checks out all files. Use
+Git non-cone patterns, one per line. For example:
 
 ```text
 /packages/protocol/

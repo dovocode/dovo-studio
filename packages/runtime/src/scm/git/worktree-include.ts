@@ -8,15 +8,8 @@ function missing(error: unknown) {
   return error instanceof Error && 'code' in error && error.code === 'ENOENT'
 }
 
-/** Git non-cone patterns for new worktrees. The main checkout keeps its current files. */
-export async function sparseWorktreePatterns(root: string): Promise<string[]> {
-  let contents: string
-  try {
-    contents = await readFile(await safeFile(root, '.worktreesparse'), 'utf8')
-  } catch (error) {
-    if (missing(error)) return []
-    throw error
-  }
+/** Git non-cone patterns from the commit used to create the worktree. */
+export function parseSparseWorktreePatterns(contents: string): string[] {
   if (Buffer.byteLength(contents) > 32768 || contents.includes('\0'))
     throw new HttpError(
       400,

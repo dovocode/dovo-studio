@@ -32,7 +32,7 @@ import {ScreenHeader,ScreenBackContext,InlineScreenHeaderContext} from './src/ui
 import {MobileFileReview} from './src/scm/review/file-review';
 const root=createRoot(document.getElementById('app'));
 window.events=[];
-window.renderHeader=options=>flushSync(()=>root.render(<InlineScreenHeaderContext.Provider value={!!options.inline}><ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden} buttons={window.headerButtons} collapsedMenuGroups={['Project','Advanced']}/></ScreenBackContext.Provider></InlineScreenHeaderContext.Provider>));
+window.renderHeader=options=>flushSync(()=>root.render(<InlineScreenHeaderContext.Provider value={!!options.inline}><ScreenBackContext.Provider value={options.context?()=>window.events.push('context'):null}><ScreenHeader title="Start a task" titleMenu={!!options.threadContext} titleMenuContext={options.threadContext} onBack={options.explicit?()=>window.events.push('explicit'):undefined} leading={options.leading?<button>Custom leading</button>:undefined} hidden={options.hidden} buttons={window.headerButtons} collapsedMenuGroups={['Project','Advanced']}/></ScreenBackContext.Provider></InlineScreenHeaderContext.Provider>));
 const files=[{path:'first.ts',viewed:false},{path:'second.ts',viewed:true},{path:'last.ts',viewed:false}];
 function Review(){const [selected,setSelected]=useState('second.ts'),[wrap,setWrap]=useState(false);return <MobileFileReview files={files} groups={[]} selected={selected} onSelect={path=>{window.events.push(path);setSelected(path)}} related={false} onRelatedChange={()=>{}} onViewed={value=>window.events.push(value)} navigationDisabled={window.navigationDisabled} wrapLines={wrap} onWrapLinesChange={setWrap} onRetry={()=>{}}/>}
 window.renderReview=()=>flushSync(()=>root.render(<Review/>));
@@ -286,6 +286,13 @@ try {
   await page.getByRole('button', { name: 'Advanced', exact: true }).click()
   await page.getByRole('button', { name: 'Compact agent context', exact: true }).click()
   assert.equal(await page.evaluate(() => window.events.at(-1)), 'compact')
+  await page.evaluate(() => window.renderHeader({ threadContext: 'Claude Code · Work Mac' }))
+  const threadContext = page.getByText('Claude Code · Work Mac', { exact: true })
+  assert.equal(await threadContext.count(), 0)
+  await page.getByRole('button', { name: 'Thread actions', exact: true }).click()
+  await threadContext.waitFor()
+  await page.getByRole('button', { name: 'Devices', exact: true }).click()
+  await threadContext.waitFor({ state: 'detached' })
   await page.evaluate(() => {
     window.os = 'ios'
     window.renderHeader({})

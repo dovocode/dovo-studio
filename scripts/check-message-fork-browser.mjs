@@ -64,6 +64,11 @@ export const View=({children})=><div>{children}</div>;
 export const Pressable=({children,accessibilityLabel,accessibilityHint,onPress,disabled})=><button aria-label={accessibilityLabel} title={accessibilityHint} disabled={disabled} onClick={onPress}>{children}</button>;`,
     },
     {
+      path: './quote-selection',
+      importer: mobileFolder,
+      contents: 'export const QuoteSelection=()=>null;',
+    },
+    {
       path: '../../../agents/use-model-catalog',
       importer: mobileFolder,
       contents: `export const loadMobileModelCatalog=()=>{throw Error('Unexpected model read')};`,

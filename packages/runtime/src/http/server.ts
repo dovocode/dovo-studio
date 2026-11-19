@@ -1,5 +1,6 @@
+import { attachLocalPreviewSocket } from './support/local-preview-socket.js'
 import { BinaryTerminalStream } from '../terminal/binary-stream.js'
-import { STUDIO_BROWSER_SCOPE } from '@dovo/protocol'
+import { STUDIO_BROWSER_SCOPE, isBrowserLoopbackAddress } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
 import { serveTaskFile } from './endpoints/task-files.js'
@@ -237,6 +238,7 @@ export function createRuntimeServer(
     timer.unref()
     typed.set(terminalId, { characters, timer })
   }
+  const localPreviews = new Map<string, number>()
   const authenticated = new Map<WebSocket, string>()
   const tunneled = new WeakMap<WebSocket, PeerOrigin>()
   const responsive = new WeakSet<WebSocket>()
@@ -426,6 +428,49 @@ export function createRuntimeServer(
           track(client, ticket.token)
           attachBrowserSocket(client, taskId, ticket.token, services, true, ticket.resourceId)
         })
+        return
+      }
+      if (url.pathname === '/ws/local-preview') {
+        const ticket = services.tickets.consume(url.searchParams.get('ticket') ?? '')
+        if (isRunToken(ticket.token)) throw new HttpError(403, 'A paired device is required.')
+        const value: unknown = JSON.parse(ticket.resourceId)
+        if (
+          !Array.isArray(value) ||
+          value.length !== 3 ||
+          value[0] !== 'local-preview' ||
+          typeof value[1] !== 'string' ||
+          typeof value[2] !== 'string' ||
+          !isBrowserLoopbackAddress(value[2]) ||
+          !value[2].startsWith('http://')
+        )
+          throw new HttpError(403, 'Invalid local preview ticket.')
+        const [resourceId, expected] = [value[1], value[2]]
+        const device = services.devices.authenticate(ticket.token)
+        bind(ticket.token)
+        const active = localPreviews.get(device.id) ?? 0
+        if (active >= 32) throw new HttpError(429, 'Too many local preview connections.')
+        localPreviews.set(device.id, active + 1)
+        const release = () => {
+          const remaining = (localPreviews.get(device.id) ?? 1) - 1
+          if (remaining) localPreviews.set(device.id, remaining)
+          else localPreviews.delete(device.id)
+        }
+        void services.browsers
+          .localPreviewOrigin(resourceId)
+          .then((origin) => {
+            services.devices.authenticate(ticket.token)
+            if (origin !== expected || stopping || socket.destroyed)
+              throw new Error('Preview changed')
+            sockets.handleUpgrade(request, socket, head, (client) => {
+              track(client, ticket.token)
+              client.once('close', release)
+              attachLocalPreviewSocket(client, origin)
+            })
+          })
+          .catch(() => {
+            release()
+            socket.destroy()
+          })
         return
       }
       if (url.pathname === '/ws/browser') {

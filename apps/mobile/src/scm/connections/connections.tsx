@@ -12,6 +12,7 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { mutableStruct } from '@dovo/protocol'
 import { decode } from '@dovo/protocol'
+import { LinearKeySettings } from './linear-key-settings'
 import { ScreenHeader } from '../../ui/layout/screen-header'
 import { CliProfilePicker } from './cli-profile-picker'
 import { GithubConnectionStatus } from './github-connection-status'
@@ -89,6 +90,7 @@ export default function SourceControlSettings() {
                 {entry.connected ? '' : uiText(' · Offline')}
               </Text>
               <ConnectionsContent />
+              <LinearKeySettings />
             </View>
           </RuntimeScope>
         ))}

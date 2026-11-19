@@ -101,6 +101,7 @@ const built = await build({
       window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'draft':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
       window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));window.clearFiles=()=>setTask(task=>({...task,files:[]}));window.setProjectActions=actions=>{repo.actions=actions;setTask(task=>({...task}))};
+      window.setHeaderHarness=provider=>setTask(task=>({...task,harnessHandoff:provider?{id:'handoff',provider,createdAt:'2026-10-14T10:00:00Z'}:undefined}));
       const request=async(path,input)=>{
         window.calls.push({path,input});
         if(path==='/api/scm/open-location')return {path:'/remote/worktree',runtimeId:'remote',sshAddress:'ssh://dominic@runtime',kind:'folder'};
@@ -371,6 +372,19 @@ try {
       const header = page.locator('.studio-task-thread-header')
       for (const name of ['Thread actions', 'Linked pull requests', 'Show thread info'])
         await header.getByRole('button', { name, exact: true }).waitFor()
+      await page.evaluate(() => window.setHeaderHarness('codex'))
+      const harness = header.getByRole('img', { name: 'Codex', exact: true })
+      const computer = header.getByRole('img', { name: 'Dominic Mac', exact: true })
+      assert.equal(await harness.innerText(), '')
+      assert.equal(await computer.innerText(), '')
+      await harness.hover()
+      await page.getByRole('tooltip', { name: 'Codex', exact: true }).waitFor()
+      await computer.focus()
+      await page.getByRole('tooltip', { name: 'Dominic Mac', exact: true }).waitFor()
+      await page.keyboard.press('Escape')
+      await page.evaluate(() => window.setHeaderHarness('claude'))
+      await header.getByRole('img', { name: 'Claude Code', exact: true }).waitFor()
+      await page.evaluate(() => window.setHeaderHarness(undefined))
       assert.equal(
         await header.locator('[data-thread-info-branch]').textContent(),
         'fix/reconnection',

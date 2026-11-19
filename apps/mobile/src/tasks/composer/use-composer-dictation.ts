@@ -3,10 +3,12 @@ import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { useCallback, useEffect, useRef } from 'react'
-import { Keyboard } from 'react-native'
-import { useRuntimeDictation } from './use-runtime-dictation'
-import type { DictationCallbacks } from './dictation'
-import { useDictation } from './use-dictation'
+import { Alert, Keyboard } from 'react-native'
+import { useIsFocused } from 'expo-router'
+import { useMobileDictation } from './dictation-provider'
+import { useRuntime } from '../../runtime/connection/provider'
+import { useMobilePreferences } from '../../runtime/preferences/app-preferences'
+import { drafts } from '../draft/runtime-drafts'
 import { DictationDraftEdit, type DraftSelection } from './dictation-draft'
 type Cleanup = {
   status: 'cleaning' | 'failed' | 'done'
@@ -17,11 +19,17 @@ type Cleanup = {
 }
 export function useComposerDictation({
   taskId,
+  title,
+  editing,
+  draftKey,
   draft,
   cleanup,
   connected,
 }: {
   taskId: string
+  title: string
+  editing: boolean
+  draftKey: string
   draft: {
     text: string
     update: (text: string, source?: 'keyboard') => void
@@ -29,6 +37,16 @@ export function useComposerDictation({
   cleanup: (text: string) => Effect.Effect<string, Error>
   connected: boolean
 }) {
+  const service = useMobileDictation()
+  const { profile, snapshot, readRuntime } = useRuntime()
+  const preferences = useMobilePreferences()
+  const runtimeId = snapshot?.runtimeId ?? profile?.connection.runtimeId
+  const selected = !!(runtimeId && preferences.runtimeDictationIds.includes(runtimeId))
+  const owns = service.owner?.key === draftKey
+  const speech = (owns ? service.owner?.remote : selected) ? service.runtime : service.local
+  const focused = useIsFocused()
+  const location = useRef({ draftKey, focused })
+  location.current = { draftKey, focused }
   const [state, setState] = useApplicationState<Cleanup | null>(null)
   const latest = useRef({
     draft,
@@ -103,23 +121,8 @@ export function useComposerDictation({
       }),
     )
   }
-  const callbacks: DictationCallbacks = {
-    onResult: (transcript) => {
-      if (edit.current) write(edit.current.preview(transcript))
-    },
-    onFinish: (transcript) => {
-      const transaction = edit.current
-      if (!transaction || !transcript.trim()) return
-      const raw = transaction.preview(transcript)
-      write(raw)
-      void clean(transaction, transcript, raw)
-    },
-  }
-  const localSpeech = useDictation(callbacks)
-  const runtimeSpeech = useRuntimeDictation(taskId, callbacks)
-  const speech = runtimeSpeech.selected ? runtimeSpeech : localSpeech
   const speechRef = useRef(speech)
-  speechRef.current = speech
+  speechRef.current = { ...speech, clearError: owns ? speech.clearError : () => {} }
   const update = useCallback(
     (text: string, source?: 'keyboard') => {
       edit.current?.invalidate()
@@ -135,22 +138,71 @@ export function useComposerDictation({
     mounted.current = true
     return () => {
       mounted.current = false
-      edit.current?.invalidate()
-      edit.current = null
     }
   }, [])
   return {
     ...speech,
+    available: speech.available && (!service.busy || owns),
+    error: owns ? speech.error : null,
+    permissionDenied: owns && speech.permissionDenied,
+    isRecording: owns && speech.isRecording,
+    isStarting: owns && speech.isStarting,
+    isStopping: owns && speech.isStopping,
+    stop: () => {
+      if (owns) void speech.stop()
+    },
+    cancel: () => {
+      if (owns) void speech.cancel()
+    },
     state,
-    active: speech.isRecording || speech.isStarting || speech.isStopping,
-    start: (selection?: DraftSelection) => {
-      return runClientEffect(
-        mobileWorkflow(function* () {
-          reset()
-          edit.current = new DictationDraftEdit(currentText.current, selection)
-          Keyboard.dismiss()
-          yield* nativeEffect(() => speech.start())
-        }),
+    active: owns && service.busy,
+    start: async (selection?: DraftSelection) => {
+      if (service.busy) return
+      reset()
+      const initial = currentText.current
+      const transaction = new DictationDraftEdit(initial, selection)
+      const originalDraft = latest.current.draft
+      edit.current = transaction
+      let expected = initial
+      const visible = () =>
+        mounted.current && location.current.focused && location.current.draftKey === draftKey
+      Keyboard.dismiss()
+      await service.start(
+        draftKey,
+        title,
+        selected
+          ? {
+              taskId,
+              ready: connected && !!snapshot?.runtimeDictationSupported && !!profile,
+              language: preferences.dictationLanguage,
+              call: (path, input, schema, method, options) => {
+                if (!profile) return Promise.reject(new Error('This computer is no longer paired.'))
+                return readRuntime(profile, path, input, schema, method, options)
+              },
+            }
+          : undefined,
+        {
+          onResult: (transcript) => {
+            if (!visible() || edit.current !== transaction) return
+            expected = transaction.preview(transcript)
+            write(expected)
+          },
+          onFinish: (transcript) => {
+            if (!transcript.trim() || edit.current !== transaction) return
+            const raw = transaction.preview(transcript)
+            if (visible()) {
+              write(raw)
+              void clean(transaction, transcript, raw)
+            } else if (editing) {
+              // The originating queue edit verifies its saved session before applying changes.
+              originalDraft.update(raw)
+            } else {
+              void runClientEffect(
+                drafts.finishDictationEffect(draftKey, initial, expected, raw, transcript.trim()),
+              ).catch((error: unknown) => Alert.alert('Could not save dictation', String(error)))
+            }
+          },
+        },
       )
     },
     update,

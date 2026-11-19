@@ -4,6 +4,8 @@ import { BotCall } from '../../bots/bot-call'
 import { BotWorkSummary } from '../../bots/bot-work-summary'
 import { useOptionalMobileAccount } from '../../runtime/connection/account-context'
 import { BotAvatar } from '../../bots/bot-avatar'
+import { HarnessIcon } from '../../agents/harness-icon'
+import { RuntimeIcon } from '../../ui/content/runtime-icon'
 import { TaskPipelineProgress } from './task-pipeline-progress'
 import { ThreadSharing, InlineThreadSuggestions } from './thread-sharing'
 import { useTaskPanes } from '../../shell/task-panes'
@@ -20,6 +22,10 @@ import {
   taskDisplayProject,
   taskThreadInputSummary,
   runtimeComputerName,
+  providerDisplayName,
+  acpHarnessName,
+  resolveTaskAgent,
+  resolveScopedAgents,
   conversationPageSchema,
   readConversationHistory,
   cachedThread,
@@ -34,6 +40,8 @@ import {
   taskBudgetUsage,
   mutableStruct,
   type Task,
+  type RuntimeIcon as RuntimeIconName,
+  type RuntimeSnapshot,
   type Subagent,
 } from '@dovo/protocol'
 import { CodeReviewCard } from '../../scm/review/code-review-card'
@@ -131,6 +139,24 @@ function threadHasChanges(task: Task, localRepository: boolean) {
   )
 }
 
+function threadHeaderHarness(task: Task, snapshot: RuntimeSnapshot | null) {
+  const repository = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
+  const agent = resolveTaskAgent(
+    task,
+    resolveScopedAgents(
+      snapshot?.defaults,
+      task.bot ? undefined : repository,
+      snapshot?.workspace.agents ?? [],
+    ),
+  )
+  const provider = task.harnessHandoff?.provider ?? task.turns?.at(-1)?.provider ?? agent?.provider
+  if (!provider) return
+  const name =
+    (agent?.provider === provider && acpHarnessName(agent, snapshot?.acpInstallations ?? [])) ||
+    providerDisplayName(provider)
+  return { provider, name }
+}
+
 /** Keep the title and context at the same size before and after history arrives. */
 function ThreadHeaderTitle({
   title,
@@ -138,17 +164,25 @@ function ThreadHeaderTitle({
   status,
   width,
   bot,
+  harness,
+  computer,
+  computerIcon,
 }: {
   bot?: Task['bot']
   title: string
   subtitle: string
   status: string
   width: number
+  harness?: ReturnType<typeof threadHeaderHarness>
+  computer: string
+  computerIcon?: RuntimeIconName
 }) {
   const { colors } = useTheme()
   return (
     <View
-      accessibilityLabel={[title, subtitle, status].filter(Boolean).join('. ')}
+      accessibilityLabel={[title, subtitle, status, harness?.name, computer]
+        .filter(Boolean)
+        .join('. ')}
       style={{
         minHeight: 44,
         flexDirection: 'row',
@@ -163,14 +197,18 @@ function ThreadHeaderTitle({
         <Text numberOfLines={1} style={{ color: colors.text, fontSize: 16, fontWeight: '600' }}>
           {title}
         </Text>
-        <Text
-          testID="Task device subtitle"
-          accessibilityLabel={subtitle}
-          numberOfLines={1}
-          style={{ color: colors.muted, fontSize: 11, lineHeight: 15 }}
-        >
-          {[subtitle, status].filter(Boolean).join(' · ')}
-        </Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, minWidth: 0 }}>
+          {harness && <HarnessIcon provider={harness.provider} size={12} />}
+          <RuntimeIcon icon={computerIcon} size={12} color={colors.muted} />
+          <Text
+            testID="Task device subtitle"
+            accessibilityLabel={subtitle}
+            numberOfLines={1}
+            style={{ color: colors.muted, fontSize: 11, lineHeight: 15, flexShrink: 1 }}
+          >
+            {[subtitle, status].filter(Boolean).join(' · ')}
+          </Text>
+        </View>
       </View>
     </View>
   )
@@ -251,17 +289,8 @@ export function TaskDetail({
 
   const { width } = useWindowDimensions()
 
-  const {
-    profile,
-    profiles,
-    overviews,
-    connection,
-    snapshot,
-    connected,
-    refresh,
-    readCache,
-    activeId,
-  } = useRuntime()
+  const { profile, overviews, connection, snapshot, connected, refresh, readCache, activeId } =
+    useRuntime()
   const panes = useTaskPanes()
   const car = useCarMode()
   const recoveryScope = JSON.stringify([
@@ -327,14 +356,10 @@ export function TaskDetail({
   const displayProject = taskDisplayProject(task, snapshot?.workspace.repositories ?? [])
   const runtimeHost = runtimeComputerName({
     profile,
-    snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
+    snapshot: { runtimeHost: snapshot?.runtimeHost ?? task.turns?.at(-1)?.runtimeHost },
   })
-  const subtitle = [
-    task.bot ? task.bot.role : projectDisplayName(displayProject, ''),
-    profiles.length > 1 ? runtimeHost : undefined,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const subtitle = task.bot?.role ?? projectDisplayName(displayProject, '')
+  const harness = threadHeaderHarness(task, snapshot)
   const hasProject = !task.bot && !!displayProject && displayProject.kind !== 'scratch'
   const pendingFileEdit =
     !loaded &&
@@ -356,6 +381,7 @@ export function TaskDetail({
           leading={<Action secondary label={uiText('Back')} onPress={onBack} />}
           titleMenu
           titleMenuDisabled
+          titleMenuContext={[harness?.name, runtimeHost].filter(Boolean).join(' · ')}
           buttons={[
             {
               label: uiText('Chat'),
@@ -388,6 +414,9 @@ export function TaskDetail({
               bot={task.bot}
               title={task.title}
               subtitle={subtitle}
+              harness={harness}
+              computer={runtimeHost}
+              computerIcon={snapshot?.runtimeIcon}
               status={connected ? 'Loading conversation…' : 'Offline'}
               width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
             />
@@ -449,7 +478,7 @@ function TaskDetailContent({
   const { focused, navigate } = useNavigation()
   const { width } = useWindowDimensions()
   const panes = useTaskPanes()
-  const { snapshot, connected, profiles, profile, callEffect, activeId, connection } = useRuntime()
+  const { snapshot, connected, profile, callEffect, activeId, connection } = useRuntime()
   const worktreeThread = useAction()
   const [transferring, setTransferring] = useState(false)
   const [continuing, setContinuing] = useState<'choose' | 'machine' | null>(null)
@@ -755,15 +784,10 @@ function TaskDetailContent({
   const latestTurn = task.turns?.at(-1)
   const runtimeHost = runtimeComputerName({
     profile,
-    snapshot: { runtimeHost: latestTurn?.runtimeHost ?? snapshot?.runtimeHost },
+    snapshot: { runtimeHost: snapshot?.runtimeHost ?? latestTurn?.runtimeHost },
   })
-  // Name the computer only when there is more than one to tell apart.
-  const subtitle = [
-    task.bot ? task.bot.role : projectDisplayName(displayProject, ''),
-    profiles.length > 1 ? runtimeHost : undefined,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+  const subtitle = task.bot?.role ?? projectDisplayName(displayProject, '')
+  const harness = threadHeaderHarness(task, snapshot)
   const status =
     (!task.archived && !task.archivedAt && inputLabel) ||
     taskRowStatus(task, false, connected, Date.now())
@@ -874,12 +898,16 @@ function TaskDetailContent({
       <ScreenHeader
         title={task.title}
         titleMenu={!startup?.temporary}
+        titleMenuContext={[harness?.name, runtimeHost].filter(Boolean).join(' · ')}
         titleContent={
           startup?.temporary ? undefined : (
             <ThreadHeaderTitle
               bot={task.bot}
               title={task.title}
               subtitle={subtitle}
+              harness={harness}
+              computer={runtimeHost}
+              computerIcon={snapshot?.runtimeIcon}
               status={status}
               width={(panes.expanded ? panes.detailWidth : width) - 180 - (hasProject ? 44 : 0)}
             />

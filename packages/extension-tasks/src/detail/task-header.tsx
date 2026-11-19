@@ -4,7 +4,7 @@ import { useThreadChildren } from './use-thread-children'
 import { sideThreadAttentionTarget } from '@dovo/protocol'
 import { SideThreadAttentionBadge, useSideThreadAttention } from '../chat/thread/side-threads-panel'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   runtimeComputerName,
   taskDisplayProject,
@@ -12,6 +12,7 @@ import {
   taskParentReference,
   taskThreadInputSummary,
   taskPullStatusFor,
+  providerDisplayName,
 } from '@dovo/protocol'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
@@ -19,7 +20,6 @@ import {
   useStudioHost,
   encodeWorkTarget,
   issueLabel,
-  providers,
   acpHarnessName,
   resolveTaskAgent,
   resolveScopedAgents,
@@ -54,6 +54,9 @@ import {
   ProjectIcon,
   DropdownMenu,
   AgentAvatar,
+  Tooltip,
+  TooltipTrigger,
+  TooltipContent,
   PullRequestIcon,
   cn,
 } from '@dovo/studio-ui'
@@ -82,6 +85,25 @@ export type TaskSurface =
   | 'side-chats'
   | 'projects'
   | 'artifacts'
+
+function ThreadHeaderIcon({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <Tooltip disableHoverableContent>
+      <TooltipTrigger asChild>
+        <span
+          role="img"
+          aria-label={label}
+          tabIndex={0}
+          className="studio-thread-header-icon inline-flex shrink-0 items-center rounded-sm p-0.5 focus-visible:outline focus-visible:outline-ring"
+        >
+          {children}
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 export function TaskHeader({
   task,
   parentThread,
@@ -190,12 +212,12 @@ export function TaskHeader({
     task,
     resolveScopedAgents(snapshot?.defaults, task.bot ? undefined : repo, workspace.agents),
   )
-  const provider = task.turns?.at(-1)?.provider ?? agent?.provider
+  const provider = task.harnessHandoff?.provider ?? task.turns?.at(-1)?.provider ?? agent?.provider
   const harness =
     (agent && agent.provider === provider
       ? acpHarnessName(agent, snapshot?.acpInstallations ?? [])
       : undefined) ??
-    (provider && providers[provider].name)
+    (provider && providerDisplayName(provider))
   const primaryPull = linkedPulls[0]
   const pullStatus = primaryPull && taskPullStatusFor(task, primaryPull.url)
   const failedChecks = pullStatus?.state === 'open' && pullStatus.checks === 'failed'
@@ -208,17 +230,15 @@ export function TaskHeader({
     snapshot,
   })
   const uiText = useInterfaceText()
-  const harnessContext = provider && (
-    <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={harness || undefined}>
+  const harnessContext = provider && harness && (
+    <ThreadHeaderIcon label={harness}>
       <AgentAvatar provider={provider} className="size-3.5 shrink-0" />
-      <span className="truncate">{harness}</span>
-    </span>
+    </ThreadHeaderIcon>
   )
   const machineContext = (
-    <span className="inline-flex min-w-0 max-w-36 items-center gap-1" title={executionHost}>
+    <ThreadHeaderIcon label={executionHost ?? uiText('Selected computer')}>
       <RuntimeIcon icon={snapshot?.runtimeIcon} className="size-3.5 shrink-0" />
-      <span className="truncate">{executionHost ?? 'Selected computer'}</span>
-    </span>
+    </ThreadHeaderIcon>
   )
   const pullContext = primaryPull && (
     <Button
@@ -507,14 +527,8 @@ export function TaskHeader({
                     }
                   />
                 )}
-                <span
-                  className="inline-flex min-w-0 max-w-36 items-center gap-1 truncate"
-                  title={`Runs on ${executionHost ?? 'the selected computer'}${!connected ? ' · offline' : ''}`}
-                >
-                  <RuntimeIcon icon={snapshot?.runtimeIcon} size={10} className="shrink-0" />
-                  <span className="truncate">{executionHost ?? 'Selected computer'}</span>
-                  {!connected && <span className="shrink-0">· Offline</span>}
-                </span>
+                {machineContext}
+                {!connected && <span className="shrink-0">Offline</span>}
                 {task.workItem && (
                   <Button
                     size="sm"

@@ -394,3 +394,21 @@ available poll after two minutes, or when page one changes or you refresh. A fai
 the previous list or discussion. Filters, pagination depth, drafts and account/destination guards
 remain in effect. See [performance verification](performance.md#jira-reads) for commands, measured
 fixture results and device-test limits.
+
+## Read Linear issues
+
+Create a read-only Linear personal API key for the workspace or teams you want to browse. Open
+**Settings → Source control**, find the computer, and enter the key under **Linear**. Choose **Save
+key**. The computer tests the key with Linear before it saves it. Dovo never displays the saved
+value. Use the same settings to replace or remove it.
+
+Open **Issues → Linear** on desktop, web, or mobile. Choose a computer if several supply Linear
+access. You can search by title or issue ID, expand an issue, copy its description, or open it in
+Linear. Make issue changes on the Linear site.
+
+A saved key takes precedence over `DOVO_LINEAR_API_KEY`. Removing a saved key restores the
+environment key if the runtime has one. To remove all access, also remove that variable and restart
+the runtime.
+
+On desktop and web, hover over or focus an issue link in a thread to see its title and status when
+Dovo can match one connected Git or Jira source. Select the link to use the normal link actions.

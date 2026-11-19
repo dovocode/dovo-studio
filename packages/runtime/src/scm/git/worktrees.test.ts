@@ -9,6 +9,7 @@ import { listWorktreesEffect, removeWorktreeEffect, worktreeChoicesEffect } from
 import { Housekeeping } from '../../agents/tasks/housekeeping'
 import { runClientEffect } from '@dovo/client-runtime'
 import { handoffTask } from '../tasks/task-handoff'
+import { GitService } from './git'
 import { TaskCheckout } from '../tasks/task-checkout'
 
 const cleanups: Array<() => Promise<void>> = []
@@ -430,4 +431,30 @@ it('creates sparse worktrees from repository patterns without changing the main 
   expect((await s.git.command(f.directory, ['status', '--porcelain'])).trim()).toBe('')
   await s.git.command(cwd, ['sparse-checkout', 'disable'])
   expect(await readFile(join(cwd, 'omit', 'hidden.txt'), 'utf8')).toBe('hidden\n')
+})
+
+it('uses the target branch sparse patterns when the source checkout has other rules', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const root = f.directory
+  const container = await mkdtemp(join(tmpdir(), 'dovo-branch-sparse-'))
+  cleanups.push(() => rm(container, { recursive: true, force: true }))
+  const target = join(container, 'checkout')
+  const sourceBranch = (await git.command(root, ['branch', '--show-current'])).trim()
+  await writeFile(join(root, 'source.txt'), 'source')
+  await writeFile(join(root, 'target.txt'), 'target')
+  await writeFile(join(root, '.worktreesparse'), '/source.txt\n')
+  await git.command(root, ['add', '.'])
+  await git.command(root, ['commit', '-qm', 'Add source patterns'])
+  await git.command(root, ['switch', '-c', 'target-patterns'])
+  await writeFile(join(root, '.worktreesparse'), '/target.txt\n')
+  await git.command(root, ['commit', '-qam', 'Select target file'])
+  await git.command(root, ['switch', sourceBranch])
+
+  await git.addWorktree(root, target, [target, 'target-patterns'])
+
+  expect(await readFile(join(target, 'target.txt'), 'utf8')).toBe('target')
+  expect(existsSync(join(target, 'source.txt'))).toBe(false)
+  expect(existsSync(join(root, 'target.txt'))).toBe(true)
 })

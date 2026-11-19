@@ -50,7 +50,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
         : [
             {
               path: 'react-native',
-              contents: `export const Platform={OS:'ios'};export const AccessibilityInfo={announceForAccessibility(){}};export const Alert={alert(){}};export const ActionSheetIOS={showActionSheetWithOptions(){}};export const View=({children})=><div>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
+              contents: `export const Platform={OS:'web'};export const TextInput=()=>null;export const AccessibilityInfo={announceForAccessibility(){}};export const Alert={alert(){}};export const ActionSheetIOS={showActionSheetWithOptions(){}};export const View=({children})=><div>{children}</div>;export const Pressable=({children,accessibilityLabel,onPress})=><button aria-label={accessibilityLabel} onClick={onPress}>{children}</button>;`,
             },
             {
               path: '../../../agents/use-model-catalog',
@@ -70,7 +70,7 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
             {
               path: '../../../ui/theme',
               importer: folder,
-              contents: `export const useTheme=()=>({colors:{muted:'#aaa'}});`,
+              contents: `export const useTheme=()=>({colors:{muted:'#aaa'},styles:{}});`,
             },
             {
               path: '../../../ui/content/clipboard',
@@ -86,6 +86,21 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
               path: '../state/provider',
               importer: folder,
               contents: `export const useAppendConversationTemplate=()=>window.append;export const useConversationSelector=selector=>selector({task:window.task,history:{setBookmark:()=>{}}});export const useConversationPresentation=()=>undefined;export const usePendingConversationMessage=()=>null;`,
+            },
+            {
+              path: '../../../ui/controls/action',
+              importer: folder,
+              contents: `export const Action=({label,onPress,disabled})=><button onClick={onPress} disabled={disabled}>{label}</button>;`,
+            },
+            {
+              path: '../../../ui/layout/sheet',
+              importer: folder,
+              contents: `import {useImperativeHandle} from 'react';export const Sheet=({ref,title,children,footer,onClose})=>{useImperativeHandle(ref,()=>({dismiss:action=>{onClose();action?.()}}));return <section role="dialog" aria-label={title}>{children}{footer}</section>};`,
+            },
+            {
+              path: '../../composer/native-composer-input',
+              importer: folder,
+              contents: `export const nativeReferenceMessagesAvailable=false;export const NativeReferenceMessage=()=>null;`,
             },
             { path: 'expo-router', contents: `export const router={};` },
             {
@@ -124,6 +139,27 @@ function App(){const[draft,setDraft]=useState('Unsent work');const[user,setUser]
     assert.ok(draft.includes('assistant-1'))
     assert.ok(draft.includes('conversation_read'))
     assert.ok(draft.length < 750)
+    if (platform === 'mobile') {
+      await page.getByRole('textbox', { name: 'Draft' }).fill('Keep this draft')
+      await page.getByRole('button', { name: 'Quote selection', exact: true }).click()
+      const source = page.getByRole('textbox', { name: 'Response text' })
+      const expected = (await source.inputValue()).slice(4, 14)
+      await source.focus()
+      await source.press('Home')
+      for (let index = 0; index < 4; index++) await source.press('ArrowRight')
+      for (let index = 0; index < 10; index++) await source.press('Shift+ArrowRight')
+      await page.getByRole('button', { name: 'Add quote to draft' }).click()
+      const quote = await page.getByRole('textbox', { name: 'Draft' }).inputValue()
+      assert.ok(quote.startsWith('Keep this draft\n\n'))
+      assert.ok(quote.includes('assistant-1'))
+      assert.equal(
+        quote
+          .split('\n')
+          .filter((line) => line.startsWith('> '))
+          .join('\n'),
+        '> ' + expected,
+      )
+    }
     await page.evaluate(() => window.setUser(true))
     await page
       .getByRole('button', { name: 'Reply to response', exact: true })

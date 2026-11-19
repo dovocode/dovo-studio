@@ -146,6 +146,7 @@ import {
   Toggle,
   useNavigationSidebar,
 } from '@dovo/studio-ui'
+import { copyBrowserSnapshot } from './browser-snapshot-clipboard'
 import { useScreenshotAttachment } from './screenshot-attachment'
 import { RemoteBrowser, type RemoteBrowserControls } from './remote-browser'
 import { DeviceList } from './device-list'
@@ -2466,6 +2467,21 @@ function BrowserContent({
         throw new Error('Could not capture the browser. Update the desktop app and try again.')
       await screenshots.attach(result.image)
     })
+  const copySnapshot = () =>
+    void act(() => {
+      const source = { url: history.url || url, title: history.title }
+      return copyBrowserSnapshot(async () => {
+        const image =
+          mode === 'remote'
+            ? await remote.current?.capture()
+            : (await browser?.({ action: 'screenshot', key: browserKey }))?.image
+        if (!image) throw new Error('Could not capture the current browser tab.')
+        const current = pageNavigation.current.history.url
+        if (current && current !== source.url)
+          throw new Error('The page changed during capture. Copy the snapshot again.')
+        return image
+      }, source)
+    })
   useEffect(() => {
     if (mode === 'remote' && remoteOnline) remote.current?.viewport(preset, landscape)
   }, [mode, activeTab, preset, landscape, remoteOnline])
@@ -2674,6 +2690,18 @@ function BrowserContent({
 
           {(mode === 'web' || mode === 'remote') && (
             <div className="studio-browser-page-settings flex flex-col">
+              {!!(history.url || url) && (mode === 'remote' ? remoteOnline : !!browser) && (
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="ghost"
+                  className="justify-start gap-2 text-xs"
+                  disabled={busy}
+                  onClick={copySnapshot}
+                >
+                  <Camera size={14} /> Copy snapshot
+                </Button>
+              )}
               {!shared && mode === 'remote' && (
                 <Button
                   type="button"

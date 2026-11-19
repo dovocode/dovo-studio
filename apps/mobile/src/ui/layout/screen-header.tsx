@@ -35,6 +35,7 @@ export function ScreenHeader({
   titleContent,
   titleMenu = false,
   titleMenuDisabled = false,
+  titleMenuContext,
   subtitle,
   leading,
   actions,
@@ -49,6 +50,7 @@ export function ScreenHeader({
   titleContent?: ReactNode
   titleMenu?: boolean
   titleMenuDisabled?: boolean
+  titleMenuContext?: string
   subtitle?: string
   leading?: ReactNode
   actions?: ReactNode
@@ -72,6 +74,7 @@ export function ScreenHeader({
     <Pressable
       accessibilityRole="button"
       accessibilityLabel={uiText('Thread actions')}
+      accessibilityHint={titleMenuContext}
       disabled={titleMenuDisabled}
       accessibilityState={{ disabled: titleMenuDisabled }}
       onPress={() => setMenu(true)}
@@ -199,6 +202,7 @@ export function ScreenHeader({
         {menu && (
           <HeaderActionSheet
             title={screenTitle}
+            context={titleMenuContext}
             buttons={buttons ?? []}
             collapsedGroups={collapsedMenuGroups}
             onClose={() => setMenu(false)}
@@ -262,6 +266,7 @@ export function ScreenHeader({
       {menu && (
         <HeaderActionSheet
           title={screenTitle}
+          context={titleMenuContext}
           buttons={buttons ?? []}
           collapsedGroups={collapsedMenuGroups}
           onClose={() => setMenu(false)}
@@ -273,11 +278,13 @@ export function ScreenHeader({
 
 function HeaderActionSheet({
   title,
+  context,
   buttons,
   onClose,
   collapsedGroups,
 }: {
   title: string
+  context?: string
   buttons: HeaderAction[]
   collapsedGroups: readonly string[]
   onClose: () => void
@@ -287,6 +294,7 @@ function HeaderActionSheet({
   const sheet = useRef<SheetHandle>(null)
   return (
     <Sheet ref={sheet} title={title} onClose={onClose}>
+      {!!context && <Text style={{ color: colors.muted, fontSize: 13 }}>{context}</Text>}
       {groupHeaderActions(buttons).map(({ name, actions }) => (
         <View key={name} style={{ gap: name ? 2 : 12 }}>
           {!!name &&

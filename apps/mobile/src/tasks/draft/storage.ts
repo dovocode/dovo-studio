@@ -519,6 +519,31 @@ export function createDraftStorage(storage: Storage) {
     readEffect,
     writeEffect,
     appendEffect,
+    finishDictationEffect: (
+      key: string,
+      initial: string,
+      expected: string,
+      final: string,
+      transcript: string,
+    ) =>
+      serialize(
+        key,
+        Effect.gen(function* () {
+          const previous = yield* load(key)
+          const current = publishedText.get(key) ?? previous?.text ?? initial
+          const text =
+            current === expected ? final : [current, transcript].filter(Boolean).join('\n\n')
+          if (text === current) return
+          appendedAt.set(key, ++revision)
+          publishedText.set(key, text)
+          listeners.get(key)?.forEach((listener) => listener(text))
+          yield* save(key, {
+            ...previous,
+            text,
+            submission: previous?.submission?.accepted ? undefined : previous?.submission,
+          })
+        }),
+      ),
     stageForkEffect,
     confirmForkEffect,
     finishForkEffect,

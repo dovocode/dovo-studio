@@ -1,3 +1,4 @@
+import { LocalBrowserPreview } from './local-browser-preview'
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { BrowserSearchEngine } from '@dovo/protocol'
 import { useScreenshotAttachment } from './screenshot-attachment'
@@ -16,8 +17,8 @@ import {
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { type ComponentRef, useEffect, useLayoutEffect, useRef } from 'react'
-import { type TextInput, Alert, AppState, View } from 'react-native'
+import { type ComponentRef, useCallback, useEffect, useLayoutEffect, useRef } from 'react'
+import { type TextInput, Alert, AppState, Platform, View } from 'react-native'
 import { WebView } from 'react-native-webview'
 import { Schema, Effect } from 'effect'
 import { remoteBrowserHtml } from '@dovo/protocol/browser-viewer'
@@ -30,6 +31,7 @@ import { browserAddress } from '../../browser/browser-state'
 import { useOpenAppLink } from '../../ui/content/open-link'
 import { Action } from '../../ui/controls/action'
 import { shareBrowserDownload } from './browser-download'
+const localPreviewTicket = mutableStruct({ ticket: Schema.String })
 const bridgeSchema = mutableStruct({
   channel: Schema.Literal('dovo-browser'),
   type: Schema.Literals(['ready', 'reconnect', 'close', 'screenshot']),
@@ -107,6 +109,7 @@ function RemoteBrowserContent({
   const [browserState, setBrowserState] = useApplicationState<
     Extract<RemoteBrowserMessage, { type: 'state' }> | undefined
   >(undefined)
+  const [localPreview, setLocalPreview] = useApplicationState('')
   const [online, setOnline] = useApplicationState(false)
   const [address, setAddress] = useApplicationState(initialUrl ?? '')
   const lastAddress = useRef(initialUrl ?? '')
@@ -116,7 +119,30 @@ function RemoteBrowserContent({
   const [preset, setPreset] = useApplicationState('fill')
   const [landscape, setLandscape] = useApplicationState(false)
 
-  const { connected, connection, profile, profiles, readEffect } = useRuntime()
+  const { connected, connection, profile, profiles, readEffect, snapshot } = useRuntime()
+  const localhost = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
+  const canOpenLocal =
+    localhost &&
+    Platform.OS !== 'web' &&
+    !!snapshot?.localBrowserPreviewSupported &&
+    online &&
+    (browserState?.url ?? initialUrl ?? '').startsWith('http://')
+  const localTicket = useCallback(async () => {
+    if (!connection || !localPreview) throw new Error('Reconnect to the preview computer.')
+    const { ticket } = await runClientEffect(
+      readEffect(
+        '/api/previews/browser/local-preview/ticket',
+        {
+          taskId,
+          tabId,
+          profileId: tabId ? profileId : undefined,
+          origin: new URL(localPreview).origin,
+        },
+        localPreviewTicket,
+      ),
+    )
+    return createRuntimeClient(connection).socketUrl('/ws/local-preview', ticket)
+  }, [connection, localPreview, profileId, readEffect, tabId, taskId])
   const browserOwner = profile?.name ?? uiText('Unavailable computer')
   const loopbackHint = isBrowserLoopbackAddress(browserState?.url ?? initialUrl ?? '')
     ? uiText('Local address on {value0}', { value0: browserOwner })
@@ -571,6 +597,13 @@ function RemoteBrowserContent({
           }}
         />
       )}
+      {!!localPreview && !deviceId && (
+        <LocalBrowserPreview
+          page={localPreview}
+          ticket={localTicket}
+          onClose={() => setLocalPreview('')}
+        />
+      )}
       {!deviceId && !expanded && (
         <BrowserToolbar
           addressRef={addressField}
@@ -584,20 +617,23 @@ function RemoteBrowserContent({
           mode="remote"
           onMode={onMode ? (next) => onMode(next, lastAddress.current) : undefined}
           onExpand={onExpand}
+          externalLabel={canOpenLocal ? uiText('Open preview on this phone') : undefined}
           onExternal={
-            /^https?:\/\//i.test(lastAddress.current)
-              ? () => {
-                  void runClientEffect(
-                    nativeEffect(() => openLink(lastAddress.current, true)).pipe(
-                      Effect.catch((error) =>
-                        nativeEffect(() =>
-                          Alert.alert(uiText('Could not open browser'), String(error)),
+            canOpenLocal
+              ? () => setLocalPreview(lastAddress.current)
+              : !localhost && /^https?:\/\//i.test(lastAddress.current)
+                ? () => {
+                    void runClientEffect(
+                      nativeEffect(() => openLink(lastAddress.current, true)).pipe(
+                        Effect.catch((error) =>
+                          nativeEffect(() =>
+                            Alert.alert(uiText('Could not open browser'), String(error)),
+                          ),
                         ),
                       ),
-                    ),
-                  )
-                }
-              : undefined
+                    )
+                  }
+                : undefined
           }
           onAddress={setAddress}
           onEditing={(value) => {

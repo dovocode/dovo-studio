@@ -52,3 +52,7 @@ space.
 
 The mobile browser check adapts React Native controls to the DOM. It does not verify SwiftUI sheet
 rendering or physical iPhone behavior.
+
+On mobile, tap a finished assistant response to show its actions. Choose **Quote selection**, select
+text in the response sheet, and choose **Add quote to draft**. The quote includes the exact
+selection and a reference to the original response.

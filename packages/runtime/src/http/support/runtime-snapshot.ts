@@ -149,6 +149,7 @@ export function runtimeSnapshot(
             ...s.questions.list().map((request) => request.taskId),
             ...s.secureInputs.list().map((request) => request.taskId),
           ])
+    const linearKeySource = s.linearSettings.source()
     const storedWorkspace = page?.workspace ?? localWorkspace
     const forgeConnections = new Map(
       storedWorkspace.repositories.some((repository) => repository.forge)
@@ -336,6 +337,9 @@ export function runtimeSnapshot(
       automationStepInputsSupported: true,
       automationStartupRetrySupported: true,
       browserTimezoneSupported: true,
+      localBrowserPreviewSupported: true,
+      linearKeySource,
+      linearIssuesSupported: linearKeySource !== 'none' ? true : undefined,
       sparseWorktreesSupported: true,
       pullFileLoadingSupported: true,
       usageRetentionSupported: true,

@@ -928,6 +928,61 @@ try {
     )
     await page.getByText('View job results', { exact: true }).click()
     await page.getByText('Assertion failed', { exact: false }).waitFor()
+
+    await page.evaluate(() => {
+      window.setTask((task) => ({
+        ...task,
+        id: 'handoff-thread',
+        harnessHandoff: { id: 'handoff', provider: 'claude', createdAt: '2026-10-03T10:02:00Z' },
+        turns: [
+          {
+            id: 'original-turn',
+            assistantId: 'original-reply',
+            provider: 'codex',
+            startedAt: '2026-10-03T10:01:00Z',
+            status: 'completed',
+          },
+        ],
+        messages: [
+          {
+            id: 'original-prompt',
+            turnId: 'original-turn',
+            role: 'user',
+            text: 'Before the switch',
+            createdAt: '2026-10-03T10:01:00Z',
+          },
+          {
+            id: 'original-reply',
+            turnId: 'original-turn',
+            role: 'assistant',
+            text: 'Saved work',
+            createdAt: '2026-10-03T10:01:01Z',
+          },
+        ],
+      }))
+    })
+    const handoff = page.getByText('Harness switched from Codex to Claude Code', { exact: true })
+    await handoff.waitFor()
+    const before = page.getByText('Before the switch', { exact: true })
+    assert.ok((await before.boundingBox()).y < (await handoff.boundingBox()).y)
+    await page.evaluate(() => {
+      window.setTask((task) => ({
+        ...task,
+        messages: [
+          ...task.messages,
+          {
+            id: 'next-prompt',
+            role: 'user',
+            text: 'After the switch',
+            createdAt: '2026-10-03T10:03:00Z',
+          },
+        ],
+      }))
+    })
+    const after = page.getByText('After the switch', { exact: true })
+    await after.waitFor()
+    assert.equal(await handoff.count(), 1)
+    assert.ok((await handoff.boundingBox()).y < (await after.boundingBox()).y)
     assert.deepEqual(errors, [])
     await page.close()
   }

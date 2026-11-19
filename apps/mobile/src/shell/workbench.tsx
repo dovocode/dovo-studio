@@ -1,3 +1,4 @@
+import { MobileDictationProvider } from '../tasks/composer/dictation-provider'
 import { recordClientAction } from '@dovo/protocol'
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
@@ -299,6 +300,7 @@ export function Workbench() {
     runtimeId?: string
     repositoryId?: string
     itemId?: string
+    taskId?: string
     url?: string
   }>()
   // Cold source links must prepare the correct retained collection underneath the detail.
@@ -720,24 +722,32 @@ export function Workbench() {
           enabled={keyboard}
           behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
         >
-          <TaskListViewProvider>
-            <SceneContext.Provider value={sceneContext}>
-              <Stack
-                screenOptions={{
-                  headerShown: false,
-                  statusBarStyle: mode === 'dark' ? 'light' : 'dark',
-                }}
-              >
-                <Stack.Screen name="(tabs)" />
-                <Stack.Screen name="(more)" />
-                <Stack.Screen name="jobs" />
-              </Stack>
-              {/* Link previews can open from any tab and need its navigation host. */}
-              <NavigationContext.Provider value={navigations[active]}>
-                <LinkBrowser />
-              </NavigationContext.Provider>
-            </SceneContext.Provider>
-          </TaskListViewProvider>
+          <MobileDictationProvider
+            draftKey={
+              routeParams.taskId && routeParams.runtimeId
+                ? `dovo.draft.${encodeURIComponent(routeParams.runtimeId)}.${routeParams.taskId}`
+                : undefined
+            }
+          >
+            <TaskListViewProvider>
+              <SceneContext.Provider value={sceneContext}>
+                <Stack
+                  screenOptions={{
+                    headerShown: false,
+                    statusBarStyle: mode === 'dark' ? 'light' : 'dark',
+                  }}
+                >
+                  <Stack.Screen name="(tabs)" />
+                  <Stack.Screen name="(more)" />
+                  <Stack.Screen name="jobs" />
+                </Stack>
+                {/* Link previews can open from any tab and need its navigation host. */}
+                <NavigationContext.Provider value={navigations[active]}>
+                  <LinkBrowser />
+                </NavigationContext.Provider>
+              </SceneContext.Provider>
+            </TaskListViewProvider>
+          </MobileDictationProvider>
         </KeyboardAvoidingView>
       </SafeAreaView>
     </KeyboardCommands>

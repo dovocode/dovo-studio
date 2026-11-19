@@ -278,3 +278,5 @@ export { useTurnAnnouncements } from './use-turn-announcements'
 
 export { useSecretReferenceCheck } from './use-secret-reference-check'
 export * from './shortcuts'
+
+export * from './scm/use-linear-issues'

@@ -12,6 +12,9 @@ import {
   checkpointFiles,
   formatTurnDuration,
   providerRetryLabel,
+  conversationHarnessHandoffs,
+  providerDisplayName,
+  type HarnessHandoffMarker,
   type FileKind,
 } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
@@ -558,6 +561,27 @@ const messageKey = (id: string) => id
 const followLatestPosition = { minIndexForVisible: 0, autoscrollToTopThreshold: 0 }
 const preserveReadingPosition = { minIndexForVisible: 0 }
 const readingPositions = createReadingPositionCache()
+
+function HarnessHandoffDivider({ provider, previousProvider }: HarnessHandoffMarker) {
+  const { colors } = useTheme()
+  const name = providerDisplayName(provider)
+  return (
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, marginVertical: 8 }}>
+      <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+      <Text style={{ color: colors.muted, fontSize: 12, textAlign: 'center', flexShrink: 1 }}>
+        {previousProvider && previousProvider !== provider ? (
+          <InterfaceText values={{ value0: providerDisplayName(previousProvider), value1: name }}>
+            {'Harness switched from {value0} to {value1}'}
+          </InterfaceText>
+        ) : (
+          <InterfaceText values={{ value0: name }}>{'Continued with {value0}'}</InterfaceText>
+        )}
+      </Text>
+      <View style={{ flex: 1, height: 1, backgroundColor: colors.border }} />
+    </View>
+  )
+}
+
 export function Conversation({
   setup,
   startModes,
@@ -573,6 +597,10 @@ export function Conversation({
 
   const history = useConversationSelector((value) => value.history)
   const task = useConversationSelector((value) => value.task)
+  const handoffs = useMemo(
+    () => conversationHarnessHandoffs(task, history.hasMore),
+    [task.messages, task.turns, task.harnessHandoff, history.hasMore],
+  )
   const legacyEvents = useConversationSelector((value) => value.legacyEvents)
   const announcementSteps = useConversationSelector((value) => value.announcementSteps)
   const activityError = useConversationSelector((value) => value.activityError)
@@ -896,23 +924,27 @@ export function Conversation({
     },
   )
   const renderMessage = useCallback(
-    ({ item }: { item: string }) => (
-      <View
-        collapsable={false}
-        ref={(node) => {
-          if (node) cellViews.current.set(item, node)
-          else cellViews.current.delete(item)
-        }}
-        onLayout={() => {
-          scheduleRestore()
-          capture()
-        }}
-      >
-        {renderConversationMessage({ item })}
-        <ConversationThreadActions messageId={item} />
-      </View>
-    ),
-    [scheduleRestore, capture],
+    ({ item }: { item: string }) => {
+      const handoff = handoffs.before.get(item)
+      return (
+        <View
+          collapsable={false}
+          ref={(node) => {
+            if (node) cellViews.current.set(item, node)
+            else cellViews.current.delete(item)
+          }}
+          onLayout={() => {
+            scheduleRestore()
+            capture()
+          }}
+        >
+          {handoff && <HarnessHandoffDivider {...handoff} />}
+          {renderConversationMessage({ item })}
+          <ConversationThreadActions messageId={item} />
+        </View>
+      )
+    },
+    [scheduleRestore, capture, handoffs.before],
   )
   const recordScroll = ({ nativeEvent }: NativeSyntheticEvent<NativeScrollEvent>) => {
     viewport.refresh()
@@ -1153,6 +1185,7 @@ export function Conversation({
                   gap: 10,
                 }}
               >
+                {handoffs.latest && <HarnessHandoffDivider {...handoffs.latest} />}
                 <ConversationThreadActions />
                 {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
                 <TaskApprovals taskId={task.id} />

@@ -32,7 +32,8 @@ export const scmExtension = defineStudioExtension(
       navigationGroup: 'settings',
       settingsScope: 'computer',
       settingsSection: 'coding',
-      keywords: 'github gitlab bitbucket azure forgejo gitea jira accounts forges pull requests',
+      keywords:
+        'github gitlab bitbucket azure forgejo gitea jira linear API key accounts forges pull requests',
       load: () => import('./connections/forge-settings'),
     },
     {

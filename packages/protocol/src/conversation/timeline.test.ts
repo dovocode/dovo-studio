@@ -3,6 +3,7 @@ import type { Task, TaskTurn } from '../workspace'
 import { recentTools } from '../automation/activity'
 import {
   conversationTurns,
+  conversationHarnessHandoffs,
   conversationPresentation,
   conversationMessageTurns,
   conversationToolsByMessage,
@@ -53,6 +54,54 @@ const messages: Task['messages'] = [
   },
 ]
 const task = { messages, turns: [turn] }
+
+it('places a saved harness handoff before the next request and shows it at the end until then', () => {
+  const handoff = {
+    ...task,
+    harnessHandoff: {
+      id: 'switch',
+      provider: 'claude' as const,
+      createdAt: '2026-10-03T10:01:30Z',
+    },
+  }
+  const marker = { previousProvider: 'codex', provider: 'claude' }
+  expect(conversationHarnessHandoffs(handoff, false).latest).toEqual(marker)
+
+  const request: Task['messages'][number] = {
+    id: 'next',
+    role: 'user',
+    text: 'Continue',
+    createdAt: '2026-10-03T10:02:00Z',
+  }
+  const nextTurn: TaskTurn = {
+    ...turn,
+    id: 'claude-turn',
+    runId: 'next-run',
+    assistantId: 'next-reply',
+    provider: 'claude',
+    startedAt: '2026-10-03T10:02:01Z',
+  }
+  const nextMessages: Task['messages'] = [
+    { ...request, turnId: nextTurn.id, createdAt: '2026-10-03T10:01:20Z' },
+    { id: 'next-reply', turnId: nextTurn.id, role: 'assistant', text: 'Continuing' },
+  ]
+  expect(
+    conversationHarnessHandoffs({ ...handoff, messages: [...messages, request] }, false),
+  ).toEqual({
+    before: new Map([['next', marker]]),
+  })
+  const next = { messages: [...messages, ...nextMessages], turns: [turn, nextTurn] }
+  expect(
+    conversationHarnessHandoffs({ ...next, harnessHandoff: handoff.harnessHandoff }, false),
+  ).toEqual({
+    before: new Map([['next', marker]]),
+  })
+  expect(conversationHarnessHandoffs(next, false).before.get('next')).toEqual(marker)
+  expect(
+    conversationHarnessHandoffs({ ...handoff, messages: nextMessages, turns: [nextTurn] }, true)
+      .before.size,
+  ).toBe(0)
+})
 
 function legacyMessageTurns(input: Pick<Task, 'messages' | 'turns'>) {
   const byId = new Map(input.turns?.map((item) => [item.id, item]))

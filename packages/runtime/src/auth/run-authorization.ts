@@ -15,6 +15,7 @@ const allowed = new Set([
   '/api/agent/vision',
   '/api/agent/help',
   '/api/agent/conversation',
+  '/api/agent/pipeline',
   '/api/agent/todos',
   '/api/agent/workflow',
   '/api/agent/secure-input',

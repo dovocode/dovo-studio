@@ -558,3 +558,21 @@ Browser tooltip detection includes text-only tooltips that ignore pointer events
 desktops, tooltips render in the Studio document. If a tooltip overlaps a native page, Studio raises
 its UI above the live page and keeps page focus. Verify overlap detection with
 `node scripts/check-shared-browser-browser.mjs`.
+
+## Copy a browser snapshot
+
+In the desktop or web Browser, open **Browser options** and choose **Copy snapshot**. Paste in a
+thread composer to attach the PNG and its source text file. The source file contains the page title
+and URL. The receiving draft owns the two files. On an HTTP LAN connection, Studio copies the
+snapshot as text and restores both files when you paste in a composer.
+
+## Open a localhost preview on a phone
+
+On iOS or Android, open an HTTP localhost page in a remote browser tab. Open **Browser options** and
+choose **Open preview on this phone**. The phone renders the page in Dovo and forwards traffic to
+the browser tab's current localhost port through the paired computer connection. Close the preview
+to stop forwarding. Dovo also stops forwarding when the app goes to the background.
+
+Relative page resources and connections to the preview origin share the same port. Apps that use
+absolute localhost URLs for other ports still require the remote browser. The option appears when
+the computer supports it and the remote tab is connected.

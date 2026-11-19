@@ -41,7 +41,7 @@ createRoot(document.getElementById('app')).render(<App/>);`,
   [
     {
       path: '@dovo/studio-ui',
-      contents: `export {cn} from '${ui}/lib/utils';export {IconButton} from '${ui}/components/icon-button';export {MessageResponse} from '${ui}/components/ai-elements/message';export {FileTypeIcon} from '${ui}/file-tree';export {Button} from '${ui}/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {RepositoryOpenItems} from '${ui}/repository-open-items';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog';`,
+      contents: `export {cn} from '${ui}/lib/utils';export {IconButton} from '${ui}/components/icon-button';export {MessageResponse} from '${ui}/components/ai-elements/message';export {FileTypeIcon} from '${ui}/file-tree';export {Button} from '${ui}/components/ui/button';export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {RepositoryOpenItems} from '${ui}/repository-open-items';export {Dialog,DialogContent,DialogTitle} from '${ui}/components/ui/dialog';export {Tooltip,TooltipTrigger,TooltipContent} from '${ui}/components/ui/tooltip';`,
     },
     {
       path: '@dovo/studio-core',

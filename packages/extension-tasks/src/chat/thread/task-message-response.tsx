@@ -1,3 +1,4 @@
+import { TaskIssueLinkPreview } from './task-issue-link-preview'
 import { NativeFileDrag } from './native-file-drag'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
@@ -29,6 +30,7 @@ import {
   useCallback,
   useRef,
   type ComponentProps,
+  type ReactNode,
 } from 'react'
 import {
   MessageResponse,
@@ -127,6 +129,27 @@ export function TaskMessageResponse({
   const { request, connection, connected } = useWorkspaceSelector(
     selectConversationConnection,
     sameWorkspaceFields,
+  )
+  const hasIssueLink = /\/(?:issues|browse|_workitems)\//i.test(children)
+  const repositoryId = useWorkspaceSelector(
+    useCallback(
+      (value: ReturnType<typeof useWorkspace>) =>
+        hasIssueLink
+          ? value.workspace.tasks.find((task) => task.id === taskId)?.repositoryId
+          : undefined,
+      [hasIssueLink, taskId],
+    ),
+  )
+  const previewLink = useCallback(
+    (href: string, link: ReactNode) =>
+      connected && repositoryId && /\/(?:issues|browse|_workitems)\//i.test(href) ? (
+        <TaskIssueLinkPreview href={href} repositoryId={repositoryId}>
+          {link}
+        </TaskIssueLinkPreview>
+      ) : (
+        link
+      ),
+    [connected, repositoryId],
   )
   const { openExternalLink } = useStudioHost()
   const referenceState = useWorkspaceSelector(
@@ -276,6 +299,7 @@ export function TaskMessageResponse({
             <MessageResponse
               {...props}
               localFiles={localFiles}
+              previewLink={previewLink}
               referenceResources={referenceResources}
             >
               {part.text}

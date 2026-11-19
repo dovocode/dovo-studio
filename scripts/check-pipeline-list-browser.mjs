@@ -78,6 +78,8 @@ async function bundle(isMobile) {
         '../connections/jira-binding': `export const JiraSourcesDialog=()=>null;`,
         '../connections/source-picker': `export const SourcePicker=()=>null;`,
       }
+  mocks['./linear-issues'] =
+    'export const LinearIssuesDialog=()=>null;export const LinearIssuesSheet=()=>null;'
   mocks['../saved-filter-views'] =
     `export const SavedFilterViews=({onApply,sources})=>{window.applySavedView=onApply;window.savedViewSources=sources.map(source=>source.key);return null};`
   return build({
