@@ -136,6 +136,7 @@ window.readDeviceHub=()=>window.workspaceContext.request('/api/device-hosts',und
       '@dovo/studio-ui/runtime-icon': root + 'packages/studio-ui/src/runtime-icon.tsx',
       '@dovo/studio-ui/image-viewer': root + 'packages/studio-ui/src/image-viewer.tsx',
       '@dovo/studio-ui/clipboard': root + 'packages/studio-ui/src/clipboard.ts',
+      '@dovo/studio-ui/tooltip': root + 'packages/studio-ui/src/components/ui/tooltip.tsx',
       '@dovo/studio-ui': root + 'packages/studio-ui/src/index.ts',
     },
     nodePaths: [

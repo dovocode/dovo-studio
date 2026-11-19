@@ -2,7 +2,7 @@ import { isValidElement, useEffect, useState, type ReactNode } from 'react'
 import { forgeIssueDetailSchema, type ForgeIssue } from '@dovo/protocol'
 import { sameWorkspaceFields, useWorkspaceSelector, type useWorkspace } from '@dovo/studio-core'
 import { resolveLinkTargets } from '@dovo/studio-core/links'
-import { Tooltip, TooltipContent, TooltipTrigger } from '@dovo/studio-ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@dovo/studio-ui/tooltip'
 
 const selectSources = (workspace: ReturnType<typeof useWorkspace>) => ({
   readRuntime: workspace.readRuntime,
