@@ -4216,6 +4216,22 @@ try {
   const regularTab = compactSidebar.locator('[data-browser-tab-id="compact-4"]')
   const regularTitle = await regularTab.locator('.studio-browser-tab-title').boundingBox()
   const regularIdentity = await regularTab.locator('.studio-browser-tab-profile').boundingBox()
+  const type = await regularTab.evaluate((row) => {
+    const title = getComputedStyle(row.querySelector('.studio-browser-tab-title'))
+    const site = getComputedStyle(row.querySelector('.studio-browser-tab-profile'))
+    const style = getComputedStyle(row)
+    return {
+      title: parseFloat(title.fontSize),
+      site: parseFloat(site.fontSize),
+      titleWeight: Number(title.fontWeight),
+      siteWeight: Number(site.fontWeight),
+      padding: style.paddingBlockStart,
+      spacing: style.marginBottom,
+    }
+  })
+  assert.ok(type.title > type.site && type.titleWeight > type.siteWeight)
+  assert.equal(type.padding, '5px')
+  assert.equal(type.spacing, '3px')
   const regularFavicon = await regularTab.locator('.studio-browser-tab-favicon').boundingBox()
   assert.ok(
     regularIdentity.y >= regularTitle.y + regularTitle.height &&

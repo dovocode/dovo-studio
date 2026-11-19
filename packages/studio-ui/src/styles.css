@@ -1395,9 +1395,6 @@ textarea {
   background: transparent;
   box-shadow: none;
 }
-.studio-browser-sidebar .studio-browser-tab {
-  margin-bottom: 2px;
-}
 .studio-browser-tab:not([data-active]):is(:hover, :focus-within) {
   background: color-mix(in srgb, var(--foreground) 3%, transparent);
 }
@@ -1410,9 +1407,6 @@ textarea {
   color: var(--foreground);
   box-shadow: var(--studio-surface-rim), var(--studio-glow);
 }
-.studio-browser-sidebar .studio-browser-tab-title {
-  font-size: 12px;
-}
 .studio-browser-tab-source {
   grid-column: 1;
   grid-row: 1 / span 2;
@@ -1422,7 +1416,10 @@ textarea {
   display: grid;
   grid-template-columns: 24px minmax(0, 1fr) minmax(0, max-content);
   column-gap: 6px;
-  padding: 0 4px 0 8px;
+  min-height: 2.625rem;
+  margin-bottom: 3px;
+  padding: 0.3125rem 0.625rem;
+  align-content: center;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-select {
   grid-column: 1 / -1;
@@ -1430,18 +1427,21 @@ textarea {
   display: grid;
   grid-template-columns: subgrid;
   grid-template-rows: subgrid;
-  min-height: 40px;
   width: 100%;
 }
 .studio-browser-tab-title {
   grid-column: 2 / span 2;
   grid-row: 1;
   align-self: center;
+  color: var(--foreground);
+  font-size: var(--dovo-type-row-size, 0.875rem);
+  font-weight: var(--dovo-type-row-weight, 500);
   line-height: 1rem;
 }
 .studio-browser-tab:not([data-pinned]) .studio-browser-tab-profile {
   grid-column: 2;
   grid-row: 2;
+  font-weight: 400;
   font-size: 0.6875rem;
   line-height: 0.875rem;
 }
@@ -1579,9 +1579,6 @@ textarea {
 .studio-browser-tab[data-active] .studio-browser-tab-badge {
   background: var(--primary);
   color: var(--primary-foreground);
-}
-.studio-browser-tab[data-active] .studio-browser-tab-title {
-  font-weight: 500;
 }
 .studio-browser-tab-select:focus-visible {
   border-radius: inherit;

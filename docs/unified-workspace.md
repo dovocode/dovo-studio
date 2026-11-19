@@ -58,10 +58,11 @@ threads and standalone terminals, with search, computer and type filters under *
 Threads render the same `TaskRow` component as Threads, with its project icon, title, branch and
 status icon. A short age such as `14h` precedes the icon when the turn has a timestamp. Screen
 readers announce the full status. On desktop, hover over the icon to read it. Pages render the
-Browser workspace's `BrowserTabRow`, including its favicon, title, site and linked project or
-profile, unread badge and media indicators. Unified adds a type badge to the leading icon of a
-thread, page or terminal. Standalone terminals share their row with Terminals. Pinned pages use the
-same browser tile component and selection styling as Browser, with the type badge on the favicon.
+Browser workspace's `BrowserTabRow` with the same title weight and row spacing as Threads. It shows
+the favicon, title, site and linked project or profile, unread badge and media indicators. Unified
+adds a type badge to the leading icon of a thread, page or terminal. Standalone terminals share
+their row with Terminals. Pinned pages use the same browser tile component and selection styling as
+Browser, with the type badge on the favicon.
 
 A small icon beside the terminal count shows how many subthreads belong to the parent. Open **Thread
 info** to see them. On desktop and web, each child shows its age before the status icon. Hover over
