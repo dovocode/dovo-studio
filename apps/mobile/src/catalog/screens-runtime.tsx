@@ -16,6 +16,7 @@ import { RuntimeValueProvider } from '../runtime/connection/provider'
 import { MobileAccountContext } from '../runtime/connection/account-context'
 import { NavigationContext } from '../shell/navigation'
 import { SettingsTargetProvider } from '../runtime/preferences/settings-target'
+import { MobileDictationProvider } from '../tasks/composer/dictation-provider'
 import { TaskListViewProvider } from '../tasks/list/task-list-view'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
@@ -340,28 +341,30 @@ export function MobileScreenProviders({
   const runtime = suppressTaskWatch ? { ...selectedRuntime, profile: null } : selectedRuntime
   return (
     <RuntimeValueProvider value={runtime}>
-      <MobileAccountContext.Provider value={account}>
-        <SettingsTargetProvider>
-          <TaskListViewProvider>
-            <NavigationContext.Provider
-              value={{
-                focused: true,
-                navigate: (view) => setIntent(`Navigation requested: ${view}`),
-                openWork: (target) => setIntent(`Open ${target.kind}: ${target.id ?? 'new'}`),
-              }}
-            >
-              <View style={{ flex: 1, minHeight: 640 }}>
-                {children}
-                {!!intent && (
-                  <Text accessibilityRole="status" style={{ color: colors.muted, padding: 12 }}>
-                    {intent}
-                  </Text>
-                )}
-              </View>
-            </NavigationContext.Provider>
-          </TaskListViewProvider>
-        </SettingsTargetProvider>
-      </MobileAccountContext.Provider>
+      <MobileDictationProvider>
+        <MobileAccountContext.Provider value={account}>
+          <SettingsTargetProvider>
+            <TaskListViewProvider>
+              <NavigationContext.Provider
+                value={{
+                  focused: true,
+                  navigate: (view) => setIntent(`Navigation requested: ${view}`),
+                  openWork: (target) => setIntent(`Open ${target.kind}: ${target.id ?? 'new'}`),
+                }}
+              >
+                <View style={{ flex: 1, minHeight: 640 }}>
+                  {children}
+                  {!!intent && (
+                    <Text accessibilityRole="status" style={{ color: colors.muted, padding: 12 }}>
+                      {intent}
+                    </Text>
+                  )}
+                </View>
+              </NavigationContext.Provider>
+            </TaskListViewProvider>
+          </SettingsTargetProvider>
+        </MobileAccountContext.Provider>
+      </MobileDictationProvider>
     </RuntimeValueProvider>
   )
 }
