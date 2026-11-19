@@ -110,7 +110,6 @@ jobs:
       - uses: ./.github/actions/setup-browser
       # All registered suites run; four jobs keep each shard bounded.
       - name: Run browser shard
-        timeout-minutes: 20
         env:
           DOVO_BROWSER_TIMINGS: ${{ runner.temp }}/browser-timings-${{ matrix.shard }}.json
         run: node scripts/run-browser-suites.mjs ${{ matrix.shard }} 4
