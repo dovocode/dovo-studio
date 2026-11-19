@@ -275,9 +275,8 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
           <div>
             <h2 className="text-sm font-semibold">Production task list rows</h2>
             <p className="mt-1 max-w-2xl text-xs text-muted-foreground">
-              Each row follows the task list hierarchy: project and status, task title, then branch,
-              computer, and provider. Select a row to expose focused styling; use the network button
-              to inspect nested threads and hover a row to reveal its lifecycle actions.
+              The title and status share the top line. The second line shows the branch, computer,
+              and provider. The child count shows how many threads belong to the task.
             </p>
           </div>
           <span className="rounded-full border px-2 py-1 text-[0.6875rem] text-muted-foreground">
@@ -300,7 +299,6 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
                 entryKey={entry.id}
                 task={entry.id === 'working' && args.showNested ? { ...entry, subagents } : entry}
                 owner={owner}
-                subagents={entry.id === 'working' && args.showNested ? subagents : []}
                 needsInput={needsInput}
                 terminals={entry.id === 'working' ? 1 : 0}
                 selected={selected}
@@ -332,8 +330,6 @@ function ThreadRows({ args }: { args: ThreadStoryArgs }) {
                   }),
                   children: [...(children ?? [])],
                 }}
-                selectedThreadKey={undefined}
-                searching={false}
               />
             )
           })}
