@@ -2,7 +2,9 @@ import { SessionConfigOption } from '@agentclientprotocol/sdk/experimental/v2'
 import { acpModelSetting, type AgentDiscovery, type Agent } from '@dovo/protocol'
 import type { openAcpV2Connection } from './acp-v2-connection.js'
 
-export function acpV2ModelOption(options: SessionConfigOption[] | undefined) {
+export function acpV2ModelOption(
+  options: SessionConfigOption[] | undefined,
+): SessionConfigOption | undefined {
   return (
     options?.find(
       (option) => option.category === 'model' && SessionConfigOption.isSelect(option),
