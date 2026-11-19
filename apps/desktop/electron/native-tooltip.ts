@@ -3,6 +3,7 @@ import { Schema } from 'effect'
 import { decode } from '@dovo/protocol'
 import { studioContents } from './studio-window.js'
 import { trustedRendererUrl } from './renderer-trust.js'
+import { isLinuxWaylandSession } from './linux-window-backend.js'
 
 const tooltips = new WeakMap<BrowserWindow, BrowserWindow>()
 const shapes = new WeakMap<BrowserWindow, string>()
@@ -54,6 +55,7 @@ export function nativeTooltipWindow(
 ): WindowOpenHandlerResponse | undefined {
   if (details.frameName !== 'dovo-native-tooltip') return
   if (
+    isLinuxWaylandSession(process.platform, process.env) ||
     details.url !== 'about:blank' ||
     // File renderers omit the referrer. Website tabs never use this handler.
     (details.referrer.url !== '' &&
@@ -187,6 +189,9 @@ export async function setNativeTooltipVisible(
 
 export function dismissNativeTooltip(owner: BrowserWindow) {
   const tooltip = tooltips.get(owner)
-  if (tooltip && !tooltip.isDestroyed() && tooltip.isVisible())
+  if (
+    isLinuxWaylandSession(process.platform, process.env) ||
+    (tooltip && !tooltip.isDestroyed() && tooltip.isVisible())
+  )
     studioContents(owner).send('window:tooltip-dismiss')
 }

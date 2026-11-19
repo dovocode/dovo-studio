@@ -554,7 +554,7 @@ manual. Verify with `node scripts/check-browser-media-browser.mjs` and
 `pnpm exec vp test apps/desktop/electron/browser-media.test.ts --maxWorkers=4`. The browser fixture
 measures event-to-dialog time; it does not measure OS source discovery.
 
-Browser tooltip detection includes text-only tooltips that ignore pointer events. When a visible
-tooltip overlaps a native page, Studio hides the native view behind its preview until the tooltip
-closes. This keeps the tooltip above website content without changing page focus. Verify with
+Browser tooltip detection includes text-only tooltips that ignore pointer events. On Linux Wayland
+desktops, tooltips render in the Studio document. If a tooltip overlaps a native page, Studio raises
+its UI above the live page and keeps page focus. Verify overlap detection with
 `node scripts/check-shared-browser-browser.mjs`.

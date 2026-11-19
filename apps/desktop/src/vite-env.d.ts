@@ -3,7 +3,7 @@
 interface Window {
   dovo: {
     onNativeTooltipDismiss: (listener: () => void) => () => void
-    nativeTooltip: (
+    nativeTooltip?: (
       visible: boolean,
       regions: import('@dovo/studio-ui/native-tooltip').NativeTooltipRegion[],
     ) => Promise<void>

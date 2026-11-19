@@ -11,12 +11,20 @@ import { _electron as electron } from 'playwright'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const require = createRequire(join(root, 'apps/desktop/package.json'))
 const directory = await mkdtemp(join(tmpdir(), 'dovo-live-overlays-'))
+const waylandSession = process.platform === 'linux' && process.argv.includes('--wayland-session')
 let app
 try {
-  await writeFile(
-    join(directory, 'preload.cjs'),
-    `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('fixture',{overlay:(open,passive)=>ipcRenderer.invoke('fixture:overlay',open,passive),tooltip:(visible,regions)=>ipcRenderer.invoke('fixture:tooltip',visible,regions),onDismiss:listener=>{ipcRenderer.on('window:tooltip-dismiss',listener);return ()=>ipcRenderer.off('window:tooltip-dismiss',listener)}});`,
-  )
+  await build({
+    stdin: {
+      resolveDir: join(root, 'apps/desktop'),
+      contents: `import './electron/preload';import {contextBridge,ipcRenderer} from 'electron';contextBridge.exposeInMainWorld('fixture',{overlay:(open,passive)=>ipcRenderer.invoke('fixture:overlay',open,passive)});`,
+    },
+    outfile: join(directory, 'preload.cjs'),
+    bundle: true,
+    platform: 'node',
+    format: 'cjs',
+    external: ['electron'],
+  })
   await build({
     stdin: {
       loader: 'tsx',
@@ -29,10 +37,10 @@ import {TooltipProvider,Tooltip,TooltipTrigger,TooltipContent} from './src/compo
 import {Dialog,DialogContent,DialogTitle,DialogTrigger} from '../web-ui/src/dialog';
 import {nativeBrowserHole} from '../extension-tasks/src/browser/native-browser-layout';
 const hole=nativeBrowserHole();
-configureNativeTooltips((visible,regions)=>window.fixture.tooltip(visible,regions),window.fixture.onDismiss);
+configureNativeTooltips(window.dovo.nativeTooltip,window.dovo.onNativeTooltipDismiss);
 function Fixture(){const [tip,setTip]=React.useState(false);window.setTooltip=setTip;const [open,setOpen]=React.useState(false);const [count,setCount]=React.useState(0);
 React.useLayoutEffect(()=>{hole.update(open?new DOMRect(100,80,500,350):undefined);window.fixture.overlay(open)},[open]);
-return <><TooltipProvider><Tooltip open={tip} onOpenChange={setTip}><TooltipTrigger>Tip</TooltipTrigger><TooltipContent>Passive page tooltip</TooltipContent></Tooltip></TooltipProvider><Menu.Root open={open} onOpenChange={setOpen}><Menu.Trigger id="menu">Options</Menu.Trigger><Menu.Portal><Menu.Content style={{background:'white',color:'black',padding:20}}><Menu.Item onSelect={()=>setCount(n=>n+1)}>Count</Menu.Item><Menu.Item>Second</Menu.Item></Menu.Content></Menu.Portal></Menu.Root><output>{count}</output><Dialog><DialogTrigger>Dialog</DialogTrigger><DialogContent><DialogTitle>Native dialog</DialogTitle><input aria-label="Dialog input"/><button>Last</button></DialogContent></Dialog><div id="slot" style={{position:'fixed',left:100,top:80,width:500,height:350}}/></>}
+return <><TooltipProvider><Tooltip open={tip} onOpenChange={setTip} disableHoverableContent><TooltipTrigger>Tip</TooltipTrigger><TooltipContent>Passive page tooltip</TooltipContent></Tooltip></TooltipProvider><Menu.Root open={open} onOpenChange={setOpen}><Menu.Trigger id="menu">Options</Menu.Trigger><Menu.Portal><Menu.Content style={{background:'white',color:'black',padding:20}}><Menu.Item onSelect={()=>setCount(n=>n+1)}>Count</Menu.Item><Menu.Item>Second</Menu.Item></Menu.Content></Menu.Portal></Menu.Root><output>{count}</output><Dialog><DialogTrigger>Dialog</DialogTrigger><DialogContent><DialogTitle>Native dialog</DialogTitle><input aria-label="Dialog input"/><button>Last</button></DialogContent></Dialog><div id="slot" style={{position:'fixed',left:100,top:80,width:500,height:350}}/></>}
 createRoot(document.getElementById('root')).render(<Fixture/>);`,
     },
     outfile: join(directory, 'ui.js'),
@@ -62,11 +70,12 @@ app.setPath('userData',${JSON.stringify(join(directory, 'profile'))});
 app.on('window-all-closed',()=>{});
 globalThis.readyPromise=app.whenReady().then(async()=>{Menu.setApplicationMenu(Menu.buildFromTemplate([{role:'viewMenu'}]));
 const host=createStudioWindow({width:700,height:500,frame:false,webPreferences:{preload:${JSON.stringify(join(directory, 'preload.cjs'))},sandbox:true,contextIsolation:true,nodeIntegration:false}});
+ipcMain.on('app:info',event=>{event.returnValue={}});
 void host.loadURL("about:blank");const ui=studioContents(host);ui.setWindowOpenHandler(details=>{return nativeTooltipWindow(host,details,${JSON.stringify(join(directory, 'index.html'))})??{action:'deny'}});registerWindowUnload(host);
 const page=new WebContentsView({webPreferences:{sandbox:true,contextIsolation:true,nodeIntegration:false,backgroundThrottling:false}});
 const pageContents=page.webContents;pageContents.on('before-input-event',(_event,input)=>{if(input.type==='keyDown'&&input.key==='Escape')dismissNativeTooltip(host)});host.once('closed',()=>{if(!pageContents.isDestroyed())pageContents.close()});host.contentView.addChildView(page);page.setBounds({x:100,y:80,width:500,height:350});
 await page.webContents.loadURL('data:text/html,<body style="background:blue;height:2000px"><input value="unsaved draft"><script>window.ticks=0;window.presses=[];window.wheels=0;document.addEventListener("wheel",()=>wheels++);document.addEventListener("pointerdown",e=>presses.push(e.type));document.addEventListener("pointerup",e=>presses.push(e.type));setInterval(()=>ticks++,10)</script>');
-let overlayCount=0;ipcMain.handle('fixture:tooltip',(_event,visible,regions)=>setNativeTooltipVisible(host,visible,regions));ipcMain.handle('fixture:overlay',(_event,open,passive)=>{overlayCount++;if(open){raiseStudioOverlay(host);if(!passive)ui.focus()}else host.contentView.addChildView(page)});
+let overlayCount=0;ipcMain.handle('window:tooltip-visible',(_event,visible,regions)=>setNativeTooltipVisible(host,visible,regions));ipcMain.handle('fixture:overlay',(_event,open,passive)=>{overlayCount++;if(open){raiseStudioOverlay(host);if(!passive)ui.focus()}else host.contentView.addChildView(page)});
 globalThis.fixture={host,ui,page,pageContents,read:()=>({overlayCount,visible:page.getVisible(),top:host.contentView.children.at(-1)===page?'page':'ui',owner:BrowserWindow.fromWebContents(ui)===host,bounds:host.contentView.children.find(v=>v.webContents===ui).getBounds()}),raise:()=>raiseStudioOverlay(host)};
 await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
 });`,
@@ -79,7 +88,20 @@ await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
   })
   app = await electron.launch({
     executablePath: require('electron'),
-    args: [...(process.platform === 'linux' ? ['--no-sandbox'] : []), join(directory, 'main.cjs')],
+    // Exercise both session policies with a real Electron renderer on an X11 display.
+    ...(process.platform === 'linux'
+      ? {
+          env: {
+            ...process.env,
+            WAYLAND_DISPLAY: '',
+            XDG_SESSION_TYPE: waylandSession ? 'wayland' : 'x11',
+          },
+        }
+      : {}),
+    args: [
+      ...(process.platform === 'linux' ? ['--no-sandbox', '--ozone-platform=x11'] : []),
+      join(directory, 'main.cjs'),
+    ],
   })
   await app.evaluate(() => globalThis.readyPromise)
   const ui = app
@@ -97,7 +119,21 @@ await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
     .pages()
     .find((page) => page.url().startsWith('data:text/html,'))
   assert.equal((await read()).owner, true, 'Native owner lookup must preserve IPC routing')
-  if (process.platform === 'linux') {
+  if (waylandSession) {
+    const trigger = ui.getByRole('button', { name: 'Tip', exact: true })
+    const tooltip = ui.getByRole('tooltip')
+    await trigger.hover()
+    await tooltip.waitFor()
+    assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length), 1)
+    await ui.mouse.move(85, 65)
+    await tooltip.waitFor({ state: 'hidden' })
+    await app.evaluate(() => globalThis.fixture.pageContents.focus())
+    await ui.evaluate(() => window.setTooltip(true))
+    await tooltip.waitFor()
+    assert.equal(await app.evaluate(() => globalThis.fixture.pageContents.isFocused()), true)
+    execFileSync('xdotool', ['key', 'Escape'])
+    await tooltip.waitFor({ state: 'hidden' })
+  } else if (process.platform === 'linux') {
     const id = String(
       await app.evaluate(() => globalThis.fixture.host.getNativeWindowHandle().readUInt32LE()),
     )
@@ -248,7 +284,7 @@ await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
         'document.querySelector("input").value',
       ),
     ),
-    process.platform === 'linux' ? 'unsXaved draft' : 'unsaved draft',
+    process.platform === 'linux' && !waylandSession ? 'unsXaved draft' : 'unsaved draft',
   )
   const ticks = await app.evaluate(() =>
     globalThis.fixture.page.webContents.executeJavaScript('ticks'),
@@ -327,7 +363,7 @@ await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
     await ui.getByText('Options', { exact: true }).waitFor()
     assert.equal(
       await website.locator('input').inputValue(),
-      'unsXaved draft',
+      waylandSession ? 'unsaved draft' : 'unsXaved draft',
       'Reloading Studio controls must not replace the native page in this fixture',
     )
   }
@@ -361,7 +397,9 @@ await ui.loadFile(${JSON.stringify(join(directory, 'index.html'))});
   assert.deepEqual(await app.evaluate(() => globalThis.nativeErrors), [])
   assert.deepEqual(rendererErrors, [])
   console.log(
-    'Native live overlays passed: sibling view order, IPC owner, visible live page, draft retention, menu click, Escape, outside dismissal, dialog input, resize and close cleanup. Passive tooltip keeps text cursor, typing, clicks, held selection drag and wheel input; styles, zoom and reload pass; Keep editing/Discard honor unsaved changes. No overlay capture or frame stream.',
+    waylandSession
+      ? 'Wayland session policy passed on X11. Tooltips render in Studio, and Escape reaches them from the live page. Menus, dialogs and draft retention passed.'
+      : 'Native live overlays passed: sibling view order, IPC owner, visible live page, draft retention, menu click, Escape, outside dismissal, dialog input, resize and close cleanup. Passive tooltip keeps text cursor, typing, clicks, held selection drag and wheel input; styles, zoom and reload pass; Keep editing/Discard honor unsaved changes. No overlay capture or frame stream.',
   )
 } catch (error) {
   if (app)

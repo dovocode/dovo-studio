@@ -4,6 +4,7 @@ import {
   type BrowserWindowConstructorOptions,
   type WebContents,
 } from 'electron'
+import { isLinuxWaylandSession } from './linux-window-backend.js'
 
 const views = new WeakMap<BrowserWindow, { view: WebContentsView; contents: WebContents }>()
 
@@ -15,7 +16,19 @@ export function createStudioWindow(options: BrowserWindowConstructorOptions) {
     // The shell never loads application or website code. Only the UI view gets the bridge.
     webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
   })
-  const ui = new WebContentsView({ webPreferences: options.webPreferences })
+  const webPreferences = options.webPreferences
+  // Keep tooltips in the renderer on Wayland sessions, including under XWayland.
+  const ui = new WebContentsView({
+    webPreferences: isLinuxWaylandSession(process.platform, process.env)
+      ? {
+          ...webPreferences,
+          additionalArguments: [
+            ...(webPreferences?.additionalArguments ?? []),
+            '--dovo-dom-tooltips',
+          ],
+        }
+      : webPreferences,
+  })
   ui.setBackgroundColor('#00000000')
   const contents = ui.webContents
   views.set(window, { view: ui, contents })

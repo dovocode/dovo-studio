@@ -1,3 +1,10 @@
+export function isLinuxWaylandSession(platform: NodeJS.Platform, environment: NodeJS.ProcessEnv) {
+  return (
+    platform === 'linux' &&
+    (!!environment.WAYLAND_DISPLAY || environment.XDG_SESSION_TYPE === 'wayland')
+  )
+}
+
 /** XWayland provides the window placement and topmost controls that native Wayland lacks. */
 export function useLinuxXWayland(
   platform: NodeJS.Platform,
@@ -5,9 +12,8 @@ export function useLinuxXWayland(
   explicitBackend: boolean,
 ) {
   return (
-    platform === 'linux' &&
+    isLinuxWaylandSession(platform, environment) &&
     !!environment.DISPLAY &&
-    (!!environment.WAYLAND_DISPLAY || environment.XDG_SESSION_TYPE === 'wayland') &&
     !explicitBackend &&
     !environment.ELECTRON_OZONE_PLATFORM_HINT
   )

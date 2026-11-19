@@ -1248,12 +1248,17 @@ wait for image decoding or subscribe to replacement image frames. The page keeps
 visibility, draft and running work. The existing link-preview opener backdrop and explicit
 screenshot tools keep their capture paths.
 
-Passive tooltips use actual React content in one reusable, non-focusable native child window per
-Studio window. That window ignores mouse input. Browser clicks, held presses, text selection, wheel
-events and the text caret stay with the page. Linux and Windows restrict the native window's painted
-shape to the tooltip bounds. This also prevents a black full-window surface on X11 desktops without
-a compositor. Tooltip styles load after the native document is ready. Zoom, theme changes, Escape,
-reload, renderer failure and window close use the same owner window.
+Passive tooltips on macOS, Windows and Linux X11 desktops use one reusable, non-focusable native
+child window per Studio window. That window ignores mouse input. Browser clicks, held presses, text
+selection, wheel events and the text caret stay with the page. X11 and Windows restrict the native
+window's painted shape to the tooltip bounds. This also prevents a black full-window surface on X11
+desktops without a compositor. Tooltip styles load after the native document is ready. Zoom, theme
+changes, Escape, reload, renderer failure and window close use the same owner window.
+
+On Wayland desktops, including when Studio runs through XWayland, tooltips render in the Studio
+document. This avoids positioning and showing a second window during hover. When a tooltip covers a
+live browser page, Studio raises its UI above the page and keeps page focus. Escape from the live
+page can still dismiss the tooltip.
 
 Browser layout observation ignores mutations from unrelated thread streams. A Chromium fixture with
 4,000 message nodes and 90 updates inside an open tool result measured 90 scans and 72.4 ms with the
@@ -1275,6 +1280,7 @@ node scripts/check-native-browser-layout-browser.mjs
 node scripts/check-shared-browser-browser.mjs
 node scripts/check-section-thread-browser.mjs
 pnpm test:browser-overlays:native
+pnpm test:browser-overlays:native -- --wayland-session
 pnpm exec vp test apps/desktop/electron/browser.test.ts apps/desktop/electron/browser-window.test.ts apps/desktop/electron/thread-window.test.ts apps/desktop/electron/links.test.ts apps/desktop/electron/browser-extension-popup.test.ts packages/protocol/src/runtime/previews/previews.test.ts --maxWorkers=2
 pnpm --filter @dovo/desktop --filter @dovo/studio-ui --filter @dovo/studio-shell --filter @dovo/extension-tasks -r typecheck
 pnpm --filter @dovo/desktop build
@@ -1282,11 +1288,12 @@ pnpm exec vp check
 ```
 
 The native fixture needs a desktop session. On Linux, it uses `xdotool` and X11 or XWayland for real
-pointer and keyboard input. It checks live page work, input, menus, dialogs, zoom, tooltip styles,
-reload, Escape and unsaved-change close guards. The browser fixtures use controlled native command
-transports. Their scan and write counts are regression measurements, not production latency claims.
-Native input was checked on Linux X11. macOS, Windows, a real Wayland session, physical iPhone wake
-and real Google sign-in with extensions remain unverified.
+pointer and keyboard input. The `--wayland-session` option tests Wayland session detection and the
+in-window tooltip path on an X11 test display. The fixture checks live page work, input, menus,
+dialogs, zoom, tooltip styles, reload, Escape and unsaved-change close guards. The browser fixtures
+use controlled native command transports. Their scan and write counts are regression measurements,
+not production latency claims. Native input was checked on Linux X11. macOS, Windows, a real Wayland
+session, physical iPhone wake and real Google sign-in with extensions remain unverified.
 
 ## Mobile thread startup and selector feedback, 2026-11-12
 

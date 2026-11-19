@@ -17,7 +17,7 @@ let prepared: Promise<HTMLElement | undefined> | undefined
 
 /** Desktop enables this only for trusted Studio windows. Web clients keep DOM portals. */
 export function configureNativeTooltips(
-  visible: Notify,
+  visible: Notify | undefined,
   onDismiss?: (listener: () => void) => () => void,
 ) {
   notify = visible
@@ -103,6 +103,14 @@ export function useNativeTooltipContainer(open: boolean, close: () => void) {
   const closeRef = useRef(close)
   closeRef.current = close
   useLayoutEffect(() => {
+    if (!open) return
+    const dismissTooltip = () => closeRef.current()
+    dismiss.add(dismissTooltip)
+    return () => {
+      dismiss.delete(dismissTooltip)
+    }
+  }, [open])
+  useLayoutEffect(() => {
     if (!open || !notify) return
     if (!popup || popup.closed) {
       stopMirror?.()
@@ -135,8 +143,6 @@ export function useNativeTooltipContainer(open: boolean, close: () => void) {
     }
     let alive = true
     users++
-    const dismissTooltip = () => closeRef.current()
-    dismiss.add(dismissTooltip)
     const report = () => {
       const regions = [...(popup?.document.querySelectorAll<HTMLElement>('.studio-tooltip') ?? [])]
         .filter((element) => element.dataset.state !== 'closed')
@@ -191,7 +197,6 @@ export function useNativeTooltipContainer(open: boolean, close: () => void) {
       resize.disconnect()
       window.removeEventListener('resize', report)
       users--
-      dismiss.delete(dismissTooltip)
       report()
       setContainer(undefined)
     }

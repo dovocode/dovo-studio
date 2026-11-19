@@ -19,8 +19,7 @@ if (
   typeof window.dovo?.browser === 'function'
 ) {
   document.documentElement.dataset.nativeBrowserOverlay = 'true'
-  if (typeof window.dovo.nativeTooltip === 'function')
-    configureNativeTooltips(window.dovo.nativeTooltip, window.dovo.onNativeTooltipDismiss)
+  configureNativeTooltips(window.dovo.nativeTooltip, window.dovo.onNativeTooltipDismiss)
 }
 const extensions = [tasksExtension, scmExtension, agentsExtension, jobsExtension, runtimeExtension]
 function SharingDeviceSync() {
