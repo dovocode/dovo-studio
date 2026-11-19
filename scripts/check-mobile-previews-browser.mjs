@@ -7,7 +7,11 @@ const mobile = `${root}/apps/mobile`
 const controls = `
 export const StyleSheet={hairlineWidth:1};
 export const Alert={alert:(title,details)=>{window.alerts=(window.alerts??[]).concat({title,details})}};
-export const View=({children})=><div>{children}</div>;
+export const View=({children,pointerEvents,style})=>{
+  // React Native positions toolbar overlays out of flow. Keep their DOM stubs out of flow too.
+  const absolute=style?.position==='absolute';
+  return <div style={{position:absolute?'absolute':'relative',left:absolute?style.left:undefined,top:absolute?style.top??0:undefined,pointerEvents}}>{children}</div>;
+};
 export const ScrollView=View;
 export const Surface=View;
 export const Icon=()=>null;
