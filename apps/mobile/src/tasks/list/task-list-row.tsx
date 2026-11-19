@@ -1,4 +1,5 @@
 import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
+import { subscribeClock } from '@dovo/studio-core/clock'
 import { BotAvatar } from '../../bots/bot-avatar'
 import { router } from 'expo-router'
 import { WorkspaceTypeBadge } from '../../workspace/type-badge'
@@ -57,8 +58,9 @@ import { TaskSwipeActions } from './task-swipe-actions'
 import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
-import { taskRowPresentation } from './task-row-status'
-import { memo, useCallback, useRef, useState, type ComponentRef } from 'react'
+import { taskRowPresentation, workingThreadAge } from './task-row-status'
+import { memo, useCallback, useRef, useState, useSyncExternalStore, type ComponentRef } from 'react'
+import { useAppActive } from '../../runtime/state/app-active'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
@@ -80,6 +82,9 @@ const statusIcons: Record<string, LucideIcon> = {
   'Needs input': MessageCircleQuestion,
   'Saving changes': Save,
 }
+const subscribeSecond = (listener: () => void) => subscribeClock(1000, listener)
+const subscribeNothing = () => () => {}
+
 export type TaskListRowActions = {
   open: (key: string) => void
   details: (key: string) => void
@@ -211,8 +216,8 @@ function TaskListRowView({
   const dense = !car && density === 'compact'
   const {
     state,
-    age,
-    label: status,
+    age: snapshotAge,
+    label: snapshotStatus,
   } = task.bot?.state === 'paused' &&
   !task.archived &&
   !task.archivedAt &&
@@ -221,6 +226,14 @@ function TaskListRowView({
   !taskIsWorking(task)
     ? { state: 'Paused', age: '', label: 'Paused' }
     : taskRowPresentation(task, needsInput, row.online, now)
+  const foreground = useAppActive()
+  const liveAge = useSyncExternalStore(
+    foreground && state === 'Working' && snapshotAge ? subscribeSecond : subscribeNothing,
+    () => workingThreadAge(task, state, Date.now()),
+    () => '',
+  )
+  const age = liveAge || snapshotAge
+  const status = liveAge ? `${state} · ${liveAge}` : snapshotStatus
   const inputLabel =
     row.online && !task.archived && !task.archivedAt
       ? threadInputLabel(thread && threadInputSummary(thread), uiText) ||

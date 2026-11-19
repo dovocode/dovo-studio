@@ -15,12 +15,19 @@ const turn = (startedAt: string, finishedAt?: string): NonNullable<Task['turns']
   ...(finishedAt ? { finishedAt } : {}),
 })
 
-it('counts seconds only during the first minute of running work', () => {
+it('counts seconds throughout running work', () => {
   expect(
     taskClockInterval({ ...task, status: 'running', turns: [turn('2026-10-13T11:59:30Z')] }, now),
   ).toBe(1000)
   expect(
     taskClockInterval({ ...task, status: 'running', turns: [turn('2026-10-13T11:58:00Z')] }, now),
+  ).toBe(1000)
+  expect(
+    taskClockInterval(
+      { ...task, status: 'running', turns: [turn('2026-10-13T11:58:00Z')] },
+      now,
+      true,
+    ),
   ).toBe(60000)
   expect(
     taskClockInterval(
@@ -36,6 +43,14 @@ it('counts seconds only during the first minute of running work', () => {
 })
 
 it('updates finished and snoozed labels per minute and leaves timeless rows without a clock', () => {
+  expect(
+    taskClockInterval(
+      { ...task, status: 'running', turns: [turn('2026-10-13T11:58:00Z')] },
+      now,
+      false,
+      false,
+    ),
+  ).toBe(60000)
   expect(
     taskClockInterval(
       { ...task, status: 'done', turns: [turn('2026-10-13T11:00:00Z', '2026-10-13T11:05:00Z')] },

@@ -1,11 +1,19 @@
 import {
   formatThreadAge,
+  formatTurnDuration,
   threadStatusTimestamp,
   taskIsWorking,
   isSnoozed,
   hasUnviewedTaskCompletion,
   type Task,
 } from '@dovo/protocol'
+
+export function workingThreadAge(task: Task, state: string, now: number) {
+  if (state !== 'Working' || task.status !== 'running') return ''
+  const date = threadStatusTimestamp(task, task.turns?.at(-1))
+  return formatTurnDuration(now - Date.parse(date ?? ''), true)
+}
+
 /** Input, snooze and failures take priority over an unread successful completion. */
 export function showTaskDone(task: Task, needsInput: boolean, now: number) {
   return (
@@ -48,7 +56,8 @@ export function taskRowPresentation(task: Task, needsInput: boolean, online: boo
                       ? 'Draft'
                       : ''
   const date = threadStatusTimestamp(task, turn)
-  const age = date ? formatThreadAge(now - Date.parse(date)) : ''
+  const age =
+    workingThreadAge(task, state, now) || (date ? formatThreadAge(now - Date.parse(date)) : '')
   return { state, age, label: [state, age].filter(Boolean).join(' · ') }
 }
 

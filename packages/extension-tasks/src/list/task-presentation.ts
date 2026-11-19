@@ -6,21 +6,14 @@ import {
 } from '@dovo/protocol'
 import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
-export function taskPresentation(task: Task, needsInput: boolean, now: number) {
+export function taskPresentation(task: Task, needsInput: boolean, now: number, online = true) {
   const latest = task.turns?.at(-1)
   const started = latest?.startedAt ? Date.parse(latest.startedAt) : NaN
   const elapsed =
     task.status === 'running' && task.runPhase !== 'finalizing' && Number.isFinite(started)
   const working = taskIsWorking(task)
   const date = Date.parse(threadStatusTimestamp(task, latest) ?? '')
-  const age = formatThreadAge(now - date)
-  const time = !Number.isFinite(date)
-    ? ''
-    : elapsed
-      ? formatTurnDuration(now - date)
-      : age === 'now'
-        ? 'just now'
-        : `${age} ago`
+  const relativeAge = formatThreadAge(now - date)
   const state = task.archivedAt
     ? 'Archived'
     : task.archived
@@ -47,6 +40,15 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
                       failed: 'Failed',
                       cancelled: 'Stopped',
                     }[task.status]
+  const showElapsedSeconds = elapsed && online && state === 'Working'
+  const time = !Number.isFinite(date)
+    ? ''
+    : elapsed
+      ? formatTurnDuration(now - date, showElapsedSeconds)
+      : relativeAge === 'now'
+        ? 'just now'
+        : `${relativeAge} ago`
+  const age = showElapsedSeconds ? time : relativeAge
   const tone: 'active' | 'attention' | 'success' | 'danger' | 'neutral' = [
     'Working',
     'Saving changes',

@@ -102,7 +102,8 @@ function TaskRowView({
     displayProject?.kind === 'scratch' ? 'No Project' : (displayProject?.name ?? 'No Project')
   const compact = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !compact
-  const now = useTaskNow(task, needsInput)
+  const offline = !owner.online && !!owner.runtimeId
+  const now = useTaskNow(task, needsInput, !offline)
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon = task.bot ? (
@@ -150,16 +151,14 @@ function TaskRowView({
   const stack = linkedPulls[0]?.url === task.pullStatus?.url ? task.pullStatus?.stack : undefined
   const queue = task.queue?.length ?? 0
   const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
-  const presentation = taskPresentation(task, needsInput, now)
+  const presentation = taskPresentation(task, needsInput, now, !offline)
   const unread = hasUnreadTaskActivity(task)
   const inputLabel =
     owner.online && !compact
       ? threadInputLabel(thread && threadInputSummary(thread), uiText) ||
         (needsInput ? uiText('Needs input') : '')
       : ''
-  const status =
-    !owner.online && owner.runtimeId ? 'Offline · Cached' : inputLabel || presentation.label
-  const offline = !owner.online && !!owner.runtimeId
+  const status = offline ? 'Offline · Cached' : inputLabel || presentation.label
   const statusBadge = (
     <ThreadRowStatus
       state={offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state}

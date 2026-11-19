@@ -782,18 +782,19 @@ try {
     const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
-    assert.equal(text, 'now')
+    if (state === 'Working') assert.match(text, /^\d+s$/)
+    else assert.equal(text, 'now')
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.equal(await indicator.locator('svg').count(), 1)
     await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
   }
-  assert.equal(
+  assert.match(
     await page
       .getByRole('button', { name: /Pinned working thread/ })
       .first()
       .locator('.studio-thread-status')
       .innerText(),
-    'now',
+    /^\d+s$/,
   )
   assert.equal(
     await page
@@ -804,7 +805,7 @@ try {
     '',
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
-  assert.equal(await workingRow.locator('.studio-thread-status').innerText(), 'now')
+  assert.match(await workingRow.locator('.studio-thread-status').innerText(), /^\d+s$/)
   assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'now')
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
@@ -920,10 +921,14 @@ try {
         true,
         'Time precedes the status icon',
       )
-    assert.equal(
-      await indicator.innerText(),
-      status === 'draft' ? '' : status === 'running' ? '14h' : '5m',
-    )
+    if (status === 'running') {
+      const time = await indicator.innerText()
+      assert.match(time, /^14h 20m \d+s$/)
+      await indicator
+        .locator('span')
+        .filter({ hasNotText: new RegExp(`^${time}$`) })
+        .waitFor()
+    } else assert.equal(await indicator.innerText(), status === 'draft' ? '' : '5m')
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row

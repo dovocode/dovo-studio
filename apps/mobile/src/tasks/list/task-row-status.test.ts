@@ -67,6 +67,11 @@ describe('mobile thread status', () => {
       ),
     ).toBe('Was working · 8m')
   })
+  it('shows seconds while an online thread is Working', () => {
+    expect(taskRowStatus({ ...task, status: 'running' }, false, true, now + 17000)).toBe(
+      'Working · 8m 17s',
+    )
+  })
   it('keeps draft and snoozed tasks explicit', () => {
     expect(
       taskRowStatus(

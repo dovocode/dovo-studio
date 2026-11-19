@@ -10,6 +10,7 @@
     "./themes": "./src/themes.ts",
     "./preferences": "./src/preferences.ts",
     "./code-themes": "./src/code-themes.ts",
+    "./clock": "./src/clock.ts",
     "./theme-catalog": "./src/theme-catalog.ts",
     "./links": "./src/links/index.ts",
     "./harness-handoff": "./src/use-harness-handoff.ts",

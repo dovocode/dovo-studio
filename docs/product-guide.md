@@ -869,6 +869,9 @@ threads or live native subagents move to **Waiting** until their family finishes
 take priority. Search includes branch, agent and host names. New turns record the runtime hostname
 for history; older data can lack that field.
 
+The Working indicator in the thread overview shows elapsed time with seconds on desktop, web and
+mobile.
+
 Agent configuration and task overrides offer **Supervised**, **Auto-accept edits**, **Auto**, **Full
 access**, and **Read only**. Existing saved `ask` and `workspace-write` values retain their behavior
 under the first two labels. Tasks can inherit their agent's mode. Mode changes start fresh provider
