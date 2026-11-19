@@ -18,6 +18,7 @@ export const threadParentSchema = mutableStruct({
 })
 export type ThreadParent = typeof threadParentSchema.Type
 export const threadNativeAgentSchema = mutableStruct({
+  statusAt: Schema.optional(maxValue(Schema.String, 80)),
   threadKey: Schema.optional(maxValue(Schema.String, 64)),
   key: maxValue(Schema.String, 64),
   name: maxValue(Schema.String, 1000),
@@ -27,6 +28,7 @@ export const threadNativeAgentSchema = mutableStruct({
 })
 export type ThreadNativeAgent = typeof threadNativeAgentSchema.Type
 const threadPresentationFields = {
+  statusAt: Schema.optional(maxValue(Schema.String, 80)),
   requestedModel: Schema.optional(maxValue(Schema.String, 500)),
   executedModel: Schema.optional(maxValue(Schema.String, 500)),
   repositoryId: Schema.optional(id),

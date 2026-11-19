@@ -5,8 +5,6 @@ import { ThreadSharing } from '../chat/thread-sharing'
 import { useRepositoryOpen } from '@dovo/studio-core/repository-open'
 import { TaskAgentLineage } from './task-agent-lineage'
 import { taskPullStatusFor } from '@dovo/protocol'
-import { NestedThreads } from '../list/nested-threads'
-import { collectTasks, taskSources, taskCollectionKey } from '../list/task-collection'
 import {
   useCallback,
   useId,
@@ -22,8 +20,6 @@ import {
   runtimeComputerName,
   mutableStruct,
   repositoryOpenTargets,
-  buildThreadTree,
-  threadChildRows,
   type RepositoryOpenTarget,
   type ThreadInfoSectionId,
   orderedThreadInfoSections,
@@ -321,23 +317,6 @@ export function TaskProjectPanel({
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
   })
-  const thread = useMemo(
-    () =>
-      buildThreadTree(
-        collectTasks(
-          taskSources({
-            workspace,
-            snapshot,
-            connected,
-            connection,
-            runtimes,
-            activeRuntimeId,
-          }),
-        ),
-      ).nodes.get(taskCollectionKey(activeRuntimeId, task.id)),
-    [workspace, snapshot, connected, connection, runtimes, activeRuntimeId, task.id],
-  )
-  const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
   const stats = useMemo(
     () =>
       task.files.reduce(
@@ -834,22 +813,8 @@ export function TaskProjectPanel({
         </div>
       </>
     ),
-    lineage: (
-      <>
-        {show('lineage') && <TaskAgentLineage task={task} />}
-        {show('lineage') && thread && childRows.length > 0 && (
-          <div hidden={!details}>
-            <NestedThreads
-              threads={childRows}
-              parent={thread}
-              acknowledgedFailures={task.acknowledgedSubagentFailures}
-            />
-            <Button size="sm" variant="ghost" onClick={() => onSurface('agents')}>
-              Manage agents
-            </Button>
-          </div>
-        )}
-      </>
+    lineage: show('lineage') && (
+      <TaskAgentLineage task={task} onManageAgents={() => onSurface('agents')} />
     ),
   } satisfies Record<ThreadInfoSectionId, ReactNode>
   const compactSections = new Set<ThreadInfoSectionId>([

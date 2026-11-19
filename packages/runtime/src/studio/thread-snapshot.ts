@@ -1,6 +1,7 @@
 import { nextQueuedMessage } from '@dovo/protocol'
 import { createHash } from 'node:crypto'
 import {
+  threadStatusTimestamp,
   taskFamilyIds,
   spawnedThreadWatch,
   mergeThreadWatchEntries,
@@ -81,6 +82,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
       repositoryId: item.repositoryId || undefined,
       projectIdentity: repository?.gitIdentity?.slice(0, 2000),
       projectKind: repository?.kind === 'scratch' ? 'scratch' : 'project',
+      statusAt: threadStatusTimestamp(item, item.history.latestTurn)?.slice(0, 80),
       nativeAgents: threadNativeAgents(item),
       nativeAgentOverflow: threadNativeAgentOverflow(item),
       projectName: (repository?.kind === 'scratch' ? 'No Project' : repository?.name)?.slice(
@@ -146,6 +148,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
             repositoryId: snapshot.repositoryId,
             projectIdentity: snapshot.projectIdentity,
             projectKind: snapshot.projectKind,
+            statusAt: snapshot.statusAt,
             nativeAgents: snapshot.nativeAgents,
             nativeAgentOverflow: snapshot.nativeAgentOverflow,
             status: snapshot.status,
@@ -280,6 +283,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
     repositoryId: task.repositoryId || undefined,
     projectIdentity: repository?.gitIdentity?.slice(0, 2000),
     projectKind: repository?.kind === 'scratch' ? 'scratch' : 'project',
+    statusAt: threadStatusTimestamp(task, task.history.latestTurn)?.slice(0, 80),
     nativeAgents: threadNativeAgents(task),
     nativeAgentOverflow: threadNativeAgentOverflow(task),
     failureVersion: task.status === 'failed' ? taskFailureVersion(task) : undefined,
@@ -296,6 +300,7 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
               threadId,
               revision,
               phase,
+              statusAt,
               attention,
               watches,
               nativeAgents,
@@ -305,13 +310,15 @@ export function threadSnapshot(s: Services, id: string): ThreadWatchSnapshot {
               threadId,
               revision,
               phase,
+              statusAt,
               attention,
               watches,
               nativeAgentOverflow,
-              nativeAgents: nativeAgents?.map(({ key, status, working }) => ({
+              nativeAgents: nativeAgents?.map(({ key, status, working, statusAt }) => ({
                 key,
                 status,
                 working,
+                statusAt,
               })),
             }),
           ),

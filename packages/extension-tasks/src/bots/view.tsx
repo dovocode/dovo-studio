@@ -3,7 +3,7 @@ import { BotAvatar } from '@dovo/studio-ui'
 import { botCreateHosts, botPairing } from './bot-create-host'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bot, Plus } from 'lucide-react'
-import { compareBotActivity } from '@dovo/protocol'
+import { buildThreadTree, compareBotActivity } from '@dovo/protocol'
 import { useStudioHost, useWorkspace, type StudioViewProps } from '@dovo/studio-core'
 import { Button, Input, SidebarHeader, useNavigationSidebar } from '@dovo/studio-ui'
 import TasksView from '../view'
@@ -46,9 +46,11 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
       store.connection,
     ],
   )
+  const entries = useMemo(() => collectTasks(sources), [sources])
+  const botThreads = useMemo(() => buildThreadTree(entries).nodes, [entries])
   const bots = useMemo(
     () =>
-      collectTasks(sources)
+      entries
         .filter(
           (entry) =>
             entry.task.bot &&
@@ -57,7 +59,7 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
             !entry.task.archivedAt,
         )
         .sort((a, b) => compareBotActivity(a.task, b.task) || a.key.localeCompare(b.key)),
-    [sources],
+    [entries],
   )
   useEffect(() => {
     // Workbench keeps this view mounted when the Bots route entity changes.
@@ -154,6 +156,7 @@ export default function BotsView({ entityId, messageId, navigationKey }: StudioV
                   onSelect={() => void select(entry)}
                   needsInput={entry.needsInput}
                   terminals={0}
+                  thread={botThreads.get(entry.key)}
                   editable={false}
                   disabled={busy}
                   titleIcon={

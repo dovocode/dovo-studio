@@ -16,6 +16,40 @@ import {
   threadPhaseLabels as phases,
 } from '@dovo/protocol'
 
+import { ThreadRowStatus } from './thread-row-status'
+import { useThreadAge } from './task-clock'
+
+function ChildStatus({ child, label }: { child: NestedThread; label: string }) {
+  const age = useThreadAge(child.statusAt)
+  const state = !child.online
+    ? 'Offline'
+    : child.paused
+      ? 'Paused'
+      : child.phase === 'needs-input' || threadNeedsInput(child)
+        ? 'Needs input'
+        : child.phase === 'running'
+          ? 'Working'
+          : phases[child.phase]
+  const tone =
+    state === 'Failed'
+      ? 'danger'
+      : state === 'Needs input' || state === 'Review'
+        ? 'attention'
+        : state === 'Working'
+          ? 'active'
+          : state === 'Done'
+            ? 'success'
+            : 'neutral'
+  return (
+    <ThreadRowStatus
+      state={state}
+      label={[label, age].filter(Boolean).join(' · ')}
+      age={age}
+      tone={tone}
+    />
+  )
+}
+
 type ThreadTarget = Parameters<NonNullable<StudioHostApi['openThread']>>[0]
 
 /** Presentation only: snapshots and watch ownership continue to come from the owning runtime. */
@@ -89,135 +123,129 @@ function NestedThreadsView({
             },
           }),
     })
-  const renderChild = (child: NestedThread) => (
-    <li key={child.key} className="min-w-0 py-0.5">
-      <button
-        type="button"
-        aria-label={`Open child thread ${child.title}`}
-        aria-description={threadInputLabel(threadInputSummary(child, false), uiText) || undefined}
-        aria-current={child.key === selectedKey ? 'true' : undefined}
-        disabled={!host.openThread}
-        className={cn(
-          'studio-thread-child w-full min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50',
-          child.key === selectedKey && 'bg-accent/70 text-foreground',
-        )}
-        onClick={(event) => {
-          event.stopPropagation()
-          navigate(child)
-        }}
-        title={child.title}
-      >
-        <span className="flex min-w-0 items-center gap-1.5 text-xs">
-          <span
-            className={cn(
-              'size-1.5 shrink-0 rounded-full bg-muted-foreground/50',
-              child.online && !child.paused && child.phase === 'running' && 'bg-primary',
-              child.online && !child.paused && threadNeedsInput(child) && 'bg-status-warning',
-              child.online && child.phase === 'failed' && 'bg-destructive',
-            )}
-            aria-hidden="true"
-          />
-          <span className="truncate font-medium">{child.title}</span>
-        </span>
-        <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[0.625rem] text-muted-foreground">
-          <Monitor className="size-3 shrink-0" aria-hidden="true" />
-          <span className="truncate">
-            {child.computerName}
-            {child.projectName ? ` · ${child.projectName}` : ''} ·{' '}
-            {child.executedModel ? `${modelDisplayName(child.executedModel)} · ` : ''}
-            {child.nativeAgentKey && child.activity
-              ? child.activity
-              : threadInputLabel(threadInputSummary(child, false), uiText) || phases[child.phase]}
-            {child.nativeAgentKey ? ' · Read only' : ''}
-          </span>
-          {!child.online ? (
-            <span className="shrink-0">· Offline</span>
-          ) : child.paused && !child.nativeAgentKey ? (
-            <span className="shrink-0">· Monitor stopped</span>
-          ) : null}
-        </span>
-        {!child.online && child.lastSuccessAt && (
-          <span className="block text-[0.625rem] text-muted-foreground">
-            Updated {new Date(child.lastSuccessAt).toLocaleString()}
-          </span>
-        )}
-        {threadNeedsInput(child) && child.phase !== 'needs-input' && (
-          <span className="block text-xs text-status-warning">Needs input in child work</span>
-        )}
-        {child.partial && (
-          <span className="block text-xs text-muted-foreground">
-            Some child details unavailable
-          </span>
-        )}
-        {child.activity && !child.nativeAgentKey && (
-          <span className="mt-0.5 block truncate text-[0.625rem] text-muted-foreground">
-            {child.activity}
-          </span>
-        )}
-      </button>
-      {child.phase === 'failed' &&
-        child.failureKey &&
-        onAcknowledgeFailure &&
-        !acknowledgedFailures.includes(child.failureKey) && (
-          <button
-            type="button"
-            className="ml-2 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50"
-            onClick={(event) => {
-              event.stopPropagation()
-              onAcknowledgeFailure(child.failureKey!)
-            }}
-          >
-            Acknowledge failure
-          </button>
-        )}
-      {!!child.nativeAgentOverflow?.total && (
-        <div className="ml-4 py-1 text-xs text-muted-foreground">
-          <button
-            type="button"
-            disabled={!host.openThread}
-            className="rounded px-2 py-1 hover:bg-accent/50"
-            onClick={(event) => {
-              event.stopPropagation()
-              navigate(child)
-            }}
-          >
-            Open {child.nativeAgentOverflow.total} additional agents in {child.title}
-          </button>
-          {!!child.nativeAgentOverflow.working && (
-            <span> · {child.nativeAgentOverflow.working} working</span>
+  const renderChild = (child: NestedThread) => {
+    const status = [
+      !child.online ? 'Offline' : child.paused ? 'Monitor stopped' : '',
+      threadInputLabel(threadInputSummary(child, false), uiText) || phases[child.phase],
+      child.nativeAgentKey && child.activity,
+    ]
+      .filter(Boolean)
+      .join(' · ')
+    return (
+      <li key={child.key} className="min-w-0 py-0.5">
+        <button
+          type="button"
+          aria-label={`Open child thread ${child.title}`}
+          aria-description={status}
+          aria-current={child.key === selectedKey ? 'true' : undefined}
+          disabled={!host.openThread}
+          className={cn(
+            'studio-thread-child w-full min-w-0 rounded-lg px-2 py-1.5 text-left hover:bg-accent/50',
+            child.key === selectedKey && 'bg-accent/70 text-foreground',
           )}
-          {nativeOverflowFailures(child, acknowledgedFailures) > 0 && (
-            <span className="text-destructive">
-              {' '}
-              · {nativeOverflowFailures(child, acknowledgedFailures)} additional failures
+          onClick={(event) => {
+            event.stopPropagation()
+            navigate(child)
+          }}
+          title={child.title}
+        >
+          <span className="flex min-w-0 items-center gap-1.5 text-xs">
+            <span className="min-w-0 flex-1 truncate font-medium">{child.title}</span>
+            <ChildStatus child={child} label={status} />
+          </span>
+          <span className="mt-0.5 flex min-w-0 items-center gap-1 text-[0.625rem] text-muted-foreground">
+            <Monitor className="size-3 shrink-0" aria-hidden="true" />
+            <span className="truncate">
+              {child.computerName}
+              {child.projectName ? ` · ${child.projectName}` : ''}
+              {child.executedModel ? ` · ${modelDisplayName(child.executedModel)}` : ''}
+              {child.nativeAgentKey ? ' · Read only' : ''}
+            </span>
+          </span>
+          {!child.online && child.lastSuccessAt && (
+            <span className="block text-[0.625rem] text-muted-foreground">
+              Updated {new Date(child.lastSuccessAt).toLocaleString()}
             </span>
           )}
-          {child.nativeAgentOverflow.failureKey &&
-            nativeOverflowFailures(child, acknowledgedFailures) > 0 &&
-            onAcknowledgeFailure && (
-              <button
-                type="button"
-                className="rounded px-2 py-1 hover:bg-accent/50"
-                onClick={(event) => {
-                  event.stopPropagation()
-                  onAcknowledgeFailure(child.nativeAgentOverflow!.failureKey!)
-                }}
-              >
-                Acknowledge {child.nativeAgentOverflow.failed} additional failures in {child.title}
-              </button>
+          {threadNeedsInput(child) && child.phase !== 'needs-input' && (
+            <span className="block text-xs text-status-warning">Needs input in child work</span>
+          )}
+          {child.partial && (
+            <span className="block text-xs text-muted-foreground">
+              Some child details unavailable
+            </span>
+          )}
+          {child.activity && !child.nativeAgentKey && (
+            <span className="mt-0.5 block truncate text-[0.625rem] text-muted-foreground">
+              {child.activity}
+            </span>
+          )}
+        </button>
+        {child.phase === 'failed' &&
+          child.failureKey &&
+          onAcknowledgeFailure &&
+          !acknowledgedFailures.includes(child.failureKey) && (
+            <button
+              type="button"
+              className="ml-2 rounded px-2 py-1 text-xs text-muted-foreground hover:bg-accent/50"
+              onClick={(event) => {
+                event.stopPropagation()
+                onAcknowledgeFailure(child.failureKey!)
+              }}
+            >
+              Acknowledge failure
+            </button>
+          )}
+        {!!child.nativeAgentOverflow?.total && (
+          <div className="ml-4 py-1 text-xs text-muted-foreground">
+            <button
+              type="button"
+              disabled={!host.openThread}
+              className="rounded px-2 py-1 hover:bg-accent/50"
+              onClick={(event) => {
+                event.stopPropagation()
+                navigate(child)
+              }}
+            >
+              Open {child.nativeAgentOverflow.total} additional agents in {child.title}
+            </button>
+            {!!child.nativeAgentOverflow.working && (
+              <span> · {child.nativeAgentOverflow.working} working</span>
             )}
-        </div>
-      )}
-      <NestedThreads
-        threads={child.children}
-        parent={child}
-        selectedKey={selectedKey}
-        searching={searching}
-        acknowledgedFailures={acknowledgedFailures}
-        onAcknowledgeFailure={onAcknowledgeFailure}
-      />
-    </li>
-  )
+            {nativeOverflowFailures(child, acknowledgedFailures) > 0 && (
+              <span className="text-destructive">
+                {' '}
+                · {nativeOverflowFailures(child, acknowledgedFailures)} additional failures
+              </span>
+            )}
+            {child.nativeAgentOverflow.failureKey &&
+              nativeOverflowFailures(child, acknowledgedFailures) > 0 &&
+              onAcknowledgeFailure && (
+                <button
+                  type="button"
+                  className="rounded px-2 py-1 hover:bg-accent/50"
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onAcknowledgeFailure(child.nativeAgentOverflow!.failureKey!)
+                  }}
+                >
+                  Acknowledge {child.nativeAgentOverflow.failed} additional failures in{' '}
+                  {child.title}
+                </button>
+              )}
+          </div>
+        )}
+        <NestedThreads
+          threads={child.children}
+          parent={child}
+          selectedKey={selectedKey}
+          searching={searching}
+          acknowledgedFailures={acknowledgedFailures}
+          onAcknowledgeFailure={onAcknowledgeFailure}
+        />
+      </li>
+    )
+  }
   return (
     <div
       className={cn('mb-1 min-w-0 px-2', className)}

@@ -2,7 +2,6 @@ import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-
 import { BotAvatar } from '../../bots/bot-avatar'
 import { router } from 'expo-router'
 import { WorkspaceTypeBadge } from '../../workspace/type-badge'
-import { NestedThreads } from './nested-threads'
 import type { NestedThread } from '@dovo/protocol'
 import { HarnessIcon } from '../../agents/harness-icon'
 import { useCachedModelCatalog } from '../../agents/use-model-catalog'
@@ -14,11 +13,8 @@ import {
   pullStackLabel,
   taskPullLinks,
   taskPullStatusFor,
-  threadChildRows,
+  threadChildCount,
   threadInputSummary,
-  threadTreeSummary,
-  matchingThreadChildren,
-  type ThreadSearchFilter,
 } from '@dovo/protocol'
 import {
   Archive,
@@ -31,9 +27,9 @@ import {
   FilePenLine,
   MessageCircleQuestion,
   MessageCircleDashed,
+  Network,
   Pin,
   Pause,
-  Network,
   SquareTerminal,
   Save,
   type LucideIcon,
@@ -62,7 +58,7 @@ import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
 import { showTaskDone, taskRowStatus } from './task-row-status'
-import { memo, useCallback, useMemo, useRef, useState, type ComponentRef } from 'react'
+import { memo, useCallback, useRef, useState, type ComponentRef } from 'react'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
@@ -94,8 +90,6 @@ function TaskListRowView({
   row,
   needsInput = row.needsInput,
   thread,
-  searching,
-  search,
   owner,
   now,
   testID,
@@ -116,8 +110,6 @@ function TaskListRowView({
   /** Includes attention from spawned work without replacing the stable row projection. */
   needsInput?: boolean
   thread?: NestedThread
-  searching?: boolean
-  search?: ThreadSearchFilter
   owner: TaskListOwner
   now: number
   testID: string
@@ -132,14 +124,8 @@ function TaskListRowView({
   const { colors, styles, highContrast } = useTheme()
   const { fontScale } = useWindowDimensions()
   const rowElement = useRef<ComponentRef<typeof View>>(null)
-  const subthreadAnchorElement = useRef<ComponentRef<typeof View>>(null)
   const pullAnchorElement = useRef<ComponentRef<typeof View>>(null)
   const rowHeight = useRef(0)
-  const [subthreadPosition, setSubthreadPosition] = useState<{
-    left: number
-    top: number
-    offsetY: number
-  } | null>(null)
   const [pullPosition, setPullPosition] = useState<{
     left: number
     top: number
@@ -147,18 +133,9 @@ function TaskListRowView({
     offsetY: number
   } | null>(null)
   // Keep the independent 44-point control aligned with the inline metadata slot.
-  const positionSubthreadControl = useCallback(() => {
+  const positionPullShortcut = useCallback(() => {
     const row = rowElement.current
     if (!row) return
-    subthreadAnchorElement.current?.measureLayout(row, (x, y, width) => {
-      const top = Math.max(0, Math.min(y - 12, rowHeight.current - 44))
-      const next = { left: Math.max(0, x + (width - 44) / 2), top, offsetY: y + 10 - top - 22 }
-      setSubthreadPosition((current) =>
-        current?.left === next.left && current.top === next.top && current.offsetY === next.offsetY
-          ? current
-          : next,
-      )
-    })
     pullAnchorElement.current?.measureLayout(row, (left, y, width, height) => {
       const middle = y + height / 2
       const top = Math.max(0, Math.min(middle - 22, rowHeight.current - 44))
@@ -173,11 +150,6 @@ function TaskListRowView({
       )
     })
   }, [])
-  const [expanded, setExpanded] = useState(false)
-  const [expandedSearch, setExpandedSearch] = useState<string>()
-  const open = searching
-    ? expandedSearch !== undefined && expandedSearch === search?.query
-    : expanded
   const onOpen = useCallback(() => commands.open(row.key), [commands, row.key])
   const onDetails = useCallback(() => commands.details(row.key), [commands, row.key])
   const onSelect = useCallback(() => commands.select(row.key), [commands, row.key])
@@ -281,35 +253,21 @@ function TaskListRowView({
       : (statusIcons[state] ?? CircleDashed)
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
-  const childRows = useMemo(() => {
-    const children = thread ? threadChildRows(thread) : []
-    return search ? matchingThreadChildren(children, search) : children
-  }, [thread, search])
-  const summary = useMemo(
-    () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
-    [childRows, task.acknowledgedSubagentFailures],
-  )
-  const childCount = task.archivedAt ? 0 : summary.total
-  const childrenDetail = [
-    `${childCount} subthread${childCount === 1 ? '' : 's'}`,
-    summary.attention ? `${summary.attention} needs input` : '',
-    summary.running ? `${summary.running} running` : '',
-    summary.waiting ? `${summary.waiting} waiting` : '',
-    summary.failed ? `${summary.failed} failed` : '',
-    summary.offline ? `${summary.offline} offline` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
   const unread = hasUnreadTaskActivity(task)
 
-  const titleHeight = Math.ceil((dense ? 18 : 20) * fontScale)
-  const metadataHeight = Math.max(16, Math.ceil(16 * fontScale))
+  // If the last metadata item also opens a menu, stack two independent 44pt targets.
+  const stackedActions = !car && !settled && !agent && !showDevice && pulls.length > 0
+  const minLineHeight = stackedActions ? 44 : 0
+  const titleHeight = Math.max(minLineHeight, Math.ceil((dense ? 18 : 20) * fontScale))
+  const metadataHeight = Math.max(minLineHeight, 16, Math.ceil(16 * fontScale))
   const rowGap = dense ? 3 : 4
   const contentHeight = metadataHeight + titleHeight + rowGap
   const openRowHeight = (dense ? 16 : 20) + contentHeight
   const headerTop = (openRowHeight - contentHeight) / 2
   const badgeSize = settled ? 16 : 24
   const contextSize = dense ? 11 : 12
+  const trailingIconSize = showDevice ? contextSize : 12
+  const menuRight = stackedActions && pullPosition ? (pullPosition.width - 44) / 2 : 0
   const contextText = { fontSize: contextSize, lineHeight: dense ? 14 : 16 }
   const metadataText = { ...contextText, opacity: highContrast ? 1 : 0.94 }
   const projectImage =
@@ -355,54 +313,6 @@ function TaskListRowView({
       {projectBadge}
       {showTypeIndicator && <WorkspaceTypeBadge kind="thread" />}
     </View>
-  )
-  const subthreadControl = childCount > 0 && (
-    <Pressable
-      accessibilityRole="button"
-      accessibilityLabel={uiText('Subthreads for {value0}', { value0: task.title })}
-      accessibilityHint={childrenDetail}
-      accessibilityState={{
-        expanded: open,
-        disabled: disabled || selectionActive,
-      }}
-      disabled={disabled || selectionActive}
-      onPress={() =>
-        searching ? setExpandedSearch(open ? undefined : search?.query) : setExpanded(!open)
-      }
-      style={{
-        position: 'absolute',
-        left: subthreadPosition?.left ?? 0,
-        top: subthreadPosition?.top ?? 0,
-        width: 44,
-        height: 44,
-        alignItems: 'center',
-        justifyContent: 'center',
-        opacity: subthreadPosition ? 1 : 0,
-      }}
-    >
-      <Network
-        style={{ transform: [{ translateY: subthreadPosition?.offsetY ?? 0 }] }}
-        size={16}
-        color={
-          summary.failed
-            ? colors.error
-            : summary.attention
-              ? colors.warning
-              : open
-                ? colors.accent
-                : colors.muted
-        }
-      />
-    </Pressable>
-  )
-  const subthreadAnchor = childCount > 0 && (
-    <View
-      ref={subthreadAnchorElement}
-      testID="Subthread anchor"
-      collapsable={false}
-      onLayout={positionSubthreadControl}
-      style={{ width: !settled && !car && pulls.length ? 44 : 20, height: 20 }}
-    />
   )
   const pullIndicators = (
     <>
@@ -471,6 +381,24 @@ function TaskListRowView({
       })}
     />
   )
+  const subthreadCount = thread ? threadChildCount(thread) : 0
+  const subthreadLabel = subthreadCount
+    ? `${uiText('Subthreads for {value0}', { value0: task.title })}, ${subthreadCount}`
+    : ''
+  const subthreadIndicator = subthreadCount > 0 && (
+    <View
+      testID="Subthread count"
+      accessible={false}
+      importantForAccessibility="no-hide-descendants"
+      accessibilityElementsHidden
+      style={{ flexDirection: 'row', alignItems: 'center', gap: 2 }}
+    >
+      <Network size={10} color={colors.muted} />
+      <Text style={{ color: colors.muted, fontSize: 10, fontVariant: ['tabular-nums'] }}>
+        {subthreadCount}
+      </Text>
+    </View>
+  )
   const titleText = (
     <Text
       numberOfLines={1}
@@ -487,25 +415,19 @@ function TaskListRowView({
   )
   const title = titleText
 
-  const visibleStatus = settled
-    ? inputLabel || age
-    : row.online
-      ? inputLabel || uiText(state)
-      : uiText('Offline')
   const statusIndicator = (!settled || inputLabel || state !== 'Review') && (
     <View
       testID="Thread status"
-      accessibilityLabel={inputLabel || status}
+      accessibilityLabel={row.online ? inputLabel || status : `${uiText('Offline')} · ${status}`}
       style={{
         flexDirection: 'row',
         alignItems: 'center',
         gap: 4,
         flexShrink: 0,
-        maxWidth: inputLabel ? '60%' : '45%',
+        maxWidth: '45%',
       }}
     >
-      <StatusIcon size={12} color={stateColor} />
-      {!!visibleStatus && (
+      {!!age && (
         <Text
           numberOfLines={1}
           style={{
@@ -515,9 +437,10 @@ function TaskListRowView({
             opacity: stateColor === colors.muted ? metadataText.opacity : 1,
           }}
         >
-          {visibleStatus}
+          {age}
         </Text>
       )}
+      <StatusIcon size={12} color={stateColor} />
     </View>
   )
 
@@ -574,7 +497,7 @@ function TaskListRowView({
         collapsable={false}
         onLayout={(event) => {
           rowHeight.current = event.nativeEvent.layout.height
-          positionSubthreadControl()
+          positionPullShortcut()
         }}
         style={{ flexDirection: 'row', alignItems: settled ? 'center' : 'flex-start' }}
       >
@@ -597,7 +520,7 @@ function TaskListRowView({
         <Pressable
           testID={testID}
           accessibilityRole="button"
-          accessibilityLabel={`${task.bot ? uiText('Bot, ') : ''}${task.pinned ? uiText('Pinned, ') : ''}${projectName}, ${task.title}, ${inputLabel || status}${unread ? `, ${uiText('Unread')}` : ''}, ${task.bot ? uiText('Bot') : general ? uiText('Conversation') : `${worktree ? uiText('Worktree') : uiText('Local checkout')}, ${branch}`}, ${executionDevice}${row.online ? '' : uiText(', Offline')}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}`}
+          accessibilityLabel={`${task.bot ? uiText('Bot, ') : ''}${task.pinned ? uiText('Pinned, ') : ''}${projectName}, ${task.title}, ${inputLabel || status}${unread ? `, ${uiText('Unread')}` : ''}, ${task.bot ? uiText('Bot') : general ? uiText('Conversation') : `${worktree ? uiText('Worktree') : uiText('Local checkout')}, ${branch}`}, ${executionDevice}${row.online ? '' : uiText(', Offline')}${agent ? `, ${providerName}${agent.model ? ` · ${modelName}` : ''}` : ''}${subthreadLabel ? `, ${subthreadLabel}` : ''}`}
           accessibilityHint={
             car
               ? uiText('Open conversation.')
@@ -675,8 +598,8 @@ function TaskListRowView({
               {title}
               <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
                 {terminalIndicator}
+                {subthreadIndicator}
                 {pullIndicators}
-                {subthreadAnchor}
                 {general && agent && <HarnessIcon provider={agent.provider} size={12} />}
                 {general && showDevice && (
                   <DeviceLabel
@@ -700,7 +623,7 @@ function TaskListRowView({
                     alignItems: 'center',
                     height: titleHeight,
                     gap: 6,
-                    paddingRight: car ? 0 : 32,
+                    paddingRight: car ? 0 : 32 + menuRight,
                   }}
                 >
                   {title}
@@ -713,12 +636,8 @@ function TaskListRowView({
                     alignItems: 'center',
                     height: metadataHeight,
                     gap: 5,
-                    paddingRight:
-                      !car && (pulls.length > 0 || childCount > 0)
-                        ? !pulls.length && !showDevice && !agent
-                          ? 44
-                          : 32
-                        : 0,
+                    marginRight: car ? 0 : -12,
+                    paddingRight: car || stackedActions ? 0 : 22 - trailingIconSize / 2,
                   }}
                 >
                   <View
@@ -755,11 +674,12 @@ function TaskListRowView({
                   </View>
                   {task.pinned && <Pin size={12} color={colors.muted} />}
                   {terminalIndicator}
+                  {subthreadIndicator}
                   {!car && pulls.length > 0 ? (
                     <View
                       ref={pullAnchorElement}
                       collapsable={false}
-                      onLayout={positionSubthreadControl}
+                      onLayout={positionPullShortcut}
                       style={{
                         minWidth: 44,
                         flexDirection: 'row',
@@ -774,15 +694,27 @@ function TaskListRowView({
                   ) : (
                     pullIndicators
                   )}
-                  {subthreadAnchor}
-                  {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
-                  {showDevice && !car && (
-                    <DeviceLabel
-                      runtimeIcon={owner.runtimeIcon}
-                      task={task}
-                      runtimeHost={row.runtimeName}
-                      size={contextSize}
-                    />
+                  {(agent || (showDevice && !car)) && (
+                    <View
+                      style={{
+                        flexDirection: 'row',
+                        alignItems: 'center',
+                        justifyContent: 'flex-end',
+                        gap: 5,
+                        // Leave the 44pt menu column clear of adjacent shortcut hit targets.
+                        minWidth: !car && pulls.length ? 28 : undefined,
+                      }}
+                    >
+                      {!!agent && <HarnessIcon provider={agent.provider} size={12} />}
+                      {showDevice && !car && (
+                        <DeviceLabel
+                          runtimeIcon={owner.runtimeIcon}
+                          task={task}
+                          runtimeHost={row.runtimeName}
+                          size={contextSize}
+                        />
+                      )}
+                    </View>
                   )}
                 </View>
               </View>
@@ -790,9 +722,8 @@ function TaskListRowView({
           )}
         </Pressable>
         {pullShortcut}
-        {subthreadControl}
         {!car && !settled && (
-          <View style={{ position: 'absolute', right: 0, top: 0 }}>
+          <View style={{ position: 'absolute', right: menuRight, top: 0 }}>
             <TaskRowMenu
               testID={`${testID} actions`}
               contentOffsetY={headerTop + titleHeight / 2 - 22}
@@ -805,20 +736,6 @@ function TaskListRowView({
           </View>
         )}
       </View>
-      {open && thread && !task.archivedAt && (
-        <NestedThreads
-          hideSummary
-          thread={{
-            ...thread,
-            children: childRows,
-            nativeAgents: undefined,
-            linkedThreads: undefined,
-          }}
-          acknowledgedFailures={task.acknowledgedSubagentFailures}
-          disabled={disabled || selectionActive}
-          searching={searching}
-        />
-      )}
       {(actions.error || pullError) && (
         <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 8 }]}>
           {actions.error || pullError}

@@ -1,4 +1,3 @@
-import type { SubagentListItem, ThreadSearchFilter } from '@dovo/protocol'
 import type { Task } from '@dovo/studio-core'
 import {
   memo,
@@ -71,7 +70,6 @@ function TaskListRowView({
   entryKey,
   task,
   owner,
-  subagents,
   needsInput,
   terminals,
   selected,
@@ -87,15 +85,10 @@ function TaskListRowView({
   actions,
   rowWindow,
   thread,
-  selectedThreadKey,
-  searching,
-  search,
-  revealSearch,
 }: {
   entryKey: string
   task: Task
   owner: TaskOwner
-  subagents: readonly SubagentListItem[]
   needsInput: boolean
   terminals: number
   selected: boolean
@@ -111,13 +104,9 @@ function TaskListRowView({
   actions: TaskListRowActions
   rowWindow: TaskListWindow | null
   thread?: NestedThread
-  selectedThreadKey?: string
-  searching: boolean
-  search?: ThreadSearchFilter
-  revealSearch?: boolean
 }) {
   const element = useRef<HTMLDivElement>(null)
-  const estimate = task.archived || task.archivedAt ? 38 : 45 + (subagents.length ? 32 : 0)
+  const estimate = task.archived || task.archivedAt ? 38 : 45
   const [visible, setVisible] = useState(!rowWindow)
   // Focus, an open menu or dialog, and a pending action keep their row mounted off-screen.
   const [focused, setFocused] = useState(false)
@@ -233,10 +222,6 @@ function TaskListRowView({
             disabled={disabled}
             onSelect={open}
             thread={thread}
-            selectedThreadKey={selectedThreadKey}
-            searching={searching}
-            search={search}
-            revealSearch={revealSearch}
           />
         </TaskContextMenu>
       )}

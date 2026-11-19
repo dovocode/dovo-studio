@@ -1,26 +1,26 @@
-import { formatTurnDuration, taskIsWorking } from '@dovo/protocol'
+import {
+  threadStatusTimestamp,
+  formatThreadAge,
+  formatTurnDuration,
+  taskIsWorking,
+} from '@dovo/protocol'
 import { hasUnviewedTaskCompletion, type Task } from '@dovo/studio-core'
 import { isSnoozed } from './task-priority'
 export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   const latest = task.turns?.at(-1)
-  const finished = latest?.finishedAt ? Date.parse(latest.finishedAt) : NaN
   const started = latest?.startedAt ? Date.parse(latest.startedAt) : NaN
   const elapsed =
     task.status === 'running' && task.runPhase !== 'finalizing' && Number.isFinite(started)
   const working = taskIsWorking(task)
-  const date = working && task.status !== 'running' ? NaN : elapsed ? started : finished
-  const seconds = Math.max(0, Math.floor((now - date) / 1000))
+  const date = Date.parse(threadStatusTimestamp(task, latest) ?? '')
+  const age = formatThreadAge(now - date)
   const time = !Number.isFinite(date)
     ? ''
     : elapsed
-      ? formatTurnDuration(seconds * 1000)
-      : seconds < 60
+      ? formatTurnDuration(now - date)
+      : age === 'now'
         ? 'just now'
-        : seconds < 3600
-          ? `${Math.floor(seconds / 60)}m ago`
-          : seconds < 86400
-            ? `${Math.floor(seconds / 3600)}h ago`
-            : `${Math.floor(seconds / 86400)}d ago`
+        : `${age} ago`
   const state = task.archivedAt
     ? 'Archived'
     : task.archived
@@ -81,6 +81,7 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
   return {
     state,
     tone,
+    age,
     time,
     compactLabel,
     label: [state, time].filter(Boolean).join(' · '),

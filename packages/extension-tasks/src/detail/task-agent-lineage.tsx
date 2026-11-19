@@ -2,13 +2,23 @@ import { useEffect, useEffectEvent, useMemo } from 'react'
 import {
   buildThreadTree,
   threadPhaseLabels,
+  threadChildRows,
   watchRuntimeSettled,
   type NestedThread,
   type Task,
 } from '@dovo/protocol'
 import { useStudioHost, useWorkspace } from '@dovo/studio-core'
+import { Button } from '@dovo/studio-ui'
+import { NestedThreads } from '../list/nested-threads'
+import { collectTasks, taskCollectionKey, taskSources } from '../list/task-collection'
 
-export function TaskAgentLineage({ task }: { task: Task }) {
+export function TaskAgentLineage({
+  task,
+  onManageAgents,
+}: {
+  task: Task
+  onManageAgents: () => void
+}) {
   const host = useStudioHost()
   const { workspace, snapshot, connected, activeRuntimeId, connection, runtimes } = useWorkspace()
   const connections = JSON.stringify([
@@ -29,42 +39,20 @@ export function TaskAgentLineage({ task }: { task: Task }) {
     return () => stops.forEach((stop) => stop())
   })
   useEffect(() => subscribe(), [connections])
-  const tree = useMemo(() => {
-    const sources = [
-      {
-        runtimeId: activeRuntimeId,
-        online: connected,
-        name: snapshot?.runtimeHost ?? 'This computer',
-        workspace,
-        snapshot,
-      },
-      ...runtimes
-        .filter((source) => source.profile.id !== activeRuntimeId && source.snapshot)
-        .map((source) => ({
-          runtimeId: source.profile.id,
-          online: source.connected,
-          name: source.profile.name,
-          workspace: source.snapshot!.workspace,
-          snapshot: source.snapshot,
-        })),
-    ]
-    return buildThreadTree(
-      sources.flatMap((source) =>
-        source.workspace.tasks.map((item) => ({
-          key: JSON.stringify([source.runtimeId, item.id]),
-          task: source.runtimeId === activeRuntimeId && item.id === task.id ? task : item,
-          needsInput: false,
-          projectName:
-            source.workspace.repositories.find((repo) => repo.id === item.repositoryId)?.name ??
-            'No Project',
-          source,
-        })),
+  const selected = taskCollectionKey(activeRuntimeId, task.id)
+  const tree = useMemo(
+    () =>
+      buildThreadTree(
+        collectTasks(
+          taskSources({ workspace, snapshot, connected, connection, runtimes, activeRuntimeId }),
+        ),
       ),
-    )
-  }, [workspace, snapshot, connected, activeRuntimeId, runtimes, task])
-  const selected = JSON.stringify([activeRuntimeId, task.id])
+    [workspace, snapshot, connected, connection, runtimes, activeRuntimeId],
+  )
   const root = tree.nodes.get(tree.rootKeys.get(selected) ?? selected)
-  if (!root || (!root.children.length && !root.nativeAgents?.length && root.key === selected))
+  const thread = tree.nodes.get(selected)
+  const childRows = useMemo(() => (thread ? threadChildRows(thread) : []), [thread])
+  if (!root || (!childRows.length && root.key === selected && !root.nativeAgentOverflow?.total))
     return null
   const branch = (node: NestedThread, depth = 0) => (
     <li key={node.key} className="min-w-0">
@@ -88,23 +76,35 @@ export function TaskAgentLineage({ task }: { task: Task }) {
           {node.partial ? ' · Partial history' : ''}
         </span>
       </button>
-      {(node.children.length > 0 || !!node.nativeAgents?.length) && depth < 16 && (
-        <ul className="ml-3 border-l border-border pl-2">
-          {node.nativeAgents?.map((agent) => (
-            <li key={agent.key} className="px-2 py-1 text-xs">
-              <span className="block break-words">{agent.name}</span>
-              <span className="text-[11px] text-muted-foreground">
-                {agent.status === 'working' ? 'Running' : agent.status}
-              </span>
-            </li>
-          ))}
-          {node.nativeAgentOverflow && node.nativeAgentOverflow.total > 0 && (
-            <li className="px-2 py-1 text-xs text-muted-foreground">
-              {node.nativeAgentOverflow.total} more native agents
-            </li>
-          )}
-          {node.children.map((child) => branch(child, depth + 1))}
-        </ul>
+      {node.key === selected && childRows.length > 0 ? (
+        <NestedThreads
+          hideSummary
+          threads={childRows}
+          parent={node}
+          acknowledgedFailures={task.acknowledgedSubagentFailures}
+        />
+      ) : (
+        (node.children.length > 0 ||
+          !!node.nativeAgents?.length ||
+          !!node.nativeAgentOverflow?.total) &&
+        depth < 16 && (
+          <ul className="ml-3 border-l border-border pl-2">
+            {node.nativeAgents?.map((agent) => (
+              <li key={agent.key} className="px-2 py-1 text-xs">
+                <span className="block break-words">{agent.name}</span>
+                <span className="text-[11px] text-muted-foreground">
+                  {agent.status === 'working' ? 'Running' : agent.status}
+                </span>
+              </li>
+            ))}
+            {node.nativeAgentOverflow && node.nativeAgentOverflow.total > 0 && (
+              <li className="px-2 py-1 text-xs text-muted-foreground">
+                {node.nativeAgentOverflow.total} more native agents
+              </li>
+            )}
+            {node.children.map((child) => branch(child, depth + 1))}
+          </ul>
+        )
       )}
     </li>
   )
@@ -114,6 +114,11 @@ export function TaskAgentLineage({ task }: { task: Task }) {
       <ul className="max-h-64 overflow-x-hidden overflow-y-auto [scrollbar-gutter:stable]">
         {branch(root)}
       </ul>
+      {childRows.length > 0 && (
+        <Button size="sm" variant="ghost" onClick={onManageAgents}>
+          Manage agents
+        </Button>
+      )}
     </section>
   )
 }

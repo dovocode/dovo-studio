@@ -29,6 +29,7 @@ const mocks = {
   './harness-settings': `export const HarnessSettings=()=>{throw Error('Unexpected model controls in navigation audit fixture')};`,
   '@dovo/studio-core': `export {useTaskWaiting} from '${root}/packages/studio-core/src/use-task-waiting.ts';`,
   'react-native': controls,
+  './thread-pressable': `export {Pressable} from 'react-native';`,
   'lucide-react-native': `export * from 'lucide-react';`,
   '@expo/ui/swift-ui': swift,
   '@expo/ui/swift-ui/modifiers': [
@@ -46,6 +47,7 @@ const mocks = {
   'expo-router': `export const router={push:href=>{window.events.push('route');window.routes.push(href)}};`,
   'expo-crypto': `export const randomUUID=()=>'00000000-0000-4000-8000-000000000001';`,
   'react-native-safe-area-context': `export const useSafeAreaInsets=()=>({bottom:0});`,
+  '../../runtime/connection/context': `export const useRuntime=()=>window.runtime;`,
   '../../runtime/connection/provider': `export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;`,
   '../../../runtime/connection/provider': `export const useRuntimeSelector=select=>select(useRuntime());export const sameRuntimeFields=(a,b)=>Object.keys(b).every(key=>Object.is(a[key],b[key]));export const useRuntime=()=>window.runtime;`,
   '../../shell/navigation': `export const useNavigation=()=>window.navigation;`,

@@ -1,4 +1,5 @@
-import { taskIsWorking } from './task-working.js'
+import type { Task } from '../workspace.js'
+import { taskIsWorking, threadStatusTimestamp } from './task-working.js'
 import {
   compareThreadWatchSources,
   type ThreadWatchSummary,
@@ -12,7 +13,7 @@ import { botInvocationParent, botProjectThread, spawnedThreadWatch } from './thr
 
 export type ThreadTreeEntry = {
   key: string
-  task: TaskMetadata
+  task: TaskMetadata & Pick<Task, 'turns'>
   needsInput: boolean
   projectName: string
   source: {
@@ -26,6 +27,7 @@ const taskCollectionKey = (runtimeId: string | null, threadId: string) =>
   JSON.stringify([runtimeId, threadId])
 
 export type NestedThread = {
+  statusAt?: string
   executedModel?: string
   key: string
   runtimeId: string | null
@@ -129,6 +131,7 @@ function threadNode(entry: ThreadTreeEntry, inputs?: ThreadInputs): NestedThread
     runtimeIdentity: source.snapshot?.runtimeId,
     threadId: task.id,
     title: task.title,
+    statusAt: threadStatusTimestamp(task, task.turns?.at(-1)),
     computerName: source.name,
     projectName: entry.projectName,
     repositoryId: task.repositoryId,
@@ -391,6 +394,7 @@ export function buildThreadTree<Entry extends ThreadTreeEntry>(
             threadId: fact.threadId,
             title: fact.title || 'Untitled thread',
             executedModel: fact.executedModel,
+            statusAt: fact.statusAt,
             projectName: fact.projectName,
             repositoryId: fact.repositoryId,
             projectIdentity: fact.projectIdentity,
@@ -554,6 +558,7 @@ function watchedNode(
     runtimeIdentity: watch.snapshot?.runtimeId,
     threadId: watch.threadId,
     title: watch.snapshot?.title ?? 'Connected thread',
+    statusAt: own?.statusAt ?? watch.snapshot?.statusAt,
     executedModel: own?.executedModel ?? watch.snapshot?.executedModel,
     computerName: watch.computerName,
     projectName: watch.snapshot?.projectName,
@@ -643,6 +648,16 @@ export const threadPhaseLabels: Record<NestedThread['phase'], string> = {
   review: 'Review',
 }
 
+/** Count the child rows without projecting them, including native agents omitted from snapshots. */
+export function threadChildCount(thread: NestedThread): number {
+  return (
+    (thread.nativeAgents?.length ?? 0) +
+    (thread.nativeAgentOverflow?.total ?? 0) +
+    (thread.linkedThreads?.length ?? 0) +
+    thread.children.reduce((total, child) => total + 1 + threadChildCount(child), 0)
+  )
+}
+
 /** Present provider-owned agents in the same tree without creating writable Studio tasks. */
 export function threadChildRows(
   thread: Pick<NestedThread, 'children' | 'runtimeId' | 'threadId' | 'title'> &
@@ -666,6 +681,7 @@ export function threadChildRows(
       threadId: thread.threadId,
       nativeAgentKey: agent.threadKey ?? agent.key,
       title: agent.name,
+      statusAt: agent.statusAt,
       computerName: thread.computerName ?? 'This computer',
       projectName: thread.projectName,
       phase:

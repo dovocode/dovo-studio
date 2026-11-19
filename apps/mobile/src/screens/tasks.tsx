@@ -207,10 +207,7 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
   )
   const historySearch = useTaskSearch(entries, query, focused)
   const searchKeys = JSON.stringify([...historySearch.keys].sort())
-  const searchFilter = useMemo(
-    () => (query ? { query, keys: historySearch.keys } : undefined),
-    [query, searchKeys],
-  )
+
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -965,7 +962,9 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       {organizing && <SectionOrderSheet onClose={() => setOrganizing(false)} />}
       <FlatList
         {...listScroll}
-        contentInsetAdjustmentBehavior="automatic"
+        // WorkbenchScene and its tab content already apply the safe area.
+        contentInsetAdjustmentBehavior="never"
+        automaticallyAdjustContentInsets={false}
         data={expandedItems}
         testID="Task list"
         scrollEventThrottle={32}
@@ -1146,8 +1145,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 row={rowData.get(item.entry.key)!.row}
                 needsInput={item.entry.needsInput}
                 thread={tree.nodes.get(item.entry.key)}
-                searching={!!query}
-                search={searchFilter}
                 owner={rowData.get(item.entry.key)!.owner}
                 commands={rowCommands}
                 now={now}

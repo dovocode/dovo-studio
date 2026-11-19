@@ -144,15 +144,13 @@ startup. Task execution readiness remains separate from replication health. Sync
 existing pairings. Summary reads reuse their projection until committed metadata changes.
 Message-only updates do not rebuild the summaries.
 
-The mobile unified list uses the shared thread tree. Delegated local and remote subthreads appear
-under their parent. Search can find a child through its parent. Thread search shows parent results
-by default. On desktop/web, hold **Alt** to reveal matching subthreads. Release **Alt** to hide
-them. This does not change saved expansion choices. On mobile, use the parent's subthread button to
-open matching children. Side chats also belong under their parent. The **Messages** tab still opens
-exact message matches. Settled counts and paging count parent threads. Child summaries stay
-available for family navigation and do not consume the settled page budget. Child input requests
-reach the parent's **Needs input** section. Project and computer filters keep the parent as context.
-Subagents stay behind its icon. An archived parent remains as context when it has a visible child.
+Threads and Unified show one row per parent. Its metadata includes a small, read-only subthread
+count. Open **Thread info** on the parent to see its subthreads and open a specific child. On
+desktop and web, use the right panel. On mobile, use the Thread info sheet. A child's input request
+still puts its parent in **Needs input**. A project or computer filter can keep the parent as
+context. Settled counts and paging count parents. In **Go to thread**, use **Show matching
+subthreads** to open a child search result. The **Messages** tab opens the exact message match.
+
 Desktop Unified uses the same preferred-copy rules as Threads. A connected original wins over its
 replicas. A connected replica can replace an offline original. One logical thread has one main row.
 Equal copies use a stable computer ID to break ties. Their order in the fleet does not change the

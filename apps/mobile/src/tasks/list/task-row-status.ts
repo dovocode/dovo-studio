@@ -1,15 +1,11 @@
-import { taskIsWorking, isSnoozed, hasUnviewedTaskCompletion, type Task } from '@dovo/protocol'
-function age(date: string, now: number) {
-  const minutes = Math.max(0, Math.floor((now - Date.parse(date)) / 60000))
-  return minutes < 1
-    ? 'now'
-    : minutes < 60
-      ? `${minutes}m`
-      : minutes < 1440
-        ? `${Math.floor(minutes / 60)}h`
-        : `${Math.floor(minutes / 1440)}d`
-}
-
+import {
+  formatThreadAge,
+  threadStatusTimestamp,
+  taskIsWorking,
+  isSnoozed,
+  hasUnviewedTaskCompletion,
+  type Task,
+} from '@dovo/protocol'
 /** Input, snooze and failures take priority over an unread successful completion. */
 export function showTaskDone(task: Task, needsInput: boolean, now: number) {
   return (
@@ -53,11 +49,7 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
                       : task.status === 'cancelled'
                         ? 'Stopped'
                         : 'Draft'
-  const date =
-    working && task.status !== 'running'
-      ? undefined
-      : task.status === 'running' && task.runPhase !== 'finalizing'
-        ? turn?.startedAt
-        : turn?.finishedAt
-  return date ? `${state} · ${age(date, now)}` : state
+  const date = threadStatusTimestamp(task, turn)
+  const age = date && formatThreadAge(now - Date.parse(date))
+  return age ? `${state} · ${age}` : state
 }

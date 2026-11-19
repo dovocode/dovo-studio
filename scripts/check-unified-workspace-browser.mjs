@@ -1264,6 +1264,10 @@ try {
     .getByRole('complementary')
     .getByRole('group', { name: 'Thread: Grouping parent', exact: true })
   await groupParent.waitFor()
+  await groupParent
+    .locator('[title="Subthreads for Grouping parent, 4"]')
+    .getByText('4', { exact: true })
+    .waitFor()
   assert.equal(
     await groupParent.evaluate((element) => element.closest('section').getAttribute('aria-label')),
     'Needs input workspace items',
@@ -1276,72 +1280,25 @@ try {
       'Subagents have no duplicate top-level rows',
     )
   }
-  await groupParent
-    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
-    .click()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping local child', exact: true })
-    .waitFor()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
-    .waitFor()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Native reviewer', exact: true })
-    .waitFor()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
-    .click()
-  await page.locator('[data-thread="group-remote"][data-owner="remote"]').waitFor()
-  assert.equal(
-    await groupParent.getAttribute('data-highlighted'),
-    'true',
-    'Selecting a child highlights its owning root',
-  )
+  assert.equal(await groupParent.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
   await page.getByLabel('Search workspace').fill('Grouping grandchild')
-  assert.equal(
-    await groupParent
-      .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
-      .count(),
-    0,
-    'Search starts with the parent result',
-  )
+  await groupParent.waitFor()
   await page.keyboard.down('Alt')
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
-    .waitFor()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
-    .click()
-  await page.locator('[data-thread="group-grandchild"][data-owner="remote"]').waitFor()
+  assert.equal(await groupParent.getByRole('button', { name: /^Open child thread/ }).count(), 0)
   await page.keyboard.up('Alt')
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping grandchild', exact: true })
-    .waitFor({ state: 'detached' })
   await page.getByLabel('Search workspace').fill('')
-  await groupParent
-    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
-    .click()
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.getByLabel('Workspace computer filter').selectOption('remote')
   await groupParent.waitFor()
   assert.equal(
     await page.getByRole('group', { name: 'Thread: Grouping remote child', exact: true }).count(),
     0,
-    'A computer filter keeps subagents behind the parent icon',
+    'A computer filter keeps subagents under the parent in Thread info',
   )
   assert.equal(
     await page.getByRole('group', { name: 'Thread: Grouping grandchild', exact: true }).count(),
     0,
   )
-  const filteredSubagents = groupParent.getByRole('button', {
-    name: 'Subthreads for Grouping parent',
-    exact: true,
-  })
-  assert.equal(await filteredSubagents.getAttribute('aria-expanded'), 'false')
-  await filteredSubagents.click()
-  await groupParent
-    .getByRole('button', { name: 'Open child thread Grouping remote child', exact: true })
-    .waitFor()
   await page.getByLabel('Workspace computer filter').selectOption('')
   await page.getByRole('button', { name: 'Filter workspace', exact: true }).click()
   await page.evaluate(() => {
@@ -1358,11 +1315,7 @@ try {
     0,
     'Archiving the parent does not mix subagents into the main list',
   )
-  await groupParent
-    .getByRole('button', { name: 'Subthreads for Grouping parent', exact: true })
-    .waitFor()
-  await page.getByRole('button', { name: 'Hide Grouping grandchild', exact: true }).click()
-  await page.getByRole('button', { name: 'Hide Grouping remote child', exact: true }).click()
+  assert.equal(await groupParent.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
   await returnHome()
   await page.evaluate((originalRuntime) => {
     window.activeRuntimeId = originalRuntime

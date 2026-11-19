@@ -91,13 +91,6 @@ createRoot(document.getElementById('app')).render(<ApplicationStateProvider><Too
     {
       name: 'sidebar-rendering-fixtures',
       setup(builder) {
-        builder.onLoad({ filter: /\/nested-threads\.tsx$/ }, ({ path }) => ({
-          contents: readFileSync(path, 'utf8').replace(
-            'if (!threads.length) return null',
-            'if (!threads.length) return null; window.counts.trees++;',
-          ),
-          loader: 'tsx',
-        }))
         builder.onResolve({ filter: /.*/ }, ({ path }) =>
           Object.hasOwn(mocks, path) ? { path, namespace: 'fixture' } : undefined,
         )
@@ -194,132 +187,20 @@ try {
   const threadSearch = page.getByRole('textbox', { name: 'Search threads', exact: true })
   await threadSearch.fill('Child thread')
   await page.getByText('Parent thread', { exact: true }).waitFor()
+  await page
+    .locator('[title="Subthreads for Parent thread, 2"]')
+    .getByText('2', { exact: true })
+    .waitFor()
   assert.equal(
     await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).count(),
     0,
   )
   await page.keyboard.down('Alt')
-  await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).waitFor()
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Native child', exact: true }).count(),
-    0,
-  )
+  assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
   await page.keyboard.up('Alt')
-  await page
-    .getByRole('button', { name: 'Open child thread Child thread', exact: true })
-    .waitFor({ state: 'detached' })
   await threadSearch.fill('')
-  // Wait for the deferred filter to restore the full list before testing its controls.
   await page.getByText('Running thread', { exact: true }).waitFor()
-  const childToggle = page.getByRole('button', {
-    name: 'Subthreads for Parent thread',
-    exact: true,
-  })
-  assert.equal(await childToggle.getAttribute('aria-expanded'), 'false')
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
-    0,
-  )
-  await childToggle.press('Enter')
-  assert.equal(await childToggle.getAttribute('aria-expanded'), 'true')
-  assert.equal(await page.evaluate(() => window.selected), undefined)
-  await page.evaluate(() => window.setMounted(false))
-  await page.evaluate(() => window.setMounted(true))
-  assert.equal(await childToggle.getAttribute('aria-expanded'), 'true')
-  await childToggle.click()
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
-    0,
-  )
-  await childToggle.click()
-
-  // The authoritative child is finished, so its activity is visible only after disclosure.
-  const finishedToggle = page.getByRole('button', {
-    name: 'Finished threads for Parent thread',
-    exact: true,
-  })
-  assert.equal(await finishedToggle.getAttribute('aria-expanded'), 'false')
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child thread' }).count(),
-    0,
-  )
-  await finishedToggle.click()
-  await page.getByRole('button', { name: 'Open child thread Child thread' }).waitFor()
-
-  // Studio and native transcript payloads do not repaint the tree. Visible facts still update.
-  await page.evaluate(() => {
-    window.counts.trees = 0
-    for (let frame = 0; frame < 30; frame++) {
-      window.publish(
-        window.tasks.map((task) =>
-          task.id === 'parent'
-            ? {
-                ...task,
-                subagents: task.subagents.map((agent) => ({
-                  ...agent,
-                  updatedAt: String(frame),
-                  prompt: 'Prompt '.repeat(10000),
-                  result: 'Result '.repeat(10000),
-                })),
-              }
-            : task.id === 'child'
-              ? {
-                  ...task,
-                  messages: [{ id: 'child-stream', role: 'assistant', text: 'chunk ' + frame }],
-                }
-              : task,
-        ),
-      )
-    }
-  })
-  assert.equal(
-    await page.evaluate(() => window.counts.trees),
-    0,
-    'transcript-only updates repainted a thread tree',
-  )
-  await page.evaluate(() =>
-    window.publish(
-      window.tasks.map((task) =>
-        task.id === 'parent'
-          ? {
-              ...task,
-              subagents: task.subagents.map((agent) => ({
-                ...agent,
-                activity: 'Running targeted tests',
-                tokens: 42,
-              })),
-            }
-          : task,
-      ),
-    ),
-  )
-  await page.getByText('Running targeted tests', { exact: true }).waitFor()
-  assert.equal(
-    await page.evaluate(() => window.counts.trees),
-    1,
-    'visible child activity should repaint only its parent tree',
-  )
-  await page.evaluate(() => {
-    window.counts.trees = 0
-    window.publish(
-      window.tasks.map((task) =>
-        task.id === 'parent'
-          ? {
-              ...task,
-              subagents: task.subagents.map((agent) =>
-                agent.id === 'native' ? { ...agent, name: 'Native child updated' } : agent,
-              ),
-            }
-          : task,
-      ),
-    )
-  })
-  await page.getByRole('button', { name: 'Open child thread Native child updated' }).waitFor()
-  assert.equal(
-    await page.evaluate(() => window.counts.trees),
-    1,
-    'visible native agent changes should repaint only their parent tree',
-  )
+  assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
 
   // The running row owns its one-second clock; the list itself does not re-render.
   await page.evaluate(() => {
@@ -339,14 +220,6 @@ try {
   )
   await page.getByRole('button', { name: /Renamed/ }).click()
   assert.equal(await page.evaluate(() => window.selected.task.title), 'Renamed')
-  await page.getByRole('button', { name: 'Open child thread Child thread', exact: true }).click()
-  assert.deepEqual(await page.evaluate(() => window.openedThread), {
-    runtimeId: 'local',
-    threadId: 'child',
-    title: 'Child thread',
-    parent: { runtimeId: 'local', threadId: 'parent', title: 'Parent thread' },
-  })
-
   // Modifier selection and the shared selection menu still work on real rows.
   await page.getByRole('button', { name: /Thread 1\b/ }).click()
   await page.getByRole('button', { name: /Thread 2\b/ }).click({ modifiers: ['ControlOrMeta'] })
@@ -744,10 +617,7 @@ try {
   const compactBox = await compactTitle.locator('xpath=ancestor::button[1]').boundingBox()
   const settledCard = compactTitle.locator('xpath=ancestor::button[1]')
   assert.doesNotMatch(await settledCard.locator('.studio-thread-status').innerText(), /Settled/)
-  assert.match(
-    await settledCard.locator('.studio-thread-status').innerText(),
-    /^(\d+[mhd]|just now)/,
-  )
+  assert.match(await settledCard.locator('.studio-thread-status').innerText(), /^(\d+[mhd]|now)$/)
   const settledIcon = settledCard.locator('.studio-thread-project-icon')
   await page.mouse.move(1100, 650)
   assert.equal(await settledIcon.evaluate((el) => getComputedStyle(el).filter), 'grayscale(1)')
@@ -783,7 +653,7 @@ try {
       (await projectless.getByText('No Project', { exact: true }).boundingBox()).x,
     'Draft status keeps the right side of the first line',
   )
-  assert.equal(await draftStatus.innerText(), 'Draft')
+  assert.equal(await draftStatus.innerText(), '')
   assert.equal(await draftStatus.getAttribute('aria-label'), 'Draft')
   const draftTitleBox = await projectless.locator('[data-thread-title]').boundingBox()
   const draftStatusBox = await draftStatus.boundingBox()
@@ -912,7 +782,7 @@ try {
     const indicator = row.locator('.studio-thread-status')
     await indicator.waitFor()
     const text = await indicator.innerText()
-    assert.equal(text, state)
+    assert.equal(text, 'now')
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.equal(await indicator.locator('svg').count(), 1)
     await assertStatusColors(indicator, state === 'Working' ? 'active' : 'neutral')
@@ -923,7 +793,7 @@ try {
       .first()
       .locator('.studio-thread-status')
       .innerText(),
-    'Working',
+    'now',
   )
   assert.equal(
     await page
@@ -931,11 +801,11 @@ try {
       .first()
       .locator('.studio-thread-status')
       .innerText(),
-    'Saving changes',
+    '',
   )
   await page.evaluate(() => window.setListPreferences({ workingSection: false }))
-  assert.equal(await workingRow.locator('.studio-thread-status').innerText(), 'Working')
-  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'Waiting')
+  assert.equal(await workingRow.locator('.studio-thread-status').innerText(), 'now')
+  assert.equal(await waitingRow.locator('.studio-thread-status').innerText(), 'now')
 
   // A provider shell is activity, but is not an agent. Keep it in Open and expose its icon.
   await page.evaluate(() => {
@@ -1018,10 +888,10 @@ try {
                   id: 'state-turn',
                   provider: 'codex',
                   status: status === 'running' ? 'running' : 'completed',
-                  startedAt: new Date(Date.now() - 600000).toISOString(),
+                  startedAt: new Date(Date.now() - (14 * 60 + 20) * 60000).toISOString(),
                   ...(status === 'running'
                     ? {}
-                    : { finishedAt: new Date(Date.now() - 300000).toISOString() }),
+                    : { finishedAt: new Date(Date.now() - 330000).toISOString() }),
                 },
               ],
       })),
@@ -1044,7 +914,18 @@ try {
     assert.equal(await indicator.getAttribute('data-tone'), tone)
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.match(await indicator.getAttribute('title'), new RegExp('^' + state))
-    assert.equal(await indicator.innerText(), state)
+    if (status !== 'draft')
+      assert.equal(
+        await indicator
+          .locator('svg')
+          .evaluate((icon) => icon === icon.parentElement.lastElementChild),
+        true,
+        'Time precedes the status icon',
+      )
+    assert.equal(
+      await indicator.innerText(),
+      status === 'draft' ? '' : status === 'running' ? '14h' : '5m',
+    )
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row
@@ -1220,17 +1101,6 @@ try {
       window.publish([...window.initialTasks.slice(0, 5), window.initialTasks[303]])
     })
     await page.getByText('Parent thread', { exact: true }).click()
-    const subthreads = page.getByRole('button', {
-      name: 'Subthreads for Parent thread',
-      exact: true,
-    })
-    if ((await subthreads.getAttribute('aria-expanded')) !== 'true') await subthreads.click()
-    const finished = page.getByRole('button', {
-      name: 'Finished threads for Parent thread',
-      exact: true,
-    })
-    if ((await finished.getAttribute('aria-expanded')) !== 'true') await finished.click()
-    await page.getByRole('button', { name: 'Open child thread Child thread' }).click()
     await page.mouse.move(800, 650)
     await page.screenshot({ path: process.env.DOVO_UI_SCREENSHOT })
   }
@@ -1341,7 +1211,7 @@ try {
   assert.equal(await bots.getByRole('button', { name: 'New Bot', exact: true }).isVisible(), true)
   assert.deepEqual(errors, [])
   console.log(
-    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; zero tree renders for 30 large Studio/native child-payload updates and one tree render per visible activity/name change; selector isolation, latest-entry commands, nested thread navigation, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
+    `Sidebar rendering: ${initial}/302 rows mounted, ${streaming.rows} row renders for 30 streamed frames, ${ticking.rows} clock renders in 3.2s with no list renders; selector isolation, latest-entry commands, parent-only overview, selection menu, Tab/Shift+Tab across 87 windowed tasks with focus handoff, collapsed sections, windowed scrolling, scroll restoration and removed-task release verified.`,
   )
 } finally {
   await browser.close()

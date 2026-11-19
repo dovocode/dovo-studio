@@ -142,9 +142,25 @@ export function mobileThreadTree(
   include?: (row: RuntimeTask) => boolean,
   includeSnapshot?: (thread: NestedThread) => boolean,
 ) {
+  return mobileThreadTreeFromRows(
+    [...rows.values()].map(({ row }) => row),
+    overviews,
+    previous,
+    include,
+    includeSnapshot,
+  )
+}
+
+export function mobileThreadTreeFromRows(
+  rows: readonly RuntimeTask[],
+  overviews: readonly RuntimeOverview[],
+  previous?: ReadonlyMap<string, NestedThread>,
+  include?: (row: RuntimeTask) => boolean,
+  includeSnapshot?: (thread: NestedThread) => boolean,
+) {
   const sources = new Map(overviews.map((source) => [source.profile.id, source]))
   return buildThreadTree(
-    [...rows.values()].map(({ row }) => ({
+    rows.map((row) => ({
       ...row,
       source: {
         runtimeId: row.runtimeId,

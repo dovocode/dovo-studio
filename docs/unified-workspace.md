@@ -56,11 +56,20 @@ An additional **Hide normal modes** preference can hide those choices while Unif
 is off by default. Disabling Unified restores the normal modes. Its sidebar mixes browser pages,
 threads and standalone terminals, with search, computer and type filters under **Filter workspace**.
 Threads render the same `TaskRow` component as Threads, with its project icon, title, branch and
-status. Pages render the Browser workspace's `BrowserTabRow`, including its favicon, title, site and
-linked project or profile, unread badge and media indicators. Unified adds a type badge to the
-leading icon of a thread, page or terminal. Standalone terminals share their row with Terminals.
-Pinned pages use the same browser tile component and selection styling as Browser, with the type
-badge on the favicon.
+status icon. A short age such as `14h` precedes the icon when the turn has a timestamp. Screen
+readers announce the full status. On desktop, hover over the icon to read it. Pages render the
+Browser workspace's `BrowserTabRow`, including its favicon, title, site and linked project or
+profile, unread badge and media indicators. Unified adds a type badge to the leading icon of a
+thread, page or terminal. Standalone terminals share their row with Terminals. Pinned pages use the
+same browser tile component and selection styling as Browser, with the type badge on the favicon.
+
+A small icon beside the terminal count shows how many subthreads belong to the parent. Open **Thread
+info** to see them. On desktop and web, each child shows its age before the status icon. Hover over
+the icon to read the full status. Older computers can supply a status without an age. Threads and
+Unified keep child rows out of the overview.
+
+On iPhone the thread list and open conversation measure the space below the native header. The
+three-dot menu sits on the title line above the last metadata icon.
 
 The overview uses the same row components; pinned pages use a normal tab row there. The overview
 centers the routing input, with compact creation actions. The shared input appears only on

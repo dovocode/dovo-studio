@@ -1,5 +1,11 @@
 import type { Task, ThreadWatchSummary } from '@dovo/protocol'
-import { decode, randomUUID, snapshotSchema, threadChildRows } from '@dovo/protocol'
+import {
+  decode,
+  randomUUID,
+  snapshotSchema,
+  threadChildCount,
+  threadChildRows,
+} from '@dovo/protocol'
 import { createTask } from '@dovo/studio-core'
 import { expect, it } from 'vite-plus/test'
 import { collectTasks, taskCollectionKey, type TaskSource } from './task-collection'
@@ -985,9 +991,11 @@ it('retains overflow failures after all detailed agents are acknowledged and cle
       nativeAgentOverflow,
     },
   })
-  const children = buildThreadTree(collectTasks([source('desktop', [taskFactory()])])).nodes.get(
+  const parent = buildThreadTree(collectTasks([source('desktop', [taskFactory()])])).nodes.get(
     key('desktop', 'parent'),
-  )!.children
+  )!
+  const children = parent.children
+  expect(threadChildCount(parent)).toBe(42)
   function taskFactory() {
     return {
       ...createTask({ title: 'parent', repositoryId: '', agentId: '', objective: '' }),

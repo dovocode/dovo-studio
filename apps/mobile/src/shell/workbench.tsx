@@ -48,7 +48,7 @@ import {
 } from 'react-native'
 import { IconButton } from '../ui/controls/icon-button'
 import { Text } from '../ui/content/text'
-import { SafeAreaView } from 'react-native-safe-area-context'
+import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context'
 import { SafeAreaView as NativeSafeAreaView } from 'react-native-screens/experimental'
 import { useRuntime } from '../runtime/connection/provider'
 import { createMobileExtensions } from './extensions'
@@ -199,6 +199,34 @@ function WorkbenchNotices() {
     </>
   )
 }
+// On iOS the native stack can already position this route below its header.
+// Measure the remaining top inset at the route, including when its header hides.
+function WorkbenchSafeArea({
+  children,
+  top = true,
+  bottom = false,
+}: {
+  children: ReactNode
+  top?: boolean
+  bottom?: boolean
+}) {
+  if (Platform.OS === 'ios')
+    return (
+      <SafeAreaProvider>
+        <SafeAreaView style={{ flex: 1 }} edges={top ? ['top'] : []}>
+          <NativeSafeAreaView edges={{ left: true, right: true, bottom }}>
+            {children}
+          </NativeSafeAreaView>
+        </SafeAreaView>
+      </SafeAreaProvider>
+    )
+  return (
+    <NativeSafeAreaView edges={{ top, left: true, right: true, bottom }}>
+      {children}
+    </NativeSafeAreaView>
+  )
+}
+
 export function WorkbenchScene({ tab, sidebar = false }: { tab: Tab | 'scm'; sidebar?: boolean }) {
   const context = useContext(SceneContext)
   const focused = useIsFocused()
@@ -218,13 +246,10 @@ export function WorkbenchScene({ tab, sidebar = false }: { tab: Tab | 'scm'; sid
         },
       }}
     >
-      <NativeSafeAreaView
-        // The expanded sidebar already consumes the top inset in TaskPaneLayout.
-        edges={{ top: !sidebar, left: true, right: true }}
-      >
+      <WorkbenchSafeArea top={!sidebar}>
         <WorkbenchNotices />
         {context.scenes[tab] ?? null}
-      </NativeSafeAreaView>
+      </WorkbenchSafeArea>
     </NavigationContext.Provider>
   )
 }
@@ -251,17 +276,10 @@ export function WorkbenchDetailRoute({
         focused: navigation.focused && focused,
       }}
     >
-      <NativeSafeAreaView
-        edges={{
-          top: true,
-          left: true,
-          right: true,
-          bottom: bottomInset,
-        }}
-      >
+      <WorkbenchSafeArea bottom={bottomInset}>
         <WorkbenchNotices />
         {children}
-      </NativeSafeAreaView>
+      </WorkbenchSafeArea>
     </NavigationContext.Provider>
   )
 }

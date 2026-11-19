@@ -3,7 +3,7 @@ import { AlarmClock, Check, GitBranch, FolderOpen, Pin, SquareTerminal } from 'l
 import type { Task } from '@dovo/studio-core'
 import { cn, ProjectIcon } from '@dovo/studio-ui'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
-import { type Repository, type RuntimeSnapshot, type ThreadSearchFilter } from '@dovo/protocol'
+import type { Repository, RuntimeSnapshot } from '@dovo/protocol'
 import type { BrowserTabTarget } from '../browser/browser-pane'
 import { TaskContextMenu } from '../detail/task-context-menu'
 import { TaskRow } from '../list/task-row'
@@ -125,10 +125,6 @@ export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
   actionDisabled,
   settleDisabled,
   thread,
-  selectedThreadKey,
-  searching,
-  search,
-  revealSearch,
 }: {
   rowKey: string
   commands: WorkspaceThreadCommands
@@ -145,10 +141,6 @@ export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
   needsInput: boolean
   terminals: number
   thread?: NestedThread
-  selectedThreadKey?: string
-  searching: boolean
-  search?: ThreadSearchFilter
-  revealSearch?: boolean
 }) {
   const onSelect = useCallback(() => commands.open(rowKey), [commands, rowKey])
   const actions = useMemo<WorkspaceResourceMenuProps>(
@@ -205,10 +197,6 @@ export const WorkspaceThreadRow = memo(function WorkspaceThreadRow({
         needsInput={needsInput}
         terminals={terminals}
         thread={thread}
-        selectedThreadKey={selectedThreadKey}
-        searching={searching}
-        search={search}
-        revealSearch={revealSearch}
         editable={false}
         disabled={disabled}
       />

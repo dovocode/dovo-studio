@@ -22,9 +22,10 @@ export const MessageResponse=({children})=><div>{children}</div>;
 export const Tooltip=({children})=><>{children}</>;export const TooltipTrigger=Tooltip;export const TooltipContent=()=>null;
 export const SettingsPage=({title,description,children})=><section><h1>{title}</h1><p>{description}</p>{children}</section>;
 export const PageHeader=({title})=><h1>{title}</h1>;
-export const BotAvatar=()=>null;export const ContextMenu={Root:Tooltip,Trigger:Tooltip,Content:Tooltip,Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};
+export const BotAvatar=()=>null;export const ContextMenu={Root:Tooltip,Trigger:Tooltip,Content:Tooltip,Label:({children})=><span>{children}</span>,Item:Tooltip,Sub:Tooltip,SubTrigger:Tooltip,Portal:Tooltip,SubContent:Tooltip};export const DropdownMenu=ContextMenu;
 export const Text=({children,accessibilityLabel})=><span aria-label={accessibilityLabel}>{children}</span>;
 export const Platform={OS:'ios'};
+export const Keyboard={dismiss:()=>{}};export const Linking={openURL:async()=>{}};
 export const View=({children,accessibilityLabel,ref,onLayout})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,0)}));useLayoutEffect(()=>{onLayout?.({nativeEvent:{layout:{height:44}}})},[onLayout]);return <div aria-label={accessibilityLabel}>{children}</div>};
 export const ScrollView=View;export const Surface=View;export const Image=()=>null;export const useWindowDimensions=()=>({width:390,height:844,fontScale:1,scale:3});
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID})=><button data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} disabled={disabled} onClick={onPress} onContextMenu={e=>{e.preventDefault();onLongPress?.()}}>{children}</button>;
@@ -32,7 +33,7 @@ export const FlatList=({data,renderItem,ListHeaderComponent,ListEmptyComponent,L
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const SearchField=({label,value,onChangeText})=><input aria-label={label} value={value} onChange={e=>onChangeText(e.target.value)}/>;
 export const SettingsAction=Action;export const SettingsSearchField=SearchField;export const SettingsChoice=({label,value,items,onChange})=><label>{label}<select aria-label={label} value={value} onChange={e=>onChange(e.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;
-export const ScreenHeader=({title,leading,buttons=[]})=><header>{leading}<h1>{title}</h1>{buttons.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
+export const ScreenHeader=({title,leading,titleContent,buttons=[]})=><header>{leading}<h1>{title}</h1>{titleContent}{buttons.map(button=><button key={button.label} disabled={button.disabled} onClick={button.onPress}>{button.label}</button>)}</header>;
 export const Icon=()=>null;export const RuntimeIcon=()=>null;export const IconButton=({label,onPress})=><button onClick={onPress}>{label}</button>;
 export function Sheet({title,children,onClose,ref}){useImperativeHandle(ref,()=>({dismiss:after=>{onClose?.();after?.()}}));return <div role="dialog" aria-label={title}>{children}</div>};export const colors={};export const styles={};export const useTheme=()=>({styles,colors,mode:'dark'});export const Alert={alert:()=>{}};export const AccessibilityInfo={announceForAccessibility:()=>{}};
 `
@@ -184,367 +185,60 @@ try {
       ),
     })
     await page.getByText('Main thread', { exact: true }).waitFor()
-    const subthreads = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
-    assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
-    assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
-    assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
-    await subthreads.click()
-    const linkedFinished = page.getByRole('button', {
-      name: 'Finished threads for Main thread',
-      exact: true,
-    })
-    if ((await linkedFinished.getAttribute('aria-expanded')) !== 'true')
-      await linkedFinished.click()
-    await page.getByRole('button', { name: 'Open child thread Dory', exact: true }).waitFor()
-    await linkedFinished.click()
-    await subthreads.click()
-    await page.mouse.move(1000, 700)
-    assert.equal(
-      await page.getByRole('button', { name: 'Open child thread Dory', exact: true }).count(),
-      0,
-    )
-    await page.evaluate(() => {
-      window.publishTasks(
-        window.workspace.tasks.map((task) =>
-          task.id === 'parent'
-            ? {
-                ...task,
-                threadWatches: task.threadWatches.filter((watch) => watch.relation !== 'linked'),
-              }
-            : task,
-        ),
-      )
-      window.renderList(false)
-    })
-    if (mobile) {
-      await subthreads.click()
-      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
-      await page
-        .getByRole('button', { name: 'Open child thread Independent child title' })
-        .waitFor()
-      assert.deepEqual(await page.evaluate(() => window.routes), [])
-      await subthreads.click()
+    const assertParentOnly = async () => {
+      assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: /^Finished threads for/ }).count(), 0)
       assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
-      await subthreads.click()
-    } else {
-      await subthreads.hover()
-      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
-      const child = page.getByRole('button', { name: 'Open child thread Independent child title' })
-      await child.hover()
-      assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
-      await page.getByText('Another main thread', { exact: true }).hover()
-      assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+      for (const title of [
+        'Dory',
+        'Configure Play testing',
+        'Independent child title',
+        'Independent nested title',
+        'Independent ended title',
+        'Native worker',
+        'Nested native',
+      ]) {
+        assert.equal(await page.getByText(title, { exact: true }).count(), 0)
+      }
     }
+    await assertParentOnly()
     if (!mobile) {
-      assert.equal(
-        await subthreads.evaluate((control) => {
-          const execution = control
-            .closest('.studio-thread-row')
-            .querySelector('[data-thread-execution]')
-          return (
-            execution.firstElementChild.classList.contains('studio-subthread-anchor') &&
-            !control.parentElement.closest('button')
-          )
-        }),
-        true,
-        'Subthreads precede runtime indicators without nesting interactive controls',
+      const parentRow = page
+        .locator('.studio-thread-row')
+        .filter({ has: page.getByText('Main thread', { exact: true }) })
+      const indicator = parentRow.locator('[title="Subthreads for Main thread, 7"]')
+      await indicator.getByText('7', { exact: true }).waitFor()
+      assert.match(
+        await parentRow.locator('.studio-thread-card').getAttribute('aria-description'),
+        /Subthreads for Main thread, 7/,
       )
-      const toggle = page.getByRole('button', { name: 'Subthreads for Main thread', exact: true })
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
-      assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
-      await toggle.click()
-      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
-      assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
-        runtimeId: 'studio',
-        threadId: 'remote-child',
-        title: 'Configure Play testing',
-        parent: { runtimeId: 'linux', threadId: 'parent', title: 'Main thread' },
-      })
-      assert.deepEqual(await page.evaluate(() => window.opened), [])
-      await page
-        .getByText('Mac Studio · executed-remote-model · Running', { exact: true })
-        .waitFor()
-      assert.equal(
-        await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
-        0,
-      )
-      const disclosure = page.getByRole('button', {
-        name: 'Subthreads for Main thread',
-        exact: true,
-      })
-      await disclosure.click()
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByText('Configure Play testing', { exact: true }).count(), 0)
-      await page.evaluate(() => {
-        window.publishTasks(
-          window.workspace.tasks.map((task) =>
-            task.id === 'parent'
-              ? {
-                  ...task,
-                  threadWatches: task.threadWatches.map((watch) => ({
-                    ...watch,
-                    snapshot:
-                      watch.relation === 'spawned'
-                        ? { ...watch.snapshot, phase: 'needs-input' }
-                        : watch.snapshot,
-                  })),
-                }
-              : task,
-          ),
-        )
-        window.renderList(false)
-      })
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      await page.waitForFunction(() =>
-        document
-          .querySelector('button[aria-label="Subthreads for Main thread"]')
-          .title.includes('1 needs input'),
-      )
-      assert.match(await disclosure.getAttribute('title'), /1 needs input/)
-      await disclosure.click()
-      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
-      assert.equal(await page.evaluate(() => window.routes.at(-1).threadId), 'remote-child')
-      await disclosure.click()
-      await page.evaluate(() => {
-        window.publishTasks(
-          window.workspace.tasks.map((task) =>
-            task.id === 'parent'
-              ? {
-                  ...task,
-                  threadWatches: task.threadWatches.map((watch) => ({
-                    ...watch,
-                    offline: true,
-                    lastSuccessAt: '2026-10-19T08:00:00Z',
-                    snapshot: { ...watch.snapshot, phase: 'running' },
-                  })),
-                }
-              : task,
-          ),
-        )
-        window.renderList(false)
-      })
-      await page.waitForFunction(
-        () =>
-          !document
-            .querySelector('button[aria-label="Subthreads for Main thread"]')
-            .title.includes('needs input'),
-      )
-      assert.doesNotMatch(await disclosure.getAttribute('title'), /needs input/)
-      const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
-      await search.fill('Independent nested title')
+      assert.equal(await indicator.locator('button').count(), 0)
+      const secondRow = page
+        .locator('.studio-thread-row')
+        .filter({ hasText: 'Another main thread' })
+      assert.equal(await secondRow.locator('[title^="Subthreads for"]').count(), 0)
+    }
+    const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
+    for (const title of ['Independent nested title', 'Independent ended title']) {
+      await search.fill(title)
       await page.getByText('Another main thread', { exact: true }).waitFor({ state: 'detached' })
       await page.getByText('Main thread', { exact: true }).waitFor()
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
+      await assertParentOnly()
       await page.keyboard.down('Alt')
-      await page.getByText('Independent nested title', { exact: true }).waitFor()
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'true')
-      assert.equal(await page.getByText('Native worker', { exact: true }).count(), 0)
-      assert.equal(await page.getByText('Configure Play testing', { exact: true }).count(), 0)
+      await assertParentOnly()
       await page.keyboard.up('Alt')
-      await page
-        .getByText('Independent nested title', { exact: true })
-        .waitFor({ state: 'detached' })
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      await search.fill('')
-      await page.getByText('Another main thread', { exact: true }).waitFor()
-      assert.equal(await disclosure.getAttribute('aria-expanded'), 'false')
-      await disclosure.click()
-      await page
-        .getByRole('button', { name: 'Open child thread Configure Play testing', exact: true })
-        .getByText('· Offline', { exact: true })
-        .waitFor()
-      await page
-        .getByText('Mac Studio · executed-remote-model · Running', { exact: true })
-        .waitFor()
-      await page.getByText(/^Updated /).waitFor()
-      await page.evaluate(() => {
-        window.publishTasks(
-          window.workspace.tasks.map((task) =>
-            task.id === 'parent'
-              ? {
-                  ...task,
-                  threadWatches: task.threadWatches.map((watch) => ({ ...watch, offline: false })),
-                }
-              : task,
-          ),
-        )
-        window.renderList(false)
-      })
     }
-    assert.equal(await page.getByText('Independent child title', { exact: true }).count(), 1)
-    assert.equal(await page.getByText('Independent nested title', { exact: true }).count(), 1)
-    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
-    const finishedThreads = page.getByRole('button', {
-      name: 'Finished threads for Main thread',
-      exact: true,
-    })
-    assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'false')
-    await finishedThreads.click()
-    await page.getByRole('button', { name: 'Open child thread Independent ended title' }).waitFor()
-    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 1)
-    await finishedThreads.click()
-    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
-    if (!mobile) {
-      const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
-      await search.fill('Independent ended title')
-      await page.getByText('Another main thread', { exact: true }).waitFor({ state: 'detached' })
-      assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
-      await page.keyboard.down('Alt')
-      await page
-        .getByRole('button', { name: 'Open child thread Independent ended title' })
-        .waitFor()
-      assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'true')
-      await page.keyboard.up('Alt')
-      await page
-        .getByText('Independent ended title', { exact: true })
-        .waitFor({ state: 'detached' })
-      await search.fill('')
-      await page.getByText('Another main thread', { exact: true }).waitFor()
-      assert.equal(await finishedThreads.getAttribute('aria-expanded'), 'false')
-      assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
-    }
-    // A resumed child leaves Finished threads immediately, without opening that group.
-    await page.evaluate(() => {
-      window.publishTasks(
-        window.workspace.tasks.map((task) =>
-          task.id === 'done' ? { ...task, status: 'running' } : task,
-        ),
-      )
-      window.renderList(false)
-    })
-    await page.getByRole('button', { name: 'Open child thread Independent ended title' }).waitFor()
-    assert.equal(await finishedThreads.count(), 0)
-    await page.evaluate(() => {
-      window.publishTasks(
-        window.workspace.tasks.map((task) =>
-          task.id === 'done' ? { ...task, status: 'done' } : task,
-        ),
-      )
-      window.renderList(false)
-    })
-    await finishedThreads.waitFor()
-    assert.equal(await page.getByText('Independent ended title', { exact: true }).count(), 0)
-    assert.equal(await page.getByText('Ended child · codex', { exact: true }).count(), 0)
-    await page.getByText('Native worker', { exact: true }).waitFor()
-    await page.getByText('Nested native', { exact: true }).waitFor()
-    for (const [name, owner] of [
-      ['Native worker', 'parent'],
-      ['Nested native', 'child'],
-    ]) {
-      const nativeRow = page.getByRole('button', { name: `Open child thread ${name}`, exact: true })
-      await nativeRow.click()
-      const target = await page.evaluate(() => window.routes.at(-1))
-      assert.equal(mobile ? target.params.taskId : target.threadId, owner)
-      assert.equal(mobile ? target.params.runtimeId : target.runtimeId, 'linux')
-      assert.equal(mobile ? target.params.parentTaskId : target.parent, undefined)
-      assert.equal(typeof (mobile ? target.params.nativeAgentKey : target.nativeAgentKey), 'string')
-      assert.ok((mobile ? target.params.nativeAgentKey : target.nativeAgentKey).length)
-    }
-    const nativeTarget = await page.evaluate(() => window.routes.at(-2))
-    const nativeKey = mobile ? nativeTarget.params.nativeAgentKey : nativeTarget.nativeAgentKey
-    await page.evaluate(() => {
-      window.publishTasks(
-        window.workspace.tasks.map((task) =>
-          task.id === 'parent'
-            ? {
-                ...task,
-                subagents: task.subagents.map((agent) =>
-                  agent.id === 'native'
-                    ? {
-                        ...agent,
-                        status: 'completed',
-                        finishedAt: '2026-10-03T12:02:00Z',
-                      }
-                    : agent,
-                ),
-              }
-            : task,
-        ),
-      )
-      window.renderList(false)
-    })
-    const finishedNative = page.getByRole('button', {
-      name: 'Open child thread Native worker',
-      exact: true,
-    })
-    await finishedNative.waitFor({ state: 'detached' })
-    await finishedThreads.click()
-    await finishedNative.click()
-    const completedTarget = await page.evaluate(() => window.routes.at(-1))
-    assert.equal(
-      mobile ? completedTarget.params.nativeAgentKey : completedTarget.nativeAgentKey,
-      nativeKey,
-    )
-    await page.evaluate(() => {
-      window.publishTasks(
-        window.workspace.tasks.map((task) =>
-          task.id === 'parent'
-            ? {
-                ...task,
-                subagents: task.subagents.map((agent) =>
-                  agent.id === 'native'
-                    ? {
-                        ...agent,
-                        status: 'working',
-                        finishedAt: undefined,
-                      }
-                    : agent,
-                ),
-              }
-            : task,
-        ),
-      )
-      window.renderList(false)
-    })
-    await finishedThreads.click()
-    await finishedNative.waitFor()
-    await page.evaluate(() => {
-      window.routes = []
-    })
-    const nested = page.getByRole('button', {
-      name: 'Open child thread Independent nested title',
-    })
-    if (!mobile) assert.equal(await nested.getAttribute('aria-current'), 'true')
-    await nested.click()
+    await search.fill('')
+    await page.getByText('Another main thread', { exact: true }).waitFor()
     if (mobile) {
-      await page.waitForFunction(() => window.routes.length > 0)
-      assert.deepEqual(await page.evaluate(() => window.routes[0]), {
-        pathname: '/(tasks)/thread/[runtimeId]/[taskId]',
-        params: {
-          taskId: 'nested',
-          runtimeId: 'linux',
-          parentRuntimeId: 'linux',
-          parentTaskId: 'child',
-          parentTitle: 'Independent child title',
-        },
-      })
-      assert.deepEqual(await page.evaluate(() => window.switches), [])
-      await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).click()
-      assert.equal(await page.evaluate(() => window.routes.at(-1).params.runtimeId), 'studio')
-      assert.equal(await page.evaluate(() => window.routes.at(-1).params.parentTaskId), 'parent')
       await page.getByRole('button', { name: /Project, Main thread/ }).click({ button: 'right' })
       await page.getByText('1 selected', { exact: true }).waitFor()
-      assert.equal(
-        await page
-          .getByRole('button', { name: 'Open child thread Independent child title' })
-          .isDisabled(),
-        true,
-      )
-      assert.equal(await page.evaluate(() => window.routes.length), 2)
+      await assertParentOnly()
+      assert.deepEqual(await page.evaluate(() => window.routes), [])
       await page.getByRole('button', { name: /Project, Main thread/ }).click({ button: 'right' })
       assert.equal(await page.getByText('1 selected', { exact: true }).count(), 0)
       assert.equal(await page.locator('[data-swipe="true"]').count(), 2)
     } else {
-      assert.deepEqual(await page.evaluate(() => window.routes.at(-1)), {
-        threadId: 'nested',
-        runtimeId: 'linux',
-        title: 'Independent nested title',
-        parent: { runtimeId: 'linux', threadId: 'child', title: 'Independent child title' },
-      })
       assert.deepEqual(await page.evaluate(() => window.orders.at(-1).sort()), ['parent', 'second'])
       await page
         .getByRole('button')
@@ -571,6 +265,7 @@ try {
             ? {
                 ...task,
                 status: 'done',
+                threadWatches: task.threadWatches.filter((watch) => watch.relation !== 'linked'),
                 subagents: task.subagents.map((agent) =>
                   agent.id === 'child' ? { ...agent, status: 'completed' } : agent,
                 ),
@@ -582,20 +277,7 @@ try {
       )
       window.renderList(false)
     })
-    await page
-      .getByRole('button', { name: /^Open subagent Live child/ })
-      .waitFor({ state: 'detached' })
-    await page
-      .getByRole('button', { name: 'Open child thread Native worker', exact: true })
-      .waitFor()
-    await page
-      .getByRole('button', { name: 'Open child thread Nested native', exact: true })
-      .waitFor()
-    await page
-      .getByRole('button', {
-        name: 'Open child thread Independent nested title',
-      })
-      .waitFor()
+    await assertParentOnly()
     await page.evaluate(() => window.renderAgents())
     await page
       .getByRole('button', { name: 'Open child thread Configure Play testing', exact: true })
@@ -856,12 +538,8 @@ try {
       ])
       window.renderList(false)
     })
-    const generalToggle = page.getByRole('button', {
-      name: 'Subthreads for Main thread',
-      exact: true,
-    })
-    if ((await generalToggle.getAttribute('aria-expanded')) === 'false') await generalToggle.click()
-    await page.getByRole('button', { name: 'Open child thread Configure Play testing' }).waitFor()
+    await page.getByText('Main thread', { exact: true }).waitFor()
+    await assertParentOnly()
     await page.getByText('No Project', { exact: true }).first().waitFor()
     assert.equal(
       await page.getByText(/\d+ (pipeline watch|PR watch|failed checks\/runs)/).count(),
@@ -1387,19 +1065,16 @@ try {
       window.renderList(false)
     })
     await page.getByText('Out of scope coordinator', { exact: true }).waitFor()
-    const scopedToggle = page.getByRole('button', {
-      name: 'Subthreads for Out of scope coordinator',
-      exact: true,
+    const scopedChild = page.getByRole('button', {
+      name: 'Open child thread Scoped background child',
     })
-    if ((await scopedToggle.getAttribute('aria-expanded')) === 'false') await scopedToggle.click()
-    await page.getByRole('button', { name: 'Open child thread Scoped background child' }).waitFor()
+    assert.equal(await scopedChild.count(), 0)
     if (!mobile) {
       await page
         .locator('select[aria-label="Filter threads by computer"]')
         .selectOption(JSON.stringify('studio-local'))
-      await page
-        .getByRole('button', { name: 'Open child thread Scoped background child' })
-        .waitFor()
+      await page.getByText('Out of scope coordinator', { exact: true }).waitFor()
+      assert.equal(await scopedChild.count(), 0)
     }
     if (!mobile) {
       await page.evaluate(() => {

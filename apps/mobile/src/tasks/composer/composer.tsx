@@ -729,7 +729,6 @@ export function Composer({
       )
     : draftMenuActions
   const canDictate = draft.ready && !busy && !task.archivedAt && !attaching
-  const listening = dictation.isRecording || dictation.isStarting
   const dictationStatus = dictation.isStarting
     ? 'Starting microphone…'
     : dictation.isStopping
@@ -1352,6 +1351,32 @@ export function Composer({
               )}
               {/* Stay at the row's trailing edge when the keyboard button disappears on blur. */}
             </Animated.View>
+            {dictation.active && (
+              <View
+                testID="Dictation toolbar"
+                style={{
+                  flexDirection: 'row',
+                  alignItems: 'center',
+                  minHeight: 44,
+                  paddingLeft: 12,
+                  gap: 8,
+                }}
+              >
+                {dictation.isRecording && !dictation.isStopping ? (
+                  <Icon name="waveform" size={20} color={colors.accent} />
+                ) : (
+                  <ActivityIndicator size="small" color={colors.muted} />
+                )}
+                <Text accessibilityLiveRegion="polite" style={[styles.muted, { flex: 1 }]}>
+                  {dictationStatus}
+                </Text>
+                <Action
+                  label={uiText('Finish dictation')}
+                  disabled={dictation.isStopping}
+                  onPress={dictation.stop}
+                />
+              </View>
+            )}
             <Animated.View
               layout={transition}
               testID="Composer toolbar"
@@ -1362,6 +1387,7 @@ export function Composer({
                   alignItems: 'center',
                   minHeight: 44,
                 },
+                dictation.active && { display: 'none' },
                 !showOptions && {
                   position: 'absolute',
                   left: 0,
@@ -1609,18 +1635,10 @@ export function Composer({
               </View>
               <IconButton
                 variant="plain"
-                icon={listening ? 'waveform' : 'microphone'}
-                label={listening ? uiText('Finish dictation') : uiText('Dictate message')}
-                color={listening ? colors.accent : undefined}
-                selected={listening}
-                disabled={dictation.isStopping || (!listening && !canDictate)}
-                onPress={
-                  listening
-                    ? dictation.stop
-                    : () => {
-                        void dictation.start(selection.current)
-                      }
-                }
+                icon="microphone"
+                label={uiText('Dictate message')}
+                disabled={!canDictate}
+                onPress={() => void dictation.start(selection.current)}
               />
               <View ref={messageTrigger} collapsable={false} style={{ width: 44, height: 44 }}>
                 <IconButton
@@ -1722,7 +1740,7 @@ export function Composer({
               upload={attachmentPicker.uploadContext}
             />
           </ComposerHistoryGesture>
-          {!!dictationStatus && (
+          {!dictation.active && !!dictationStatus && (
             <View
               style={[
                 styles.row,
@@ -1734,7 +1752,7 @@ export function Composer({
                 },
               ]}
             >
-              {dictation.active || dictation.state?.status === 'cleaning' ? (
+              {dictation.state?.status === 'cleaning' ? (
                 <ActivityIndicator size="small" color={colors.muted} />
               ) : null}
               <Text
@@ -1763,7 +1781,7 @@ export function Composer({
               {dictation.state?.status === 'failed' && connected && (
                 <Action secondary label={uiText('Retry cleanup')} onPress={dictation.retry} />
               )}
-              {dictation.state?.status !== 'cleaning' && !dictation.active && (
+              {dictation.state?.status !== 'cleaning' && (
                 <IconButton
                   variant="plain"
                   icon="close"

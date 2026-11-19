@@ -12,7 +12,6 @@ import {
   type Dispatch,
   type SetStateAction,
 } from 'react'
-import { useSearchSubthreads } from '../list/use-search-subthreads'
 import {
   ChevronDown,
   Globe2,
@@ -633,7 +632,7 @@ function WorkspaceContent() {
       for (const session of snapshot.terminals)
         if (!session.exited)
           shellCounts.set(session.taskId, (shellCounts.get(session.taskId) ?? 0) + 1)
-      // Retain an archived parent only as context for visible subagents behind its icon.
+      // An archived parent can represent active work in its thread family.
       const threads = snapshot.workspace.tasks
         .filter(
           (task) =>
@@ -784,11 +783,6 @@ function WorkspaceContent() {
     }),
   ]
   const searching = !!search.trim()
-  const revealSearch = useSearchSubthreads(searching)
-  const threadSearch = useMemo(
-    () => (searching ? { query: search.trim(), keys: new Set<string>() } : undefined),
-    [search, searching],
-  )
   const threadKey = (resource: WorkspaceResource) =>
     taskCollectionKey(resource.tab.runtimeId, resource.tab.id)
   const listResources = sortWorkspaceActivity(
@@ -944,10 +938,6 @@ function WorkspaceContent() {
         settleDisabled={resource.settleDisabled}
         {...row}
         thread={threadTree.nodes.get(threadKey(resource))}
-        selectedThreadKey={threadKey(resource) === selectedRootKey ? selectedThreadKey : undefined}
-        searching={searching}
-        search={threadSearch}
-        revealSearch={revealSearch}
       />
     ) : row.kind === 'browser' ? (
       <WorkspacePageRow

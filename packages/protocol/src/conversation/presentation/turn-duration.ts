@@ -7,3 +7,15 @@ export function formatTurnDuration(ms: number, includeSeconds = false) {
     return `${Math.floor(seconds / 60)}m${includeSeconds ? ` ${seconds % 60}s` : ''}`
   return `${Math.floor(seconds / 3600)}h ${Math.floor((seconds % 3600) / 60)}m${includeSeconds ? ` ${seconds % 60}s` : ''}`
 }
+
+export function formatThreadAge(ms: number) {
+  if (!Number.isFinite(ms)) return ''
+  const minutes = Math.max(0, Math.floor(ms / 60000))
+  return minutes < 1
+    ? 'now'
+    : minutes < 60
+      ? `${minutes}m`
+      : minutes < 1440
+        ? `${Math.floor(minutes / 60)}h`
+        : `${Math.floor(minutes / 1440)}d`
+}

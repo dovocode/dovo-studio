@@ -67,6 +67,9 @@ function allThreadNativeAgents(task: Pick<TaskMetadata, 'id' | 'subagents'>) {
       threadKey: nativeAgentKey(task.id, agent),
       name: agent.name.slice(0, 1000),
       status: agent.status,
+      statusAt: (
+        agent.finishedAt || (agent.status === 'working' ? agent.startedAt : undefined)
+      )?.slice(0, 80),
       working: nativeAgentWorking(agent),
       finished: !!agent.finishedAt,
     }))

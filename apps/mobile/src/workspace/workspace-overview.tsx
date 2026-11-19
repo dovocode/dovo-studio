@@ -267,7 +267,6 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
         needsInput={threadRoots.get(data.row.key)?.needsInput ?? data.row.needsInput}
         owner={data.owner}
         thread={tree.nodes.get(data.row.key)}
-        searching={!!query}
         commands={threadCommands}
         now={now}
         testID={`Workspace thread ${item.title}`}

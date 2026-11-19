@@ -11,7 +11,6 @@ import {
 } from '@dovo/protocol'
 import { orderThreadSections, settledThreadPreviewLimit } from '@dovo/protocol'
 import { SectionOrderDialog } from './section-order-dialog'
-import { useSearchSubthreads } from './use-search-subthreads'
 import { useTaskSearch } from './use-task-search'
 import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import { flushSync } from 'react-dom'
@@ -56,8 +55,6 @@ import {
 import { taskActionClient, useTaskActionStore } from './task-row-actions'
 import { buildThreadTree, threadDescendants } from './thread-tree'
 import { useCommittedCallback } from '../detail/use-committed-callback'
-import { indexTaskSubagents, projectSubagentList, type SubagentListItem } from '@dovo/protocol'
-const noSubagents: readonly SubagentListItem[] = []
 // Below this, every open row renders; above it, rows mount near the viewport.
 const windowedRowCount = 80
 const selectionActions = [
@@ -188,39 +185,6 @@ export function TaskList({
     [allEntries, retainThreadTree, scopeMatches, sources, environment, projectId],
   )
   const entries = threadTree.roots
-  const subagentsByRuntime = useMemo(
-    () =>
-      new Map(
-        sources.map((source) => [source.runtimeId, indexTaskSubagents(source.workspace.tasks)]),
-      ),
-    [sources],
-  )
-  // Snapshots rebuild every list; rows keep the previous value while their content is equal.
-  const retainSubagents = useMemo(() => {
-    let previous = new Map<string, readonly SubagentListItem[]>()
-    return (next: Map<string, readonly SubagentListItem[]>) => {
-      for (const [key, agents] of next) {
-        const old = previous.get(key)
-        next.set(key, !agents.length ? noSubagents : projectSubagentList(agents, old))
-      }
-      previous = next
-      return next
-    }
-  }, [])
-  const subagentsByKey = useMemo(
-    () =>
-      retainSubagents(
-        new Map(
-          entries.map((entry) => [
-            entry.key,
-            (
-              subagentsByRuntime.get(entry.source.runtimeId)?.(entry.task, true) ?? noSubagents
-            ).filter((agent) => agent.source !== 'dovo'),
-          ]),
-        ),
-      ),
-    [entries, subagentsByRuntime, retainSubagents],
-  )
   const retainOwners = useMemo(() => {
     let previous = new Map<string | null, TaskOwner>()
     return (next: readonly TaskSource[]) => {
@@ -339,11 +303,6 @@ export function TaskList({
   const deferredQuery = useDeferredValue(query)
   const search = useTaskSearch(allEntries, deferredQuery)
   const searchIdentity = JSON.stringify([...search.keys].sort())
-  const revealSearch = useSearchSubthreads(!!deferredQuery.trim())
-  const searchFilter = useMemo(
-    () => (deferredQuery.trim() ? { query: deferredQuery.trim(), keys: search.keys } : undefined),
-    [deferredQuery, searchIdentity],
-  )
   const tasks = useMemo(() => {
     const needle = deferredQuery.toLowerCase()
     return (
@@ -1052,7 +1011,6 @@ export function TaskList({
                     owner={
                       owners.get(entry.source.runtimeId) ?? retainTaskOwner(undefined, entry.source)
                     }
-                    subagents={subagentsByKey.get(entry.key) ?? noSubagents}
                     needsInput={!!facts?.input.has(entry.task.id)}
                     terminals={facts?.terminals.get(entry.task.id) ?? 0}
                     selected={entry.key === selectedId}
@@ -1078,10 +1036,6 @@ export function TaskList({
                     actions={rowActions}
                     rowWindow={rowCount > windowedRowCount ? rowWindow : null}
                     thread={threadTree.nodes.get(entry.key)}
-                    selectedThreadKey={entry.key === selectedMainKey ? selectedId : undefined}
-                    searching={!!deferredQuery.trim()}
-                    search={searchFilter}
-                    revealSearch={revealSearch}
                   />
                 )
               })

@@ -22,10 +22,10 @@ export const Image=({source})=><span data-project-image={source?.uri}/>;
 export const useWindowDimensions=()=>({width:390,height:844,fontScale:window.rowFontScale??1,scale:3});
 export const ScrollView=View;
 export const Pressable=({children,onPress,onLongPress,disabled,accessibilityLabel,accessibilityState,testID,style,ref})=><button ref={ref} style={window.rowLayout?{display:'flex',position:'relative',boxSizing:'border-box',background:'transparent',padding:0,border:0,textAlign:'left',...nativeStyle(typeof style==='function'?style({pressed:false}):style)}:{opacity:(typeof style==='function'?style({pressed:false}):style)?.opacity}} data-testid={testID} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-pressed={accessibilityState?.selected} disabled={disabled} onClick={event=>{event.stopPropagation();onPress?.(event)}} onContextMenu={event=>{event.preventDefault();onLongPress?.()}}>{typeof children==='function'?children({pressed:false}):children}</button>;
-export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange},ref){
+export const FlatList=forwardRef(function FlatList({data,renderItem,keyExtractor,ListHeaderComponent,ListEmptyComponent,ListFooterComponent,ListFooterComponentStyle,testID,contentInsetAdjustmentBehavior,automaticallyAdjustContentInsets,contentContainerStyle,onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange},ref){
   window.listScrollHandlers={onScroll,onScrollBeginDrag,onScrollEndDrag,onScrollToTop,onLayout,onContentSizeChange};
   useImperativeHandle(ref,()=>({scrollToOffset:({offset})=>{window.lastRestoredListOffset=offset}}),[]);
-  return <div data-testid={testID} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}<div data-list-footer style={{display:'flex',flexDirection:'column',...nativeStyle(ListFooterComponentStyle)}}>{ListFooterComponent}</div></div>
+  return <div data-testid={testID} data-inset-adjustment={contentInsetAdjustmentBehavior} data-auto-insets={automaticallyAdjustContentInsets} style={window.rowLayout?{boxSizing:'border-box',display:'flex',flexDirection:'column',...nativeStyle(contentContainerStyle)}:undefined}>{ListHeaderComponent}{data.map((item,index)=><div key={keyExtractor(item)}>{renderItem({item,index})}</div>)}{data.length?null:ListEmptyComponent}<div data-list-footer style={{display:'flex',flexDirection:'column',...nativeStyle(ListFooterComponentStyle)}}>{ListFooterComponent}</div></div>
 });
 export const AppState={currentState:'active',addEventListener:()=>({remove:()=>{}})};
 export const Platform={OS:'ios'};
@@ -368,6 +368,9 @@ try {
   }
   await page.addScriptTag({ content: built.outputFiles[0].text })
   await page.getByTestId('Task task-99').waitFor()
+  const list = page.getByTestId('Task list')
+  assert.equal(await list.getAttribute('data-inset-adjustment'), 'never')
+  assert.equal(await list.getAttribute('data-auto-insets'), 'false')
   const header = page.locator('header')
   for (const label of ['Projects', 'Quick task', 'Issues', 'Settings'])
     assert.equal(await header.getByRole('button', { name: label, exact: true }).count(), 1)
@@ -493,13 +496,6 @@ try {
             JSON.stringify({ id, width, scale, project, title }),
           )
         }
-        const toggle = await page
-          .getByRole('button', {
-            name: 'Subthreads for Has several subagents ' + scale,
-            exact: true,
-          })
-          .boundingBox()
-        const menu = await page.getByTestId('Task parent actions').boundingBox()
         const parentRow = page.getByTestId('Task parent')
         const statusBounds = await parentRow.getByTestId('Thread status').boundingBox()
         const menuGlyph = await page
@@ -515,26 +511,11 @@ try {
         assert.equal(
           await parentRow
             .locator('[data-harness]')
-            .evaluate((icon) => icon.parentElement.textContent.includes('main')),
+            .evaluate((icon) =>
+              icon.closest('[data-testid="Thread metadata"]').textContent.includes('main'),
+            ),
           true,
           'Provider belongs beside branch and PRs in the footer',
-        )
-        const provider = await parentRow.locator('[data-harness]').boundingBox()
-        const glyph = await page
-          .getByRole('button', {
-            name: 'Subthreads for Has several subagents ' + scale,
-            exact: true,
-          })
-          .locator('svg')
-          .boundingBox()
-        assert.ok(
-          Math.abs(provider.y + provider.height / 2 - glyph.y - glyph.height / 2) < 1,
-          'Subthread icon aligns with footer indicators',
-        )
-        assert.ok(toggle && menu && toggle.width === 44 && toggle.height === 44)
-        assert.ok(toggle.x + toggle.width <= menu.x, 'Subthread and menu touch targets overlap')
-        assert.ok(
-          toggle.y >= sizes[1].y && toggle.y + toggle.height <= sizes[1].y + sizes[1].height,
         )
         for (const id of ids) {
           const bounds = await page
@@ -565,19 +546,10 @@ try {
         const row = page.getByTestId('Task parent')
         const provider = await row.locator('[data-harness]').boundingBox()
         const project = await row.getByText('Project', { exact: true }).boundingBox()
-        const toggle = page.getByRole('button', { name: /^Subthreads for Has several subagents/ })
-        const icon = await toggle.locator('svg').boundingBox()
-        const menu = await page.getByTestId('Task parent actions').boundingBox()
-        const touch = await toggle.boundingBox()
-        assert.ok(Math.abs(provider.y + provider.height / 2 - icon.y - icon.height / 2) < 1)
         assert.ok(
           Math.abs(provider.y + provider.height / 2 - project.y - project.height / 2) < 2,
           'Comfortable execution indicators share the project metadata line',
         )
-        assert.equal(touch.width, 44)
-        assert.equal(touch.height, 44)
-        assert.ok(touch.x + touch.width <= menu.x)
-        assert.ok(icon.x + icon.width <= provider.x, 'Subthreads precede execution indicators')
         const statusBounds = await row.getByTestId('Thread status').boundingBox()
         const menuGlyph = await page
           .getByTestId('Task parent actions')
@@ -631,54 +603,20 @@ try {
             const row = page.getByRole('button', {
               name: /^(Project|No Project), Has several subagents/,
             })
-            const toggle = page.getByRole('button', {
-              name: /^Subthreads for Has several subagents/,
-            })
             const indicator = await row.locator('[data-harness]').boundingBox()
-            const anchor = await row.getByTestId('Subthread anchor').boundingBox()
             const pull = await row.getByText('#42', { exact: true }).boundingBox()
-            await page.waitForFunction(
-              ({ selector, anchor }) => {
-                const glyph = document
-                  .querySelector(selector)
-                  .querySelector('svg')
-                  .getBoundingClientRect()
-                return (
-                  Math.abs(glyph.y + glyph.height / 2 - anchor.y - anchor.height / 2) < 1 &&
-                  Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
-                )
-              },
-              { selector: 'button[aria-label^="Subthreads for Has several subagents"]', anchor },
-            )
-            const icon = await toggle.locator('svg').boundingBox()
-            assert.ok(
-              pull.x + pull.width <= icon.x,
-              JSON.stringify({
-                message: 'PRs precede subthreads',
-                repositoryId,
-                showDevice,
-                density,
-                width,
-                pull,
-                icon,
-                indicator,
-              }),
-            )
-            assert.ok(
-              Math.abs(pull.y + pull.height / 2 - icon.y - icon.height / 2) < 1,
-              'PRs and subthreads share a line',
-            )
-            assert.ok(icon.x + icon.width <= indicator.x, 'Subthreads precede harness')
+            assert.ok(pull.x + pull.width <= indicator.x, 'PR shortcut precedes execution icons')
             const runtimeIcon = row.locator('[data-runtime-icon]')
             assert.equal(await runtimeIcon.count(), Number(showDevice))
             if (await runtimeIcon.count()) {
               const runtime = await runtimeIcon.boundingBox()
-              assert.ok(icon.x + icon.width <= runtime.x, 'Subthreads precede runtime')
               assert.ok(indicator.x + indicator.width <= runtime.x, 'Harness precedes runtime')
             }
-            const touch = await toggle.boundingBox()
+            const touch = await page
+              .getByRole('button', { name: 'Open PR #42: PR', exact: true })
+              .boundingBox()
             const menu = await page.getByTestId(/Task .*parent.* actions/).boundingBox()
-            assert.equal(touch.width, 44)
+            assert.ok(touch.width >= 44)
             assert.equal(touch.height, 44)
             assert.ok(
               touch.x + touch.width <= menu.x || touch.y >= menu.y + menu.height,
@@ -689,6 +627,11 @@ try {
               .getByTestId(/Task .*parent.* actions/)
               .locator('[data-menu-glyph]')
               .boundingBox()
+            const lastIcon = showDevice ? await runtimeIcon.boundingBox() : indicator
+            assert.ok(
+              Math.abs(menuGlyph.x + menuGlyph.width / 2 - lastIcon.x - lastIcon.width / 2) < 1,
+              'Menu sits directly above the rightmost execution icon, including rows with PRs',
+            )
             assert.ok(
               Math.abs(status.y + status.height / 2 - menuGlyph.y - menuGlyph.height / 2) < 1,
               'Menu aligns with status/time',
@@ -711,23 +654,11 @@ try {
       window.setListPreferences({ threadDensity: 'comfortable' })
       window.publish({ parent: { repositoryId: 'repo', agentId: '' } })
     })
-    const noAgentRow = page.getByTestId('Task parent')
-    const noAgentToggle = page.getByRole('button', {
-      name: /^Subthreads for Has several subagents/,
-    })
-    const noAgentAnchor = await noAgentRow.getByTestId('Subthread anchor').boundingBox()
-    await page.waitForFunction((anchor) => {
-      const glyph = document
-        .querySelector('button[aria-label^="Subthreads for Has several subagents"] svg')
-        .getBoundingClientRect()
-      return Math.abs(glyph.x + glyph.width / 2 - anchor.x - anchor.width / 2) < 1
-    }, noAgentAnchor)
-    const noAgentTouch = await noAgentToggle.boundingBox()
+    const noAgentTouch = await pullShortcut.boundingBox()
     const noAgentMenu = await page.getByTestId('Task parent actions').boundingBox()
     assert.ok(
-      noAgentTouch.x + noAgentTouch.width <= noAgentMenu.x ||
-        noAgentTouch.y >= noAgentMenu.y + noAgentMenu.height,
-      'Disclosure remains clear of menu without a harness/runtime icon',
+      noAgentTouch.y >= noAgentMenu.y + noAgentMenu.height,
+      'PR and menu targets remain separate',
     )
     await page.evaluate(() => window.publish({ parent: { agentId: 'agent' } }))
     await page.screenshot({ path: '/tmp/dovo-compact-uniform-rows.png' })
@@ -990,58 +921,20 @@ try {
   await page.getByRole('button', { name: 'Close details', exact: true }).click()
   await page.getByTestId('Task task-5').click()
   assert.equal(await page.evaluate(() => window.navigations.at(-1)[1]), 'task-5')
-  const beforeSubagents = await page.evaluate(() => window.navigations.length)
-  const subthreads = page.getByRole('button', { name: 'Subthreads for Parent task', exact: true })
-  assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
-    0,
-  )
-  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  const parentRow = page.getByTestId('Task parent')
+  const subthreadCount = parentRow.getByTestId('Thread metadata').getByTestId('Subthread count')
+  assert.equal(await subthreadCount.innerText(), '1')
+  assert.equal(await subthreadCount.locator('svg').getAttribute('width'), '10')
+  assert.equal(await subthreadCount.getByRole('button').count(), 0)
+  assert.match(await parentRow.getAttribute('aria-label'), /Subthreads for Parent task, 1/)
+  assert.equal(await page.getByTestId('Task task-5').getByTestId('Subthread count').count(), 0)
+  assert.equal(await page.getByTestId('Task child').count(), 0)
+  assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
   const search = page.getByRole('textbox', { name: 'Search threads', exact: true })
   await search.fill('Child task')
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('button[aria-label="Subthreads for Parent task"]')
-        ?.getAttribute('aria-expanded') === 'false',
-  )
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
-    0,
-  )
-  assert.equal(await subthreads.isDisabled(), false)
-  await subthreads.click()
-  await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).waitFor()
-  assert.equal(await subthreads.getAttribute('aria-expanded'), 'true')
+  await page.getByTestId('Task parent').waitFor()
+  assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
   await search.fill('')
-  await page.getByRole('button', { name: 'Close details', exact: true }).click()
-  // Filtering uses a deferred query; wait for that render before checking the restored collapse.
-  await page.waitForFunction(
-    () =>
-      document
-        .querySelector('button[aria-label="Subthreads for Parent task"]')
-        ?.getAttribute('aria-expanded') === 'false',
-  )
-  assert.equal(await subthreads.getAttribute('aria-expanded'), 'false')
-  assert.equal(
-    await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).count(),
-    0,
-  )
-  await subthreads.click()
-  await page.getByRole('button', { name: 'Open child thread Child task', exact: true }).click()
-  assert.equal(
-    await page.evaluate(() => window.navigations.length),
-    beforeSubagents,
-    'Opening a nested child must not open the parent conversation',
-  )
-  assert.deepEqual(await page.evaluate(() => window.routes.at(-1).params), {
-    runtimeId: 'http://mobile-owner.lan:8787',
-    taskId: 'child',
-    parentRuntimeId: 'http://mobile-owner.lan:8787',
-    parentTaskId: 'parent',
-    parentTitle: 'Parent task',
-  })
   await page.evaluate(() => {
     window.snapshot.approvals = ['a', 'b'].map((id) => ({
       id,
@@ -1087,6 +980,10 @@ try {
               revision: 'one',
               attention: ['question'],
               watches: { pipelines: 0, pullRequests: 0, failures: 0 },
+              nativeAgents: [
+                { key: 'worker', name: 'Remote worker', status: 'working', working: true },
+              ],
+              nativeAgentOverflow: { total: 2, working: 1, failed: 0 },
             },
           },
         ],
@@ -1094,8 +991,11 @@ try {
     }),
   )
   await page.getByTestId('Task parent').getByLabel('Needs input', { exact: true }).waitFor()
+  assert.equal(await subthreadCount.innerText(), '5')
+  assert.equal(await page.getByText('Remote child', { exact: true }).count(), 0)
   await page.evaluate(() => window.publish({ parent: { threadWatches: [] } }))
   await page.getByTestId('Task parent').getByLabel('Working', { exact: true }).waitFor()
+  assert.equal(await subthreadCount.innerText(), '1')
   await page.evaluate(() => {
     const parent = window.snapshot.workspace.tasks.find((task) => task.id === 'parent')
     window.publish({
@@ -1483,7 +1383,7 @@ try {
               provider: 'codex',
               model: 'fixture',
               status: 'running',
-              startedAt: new Date(Date.now() - 65000).toISOString(),
+              startedAt: new Date(Date.now() - 90000).toISOString(),
             },
           ],
         })),
@@ -1495,7 +1395,7 @@ try {
   await page.getByRole('button', { name: /^Working,/ }).click()
   await page.getByTestId('Task running').waitFor()
   const groupedStatus = page.getByTestId('Task running').getByTestId('Thread status')
-  assert.equal(await groupedStatus.innerText(), 'Working')
+  assert.equal(await groupedStatus.innerText(), '1m')
   assert.match(await groupedStatus.getAttribute('aria-label'), /^Working/)
   await page.evaluate(() => {
     const task = window.snapshot.workspace.tasks[0]
@@ -1522,7 +1422,7 @@ try {
               {
                 ...task.turns[0],
                 status: 'completed',
-                finishedAt: new Date(Date.now() - 600000).toISOString(),
+                finishedAt: new Date(Date.now() - 630000).toISOString(),
               },
             ],
           },
@@ -1566,14 +1466,14 @@ try {
   )
   assert.equal(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    'Working',
+    '1m',
   )
   const waitingStatus = page.getByTestId('Task waiting').getByTestId('Thread status')
-  assert.equal(await waitingStatus.innerText(), 'Waiting')
+  assert.equal(await waitingStatus.innerText(), '10m')
   await page.evaluate(() => window.setListPreferences({ taskGrouping: 'project' }))
   assert.equal(
     await page.getByTestId('Task pinned-working').getByTestId('Thread status').innerText(),
-    'Working',
+    '1m',
   )
   await page.evaluate(() =>
     window.setListPreferences({
@@ -1684,7 +1584,7 @@ try {
   }
   await page.evaluate(() => {
     const base = window.snapshot.workspace.tasks[0]
-    const finishedAt = new Date(Date.now() - 300000).toISOString()
+    const finishedAt = new Date(Date.now() - 330000).toISOString()
     window.setListPreferences({ workingSection: false, collapsedThreadSections: [] })
     window.snapshot = {
       ...window.snapshot,
@@ -1710,7 +1610,7 @@ try {
                     model: 'fixture',
                     provider: 'codex',
                     status: status === 'running' ? 'running' : 'completed',
-                    startedAt: new Date(Date.now() - 600000).toISOString(),
+                    startedAt: new Date(Date.now() - (14 * 60 + 20) * 60000).toISOString(),
                     ...(status === 'running' ? {} : { finishedAt }),
                   },
                 ],
@@ -1730,7 +1630,18 @@ try {
     await indicator.waitFor()
     assert.match(await indicator.getAttribute('aria-label'), new RegExp('^' + state))
     assert.equal(await indicator.locator('svg').count(), 1)
-    assert.equal(await indicator.innerText(), state)
+    if (status !== 'draft')
+      assert.equal(
+        await indicator
+          .locator('svg')
+          .evaluate((icon) => icon === icon.parentElement.lastElementChild),
+        true,
+        'Time precedes the status icon',
+      )
+    assert.equal(
+      await indicator.innerText(),
+      status === 'draft' ? '' : status === 'running' ? '14h' : '5m',
+    )
   }
   assert.deepEqual(errors, [])
 
@@ -2330,7 +2241,7 @@ try {
       `Hide ${name} for Bots`,
     )
   console.log(
-    'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, child navigation, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
+    'Mobile task list: 102 real rows mounted; 30 streaming updates rendered only the running row 30 times. Compact settled rows, reopen transitions, details/navigation, parent-only rows, selection and owner-bound pin lifecycle verified with the real RuntimeProvider and selectors.',
   )
 } finally {
   await browser.close()

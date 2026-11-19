@@ -92,18 +92,18 @@ export function BotStrip({
     <View
       testID={`Bot layout ${botLayout}`}
       accessibilityLabel={uiText('Bots')}
-      style={{ gap: 6, paddingTop: 8, paddingBottom: 10 }}
+      style={{ gap: 6, paddingTop: 2, paddingBottom: 10 }}
     >
       {horizontal ? (
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
-          contentContainerStyle={{ gap: 4, paddingVertical: 5, paddingHorizontal: 2 }}
+          contentContainerStyle={{ gap: 4, paddingBottom: 5, paddingHorizontal: 2 }}
         >
           {tiles}
         </ScrollView>
       ) : (
-        <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 4, paddingVertical: 5 }}>
+        <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: 4, paddingBottom: 5 }}>
           {tiles}
         </View>
       )}

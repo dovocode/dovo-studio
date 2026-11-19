@@ -88,7 +88,16 @@ const built = await build({
     window.lineage=[];
     function App(){
       const [task,setTask]=useState(initial),[panel,setPanel]=useState(false),[surface,setSurface]=useState('chat'),[hideSidebar,setHideSidebar]=useState(false),[toolsWidth,setToolsWidth]=useState(0),[bottomTerminal,setBottomTerminal]=useState(false);const lastTool=useRef('files');const selectSurface=next=>{window.surface=next;if(next!=='chat'&&next!=='terminal')lastTool.current=next;setSurface(next);setToolsWidth(next==='chat'?0:380)};window.generalProject=()=>{repo.kind='scratch';repo.name='No project';selectSurface('chat');setPanel(true)};window.hideSidebar=setHideSidebar;window.setToolsWidth=setToolsWidth;
-      window.setLineage=enabled=>{window.lineage=enabled?[{...task,id:'child-review',title:'Review browser',spawnParent:{runtimeId:'runtime',threadId:task.id},subagents:[{id:'native-review',name:'Native reviewer',provider:'codex',status:'working'}]},{...task,id:'grandchild',title:'Check page menus',spawnParent:{runtimeId:'runtime',threadId:'child-review'}}]:[];setTask(task=>({...task}))};
+      window.setLineage=enabled=>{
+        window.lineage=enabled?[
+          {...task,id:'child-review',title:'Review browser',spawnParent:{runtimeId:'runtime',threadId:task.id},subagents:[{id:'native-review',name:'Native reviewer',provider:'codex',status:'working',sessionLive:true,startedAt:new Date(Date.now()-2*3600000).toISOString()}]},
+          {...task,id:'grandchild',title:'Check page menus',status:'draft',spawnParent:{runtimeId:'runtime',threadId:'child-review'}},
+        ]:[];
+        setTask(task=>({...task,threadWatches:enabled?[{
+          relation:'spawned',runtimeId:'remote',threadId:'child-review',computerName:'Remote computer',status:'watching',offline:false,
+          snapshot:{runtimeId:'remote-identity',title:'Remote review',phase:'running',statusAt:new Date(Date.now()-14*3600000).toISOString(),revision:'one',attention:[],watches:{pipelines:0,pullRequests:0,failures:0}},
+        }]:[]}));
+      };
       window.setToolContent=(subagents,artifacts,watches=[])=>{window.savedArtifacts=artifacts;setTask(task=>({...task,subagents,threadWatches:watches,status:task.status==='done'?'draft':'done'}))};
       window.switchThread=()=>setTask(task=>({...task,id:task.id==='other-thread'?'thread':'other-thread',title:task.id==='other-thread'?'Fix reconnection':'Another thread'}));window.setPullState=(state,draft=false)=>setTask(task=>({...task,pullStatus:{...task.pullStatus,state,draft,checks:'failed'}}));
       window.setParent=spawnParent=>setTask(task=>({...task,spawnParent}));window.setContextUsage=contextUsage=>setTask(task=>({...task,contextUsage}));window.clearPulls=()=>setTask(task=>({...task,linkedPullRequests:[],pullRequest:undefined,pullStatus:undefined}));window.clearFiles=()=>setTask(task=>({...task,files:[]}));window.setProjectActions=actions=>{repo.actions=actions;setTask(task=>({...task}))};
@@ -107,7 +116,7 @@ const built = await build({
       const activeRequest=async(path,input,...rest)=>{if(path==='/api/tasks/waiting'&&input.unlink)window.stopped=true;return request(path,input,...rest)};
       window.store={workspace:{tasks:[task,...window.lineage],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
-      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working'}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} thread={i===0?{key:name,runtimeId:'runtime',threadId:name,title:'Fix reconnection across Wi-Fi switches',computerName:'Dominic Mac',phase:'completed',online:true,paused:false,children:[{key:'child',runtimeId:'runtime',threadId:'child',title:'Review implementation',computerName:'Dominic Mac',phase:'running',online:true,paused:false,children:[]}]}:undefined} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
+      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working'}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
       return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<TaskProjectPanelRoot open={panel&&(!window.mobile||surface==='chat')} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,minHeight:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={selectSurface} sidebarVisible={true} hasDiff={false} projectPanelOpen={panel} onProjectPanel={()=>{if(window.mobile)selectSurface('chat');setPanel(value=>!value)}} onCreate={()=>{}} onDeselect={()=>{}}/>
         <div data-thread-workspace style={{position:'relative',display:'flex',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
         <div data-project-panel-frame style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
@@ -360,11 +369,8 @@ try {
       await firstMenu.getByRole('menuitem', { name: 'Rename…', exact: true }).waitFor()
       await page.keyboard.press('Escape')
       const header = page.locator('.studio-task-thread-header')
-      assert.equal(
-        await header.getByRole('button').count(),
-        2,
-        'Header contains title actions and thread info',
-      )
+      await header.getByRole('button', { name: 'Thread actions', exact: true }).waitFor()
+      await header.getByRole('button', { name: 'Show thread info', exact: true }).waitFor()
       assert.equal(
         await header.locator('[data-thread-info-branch]').textContent(),
         'fix/reconnection',
@@ -450,6 +456,44 @@ try {
         .getAttribute('aria-expanded'),
       'false',
     )
+    const summaryChild = summaryLineage.getByRole('button', {
+      name: 'Open child thread Review browser',
+      exact: true,
+    })
+    assert.equal(await info.getByText('Review browser', { exact: true }).count(), 1)
+    await summaryChild.click()
+    assert.deepEqual(await page.evaluate(() => window.openedThread), {
+      runtimeId: 'runtime',
+      threadId: 'child-review',
+      title: 'Review browser',
+      parent: { runtimeId: 'runtime', threadId: 'thread', title: 'Fix reconnection' },
+    })
+    const remote = summaryLineage.getByRole('button', { name: 'Open child thread Remote review' })
+    const remoteStatus = remote.locator('.studio-thread-status')
+    assert.equal(await remoteStatus.innerText(), '14h')
+    assert.equal(await remoteStatus.locator('span + svg').count(), 1)
+    assert.match(await remote.getAttribute('aria-description'), /Running/)
+    await remote.click()
+    assert.deepEqual(await page.evaluate(() => window.openedThread), {
+      runtimeId: 'remote-identity',
+      runtimeIdentity: 'remote-identity',
+      threadId: 'child-review',
+      title: 'Remote review',
+      parent: { runtimeId: 'runtime', threadId: 'thread', title: 'Fix reconnection' },
+    })
+    const nativeRow = summaryLineage.getByRole('button', {
+      name: 'Open child thread Native reviewer',
+    })
+    assert.equal(await nativeRow.locator('.studio-thread-status').innerText(), '2h')
+    await nativeRow.click()
+    const native = await page.evaluate(() => window.openedThread)
+    assert.match(native.nativeAgentKey, /^[a-f0-9]{64}$/)
+    assert.deepEqual(native, {
+      runtimeId: 'runtime',
+      threadId: 'child-review',
+      title: 'Native reviewer',
+      nativeAgentKey: native.nativeAgentKey,
+    })
     await page.evaluate(() => window.setLineage(false))
     await summaryLineage.waitFor({ state: 'hidden' })
     await info.getByRole('button', { name: 'More details', exact: true }).click()
@@ -563,7 +607,7 @@ try {
     const lineage = page.getByRole('region', { name: 'Agent lineage', exact: true })
     await lineage.getByText('Check page menus', { exact: true }).waitFor()
     await lineage.getByText('Native reviewer', { exact: true }).waitFor()
-    await lineage.getByRole('button', { name: /Review browser/ }).click()
+    await lineage.getByRole('button', { name: 'Open child thread Review browser' }).click()
     assert.equal(await page.evaluate(() => window.openedThread.threadId), 'child-review')
     await page.evaluate(() => window.setLineage(false))
     const popover = await page
@@ -911,7 +955,7 @@ try {
       })
       assert.ok(totals && card && card.x + card.width - (totals.x + totals.width) <= 16)
     }
-    const linkedRow = page.getByLabel('Linked pull requests', { exact: true })
+    const linkedRow = info.getByLabel('Linked pull requests', { exact: true })
     await linkedRow.getByRole('link', { name: /Open PR #7/ }).waitFor()
     await linkedRow
       .getByRole('button', { name: 'Open PR #9: Preserve the runtime session', exact: true })
@@ -1197,63 +1241,29 @@ try {
       }, scheme)
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await page.locator('.studio-thread-card-context').first().waitFor()
-      assert.equal(await page.locator('.studio-thread-card-context').count(), 8)
-      assert.equal(
-        await page.locator('.studio-thread-card-context > span.flex[data-tone="success"]').count(),
-        4,
-      )
+      assert.equal(await page.locator('.studio-thread-card-context').count(), 4)
+      assert.equal(await page.locator('.studio-thread-status[data-tone="success"]').count(), 4)
       // Unread and read completions keep distinct accessible status and a success icon.
-      // Rows show time without status text.
       for (const [project, unread] of [
         ['Project', true],
         ['Mobile app', false],
         ['Runtime', true],
         ['Draft PR', false],
       ]) {
-        const context = page.locator('.studio-thread-card-context').filter({
+        const row = page.locator('.studio-thread-row').filter({
           has: page.getByText(project, { exact: true }),
         })
-        const status = context.locator(':scope > span.flex')
+        const status = row.locator('.studio-thread-card-title .studio-thread-status')
         assert.equal(await status.count(), 1)
         assert.match(await status.getAttribute('aria-label'), unread ? /^Done/ : /^Finished/)
         assert.doesNotMatch(await status.innerText(), /Done|Finished/)
+        assert.ok((await status.locator('.tabular-nums').innerText()).trim())
         assert.equal(await status.locator('svg').count(), 1)
         assert.equal(await status.getAttribute('data-tone'), 'success')
       }
-      const toggle = page.getByRole('button', {
-        name: 'Subthreads for Fix reconnection across Wi-Fi switches',
-        exact: true,
-      })
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'false')
-      assert.equal(
-        await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
-        0,
-      )
-      const executionRow = page.locator('[data-thread-execution]').first()
-      const toggleBounds = await toggle.boundingBox()
-      const rowBounds = await executionRow.boundingBox()
-      assert.ok(
-        Math.abs(toggleBounds.y + toggleBounds.height / 2 - rowBounds.y - rowBounds.height / 2) < 1,
-      )
-      await page.screenshot({ path: `/tmp/dovo-thread-cards-${scheme}.png` })
-      await toggle.click()
-      await page.getByRole('button', { name: 'Open child thread Review implementation' }).waitFor()
-      assert.equal(await page.evaluate(() => window.selectedRow), undefined)
-      assert.equal(await toggle.getAttribute('aria-expanded'), 'true')
-      await page.screenshot({ path: `/tmp/dovo-subthreads-expanded-${scheme}.png` })
-      await toggle.click()
-      assert.equal(
-        await page.getByRole('button', { name: 'Open child thread Review implementation' }).count(),
-        0,
-      )
-      const nativeToggle = page.getByRole('button', {
-        name: 'Subthreads for Keep sidebar state between restarts',
-        exact: true,
-      })
+      assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
       assert.equal(await page.getByText('Native reviewer', { exact: true }).count(), 0)
-      await nativeToggle.click()
-      await page.getByText('Native reviewer', { exact: true }).waitFor()
-      await page.screenshot({ path: `/tmp/dovo-native-subagents-${scheme}.png` })
+      await page.screenshot({ path: `/tmp/dovo-thread-cards-${scheme}.png` })
       assert.equal(await page.locator('button button').count(), 0)
       await page.close()
     }

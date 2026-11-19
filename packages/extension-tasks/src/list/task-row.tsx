@@ -1,17 +1,12 @@
+import { ThreadRowStatus } from './thread-row-status'
 import { threadInputLabel, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { ThreadWatchSummary } from './thread-watch-summary'
 import { WorkspaceTypeBadge } from '../unified/workspace-type-badge'
 import { MiddleTruncate } from './middle-truncate'
-import { NestedThreads } from './nested-threads'
-import { readTaskListViewState, saveTaskListViewState } from './task-list-view-state'
 import type { NestedThread } from './thread-tree'
 import { RuntimeIcon } from '@dovo/studio-ui/runtime-icon'
 import {
-  matchingThreadChildren,
-  type ThreadSearchFilter,
-  threadChildRows,
+  threadChildCount,
   threadInputSummary,
-  threadNativeAgents,
   pullStackLabel,
   taskPullStatusFor,
   taskDisplayProject,
@@ -31,48 +26,21 @@ import { hasUnreadTaskActivity } from '@dovo/protocol'
 import { isSnoozed } from './task-priority'
 import { taskPresentation } from './task-presentation'
 import {
-  Archive,
   Bot,
   AlarmClock,
-  CloudOff,
-  CircleX,
-  CircleStop,
-  FilePenLine,
-  MessageCircleQuestion,
   MessageCircleDashed,
-  Save,
-  type LucideIcon,
-  CircleCheck,
-  CircleDashed,
   FolderGit2,
   GitBranch,
   Layers,
   Pin,
   Network,
   SquareTerminal,
-  Pause,
 } from 'lucide-react'
-import { memo, useId, useMemo, useState, type ReactNode } from 'react'
+import { memo, type ReactNode } from 'react'
 import { providers, type Task } from '@dovo/studio-core'
 import { Button, cn, DropdownMenu, Tooltip, TooltipTrigger, TooltipContent } from '@dovo/studio-ui'
 import type { TaskOwner } from './task-collection'
 import { useTaskNow } from './task-clock'
-import { threadTreeSummary } from '@dovo/protocol'
-const statusIcons: Record<string, LucideIcon> = {
-  Draft: FilePenLine,
-  Paused: Pause,
-  Working: CircleDashed,
-  Done: CircleCheck,
-  Finished: CircleCheck,
-  Failed: CircleX,
-  Stopped: CircleStop,
-  Snoozed: AlarmClock,
-  Waiting: AlarmClock,
-  Settled: CircleCheck,
-  Archived: Archive,
-  'Needs input': MessageCircleQuestion,
-  'Saving changes': Save,
-}
 function TaskRowView({
   task,
   selected,
@@ -85,10 +53,6 @@ function TaskRowView({
   disabled,
   selectedChildId,
   thread,
-  selectedThreadKey,
-  searching,
-  search,
-  revealSearch,
   workspaceType,
   titleIcon,
 }: {
@@ -105,10 +69,6 @@ function TaskRowView({
   disabled: boolean
   selectedChildId?: string
   thread?: NestedThread
-  selectedThreadKey?: string
-  searching?: boolean
-  search?: ThreadSearchFilter
-  revealSearch?: boolean
   workspaceType?: boolean
   titleIcon?: ReactNode
 }) {
@@ -120,75 +80,29 @@ function TaskRowView({
       aria-label={`${activeTerminals} active terminal${activeTerminals === 1 ? '' : 's'}`}
     />
   )
-  const studioHost = useStudioHost()
-  const childrenId = useId()
-  const parentKey = JSON.stringify([owner.runtimeId, task.id])
-  const [expanded, setExpanded] = useState(
-    () => readTaskListViewState(studioHost).threadExpansion?.[parentKey] ?? false,
+  const subthreadCount = thread ? threadChildCount(thread) : 0
+  const subthreadLabel = subthreadCount
+    ? `${uiText('Subthreads for {value0}', { value0: task.title })}, ${subthreadCount}`
+    : undefined
+  const subthreadIndicator = subthreadCount > 0 && (
+    <span
+      className="inline-flex shrink-0 items-center gap-0.5 text-[0.625rem] tabular-nums text-muted-foreground"
+      aria-hidden="true"
+      title={subthreadLabel}
+    >
+      <Network className="size-2.5" aria-hidden="true" />
+      <span>{subthreadCount}</span>
+    </span>
   )
-  const [hovered, setHovered] = useState(false)
-  const [expandedSearch, setExpandedSearch] = useState<string>()
-  const open = searching
-    ? !!revealSearch || (expandedSearch !== undefined && expandedSearch === search?.query)
-    : expanded || hovered
+  const studioHost = useStudioHost()
   const repository = owner.repositories.find((r) => r.id === task.repositoryId)
   const displayProject = taskDisplayProject(task, owner.repositories)
   const general = repository?.kind === 'scratch'
   const projectName =
     displayProject?.kind === 'scratch' ? 'No Project' : (displayProject?.name ?? 'No Project')
-  // The list retains this projection across transcript-only updates, including native agents.
-  const rootThread = useMemo(
-    () =>
-      thread ?? {
-        runtimeId: owner.runtimeId,
-        threadId: task.id,
-        title: task.title,
-        computerName: owner.name,
-        projectName,
-        online: owner.online,
-        children: [],
-        nativeAgents: threadNativeAgents(task, Infinity),
-      },
-    [
-      owner.runtimeId,
-      owner.name,
-      owner.online,
-      projectName,
-      task.id,
-      task.title,
-      task.subagents,
-      thread,
-    ],
-  )
-  const childRows = useMemo(
-    () =>
-      search
-        ? matchingThreadChildren(threadChildRows(rootThread), search)
-        : threadChildRows(rootThread),
-    [rootThread, search],
-  )
-  const summary = useMemo(
-    () => threadTreeSummary(childRows, task.acknowledgedSubagentFailures),
-    [childRows, task.acknowledgedSubagentFailures],
-  )
   const compact = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !compact
-  const childCount = summary.total
-  const childrenDetail = [
-    `${childCount} subthread${childCount === 1 ? '' : 's'}`,
-    summary.attention ? `${summary.attention} needs input` : '',
-    summary.running ? `${summary.running} running` : '',
-    summary.waiting ? `${summary.waiting} waiting` : '',
-    summary.failed ? `${summary.failed} failed` : '',
-    summary.offline ? `${summary.offline} offline` : '',
-  ]
-    .filter(Boolean)
-    .join(' · ')
   const now = useTaskNow(task, needsInput)
-  const threadParent = useMemo(
-    () => ({ runtimeId: owner.runtimeId, threadId: task.id, title: task.title }),
-    [owner.runtimeId, task.id, task.title],
-  )
   const agent = resolveTaskAgent(task, owner.agents)
   const customIcon = task.agentId && agent ? (agent.icon ?? 'bot') : undefined
   const projectIcon = task.bot ? (
@@ -246,16 +160,14 @@ function TaskRowView({
   const status =
     !owner.online && owner.runtimeId ? 'Offline · Cached' : inputLabel || presentation.label
   const offline = !owner.online && !!owner.runtimeId
-  const statusTime = presentation.time.replace(' ago', '')
-  const StatusIcon = inputLabel
-    ? MessageCircleQuestion
-    : compact && presentation.state === 'Review' && !offline
-      ? undefined
-      : offline
-        ? CloudOff
-        : (statusIcons[presentation.state] ?? CircleDashed)
-  const statusTone = offline ? 'neutral' : inputLabel ? 'attention' : presentation.tone
-  const rowStatus = offline ? uiText('Offline') : inputLabel || uiText(presentation.state)
+  const statusBadge = (
+    <ThreadRowStatus
+      state={offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state}
+      label={status}
+      age={presentation.age}
+      tone={offline ? 'neutral' : inputLabel ? 'attention' : presentation.tone}
+    />
+  )
   const statusDetail = [
     status,
     unread ? uiText('Unread') : '',
@@ -368,7 +280,6 @@ function TaskRowView({
   const executionIcons = (
     <span className="inline-flex shrink-0 items-center gap-1" data-thread-execution>
       {compact && pullIndicators}
-      {!!childCount && <span className="studio-subthread-anchor block h-3.5 w-5 shrink-0" />}
       {provider && (
         <AgentAvatar provider={provider} customIcon={customIcon} className="size-3.5 shrink-0" />
       )}
@@ -379,20 +290,21 @@ function TaskRowView({
       />
     </span>
   )
-  const grouped = compact && !!childCount && open
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
     <div
       data-highlighted={highlighted || undefined}
-      onMouseLeave={() => setHovered(false)}
-      className={cn('studio-thread-row group/task relative w-full min-w-0', grouped && 'mb-[3px]')}
+      className="studio-thread-row group/task relative w-full min-w-0"
     >
       <div className="relative">
         <Tooltip delayDuration={450}>
           <TooltipTrigger asChild>
             <Button
               variant="ghost"
-              aria-description={unread ? uiText('Unread') : undefined}
+              aria-description={
+                [unread && uiText('Unread'), subthreadLabel].filter(Boolean).join(' · ') ||
+                undefined
+              }
               aria-current={selected ? 'true' : undefined}
               data-unread={unread || undefined}
               data-read={(!highlighted && !unread) || undefined}
@@ -401,11 +313,9 @@ function TaskRowView({
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
                 compact ? 'min-h-9 items-center py-1.5' : 'studio-thread-row-two-line items-center',
-                grouped
-                  ? 'mb-0'
-                  : highlighted
-                    ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
-                    : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
+                highlighted
+                  ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
+                  : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
               )}
               onClick={onSelect}
               disabled={disabled}
@@ -442,43 +352,11 @@ function TaskRowView({
                   >
                     {task.title}
                   </span>
-                  {compact && !!childCount && executionIcons}
+                  {compact && subthreadIndicator}
                   {compact && terminalIndicator}
-                  {!compact && (
-                    <span
-                      className="studio-thread-status flex min-w-0 max-w-[56%] shrink-0 items-center gap-1 text-xs font-normal"
-                      data-thread-copy=""
-                      data-tone={statusTone}
-                      data-thread-state={
-                        offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
-                      }
-                      aria-label={status}
-                      title={status}
-                    >
-                      {StatusIcon && (
-                        <StatusIcon
-                          className="studio-thread-status-icon size-3.5 shrink-0"
-                          aria-hidden="true"
-                        />
-                      )}
-                      <span className="truncate">{rowStatus}</span>
-                    </span>
-                  )}
+                  {!compact && statusBadge}
                 </span>
-                {compact && StatusIcon && (
-                  <span
-                    className="studio-thread-status flex min-w-0 max-w-[65%] shrink-0 items-center gap-1 text-xs"
-                    data-tone={statusTone}
-                    data-thread-state={
-                      offline ? 'Offline' : inputLabel ? 'Needs input' : presentation.state
-                    }
-                    aria-label={status}
-                    title={status}
-                  >
-                    <StatusIcon className="studio-thread-status-icon size-3.5" aria-hidden="true" />
-                    {statusTime && <span className="tabular-nums">{statusTime}</span>}
-                  </span>
-                )}
+                {compact && statusBadge}
                 {!compact && (
                   <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs">
                     <span
@@ -512,6 +390,7 @@ function TaskRowView({
                           {pullIndicators}
                         </span>
                       )}
+                      {subthreadIndicator}
                       {terminalIndicator}
                       {executionIcons}
                     </span>
@@ -592,60 +471,7 @@ function TaskRowView({
           </TooltipContent>
         </Tooltip>
         {pullShortcut}
-        {!!childCount && (
-          <button
-            type="button"
-            className={cn(
-              'studio-subthread-control flex size-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground',
-              open && 'bg-accent text-foreground',
-              summary.attention > 0 && 'text-status-warning',
-              summary.failed > 0 && 'text-destructive',
-            )}
-            aria-label={`Subthreads for ${task.title}`}
-            aria-expanded={open}
-            aria-controls={open ? childrenId : undefined}
-            title={childrenDetail}
-            onMouseEnter={() => {
-              if (!searching) setHovered(true)
-            }}
-            onClick={(event) => {
-              event.stopPropagation()
-              if (searching) {
-                setExpandedSearch(open ? undefined : search?.query)
-                return
-              }
-              // A hover preview becomes pinned on click; clicking again closes it.
-              const next = !expanded
-              setHovered(false)
-              setExpanded(next)
-              saveTaskListViewState(studioHost, {
-                threadExpansion: {
-                  ...readTaskListViewState(studioHost).threadExpansion,
-                  [parentKey]: next,
-                },
-              })
-            }}
-          >
-            <Network className="size-3.5" aria-hidden="true" />
-          </button>
-        )}
       </div>
-      {!compact && !thread && (
-        <ThreadWatchSummary task={task} online={owner.online} runtimeId={owner.runtimeId} />
-      )}
-      {open && !!childCount && (
-        <div id={childrenId}>
-          <NestedThreads
-            hideSummary
-            className={grouped ? 'mb-0 border-t border-border/30 py-0.5' : undefined}
-            threads={childRows}
-            acknowledgedFailures={task.acknowledgedSubagentFailures}
-            parent={threadParent}
-            selectedKey={selectedThreadKey}
-            searching={searching}
-          />
-        </div>
-      )}
       {editable && (
         <div
           className={cn(

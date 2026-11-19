@@ -1,3 +1,4 @@
+import { formatThreadAge } from '@dovo/protocol'
 import { useCallback, useRef, useSyncExternalStore } from 'react'
 import type { Task } from '@dovo/studio-core'
 import { taskPresentation } from './task-presentation'
@@ -71,4 +72,15 @@ export function useTaskNow(task: Task, needsInput: boolean) {
     [interval],
   )
   return useSyncExternalStore(subscribe, read, read)
+}
+
+const subscribeMinute = (listener: () => void) => subscribeClock(60000, listener)
+export function useThreadAge(statusAt?: string) {
+  const time = Date.parse(statusAt ?? '')
+  const read = () => formatThreadAge(Date.now() - time)
+  return useSyncExternalStore(
+    Number.isFinite(time) ? subscribeMinute : () => unsubscribed,
+    read,
+    read,
+  )
 }

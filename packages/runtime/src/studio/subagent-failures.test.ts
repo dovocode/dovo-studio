@@ -220,7 +220,7 @@ it('publishes bounded private-free native summaries and changes revision for nat
   expect(before.phase).toBe('running')
   expect(
     before.threads?.find((entry) => entry.threadId === f.child.id)?.nativeAgents,
-  ).toMatchObject([{ working: true, name: 'Provider worker' }])
+  ).toMatchObject([{ working: true, name: 'Provider worker', statusAt: agent.startedAt }])
   f.s.store.updateTask(f.child.id, (task) => ({
     ...task,
     subagents: [{ ...agent, status: 'failed', finishedAt: 'end' }],
@@ -228,7 +228,7 @@ it('publishes bounded private-free native summaries and changes revision for nat
   const after = decode(threadWatchSnapshotSchema, threadSnapshot(f.s, f.parent.id))
   expect(after.revision).not.toBe(before.revision)
   const native = after.threads?.find((entry) => entry.threadId === f.child.id)?.nativeAgents
-  expect(native).toMatchObject([{ status: 'failed', working: false }])
+  expect(native).toMatchObject([{ status: 'failed', working: false, statusAt: 'end' }])
   expect(JSON.stringify(native)).not.toMatch(/private|prompt|result|sessionId/)
   expect((await f.post(native![0].key)).status).toBe(200)
   // Presentation changes do not resend a completed execution result.

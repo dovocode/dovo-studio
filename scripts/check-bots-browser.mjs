@@ -127,7 +127,6 @@ for (const name of ['ComposerHarnessControls', 'TurnModelControls'])
 delete mocks['./task-row']
 mocks['../detail/task-lifecycle-actions'] = 'export const TaskLifecycleActions=()=>null;'
 mocks['./nested-threads'] = 'export const NestedThreads=()=>null;'
-mocks['./thread-watch-summary'] = 'export const ThreadWatchSummary=()=>null;'
 mocks['../detail/resizable-sidebar'] =
   'export const ResizableSidebar=({children,className})=><aside className={className} style={{width:260,maxWidth:"40%",flexShrink:0}}>{children}</aside>;'
 mocks['@dovo/studio-core'] += `
@@ -176,7 +175,18 @@ window.calls=[];window.failCreate=false;window.failUpdate=false;window.commands=
 const harness={provider:'codex',model:'model',permission:'workspace-write',endpoint:'',args:[],instructions:'',skills:[],mcpServers:[],reasoning:''};
 const metadata=()=>({role:'Release assistant',responsibilities:'Review releases',state:'active',revision:randomUUID(),createdAt:new Date().toISOString(),updatedAt:new Date().toISOString()});
 const task=(id,title,bot)=>({...createTask({title,objective:'',agentId:'',repositoryId:'scratch',harness}),id,status:'review',draft:'',...(bot?{bot:metadata()}:{})});
-const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[task('bot','Release Bot '+owner,true),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}}],agents:[{...harness,id:'backup',name:'Backup',model:'backup-model'}],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
+const watchedBot = owner => ({
+  ...task('bot', 'Release Bot ' + owner, true),
+  threadWatches: [{
+    runtimeId: 'remote',
+    threadId: 'connected-child',
+    computerName: 'Remote computer',
+    relation: 'spawned',
+    status: 'watching',
+    offline: false,
+  }],
+});
+const workspace=owner=>({version:1,runtimeAddress:'http://'+owner+'.lan',tasks:[watchedBot(owner),task('chat','Normal chat '+owner,false),{...task('child','Delegated work '+owner,false),delegation:{parentTaskId:'bot',parentRunId:'run',key:'child',fingerprint:'x'}}],agents:[{...harness,id:'backup',name:'Backup',model:'backup-model'}],repositories:[{id:'scratch',kind:'scratch',name:'No project',path:'/scratch',branch:''}],automations:[]});
 const initial={one:workspace('one'),two:workspace('two')};
 function OwnerProbe(){const scope=useWorkspace();window.ownerProbe={id:scope.activeRuntimeId,read:()=>scope.request('/api/fixture/agent',{},Schema.Unknown)};return null}
 // Hold the context commit separately from switchRuntime's promise, as React can do.
@@ -334,6 +344,12 @@ try {
     'One persistent row per computer, no run or delegation rows',
   )
   assert.equal(await page.locator('[data-bot-row="child"]').count(), 0)
+  await page
+    .locator('[data-bot-row="bot"] [title="Subthreads for Release Bot one, 2"]')
+    .first()
+    .waitFor()
+  assert.equal(await page.getByLabel('Related threads', { exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: /^Open child thread/ }).count(), 0)
   await page
     .locator('[data-bot-row="bot"]')
     .filter({ hasText: 'Release Bot one' })

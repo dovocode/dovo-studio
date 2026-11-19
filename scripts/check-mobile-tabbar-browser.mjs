@@ -71,7 +71,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: 'react-native-safe-area-context',
     contents:
-      'export const SafeAreaView=({children})=><div>{children}</div>;export const useSafeAreaInsets=()=>({top:0,bottom:0,right:0,left:0});',
+      'export const SafeAreaProvider=({children})=><div data-route-safe-area>{children}</div>;export const SafeAreaView=({children,edges})=><div data-safe-edges={JSON.stringify(edges)}>{children}</div>;export const useSafeAreaInsets=()=>({top:0,bottom:0,right:0,left:0});',
   },
   {
     path: 'react-native-screens/experimental',
@@ -211,16 +211,14 @@ try {
       .evaluateAll((nodes) => nodes.map((node) => JSON.parse(node.dataset.nativeSafeArea)))
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, left: true, right: true }, { bottom: true }],
+    [{ left: true, right: true, bottom: false }, { bottom: true }],
     'Collections consume remaining top and tab-bar insets before fixed controls',
   )
   await page.evaluate(() => window.updateFixture({ notice: true }))
   assert.equal(
     await page
       .getByRole('alert')
-      .evaluate(
-        (node) => JSON.parse(node.closest('[data-native-safe-area]').dataset.nativeSafeArea).top,
-      ),
+      .evaluate((node) => !!node.closest(`[data-route-safe-area] [data-safe-edges='["top"]']`)),
     true,
     'Storage recovery notices stay below the navigation safe area too',
   )
@@ -274,7 +272,7 @@ try {
   await page.getByText('Collection content', { exact: true }).waitFor()
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, left: true, right: true }, { bottom: true }],
+    [{ left: true, right: true, bottom: false }, { bottom: true }],
     'Menu destinations outside tabs protect the navigation and home edges too',
   )
   await page.evaluate(() => window.updateFixture({ path: '/pulls' }))
@@ -301,7 +299,7 @@ try {
   await plus.waitFor({ state: 'hidden' })
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, left: true, right: true }, { bottom: false }],
+    [{ left: true, right: true, bottom: false }, { bottom: false }],
     'Keyboard avoidance owns the collection bottom while the keyboard is visible',
   )
   await page.evaluate(() => window.keyboardListeners.keyboardDidHide())
@@ -364,7 +362,7 @@ try {
   )
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: false, left: true, right: true }, { bottom: false }],
+    [{ top: false, left: true, right: true, bottom: false }, { bottom: false }],
     'The expanded sidebar keeps the top inset already applied by its pane',
   )
   await page.getByRole('button', { name: 'Open sidebar thread', exact: true }).click()
@@ -415,11 +413,12 @@ try {
   await page.evaluate(() => window.updateFixture({ detail: true, bottomInset: true }))
   const draft = page.getByRole('textbox', { name: 'Retained draft' })
   await draft.fill('Unsaved draft')
-  assert.deepEqual(await nativeInsets(), [{ top: true, left: true, right: true, bottom: true }])
+  assert.equal(await draft.locator('xpath=ancestor::*[@data-route-safe-area]').count(), 1)
+  assert.deepEqual(await nativeInsets(), [{ left: true, right: true, bottom: true }])
   await page.evaluate(() => window.updateFixture({ bottomInset: false }))
   assert.deepEqual(
     await nativeInsets(),
-    [{ top: true, left: true, right: true, bottom: false }],
+    [{ left: true, right: true, bottom: false }],
     'Composer and preview routes own their bottom inset, including when the header hides',
   )
   assert.equal(await draft.inputValue(), 'Unsaved draft', 'Inset changes preserve the editor')

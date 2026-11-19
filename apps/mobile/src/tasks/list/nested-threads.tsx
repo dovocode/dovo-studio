@@ -27,12 +27,14 @@ export const NestedThreads = memo(function NestedThreads({
   acknowledgedFailures = [],
   onAcknowledgeFailure,
   hideSummary = false,
+  beforeNavigate,
 }: {
   thread: NestedThread
   disabled?: boolean
   searching?: boolean
   acknowledgedFailures?: readonly string[]
   onAcknowledgeFailure?: (key: string) => void
+  beforeNavigate?: (open: () => void) => void
   hideSummary?: boolean
 }) {
   const uiText = useInterfaceText()
@@ -47,7 +49,11 @@ export const NestedThreads = memo(function NestedThreads({
   const { profiles, overviews } = useRuntime()
   const [expanded, setExpanded] = useState(true)
   const [finishedExpanded, setFinishedExpanded] = useState(false)
-  const navigate = (child: NestedThread) => openNestedThread(child, thread, profiles, overviews)
+  const navigate = (child: NestedThread) => {
+    const open = () => openNestedThread(child, thread, profiles, overviews)
+    if (beforeNavigate) beforeNavigate(open)
+    else open()
+  }
   const summary = threadTreeSummary(thread.children, acknowledgedFailures)
   if (!summary.total) return null
   const activeKeys = new Set(
@@ -192,6 +198,7 @@ export const NestedThreads = memo(function NestedThreads({
       )}
       <NestedThreads
         thread={child}
+        beforeNavigate={beforeNavigate}
         disabled={disabled}
         searching={searching}
         acknowledgedFailures={acknowledgedFailures}

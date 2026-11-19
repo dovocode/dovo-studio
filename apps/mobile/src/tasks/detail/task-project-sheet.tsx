@@ -4,9 +4,10 @@ import { Pressable, ScrollView, View } from 'react-native'
 import { Effect } from 'effect'
 import { randomUUID } from 'expo-crypto'
 import {
-  indexTaskSubagents,
-  subagentMetadata,
+  aggregateRuntimeTasks,
+  threadChildRows,
   runtimeComputerName,
+  runtimeResourceKey,
   workspacePatchResultSchema,
   type ProjectAction,
   type Task,
@@ -29,6 +30,8 @@ import { Text } from '../../ui/content/text'
 import { useTheme } from '../../ui/theme'
 import { ProjectIconSettings } from '../../scm/connections/project-icon-settings'
 import { TaskWaitingPanel } from './task-waiting-panel'
+import { mobileThreadTreeFromRows } from '../list/task-list-projection'
+import { NestedThreads } from '../list/nested-threads'
 import { TaskSource } from './task-source'
 import { PullStatus } from './pull-status'
 import { CommitSection } from './commit-section'
@@ -135,7 +138,7 @@ export function TaskProjectSheet({
 }) {
   const uiText = useInterfaceText()
 
-  const { snapshot, profile, connected, callEffect } = useRuntime()
+  const { snapshot, profile, connected, callEffect, overviews } = useRuntime()
   const { colors, styles } = useTheme()
   const { act, busy, error } = useAction()
   const repository = snapshot?.workspace.repositories.find((repo) => repo.id === task.repositoryId)
@@ -153,7 +156,7 @@ export function TaskProjectSheet({
   const details = detailsScope === scope
   const [customizing, setCustomizing] = useState(false)
   const summarySection = (id: ThreadInfoSectionId) =>
-    threadInfoSummarySections.has(id) &&
+    (threadInfoSummarySections.has(id) || id === 'lineage') &&
     (id !== 'pulls' || taskPullLinks(task).length > 0 || !!task.pullStatus) &&
     (id !== 'changes' || task.files.length > 0)
   const { threadInfoSections, threadInfoOrder } = useMobilePreferences()
@@ -164,11 +167,18 @@ export function TaskProjectSheet({
   const [editingScripts, setEditingScripts] = useState(false)
   const [drafts, setDrafts] = useState<ProjectAction[]>(() => repository?.actions ?? [])
   const [icons, setIcons] = useState(false)
-  const indexed = useMemo(
-    () => indexTaskSubagents(snapshot?.workspace.tasks ?? []),
-    [snapshot?.workspace.tasks],
-  )
-  const agents = indexed(task, true)
+  const thread = useMemo(() => {
+    if (!profile) return
+    const tree = mobileThreadTreeFromRows(
+      aggregateRuntimeTasks(overviews, Date.now(), true),
+      overviews,
+    )
+    const parent = tree.nodes.get(runtimeResourceKey(profile.id, task.id))
+    if (!parent) return
+    const children = threadChildRows(parent)
+    if (children.length)
+      return { ...parent, children, nativeAgents: undefined, linkedThreads: undefined }
+  }, [overviews, profile, task.id])
   const sheet = useRef<SheetHandle>(null)
   const dismissThen = (action: () => void) => (inline ? action() : sheet.current?.dismiss(action))
   const sections = {
@@ -433,20 +443,29 @@ export function TaskProjectSheet({
     lineage: (
       <>
         {show('lineage') && <TaskSource task={task} />}
-        {show('lineage') && !!agents.length && (
-          <View style={{ gap: 8 }} accessibilityLabel={uiText('Working subagents')}>
+        {show('lineage') && thread && (
+          <View style={{ gap: 4 }}>
             <Text style={styles.muted}>
-              <InterfaceText>{'Working agents'}</InterfaceText>
+              {uiText('Subthreads for {value0}', { value0: task.title })}
             </Text>
-            {agents.map((agent) => (
+            <NestedThreads
+              hideSummary
+              thread={thread}
+              acknowledgedFailures={task.acknowledgedSubagentFailures}
+              beforeNavigate={(open) =>
+                dismissThen(() => {
+                  if (inline) onClose()
+                  open()
+                })
+              }
+            />
+            {onAgents && (
               <ProjectRow
-                key={`${agent.provider}:${agent.id}`}
-                secondary
+                label={uiText('Agents')}
                 icon="agents"
-                label={`${agent.name} · ${subagentMetadata(agent)}`}
-                onPress={() => dismissThen(onAgents ?? (() => {}))}
+                onPress={() => dismissThen(onAgents)}
               />
-            ))}
+            )}
           </View>
         )}
       </>
