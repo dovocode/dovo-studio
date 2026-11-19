@@ -273,7 +273,8 @@ it('keeps agents, terminals, review edits, commits and gh inside the selected ta
     await s.tasks.start(isolated.id)
   ).done
   expect(runs[0].cwd).toBe(cwd)
-  expect(runs[0].agent.instructions).toContain('Use gh for GitHub operations')
+  expect(runs[0].agent.instructions).toContain(`Project working directory: ${JSON.stringify(cwd)}`)
+  expect(runs[0].agent.instructions).toContain('GitHub CLI executable: "gh"')
   expect(s.store.task(isolated.id).files[0].after).toBe('agent change\n')
   const scope = {
     repositoryId: 'repo',

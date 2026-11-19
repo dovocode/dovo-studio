@@ -116,7 +116,7 @@ const built = await build({
       const activeRequest=async(path,input,...rest)=>{if(path==='/api/tasks/waiting'&&input.unlink)window.stopped=true;return request(path,input,...rest)};
       window.store={workspace:{tasks:[task,...window.lineage],repositories:[repo],agents:[]},snapshot:{runtimeHost:'Dominic Mac',questions:[],approvals:[],terminals:[],threadBehaviorSupported:true},connection:{address:'http://runtime',token:'token'},activeRuntimeId:'runtime',runtimes:[],connected:true,request:activeRequest,
         runtimeRegistry:{profiles:[]},readRuntime:activeRequest,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},previewTask:async(_,__,___,apply)=>apply(),setWorkspace:()=>{}};
-      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working'}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
+      if(window.cards)return <div style={{width:320,padding:12,background:'var(--sidebar)'}}>{['Project','Mobile app','Runtime','Draft PR'].map((name,i)=><TaskRow key={name} task={{...task,id:name,turns:[{id:'completed',status:'completed',startedAt:'2026-10-14T08:00:00Z',finishedAt:'2026-10-14T08:01:00Z'}],lastViewedTurnId:i%2?'completed':undefined,pullStatus:{...task.pullStatus,state:['open','merged','closed','open'][i],draft:i===3},subagents:i===1?[{id:'native',name:'Native reviewer',provider:'claude',status:'working',sessionLive:true}]:[],title:['Fix reconnection across Wi-Fi switches','Keep sidebar state between restarts','Improve pipeline failure handling','Prepare new project layout'][i]}} selected={i===0} onSelect={()=>window.selectedRow=name} owner={{name:'Dominic Mac',online:true,agents:[],repositories:[{...repo,name}],acpInstallations:[]}} needsInput={false} terminals={0} editable={false} disabled={false}/>)}</div>;
       return <SidebarHeaderLayout collapsed={hideSidebar} onCollapsedChange={setHideSidebar} brand={<TitleBar sidebar platform={window.mobile ? undefined : 'darwin'} online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/>}><div className="studio" data-platform={window.mobile ? undefined : 'darwin'}><HeaderFallback><TitleBar platform={window.mobile ? undefined : 'darwin'} section="Threads" online={1} devices={1} onDevices={()=>{}} onSearch={()=>{}}/></HeaderFallback><div style={{display:'flex',minHeight:0,flex:1}}><ActivityBar views={[{id:'tasks',title:'Threads',icon:'tasks'}]} activeId="tasks" onSelect={id=>window.navigation=id}/>{!window.mobile&&<><aside style={{width:300,flexShrink:0,background:'var(--sidebar)',display:hideSidebar?'none':undefined}}><SidebarHeader/></aside></>}<TaskProjectPanelRoot open={panel&&(!window.mobile||surface==='chat')} onOpenChange={setPanel}><div data-thread-content style={{minWidth:0,minHeight:0,flex:1,display:'flex',flexDirection:'column'}}><TaskHeader task={task} compact={window.mobile} surface={surface} onSurface={selectSurface} sidebarVisible={true} hasDiff={false} projectPanelOpen={panel} onProjectPanel={()=>{if(window.mobile)selectSurface('chat');setPanel(value=>!value)}} onCreate={()=>{}} onDeselect={()=>{}}/>
         <div data-thread-workspace style={{position:'relative',display:'flex',minHeight:0,flex:1,marginRight:window.mobile?0:56}}>
         <div data-project-panel-frame style={{position:'relative',minWidth:0,minHeight:0,flex:1}}>
@@ -369,8 +369,8 @@ try {
       await firstMenu.getByRole('menuitem', { name: 'Rename…', exact: true }).waitFor()
       await page.keyboard.press('Escape')
       const header = page.locator('.studio-task-thread-header')
-      await header.getByRole('button', { name: 'Thread actions', exact: true }).waitFor()
-      await header.getByRole('button', { name: 'Show thread info', exact: true }).waitFor()
+      for (const name of ['Thread actions', 'Linked pull requests', 'Show thread info'])
+        await header.getByRole('button', { name, exact: true }).waitFor()
       assert.equal(
         await header.locator('[data-thread-info-branch]').textContent(),
         'fix/reconnection',
@@ -1242,24 +1242,23 @@ try {
       await page.addScriptTag({ content: built.outputFiles[0].text })
       await page.locator('.studio-thread-card-context').first().waitFor()
       assert.equal(await page.locator('.studio-thread-card-context').count(), 4)
-      assert.equal(await page.locator('.studio-thread-status[data-tone="success"]').count(), 4)
-      // Unread and read completions keep distinct accessible status and a success icon.
-      for (const [project, unread] of [
-        ['Project', true],
-        ['Mobile app', false],
-        ['Runtime', true],
-        ['Draft PR', false],
+      for (const [project, label, tone] of [
+        ['Project', 'Done', 'success'],
+        ['Mobile app', 'Working', 'active'],
+        ['Runtime', 'Done', 'success'],
+        ['Draft PR', 'Finished', 'success'],
       ]) {
         const row = page.locator('.studio-thread-row').filter({
           has: page.getByText(project, { exact: true }),
         })
         const status = row.locator('.studio-thread-card-title .studio-thread-status')
         assert.equal(await status.count(), 1)
-        assert.match(await status.getAttribute('aria-label'), unread ? /^Done/ : /^Finished/)
-        assert.doesNotMatch(await status.innerText(), /Done|Finished/)
-        assert.ok((await status.locator('.tabular-nums').innerText()).trim())
+        assert.equal((await status.getAttribute('aria-label')).split(' · ')[0], label)
+        const age = (await status.innerText()).trim()
+        if (label === 'Working') assert.equal(age, '')
+        else assert.match(age, /^\d+[mhd]$/)
         assert.equal(await status.locator('svg').count(), 1)
-        assert.equal(await status.getAttribute('data-tone'), 'success')
+        assert.equal(await status.getAttribute('data-tone'), tone)
       }
       assert.equal(await page.getByRole('button', { name: /^Subthreads for/ }).count(), 0)
       assert.equal(await page.getByText('Native reviewer', { exact: true }).count(), 0)
