@@ -57,7 +57,7 @@ import { TaskSwipeActions } from './task-swipe-actions'
 import { isSnoozed, taskIsWorking } from '@dovo/protocol'
 import { chooseSnoozeDuration, useTaskLifecycle } from '../detail/use-task-lifecycle'
 import { useTheme } from '../../ui/theme'
-import { showTaskDone, taskRowStatus } from './task-row-status'
+import { taskRowPresentation } from './task-row-status'
 import { memo, useCallback, useRef, useState, type ComponentRef } from 'react'
 import type { TaskListOwner } from './task-list-projection'
 import type { MobilePreferences } from '../../runtime/preferences/app-preferences'
@@ -71,7 +71,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Working: CircleDashed,
   'Was working': CloudOff,
   Done: CircleCheck,
-  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -210,16 +209,24 @@ function TaskListRowView({
   }
   const car = useCarMode()
   const dense = !car && density === 'compact'
-  const status =
-    task.bot?.state === 'paused' && row.online && !needsInput && !taskIsWorking(task)
-      ? 'Paused'
-      : taskRowStatus(task, needsInput, row.online, now)
+  const {
+    state,
+    age,
+    label: status,
+  } = task.bot?.state === 'paused' &&
+  !task.archived &&
+  !task.archivedAt &&
+  row.online &&
+  !needsInput &&
+  !taskIsWorking(task)
+    ? { state: 'Paused', age: '', label: 'Paused' }
+    : taskRowPresentation(task, needsInput, row.online, now)
   const inputLabel =
     row.online && !task.archived && !task.archivedAt
       ? threadInputLabel(thread && threadInputSummary(thread), uiText) ||
         (needsInput ? uiText('Needs input') : '')
       : ''
-  const done = showTaskDone(task, needsInput, now)
+  const done = state === 'Done'
   const failed = !needsInput && !done && status.startsWith('Failed')
   const displayProject = owner.displayProject ?? repository
   const general = !!task.bot || repository?.kind === 'scratch'
@@ -229,8 +236,6 @@ function TaskListRowView({
       ? 'No Project'
       : row.projectName || 'No Project'
   const worktree = !general && task.execution === 'worktree'
-  // "Review · 23m" → state "Review" and a right-aligned age "23m".
-  const [state, age] = /^(.*) · (now|\d+[mhd])$/.exec(status)?.slice(1) ?? [status, '']
   const working = taskIsWorking(task) && !needsInput
   const stateColor = needsInput
     ? colors.warning
@@ -250,7 +255,9 @@ function TaskListRowView({
     ? CloudOff
     : inputLabel
       ? MessageCircleQuestion
-      : (statusIcons[state] ?? CircleDashed)
+      : state
+        ? (statusIcons[state] ?? CircleDashed)
+        : undefined
   const settled = task.archived || !!task.archivedAt
   const draft = task.status === 'draft' && !settled
   const unread = hasUnreadTaskActivity(task)
@@ -415,7 +422,7 @@ function TaskListRowView({
   )
   const title = titleText
 
-  const statusIndicator = (!settled || inputLabel || state !== 'Review') && (
+  const statusIndicator = (StatusIcon || !!age) && (
     <View
       testID="Thread status"
       accessibilityLabel={row.online ? inputLabel || status : `${uiText('Offline')} · ${status}`}
@@ -440,7 +447,7 @@ function TaskListRowView({
           {age}
         </Text>
       )}
-      <StatusIcon size={12} color={stateColor} />
+      {StatusIcon && <StatusIcon size={12} color={stateColor} />}
     </View>
   )
 

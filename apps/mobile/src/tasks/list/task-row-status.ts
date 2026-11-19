@@ -18,8 +18,8 @@ export function showTaskDone(task: Task, needsInput: boolean, now: number) {
   )
 }
 
-/** Time supplements state without hiding warnings or unread results. */
-export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, now: number) {
+/** Keep the status and age separate so read completions can show the age alone. */
+export function taskRowPresentation(task: Task, needsInput: boolean, online: boolean, now: number) {
   const turn = task.turns?.at(-1)
   const working = taskIsWorking(task)
   const state = task.archivedAt
@@ -42,14 +42,16 @@ export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, 
                 ? 'Waiting'
                 : showTaskDone(task, needsInput, now)
                   ? 'Done'
-                  : task.status === 'review'
-                    ? 'Review'
-                    : task.status === 'done'
-                      ? 'Finished'
-                      : task.status === 'cancelled'
-                        ? 'Stopped'
-                        : 'Draft'
+                  : task.status === 'cancelled'
+                    ? 'Stopped'
+                    : task.status === 'draft'
+                      ? 'Draft'
+                      : ''
   const date = threadStatusTimestamp(task, turn)
-  const age = date && formatThreadAge(now - Date.parse(date))
-  return age ? `${state} · ${age}` : state
+  const age = date ? formatThreadAge(now - Date.parse(date)) : ''
+  return { state, age, label: [state, age].filter(Boolean).join(' · ') }
+}
+
+export function taskRowStatus(task: Task, needsInput: boolean, online: boolean, now: number) {
+  return taskRowPresentation(task, needsInput, online, now).label
 }

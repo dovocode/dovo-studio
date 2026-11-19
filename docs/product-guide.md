@@ -1188,6 +1188,9 @@ protection. Removed queued messages cannot return through a lost-response retry.
 
 ### Thread archive and subagents
 
+A successful turn shows **Done** until you read the result. After you read it, the thread shows its
+finish time. Older threads without a finish time show the last prompt or creation time.
+
 Settle keeps a finished thread in the sidebar’s Settled group. **Archive thread** hides it from
 normal lists; select **Archived** in the thread filter to restore it. **Delete thread** asks for
 confirmation and removes its conversation, stored attachments, and thread activity. Project files

@@ -74,7 +74,7 @@ it('identifies colliding thread/page/terminal IDs with actual context instead of
     title: 'Ship release',
     project: 'App',
     computer: 'Build Mac',
-    status: 'Review',
+    status: '',
     availability: 'present',
   })
   const terminal = workspaceIdentity({ kind: 'terminal', runtimeId: 'mac', id: 'same' }, sources)

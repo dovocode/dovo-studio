@@ -42,8 +42,8 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
                   : {
                       draft: 'Draft',
                       running: task.runPhase === 'finalizing' ? 'Saving changes' : 'Working',
-                      review: 'Review',
-                      done: 'Finished',
+                      review: '',
+                      done: '',
                       failed: 'Failed',
                       cancelled: 'Stopped',
                     }[task.status]
@@ -52,9 +52,9 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
     'Saving changes',
   ].includes(state)
     ? 'active'
-    : ['Review', 'Needs input'].includes(state)
+    : state === 'Needs input'
       ? 'attention'
-      : ['Done', 'Finished', 'Settled'].includes(state)
+      : ['Done', 'Settled'].includes(state)
         ? 'success'
         : state === 'Failed'
           ? 'danger'
@@ -67,8 +67,6 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number) {
             'Failed',
             'Stopped',
             'Done',
-            'Review',
-            'Finished',
             'Archived',
             'Settled',
             'Waiting',

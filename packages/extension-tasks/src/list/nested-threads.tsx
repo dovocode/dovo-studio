@@ -13,7 +13,7 @@ import {
   visibleThreadChildren,
   nativeOverflowFailures,
   threadNeedsInput,
-  threadPhaseLabels as phases,
+  threadPhaseLabel,
 } from '@dovo/protocol'
 
 import { ThreadRowStatus } from './thread-row-status'
@@ -29,15 +29,15 @@ function ChildStatus({ child, label }: { child: NestedThread; label: string }) {
         ? 'Needs input'
         : child.phase === 'running'
           ? 'Working'
-          : phases[child.phase]
+          : threadPhaseLabel(child)
   const tone =
     state === 'Failed'
       ? 'danger'
-      : state === 'Needs input' || state === 'Review'
+      : state === 'Needs input'
         ? 'attention'
         : state === 'Working'
           ? 'active'
-          : state === 'Done'
+          : state === 'Done' || state === 'Settled'
             ? 'success'
             : 'neutral'
   return (
@@ -126,7 +126,7 @@ function NestedThreadsView({
   const renderChild = (child: NestedThread) => {
     const status = [
       !child.online ? 'Offline' : child.paused ? 'Monitor stopped' : '',
-      threadInputLabel(threadInputSummary(child, false), uiText) || phases[child.phase],
+      threadInputLabel(threadInputSummary(child, false), uiText) || threadPhaseLabel(child),
       child.nativeAgentKey && child.activity,
     ]
       .filter(Boolean)

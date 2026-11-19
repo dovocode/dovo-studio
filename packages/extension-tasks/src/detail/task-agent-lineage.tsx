@@ -1,7 +1,8 @@
 import { useEffect, useEffectEvent, useMemo } from 'react'
 import {
   buildThreadTree,
-  threadPhaseLabels,
+  formatThreadAge,
+  threadPhaseLabel,
   threadChildRows,
   watchRuntimeSettled,
   type NestedThread,
@@ -72,7 +73,15 @@ export function TaskAgentLineage({
       >
         <span className="block truncate">{node.title || 'Untitled thread'}</span>
         <span className="block truncate text-[11px] text-muted-foreground">
-          {node.computerName} · {node.online ? threadPhaseLabels[node.phase] : 'Offline'}
+          {[
+            node.computerName,
+            node.online
+              ? threadPhaseLabel(node) ||
+                (node.statusAt && formatThreadAge(Date.now() - Date.parse(node.statusAt)))
+              : 'Offline',
+          ]
+            .filter(Boolean)
+            .join(' · ')}
           {node.partial ? ' · Partial history' : ''}
         </span>
       </button>

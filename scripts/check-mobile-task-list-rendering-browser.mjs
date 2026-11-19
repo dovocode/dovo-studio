@@ -1009,7 +1009,9 @@ try {
       child: { status: 'done' },
     })
   })
-  await page.getByTestId('Task parent').getByLabel('Finished', { exact: true }).waitFor()
+  const parentStatus = page.getByTestId('Task parent').getByTestId('Thread status')
+  await parentStatus.getByText(/^\d+m$/).waitFor()
+  assert.equal(await parentStatus.locator('svg').count(), 0)
   await page.getByTestId('Task task-2').dispatchEvent('contextmenu')
   await page.getByTestId('Task task-3').click()
   await page.getByText('2 selected', { exact: true }).waitFor()
@@ -1620,7 +1622,6 @@ try {
     window.pushSnapshot(window.snapshot)
   })
   for (const [status, state] of [
-    ['done', 'Finished'],
     ['failed', 'Failed'],
     ['cancelled', 'Stopped'],
     ['draft', 'Draft'],
@@ -1643,6 +1644,16 @@ try {
       status === 'draft' ? '' : status === 'running' ? '14h' : '5m',
     )
   }
+  const completion = page.getByTestId('Task status-done').getByTestId('Thread status')
+  await completion.getByText('5m', { exact: true }).waitFor()
+  assert.equal(await completion.getAttribute('aria-label'), '5m')
+  assert.equal(await completion.locator('svg').count(), 0)
+  await page.evaluate(() => window.publish({ 'status-done': { lastViewedTurnId: undefined } }))
+  await page.getByTestId('Task status-done').getByLabel('Done · 5m', { exact: true }).waitFor()
+  assert.equal(await completion.locator('svg').count(), 1)
+  await page.evaluate(() => window.publish({ 'status-done': { lastViewedTurnId: 'status-turn' } }))
+  await page.getByTestId('Task status-done').getByLabel('5m', { exact: true }).waitFor()
+  assert.equal(await completion.locator('svg').count(), 0)
   assert.deepEqual(errors, [])
 
   if (!process.env.DOVO_MOBILE_DENSITY_LAYOUT) {

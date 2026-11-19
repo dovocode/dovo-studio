@@ -3,6 +3,7 @@ import {
   runtimeComputerName,
   STUDIO_TERMINAL_SCOPE,
   latestTaskTurn,
+  hasUnviewedTaskCompletion,
   type Repository,
   type RuntimeOverview,
   type RuntimeSnapshot,
@@ -59,8 +60,8 @@ export function standaloneTerminalTabAvailability(
 const threadStatuses = {
   draft: 'Draft',
   running: 'Running',
-  review: 'Review',
-  done: 'Done',
+  review: '',
+  done: '',
   failed: 'Failed',
   cancelled: 'Cancelled',
 } as const
@@ -212,7 +213,9 @@ export function workspaceIdentity(
         ? 'Archived'
         : task.archived
           ? 'Settled'
-          : threadStatuses[task.status],
+          : hasUnviewedTaskCompletion(task)
+            ? 'Done'
+            : threadStatuses[task.status],
     })
   }
   const session = snapshot.terminals.find((item) => item.id === tab.id)

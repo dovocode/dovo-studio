@@ -28,6 +28,8 @@ const taskCollectionKey = (runtimeId: string | null, threadId: string) =>
 
 export type NestedThread = {
   statusAt?: string
+  completionViewed?: boolean
+  settled?: boolean
   executedModel?: string
   key: string
   runtimeId: string | null
@@ -115,6 +117,7 @@ function watchedThreadInputs(
 function threadNode(entry: ThreadTreeEntry, inputs?: ThreadInputs): NestedThread {
   const { task, source } = entry
   const needsInput = !!inputs
+  const turn = task.turns?.at(-1)
   return {
     needsInput,
     ...inputs,
@@ -131,7 +134,14 @@ function threadNode(entry: ThreadTreeEntry, inputs?: ThreadInputs): NestedThread
     runtimeIdentity: source.snapshot?.runtimeId,
     threadId: task.id,
     title: task.title,
-    statusAt: threadStatusTimestamp(task, task.turns?.at(-1)),
+    statusAt: threadStatusTimestamp(task, turn),
+    completionViewed:
+      (task.status === 'review' || task.status === 'done') &&
+      turn?.status === 'completed' &&
+      turn.id === task.lastViewedTurnId
+        ? true
+        : undefined,
+    settled: task.archived && !task.archivedAt ? true : undefined,
     computerName: source.name,
     projectName: entry.projectName,
     repositoryId: task.repositoryId,
@@ -645,7 +655,14 @@ export const threadPhaseLabels: Record<NestedThread['phase'], string> = {
   failed: 'Failed',
   stopped: 'Stopped',
   stopping: 'Stopping…',
-  review: 'Review',
+  review: 'Done',
+}
+
+export function threadPhaseLabel(thread: NestedThread): string {
+  if (thread.settled) return 'Settled'
+  if (thread.completionViewed && (thread.phase === 'completed' || thread.phase === 'review'))
+    return ''
+  return threadPhaseLabels[thread.phase]
 }
 
 /** Count the child rows without projecting them, including native agents omitted from snapshots. */

@@ -18,7 +18,6 @@ const statusIcons: Record<string, LucideIcon> = {
   Paused: Pause,
   Working: CircleDashed,
   Done: CircleCheck,
-  Finished: CircleCheck,
   Failed: CircleX,
   Stopped: CircleStop,
   Snoozed: AlarmClock,
@@ -39,7 +38,8 @@ export function ThreadRowStatus({
   age: string
   tone: 'neutral' | 'active' | 'attention' | 'success' | 'danger'
 }) {
-  const Icon = statusIcons[state] ?? CircleDashed
+  const Icon = state ? (statusIcons[state] ?? CircleDashed) : undefined
+  if (!Icon && !age) return null
   return (
     <span
       className="studio-thread-status inline-flex shrink-0 items-center gap-1 text-[0.6875rem] font-normal"
@@ -50,7 +50,7 @@ export function ThreadRowStatus({
       title={label}
     >
       {age && <span className="tabular-nums">{age}</span>}
-      <Icon className="studio-thread-status-icon size-3 shrink-0" aria-hidden="true" />
+      {Icon && <Icon className="studio-thread-status-icon size-3 shrink-0" aria-hidden="true" />}
     </span>
   )
 }

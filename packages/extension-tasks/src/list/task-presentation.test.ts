@@ -40,28 +40,12 @@ it('shows a paused Bot without hiding current work or a request for human input'
   expect(taskPresentation({ ...task('running'), bot }, false, now).state).toBe('Working')
   expect(taskPresentation({ ...task('done'), bot }, true, now).state).toBe('Needs input')
 })
-it('keeps review, failure and completion visible alongside the finish age', () => {
-  expect(taskPresentation(task('review'), false, now).label).toBe('Review · 5m ago')
+it('keeps the finish age and preserves failure and input status', () => {
+  expect(taskPresentation(task('review'), false, now).label).toBe('5m ago')
   expect(taskPresentation(task('failed'), false, now).label).toBe('Failed · 5m ago')
-  expect(taskPresentation(task('done'), false, now).label).toBe('Finished · 5m ago')
-})
-it('distinguishes attention from activity, failure, completion and neutral states', () => {
-  expect(taskPresentation(task('review'), false, now)).toMatchObject({
-    state: 'Review',
-    compactLabel: 'Review',
-    tone: 'attention',
-  })
-  expect(taskPresentation(task('running'), true, now)).toMatchObject({
-    state: 'Needs input',
-    tone: 'attention',
-  })
+  expect(taskPresentation(task('running'), true, now).tone).toBe('attention')
   expect(taskPresentation(task('running'), false, now).tone).toBe('active')
   expect(taskPresentation(task('failed'), false, now).tone).toBe('danger')
-  expect(taskPresentation(task('done'), false, now)).toMatchObject({
-    state: 'Finished',
-    compactLabel: 'Finished',
-    tone: 'success',
-  })
   expect(taskPresentation(task('cancelled'), false, now).tone).toBe('neutral')
   expect(taskPresentation(task('draft'), false, now).tone).toBe('neutral')
 })
@@ -87,8 +71,9 @@ it('shows Done only until the latest successful turn is viewed', () => {
         now,
       ),
     ).toMatchObject({
-      state: status === 'review' ? 'Review' : 'Finished',
-      compactLabel: status === 'review' ? 'Review' : 'Finished',
+      state: '',
+      compactLabel: '5m',
+      label: '5m ago',
     })
     expect(
       taskPresentation(
@@ -171,8 +156,8 @@ it('does not invent unread completion for legacy done tasks without a completed 
       now,
     ),
   ).toMatchObject({
-    state: 'Finished',
-    compactLabel: 'Finished',
+    state: '',
+    tone: 'neutral',
   })
 })
 it('shows active duration and input state without replacing either', () => {

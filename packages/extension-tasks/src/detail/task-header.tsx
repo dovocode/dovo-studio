@@ -405,7 +405,7 @@ export function TaskHeader({
             data-tone={presentation.tone}
             className="studio-thread-status max-w-36 truncate text-xs"
           >
-            {inputLabel || presentation.state}
+            {inputLabel || presentation.state || presentation.time}
           </span>
           <ChevronDown size={12} className="shrink-0" aria-hidden="true" />
         </Button>
@@ -486,7 +486,7 @@ export function TaskHeader({
                 <span className="truncate">{projectName}</span>
               </span>
             )}
-            {presentation.state !== 'Review' && (
+            {status && (
               <span className="studio-thread-status truncate" data-tone={presentation.tone}>
                 {status}
               </span>

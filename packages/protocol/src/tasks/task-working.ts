@@ -34,7 +34,12 @@ export function threadStatusTimestamp(
 ) {
   if (task.status === 'running' && task.runPhase !== 'finalizing') return turn?.startedAt
   if (task.status !== 'running' && taskIsWorking(task)) return undefined
-  return turn?.finishedAt
+  return (
+    turn?.finishedAt ??
+    (!task.archived && !task.archivedAt && (task.status === 'review' || task.status === 'done')
+      ? (task.lastPromptAt ?? task.createdAt)
+      : undefined)
+  )
 }
 
 /** Provider-owned shell jobs can outlive an agent turn without keeping the thread Working. */

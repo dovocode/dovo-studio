@@ -95,6 +95,7 @@ import { TaskFiles, type ThreadFileDraft } from '../files/task-files'
 import { TaskReview, type FileEditDraft } from './task-review'
 import { TerminalPane } from '../../terminal/terminal-pane'
 import { useTaskViewed } from './use-task-viewed'
+import { taskRowStatus } from '../list/task-row-status'
 import { copyText } from '../../ui/content/clipboard'
 import { PreparationProgress } from '../conversation/components/preparation-progress'
 import { ReviewComments } from '../conversation/components/review-comments'
@@ -763,23 +764,9 @@ function TaskDetailContent({
   ]
     .filter(Boolean)
     .join(' · ')
-  const status = task.archivedAt
-    ? 'Archived'
-    : task.archived
-      ? 'Settled'
-      : inputLabel
-        ? inputLabel
-        : task.status === 'running'
-          ? 'Working'
-          : task.status === 'failed'
-            ? 'Failed'
-            : task.status === 'review'
-              ? 'Ready for review'
-              : task.status === 'done'
-                ? 'Finished'
-                : task.status === 'cancelled'
-                  ? 'Stopped'
-                  : 'Draft'
+  const status =
+    (!task.archived && !task.archivedAt && inputLabel) ||
+    taskRowStatus(task, false, connected, Date.now())
   const [checkpoint, setCheckpoint] = useApplicationState('')
   const [checkpointPath, setCheckpointPath] = useApplicationState('')
   const [checkpointCheckoutId, setCheckpointCheckoutId] = useApplicationState('')

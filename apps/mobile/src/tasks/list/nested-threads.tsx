@@ -4,6 +4,7 @@ import { memo, useState } from 'react'
 import { View } from 'react-native'
 import { Pressable } from './thread-pressable'
 import {
+  formatThreadAge,
   modelDisplayName,
   threadTreeSummary,
   threadInputSummary,
@@ -11,7 +12,7 @@ import {
   visibleThreadChildren,
   nativeOverflowFailures,
   threadNeedsInput,
-  threadPhaseLabels,
+  threadPhaseLabel,
   type NestedThread,
 } from '@dovo/protocol'
 import { useRuntime } from '../../runtime/connection/context'
@@ -101,7 +102,8 @@ export const NestedThreads = memo(function NestedThreads({
             child.nativeAgentKey && child.activity
               ? child.activity
               : threadInputLabel(threadInputSummary(child, false), uiText) ||
-                threadPhaseLabels[child.phase],
+                threadPhaseLabel(child) ||
+                (child.statusAt && formatThreadAge(Date.now() - Date.parse(child.statusAt))),
             child.nativeAgentKey ? 'Read only' : '',
             !child.online
               ? 'Offline · saved state'
