@@ -107,12 +107,45 @@ final class Harness {
   func run(phase: Int) async {
     print("DWB-START phase=\(phase) port=\(port) ios=\(UIDevice.current.systemVersion)")
     do {
-      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else if phase == 6 { try await privateTabs() } else if phase == 7 { try await processRecovery() } else { await experiment(phase) }
+      if phase == 1 { try await phaseOne() } else if phase == 2 { try await phaseTwo() } else if phase == 6 { try await privateTabs() } else if phase == 7 { try await processRecovery() } else if phase == 8 { try await certificates() } else { await experiment(phase) }
     } catch {
       check("phase \(phase) threw", false, "\((error as? BrowserError)?.message ?? error.localizedDescription)")
     }
     print("DWB-DONE phase=\(phase) pass=\(passes) fail=\(failures)")
     fflush(stdout)
+  }
+
+  /// Optional network check. WebKit uses the simulator's normal TLS trust.
+  func certificates() async throws {
+    await engine.setEnabled(true)
+    let origin = "https://example.com"
+    let tab = try await engine.openTab(tabId: "certificate-check", profileId: "certificates", url: origin)
+    host.tabId = tab.id
+    check("HTTPS page loaded", await loaded(tab), tab.state)
+    let document = tab.certificateDocumentId ?? ""
+    let result = try tab.certificate(documentId: document, expectedOrigin: origin)
+    check("certificate is from the committed main frame", result["origin"] as? String == origin)
+    let chain = result["chain"] as? [[String: String]] ?? []
+    check("real chain has a subject and fingerprint", !chain.isEmpty && chain.first?["subject"]?.isEmpty == false && chain.first?["fingerprint256"]?.count == 95)
+    check("leaf has serial and issuer", chain.first?["serialNumber"]?.isEmpty == false && chain.first?["issuer"]?.isEmpty == false)
+    if #available(iOS 18.0, *) {
+      check("leaf has both validity dates", chain.first?["validFrom"] != nil && chain.first?["validTo"] != nil)
+    }
+    await expectError("rejects a changed origin", code: "ERR_NOT_FOUND") {
+      _ = try tab.certificate(documentId: document, expectedOrigin: "https://other.example")
+    }
+    tab.reload()
+    check("same-origin reload gets a fresh document ID", await wait(30) {
+      tab.certificateDocumentId != nil && tab.certificateDocumentId != document && tab.loadState == "loaded" && !tab.webView.isLoading
+    })
+    await expectError("rejects the previous document at the same URL", code: "ERR_NOT_FOUND") {
+      _ = try tab.certificate(documentId: document, expectedOrigin: origin)
+    }
+    tab.load(try BrowserInput.pageURL(url("other.html")))
+    check("HTTP fixture loaded", await loaded(tab), tab.state)
+    await expectError("HTTP page cannot reuse the previous HTTPS certificate", code: "ERR_NOT_FOUND") {
+      _ = try tab.certificate(documentId: document, expectedOrigin: origin)
+    }
   }
 
   /// Diagnostics for first-load latency of plain WKWebViews outside the engine.

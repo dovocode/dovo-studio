@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { dialog, type BrowserWindow } from 'electron'
-import { createBrowserHistory } from './browser-history.js'
+import { clearBrowserHistories, createBrowserHistory } from './browser-history.js'
 import { browserDownloads } from './browser-downloads.js'
 import { createBrowserIdentity } from './browser-identity.js'
 
@@ -78,6 +78,9 @@ const authOptions = Schema.Struct({
     nonnegative.pipe(Schema.check(Schema.isLessThanOrEqualTo(60_000))),
   ),
 })
+
+const liveHistories = new Map<string, ReturnType<typeof createBrowserHistory>>()
+export const clearLocalBrowserHistory = () => clearBrowserHistories(liveHistories)
 
 /** Runtime-checked adapter for electron-chrome-extensions 4.10.0. */
 export function attachExtensionBrowserAPIs(
@@ -178,11 +181,14 @@ export function attachExtensionBrowserAPIs(
     if (!allowed(event, 'identity')) throw new Error('Identity permission was removed.')
     return result
   })
+  liveHistories.set(options.profileId, history)
   return {
     attachTab: (contents: Electron.WebContents) => history.attach(contents),
     removeTab: (contents: Electron.WebContents) => history.detach(contents),
+    signingIn: identity.signingIn,
     close: (id: string) => identity.close(id),
     dispose() {
+      liveHistories.delete(options.profileId)
       identity.dispose()
       history.dispose()
       unsubscribeDownloads()

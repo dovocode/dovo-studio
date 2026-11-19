@@ -68,7 +68,8 @@ export function CommandPalette({
             })
           } else if (
             document.activeElement === document.body ||
-            document.activeElement?.closest('[role="dialog"]')
+            (event.currentTarget instanceof HTMLElement &&
+              event.currentTarget.contains(document.activeElement))
           ) {
             document.querySelector<HTMLElement>('.studio-main')?.focus({
               preventScroll: true,

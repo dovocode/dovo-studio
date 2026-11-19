@@ -2,6 +2,7 @@ import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   readSharedBrowserLibrary,
   saveSharedBrowserLibrary,
+  updateSharedBrowserLibrary,
   SHARED_BROWSER_LIBRARY_KEY,
   browserQuote,
   browserAddress,
@@ -187,6 +188,41 @@ it('validates bounds and shapes for shared libraries and per-window recently clo
       closed: Array.from({ length: 21 }, () => remote),
     }),
   ).toThrow('Saved browser tabs could not be restored.')
+})
+it('uses current storage when a pending visit follows a clear in another window', async () => {
+  storage()
+  const initial = { bookmarks: [local], visits: [local] }
+  saveSharedBrowserLibrary(initial)
+  const request = vi.fn<(_name: string, save: () => unknown) => Promise<unknown>>((_name, save) =>
+    Promise.resolve().then(save),
+  )
+  vi.stubGlobal('navigator', { locks: { request } })
+  const pending = updateSharedBrowserLibrary((state) => ({
+    ...state,
+    visits: rememberBrowserVisit(state.visits, remote),
+  }))
+  saveSharedBrowserLibrary({ bookmarks: [remote], visits: [] })
+  await pending
+  expect(request).toHaveBeenCalledOnce()
+  expect(readSharedBrowserLibrary()).toEqual({ bookmarks: [remote], visits: [remote] })
+})
+it('keeps the library when a lock or a storage write fails', async () => {
+  const values = storage()
+  const initial = { bookmarks: [local], visits: [remote] }
+  saveSharedBrowserLibrary(initial)
+  vi.stubGlobal('navigator', { locks: { request: () => Promise.reject(new Error('Lock denied')) } })
+  const clear = () => updateSharedBrowserLibrary((state) => ({ ...state, visits: [] }))
+  await expect(clear()).rejects.toThrow('Lock denied')
+  expect(readSharedBrowserLibrary()).toEqual(initial)
+  vi.stubGlobal('navigator', {})
+  vi.stubGlobal('localStorage', {
+    getItem: (key: string) => values.get(key),
+    setItem: () => {
+      throw new Error('Storage full')
+    },
+  })
+  await expect(clear()).rejects.toThrow('Storage full')
+  expect(readSharedBrowserLibrary()).toEqual(initial)
 })
 it('isolates windows and never lets unrelated tab saves overwrite the shared library', () => {
   const persistent = storage()

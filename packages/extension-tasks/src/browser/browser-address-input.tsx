@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useId, useState, type RefObject } from 'react'
+import { useId, useState, type ReactNode, type RefObject } from 'react'
 import {
   History,
   Star,
@@ -77,7 +77,9 @@ export function BrowserAddressInput({
   onNavigate,
   label = 'Preview URL',
   suggestOnFocus = true,
+  siteInfo,
 }: {
+  siteInfo?: ReactNode
   suggestOnFocus?: boolean
   label?: string
   value: string
@@ -148,18 +150,22 @@ export function BrowserAddressInput({
   }
   return (
     <div className="flex min-w-0 flex-1 items-center self-stretch">
-      <span
-        className="flex w-9 shrink-0 justify-center text-muted-foreground @max-[380px]/browser:hidden [@media(pointer:coarse)]:w-11"
-        aria-hidden="true"
-      >
-        {intent?.kind === 'search' ? (
-          <Search size={15} />
-        ) : /^https:\/\//i.test(value) ? (
-          <LockKeyhole size={15} />
-        ) : (
-          <Globe2 size={15} />
-        )}
-      </span>
+      {siteInfo && !(open && typed) ? (
+        siteInfo
+      ) : (
+        <span
+          className="flex w-9 shrink-0 justify-center text-muted-foreground @max-[380px]/browser:hidden [@media(pointer:coarse)]:w-11"
+          aria-hidden="true"
+        >
+          {intent?.kind === 'search' ? (
+            <Search size={15} />
+          ) : !(open && typed) && /^https:\/\//i.test(value) ? (
+            <LockKeyhole size={15} />
+          ) : (
+            <Globe2 size={15} />
+          )}
+        </span>
+      )}
       <Input
         ref={inputRef}
         type="text"
@@ -192,6 +198,7 @@ export function BrowserAddressInput({
           setActive(-1)
         }}
         onKeyDown={(event) => {
+          if (event.nativeEvent.isComposing || event.keyCode === 229) return
           if (event.key === 'Escape' && open) {
             event.preventDefault()
             event.stopPropagation()
@@ -210,7 +217,6 @@ export function BrowserAddressInput({
                   : current - 1,
             )
           }
-          if (event.nativeEvent.isComposing) return
           if (
             event.key === 'Enter' &&
             intent &&

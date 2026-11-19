@@ -25,6 +25,7 @@ interface Window {
       import('@dovo/studio-core').StudioHostApi['onBrowserMediaChange']
     >
     onBrowserWorkspaceFocus: (listener: () => void) => () => void
+    onBrowserPreviewInput: import('@dovo/protocol').BrowserPreviewInputBridge
     defaultBrowser: import('@dovo/protocol').DefaultBrowserBridge
     browser: import('@dovo/protocol').BrowserBridge
     browserFrames: import('@dovo/protocol').BrowserFrameBridge

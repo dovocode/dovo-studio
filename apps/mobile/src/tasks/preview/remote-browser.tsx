@@ -671,6 +671,11 @@ function RemoteBrowserContent({
           onReconnect={() => post({ type: 'reconnect' })}
           onCloseSession={() => post({ type: 'close' })}
           onDiagnostics={() => post({ type: 'performance' })}
+          onSiteInfo={
+            online && /^https?:\/\//i.test(browserState?.url ?? '')
+              ? () => post({ type: 'certificate' })
+              : undefined
+          }
           onKeyboard={() => post({ type: 'keyboard' })}
           onScreenshot={() => {
             if (screenshots) post({ type: 'screenshot' })

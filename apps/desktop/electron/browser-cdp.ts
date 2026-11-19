@@ -2,10 +2,17 @@ import { createServer } from 'node:http'
 import { randomBytes } from 'node:crypto'
 import { mkdirSync, writeFileSync, renameSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
-import type { WebContents } from 'electron'
+import type { Debugger, WebContents } from 'electron'
 import { WebSocketServer, WebSocket } from 'ws'
 import { Schema } from 'effect'
-import { decode, mutableStruct, desktopBrowserHostSchema } from '@dovo/protocol'
+import {
+  decode,
+  mutableStruct,
+  desktopBrowserHostSchema,
+  STUDIO_BROWSER_SCOPE,
+  isPrivateBrowserProfile,
+  type BrowserPageCertificate,
+} from '@dovo/protocol'
 
 const commandSchema = mutableStruct({
   id: Schema.Number.pipe(Schema.check(Schema.isInt())),
@@ -18,10 +25,30 @@ type Target = {
   pageId: string
   taskId: string
   tabId?: string
+  readCertificate?: (origin: string) => Promise<BrowserPageCertificate>
   profileId: string
   contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>
   token: string
   clients: Set<WebSocket>
+}
+
+// Agent clients and short-lived certificate observations can use the same Electron transport.
+const attachments = new WeakMap<Debugger, { users: number; owned: boolean }>()
+export function retainBrowserDebugger(api: Debugger) {
+  let attachment = attachments.get(api)
+  if (!attachment || !api.isAttached()) {
+    const owned = !api.isAttached()
+    if (owned) api.attach('1.3')
+    attachment = { users: 0, owned }
+    attachments.set(api, attachment)
+  }
+  attachment.users++
+  return () => {
+    if (--attachment.users === 0 && attachments.get(api) === attachment) {
+      attachments.delete(api)
+      if (attachment.owned && api.isAttached()) api.detach()
+    }
+  }
 }
 
 /** A page-only CDP transport: never exposes the Electron application or other targets. */
@@ -42,6 +69,7 @@ export async function createBrowserCdp(
       targets: currentTargets.map((target) => ({
         taskId: target.taskId,
         ...(target.tabId ? { tabId: target.tabId } : {}),
+        ...(target.tabId && target.readCertificate ? { certificateSupported: true } : {}),
         profileId: target.profileId,
         endpoint: websocketUrl(target),
       })),
@@ -95,8 +123,9 @@ export async function createBrowserCdp(
     const [id, target] = found
     sockets.handleUpgrade(request, socket, head, (client) => {
       const debuggerApi = target.contents.debugger
+      let release: () => void
       try {
-        if (!debuggerApi.isAttached()) debuggerApi.attach('1.3')
+        release = retainBrowserDebugger(debuggerApi)
       } catch {
         client.close(1011, 'Debugger unavailable')
         return
@@ -134,11 +163,19 @@ export async function createBrowserCdp(
           // These domains can enumerate or attach unrelated Electron targets.
           if (/^(Browser|Target)\./.test(command.method))
             throw new Error('This endpoint supports page-scoped CDP only')
-          const result: unknown = await debuggerApi.sendCommand(
-            command.method,
-            command.params,
-            command.sessionId,
-          )
+          let result: unknown
+          if (command.method === 'Dovo.getPageCertificate') {
+            if (!target.readCertificate || !target.tabId || command.sessionId)
+              throw new Error('Certificate inspection is unavailable for this target.')
+            const page = new URL(target.contents.getURL())
+            if (page.protocol !== 'https:') throw new Error('This page has no TLS certificate.')
+            result = await target.readCertificate(page.origin)
+          } else
+            result = await debuggerApi.sendCommand(
+              command.method,
+              command.params,
+              command.sessionId,
+            )
           if (client.readyState === WebSocket.OPEN)
             client.send(
               JSON.stringify({
@@ -166,15 +203,7 @@ export async function createBrowserCdp(
         if (removed && !target.clients.size) connectionChanged?.(id, false)
         debuggerApi.removeListener('message', event)
         debuggerApi.removeListener('detach', detached)
-        if (
-          !target.clients.size &&
-          ![...targets.values()].some(
-            (other) => other.contents === target.contents && other.clients.size,
-          ) &&
-          !target.contents.isDestroyed() &&
-          debuggerApi.isAttached()
-        )
-          debuggerApi.detach()
+        release()
       })
     })
   })
@@ -203,6 +232,7 @@ export async function createBrowserCdp(
       profileId: string,
       contents: Pick<WebContents, 'debugger' | 'getTitle' | 'getURL' | 'isDestroyed'>,
       tabId?: string,
+      readCertificate?: Target['readCertificate'],
     ) {
       let target = targets.get(id)
       if (!target) {
@@ -210,6 +240,10 @@ export async function createBrowserCdp(
           pageId: String(++nextPageId),
           taskId,
           tabId,
+          readCertificate:
+            taskId === STUDIO_BROWSER_SCOPE && !isPrivateBrowserProfile(profileId)
+              ? readCertificate
+              : undefined,
           profileId,
           contents,
           token: randomBytes(32).toString('hex'),

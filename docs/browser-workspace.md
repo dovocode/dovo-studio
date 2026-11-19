@@ -88,6 +88,10 @@ visits and recently closed tabs by page, computer or profile. Opening a saved pa
 source computer and profile. The library also removes bookmarks, clears history and reopens the last
 closed tab.
 
+**History → Clear history** clears visits saved on this device. On desktop it also clears the visit
+records that extensions can read in every local Browser profile, including inactive profiles.
+Bookmarks, recently closed tabs and browser data on paired computers stay available.
+
 In the Browser workspace, Ctrl/Cmd+L focuses the address bar, Ctrl/Cmd+T opens a tab with the
 current tab's computer and profile, Ctrl/Cmd+W closes it, Ctrl/Cmd+Shift+T reopens the last closed
 tab and Ctrl/Cmd+R reloads. Native page links that open a new window become tabs using the source
@@ -205,14 +209,21 @@ limit of four pages per window and expire after five minutes. Settling or snoozi
 releases its page promptly, while active media and PiP defer release until activity ends. Private
 tabs are throttled but retain their in-memory page and sign-in data until explicitly closed.
 
+When you edit a standard form field or editable text in a desktop workspace tab, Studio keeps that
+page alive during automatic tab cleanup. This includes edits inside frames. Studio records only that
+an edit occurred. A new top-level document clears this protection. You can still close, snooze or
+settle the tab yourself. Closing Studio also ends the live page.
+
 Links opened as temporary previews retain the original opener beneath them. **Expand preview** and
 **Contract preview** change the same live preview's size. Clicking the visible opener dismisses the
 preview chain and returns to that retained page; **Close preview** returns to the immediate opener.
-**Keep as tab** retains the preview as a normal tab without creating another session. On desktop and
-web, the normal address bar keeps the opener's address while a preview is open. The floating preview
-has its own address bar. Select the normal toolbar to return to the opener before using its
-controls. Each toolbar controls its own page. Closing a preview also restores the opener's address
-draft.
+If your first click after switching back to the window lands on the opener, the preview stays open.
+Click the opener again to return. Clicks inside the preview and its **Close preview** control work
+on the first press. **Keep as tab** retains the preview as a normal tab without creating another
+session. On desktop and web, the normal address bar keeps the opener's address while a preview is
+open. The floating preview has its own address bar. Select the normal toolbar to return to the
+opener before using its controls. Each toolbar controls its own page. Closing a preview also
+restores the opener's address draft.
 
 On desktop, the opener stays in its original native browser view beneath the link preview. Opening
 the preview does not capture a screenshot or start a frame-image stream. The opener keeps its
@@ -246,6 +257,35 @@ its own tab, and incoming links queue while the chooser is open. A failed open r
 retry; Cancel skips that link. Choosing a destination enables Browser and opens its workspace.
 Remote destinations retain their selected computer and profile.
 
+## Website certificates
+
+On a local desktop tab, select the site icon beside the address and choose **View certificate**. The
+panel shows the TLS version, cipher and certificate chain reported by Chromium for the loaded page.
+Expand a certificate to see its subject, issuer, validity dates, serial number and SHA-256
+fingerprint. The panel also lists alternative names when available. If Electron supplies only the
+main page's TLS details, the panel shows those details and tells you the chain is unavailable. HTTP
+pages show that they have no TLS certificate.
+
+In a narrow desktop window, the site icon is in **Browser options**. You can also run **View website
+information** from the command palette while Browser is open.
+
+On a paired tab, select the site icon beside the address to inspect the page on its host computer.
+If the host needs an update, the viewer tells you when you open site information. On an iPhone with
+the updated native browser, choose **Browser options → Site information**. WebKit supplies the chain
+and the fields available on that OS version. The Android and older mobile browser bridges show when
+certificate details are unavailable. In the web app's device-local embedded preview, open the
+website in its own tab to inspect it with the web browser.
+
+Agents with Browser access can run `studio_browsers` with `action: "certificate"` and the tab ID or
+reference returned by `list`. Supported tabs report `certificateSupported: true`. If the field is
+missing, update the desktop app or runtime that owns the tab. Private tabs are excluded. A read-only
+agent can inspect the certificate.
+
+The viewer reads the loaded connection. Opening it sends no new request to the website and makes no
+change to certificate trust. Run `pnpm test:browser-certificates:native` with Electron and OpenSSL
+installed. On headless Linux, use `xvfb-run -a pnpm test:browser-certificates:native`. Run
+`pnpm test:paired-certificate:browser` to check the paired host and viewer.
+
 ## Desktop extensions
 
 In a local desktop Browser tab, open **Extensions → Manage extensions** and load an unpacked
@@ -260,11 +300,28 @@ This uses Electron with `electron-chrome-extensions` 4.10.0; supported APIs are 
 Host registrations must allow the extension’s origin; helpers use bounded Chrome stdio framing.
 Turning Browser off or unloading the extension closes its toolbar popup and helper connections.
 Store packages are downloaded over official Google HTTPS endpoints; the CRX3 developer signature and
-requested extension ID are verified before bounded ZIP extraction and permission review. Store
-extensions update manually by installing the same link again. Older copies with removed
-`nativeMessaging` must be reinstalled and reviewed to gain it. On macOS, 1Password also requires the
-signed Dovo Studio app in **1Password Settings → Browser → Add Browser**
-([1Password instructions](https://support.1password.com/additional-browsers/)). Dovo never
+requested extension ID are verified before bounded ZIP extraction and permission review.
+
+Studio checks enabled Store extensions for updates about every six hours in local profiles opened
+during the current desktop session. Checks run while Browser workspace or Unified workspace is on.
+Each request sends the extension ID, installed or pending version, and Chromium version to Google.
+When an update changes the requested access, the installed version stays active. Open **Extensions →
+Manage extensions → Review update** to see the change and decide whether to install it. Studio also
+asks for review if reloading would change permissions granted or revoked during the current session.
+
+An automatic check waits while the extension has an open popup, extension page, native helper
+connection or sign-in flow. Studio checks again on a later 15-minute sweep. **Check for update**
+also works while the extension is in use. Applying an update then can close its popup or connection.
+
+In **Manage extensions**, clear **Automatic updates** to pause checks for one extension in this
+profile. Select it again to resume, or choose **Check for update** to check now. The manager shows
+the last check and any error. A failed check keeps the installed copy. Folder installs and older
+installs with no saved source use manual updates. Install a verified Store link once to enable
+automatic checks for that copy. Reinstalling the link preserves the pin and enabled setting.
+
+Reinstall older copies that had `nativeMessaging` removed to review and grant that permission. On
+macOS, 1Password also requires the signed Dovo Studio app in **1Password Settings → Browser → Add
+Browser** ([1Password instructions](https://support.1password.com/additional-browsers/)). Dovo never
 impersonates Chrome or bypasses that approval. Native transport is tested, but a real 1Password
 desktop pairing has not been verified; general Chrome extension parity is not claimed. Unsupported
 APIs/permissions and load errors are reported by the extension manager. Extension-created tabs
@@ -273,6 +330,12 @@ requests a background tab. The extension can also select an existing tab in the 
 close events remove tabs from the list. If the browser releases an inactive extension page to save
 memory, select its tab to reload the page in the same profile while the extension is loaded.
 Extension URL pages are available only in the current app session.
+
+Run `pnpm exec playwright install chromium` and `node scripts/check-browser-extensions-browser.mjs`
+after building the desktop app to check the extension manager. Run
+`node apps/desktop/scripts/check-browser-extensions-native.mjs --store` to install signed Dark
+Reader in a temporary Electron profile, check for an update, and verify its settings after restart.
+The Store check requires network access.
 
 Host permission checks recognize narrower origins covered by existing wildcard web grants, including
 Proton Pass sign-in hosts under `https://*/*`. Optional narrower web grants still require review;

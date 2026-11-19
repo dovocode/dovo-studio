@@ -2,6 +2,7 @@
 // Native browsing uses WKWebView with one persistent WKWebsiteDataStore per profile (iOS 17+).
 // Android uses its platform WebView and does not register this module.
 import { requireNativeView, requireOptionalNativeModule } from 'expo'
+import type { BrowserPageCertificate } from '@dovo/protocol'
 import type { ComponentType } from 'react'
 import type { ViewProps } from 'react-native'
 
@@ -17,6 +18,8 @@ export type BrowserTabState = {
    * instanceId; ignore events whose instanceId is not the one you currently track.
    */
   instanceId: string
+  /** Changes on each committed HTTPS document, including same-URL reloads. */
+  certificateDocumentId?: string | null
   profileId: BrowserId
   /** Tab that opened this one through target=_blank or window.open. */
   openerTabId: BrowserId | null
@@ -109,6 +112,12 @@ export type DovoWebKitBrowserModule = {
   reload(tabId: BrowserId): Promise<void>
   stopLoading(tabId: BrowserId): Promise<void>
   getTab(tabId: BrowserId): Promise<BrowserTabState>
+  /** Available in builds with the certificate viewer. Uses the loaded tab's main-frame trust. */
+  getPageCertificate?(
+    tabId: BrowserId,
+    documentId: string,
+    origin: string,
+  ): Promise<BrowserPageCertificate>
   /** Exact `getSelection().toString()` from an isolated world, clamped to 32000 UTF-16 units, 3 s timeout. */
   getSelection(tabId: BrowserId): Promise<BrowserSelection>
 

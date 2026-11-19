@@ -9,6 +9,7 @@ let tab='',url='',back=true,favicon;
 function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,favicon,back,forward:false,loading:false,editable:false},'*')}
 window.addEventListener('message',event=>{const m=event.data;
 if(m.type==='connect'){const ticket=JSON.parse(new URL(m.url).searchParams.get('ticket'));tab=ticket.tabId;url=ticket.url;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
+if(m.type==='certificate')document.body.dataset.certificateOpened='true';
 if(m.type==='fixture-favicon'){favicon=m.favicon;state()}
 if(m.type==='snapshot')window.parent.postMessage({channel:'dovo-browser',type:'snapshot',id:m.id,image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='},'*');
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:{...m.input,tabId:tab}},'*');if(m.input.type==='navigate')url=m.input.url;state()}
@@ -26,11 +27,13 @@ function ControlledBrowser(){
   const onSetTabs=useCallback(action=>{window.ownerWrites=(window.ownerWrites||0)+1;setTabs(previous=>typeof action==='function'?action(previous??[]):action)},[]);
   // Like the unified workspace, the pane stays mounted and laid out; visible:false alone hides it.
   return <div className="flex min-h-0 flex-1 flex-col"><BrowserPane taskId="studio:browser" shared workspaceControl={{...window.fixtureWorkspaceControl,tabs,onSetTabs,visible:!window.fixtureBackground}}/></div>
-}import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';
+}import {TooltipProvider,SidebarHeaderLayout,HeaderFallback,HeaderMainSlot} from '@dovo/studio-ui';import {TitleBar} from '../studio-shell/src/title-bar';import {ActivityBar} from '../studio-shell/src/activity-bar';import {CommandPalette} from '../studio-shell/src/command-palette';
 function Fixture(){
   const [collapsed,setCollapsed]=useState(false);window.collapseBrowserSidebar=setCollapsed;
+  const [paletteOpen,setPaletteOpen]=useState(false);window.openFixturePalette=()=>setPaletteOpen(true);
   const content=window.fixtureThreadSidebar ? <BrowserPane taskId="target"/> : window.fixtureUnified ? <UnifiedWorkspace/> : window.fixtureControlled ? <ControlledBrowser/> : window.fixtureNavigatedAway ? <p>Studio threads</p> : window.fixtureGate ? <BrowserView navigationKey="fixture-gate"/> : <BrowserPane taskId="studio:browser" shared openLink={window.fixtureOpenLink} workspaceControl={window.fixtureWorkspaceControl}/>;
-  if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}</>;
+  const palette=window.fixturePalette&&<><span className="studio-main sr-only" tabIndex={-1}/><CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} commands={[...window.studioCommands.values()]}/></>;
+  if(!window.fixtureHeader)return <>{window.fixtureActivityBar&&<ActivityBar views={[{id:'browser',title:'Browser',icon:'browser'}]} activeId="browser" onSelect={()=>{}} onDetachBrowser={()=>window.studioCommands.get('browser.detach')?.run()}/>} {content}{palette}</>;
   const titleProps={platform:'darwin',online:1,devices:1,onDevices:()=>{},onSearch:()=>{}};
   return <SidebarHeaderLayout collapsed={collapsed} onCollapsedChange={setCollapsed} brand={<TitleBar sidebar {...titleProps}/>}><div className="studio" data-platform="darwin"><HeaderFallback>{window.fixtureDetached?<header className="studio-titlebar" data-platform="darwin"><span className="studio-titlebar-brand">Browser</span><HeaderMainSlot/></header>:<TitleBar {...titleProps} section="Browser"/>}</HeaderFallback><div className="flex min-h-0 flex-1 flex-col">{content}</div></div></SidebarHeaderLayout>
 }
@@ -130,7 +133,7 @@ const profileCatalogs={runtime:[{id:'default',name:'LAN Default'},{id:'remote-wo
 window.browserInputs=[];window.browserViewports=[];window.remoteVisibility=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport);if(event.data.visibility!==undefined)window.remoteVisibility.push(event.data.visibility)}});
 const remoteTicket=body=>({ok:true,ticket:JSON.stringify({tabId:body.tabId,url:body.url||'about:blank'}),tabId:body.tabId,profileId:body.profileId});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});if(path.endsWith('/profiles/read'))return {profiles:profileCatalogs.runtime};return remoteTicket(body)};
-const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
+const workspaceFocusListeners=new Set();window.focusBrowserWorkspace=()=>{for(const listener of workspaceFocusListeners)listener()};const onBrowserWorkspaceFocus=listener=>{workspaceFocusListeners.add(listener);return ()=>workspaceFocusListeners.delete(listener)};window.contextListeners=new Set();window.contextAction=action=>{for(const listener of window.contextListeners)listener(action)};const nativePages=new Map();window.setNativePage=(key,state)=>nativePages.set(key,state);window.openedLinks=[];window.createdTabs=[];window.closedTabs=[];window.movedTabs=[];window.detachedTabs=[];window.faviconUpdates=[];const sitePermissions=new Map();const siteRequests=new Map();window.setSiteRequests=(profile,origin,permissions)=>siteRequests.set(profile+':'+origin,permissions);const browser=async(command)=>{if(command.action==='hide')decode(browserCommandSchema,command);if(command.action==='remote-media-sources')decode(browserCommandSchema,command);window.calls.push(command);if(command.action==='find'){decode(browserCommandSchema,command);try{if(command.regex)new RegExp(command.text);return {find:{active:command.text?1:0,total:command.text?3:0}}}catch(error){return {find:{active:0,total:0,error:error.message}}}}if(command.action==='stop-find'){decode(browserCommandSchema,command);return;}if(command.action==='browser-windows')return {windows:[{id:2,title:'Other browser window'}]};if(command.action==='move-tab'){decode(browserCommandSchema,command);if(window.failWindowMove)throw Error('Destination closed');window.transferredTab=command;if(command.tab.pinned&&command.targetWindowId===undefined)window.detachedTabs.push(command.key);return {url:'',back:false,forward:false,detachedTabs:[...window.detachedTabs]};}if(command.action==='site-certificate'){decode(browserCommandSchema,command);return {certificate:nativePages.get(command.key).certificate??{origin:new URL(nativePages.get(command.key).url).origin,protocol:'TLS 1.3',cipher:'AES_128_GCM',chain:[{subject:'CN=Bank test',issuer:'CN=Test CA',serialNumber:'B9',fingerprint256:'AB:CD',validTo:'2030-09-01T00:00:00.000Z'}]}}}if(command.action.includes('site-permission')||command.action==='clear-site-data'){decode(browserCommandSchema,command);const page=nativePages.get(command.key);const origin=new URL(page.url).origin;const key=page.profileId+':'+origin;const permissions=sitePermissions.get(key)||{notifications:'ask',microphone:'ask',camera:'ask','automatic-pip':'block','screen-wake-lock':'allow','clipboard-sanitized-write':'allow'};if(command.action==='set-site-permission')permissions[command.permission]=command.setting;if(command.action==='request-site-permission')permissions[command.permission]='allow';sitePermissions.set(key,permissions);return {sitePermissions:{origin,permissions:{...permissions},requested:siteRequests.get(key)||[]}};}if(command.action==='zoom'){decode(browserCommandSchema,command);window.fixtureZoom=command.direction==='reset'?1:command.direction==='in'?1.25:0.8;return {url:'',back:false,forward:false,zoomFactor:window.fixtureZoom};}if(command.action==='print'||command.action==='save-pdf'){decode(browserCommandSchema,command);return;}if(command.action==='downloads'){decode(browserCommandSchema,command);return {url:'',back:false,forward:false,downloads:window.fixtureDownloads||[]};}if(command.action==='keep-awake'){decode(browserCommandSchema,command);return;}if(command.action==='show')nativePages.set(command.key,{profileId:command.profileId,url:command.url,title:'',back:false,forward:false});if(command.action==='tab-activity')return {url:'',back:false,forward:false,protectedKeys:window.protectedKeys||[]};if(command.action==='set-audio-muted'){decode(browserCommandSchema,command);const state=window.tabActivityStates?.find(item=>item.key===command.key);if(state)state.muted=command.muted;return {url:'',back:false,forward:false,tabStates:structuredClone(window.tabActivityStates||[])}};if(command.action==='status'){const focusedTabKey=window.focusedTabKey;if(command.tabCount!==undefined)window.focusedTabKey=undefined;return {...nativePages.get(command.key),tabStates:structuredClone(window.tabActivityStates||[]),focusedTabKey,openedLinks:window.openedLinks.splice(0),createdTabs:window.createdTabs.splice(0),closedTabs:window.closedTabs.splice(0),movedTabs:window.movedTabs.splice(0),detachedTabs:[...window.detachedTabs],faviconUpdates:window.faviconUpdates.splice(0)}};if(command.action==='hide'){window.lastHideHadFrame=!!document.querySelector('img[aria-hidden][src^="data:image/png"]');}if(command.action==='screenshot'){if(window.holdCapture)await new Promise(resolve=>window.finishCapture=resolve);return {image:'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg=='};}if(command.action==='selection')return {url:'http://localhost:3000/',title:'Source page',selection:window.fixtureSelection,back:false,forward:false};};
 const browserExtensions=async command=>{(window.extensionCalls??=[]).push(command);return {extensions:[],capabilities:{unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false}}};
 window.fixtureSelection='Keep  spaces\\nSecond line';
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device-token-at-least-20-characters'}};
@@ -2074,6 +2077,17 @@ try {
     ),
   )
   await page.getByText('Local address on Mac Studio', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Website certificate', exact: true }).click()
+  const remoteCertificate = page
+    .locator('iframe[title="Host browser"]')
+    .filter({ visible: true })
+    .contentFrame()
+    .locator('body[data-certificate-opened="true"]')
+  await remoteCertificate.waitFor({ state: 'attached' })
+  await remoteCertificate.evaluate((body) => delete body.dataset.certificateOpened)
+  await page.evaluate(() => window.studioCommands.get('browser.site-information').run())
+  await remoteCertificate.waitFor({ state: 'attached' })
+
   await page.getByRole('button', { name: 'Back', exact: true }).waitFor()
   const opensBeforeReselect = await page.evaluate(
     () => window.calls.filter((call) => call.path === '/api/previews/browser/open').length,
@@ -3060,6 +3074,12 @@ try {
   const historyDialog = page.getByRole('dialog', { name: 'History', exact: true })
   assert.equal(await historyDialog.getByRole('region', { name: 'Bookmarks' }).count(), 0)
   await historyDialog.getByRole('button', { name: 'Clear history', exact: true }).click()
+  await historyDialog.getByText('History cleared.', { exact: true }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.some((call) => call.action === 'clear-history')),
+    true,
+    'Clear history also clears extension-visible visits on the desktop',
+  )
   await page.waitForFunction(
     () => JSON.parse(localStorage.getItem('dovo.shared-browser-library.v1')).visits.length === 0,
   )
@@ -4040,6 +4060,7 @@ try {
   )
   await controlsPage.goto('http://localhost/')
   await controlsPage.evaluate(() => {
+    window.fixturePalette = true
     const tabs = Array.from({ length: 5 }, (_, index) => ({
       id: 'compact-' + index,
       title: 'Website ' + index,
@@ -4452,8 +4473,35 @@ try {
     '1',
   )
   await compactSidebar.getByRole('button', { name: 'Settle tab Website 4', exact: true }).waitFor()
-  await controlsPage.getByRole('button', { name: 'Website permissions and site data' }).click()
   const permissionList = controlsPage.getByLabel('Website permissions', { exact: true })
+  const inspectFromPalette = async () => {
+    await controlsPage.evaluate(() => window.openFixturePalette())
+    const search = controlsPage.getByRole('combobox', { name: 'Search commands' })
+    await search.fill('TLS certificate')
+    await search.press('Enter')
+    await permissionList.waitFor()
+    await permissionList.getByRole('button', { name: 'View certificate' }).waitFor()
+    // Radix restores focus after the palette's closing animation finishes.
+    await controlsPage.waitForFunction(
+      () => !document.querySelector('[role="dialog"][data-state="closed"]'),
+    )
+    await controlsPage.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    )
+    assert.ok(
+      await permissionList.evaluate((panel) => panel.contains(document.activeElement)),
+      'The palette leaves keyboard focus inside website information',
+    )
+  }
+  await controlsPage.setViewportSize({ width: 440, height: 800 })
+  await controlsPage.locator('.studio-browser-toolbar[data-compact="true"]').first().waitFor()
+  await inspectFromPalette()
+  await controlsPage.keyboard.press('Escape')
+  await permissionList.waitFor({ state: 'hidden' })
+  await controlsPage.keyboard.press('Escape')
+  await controlsPage.setViewportSize({ width: 1200, height: 800 })
+  await controlsPage.locator('.studio-browser-toolbar[data-compact="false"]').first().waitFor()
+  await inspectFromPalette()
   await controlsPage.getByRole('combobox', { name: 'Automatic PiP permission' }).waitFor()
   await controlsPage.getByRole('combobox', { name: 'Notifications permission' }).waitFor()
   assert.equal(
@@ -4461,6 +4509,38 @@ try {
     2,
     'A site without requests shows Notifications and Automatic PiP',
   )
+  await permissionList.getByRole('button', { name: 'View certificate' }).click()
+  const chain = permissionList.getByRole('region', { name: 'Certificate chain' })
+  await chain.getByText('CN=Bank test').waitFor()
+  await chain.getByText('AB:CD').waitFor()
+  await chain.getByText('TLS 1.3 · AES_128_GCM').waitFor()
+  await controlsPage.screenshot({ path: root + 'work/shared-browser/website-certificate.png' })
+  await permissionList.getByRole('button', { name: 'Hide certificate' }).click()
+  await permissionList.getByRole('button', { name: 'View certificate' }).click()
+  await chain.waitFor()
+  await controlsPage.evaluate(async () => {
+    window.setNativePage('studio:browser:main:compact-4', {
+      profileId: 'default',
+      url: 'https://example.test/4',
+      title: 'Website 4',
+      back: false,
+      forward: false,
+      documentRevision: 2,
+      certificate: {
+        origin: 'https://example.test',
+        protocol: 'TLS 1.3',
+        chain: [],
+        leaf: { subject: 'bank.example.test', issuer: 'Test issuer' },
+      },
+    })
+    await window.pollBrowser()
+  })
+  await chain.waitFor({ state: 'hidden' })
+  await permissionList.getByRole('button', { name: 'View certificate' }).click()
+  await chain.getByText('bank.example.test', { exact: true }).waitFor()
+  await chain.getByText('Chromium did not provide the certificate chain for this page.').waitFor()
+  assert.equal(await chain.getByText('SHA-256 fingerprint').count(), 0)
+  await permissionList.getByRole('button', { name: 'Hide certificate' }).click()
   await permissionList.locator('[aria-busy="false"]').waitFor()
   await controlsPage
     .getByRole('combobox', { name: 'Notifications permission' })

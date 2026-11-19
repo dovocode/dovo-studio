@@ -1,28 +1,79 @@
+import type { BrowserPreviewInputBridge } from '@dovo/protocol'
+
 const floatingOverlays =
   'dialog[open], [role="dialog"], [role="alertdialog"], [role="menu"], [role="listbox"], [role="tooltip"], .studio-tooltip, [data-preview-dragging="true"], [data-inline-artifact] [data-preview-overlay="true"], [data-browser-viewport] > [data-preview-overlay="true"]'
 const overlays = `details[open], ${floatingOverlays}`
 
 /** A transparent Studio surface still receives clicks over native sibling views.
  * Keep the backdrop's return action reachable when its DOM is clipped for live painting. */
-export function onNativeBrowserBackgroundClick(slot: HTMLElement, onReturn: () => void) {
-  const clicked = (event: MouseEvent) => {
-    if (
-      event.button !== 0 ||
-      (event.target !== document.body && event.target !== document.documentElement)
-    )
-      return
+export function onNativeBrowserBackgroundClick(
+  slot: HTMLElement,
+  onReturn: () => void,
+  previewKey?: string,
+  nativeInput?: BrowserPreviewInputBridge,
+) {
+  let awaitingInput = false
+  const blurred = () => {
+    awaitingInput = true
+  }
+  const background = (event: MouseEvent) => {
+    if (event.target instanceof Node && slot.contains(event.target)) return true
+    if (event.target !== document.body && event.target !== document.documentElement) return false
     const bounds = nativeBrowserBounds(slot)
-    if (
-      bounds &&
+    return (
+      !!bounds &&
       event.clientX >= bounds.left &&
       event.clientX < bounds.right &&
       event.clientY >= bounds.top &&
       event.clientY < bounds.bottom
     )
-      onReturn()
   }
+  const pressed = (event: PointerEvent) => {
+    if (!background(event)) awaitingInput = false
+  }
+  const keyed = (event: KeyboardEvent) => {
+    if (!['Alt', 'Meta', 'Shift', 'Control'].includes(event.key)) awaitingInput = false
+  }
+  const focused = (event: FocusEvent) => {
+    if (
+      awaitingInput &&
+      event.target instanceof Element &&
+      previewKey &&
+      event.target
+        .closest('[data-browser-opener-toolbar]')
+        ?.getAttribute('data-browser-opener-toolbar') === previewKey
+    )
+      event.stopPropagation()
+  }
+  const clicked = (event: MouseEvent) => {
+    if (event.button === 0 && background(event) && (!event.detail || !awaitingInput)) onReturn()
+    awaitingInput = false
+  }
+  const unsubscribe = nativeInput?.((input) => {
+    if (input.type === 'window-blur') blurred()
+    else if (input.key === previewKey) {
+      if (input.type === 'opener-click' && !awaitingInput) onReturn()
+      awaitingInput = false
+    }
+  })
+  // A WebContentsView can lose DOM focus to a sibling view inside the same desktop window.
+  // Electron reports actual window deactivation. Web clients use their document's focus.
+  const webBlur = () => {
+    if (!document.hasFocus()) blurred()
+  }
+  if (!nativeInput) window.addEventListener('blur', webBlur)
+  document.addEventListener('pointerdown', pressed, true)
+  document.addEventListener('keydown', keyed, true)
+  document.addEventListener('focusin', focused, true)
   document.addEventListener('click', clicked)
-  return () => document.removeEventListener('click', clicked)
+  return () => {
+    unsubscribe?.()
+    window.removeEventListener('blur', webBlur)
+    document.removeEventListener('pointerdown', pressed, true)
+    document.removeEventListener('keydown', keyed, true)
+    document.removeEventListener('focusin', focused, true)
+    document.removeEventListener('click', clicked)
+  }
 }
 
 /** Streaming in another pane cannot move this browser. Portalled overlays can. */

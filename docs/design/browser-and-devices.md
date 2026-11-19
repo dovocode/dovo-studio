@@ -98,11 +98,15 @@ capture and interaction. These local checks do not establish latency over a phys
 Input-to-image latency includes network round trips, capture, decoding and display refresh; a 1–5 ms
 end-to-end guarantee across networks is not achievable through app optimization alone.
 
-The canvas represents the remote page visually: it does not expose that page's DOM to the client's
-screen reader. Use Direct preview when local page accessibility is needed. This slice doesn't
-transfer uploaded/downloaded files, system clipboard contents, audio or video streams. Typed text
-and explicitly pasted text are forwarded. HTTP popups open in the same preview tab; authentication
-flows requiring a separate popup window may need Direct preview or an external browser.
+The viewer displays the remote page in a canvas. Use Direct preview to read the page with a local
+screen reader. You can type or paste text into the remote page. Use a website's file picker to
+upload files from your device. For a download, choose **Save** in the viewer. On mobile, Save opens
+the share sheet. The runtime accepts downloads up to 50 MiB each and retains them for fifteen
+minutes while the tab stays open. The remote browser stream carries page images without audio.
+
+In a thread preview, an HTTP or HTTPS popup opens in the current tab. Sign-in flows that need to
+communicate with the original window can use a Browser workspace tab, which keeps the popup in a
+separate tab on the same computer and profile.
 
 ## Direct previews and simulators
 

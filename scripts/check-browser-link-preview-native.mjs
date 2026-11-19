@@ -31,7 +31,7 @@ try {
   )
   await writeFile(
     join(directory, 'preload.cjs'),
-    `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('bridge',{browser:command=>ipcRenderer.invoke('preview:browser',command)});`,
+    `const {contextBridge,ipcRenderer}=require('electron');contextBridge.exposeInMainWorld('bridge',{browser:command=>ipcRenderer.invoke('preview:browser',command),onPreviewInput:listener=>{const handler=(_event,input)=>listener(input);ipcRenderer.on('browser:preview-input',handler);return ()=>ipcRenderer.off('browser:preview-input',handler)}});`,
   )
   await build({
     stdin: {
@@ -40,8 +40,10 @@ try {
       contents: `import {nativeBrowserHole,onNativeBrowserBackgroundClick} from './src/browser/native-browser-layout';
 const source=document.getElementById('source');const child=document.getElementById('child');const frame=document.getElementById('frame');const menu=document.getElementById('menu');
 const backgroundHole=nativeBrowserHole(source),childHole=nativeBrowserHole(child);
-window.backgroundClicks=0;onNativeBrowserBackgroundClick(source,()=>{window.backgroundClicks++;window.layout(false);void window.bridge.browser(window.sourceCommand)});
-window.layout=(preview,overlay=false)=>{frame.hidden=!preview;menu.hidden=!overlay;backgroundHole.update(preview?source.getBoundingClientRect():undefined);childHole.update(preview&&overlay?child.getBoundingClientRect():undefined);return {background:source.getBoundingClientRect().toJSON(),child:child.getBoundingClientRect().toJSON()}};`,
+let stop;window.backgroundClicks=0;window.layout=(preview,overlay=false)=>{
+if(preview&&!stop)stop=onNativeBrowserBackgroundClick(source,()=>{window.backgroundClicks++;window.layout(false);void window.bridge.browser(window.sourceCommand)},window.created.key,window.bridge.onPreviewInput);
+if(!preview&&stop){stop();stop=undefined}
+frame.hidden=!preview;menu.hidden=!overlay;backgroundHole.update(preview?source.getBoundingClientRect():undefined);childHole.update(preview&&overlay?child.getBoundingClientRect():undefined);return {background:source.getBoundingClientRect().toJSON(),child:child.getBoundingClientRect().toJSON()}};`,
     },
     outfile: join(directory, 'ui.js'),
     bundle: true,
@@ -239,8 +241,36 @@ registerBrowser(${JSON.stringify(index)});const ui=studioContents(host);globalTh
     const status = await call({ action: 'status', key: created.key, tabCount: 2 })
     assert.equal(
       status.focusedTabKey,
-      'opener',
-      'Focusing the live background returns selection to its opener',
+      undefined,
+      'Restoring focus to the live background keeps the preview selected',
+    )
+    const other = await app.evaluate(async ({ BrowserWindow }) => {
+      const [x, y] = globalThis.fixture.host.getPosition()
+      const other = new BrowserWindow({ width: 180, height: 100, x: x + 450, y: y + 200 })
+      globalThis.fixture.other = other
+      await other.loadURL('about:blank')
+      return String(other.getNativeWindowHandle().readUInt32LE())
+    })
+    execFileSync('xdotool', ['windowactivate', '--sync', other])
+    execFileSync('xdotool', ['windowactivate', '--sync', id])
+    execFileSync('xdotool', ['mousemove', '--window', id, '60', '55', 'click', '1'])
+    assert.equal(
+      await ui.evaluate(() => window.backgroundClicks),
+      0,
+      'The first click after switching back keeps the preview.',
+    )
+    assert.equal((await read()).find((view) => view.url.endsWith('/child')).visible, true)
+    execFileSync('xdotool', ['windowactivate', '--sync', other])
+    execFileSync('xdotool', ['mousemove', '--window', id, '60', '55', 'click', '1'])
+    assert.equal(
+      await app.evaluate(() => globalThis.fixture.host.isFocused()),
+      true,
+      'Clicking the exposed opener reactivates its window.',
+    )
+    assert.equal(
+      await ui.evaluate(() => window.backgroundClicks),
+      0,
+      'The click that activates the window keeps the preview.',
     )
     execFileSync('xdotool', ['mousemove', '--window', id, '60', '55', 'click', '1'])
     await ui.waitForFunction(() => window.backgroundClicks === 1)

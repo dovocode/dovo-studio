@@ -62,6 +62,7 @@ createRoot(root).render(
           openBrowserWindow={window.dovo?.openBrowserWindow}
           onBrowserMediaChange={window.dovo?.onBrowserMediaChange}
           onBrowserWorkspaceFocus={window.dovo?.onBrowserWorkspaceFocus}
+          onBrowserPreviewInput={window.dovo?.onBrowserPreviewInput}
           popOutThread={window.dovo?.popOutThread}
           appInfo={window.dovo?.appInfo}
           desktopPlatform={window.dovo?.platform}

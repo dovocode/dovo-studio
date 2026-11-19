@@ -127,6 +127,19 @@ export function saveSharedBrowserLibrary(state: BrowserLibraryState) {
   const library = validatedLibrary(state)
   localStorage.setItem(SHARED_BROWSER_LIBRARY_KEY, JSON.stringify(library))
 }
+/** Apply the operation to current storage, including changes made in another window. */
+export async function updateSharedBrowserLibrary(
+  update: (state: BrowserLibraryState) => BrowserLibraryState,
+) {
+  const save = () => {
+    const latest = readSharedBrowserLibrary()
+    if (latest.error) throw new Error(latest.error)
+    const next = update(latest)
+    saveSharedBrowserLibrary(next)
+    return next
+  }
+  return navigator.locks ? navigator.locks.request(SHARED_BROWSER_LIBRARY_KEY, save) : save()
+}
 // Extra windows survive reload only; restoring them after app quit is intentionally unsupported.
 export function readSharedBrowserTabs(windowId = 'main'): { state?: BrowserTabs; error?: string } {
   try {

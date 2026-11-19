@@ -213,7 +213,9 @@ export function studioReadAction(part: string, action: unknown) {
         String(action),
       )) ||
     (part === 'browsers' &&
-      ['list', 'snapshot', 'elements', 'screenshot', 'logs'].includes(String(action))) ||
+      ['list', 'snapshot', 'elements', 'screenshot', 'logs', 'certificate'].includes(
+        String(action),
+      )) ||
     (part === 'ui' && ['list', 'snapshot', 'theme-read'].includes(String(action))) ||
     part === 'diagnostics'
   )
@@ -781,6 +783,17 @@ export async function studioTool(
       }
     }
     if (!command.id) throw new HttpError(400, 'Choose a browser session ID from list or open')
+    if (command.action === 'certificate') {
+      const result = command.id.startsWith(DESKTOP_BROWSER_PREFIX)
+        ? await desktopBrowserCommand(command.id, { action: 'certificate' }, check)
+        : await s.browsers.studioCertificate(command.id, check)
+      if (Buffer.byteLength(JSON.stringify(result)) > 65536)
+        throw new HttpError(
+          413,
+          'The certificate chain exceeds the tool output limit. View it in the Browser workspace.',
+        )
+      return result
+    }
     if (command.id.startsWith(DESKTOP_BROWSER_PREFIX)) {
       if (command.action === 'logs')
         return { entries: [], note: 'Console logs are not captured for desktop browser tabs.' }

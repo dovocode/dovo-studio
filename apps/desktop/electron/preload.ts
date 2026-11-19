@@ -69,6 +69,14 @@ contextBridge.exposeInMainWorld('dovo', {
     ipcRenderer.on('browser:focus-workspace', handler)
     return () => ipcRenderer.removeListener('browser:focus-workspace', handler)
   },
+  onBrowserPreviewInput: ((listener) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      input: import('@dovo/protocol').BrowserPreviewInput,
+    ) => listener(input)
+    ipcRenderer.on('browser:preview-input', handler)
+    return () => ipcRenderer.removeListener('browser:preview-input', handler)
+  }) satisfies import('@dovo/protocol').BrowserPreviewInputBridge,
   browserExtensions: (
     command: import('@dovo/protocol').BrowserExtensionCommand,
   ): Promise<import('@dovo/protocol').BrowserExtensionsResult | undefined> =>

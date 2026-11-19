@@ -23,7 +23,8 @@ export type BrowserLibraryProps = {
   visits: readonly BrowserTab[]
   onOpen: (tab: BrowserTab) => void
   onRemoveBookmark: (tab: BrowserTab) => void
-  onClearHistory: () => void
+  localProfileHistory: boolean
+  onClearHistory: () => Promise<void>
   onReopen: () => void
 }
 
@@ -84,12 +85,15 @@ export function BrowserLibrary({
   visits,
   onOpen,
   onRemoveBookmark,
+  localProfileHistory,
   onClearHistory,
   onReopen,
 }: BrowserLibraryProps) {
   const uiText = useInterfaceText()
 
   const [query, setQuery] = useState('')
+  const [clearing, setClearing] = useState(false)
+  const [clearMessage, setClearMessage] = useState('')
   const title = view === 'history' ? 'History' : 'Bookmarks'
   const sections =
     view === 'history'
@@ -129,9 +133,38 @@ export function BrowserLibrary({
             >
               Reopen last closed tab
             </Button>
-            <Button size="sm" variant="ghost" disabled={!visits.length} onClick={onClearHistory}>
+            <Button
+              size="sm"
+              variant="ghost"
+              disabled={clearing || (!localProfileHistory && !visits.length)}
+              onClick={async () => {
+                setClearing(true)
+                setClearMessage('')
+                try {
+                  await onClearHistory()
+                  setClearMessage('History cleared.')
+                } catch (error) {
+                  setClearMessage(
+                    `Could not clear history. ${error instanceof Error ? error.message : String(error)}`,
+                  )
+                } finally {
+                  setClearing(false)
+                }
+              }}
+            >
               Clear history
             </Button>
+            {localProfileHistory && (
+              <p className="w-full text-xs text-muted-foreground">
+                Clear visits saved on this device, including extension history in all local
+                profiles. Bookmarks and recently closed tabs stay available.
+              </p>
+            )}
+            {clearMessage && (
+              <p className="w-full text-xs" role="status">
+                {clearMessage}
+              </p>
+            )}
           </div>
         )}
         <div className="max-h-[55vh] space-y-4 overflow-y-auto">

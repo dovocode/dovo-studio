@@ -16,7 +16,9 @@
  * Usage: node apps/desktop/scripts/check-browser-extensions-native.mjs [--keep] [--1password]
  * Linux without a display needs `xvfb-run`. The Chromium sandbox must be available.
  */
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { createHash, generateKeyPairSync } from 'node:crypto'
+import { chromium } from 'playwright'
 import {
   chmodSync,
   mkdirSync,
@@ -45,6 +47,44 @@ symlinkSync(join(desktop, 'node_modules'), join(work, 'node_modules'), 'junction
 const write = (path, contents) => {
   mkdirSync(join(path, '..'), { recursive: true })
   writeFileSync(path, contents)
+}
+// Chromium signs both releases using one temporary test key. Only the Store's
+// network response is substituted in this fixture; Dovo verifies the real CRX3.
+const { publicKey, privateKey } = generateKeyPairSync('rsa', { modulusLength: 2048 })
+const signedFixtureId = createHash('sha256')
+  .update(publicKey.export({ type: 'spki', format: 'der' }))
+  .digest('hex')
+  .slice(0, 32)
+  .replace(/[0-9a-f]/g, (digit) => String.fromCharCode(97 + parseInt(digit, 16)))
+const signingKey = join(work, 'fixture-signing-key.pem')
+write(signingKey, privateKey.export({ type: 'pkcs8', format: 'pem' }))
+try {
+  for (const version of ['1', '2']) {
+    const folder = join(work, 'release-' + version)
+    write(
+      join(folder, 'manifest.json'),
+      JSON.stringify({
+        manifest_version: 3,
+        name: 'Signed update fixture',
+        version,
+        permissions: ['storage'],
+      }),
+    )
+    write(join(folder, 'probe.html'), '<!doctype html><title>Signed extension storage</title>')
+    execFileSync(
+      chromium.executablePath(),
+      [
+        '--headless',
+        '--disable-background-networking',
+        '--user-data-dir=' + join(work, 'pack-profile'),
+        '--pack-extension=' + folder,
+        '--pack-extension-key=' + signingKey,
+      ],
+      { timeout: 30_000 },
+    )
+  }
+} finally {
+  rmSync(signingKey, { force: true })
 }
 if (process.platform !== 'win32') {
   write(
@@ -608,13 +648,6 @@ app.whenReady().then(async () => {
         assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }
-      if (process.env.SMOKE_STORE === '1') {
-        const added=await call('extensions',{action:'installStore',profileId:'store-proof',url:'https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh'})
-        assert.equal(added.installed,'eimadpbcbfnmbkopoojfekhnkhdbieeh')
-        assert.ok(added.extensions[0].loaded)
-        await call('extensions',{action:'remove',profileId:'store-proof',id:added.installed})
-        report.chromeWebStore=true
-      }
 
       if (process.platform !== 'win32') {
         const hostDirectory = join(app.getPath('userData'), 'NativeMessagingHosts')
@@ -727,6 +760,8 @@ app.whenReady().then(async () => {
       await workerAPI('history','deleteUrl',[{url:page+'history-proof'}])
       assert.deepEqual(await api('chrome.history.search({text:"history-proof",startTime:0})'),[])
       assert.ok((await api('chrome.history.search({text:'+JSON.stringify(page)+',startTime:0})')).length > 0,'Real web tab visits must be recorded.')
+      await call('browser', {action:'clear-history',key:created.key})
+      assert.deepEqual(await api('chrome.history.search({text:"",startTime:0})'),[],'Clear history must remove extension-visible visits.')
       await api('window.createdDownloads=[];window.downloadChanges=[];chrome.downloads.onCreated.addListener(item=>createdDownloads.push(item));chrome.downloads.onChanged.addListener(delta=>downloadChanges.push(delta));true')
       const downloaded = await workerAPI('downloads','download',[{url:page+'download',filename:'native-smoke-'+run+'.txt'}])
       assert.equal(typeof downloaded.value,'number')
@@ -870,13 +905,86 @@ app.whenReady().then(async () => {
         assert.equal(await login.executeJavaScript(\`document.querySelector('input[type=email]').value\`), 'a', 'Mouse and keyboard must enter text on Microsoft sign-in.')
         report.teamsSignIn=true
       }
-      if (process.env.SMOKE_STORE === '1') {
-        const added=await call('extensions',{action:'installStore',profileId:'store-proof',url:'https://chromewebstore.google.com/detail/dark-reader/eimadpbcbfnmbkopoojfekhnkhdbieeh'})
-        assert.equal(added.installed,'eimadpbcbfnmbkopoojfekhnkhdbieeh')
-        assert.ok(added.extensions[0].loaded)
-        await call('extensions',{action:'remove',profileId:'store-proof',id:added.installed})
-        report.chromeWebStore=true
+    }
+    stage('signed version replacement')
+    const fixtureId = process.env.SMOKE_SIGNED_ID!
+    const fixtureProfile = 'signed-update'
+    const fixtureSession = session.fromPartition(workspacePartition(fixtureProfile))
+    async function storedValue(save = false) {
+      const probe = new BrowserWindow({
+        show: false, webPreferences: {session:fixtureSession, sandbox:true, contextIsolation:true, nodeIntegration:false},
+      })
+      try {
+        await probe.loadURL('chrome-extension://' + fixtureId + '/probe.html')
+        if (save) await probe.webContents.executeJavaScript("chrome.storage.local.set({saved:'before update'})")
+        return await probe.webContents.executeJavaScript("chrome.storage.local.get('saved').then(data=>({saved:data.saved,version:chrome.runtime.getManifest().version}))")
+      } finally { probe.destroy() }
+    }
+    if (run === '1') {
+      const fetch = globalThis.fetch
+      const requests: string[] = []
+      globalThis.fetch = async (...args) => {
+        const [input] = args
+        if (input instanceof URL && input.origin === 'https://clients2.google.com' &&
+            input.pathname === '/service/update2/crx') {
+          const parameters = new URLSearchParams(input.searchParams.get('x') ?? '')
+          if (parameters.get('id') === fixtureId) {
+            const version = parameters.get('v')
+            assert.ok(version === null || version === '1')
+            requests.push(version || 'install')
+            return new Response(readFileSync(join(work,version ? 'release-2.crx' : 'release-1.crx')))
+          }
+        }
+        return fetch(...args)
       }
+      try {
+        const added = await call('extensions',{action:'installStore',profileId:fixtureProfile,url:fixtureId})
+        assert.equal(added.installed, fixtureId)
+        assert.deepEqual(await storedValue(true), {saved:'before update',version:'1'})
+        const promptCount = prompts.length
+        const updated = await call('extensions',{action:'checkUpdate',profileId:fixtureProfile,id:fixtureId})
+        assert.equal(updated.extensions[0].id, fixtureId)
+        assert.equal(updated.extensions[0].version, '2')
+        assert.equal(updated.extensions[0].storeUpdates?.error, undefined)
+        assert.equal(prompts.length, promptCount, 'Unchanged access can update without review.')
+        assert.deepEqual(requests, ['install','1'])
+      } finally { globalThis.fetch = fetch }
+    } else {
+      const list = await call('extensions',{action:'list',profileId:fixtureProfile})
+      assert.equal(list.extensions[0].version, '2')
+      assert.equal(list.extensions[0].loaded, true)
+    }
+    assert.deepEqual(await storedValue(), {saved:'before update',version:'2'})
+    report.signedUpdate = true
+    if (process.env.SMOKE_STORE === '1') {
+      stage('Chrome Web Store update check')
+      const id = 'eimadpbcbfnmbkopoojfekhnkhdbieeh'
+      const profileId = 'store-proof'
+      if (run === '1') {
+        const added = await call('extensions', {action:'installStore', profileId, url:id})
+        assert.equal(added.installed, id)
+        assert.equal(added.extensions[0].storeUpdates?.automatic, true)
+        await call('extensions', {action:'disableAutoUpdates', profileId, id})
+      }
+      const checked = await call('extensions', {action:'checkUpdate', profileId, id})
+      const item = checked.extensions.find((entry: { id: string }) => entry.id === id)
+      assert.ok(item?.loaded)
+      assert.equal(item.storeUpdates.automatic, false)
+      assert.ok(item.storeUpdates.checkedAt)
+      assert.equal(item.storeUpdates.error, undefined)
+      if (run === '2') {
+        await call('extensions', {action:'pin', profileId, id})
+        await call('extensions', {action:'disable', profileId, id})
+        const reinstall = await call('extensions', {action:'installStore', profileId, url:id})
+        assert.equal(reinstall.installed, id)
+        const replaced = reinstall.extensions.find((entry: { id: string }) => entry.id === id)
+        assert.ok(replaced.pinned)
+        assert.equal(replaced.enabled, false)
+        assert.equal(replaced.loaded, false)
+        assert.equal(replaced.storeUpdates.automatic, false)
+        await call('extensions', {action:'remove', profileId, id})
+      }
+      report.chromeWebStore = { version: item.version, checkedAt: item.storeUpdates.checkedAt }
     }
     if (process.env.SMOKE_PROTON === '1') {
       stage('Proton Pass')
@@ -968,6 +1076,7 @@ for (const run of ['1', '2']) {
         ...process.env,
         SMOKE_DIR: work,
         SMOKE_RUN: run,
+        SMOKE_SIGNED_ID: signedFixtureId,
         SMOKE_WEBSITES: websites ? '1' : '0',
         SMOKE_STORE: store ? '1' : '0',
         SMOKE_PROTON: proton ? '1' : '0',

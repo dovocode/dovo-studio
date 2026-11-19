@@ -31,6 +31,14 @@ empty state. Removal closes the profile's tabs and removes its named store, or c
 WebKit still holds the store. The module never enumerates all stores because that WebKit API can
 crash before any web view exists.
 
+## Website certificates
+
+In a device-local tab, open **Browser options → Site information**. The iOS module reads the loaded
+main frame's `WKWebView.serverTrust` on demand. It shows the origin, certificate subjects, available
+issuers, serial numbers and SHA-256 fingerprints. iOS 18 and later also report validity dates. The
+sheet closes when navigation changes the page. HTTP pages have no TLS certificate. Older app builds
+and the React Native WebView fallback show an availability message.
+
 ## Safety and limits
 
 - Page web views have no script message handlers or app bridge. The module supplies no
@@ -61,6 +69,10 @@ HTTP. It does not install Dovo Studio.
   background prompt suppression, native prompt cancellation and capture capability.
 - Phase 2 starts a new process to verify per-profile cookies/localStorage persistence and profile
   removal.
+- Phase 8 opens `https://example.com`, checks its certificate chain, then opens the local HTTP
+  fixture. It checks document identity after a same-URL reload, the origin and removal of the
+  previous certificate. Run it with
+  `PHASES=8 tests/run-simulator-harness.sh <booted-simulator-udid>` on a Mac with internet access.
 - Phase 7 invokes content-process delegate callbacks on real WKWebViews, checking one recovery,
   repeated failure, detached/hidden hosts, background/foreground notifications, explicit retries,
   navigation budgets and stale callbacks after close/reopen. Application notifications simulate

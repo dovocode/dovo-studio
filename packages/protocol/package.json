@@ -7,6 +7,12 @@
   ],
   "type": "module",
   "exports": {
+    "./browser-certificate": {
+      "types": "./src/node/browser-certificate.ts",
+      "development": "./src/node/browser-certificate.ts",
+      "import": "./dist/node/browser-certificate.js",
+      "default": "./dist/node/browser-certificate.js"
+    },
     "./a2ui": {
       "types": "./src/a2ui.ts",
       "development": "./src/a2ui.ts",

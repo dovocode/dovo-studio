@@ -123,6 +123,11 @@ public class DovoWebKitBrowserModule: Module {
       return try await run { try BrowserEngine.shared.tab(tabId).state }
     }
 
+    AsyncFunction("getPageCertificate") { @MainActor (tabId: String, documentId: String, origin: String) async throws -> [String: Any] in
+      guard #available(iOS 17.0, *) else { throw unsupported() }
+      return try await run { try BrowserEngine.shared.tab(tabId).certificate(documentId: documentId, expectedOrigin: origin) }
+    }
+
     AsyncFunction("getSelection") { @MainActor (tabId: String) async throws -> [String: Any] in
       guard #available(iOS 17.0, *) else { throw unsupported() }
       return try await run { try await BrowserEngine.shared.selection(tabId) }

@@ -36,6 +36,7 @@ import {
   type BrowserWorkspaceState,
   type BrowserTabState,
 } from '@dovo/protocol'
+import { observeBrowserCertificate } from './browser-certificate.js'
 import { createBrowserCdp } from './browser-cdp.js'
 import { decode } from '@dovo/protocol'
 import {
@@ -51,6 +52,7 @@ import {
 } from 'electron'
 import { trustedRendererUrl } from './renderer-trust.js'
 import { createBrowserExtensions, workspacePartition } from './browser-extensions.js'
+import { clearLocalBrowserHistory } from './browser-extension-browser-apis.js'
 import { createBrowserMedia, type MediaTab } from './browser-media.js'
 import { browserPermissions, forgetPrivateBrowserPermissions } from './browser-permissions.js'
 import {
@@ -100,6 +102,9 @@ type Entry = {
   /** Reported once by the next `status`; native POST loads have no other channel to the UI. */
   navigationError?: string
   documentRevision?: number
+  /** Trusted edit in this page or one of its frames, until a new top-level document commits. */
+  formEdited?: boolean
+  certificate?: ReturnType<typeof observeBrowserCertificate>
   findOpen?: boolean
   popups: Set<BrowserWindow>
   documentPip?: BrowserWindow
@@ -318,6 +323,7 @@ export function registerBrowser(
   const faviconObserver = createNativeFaviconObserver(observeBrowserFavicons)
   const routingSessions = new Set<Electron.Session>()
   const focusedTabs = new Map<number, string>()
+  const awaitingPreviewInput = new WeakSet<BrowserWindow>()
   const awakeRequests = new Map<string, object>()
   let disposed = false
   const pageVisible = (entry: Entry) =>
@@ -681,6 +687,7 @@ export function registerBrowser(
         !isPrivateBrowserProfile(entry.profileId) &&
         !cdp?.connected(key) &&
         !keepsAwake(entry) &&
+        (!entry.formEdited || entry.sleeping) &&
         !entry.videoPictureInPicture &&
         !entry.documentPip &&
         !(entry.workspace && media.keepAlive(entry.view.webContents)),
@@ -753,6 +760,12 @@ export function registerBrowser(
       }
       window.on('minimize', visibilityChanged)
       window.on('restore', visibilityChanged)
+      window.on('blur', () => {
+        const ui = studioContents(window)
+        if (ui.isDestroyed()) return
+        awaitingPreviewInput.add(window)
+        ui.send('browser:preview-input', { type: 'window-blur' })
+      })
       window.on('hide', visibilityChanged)
       window.on('show', visibilityChanged)
       window.on('resize', resizeFullscreen)
@@ -876,7 +889,10 @@ export function registerBrowser(
       ),
       url: '',
     }
-    if (workspace) created.activity = createBrowserTabActivity(view.webContents)
+    if (workspace) {
+      created.activity = createBrowserTabActivity(view.webContents)
+      created.certificate = observeBrowserCertificate(view.webContents)
+    }
     created.find = createBrowserFind(view.webContents)
     if (workspace) downloadsFor(created.browserSession, profileId)
     if (workspace && !routingSessions.has(created.browserSession)) {
@@ -929,6 +945,17 @@ export function registerBrowser(
     view.webContents.ipc.on('browser:notification-click', (event) => {
       if (created.workspace && event.senderFrame === view.webContents.mainFrame) focusTab(created)
     })
+    view.webContents.ipc.on('browser:form-edited', (event) => {
+      const frame = event.senderFrame
+      if (
+        created.workspace &&
+        frame &&
+        !frame.detached &&
+        (frame === created.contents.mainFrame ||
+          created.contents.mainFrame.framesInSubtree.includes(frame))
+      )
+        created.formEdited = true
+    })
     view.webContents.ipc.on('browser:video-pip', (event, active: unknown) => {
       if (!created.workspace || !event.senderFrame || typeof active !== 'boolean') return
       created.videoPictureInPicture = active
@@ -969,6 +996,7 @@ export function registerBrowser(
     })
     view.webContents.on('audio-state-changed', () => syncBackgroundThrottling(created))
     view.webContents.on('did-navigate', () => {
+      created.formEdited = false
       try {
         applyZoom(created)
       } catch (error) {
@@ -981,18 +1009,6 @@ export function registerBrowser(
     view.webContents.on('did-navigate-in-page', () => syncBackgroundThrottling(created))
     // Service-worker clients.focus() and Chromium's native notification focus follow this path.
     view.webContents.on('focus', () => {
-      if (
-        view.getVisible() &&
-        [...views.values()].some(
-          (entry) =>
-            entry.windowId === created.windowId &&
-            entry.view.getVisible() &&
-            entry.previewBackgroundKey === created.key,
-        )
-      ) {
-        focusTab(created)
-        return
-      }
       if (
         created.workspace &&
         !agentConnected(created) &&
@@ -1555,7 +1571,39 @@ export function registerBrowser(
       configureBrowserIdentity(popup.webContents, nativeUserAgent)(details.url)
       trackPopup(popup, popup.webContents)
     })
-    view.webContents.on('before-mouse-event', (_event, input) => {
+    const containingPreview = () =>
+      created.workspace &&
+      [...views.values()].find(
+        (entry) =>
+          entry.windowId === created.windowId &&
+          entry.view.getVisible() &&
+          entry.previewBackgroundKey &&
+          (entry === created || entry.previewBackgroundKey === created.key),
+      )
+    let pressedOpener: string | undefined
+    view.webContents.on('before-mouse-event', (event, input) => {
+      if ((input.type === 'mouseDown' || input.type === 'mouseUp') && input.button === 'left') {
+        const preview = containingPreview()
+        if (preview && preview !== created) {
+          // The visible opener is a return target. Never forward this press to the website.
+          event.preventDefault()
+          if (input.type === 'mouseDown') pressedOpener = preview.key
+          else if (pressedOpener === preview.key) {
+            pressedOpener = undefined
+            studioContents(created.window).send('browser:preview-input', {
+              type: 'opener-click',
+              key: preview.key,
+            })
+          }
+          return
+        }
+        pressedOpener = undefined
+        if (preview && input.type === 'mouseDown' && awaitingPreviewInput.delete(created.window))
+          studioContents(created.window).send('browser:preview-input', {
+            type: 'page-input',
+            key: preview.key,
+          })
+      }
       // A site-isolated redirect or extension popup may leave keyboard focus in another
       // renderer. Give the page focus on deliberate clicks, never on polling or resizing.
       if (
@@ -1565,6 +1613,16 @@ export function registerBrowser(
         view.webContents.focus()
     })
     view.webContents.on('before-input-event', (event, input) => {
+      if (
+        created.previewBackgroundKey &&
+        input.type === 'keyDown' &&
+        !['Alt', 'Meta', 'Control', 'Shift'].includes(input.key) &&
+        awaitingPreviewInput.delete(created.window)
+      )
+        studioContents(created.window).send('browser:preview-input', {
+          type: 'page-input',
+          key: created.key,
+        })
       if (input.type === 'keyDown' && input.key === 'Escape') dismissNativeTooltip(created.window)
       if (input.type === 'keyDown' && input.key === 'Escape' && created.findOpen) {
         event.preventDefault()
@@ -1961,6 +2019,10 @@ export function registerBrowser(
   ipcMain.handle('preview:browser', async (event, raw: unknown) => {
     const window = trustedWindow(event)
     const command = decode(browserCommandSchema, raw)
+    if (command.action === 'clear-history') {
+      clearLocalBrowserHistory()
+      return
+    }
     if (command.action === 'sync-tabs' || command.action === 'detach-tabs') {
       validateWorkspaceState(command)
       // In-flight renderer saves must not reclaim a page that just moved to another window.
@@ -2336,6 +2398,7 @@ export function registerBrowser(
           profileId,
           entry.view.webContents,
           command.tabId,
+          entry.certificate,
         )
       } else if (entry.cdp) {
         cdp?.remove(viewKey)
@@ -2468,6 +2531,7 @@ export function registerBrowser(
             entry.workspace &&
             (media.keepAlive(entry.view.webContents) ||
               keepsAwake(entry) ||
+              (entry.formEdited && !entry.sleeping) ||
               entry.videoPictureInPicture ||
               entry.documentPip),
         )
@@ -2606,6 +2670,14 @@ export function registerBrowser(
         throw new Error('Browser history changed. Open the history menu again.')
       navigation.goToIndex(command.id)
       return
+    }
+    if (command.action === 'site-certificate') {
+      if (!entry.certificate) throw new Error('Open a local Browser tab to view its certificate.')
+      const page = new URL(entry.contents.getURL())
+      if (page.origin !== command.origin)
+        throw new Error('The page changed. Open its certificate again.')
+      if (page.protocol !== 'https:') throw new Error('HTTP pages do not use a TLS certificate.')
+      return { url: page.href, certificate: await entry.certificate(page.origin) }
     }
     if (
       [

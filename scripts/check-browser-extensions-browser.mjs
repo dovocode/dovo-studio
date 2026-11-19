@@ -15,7 +15,7 @@ const built = await bundleBrowser(
         const capabilities={unpackedFolders:true,nativeMessaging:true,chromeWebStore:true,remoteRuntimes:false};
         const extension=(id,name,extra={})=>({id,name,version:'1.2.3',enabled:true,loaded:true,popup:true,unsupportedPermissions:[],removedPermissions:[],...extra});
         window.catalogs={
-          work:[extension('a'.repeat(32),'Work helper',{unsupportedPermissions:['debugger'],removedPermissions:['nativeMessaging']}),extension('b'.repeat(32),'Broken helper',{loaded:false,error:'Extension manifest could not load'})],
+          work:[extension('a'.repeat(32),'Work helper',{unsupportedPermissions:['debugger'],removedPermissions:['nativeMessaging'],storeUpdates:{automatic:true,pendingVersion:'2.0',checkedAt:1700000000000}}),extension('b'.repeat(32),'Broken helper',{loaded:false,error:'Extension manifest could not load'})],
           personal:[extension('c'.repeat(32),'Personal helper',{popup:false})],
         };
         window.commands=[];
@@ -26,6 +26,9 @@ const built = await bundleBrowser(
           if(window.failAction===command.action)throw new Error('Fixture '+command.action+' failed');
           const entries=window.catalogs[command.profileId];
           if(command.action==='open')return;
+          const item=entries.find(item=>item.id===command.id);
+          if(command.action==='checkUpdate'){item.version=item.storeUpdates.pendingVersion??item.version;delete item.storeUpdates.pendingVersion}
+          if(command.action==='enableAutoUpdates'||command.action==='disableAutoUpdates')item.storeUpdates.automatic=command.action==='enableAutoUpdates';
           if(command.action==='pin'||command.action==='unpin')for(const item of entries)if(item.id===command.id)item.pinned=command.action==='pin';
           if(command.action==='install')entries.push(extension('d'.repeat(32),'Installed helper'));
           if(command.action==='remove')window.catalogs[command.profileId]=entries.filter(item=>item.id!==command.id);
@@ -120,8 +123,7 @@ try {
     await dialog.waitFor()
     await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'))
   }
-  const row = (name) =>
-    dialog.locator('.rounded-lg.border').filter({ has: page.getByText(name, { exact: true }) })
+  const row = (name) => dialog.getByRole('group', { name, exact: true })
   const calls = () => page.evaluate(() => window.commands)
   await render()
   await show()
@@ -133,6 +135,37 @@ try {
     await row('Broken helper').getByRole('button', { name: 'Open extension' }).isEnabled(),
     false,
   )
+  assert.equal(await row('Broken helper').getByRole('checkbox').count(), 0)
+  const automatic = row('Work helper').getByRole('checkbox', { name: 'Automatic updates' })
+  assert.equal(await automatic.isChecked(), true)
+  await automatic.uncheck()
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'))
+  assert.deepEqual((await calls()).at(-1), {
+    action: 'disableAutoUpdates',
+    profileId: 'work',
+    id: 'a'.repeat(32),
+  })
+  assert.equal(await automatic.isChecked(), false)
+  await automatic.check()
+  await page.waitForFunction(() => !document.querySelector('[aria-busy="true"]'))
+  assert.deepEqual((await calls()).at(-1), {
+    action: 'enableAutoUpdates',
+    profileId: 'work',
+    id: 'a'.repeat(32),
+  })
+  await row('Work helper').getByRole('button', { name: 'Review update' }).click()
+  await row('Work helper').getByText('2.0 · Enabled').waitFor()
+  await row('Work helper')
+    .getByRole('status')
+    .filter({ hasText: 'Updated to version 2.0.' })
+    .waitFor()
+  assert.deepEqual((await calls()).at(-1), {
+    action: 'checkUpdate',
+    profileId: 'work',
+    id: 'a'.repeat(32),
+  })
+  await row('Work helper').getByRole('button', { name: 'Check for update' }).click()
+  await row('Work helper').getByText('Up to date.', { exact: true }).waitFor()
 
   await dialog
     .getByRole('textbox', { name: 'Chrome Web Store URL or extension ID' })
@@ -149,6 +182,10 @@ try {
   assert.deepEqual((await calls()).at(-1), { action: 'install', profileId: 'work' })
   await row('Work helper').getByRole('button', { name: 'Disable', exact: true }).click()
   await row('Work helper').getByRole('button', { name: 'Enable', exact: true }).waitFor()
+  assert.equal(
+    await row('Work helper').getByRole('button', { name: 'Check for update' }).isEnabled(),
+    false,
+  )
   assert.deepEqual((await calls()).at(-1), {
     action: 'disable',
     profileId: 'work',

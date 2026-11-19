@@ -167,6 +167,24 @@ it('enforces independent runtime/run toggles, exact run scope, and read-only acc
       .status,
   ).toBe(403)
   expect((await reader.post('browsers', { action: 'open' })).status).toBe(403)
+  const certificateRead = vi.spyOn(reader.s.browsers, 'studioCertificate').mockResolvedValue({
+    ok: true,
+    certificate: {
+      origin: 'https://bank.test',
+      protocol: 'TLS 1.3',
+      cipher: 'AES_128_GCM',
+      chain: [{ subject: 'CN=bank.test', serialNumber: '01', fingerprint256: 'test' }],
+    },
+  })
+  const certificateReply = await reader.post('browsers', {
+    action: 'certificate',
+    id: 'workspace:work',
+  })
+  expect(certificateReply.status).toBe(200)
+  expect(await certificateReply.json()).toMatchObject({
+    certificate: { origin: 'https://bank.test' },
+  })
+  expect(certificateRead).toHaveBeenCalledWith('workspace:work', expect.any(Function))
   const screenshot = vi
     .spyOn(reader.s.browsers, 'agentCommand')
     .mockResolvedValue({ ok: true, image: 'png' })
@@ -802,6 +820,13 @@ it('preserves run read-only access and permission ceilings across paired compute
       )
     ).status,
   ).toBe(403)
+  const missing = await reader.post(
+    'browsers',
+    { action: 'certificate', id: 'workspace:missing' },
+    pairing.peer.id,
+  )
+  expect(missing.status).toBe(404)
+  expect(await missing.text()).toContain('Browser session not found')
   expect((await reader.post('browsers', { action: 'open' }, pairing.peer.id)).status).toBe(403)
   expect((await reader.raw('/api/studio/peers', { sessionId: 'forged', peers: [] })).status).toBe(
     403,

@@ -66,4 +66,5 @@ export function attachExtensionPermissionChecks(library: unknown) {
       )
     )
   })
+  return (id: string) => permissions.getAll({ extension: { id } })
 }

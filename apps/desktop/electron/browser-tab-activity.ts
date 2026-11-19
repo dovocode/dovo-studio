@@ -101,7 +101,33 @@ export function installBrowserTabActivity(
   update()
 }
 
+// Runs in each frame's isolated preload world. Keep field names and values out of IPC.
+function observeFormEdits(report: () => void) {
+  let edited = false
+  window.addEventListener(
+    'input',
+    (event) => {
+      if (edited || !event.isTrusted) return
+      const field = event.composedPath()[0]
+      const editable =
+        field instanceof HTMLInputElement
+          ? !['range', 'button', 'submit', 'reset', 'image', 'hidden'].includes(field.type)
+          : field instanceof HTMLTextAreaElement ||
+            field instanceof HTMLSelectElement ||
+            (field instanceof HTMLElement && field.isContentEditable)
+      if (!editable) return
+      edited = true
+      report()
+    },
+    true,
+  )
+  window.addEventListener('pageshow', (event) => {
+    if (edited && event.persisted) report()
+  })
+}
+
 export const BROWSER_TAB_ACTIVITY_PRELOAD = `
+;(${observeFormEdits.toString()})(() => ipcRenderer.send('browser:form-edited'))
 contextBridge.executeInMainWorld({
   func: ${installBrowserTabActivity.toString()},
   args: [

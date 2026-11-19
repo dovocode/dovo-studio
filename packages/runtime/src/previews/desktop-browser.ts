@@ -6,6 +6,7 @@ import {
   STUDIO_BROWSER_SCOPE,
   isPrivateBrowserProfile,
   remoteBrowserInputSchema,
+  browserPageCertificateSchema,
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { HttpError } from '../errors.js'
@@ -69,6 +70,7 @@ export async function desktopBrowserList() {
       return {
         id: `${DESKTOP_BROWSER_PREFIX}${target.tabId}`,
         kind: 'desktop' as const,
+        ...(target.certificateSupported ? { certificateSupported: true } : {}),
         tabId: target.tabId as string,
         profileId: target.profileId,
         url,
@@ -403,7 +405,7 @@ async function actOnElement(
 /** Run one agent browser command against a live desktop Browser-workspace tab. */
 export async function desktopBrowserCommand(
   id: string,
-  command: AgentBrowserCommand,
+  command: AgentBrowserCommand | { action: 'certificate' },
   authorize: () => void,
 ) {
   authorize()
@@ -430,7 +432,7 @@ export async function desktopBrowserCommand(
 
 async function runDesktopBrowserCommand(
   id: string,
-  command: AgentBrowserCommand,
+  command: AgentBrowserCommand | { action: 'certificate' },
   authorize: () => void,
   endpoint: string,
 ) {
@@ -441,9 +443,21 @@ async function runDesktopBrowserCommand(
       404,
       'Desktop browser tab not found. Open the tab in the desktop Browser workspace, then list sessions again.',
     )
+  if (command.action === 'certificate' && !target.certificateSupported)
+    throw new HttpError(409, 'Update the desktop app on this computer to view the certificate.')
   const cdp = await PageCdp.open(target.endpoint)
   try {
     authorize()
+    if (command.action === 'certificate') {
+      const certificate = decode(
+        browserPageCertificateSchema,
+        await cdp.send('Dovo.getPageCertificate'),
+      )
+      authorize()
+      if (desktopBrowserTarget(id)?.endpoint !== target.endpoint)
+        throw new HttpError(409, 'The desktop tab changed during certificate inspection.')
+      return { ok: true as const, certificate }
+    }
     await cdp.send('Page.enable')
     if (['navigate', 'back', 'forward', 'reload', 'close'].includes(command.action))
       snapshots.delete(target.endpoint)

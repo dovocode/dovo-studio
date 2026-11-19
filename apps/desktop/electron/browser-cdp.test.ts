@@ -175,6 +175,10 @@ it('isolates page discovery, forwards CDP, blocks application targets and revoke
       id: 3,
       error: { message: expect.stringContaining('page-scoped') },
     })
+    expect(await command(4, 'Dovo.getPageCertificate')).toMatchObject({
+      id: 4,
+      error: { message: expect.stringContaining('unavailable for this target') },
+    })
     expect(debuggerApi.sendCommand).toHaveBeenCalledOnce()
     const closed = new Promise<void>((resolve) => client.once('close', () => resolve()))
     bridge.remove(key)

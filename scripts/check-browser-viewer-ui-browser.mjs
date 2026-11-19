@@ -54,6 +54,32 @@ try {
     )
     await post({ type: 'connect', url: 'ws://fixture/browser' })
     await page.getByText('Connected', { exact: true }).waitFor()
+    if (width === 1100) {
+      await page.evaluate(() =>
+        window.socket.onmessage({
+          data: JSON.stringify({
+            type: 'state',
+            url: 'https://older-host.example/',
+            title: 'Older host',
+            back: false,
+            forward: false,
+            loading: false,
+            editable: false,
+          }),
+        }),
+      )
+      await page.getByRole('button', { name: 'Site information', exact: true }).click()
+      await page.getByText('Update the paired computer to inspect website certificates.').waitFor()
+      assert.ok(
+        await page.evaluate(
+          () => !window.outbox.some((item) => item.type === 'certificateRequest'),
+        ),
+      )
+      await page
+        .getByRole('dialog', { name: 'Site information' })
+        .getByRole('button', { name: 'Close' })
+        .click()
+    }
     await page.evaluate(() =>
       window.socket.onmessage({
         data: JSON.stringify({

@@ -185,6 +185,48 @@ export const browserSitePermissionSchema = Schema.Literals([
 export const browserPermissionSettingSchema = Schema.Literals(['ask', 'allow', 'block'])
 export type BrowserSitePermission = typeof browserSitePermissionSchema.Type
 export type BrowserPermissionSetting = typeof browserPermissionSettingSchema.Type
+const certificateField = maxValue(Schema.String, 65536)
+const certificateIdentityFields = {
+  subject: certificateField,
+  issuer: Schema.optional(certificateField),
+  validFrom: Schema.optional(maxValue(Schema.String, 64)),
+  validTo: Schema.optional(maxValue(Schema.String, 64)),
+  subjectAltName: Schema.optional(certificateField),
+}
+const browserCertificateDetailsSchema = mutableStruct({
+  ...certificateIdentityFields,
+  fingerprint256: maxValue(Schema.String, 128),
+  serialNumber: maxValue(Schema.String, 256),
+})
+export type BrowserCertificateDetails = typeof browserCertificateDetailsSchema.Type
+const connectionFields = {
+  origin: maxValue(Schema.String, 8192),
+  protocol: Schema.optional(maxValue(Schema.String, 100)),
+  cipher: Schema.optional(maxValue(Schema.String, 100)),
+}
+export const browserPageCertificateSchema = Schema.Union([
+  mutableStruct({
+    ...connectionFields,
+    chain: mutableArray(browserCertificateDetailsSchema).pipe(
+      Schema.check(Schema.isMinLength(1)),
+      Schema.check(Schema.isMaxLength(32)),
+    ),
+  }),
+  // Electron can report the main response's certificate fields without exposing its DER chain.
+  mutableStruct({
+    ...connectionFields,
+    chain: mutableArray(Schema.Never),
+    leaf: mutableStruct(certificateIdentityFields),
+  }),
+])
+export type BrowserPageCertificate = typeof browserPageCertificateSchema.Type
+
+export function browserCertificateEntries(
+  certificate: BrowserPageCertificate,
+): readonly Partial<BrowserCertificateDetails>[] {
+  return 'leaf' in certificate ? [certificate.leaf] : certificate.chain
+}
+
 export type BrowserSitePermissions = {
   origin: string
   permissions: Record<BrowserSitePermission, BrowserPermissionSetting>
@@ -267,6 +309,10 @@ const browserPreviewBackgroundSchema = mutableStruct({
 })
 
 export const browserCommandSchema = Schema.Union([
+  mutableStruct({
+    action: Schema.Literal('clear-history'),
+    key: maxValue(minValue(Schema.String, 1), 500),
+  }),
   mutableStruct({
     action: Schema.Literal('element-snapshot'),
     key: maxValue(minValue(Schema.String, 1), 500),
@@ -354,7 +400,7 @@ export const browserCommandSchema = Schema.Union([
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
   mutableStruct({
-    action: Schema.Literal('clear-site-data'),
+    action: Schema.Literals(['clear-site-data', 'site-certificate']),
     origin: maxValue(minValue(Schema.String, 1), 8192),
     key: maxValue(minValue(Schema.String, 1), 500),
   }),
@@ -619,6 +665,12 @@ export type BrowserTabState = {
   /** An agent CDP client is currently connected to this tab. */
   agent?: boolean
 }
+export type BrowserPreviewInput =
+  | { type: 'window-blur' }
+  | { type: 'page-input' | 'opener-click'; key: string }
+export type BrowserPreviewInputBridge = (
+  listener: (input: BrowserPreviewInput) => void,
+) => () => void
 export type BrowserFrameBridge = (
   key: string,
   listener: (frame: BrowserFrame) => void,
@@ -639,6 +691,7 @@ export type BrowserBridge = (command: BrowserCommand) => Promise<
       downloads?: BrowserDownloadItem[]
       find?: BrowserFindResult
       documentRevision?: number
+      certificate?: BrowserPageCertificate
       sitePermissions?: BrowserSitePermissions
       navigationHistory?: BrowserNavigationHistory
       focusedWindowId?: number
@@ -687,6 +740,7 @@ export const desktopBrowserHostSchema = mutableStruct({
       taskId: Schema.String,
       /** Browser workspace tab ID when `taskId` is the shared-browser scope. */
       tabId: Schema.optional(Schema.String),
+      certificateSupported: Schema.optional(Schema.Literal(true)),
       profileId: Schema.String,
       endpoint: Schema.String.pipe(
         Schema.check(
@@ -739,7 +793,16 @@ export const browserExtensionCommandSchema = Schema.Union([
     profileId: browserProfileIdSchema,
   }),
   mutableStruct({
-    action: Schema.Literals(['enable', 'disable', 'remove', 'pin', 'unpin']),
+    action: Schema.Literals([
+      'enable',
+      'disable',
+      'remove',
+      'pin',
+      'unpin',
+      'checkUpdate',
+      'enableAutoUpdates',
+      'disableAutoUpdates',
+    ]),
     profileId: browserProfileIdSchema,
     id: browserExtensionIdSchema,
   }),
@@ -776,6 +839,13 @@ export type BrowserExtension = {
   unsupportedPermissions: string[]
   /** Permissions removed from a managed copy by an older Dovo release. Reinstall to review access. */
   removedPermissions: string[]
+  /** Available only for a verified Chrome Web Store installation in this profile. */
+  storeUpdates?: {
+    automatic: boolean
+    checkedAt?: number
+    pendingVersion?: string
+    error?: string
+  }
   error?: string
 }
 export type BrowserExtensionsResult = {
