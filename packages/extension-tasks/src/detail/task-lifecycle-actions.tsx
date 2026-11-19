@@ -9,8 +9,10 @@ import { isSnoozed } from '../list/task-priority'
 export function TaskLifecycleActions({
   task,
   owner,
+  compactReopen = false,
 }: {
   task: Task
+  compactReopen?: boolean
   owner?: Pick<TaskSource, 'runtimeId' | 'name' | 'online'>
 }) {
   const { taskSnoozeMinutes, taskSnoozeSchedule } = useAppPreferences()
@@ -83,13 +85,16 @@ export function TaskLifecycleActions({
       <Button
         type="button"
         variant="ghost"
-        className="h-6 gap-1 px-1 text-[0.6875rem]"
+        className={
+          task.archived && compactReopen ? 'size-6 p-0' : 'h-6 gap-1 px-1 text-[0.6875rem]'
+        }
+        title={task.archived && compactReopen ? 'Reopen thread' : undefined}
         aria-label={task.archived ? 'Reopen thread' : 'Settle thread'}
         disabled={pending || task.status === 'running'}
         onClick={() => void change({ archived: !task.archived, snoozedUntil: null })}
       >
         {task.archived ? <Undo2 className="size-3.5" /> : <Check className="size-3.5" />}
-        {task.archived ? 'Reopen' : 'Settle'}
+        {task.archived ? !compactReopen && 'Reopen' : 'Settle'}
       </Button>
       {error && (
         <span

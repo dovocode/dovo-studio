@@ -19,7 +19,7 @@ const mocks = {
   './task-branch-menu': `export const TaskBranchMenu=({label})=><button className="min-w-0 max-w-48 truncate">{label}</button>;`,
   './task-pull-status': `export const TaskPullStatus=()=>null;`,
   '../list/task-collection': `export const retainTaskOwner=()=>window.owner;`,
-  '../detail/task-lifecycle-actions': `export const TaskLifecycleActions=()=>null;`,
+  '../detail/task-lifecycle-actions': `export const TaskLifecycleActions=({task})=>task.archived?<button className="size-6" aria-label="Reopen thread">↶</button>:null;`,
   './run-details': `export const StepStatus=()=>null;`,
   './automation-detail': `export const AutomationDetail=()=>null;`,
   './cached-automation': `export const CachedAutomation=()=>null;`,
@@ -189,6 +189,26 @@ try {
   }
   for (const width of [240, 320, 390, 976]) {
     await setWidth(width)
+    await show('rows', { archived: true, editable: true, long: true })
+    await page.mouse.move(width - 1, 699)
+    const settled = page.locator('.studio-thread-row')
+    const headline = settled.locator('[data-thread-title]')
+    const idle = await headline.boundingBox()
+    const state = settled.locator('.studio-thread-status')
+    const badge = await state.boundingBox()
+    assert.ok(badge.x - (idle.x + idle.width) < 12, 'Settled titles use the space up to the status')
+    const check = state.locator('svg')
+    assert.equal(await check.isVisible(), true)
+    const reopen = settled.getByRole('button', { name: 'Reopen thread' })
+    await settled.hover()
+    assert.equal(await check.isVisible(), false)
+    assert.deepEqual(await headline.boundingBox(), idle)
+    await page.mouse.move(width - 1, 699)
+    await page.keyboard.press('Tab')
+    await reopen.focus()
+    assert.equal(await check.isVisible(), false)
+    assert.deepEqual(await headline.boundingBox(), idle)
+    await contained(reopen, settled)
     for (const archived of [false, true]) {
       await show('rows', { archived })
       const row = page.locator('.group\\/task')

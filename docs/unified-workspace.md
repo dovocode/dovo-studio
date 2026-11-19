@@ -68,6 +68,8 @@ info** to see them. On desktop and web, each child shows its age before the stat
 the icon to read the full status. Older computers can supply a status without an age. Threads and
 Unified keep child rows out of the overview.
 
+Settled desktop rows stay on one line. Hover or focus the row to show Reopen in the checkmark slot.
+
 On iPhone the thread list and open conversation measure the space below the native header. The
 three-dot menu sits on the title line above the last metadata icon.
 

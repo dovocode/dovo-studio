@@ -293,6 +293,7 @@ function TaskRowView({
   const highlighted = selected || multiSelected || !!selectedChildId
   return (
     <div
+      data-settled-action={(task.archived && editable && !task.bot) || undefined}
       data-highlighted={highlighted || undefined}
       className="studio-thread-row group/task relative w-full min-w-0"
     >
@@ -312,7 +313,9 @@ function TaskRowView({
               data-compact={compact || undefined}
               className={cn(
                 'studio-thread-card mb-[3px] h-auto w-full min-w-0 flex-row gap-2.5 whitespace-normal rounded-xl border border-transparent px-2.5 text-left font-normal',
-                compact ? 'min-h-9 items-center py-1.5' : 'studio-thread-row-two-line items-center',
+                compact
+                  ? 'min-h-9 items-center gap-2 py-1.5'
+                  : 'studio-thread-row-two-line items-center',
                 highlighted
                   ? 'border-transparent bg-accent/70 hover:bg-accent/80 group-hover/task:bg-accent/80'
                   : 'hover:bg-accent/40 group-hover/task:bg-accent/40',
@@ -331,6 +334,11 @@ function TaskRowView({
                 className={cn(
                   'studio-thread-card-body flex min-w-0 flex-1',
                   compact ? 'items-center gap-1.5' : 'flex-col items-stretch',
+                  compact &&
+                    !task.archived &&
+                    editable &&
+                    !task.bot &&
+                    'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
                 )}
               >
                 <span
@@ -340,7 +348,6 @@ function TaskRowView({
                     editable &&
                       !compact &&
                       'group-hover/task:pr-24 group-has-[:focus-visible]/task:pr-24 group-has-[[data-state=open]]/task:pr-24',
-                    compact && editable && 'pr-24',
                   )}
                 >
                   {titleIcon}
@@ -480,7 +487,12 @@ function TaskRowView({
             'right-2',
           )}
         >
-          <TaskLifecycleActions key={owner.runtimeId ?? 'local'} task={task} owner={owner} />
+          <TaskLifecycleActions
+            compactReopen={compact}
+            key={owner.runtimeId ?? 'local'}
+            task={task}
+            owner={owner}
+          />
         </div>
       )}
     </div>

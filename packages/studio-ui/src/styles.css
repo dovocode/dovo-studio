@@ -2622,6 +2622,18 @@ select:focus-visible,
 .studio-task-sidebar .studio-thread-disclosure:hover {
   background: color-mix(in srgb, var(--foreground) 4%, transparent);
 }
+/* Reopen uses the settled checkmark's slot, so hover and keyboard focus keep the title in place. */
+.studio-thread-row[data-settled-action] .studio-thread-status-icon {
+  box-sizing: content-box;
+  padding-inline: 5px;
+}
+.studio-thread-row[data-settled-action]:is(:hover, :has(:focus-visible))
+  .studio-thread-status-icon {
+  visibility: hidden;
+}
+.studio-thread-row[data-settled-action] .studio-thread-actions {
+  right: 0.625rem;
+}
 .studio-thread-actions > button {
   border-radius: 6px;
 }
