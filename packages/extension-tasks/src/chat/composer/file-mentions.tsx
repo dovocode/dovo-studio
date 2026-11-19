@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState, type RefObject } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type RefObject,
+} from 'react'
 import { Schema } from 'effect'
 import { Bot, FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
@@ -324,6 +332,22 @@ export function useFileMentions({
       setCaret(context?.caret ?? 0)
     } else setCaret(composerSelection(input.current, draft.length).start)
   }
+  const sourceInsertion = useRef<{ text: string; caret: number } | null>(null)
+  const placeSourceCaret = useCallback(
+    (position: number) => {
+      input.current?.focus()
+      selectComposerInput(input.current, position)
+      setCaret(position)
+    },
+    [input],
+  )
+  useLayoutEffect(() => {
+    const next = sourceInsertion.current
+    sourceInsertion.current = null
+    if (!next || rich || next.text !== draft) return
+    // Set the selection as the new draft reaches the textarea, before the next edit.
+    placeSourceCaret(next.caret)
+  }, [draft, placeSourceCaret, rich])
   /** Replace the typed mention; rich mode inserts at the caret instead of rewriting the draft. */
   const apply = (next: { text: string; caret: number }, markdown = false) => {
     if (!mention) return
@@ -337,12 +361,12 @@ export function useFileMentions({
       track()
       return
     }
+    if (next.text === draft) {
+      placeSourceCaret(next.caret)
+      return
+    }
+    sourceInsertion.current = next
     setDraft(next.text)
-    requestAnimationFrame(() => {
-      input.current?.focus()
-      selectComposerInput(input.current, next.caret)
-      setCaret(next.caret)
-    })
   }
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return

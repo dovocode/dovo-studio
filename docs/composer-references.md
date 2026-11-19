@@ -32,6 +32,9 @@ formatting before it undoes the text. Attachments carry the input font and text 
 and deletions restore the typing style, including when the last chip is deleted before JavaScript
 acknowledges the edit.
 
+In Markdown source mode, the caret moves to the end of the chosen reference when Studio inserts it.
+You can then select or replace the draft immediately.
+
 ## Sent user messages
 
 Sent user messages show the same file, skill, MCP server and model references. The final token is

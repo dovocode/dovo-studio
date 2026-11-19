@@ -365,13 +365,29 @@ try {
   await composer().pressSequentially('@Release')
   const botMention = page.getByRole('option').filter({ hasText: 'Release Bot two' })
   await botMention.waitFor()
-  await botMention.click()
+  // Make a selection before any animation frame queued by choosing the mention.
+  await botMention.evaluate((button) => {
+    const requestFrame = window.requestAnimationFrame
+    const frames = []
+    window.requestAnimationFrame = (callback) => frames.push(callback)
+    try {
+      button.click()
+    } finally {
+      window.requestAnimationFrame = requestFrame
+    }
+    window.finishMentionFrames = () => {
+      for (const callback of frames) callback(performance.now())
+    }
+  })
   assert.match(await composer().inputValue(), /@Release Bot two \(`studio:two:thread:bot`\)/)
   await page.waitForFunction(() => {
     const input = document.querySelector('textarea[data-task-id="bot"]')
     return document.activeElement === input && input.selectionStart === input.value.length
   })
-  await composer().fill('Unsent Bot message')
+  await composer().selectText()
+  await page.evaluate(() => window.finishMentionFrames())
+  await page.keyboard.insertText('Unsent Bot message')
+  assert.equal(await composer().inputValue(), 'Unsent Bot message')
   await page.getByRole('button', { name: 'Settings', exact: true }).click()
   assert.equal(await page.getByLabel('Bot project', { exact: true }).count(), 0)
   if (process.env.DOVO_BOT_STYLES) {
