@@ -2,16 +2,16 @@ import { expect, it } from 'vite-plus/test'
 import { insertMention, mentionQuery, rankPaths } from './file-mentions.js'
 
 it('finds the mention being typed and ignores e-mail addresses', () => {
-  expect(mentionQuery('Look at @src/ma', 15)).toEqual({ start: 8, query: 'src/ma' })
-  expect(mentionQuery('@', 1)).toEqual({ start: 0, query: '' })
+  expect(mentionQuery('Look at @file:src/ma', 20)).toEqual({ start: 8, query: 'src/ma' })
+  expect(mentionQuery('@file', 5)).toEqual({ start: 0, query: '' })
   expect(mentionQuery('mail me@example.com', 19)).toBeUndefined()
   expect(mentionQuery('@done and more', 14)).toBeUndefined()
 })
 
 it('inserts the chosen path in place of the query', () => {
-  expect(insertMention('Fix @comp please', 4, 9, 'src/composer.tsx')).toEqual({
-    text: 'Fix @src/composer.tsx  please',
-    caret: 22,
+  expect(insertMention('Fix @file:comp please', 4, 14, 'src/composer.tsx')).toEqual({
+    text: 'Fix @file:src/composer.tsx  please',
+    caret: 27,
   })
 })
 

@@ -3,7 +3,7 @@ import { taskSchema } from '../../workspace.js'
 import { decode } from '../../shared/schema.js'
 import { botMentionSuggestions, botMentionTargets, insertBotMention } from './bot-mentions.js'
 
-it('keeps same-named Bots on different computers distinct and inserts only a reference', () => {
+it('keeps same-named Bots on different computers distinct and inserts only a reference', async () => {
   const bot = decode(taskSchema, {
     id: 'same',
     title: 'Release helper',
@@ -33,6 +33,22 @@ it('keeps same-named Bots on different computers distinct and inserts only a ref
       { ...bot, id: 'normal', bot: undefined },
     ],
   }))
+  const { contextMentionSuggestions, agentMentionSuggestions, insertAgentMention } =
+    await import('./bot-mentions.js')
+  const agent = { id: 'review/1', name: bot.title, provider: 'codex' as const }
+  expect(contextMentionSuggestions(sources, 'release')).toEqual(
+    botMentionSuggestions(sources, 'release'),
+  )
+  const [choice] = agentMentionSuggestions('mac/1', 'my project', [agent], 'release')
+  expect(choice).toEqual({
+    kind: 'agent',
+    name: bot.title,
+    detail: 'Agent · codex',
+    reference: 'agent:mac%2F1/my%20project/review%2F1',
+  })
+  const inserted = insertAgentMention('Ask @re', 4, 7, choice)
+  expect(inserted.text).toBe('Ask @Release helper (`agent:mac%2F1/my%20project/review%2F1`) ')
+  expect(botMentionTargets(inserted.text)).toEqual([])
   const items = botMentionSuggestions(sources, 'release')
   expect(items.map((item) => item.reference).sort()).toEqual([
     'studio:linux:thread:same',
@@ -53,6 +69,7 @@ it('extracts only explicit mentions in sent prose', () => {
   for (const text of [
     'studio:host-a:thread:dory',
     '@Dory',
+    '@file:"notes/ @Dory (`studio:host-a:thread:dory`) file.md"',
     '```\n' + mention + '\n```',
     '# ' + mention,
     '[' + mention + '](https://example.com)',

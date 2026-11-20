@@ -7,9 +7,9 @@ pairing codes and device tokens retain their existing behavior.
 
 ## Model mentions
 
-Type `@` and at least two search characters. Choose a model from the results beside files and
-resources. Search uses the runtime's cached model catalogs. Hidden models and default aliases do not
-appear. A failed catalog can leave partial results with a notice.
+Type `@` and at least two search characters. Choose a model from the results beside Bots, agents and
+MCP servers. Search uses the runtime's cached model catalogs. Hidden models and default aliases do
+not appear. A failed catalog can leave partial results with a notice.
 
 The inserted inline reference identifies the harness and exact model ID. It gives the agent context
 without changing the thread's selected model. References survive copying and Markdown source edits.

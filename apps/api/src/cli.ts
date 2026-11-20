@@ -5,6 +5,15 @@ import { discoverNetworks, networkUrls } from './network.js'
 import { parseArgs } from 'node:util'
 import { responses, snapshotSchema } from '@dovo/protocol'
 import { connectionPaths, readConnection, type LocalConnection } from './connection.js'
+/** The snapshot fields this CLI reads. The overview omits conversation history. Older runtimes
+ * ignore `scope` and return a full snapshot, which still decodes with this schema. */
+const pairingSnapshotSchema = Schema.Struct({
+  owner: snapshotSchema.fields.owner,
+  internet: snapshotSchema.fields.internet,
+  devices: snapshotSchema.fields.devices,
+  pendingDevices: snapshotSchema.fields.pendingDevices,
+  pendingPeerUpgrades: snapshotSchema.fields.pendingPeerUpgrades,
+})
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
@@ -76,13 +85,16 @@ Device listings show paired devices, not live network presence.`)
   const live: Array<{
     path: string
     connection: LocalConnection
-    snapshot: Schema.Schema.Type<typeof snapshotSchema>
+    snapshot: Schema.Schema.Type<typeof pairingSnapshotSchema>
   }> = []
   const failures: string[] = []
   for (const path of candidates) {
     try {
       const connection = readConnection(path)
-      const snapshot = decode(snapshotSchema, await call(connection, '/api/snapshot'))
+      const snapshot = decode(
+        pairingSnapshotSchema,
+        await call(connection, '/api/snapshot?scope=overview'),
+      )
       if (!snapshot.owner) throw new Error('Owner credentials required to manage pairing')
       live.push({
         path,

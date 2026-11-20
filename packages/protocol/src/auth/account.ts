@@ -26,6 +26,15 @@ export const accountLoginSchema = mutableStruct({
   url: Schema.String,
   expiresAt: Schema.Number,
 })
+/**
+ * Body of a 409 from a Connect that stores the started deletion and finishes it without the
+ * session. Older Connect versions send 409 without `deletion`, and they need the client to retry.
+ */
+export const accountDeletionPendingSchema = Schema.Struct({
+  error: Schema.String,
+  deletion: Schema.Literal('durable'),
+})
+export type AccountDeletionPending = typeof accountDeletionPendingSchema.Type
 export type AccountDirectory = typeof accountDirectorySchema.Type
 export type AccountServer = typeof accountServerSchema.Type
 export type AccountLogin = typeof accountLoginSchema.Type

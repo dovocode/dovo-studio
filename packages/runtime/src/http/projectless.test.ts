@@ -1,13 +1,14 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, rm, writeFile, mkdir, readFile, symlink, realpath } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile, mkdir, readFile, symlink, realpath, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   SCRATCH_PROJECT_ID,
   defaultTaskHarness,
   decode,
   snapshotSchema,
   repositorySchema,
+  type Automation,
   type Task,
 } from '@dovo/protocol'
 import { startRuntime } from '../index'
@@ -508,8 +509,219 @@ it('keeps a linked project available while a thread has pending undo recovery', 
   }))
   const result = await f.request('/api/scm/repositories/delete', { repositoryId: 'recoverable' })
   expect(result.status).toBe(409)
-  expect(await result.text()).toContain('Finish the pending undo or redo')
+  expect(await result.text()).toContain('Review the saved Undo backup in the linked thread')
   expect(s.store.get().repositories.some((repository) => repository.id === 'recoverable')).toBe(
     true,
   )
+})
+/** Writes a file into a thread's private sandbox state and harness home folders. */
+async function sandboxFiles(
+  runtime: { services: Awaited<ReturnType<typeof startRuntime>>['services'] },
+  taskId: string,
+) {
+  const state = runtime.services.sandboxes.stateDirectory(taskId)
+  const files = [
+    join(state, 'private.txt'),
+    join(dirname(dirname(state)), 'homes', basename(state), 'harness', 'auth.json'),
+  ]
+  for (const file of files) {
+    await mkdir(dirname(file), { recursive: true })
+    await writeFile(file, 'private')
+  }
+  const present = async () =>
+    Promise.all(
+      files.map((file) =>
+        stat(file).then(
+          () => true,
+          () => false,
+        ),
+      ),
+    )
+  return { present }
+}
+it('keeps every project record when a later thread conflicts or the deletion commit fails', async () => {
+  const f = await setup()
+  const folder = join(f.root, 'atomic-project')
+  await mkdir(folder)
+  const repository = await registerFolder(f, folder)
+  await f.create(f.draft('first-thread', repository.id))
+  await f.create(f.draft('second-thread', repository.id))
+  const s = f.runtime.services
+  const flow: Automation = {
+    id: 'project-flow',
+    name: 'Project flow',
+    enabled: true,
+    nodes: [
+      {
+        id: 'task',
+        type: 'automation',
+        position: { x: 0, y: 0 },
+        data: {
+          kind: 'task',
+          label: 'Task',
+          trigger: 'manual',
+          schedule: '',
+          timezone: 'UTC',
+          objective: 'Project work',
+          agentId: '',
+          repositoryId: repository.id,
+          harness: defaultTaskHarness('codex'),
+          execution: 'main',
+        },
+      },
+    ],
+    edges: [],
+  }
+  s.store.update((workspace) => ({ ...workspace, automations: [flow] }))
+  const kept = (runtime: { services: typeof s }) => {
+    const workspace = runtime.services.store.get()
+    expect(workspace.repositories.some((entry) => entry.id === repository.id)).toBe(true)
+    expect(workspace.tasks.map((task) => task.id).sort()).toEqual(['first-thread', 'second-thread'])
+    expect(workspace.automations[0]?.enabled).toBe(true)
+    expect(workspace.automations[0]?.nodes[0]?.data.repositoryId).toBe(repository.id)
+  }
+  // A pending move on the second thread rejects the request before any thread is deleted.
+  s.store.updateTask('second-thread', (task) => ({
+    ...task,
+    machineHandoff: { id: 'pending-move', targetRuntimeId: 'other', state: 'preparing' },
+  }))
+  const conflict = await f.request('/api/scm/repositories/delete', { repositoryId: repository.id })
+  expect(conflict.status).toBe(409)
+  kept(f.runtime)
+  s.store.updateTask('second-thread', (task) => ({ ...task, machineHandoff: undefined }))
+  // A write failure in the commit, after cleanup has started, rolls back every record.
+  s.db.exec(
+    `CREATE TRIGGER fail_project_delete BEFORE INSERT ON documents WHEN NEW.id = 'workspace-deleted:repositories:${repository.id}' BEGIN SELECT RAISE(ABORT, 'Injected disk fault'); END`,
+  )
+  const files = await sandboxFiles(f.runtime, 'first-thread')
+  const releaseResources = vi.spyOn(s.agents, 'releaseTask')
+  const retireSideChats = vi.spyOn(s.titles, 'cancelSideChats')
+  const failed = await f.request('/api/scm/repositories/delete', { repositoryId: repository.id })
+  expect(failed.status).toBe(500)
+  expect(releaseResources).toHaveBeenCalled()
+  // Inputs, containers and private files go only after the commit, so a failed write keeps them.
+  expect(retireSideChats).not.toHaveBeenCalled()
+  expect(await files.present()).toEqual([true, true])
+  kept(f.runtime)
+  await f.runtime.close()
+  const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
+  cleanups.push(reopened.close)
+  kept(reopened)
+  reopened.services.db.exec('DROP TRIGGER fail_project_delete')
+  const retired = vi.spyOn(reopened.services.questions, 'cancelTask')
+  const retried = await fetch(`http://127.0.0.1:${reopened.port}/api/scm/repositories/delete`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repositoryId: repository.id }),
+  })
+  expect(retried.status).toBe(200)
+  expect(await files.present()).toEqual([false, false])
+  expect(retired.mock.calls.map(([id]) => id).sort()).toEqual(['first-thread', 'second-thread'])
+  const workspace = reopened.services.store.get()
+  expect(workspace.repositories.some((entry) => entry.id === repository.id)).toBe(false)
+  expect(workspace.tasks).toEqual([])
+  expect(workspace.automations[0]).toMatchObject({ enabled: false })
+  expect(workspace.automations[0]?.nodes[0]?.data.repositoryId).toBe(SCRATCH_PROJECT_ID)
+})
+it.each(['delete', 'archive'] as const)(
+  'keeps a thread sandbox and its private files when the %s commit fails',
+  async (action) => {
+    const f = await setup()
+    await f.create(f.draft('sandboxed-thread'))
+    const s = f.runtime.services
+    const files = await sandboxFiles(f.runtime, 'sandboxed-thread')
+    const fail =
+      action === 'delete'
+        ? "BEFORE INSERT ON documents WHEN NEW.id = 'workspace-deleted:tasks:sandboxed-thread'"
+        : "BEFORE INSERT ON workspace_tasks WHEN NEW.task_id = 'sandboxed-thread'"
+    s.db.exec(
+      `CREATE TRIGGER fail_lifecycle ${fail} BEGIN SELECT RAISE(ABORT, 'Injected disk fault'); END`,
+    )
+    const remove = vi.spyOn(s.sandboxes, 'remove')
+    const retireSideChats = vi.spyOn(s.titles, 'cancelSideChats')
+    const change = () =>
+      f.request('/api/tasks/lifecycle', { id: 'sandboxed-thread', action, removeWorktrees: false })
+    expect((await change()).status).toBe(500)
+    expect(remove).not.toHaveBeenCalled()
+    expect(retireSideChats).not.toHaveBeenCalled()
+    expect(await files.present()).toEqual([true, true])
+    const task = s.store.get().tasks.find((entry) => entry.id === 'sandboxed-thread')
+    expect(task?.archived).toBeFalsy()
+    s.db.exec('DROP TRIGGER fail_lifecycle')
+    // The commit stands even if the removal after it fails.
+    remove.mockRejectedValueOnce(new Error('Injected busy container'))
+    expect((await change()).status).toBe(200)
+    expect(retireSideChats).toHaveBeenCalledWith('sandboxed-thread')
+    expect(await files.present()).toEqual([true, true])
+    if (action === 'delete') {
+      // Repeating the deletion retries the removal.
+      expect((await change()).status).toBe(200)
+      expect(await files.present()).toEqual([false, false])
+    } else {
+      // Startup cleanup removes the folders of an archived thread.
+      await f.runtime.close()
+      const reopened = await startRuntime({
+        databasePath: f.databasePath,
+        ownerToken: token,
+        port: 0,
+      })
+      cleanups.push(reopened.close)
+      await vi.waitFor(async () => expect(await files.present()).toEqual([false, false]))
+    }
+  },
+)
+it('removes private sandbox folders of removed threads at startup and keeps active ones', async () => {
+  const f = await setup()
+  await f.create(f.draft('active-thread'))
+  const active = await sandboxFiles(f.runtime, 'active-thread')
+  const removed = await sandboxFiles(f.runtime, 'removed-thread')
+  await f.runtime.close()
+  const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
+  cleanups.push(reopened.close)
+  await vi.waitFor(async () => expect(await removed.present()).toEqual([false, false]))
+  expect(await active.present()).toEqual([true, true])
+})
+it('holds the thread through archive cleanup, so a restore or start cannot race the removal', async () => {
+  const f = await setup()
+  await f.create(f.draft('raced-thread'))
+  const s = f.runtime.services
+  const files = await sandboxFiles(f.runtime, 'raced-thread')
+  const remove = s.sandboxes.remove.bind(s.sandboxes)
+  let entered!: () => void
+  let release!: () => void
+  const removing = new Promise<void>((resolve) => (entered = resolve))
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  vi.spyOn(s.sandboxes, 'remove').mockImplementation(async (id) => {
+    entered()
+    await gate
+    return remove(id)
+  })
+  const lifecycle = (action: 'archive' | 'restore') =>
+    f.request('/api/tasks/lifecycle', { id: 'raced-thread', action })
+  const archiving = lifecycle('archive')
+  try {
+    await removing
+    // The archive has committed and its cleanup is pending.
+    expect(s.store.taskSummary('raced-thread').archived).toBe(true)
+    const restore = await lifecycle('restore')
+    expect(restore.status).toBe(409)
+    expect(await restore.text()).toContain('archived or deleted')
+    await expect(Effect.runPromise(s.tasks.startEffect('raced-thread'))).rejects.toThrow()
+    expect(s.store.taskSummary('raced-thread').archived).toBe(true)
+  } finally {
+    release()
+  }
+  expect((await archiving).status).toBe(200)
+  expect(await files.present()).toEqual([false, false])
+  expect((await lifecycle('restore')).status).toBe(200)
+  expect(s.store.taskSummary('raced-thread').archived).toBe(false)
+  // Failures release the reservation: before the commit, and in the removal after it.
+  vi.mocked(s.sandboxes.remove).mockRejectedValueOnce(new Error('Injected busy container'))
+  expect((await lifecycle('archive')).status).toBe(200)
+  expect((await lifecycle('restore')).status).toBe(200)
+  vi.spyOn(s.agents, 'releaseTask').mockRejectedValueOnce(new Error('Injected provider failure'))
+  expect((await lifecycle('archive')).status).toBe(500)
+  expect(s.store.taskSummary('raced-thread').archived).toBeFalsy()
+  expect((await lifecycle('archive')).status).toBe(200)
+  expect((await lifecycle('restore')).status).toBe(200)
 })

@@ -32,7 +32,16 @@ export function NotificationInputView({
     return viewport.observe(input, (callback) => {
       view.current?.measureInWindow?.((x, y, width, height) => callback({ x, y, width, height }))
     })
-  }, [viewport, enabled, input?.runtimeId, input?.taskId, input?.inputId, input?.inputType])
+  }, [
+    viewport,
+    enabled,
+    input?.runtimeId,
+    input?.runtimeIdentity,
+    input?.taskId,
+    input?.ownerTaskId,
+    input?.inputId,
+    input?.inputType,
+  ])
   return (
     <View ref={view} collapsable={false} onLayout={() => viewport?.refresh()} style={style}>
       {children}

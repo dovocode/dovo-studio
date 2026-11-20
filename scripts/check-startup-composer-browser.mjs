@@ -18,7 +18,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useApplicationState} from '../studio-core/src/runtime/application-state';`,
   '@dovo/studio-core': `export * from '../studio-core/src/shortcuts';export {clientScopeKey} from '../client-runtime/src/effects/request-scope';export const useConfirmation=()=>async options=>window.confirmationResponse?.(options)??true;export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;
     export * from '@dovo/protocol';
-    export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} from '../studio-core/src/workspace/composer-recovery';
+    export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey,recoverStartupComposer} from '../studio-core/src/workspace/composer-recovery';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
     export {imageEditorDocument,parseImageEditorResult} from '../client-runtime/src/images/image-editor';

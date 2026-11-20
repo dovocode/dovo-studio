@@ -10,7 +10,7 @@ const vite = await createServer({
   plugins: [tailwindcss()],
   root,
   logLevel: 'error',
-  server: { host: '127.0.0.1', port: 0 },
+  server: { host: '127.0.0.1', port: 0, watch: null },
 })
 await vite.listen()
 const origin = `http://127.0.0.1:${vite.httpServer.address().port}`
@@ -85,7 +85,22 @@ const read=useCallback(async(profile,path,input)=>{
  if(path==='/api/terminals/shells'){if(window.shellError)throw Error(window.shellError);if(window.delayShellOwner===profile.id)await new Promise(resolve=>window.finishShells=resolve);return {shells:[{id:'default',label:'Default ('+profile.id+')',path:'/bin/bash',args:['-l']},{id:profile.id==='local'?'bash':'fish',label:profile.id==='local'?'Bash':'Fish',path:profile.id==='local'?'/bin/bash':'/usr/bin/fish',args:['-l']}]}}
  if(path==='/api/scm/branches')return {branches:[{ref:'refs/heads/main',name:'main',remote:false,checkedOut:true},{ref:'refs/heads/feature',name:'feature',remote:false,checkedOut:false}],current:'main',revision:'fixture'};
  if(path==='/api/scm/worktrees/choices'){if(window.checkoutError)throw Error(window.checkoutError);return {worktrees:[{path:'/project/existing',branch:'feature',dirty:true}]}};
- if(path==='/api/terminals/workspace'){if(window.terminalError)throw Error(window.terminalError);const id=profile.id+'-created-'+window.calls.length;const session={id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)};const publish=()=>{owner.snapshot.terminals.push(session);window.refresh()};if(window.delayTerminalSnapshot)window.publishTerminalSnapshot=publish;else publish();if(window.delayTerminalResponse)await new Promise(resolve=>window.finishTerminalResponse=resolve);return {id}}
+ if(path==='/api/terminals/workspace'){
+  if(window.terminalError)throw Error(window.terminalError);
+  const results=window.terminalResults??=new Map();
+  const key=input.requestId&&JSON.stringify([profile.id,input.requestId]);
+  const previous=key&&results.get(key);
+  const id=previous||profile.id+'-created-'+window.calls.length;
+  if(!previous){
+   const session={id,taskId:'studio:terminals',title:'Created shell',exited:false,repositoryId:input.repositoryId,shellId:input.shellId,directory:input.existingWorktreePath??(input.repositoryId?'/project':'/home/'+profile.id)};
+   const publish=()=>{owner.snapshot.terminals.push(session);window.refresh()};
+   if(window.delayTerminalSnapshot)window.publishTerminalSnapshot=publish;else publish();
+   if(key)results.set(key,id);
+  }
+  if(window.dropTerminalResponse){window.dropTerminalResponse=false;throw Error('Terminal response lost')}
+  if(window.delayTerminalResponse)await new Promise(resolve=>window.finishTerminalResponse=resolve);
+  return {id}
+ }
  if(path==='/api/terminals/update'){if(window.terminalUpdateError)throw Error(window.terminalUpdateError);const session=owner.snapshot.terminals.find(item=>item.id===input.id);if(input.pinned!==undefined)session.pinned=input.pinned;if(input.settled!==undefined){session.settledAt=input.settled?new Date().toISOString():undefined;session.snoozedUntil=undefined}if(input.snoozedUntil!==undefined){session.snoozedUntil=input.snoozedUntil??undefined;if(input.snoozedUntil)session.settledAt=undefined}window.refresh();return {...session}}
  if(path==='/api/workspace'){let task=owner.snapshot.workspace.tasks.find(item=>item.id===input.id);if(!task&&input.create){task=input.create;owner.snapshot.workspace.tasks.push(task)}for(const [key,value] of Object.entries(input.changes))task[key]=value.after;window.refresh();if(window.delayCreate&&input.create)await new Promise(resolve=>window.finishCreate=resolve);return {applied:true,outcome:'applied',conflicts:[]}}
  return {ok:true};
@@ -179,7 +194,7 @@ useEffect(()=>{if(!control.tabs)control.onSetTabs?.(ownTabs)},[control.tabs,ownT
 useEffect(()=>{control.onTabsChange(tabs,tabs.at(-1)?.id);saveSharedBrowserWorkspaceTabs(tabs)},[tabs]);
 useEffect(()=>{const req=control.lifecycleRequest;if(!req)return;setTabs(previous=>previous.map(tab=>tab.id!==req.tabId?tab:req.action==='pin'||req.action==='unpin'?{...wakeBrowserTab(tab),pinned:req.action==='pin'}:req.action==='settle'?settleBrowserTab(tab):req.action==='snooze'?snoozeBrowserTab(tab,req.until):wakeBrowserTab(tab)));control.onLifecycleHandled?.(req.requestId)},[control.lifecycleRequest?.requestId]);
 useEffect(()=>{if(!control.newTabRequest||opened.current===control.newTabRequest)return;opened.current=control.newTabRequest;const id='page-'+control.newTabRequest;setTabs(previous=>[...previous,{id,url:'',title:'New page',kind:'remote',profileId:'default'}]);control.onSelect(id)},[control.newTabRequest]);
-useEffect(()=>{if(!openLink)return;const id='link-'+openLink.id;setTabs(previous=>[...previous,{id,url:openLink.url,title:openLink.url,kind:'remote',profileId:'default'}]);window.openedUrls.push(openLink.url);control.onSelect(id);onLinkOpened()},[openLink?.id]);
+useEffect(()=>{if(!openLink)return;const id='link-'+openLink.id;setTabs(previous=>[...previous,{id,url:openLink.url,title:openLink.url,kind:'remote',profileId:'default'}]);window.openedUrls.push(openLink.url);control.onSelect(id);openLink.onResult?.({tabId:id});onLinkOpened?.()},[openLink?.id]);
 return <>{snoozing&&<SnoozeDialog name={snoozing.title} onClose={()=>setSnoozing(null)} onSnooze={until=>setTabs(previous=>previous.map(item=>item.id===snoozing.id?snoozeBrowserTab(item,until):item))}/>}<div data-browser={control.focusTabId}>Browser surface</div>{control.tabTargets?.map(target=>{const tab=tabs.find(tab=>tab.id===target.tabId);if(!tab)return null;return createPortal(<BrowserTabRow tab={tab} workspaceType pinnedTile={target.pinnedTile} active={target.active} disabled={target.disabled} busy={target.disabled||!!tab.detached} state={activity[tab.id]} onMute={tab.kind==='web'?()=>{}:undefined} onError={()=>{}} onMenuOpen={()=>{}} onSelect={()=>{setTabs(previous=>previous.map(item=>item.id===tab.id?wakeBrowserTab(item):item));control.onSelect(tab.id)}} onPin={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?{...wakeBrowserTab(item),pinned:!item.pinned}:item))} onSettle={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?settleBrowserTab(item):item))} onSnooze={()=>setTabs(previous=>previous.map(item=>item.id===tab.id?snoozeBrowserTab(item,Date.now()+3600000):item))} onCustomSnooze={()=>window.openBrowserSnooze(tab)} onClose={()=>setTabs(previous=>previous.filter(item=>item.id!==tab.id))} onHome={tab.pinned?()=>{}:undefined} onEditHome={tab.pinned?()=>{}:undefined} onKeepAwake={()=>{}} onMove={()=>{}} windows={[{id:2,title:'Other window'}]} studioId={'studio:local:browser:workspace:'+tab.id} />,target.element,target.key)})}</>}`,
     },
   ],
@@ -277,6 +292,7 @@ try {
       connected: true,
       snapshot: {
         terminalRecoverySupported: true,
+        ...(id === 'remote' ? { terminalLiveRecoverySupported: true } : {}),
         workspace: workspace(id),
         terminals: [
           { id: 'shell', title: id + ' shell', taskId: 'studio:terminals', exited: false },
@@ -1895,6 +1911,17 @@ try {
           id: 'approval',
           activity: { state: 'blocked', kind: 'permission', message: 'Approve deployment?' },
         },
+        {
+          id: 'children',
+          activity: { state: 'idle' },
+          childActivities: [
+            {
+              id: 'build',
+              activity: { state: 'blocked', kind: 'permission', message: 'Write files?' },
+            },
+            { id: 'test', activity: { state: 'blocked', kind: 'auth' } },
+          ],
+        },
         { id: 'done', activity: { state: 'done' } },
         { id: 'error', activity: { state: 'error' } },
         { id: 'idle', activity: { state: 'idle' } },
@@ -1932,7 +1959,8 @@ try {
     ['Working', 'Program build', 'Working 40%', 'text-primary'],
     ['Needs input', 'Program approval', 'Needs input', 'text-status-warning'],
     ['Active', 'Program done', 'Done', 'text-status-success'],
-    ['Active', 'Program error', 'Failed', 'text-destructive'],
+    ['Needs input', 'Program children', 'Idle', 'text-muted-foreground'],
+    ['Needs input', 'Program error', 'Failed', 'text-destructive'],
     ['Active', 'Program idle', 'Idle', 'text-muted-foreground'],
     ['Active', 'Program unknown', 'Live session', 'text-muted-foreground'],
     ['Active', 'Program exited', 'Exited 7', 'text-destructive'],
@@ -1951,8 +1979,8 @@ try {
   }
   for (const [section, count] of [
     ['Pinned', 1],
-    ['Needs input', 1],
-    ['Active', 5],
+    ['Needs input', 3],
+    ['Active', 4],
     ['Working', 1],
     ['Snoozed', 1],
     ['Settled', 1],
@@ -2006,7 +2034,20 @@ try {
     window.computers[1].connected = true
     window.refresh()
   })
-  await selectSidebarItem('Terminal', 'Program build')
+  await page.evaluate(() => {
+    const terminals = window.computers[1].snapshot.terminals
+    const parent = terminals.find((item) => item.title === 'Program children')
+    terminals.find((item) => item.title === 'Program build').parentTerminalId = parent.id
+    window.refresh()
+  })
+  await selectSidebarItem('Terminal', 'Program children')
+  const childList = page.getByRole('list', { name: 'Child agents needing input' })
+  await childList.getByText('build needs permission · Write files?', { exact: true }).waitFor()
+  await childList.getByText('test needs authentication', { exact: true }).waitFor()
+  await page
+    .getByRole('navigation', { name: 'Related terminals' })
+    .getByRole('button', { name: /Child: Program build/ })
+    .click()
   await page.waitForSelector('[data-terminal="program-build"][data-owner="remote"]')
   await assertComposerHidden('terminal')
   await rowAction('Program build', 'Pin')
@@ -2357,6 +2398,28 @@ try {
   await page.getByLabel('Workspace request').fill('printf original-input')
   await page.getByRole('button', { name: 'Choose destination' }).click()
   await page.getByLabel('Workspace terminal shell').selectOption('fish')
+  await page.evaluate(() => {
+    window.computers = window.computers.map((owner) =>
+      owner.profile.id === 'remote'
+        ? {
+            ...owner,
+            snapshot: {
+              ...owner.snapshot,
+              terminalChildrenSupported: true,
+              workspaceTerminalRequestIdSupported: true,
+            },
+          }
+        : owner,
+    )
+    window.dropTerminalResponse = true
+    window.refresh()
+  })
+  await page.getByLabel('Parent terminal', { exact: true }).selectOption('shell')
+  await page.getByRole('button', { name: 'Run command' }).click()
+  await page.getByRole('alert').filter({ hasText: 'Terminal response lost' }).waitFor()
+  const unifiedRetry = await page.evaluate(
+    () => window.computers.find((owner) => owner.profile.id === 'remote').snapshot.terminals.length,
+  )
   await page.getByRole('button', { name: 'Run command' }).click()
   assert.equal(
     await page.evaluate(
@@ -2370,13 +2433,47 @@ try {
     ),
     'fish',
   )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.find((call) => call.path === '/api/terminals/workspace').input
+          .parentTerminalId,
+    ),
+    'shell',
+  )
   await assertComposerHidden('terminal')
+  const unifiedSubmissions = await page.evaluate(() =>
+    window.calls.filter((call) => call.path === '/api/terminals/workspace'),
+  )
+  assert.equal(unifiedSubmissions.length, 2)
+  assert.ok(unifiedSubmissions[0].input.requestId)
+  assert.equal(unifiedSubmissions[1].input.requestId, unifiedSubmissions[0].input.requestId)
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.computers.find((owner) => owner.profile.id === 'remote').snapshot.terminals.length,
+    ),
+    unifiedRetry,
+  )
+  await page.evaluate(() => {
+    window.computers = window.computers.map((owner) =>
+      owner.profile.id === 'remote'
+        ? {
+            ...owner,
+            snapshot: { ...owner.snapshot, workspaceTerminalRequestIdSupported: undefined },
+          }
+        : owner,
+    )
+    window.refresh()
+  })
   const lastUnifiedCreate = () =>
     page.evaluate(() =>
       window.calls.filter((call) => call.path === '/api/terminals/workspace').at(-1),
     )
   await returnHome()
   await page.getByLabel('Workspace destination').selectOption('terminal')
+  const unifiedRecovery = page.getByRole('button', { name: 'Remember session', exact: true })
+  assert.match(await unifiedRecovery.getAttribute('aria-description'), /running commands alive/)
   await page.getByLabel('Workspace input project').selectOption('project')
   await page.evaluate(() => {
     window.checkoutError = 'Checkout catalog unavailable'
@@ -2486,7 +2583,18 @@ try {
   await openStarter()
   await page.waitForFunction(() => !!window.finishShells)
   await page.getByLabel('Startup command', { exact: true }).fill('printf keep-draft')
+  const starterRecovery = page
+    .locator('[data-terminal-starter]:visible')
+    .getByRole('button', { name: 'Remember session' })
+  assert.match(
+    await starterRecovery.getAttribute('aria-description'),
+    /running commands alive when the Dovo runtime restarts/,
+  )
   await page.getByLabel('Terminal computer', { exact: true }).selectOption('local')
+  assert.match(
+    await starterRecovery.getAttribute('aria-description'),
+    /Other running commands stop/,
+  )
   await page.getByLabel('Terminal shell', { exact: true }).selectOption('bash')
   await page.evaluate(() => {
     window.delayShellOwner = undefined
@@ -2734,12 +2842,32 @@ try {
     0,
     'Opening and leaving a starter keeps the shell alive',
   )
-  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
   await page.evaluate(() => {
-    window.terminalError = 'Could not launch shell'
+    window.computers = window.computers.map((owner) => ({
+      ...owner,
+      snapshot: { ...owner.snapshot, workspaceTerminalRequestIdSupported: true },
+    }))
+    window.dropTerminalResponse = true
+    window.refresh()
   })
-  await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
-  await page.getByRole('alert').filter({ hasText: 'Could not launch shell' }).waitFor()
+  await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
+  await page.getByRole('button', { name: 'Open terminal', exact: true }).evaluate((button) => {
+    const form = button.closest('form')
+    form.requestSubmit()
+    form.requestSubmit()
+  })
+  await page.getByRole('alert').filter({ hasText: 'Terminal response lost' }).waitFor()
+  const dedicatedSubmissions = () =>
+    page.evaluate(() =>
+      window.calls.filter(
+        (call) =>
+          call.path === '/api/terminals/workspace' &&
+          call.input.command === 'printf dedicated-draft',
+      ),
+    )
+  const firstTerminalSubmit = await dedicatedSubmissions()
+  assert.equal(firstTerminalSubmit.length, 1, 'Two submits in the same event turn send one request')
+  assert.ok(firstTerminalSubmit[0].input.requestId)
   assert.equal(
     await page.getByLabel('Startup command', { exact: true }).inputValue(),
     'printf dedicated-draft',
@@ -2747,12 +2875,14 @@ try {
   )
   await page.getByRole('button', { name: 'Return to terminal', exact: true }).click()
   await page.evaluate(() => {
-    window.terminalError = undefined
     window.delayTerminalResponse = true
   })
   await page.getByRole('button', { name: 'New terminal', exact: true }).first().click()
   await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
   await page.waitForFunction(() => !!window.finishTerminalResponse)
+  const retriedTerminalSubmit = await dedicatedSubmissions()
+  assert.equal(retriedTerminalSubmit.length, 2)
+  assert.equal(retriedTerminalSubmit[1].input.requestId, firstTerminalSubmit[0].input.requestId)
   const pendingSession = await page.evaluate(
     () =>
       window.computers.find((owner) => owner.profile.id === 'remote').snapshot.terminals.at(-1).id,
@@ -2976,6 +3106,39 @@ try {
   assert.equal(await attentionBot.getByText('Needs input', { exact: true }).count(), 0)
   await attentionBot.click()
   await page.locator('[data-thread="attention-bot"][data-owner="local"]').waitFor()
+
+  await returnHome()
+  const pendingRoute = page.getByLabel('Workspace request', { exact: true })
+  await page.getByLabel('Workspace destination').selectOption('auto')
+  await page.evaluate(() => {
+    window.delayRoute = true
+    window.routeMode = 'terminal'
+    window.finishRoute = undefined
+  })
+  await pendingRoute.fill('echo cancelled-workspace-route')
+  await pendingRoute.press('Control+Enter')
+  await page.waitForFunction(() => !!window.finishRoute)
+  await attentionBot.click()
+  await pendingRoute.waitFor({ state: 'hidden' })
+  await returnHome()
+  await page.evaluate(() => {
+    window.delayRoute = false
+    window.finishRoute()
+  })
+  await page.clock.runFor(1000)
+  assert.equal(await pendingRoute.inputValue(), 'echo cancelled-workspace-route')
+  assert.equal(await page.getByLabel('Workspace destination').inputValue(), 'auto')
+  assert.equal(
+    await page.evaluate(() =>
+      window.calls.some(
+        (call) =>
+          call.path === '/api/terminals/workspace' &&
+          call.input.command === 'echo cancelled-workspace-route',
+      ),
+    ),
+    false,
+    'Leaving and returning to Home cancels the old automatic start',
+  )
 
   assert.deepEqual(errors, [])
   console.log(

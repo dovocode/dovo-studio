@@ -259,6 +259,7 @@ export function WorkspaceTerminalRow({
   state,
   stateTone = 'muted',
   stateDetail,
+  childAttention,
   computer,
   runtimeIcon,
   pinned,
@@ -281,6 +282,7 @@ export function WorkspaceTerminalRow({
   state: string
   stateTone?: TerminalStatusTone
   stateDetail?: string
+  childAttention?: string
   computer: string
   runtimeIcon?: RuntimeSnapshot['runtimeIcon']
   pinned: boolean
@@ -358,6 +360,11 @@ export function WorkspaceTerminalRow({
                 {offline ? 'Offline' : state}
               </span>
             </span>
+            {childAttention && (
+              <span className="truncate text-xs text-status-warning" title={childAttention}>
+                {childAttention}
+              </span>
+            )}
             <span className="studio-thread-card-context flex min-w-0 items-center gap-1 text-xs">
               {project !== checkout && (
                 <>

@@ -6,7 +6,8 @@ and use the delete action on the project. General is protected.
 The confirmation names the computer. Deletion applies only to that computer and cannot be undone.
 
 - **Will be removed:** The local project entry and its thread histories. Local artifact feeds for
-  those threads stop and are removed.
+  those threads stop and are removed. Dovo also removes its private copies of imported Pi
+  transcripts. The original Pi transcript stays.
 - **Will change:** Dovo disables affected automations, redirects project targets to General, and
   removes references to the checkout from other threads and automations.
 - **Will stay:** Project folders, Git repositories, worktrees, and their files stay on disk. Other
@@ -25,3 +26,10 @@ example, the snapshot can omit pending checkpoint restores, older runs, and work
 still owns. If work starts after the preview, the computer can reject the request. If the connection
 drops during the request, reconnect and check the project list before trying again. Dovo does not
 queue the request for later.
+
+Dovo checks every thread before cleanup starts. If one thread blocks deletion, such as a thread with
+a pending computer move, Dovo returns the blocker and changes nothing. Dovo removes the threads, the
+project entry and the automation changes in one database transaction. If that write fails, every
+record stays and automations stay on. Try again after you fix the cause. Agent processes, browsers
+and device sessions that cleanup already stopped stay stopped. Dovo removes thread containers,
+private sandbox files, side chats, questions and approvals only after the write commits.

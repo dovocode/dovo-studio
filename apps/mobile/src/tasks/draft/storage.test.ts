@@ -785,6 +785,8 @@ const restore = {
   attachmentIds: ['queued-file'],
   turnSettings: submission.turnSettings,
   draftTurnSettings: submission.turnSettings,
+  plan: true,
+  draftPlan: false,
   connection: 'original-connection-fingerprint',
 }
 
@@ -812,6 +814,14 @@ it('durably stages a restore before the request and survives restart with submis
     submission: { attempt: submission },
   })
   expect(after?.restore).toBeUndefined()
+})
+
+it('reopens a pending restore saved by an older build without Plan values', async () => {
+  const storage = memoryStorage()
+  const { plan: _plan, draftPlan: _draftPlan, ...older } = restore
+  await runClientEffect(createDraftStorage(storage).stageRestoreEffect('runtime.task', older, ''))
+  const record = await runClientEffect(createDraftStorage(storage).readRecordEffect('runtime.task'))
+  expect(record?.restore).toEqual(older)
 })
 
 it('does not duplicate a confirmed restore after final disk failure, retry or process restart', async () => {

@@ -6,6 +6,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import {
   RuntimeRequestError,
   decode,
+  mutableStruct,
   responseActionSendSchema,
   responseActionText,
   responseFormDefaults,
@@ -16,10 +17,14 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
+  computerDraftKey,
   createDetailDrafts,
-  detailDraftKey,
   useDetailDraft,
+  type SavedDraftKey,
 } from '../../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
+import { Schema } from 'effect'
 import { Action } from '../../../ui/controls/action'
 import { Choice } from '../../../ui/controls/choice'
 import { Field } from '../../../ui/controls/field'
@@ -35,16 +40,24 @@ type Draft = {
   attempt?: ResponseActionSend
   stale?: boolean
 }
-const drafts = createDetailDrafts<Draft>()
+// Edited text and form values stay on the device after the app restarts. `attempt` is a send
+// receipt and stays in memory only.
+const drafts = createDetailDrafts<Draft>({
+  persist: {
+    name: 'response-action',
+    schema: mutableStruct({
+      text: Schema.String,
+      values: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+      actionId: Schema.optional(Schema.String),
+      stale: Schema.optional(Schema.Boolean),
+    }),
+    storage: detailDraftStorage,
+  },
+})
 type Props = { task: Task; action: ThreadAction; onTerminal?: (id: string) => void }
 export function ResponseActionCard(props: Props) {
   const { profile } = useRuntime()
-  const key = detailDraftKey(
-    profile?.connection ?? null,
-    'response-action',
-    props.task.id,
-    props.action.id,
-  )
+  const key = computerDraftKey(profile, 'response-action', props.task.id, props.action.id)
   return <ResponseActionBody key={key} {...props} draftKey={key} />
 }
 function ResponseActionBody({
@@ -52,7 +65,7 @@ function ResponseActionBody({
   action,
   onTerminal,
   draftKey: key,
-}: Props & { draftKey: string }) {
+}: Props & { draftKey: SavedDraftKey }) {
   const uiText = useInterfaceText()
 
   const { snapshot, connected, callEffect } = useRuntime()
@@ -61,7 +74,7 @@ function ResponseActionBody({
   const navigate = useSheetNavigation()
   const [editing, setEditing] = useState(false)
   const [receipt, setReceipt] = useState<ThreadAction>()
-  const { draft, setField } = useDetailDraft(drafts, key, () => ({
+  const { draft, setField, persistence } = useDetailDraft(drafts, key, () => ({
     text: action.prompt,
     values: action.response ? responseFormDefaults(action.response) : {},
   }))
@@ -353,6 +366,7 @@ function ResponseActionBody({
                 </InterfaceText>
               </Text>
             )}
+            <DraftStorageNotice persistence={persistence} />
             {!!error && (
               <Text accessibilityRole="alert" style={styles.error}>
                 {error}

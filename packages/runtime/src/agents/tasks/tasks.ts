@@ -30,7 +30,7 @@ import { Cause, Deferred, Effect, Exit, Fiber, Layer, ManagedRuntime } from 'eff
 import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
-  checkpointCanUndo,
+  hasUndoBackup,
   checkpointRestoreNotice,
   agentTurnSettings,
   changeModelSettings,
@@ -68,16 +68,14 @@ import {
 } from '../execution/run-turn.js'
 import { TaskQueue } from './task-queue.js'
 import type { UnattendedSpend } from './spend-limit.js'
-import { safeFile } from '../../scm/repositories/paths.js'
 import type { Questions } from '../execution/questions.js'
 import type { Activity } from '../../storage/activity.js'
 import { pendingReviewComments, taskFeedbackSchema } from '@dovo/protocol'
 import type { Commands } from '../../storage/commands.js'
 import type { TaskCheckout } from '../../scm/tasks/task-checkout.js'
 import { randomUUID, createHash } from 'node:crypto'
-import { isDeepStrictEqual } from 'node:util'
 import type { Task, TaskMetadata, QuestionPrompt } from '@dovo/protocol'
-import { WorkspaceStore } from '../../storage/workspace.js'
+import { WorkspaceStore, type QuestionResponseReceipt } from '../../storage/workspace.js'
 import { GitService } from '../../scm/git/git.js'
 import { listBranches } from '../../scm/git/branches.js'
 import { AgentRegistry } from '../configuration/registry.js'
@@ -384,7 +382,7 @@ export class Tasks {
     const reservation = Symbol('task deletion')
     for (const id of ids) {
       if (this.deletionReservations.has(id))
-        throw new HttpError(409, 'This thread is already being deleted.')
+        throw new HttpError(409, 'This thread is already being archived or deleted.')
     }
     for (const id of ids) this.deletionReservations.set(id, reservation)
     return reservation
@@ -396,7 +394,10 @@ export class Tasks {
   requireIdle(id: string, reservation?: symbol) {
     const activeDeletion = this.deletionReservations.get(id)
     if (activeDeletion && activeDeletion !== reservation)
-      throw new HttpError(409, 'This thread is being deleted.')
+      throw new HttpError(
+        409,
+        'This thread is being archived or deleted. Try again when it finishes.',
+      )
     const task = this.store.taskSummary(id)
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the active turn before archiving or deleting this thread.')
@@ -608,215 +609,48 @@ export class Tasks {
       ok: true,
     }
   }
-  /** Undoes a turn's file changes (back to its before snapshot) or redoes them. The current
-   * files are saved first, and a note tells the agent, so nothing is lost and it stays in sync. */
-  async restoreTurn(id: string, turnId: string, direction: 'undo' | 'redo', note = true) {
+  /** Keep the current checkout and make the legacy backup trees available in history. */
+  reviewUndoBackup(id: string, turnId: string) {
     this.requireExecutionOwner(id)
-    const task = this.store.task(id)
-    if (task.status === 'running' || this.running.has(id))
-      throw new HttpError(409, 'Stop the agent before undoing or redoing a turn.')
-    if (task.turns?.some((item) => item.id !== turnId && item.checkpoint?.restorePending))
-      throw new HttpError(409, 'Finish the pending undo or redo before restoring another turn.')
-    const turn = task.turns?.find((item) => item.id === turnId)
-    const checkpoint = turn?.checkpoint
-    if (!turn || !checkpoint || (!checkpoint.before && !checkpoint.linked?.length))
-      throw new HttpError(404, 'This turn has no saved snapshot to go back to.')
-    if (turn.status === 'running') throw new HttpError(409, 'This turn is still running.')
-    const restoreNotice = checkpointRestoreNotice(task.turns ?? [], turnId)
-    if (restoreNotice && !checkpoint.restorePending) throw new HttpError(409, restoreNotice)
-    if (
-      direction === 'undo' &&
-      !checkpoint.restorePending &&
-      (checkpoint.undone || (!checkpoint.before && checkpoint.linked?.every((item) => item.undone)))
-    )
-      return { ok: true }
-    if (
-      direction === 'redo' &&
-      !checkpoint.undone &&
-      !checkpoint.linked?.some((item) => item.undone)
-    )
-      return { ok: true }
-    const cwd = await this.checkouts.directory(id)
-    const entries = [
-      ...(checkpoint.before ? [{ key: 'primary', directory: cwd, checkpoint }] : []),
-      ...(await Promise.all(
-        (checkpoint.linked ?? []).map(async (value) => ({
-          key: `linked/${value.checkoutId}`,
-          directory: await this.checkouts.linked.checkpointDirectory(value, true),
-          checkpoint: value,
-        })),
-      )),
-    ]
-    const lockAll = <A>(paths: string[], action: () => Promise<A>): Promise<A> =>
-      paths.length
-        ? this.withCheckoutMutation(paths[0], () => lockAll(paths.slice(1), action))
-        : action()
-    const validateCheckpoint = (current: Task, expected = checkpoint) => {
-      if (
-        !isDeepStrictEqual(current.turns?.find((item) => item.id === turnId)?.checkpoint, expected)
-      )
-        throw new HttpError(
-          409,
-          'This turn checkpoint changed. Refresh before undoing or redoing it.',
-        )
-    }
-    return lockAll([...new Set(entries.map((entry) => entry.directory))].sort(), async () => {
-      this.requireExecutionOwner(id)
-      validateCheckpoint(this.store.task(id))
-      const at = new Date().toISOString()
-      const restoreId = randomUUID()
-      const active = entries.filter((entry) =>
-        direction === 'undo'
-          ? !entry.checkpoint.undone || checkpoint.restorePending
-          : !!entry.checkpoint.undone,
-      )
-      const backups = new Map<string, string>()
-      for (const entry of active) {
-        const backup = await this.git.snapshot(
-          entry.directory,
-          `refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup-${restoreId}`,
-        )
-        backups.set(entry.key, backup)
-      }
-      if (direction === 'undo' && checkpoint.restorePending) {
-        for (const entry of active) {
-          const current = backups.get(entry.key)
-          if (!current || !entry.checkpoint.undone) continue
-          const changed = async (target: string) =>
-            (
-              await this.git.command(entry.directory, [
-                'diff',
-                '--name-only',
-                '--no-renames',
-                '-z',
-                target,
-                current,
-                '--',
-              ])
-            )
-              .split('\0')
-              .filter(Boolean)
-          const fromBefore = new Set(await changed(entry.checkpoint.before))
-          const edited = (await changed(entry.checkpoint.undone.backup)).filter((path) =>
-            fromBefore.has(path),
-          )
-          if (edited.length)
-            throw new HttpError(
-              409,
-              `Files changed after the interrupted undo in ${entry.directory}. Recovery is still pending. Inspect those edits before restoring; their current snapshot is ${current}, retained in refs/dovo/checkpoints/${turnId}/${entry.key}/restore-backup-${restoreId}.`,
-            )
-        }
-      }
-      const undoState = (key: string, saved: typeof checkpoint.undone) => {
-        if (direction === 'redo') return undefined
-        // An interrupted undo keeps its original redo target, even if some files are already undone.
-        if (checkpoint.restorePending && saved) return saved
-        const backup = backups.get(key)
-        return backup ? { at, backup } : saved
-      }
-      const next = {
-        ...checkpoint,
-        restorePending: undefined,
-        undone: undoState('primary', checkpoint.undone),
-        ...(checkpoint.linked
-          ? {
-              linked: checkpoint.linked.map((entry) => ({
-                ...entry,
-                undone: undoState(`linked/${entry.checkoutId}`, entry.undone),
-              })),
-            }
-          : {}),
-      }
-      const withCheckpoint = (current: Task, value: typeof checkpoint): Task => ({
-        ...current,
-        turns: current.turns?.map((item) =>
-          item.id === turnId && item.checkpoint ? { ...item, checkpoint: value } : item,
+    this.store.updateTaskHistory(id, (task) => {
+      const checkpoint = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+      if (checkpoint?.undoBackupReviewed) return task
+      if (!checkpoint || !hasUndoBackup(checkpoint))
+        throw new HttpError(404, 'No saved Undo backup for this turn.')
+      const backups = [
+        ...(checkpoint.undone ? [`Primary project: ${checkpoint.undone.backup}`] : []),
+        ...(checkpoint.linked ?? []).flatMap((link) =>
+          link.undone ? [`${link.repositoryName || link.repositoryId}: ${link.undone.backup}`] : [],
         ),
-      })
-      const applied: typeof entries = []
-      let recorded: typeof checkpoint | undefined
-      try {
-        if (direction === 'undo') {
-          // Persist recovery intent before the first file write, including across a process restart.
-          this.store.updateTaskHistory(id, (current) => {
-            validateCheckpoint(current)
-            return withCheckpoint(current, { ...next, restorePending: true })
-          })
-          recorded = this.store.task(id).turns?.find((item) => item.id === turnId)?.checkpoint
-          if (!recorded) throw new HttpError(409, 'The turn checkpoint disappeared before undo.')
-        }
-        for (const entry of active) {
-          const target =
-            direction === 'undo' ? entry.checkpoint.before : entry.checkpoint.undone?.backup
-          if (!target) continue
-          applied.push(entry)
-          await this.git.restoreSnapshot(
-            entry.directory,
-            target,
-            `refs/dovo/checkpoints/${turnId}/${entry.key}/${direction}-${restoreId}`,
-          )
-        }
-        const files = await this.git.changes(cwd).catch(() => undefined)
-        this.store.updateTaskHistory(id, (current) => {
-          validateCheckpoint(current, recorded ?? checkpoint)
-          return {
-            ...withCheckpoint(current, next),
-            ...(files ? { files: retainChangedFiles(current.files, files) } : {}),
-            messages: note
-              ? [
-                  ...current.messages,
-                  {
-                    id: randomUUID(),
-                    role: 'user',
-                    text:
-                      direction === 'undo'
-                        ? 'I undid the file changes from one of your earlier turns, so those files are back to how they were before it. Check the current files before continuing.'
-                        : 'I restored the file changes from that earlier turn again. Check the current files before continuing.',
-                    createdAt: at,
-                  },
-                ]
-              : current.messages,
-          }
-        })
-      } catch (error) {
-        const rollback = await Promise.allSettled(
-          applied.map((entry) => {
-            const backup = backups.get(entry.key)
-            return backup
-              ? this.git.restoreSnapshot(
-                  entry.directory,
-                  backup,
-                  `refs/dovo/checkpoints/${turnId}/${entry.key}/rollback-${restoreId}`,
-                )
-              : Promise.resolve()
-          }),
-        )
-        const failed = rollback.some((result) => result.status === 'rejected')
-        let pending = !!recorded || !!checkpoint.restorePending
-        if (recorded && !failed) {
-          try {
-            this.store.updateTaskHistory(id, (current) => {
-              validateCheckpoint(current, recorded)
-              return withCheckpoint(current, checkpoint)
-            })
-            pending = !!checkpoint.restorePending
-          } catch {
-            // Keep the durable intent when clearing it fails. A later undo can safely resume it.
-          }
-        }
-        throw new HttpError(
-          error instanceof HttpError ? error.status : 500,
-          `${errorMessage(error)}${failed ? ' Some checkouts could not be rolled back; backups remain in Git checkpoint refs.' : ' All checkouts restored to their previous contents.'}${pending ? ' Undo recovery is pending. Undo again to finish, or redo to recover the files saved before this undo.' : ''}`,
-        )
+      ]
+      const text = [
+        'Kept the current checkout files. Git retains the saved Undo backup trees for this turn.',
+        ...backups,
+        'In the matching repository, list the saved files with git ls-tree -r TREE. Read a saved file with git show TREE:path/to/file.',
+      ].join('\n')
+      return {
+        ...task,
+        turns: task.turns?.map((item) =>
+          item.id === turnId
+            ? {
+                ...item,
+                checkpoint: { ...checkpoint, restorePending: undefined, undoBackupReviewed: true },
+              }
+            : item,
+        ),
+        messages: [
+          ...task.messages,
+          {
+            id: randomUUID(),
+            role: 'user',
+            source: { kind: 'system', label: 'Undo backup recovery' },
+            text,
+            createdAt: new Date().toISOString(),
+          },
+        ],
       }
-      this.activity?.add(
-        'task',
-        id,
-        direction === 'undo' ? 'Undid turn changes' : 'Restored turn changes',
-        { turnId },
-      )
-      return { ok: true }
     })
+    return { ok: true }
   }
   /** Reverts one file: to how it was before a turn, or (without a turn) to the last commit.
    * The current files are saved to a ref first, and the agent gets a note. */
@@ -844,7 +678,6 @@ export class Tasks {
         'edit'
     )
       throw new HttpError(403, 'This linked checkout is reference-only')
-    await safeFile(cwd, path)
     return this.withCheckoutMutation(cwd, async () => {
       const tree = before ?? (await this.git.headTree(cwd))
       this.requireExecutionOwner(id)
@@ -913,17 +746,16 @@ export class Tasks {
     return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path, full, includePatch)
   }
   /** Runs the latest turn's request again, optionally with another model of the same
-   * provider. Undoes the turn's file changes first when the checkpoint supports it. */
+   * provider using the current files. */
   retryTurnEffect(id: string, turnId: string, model?: string) {
     return runtimeOperation(async () => {
       this.requireExecutionOwner(id)
       const task = this.store.task(id)
       if (task.status === 'running' || this.running.has(id))
         throw new HttpError(409, 'Stop the agent before trying again.')
-      // Check before undoing files: a paused Bot would only queue the repeated request.
       if (botPaused(task)) throw new HttpError(409, botPausedMessage)
-      if (task.turns?.some((item) => item.id !== turnId && item.checkpoint?.restorePending))
-        throw new HttpError(409, 'Finish the pending undo or redo before retrying another turn.')
+      if (task.turns?.some((item) => item.checkpoint?.restorePending))
+        throw new HttpError(409, 'Review the saved Undo backup before trying again.')
       const turn = task.turns?.at(-1)
       if (!turn || turn.id !== turnId)
         throw new HttpError(409, 'Only the latest turn can be tried again.')
@@ -966,8 +798,6 @@ export class Tasks {
         settings = agentTurnSettings(next, !!originalSettings?.harness || !!catalog?.acp)
         this.queue.validateSettings(id, settings)
       }
-      const undo = checkpointCanUndo(turn.checkpoint)
-      if (undo) await this.restoreTurn(id, turnId, 'undo', false)
       this.activity?.add(
         'task',
         id,
@@ -981,7 +811,7 @@ export class Tasks {
         review,
         attachments,
         settings,
-        text: `Try this again${turn.checkpoint?.sharedCheckout ? ' using the current files' : ' from scratch'}${selectedModel ? ` (you now run as ${selectedModel})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''}${request ? ` The request was:\n\n${request}` : ''}`,
+        text: `Try this again using the current files${selectedModel ? ` (you now run as ${selectedModel})` : ''}.${request ? ` The request was:\n\n${request}` : ''}`,
       }
     }).pipe(
       Effect.flatMap(({ text, plan, review, attachments, settings }) =>
@@ -2385,7 +2215,7 @@ export class Tasks {
             )
           if (task.turns?.some((turn) => turn.checkpoint?.restorePending))
             return Effect.fail(
-              new HttpError(409, 'Finish the pending undo or redo before running this task.'),
+              new HttpError(409, 'Review the saved Undo backup before running this task.'),
             )
           if (this.running.has(id))
             return Effect.fail(new HttpError(409, 'This task is already running'))
@@ -3169,11 +2999,7 @@ export class Tasks {
     id: string,
     runId: string,
     text: string,
-    receipt: {
-      id: string
-      fingerprint: string
-      attachments?: import('@dovo/protocol').Attachment[]
-    },
+    receipt: QuestionResponseReceipt,
   ) {
     const messageId = `answer:${receipt.id}`
     // The answer receipt and input are one transaction, before HTTP acknowledgement.

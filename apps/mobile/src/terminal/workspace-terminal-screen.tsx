@@ -1,6 +1,6 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useState } from 'react'
-import { Alert, View } from 'react-native'
+import { Alert, ScrollView, View } from 'react-native'
 import { router } from 'expo-router'
 import {
   responses,
@@ -8,6 +8,7 @@ import {
   runtimeReachability,
   STUDIO_TERMINAL_SCOPE,
   terminalStatus,
+  terminalFamilyLinks,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime } from '../runtime/connection/provider'
 import { useNavigation } from '../shell/navigation'
@@ -17,7 +18,7 @@ import { EmptyState } from '../ui/content/empty-state'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { ResourceActions, useTerminalActions } from '../workspace/resource-actions'
-import { workspaceItems } from '../workspace/workspace-items'
+import { workspaceItems, terminalHref } from '../workspace/workspace-items'
 import { TerminalSession } from './terminal-session'
 import { TerminalRename } from './terminal-rename'
 
@@ -32,7 +33,7 @@ export function WorkspaceTerminalScreen({
 
   const runtime = useRuntime()
   const { focused } = useNavigation()
-  const { styles } = useTheme()
+  const { colors, styles } = useTheme()
   const owner = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
   const loading =
     !runtime.ready ||
@@ -55,7 +56,11 @@ export function WorkspaceTerminalScreen({
   ])
   const [reconnectToken, setReconnectToken] = useState(0)
   const [closing, setClosing] = useState(false)
-  const status = terminal && terminalStatus(terminal, !!owner?.connected)
+  const status =
+    terminal && terminalStatus(terminal, !!owner?.connected, owner?.snapshot?.terminals)
+  const family = terminal
+    ? terminalFamilyLinks(terminal, owner?.snapshot?.terminals ?? [], !!owner?.connected)
+    : []
   const item = workspaceItems(owner ? [owner] : [], [], Date.now()).find(
     (entry) => entry.kind === 'terminal' && entry.terminal.id === terminalId,
   )
@@ -94,7 +99,7 @@ export function WorkspaceTerminalScreen({
         title={terminal?.title ?? uiText('Terminal')}
         subtitle={
           owner
-            ? `${runtimeComputerName(owner)}${status ? ` · ${status.label}` : ''}`
+            ? [runtimeComputerName(owner), status?.label].filter(Boolean).join(' · ')
             : runtime.ready
               ? uiText('Unpaired computer')
               : uiText('Loading computer…')
@@ -124,6 +129,17 @@ export function WorkspaceTerminalScreen({
                   disabled: actions.disabled || !terminal.customTitle,
                   onPress: () => void actions.update({ title: null }),
                 },
+                ...(terminal.parentTerminalId && owner?.snapshot?.terminalChildrenSupported
+                  ? [
+                      {
+                        label: uiText('Detach from parent'),
+                        icon: 'terminal' as const,
+                        overflow: true,
+                        disabled: actions.disabled,
+                        onPress: () => void actions.update({ parentTerminalId: null }),
+                      },
+                    ]
+                  : []),
                 {
                   label: uiText('Reconnect terminal'),
                   icon: 'refresh',
@@ -149,6 +165,30 @@ export function WorkspaceTerminalScreen({
             : []
         }
       />
+      {!!family.length && (
+        <ScrollView style={{ maxHeight: 112, flexGrow: 0 }}>
+          {family.map((link) => (
+            <Action
+              secondary
+              key={link.id}
+              label={link.label}
+              onPress={() => router.push(terminalHref(runtimeId, link.id))}
+            />
+          ))}
+        </ScrollView>
+      )}
+      {status?.childDetails && (
+        <ScrollView
+          style={{ maxHeight: 96, flexGrow: 0 }}
+          contentContainerStyle={{ paddingHorizontal: 12, paddingVertical: 4 }}
+        >
+          {status.childDetails.map((line) => (
+            <Text key={line} style={{ color: colors.warning, fontSize: 12 }}>
+              {line}
+            </Text>
+          ))}
+        </ScrollView>
+      )}
       {!terminal ? (
         <EmptyState
           icon="terminal"
@@ -201,6 +241,7 @@ export function WorkspaceTerminalScreen({
               <RetainedTerminalSession
                 id={terminalId}
                 focused={focused}
+                covered={menu || renaming}
                 readOnly={!!terminal.exited}
                 reconnectToken={reconnectToken}
               />
@@ -220,10 +261,12 @@ export function WorkspaceTerminalScreen({
 function RetainedTerminalSession({
   id,
   focused,
+  covered,
   reconnectToken,
   readOnly,
 }: {
   id: string
+  covered: boolean
   focused: boolean
   reconnectToken: number
   readOnly: boolean
@@ -267,6 +310,7 @@ function RetainedTerminalSession({
       <TerminalSession
         id={id}
         visible={focused}
+        covered={covered}
         readOnly={readOnly}
         reconnectToken={reconnectToken}
       />

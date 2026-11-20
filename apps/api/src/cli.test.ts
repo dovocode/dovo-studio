@@ -62,7 +62,7 @@ it('honors an explicit HTTPS public address when network discovery cannot determ
   request.mockImplementation((address) =>
     Promise.resolve(
       Response.json(
-        address.endsWith('/api/snapshot')
+        address.includes('/api/snapshot')
           ? snapshot
           : {
               code: '12345678',
@@ -123,7 +123,7 @@ it('prints a scannable pairing invitation in human-readable server output', asyn
     vi.fn<(address: string) => Promise<Response>>((address) =>
       Promise.resolve(
         Response.json(
-          address.endsWith('/api/snapshot') ? snapshot : { code: '00112233', expiresAt },
+          address.includes('/api/snapshot') ? snapshot : { code: '00112233', expiresAt },
         ),
       ),
     ),
@@ -181,7 +181,7 @@ it.each(['approve', 'deny'])(
       ],
     })
     const request = vi.fn<(address: string, options: RequestInit) => Promise<Response>>((address) =>
-      Promise.resolve(Response.json(address.endsWith('/api/snapshot') ? snapshot : { ok: true })),
+      Promise.resolve(Response.json(address.includes('/api/snapshot') ? snapshot : { ok: true })),
     )
     vi.stubGlobal('fetch', request)
     const output = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -265,7 +265,7 @@ it('shows only the public relay key for headless server admission', async () => 
   })
   const publicKey = 'A'.repeat(59)
   const request = vi.fn<(address: string) => Promise<Response>>(async (address) =>
-    Response.json(address.endsWith('/api/snapshot') ? snapshot : { publicKey }),
+    Response.json(address.includes('/api/snapshot') ? snapshot : { publicKey }),
   )
   vi.stubGlobal('fetch', request)
   const output = vi.spyOn(console, 'log').mockImplementation(() => {})
@@ -305,7 +305,7 @@ it.each(['status', 'off'])(
     const request = vi.fn<(address: string, init: RequestInit) => Promise<Response>>(
       async (address) =>
         Response.json(
-          address.endsWith('/api/snapshot')
+          address.includes('/api/snapshot')
             ? snapshot
             : { ...internet, enabled: false, connected: false },
         ),
@@ -329,3 +329,56 @@ it.each(['status', 'off'])(
     )
   },
 )
+
+it.each([
+  ['an overview', 'overview'],
+  ['an older runtime full snapshot', 'full'],
+])('lists paired devices from %s without decoding conversations', async (_label, reply) => {
+  vi.resetModules()
+  outputOptions.positionals = ['devices']
+  const pairing = {
+    owner: true,
+    devices: [
+      { id: 'phone', name: 'My phone', createdAt: '2026-11-20T10:00:00Z', revokedAt: null },
+      {
+        id: 'old-phone',
+        name: 'Old phone',
+        createdAt: '2026-11-01T10:00:00Z',
+        revokedAt: '2026-11-02T10:00:00Z',
+      },
+    ],
+    pendingDevices: [{ id: 'request', name: 'Tablet', expiresAt: '2026-11-20T10:02:00Z' }],
+  }
+  // An older runtime ignores `scope` and returns every field, including history this CLI never
+  // shows. A malformed message must not stop a device listing.
+  const full = {
+    ...pairing,
+    revision: 0,
+    workspace: {
+      version: 1,
+      agents: [],
+      repositories: [],
+      tasks: [{ id: 'thread', messages: [{ unexpected: true }] }],
+      automations: [],
+      runtimeAddress: '',
+    },
+    approvals: [],
+    terminals: [],
+    runs: [],
+  }
+  const request = vi.fn<(address: string) => Promise<Response>>(async (address) =>
+    address === 'http://127.0.0.1:8787/api/snapshot?scope=overview'
+      ? Response.json(reply === 'overview' ? pairing : full)
+      : Response.json({ error: 'Full snapshot requested' }, { status: 500 }),
+  )
+  vi.stubGlobal('fetch', request)
+  const output = vi.spyOn(console, 'log').mockImplementation(() => {})
+  await import('./cli')
+  await vi.waitFor(() => expect(output).toHaveBeenCalledOnce())
+  expect(request).toHaveBeenCalledOnce()
+  expect(JSON.parse(String(output.mock.calls[0][0]))).toEqual({
+    pending: pairing.pendingDevices,
+    internet: [],
+    paired: [pairing.devices[0]],
+  })
+})

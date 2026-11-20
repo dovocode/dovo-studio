@@ -52,7 +52,7 @@ async function fixture(
           publicationId,
           expiresAt: Date.now() + 600_000,
         })
-      if (url.endsWith('/v1/artifacts/session')) {
+      if (new URL(url).pathname === '/v1/artifacts/session') {
         if (options.accountChanges) await client.signOut()
         return Response.json({
           origin: 'https://artifacts.test',
@@ -80,6 +80,9 @@ it('registers the selected preview with a sharing scope and passes only a public
   expect(enable).toHaveBeenCalledWith(
     expect.objectContaining({ token: writer, publicationId, generation }),
   )
+  expect(
+    f.calls.some((call) => call.url === 'https://connect.test/v1/artifacts/session?reuse=1'),
+  ).toBe(true)
   const hosted = f.calls.filter((call) => call.url.startsWith('https://artifacts.test'))
   expect(hosted).toHaveLength(1)
   expect(new Headers(hosted[0]?.init?.headers).get('Authorization')).toBe('Bearer ' + sharing)

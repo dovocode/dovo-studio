@@ -1,10 +1,11 @@
 import { homedir } from 'node:os'
-import { realpath, readdir } from 'node:fs/promises'
+import { realpath, readdir, rename } from 'node:fs/promises'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
   decode,
   responses,
+  snapshotSchema,
   STUDIO_TERMINAL_SCOPE,
   SCRATCH_PROJECT_ID,
   taskSchema,
@@ -21,10 +22,11 @@ afterEach(async () => {
   for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
 })
 const ownerToken = 'workspace-terminal-owner-token-at-least-32-chars'
-async function setup() {
+async function setup(persistent = false) {
   const f = await fixture()
   cleanups.push(f.cleanup)
-  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  const databasePath = persistent ? join(f.directory, 'runtime.sqlite') : ':memory:'
+  const runtime = await startRuntime({ databasePath, ownerToken, port: 0 })
   cleanups.push(runtime.close)
   runtime.services.store.update(() => ({ ...f.workspace, tasks: [] }))
   const token = 'paired-computer-terminal-token-at-least-32-chars'
@@ -41,6 +43,22 @@ async function setup() {
     request('/api/terminals/update', input, credential)
   return { ...f, runtime, post, update, request, token }
 }
+it.each([true, false])(
+  'reports terminal recovery for the selected runtime storage (persistent: %s)',
+  async (persistent) => {
+    const { runtime, token } = await setup(persistent)
+    const response = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot?scope=overview`, {
+      headers: { Authorization: `Bearer ${token}` },
+    })
+    expect(response.status).toBe(200)
+    const snapshot = decode(snapshotSchema, await response.json())
+    expect(snapshot.terminalRecoverySupported).toBe(persistent)
+    expect(snapshot.terminalLiveRecoverySupported).toBe(
+      (persistent && runtime.services.terminals.supportsLiveRecovery()) || undefined,
+    )
+  },
+)
+
 it('opens home and project shells for a paired device without creating threads', async () => {
   const { runtime, post, directory, workspace } = await setup()
   const home = decode(responses.terminal, await (await post({})).json())
@@ -57,6 +75,41 @@ it('opens home and project shells for a paired device without creating threads',
   expect(runtime.services.terminals.get(project.id).directory).toBe(await realpath(directory))
   expect(runtime.services.store.get().tasks).toEqual([])
 })
+it('starts one named terminal for concurrent CLI launches and honors its exact directory', async () => {
+  const { directory, post, runtime } = await setup()
+  const input = { name: 'release monitor', workingDirectory: directory }
+  const attempts = await Promise.all([
+    post({ ...input, requestId: 'release-one' }, ownerToken),
+    post({ ...input, requestId: 'release-two' }, ownerToken),
+  ])
+  expect(attempts.map((item) => item.status).sort((a, b) => a - b)).toEqual([200, 409])
+  const winner = attempts.findIndex((item) => item.ok)
+  const requestId = winner === 0 ? 'release-one' : 'release-two'
+  const opened = decode(responses.terminal, await attempts[winner]!.json())
+  expect(opened).toMatchObject({
+    title: input.name,
+    customTitle: input.name,
+    directory: await realpath(directory),
+  })
+  expect(runtime.services.terminals.list()).toHaveLength(1)
+  const retry = await post({ ...input, requestId }, ownerToken)
+  expect(retry.status).toBe(200)
+  expect(decode(responses.terminal, await retry.json()).id).toBe(opened.id)
+})
+
+it('restricts arbitrary terminal directories to the owner and rejects conflicting checkouts', async () => {
+  const { directory, post, runtime } = await setup()
+  expect((await post({ workingDirectory: directory })).status).toBe(403)
+  for (const input of [
+    { workingDirectory: '.' },
+    { workingDirectory: join(directory, 'missing-dir') },
+    { workingDirectory: directory, repositoryId: 'repo' },
+    { workingDirectory: directory, sourceTerminalId: 'other' },
+  ])
+    expect((await post(input, ownerToken)).status).toBe(400)
+  expect(runtime.services.terminals.list()).toHaveLength(0)
+})
+
 it('rejects unknown projects and unpaired devices before opening shells', async () => {
   const { runtime, post } = await setup()
   expect((await post({ repositoryId: 'missing' })).status).toBe(404)
@@ -78,6 +131,67 @@ it('runs explicitly submitted input in the new standalone terminal', async () =>
     expect(runtime.services.terminals.get(session.id).buffer).toContain('workspace-command-ready'),
   )
 })
+
+it('runs each paired workspace terminal request once across overlap and response loss', async () => {
+  const { runtime, post } = await setup()
+  const command = 'echo workspace-launch-once'
+  const input = { requestId: 'first-terminal-request', command }
+  const write = vi.spyOn(runtime.services.terminals, 'input')
+  const submit = async () => {
+    const response = await post(input)
+    expect(response.status).toBe(200)
+    return decode(responses.terminal, await response.json())
+  }
+  const [first, second] = await Promise.all([submit(), submit()])
+  expect(second.id).toBe(first.id)
+  expect((await submit()).id).toBe(first.id)
+  expect((await post({ ...input, command: 'echo changed' })).status).toBe(409)
+  expect(runtime.services.terminals.list()).toHaveLength(1)
+  expect(write).toHaveBeenCalledExactlyOnceWith(first.id, `${command}\r`)
+  const separate = await post({ ...input, requestId: 'second-terminal-request' })
+  expect(separate.status).toBe(200)
+  expect(decode(responses.terminal, await separate.json()).id).not.toBe(first.id)
+  await runtime.services.terminals.close(first.id)
+  expect((await post(input)).status).toBe(404)
+  expect(write).toHaveBeenCalledTimes(2)
+})
+
+it.each(['main', 'split'] as const)(
+  'retries the same %s terminal request after the checkout returns',
+  async (mode) => {
+    const { runtime, post, directory } = await setup()
+    const { git, terminals } = runtime.services
+    const project = { repositoryId: 'repo' }
+    const offline = `${directory}-offline`
+    let selection: typeof project | { sourceTerminalId: string } = project
+    if (mode === 'main') {
+      const inspect = git.inspect.bind(git)
+      vi.spyOn(git, 'inspect').mockImplementationOnce(async (path) => {
+        const checkout = await inspect(path)
+        await rename(directory, offline)
+        return checkout
+      })
+    } else {
+      const source = decode(responses.terminal, await (await post(project)).json())
+      selection = { sourceTerminalId: source.id }
+      await rename(directory, offline)
+    }
+    const input = { ...selection, requestId: `retry-terminal-${mode}` }
+    try {
+      const response = await post(input)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ mutationRejected: true })
+      expect(terminals.list()).toHaveLength(mode === 'split' ? 1 : 0)
+    } finally {
+      await rename(offline, directory)
+    }
+    const response = await post(input)
+    expect(response.status).toBe(200)
+    const terminal = decode(responses.terminal, await response.json())
+    expect(terminal.directory).toBe(await realpath(directory))
+    expect(decode(responses.terminal, await (await post(input)).json()).id).toBe(terminal.id)
+  },
+)
 
 it('pins, settles, reopens and snoozes a standalone shell without replacing or stopping it', async () => {
   const { runtime, post, update } = await setup()

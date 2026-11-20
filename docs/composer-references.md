@@ -14,8 +14,15 @@ Unknown or removed harnesses use a generic model icon. Native inputs use bundled
 same Lucide and harness icon data and keep brand colors or apply the current text color as
 appropriate.
 
-Use the existing mention menu to insert a reference. A completed file token such as `@src/app.ts `
-becomes a file chip. Skill and MCP tokens must match available resource names. Model chips use the
+Type `@` to find Bots and agents. Bot results include paired computers. Agent results use the
+current computer and project settings. Selecting an agent inserts its name and scoped ID in the
+message. Use `@thread:title` to search other threads, including archived threads.
+
+Type `@file` to browse files or `@file:src/app` to search. A selection inserts `@file:src/app.ts`.
+Paths with spaces use quotes, such as `@file:"docs/Review Notes.md"`. Older saved file mentions such
+as `@src/app.ts` still show as chips. File search reads the project's Git file list as a stream and
+covers the first 200,000 files. In a larger project, the suggestions say so. Type more of the path
+to narrow the results. Skill and MCP tokens must match available resource names. Model chips use the
 existing encoded model reference. Model suggestions list each default harness once. Saved agents
 keep their own entries. A scoped built-in agent also keeps its entry when its account or launch
 settings differ from the default harness. Headings, code and links keep their normal text behavior.

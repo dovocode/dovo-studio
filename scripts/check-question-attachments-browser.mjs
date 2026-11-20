@@ -7,6 +7,7 @@ const native = `
 export const View=({children})=><div>{children}</div>;export const ScrollView=View;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
 export const Keyboard={dismiss(){}};export const Linking={openSettings(){}};export const Platform={OS:'ios'};
+export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const AccessibilityInfo={setAccessibilityFocus(){}};export const findNodeHandle=()=>null;
 export const Alert={alert:(title,text,buttons)=>{window.alerts.push(title);buttons?.find(button=>button.text==='Files')?.onPress?.()}};
 export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
@@ -34,7 +35,7 @@ try {
       '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
       '../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
       '../conversation/state/provider': `export const useConversationSelector=select=>select({visible:true});`,
-      'expo-router': `export const router={setParams(){}};`,
+      'expo-router': `export const router={setParams(){},push(href){window.pushed=href}};`,
       '../../notifications/answers': `export const notificationAnswerDraft=async()=>null;export const clearNotificationAnswerDraft=async()=>{};`,
       '../../notifications/viewport-view': `export const NotificationInputView=({children})=><div>{children}</div>;`,
       'expo-image-picker': `export const requestCameraPermissionsAsync=async()=>({granted:true});export const launchCameraAsync=async()=>({canceled:true});export const launchImageLibraryAsync=launchCameraAsync;`,
@@ -55,10 +56,11 @@ import {WorkspaceContext} from '${root}packages/studio-core/src/workspace/contex
 import {TaskQuestions} from '${root}${mobile ? 'apps/mobile/src/tasks/detail' : 'packages/extension-tasks/src/chat/thread'}/task-questions.tsx';
 const prompt=decode(questionPromptSchema,{title:'Answer with references',questions:[{id:'design',header:'Design',question:'Attach design'},{id:'notes',header:'Notes',question:'Attach notes',required:false},{id:'secret',header:'Secret',question:'Private',secret:true,required:false},{id:'number',header:'Number',question:'Count',inputType:'number',required:false}]});
 window.uploads=[];window.answers=[];window.acknowledged=[];window.alerts=[];window.fail=false;window.hold=false;window.expired=[];window.preparations=[];
-window.reuseSupported=true;window.reuseFiles=[];const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
+window.reuseSupported=true;window.reuseFiles=[];const task={id:'task',title:'Task',draft:'Untouched message',draftAttachments:[]};const child={id:'child',title:'Worker',draft:'',draftAttachments:[],delegation:{parentTaskId:'task',parentRunId:'run',key:'worker'}};
+window.seedChildRecovery=async()=>{const scope=runtimeRecoveryScope({address:'http://runtime.local',token:'original'});await questionRecovery.load(scope);questionRecovery.update(scope,{...pending,id:'child-question',taskId:'child'},{design:{selected:[],text:'Child answer'}})};const pending={id:'question',taskId:'task',prompt,createdAt:'',attachments:true};
 window.request=async(path,input)=>{if(path==='/api/attachments/draft-guard')return {guard:'guard'};if(path==='/api/attachments/reuse-draft'){if(window.reuseFail)throw Error('Attachment not found');window.reuseFiles=[...new Set([...window.reuseFiles,...input.ids])];return {ok:true}}if(path==='/api/attachments/prepare'){window.preparations.push(input);return {missing:input.ids.filter(id=>window.expired.includes(id))}}if(path==='/api/tasks/answer'){window.answers.push(input);if(window.fail)throw Error('Answer admission failed');return {ok:true}}if(path==='/api/attachments/remove')return {ok:true,revision:1};window.uploads.push(input);window.expired=window.expired.filter(id=>id!==input.id);if(window.hold)await new Promise(resolve=>window.release=resolve);return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:3},revision:1}};
 window.seedRecovery=async()=>{const scope=runtimeRecoveryScope({address:'http://runtime.local',token:'original'});await questionRecovery.load(scope);questionRecovery.update(scope,{...pending,id:'recover-me'},{design:{selected:[],text:'Reuse exact answer'},secret:{selected:[],text:'Do not copy this secret'}},{design:[{id:window.uploads[0].id,name:'answer.txt',mime:'text/plain',size:3}]})};const read=(...args)=>Effect.tryPromise({try:()=>window.request(...args),catch:e=>e});
-function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion(mode==='none'?null:{...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{questionDraftReuseSupported:window.reuseSupported,attachmentPreparationSupported:true,revision:1,questions:[question].filter(Boolean),workspace:{tasks:[task],repositories:[]}},request:window.request,readEffect:read,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task" onUseDraft={(text,done)=>{const input=document.querySelector('[aria-label="Normal message"]');input.value=[input.value,text].filter(Boolean).join("\\n\\n");done()}}/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[questionId,setQuestionId]=useState();const[questionNavigation,setQuestionNavigation]=useState(0);window.openQuestion=id=>{setQuestionId(id);setQuestionNavigation(previous=>previous+1)};const[mount,setMount]=useState(0);window.remount=()=>setMount(value=>value+1);const[connected,setConnected]=useState(true);const[question,setQuestion]=useState(pending);window.setQuestion=mode=>setQuestion(mode==='none'?null:{...pending,id:mode,prompt:{...prompt,unanswered:mode!=='legacy',questions:prompt.questions.map(q=>({...q,required:false}))}});window.connect=setConnected;window.runtime={connected,connection:{address:'http://runtime.local',token:'original'},profile:{id:'computer',name:'Computer',connection:{address:'http://runtime.local',token:'original'}},workspace:{tasks:[task],repositories:[]},snapshot:{questionDraftReuseSupported:window.reuseSupported,attachmentPreparationSupported:true,revision:1,questions:[question].filter(Boolean),workspace:{tasks:[task,child],repositories:[]}},request:window.request,readEffect:read,callEffect:read,readRuntimeEffect:(_owner,...args)=>read(...args),requestAttachmentEffect:(_owner,input)=>read('/api/attachments/upload',input),finishAttachmentEffect:(_owner,id)=>Effect.sync(()=>window.acknowledged.push(id)),reviewAttachments:()=>{},discardAttachment:async()=>{},refreshRuntimeEffect:()=>Effect.void};return <WorkspaceContext.Provider value={window.runtime}><TaskQuestions key={mount} taskId="task" questionId={questionId} questionNavigation={String(questionNavigation)} onUseDraft={(text,done)=>{const input=document.querySelector('[aria-label="Normal message"]');input.value=[input.value,text].filter(Boolean).join("\\n\\n");done()}}/><textarea data-task-id="task" aria-label="Normal message" defaultValue={task.draft}/></WorkspaceContext.Provider>};createRoot(document.getElementById('app')).render(<App/>);`,
       },
       bundle: true,
       write: false,
@@ -361,11 +363,68 @@ function App(){const[mount,setMount]=useState(0);window.remount=()=>setMount(val
     assert.ok(recoveredDraft.includes('Reuse exact answer'))
     assert.ok(!recoveredDraft.includes('Do not copy this secret'))
     assert.equal(recoveredDraft.split('Reuse exact answer').length, 2)
+    // An explicit request ID never opens a different pending request.
+    await page.evaluate(() => {
+      window.setQuestion('question')
+      window.openQuestion('closed-request')
+    })
+    await page
+      .getByText('This question has already been answered or is no longer pending.', {
+        exact: true,
+      })
+      .waitFor()
+    assert.equal(await page.getByRole('button', { name: 'Send answers', exact: true }).count(), 0)
+    assert.equal(await page.getByRole('button', { name: 'Dismiss', exact: true }).count(), 0)
+    if (!mobile) {
+      const closed = page.getByText(
+        'This question has already been answered or is no longer pending.',
+        { exact: true },
+      )
+      const release = async () => {
+        await page.getByRole('button', { name: 'Show pending questions (1)', exact: true }).click()
+        await page.getByRole('button', { name: 'Send answers', exact: true }).waitFor()
+      }
+      await release()
+      // The release covers this navigation only. The same mounted form asks again after the user
+      // opens another request and later the closed one, or opens the closed one again.
+      await page.evaluate(() => window.openQuestion('question'))
+      await page.getByRole('button', { name: 'Send answers', exact: true }).waitFor()
+      await page.evaluate(() => window.openQuestion('closed-request'))
+      await closed.waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Send answers', exact: true }).count(), 0)
+      await release()
+      await page.evaluate(() => window.openQuestion('closed-request'))
+      await closed.waitFor()
+      assert.equal(await page.getByRole('button', { name: 'Send answers', exact: true }).count(), 0)
+      assert.equal(await page.getByRole('button', { name: 'Dismiss', exact: true }).count(), 0)
+      await release()
+    }
+    await page.evaluate(() => window.openQuestion(undefined))
+    if (mobile) {
+      // The parent links to an answer saved for its child's closed question. Reuse stays in the child.
+      await page.evaluate(() => window.seedChildRecovery())
+      await page
+        .getByText('Saved answers · Answer with references · For child thread: Worker')
+        .waitFor()
+      await page.getByRole('button', { name: 'Open saved answers', exact: true }).click()
+      assert.deepEqual(await page.evaluate(() => window.pushed.params), {
+        runtimeId: 'computer',
+        taskId: 'child',
+        parentRuntimeId: 'computer',
+        parentTaskId: 'task',
+        parentTitle: 'Task',
+      })
+      assert.equal(
+        await page.getByText('Saved answers · Answer with references', { exact: true }).count(),
+        0,
+        'The parent does not reuse a child answer in its own draft',
+      )
+    }
     assert.deepEqual(errors, [])
     await page.close()
   }
   console.log(
-    'Question files: desktop and mobile form adapters passed per-question ownership, detached uploads, upload gating, file-only answers, unchanged drafts, saved attachment references, form remount recovery, failed admission retention and identical retry checks.',
+    'Question files: desktop and mobile form adapters passed per-question ownership, detached uploads, upload gating, file-only answers, unchanged drafts, saved attachment references, form remount recovery, failed admission retention, identical retry, exact request IDs and child answer links.',
   )
 } finally {
   await browser.close()

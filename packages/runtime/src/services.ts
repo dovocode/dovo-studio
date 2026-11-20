@@ -1,3 +1,5 @@
+import { piSessionStorage, recoverPiSessionCopies } from './agents/providers/pi/session-copies.js'
+import { reconcileTransferOwnership } from './scm/repositories/project-transfer-fences.js'
 import { LinearSettings } from './scm/work/linear-issues.js'
 import { DatabaseSpaceRecovery } from './storage/database-space.js'
 import { applyBotBackup } from './agents/tasks/bot-backup.js'
@@ -86,7 +88,7 @@ import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
 import { errorMessage } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
-import { Sandboxes } from './sandbox/sandboxes.js'
+import { Sandboxes, sandboxThreadRetention } from './sandbox/sandboxes.js'
 import { threadContainerSandbox } from './sandbox/thread-terminal.js'
 import { containerSandboxEnabled } from '@dovo/protocol'
 import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
@@ -309,9 +311,7 @@ export function createServices(
         ? join(tmpdir(), `dovo-sandboxes-${randomUUID()}`)
         : join(dirname(resolve(db.name)), 'sandboxes'),
     taskTools: () => tasks.taskToolsAddress(),
-    keepThread: (id) =>
-      store.get().tasks.some((task) => task.id === id && !task.archived && !task.archivedAt),
-    threadExists: (id) => store.get().tasks.some((task) => task.id === id),
+    ...sandboxThreadRetention(store),
     acpDistribution: (id) => acpInstallations.sandboxDistribution(id),
   })
   tasks.setSandboxes(sandboxes)
@@ -572,6 +572,10 @@ export function createServices(
       // The database may already be closed by a short-lived runtime; the log above remains.
     }
   })
+  // Reclaims private Pi transcripts whose thread deletion committed before the file removal.
+  void recoverPiSessionCopies(piSessionStorage(db), store, Date.now()).catch((error: unknown) => {
+    console.error('Could not remove private Pi transcripts of deleted threads', error)
+  })
   tasks.onTurnFailed = (id, turnId) => applyBotBackup(services, id, turnId)
   tasks.spendLimit = new UnattendedSpend(db, store, () => preferences.get().unattendedSpendLimitUsd)
   tasks.spendLimit.prune()
@@ -689,6 +693,8 @@ export function createServices(
     projectFiles: new ProjectFiles(git),
     sandboxes,
   }
+  // Before any thread can run, apply the latest move decisions, including after a backup restore.
+  reconcileTransferOwnership(db, store)
   return services
 }
 export interface Services {

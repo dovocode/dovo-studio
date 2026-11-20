@@ -1,5 +1,5 @@
 import { DictationNotice } from './dictation-notice'
-import { matchesApplicationShortcut, readAppPreferences } from '@dovo/studio-core'
+import { matchesApplicationShortcut, readAppPreferences, threadCommands } from '@dovo/studio-core'
 import { parseStudioLink, recordClientAction } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AppInterfaceLanguage } from './interface-language'
@@ -65,6 +65,7 @@ import { useAppearance, type WindowColors } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
 import { TaskNotificationNotice } from './task-notice'
 import { createExtensionCatalog } from './extension-catalog'
+import { navigationViewVisible, paletteCommands } from './navigation-commands'
 import { ActivityBar, visibleWorkspaceTarget, workspaceModeVisible } from './activity-bar'
 import type { InputPreviewBridge, DesktopUpdateBridge, DesktopUpdateState } from '@dovo/protocol'
 import { CommandPalette } from './command-palette'
@@ -805,7 +806,8 @@ function WorkbenchContent({
   const [palette, setPalette] = useApplicationState(false)
   const commands = useRef(new Map<string, StudioCommand>())
   const [commandVersion, refreshCommands] = useApplicationState(0)
-  const [detachBrowserRequested, setDetachBrowserRequested] = useState(false)
+  /** A command to run once its view mounts and registers it. */
+  const [pendingCommand, setPendingCommand] = useState<{ viewId: string; id: string }>()
   const registerCommand = useCallback((command: StudioCommand) => {
     if (commands.current.has(command.id)) throw new Error(`Duplicate command: ${command.id}`)
     commands.current.set(command.id, command)
@@ -815,23 +817,25 @@ function WorkbenchContent({
       refreshCommands((n) => n + 1)
     }
   }, [])
-  const detachBrowser = async () => {
-    const command = commands.current.get('browser.detach')
+  /** Runs a view's command, opening the view first when the command is not registered yet. */
+  const runViewCommand = async (destination: StudioNavigation, id: string) => {
+    const command = commands.current.get(id)
     if (command) return command.run()
-    if (await navigate({ viewId: 'browser' })) setDetachBrowserRequested(true)
+    if (await navigate(destination)) setPendingCommand({ viewId: destination.viewId, id })
   }
+  const detachBrowser = () => runViewCommand({ viewId: 'browser' }, 'browser.detach')
   useEffect(() => {
-    if (!detachBrowserRequested) return
-    if (target.viewId !== 'browser') {
-      setDetachBrowserRequested(false)
+    if (!pendingCommand) return
+    if (target.viewId !== pendingCommand.viewId) {
+      setPendingCommand(undefined)
       return
     }
-    const command = commands.current.get('browser.detach')
+    const command = commands.current.get(pendingCommand.id)
     if (command) {
-      setDetachBrowserRequested(false)
+      setPendingCommand(undefined)
       command.run()
     }
-  }, [detachBrowserRequested, target.viewId, commandVersion])
+  }, [pendingCommand, target.viewId, commandVersion])
   const api = useMemo<StudioHostApi>(
     () => ({
       navigate,
@@ -1006,24 +1010,14 @@ function WorkbenchContent({
       : undefined)
   const SettingsView = settingsTarget && views.get(settingsTarget.viewId)
   const View = views.get(target.viewId)
-  const navigationCommands = catalog.views
-    .filter(
-      (view) =>
-        view.navigationGroup !== 'hidden' &&
-        (view.id !== 'browser' || browserWorkspaceEnabled) &&
-        (view.id !== 'workspace' || unifiedWorkspaceEnabled) &&
-        (view.id !== 'bots' || botsOverviewEnabled) &&
-        workspaceModeVisible(view.id, workspaceModes) &&
-        (view.id !== 'artifacts' || artifactsEnabled) &&
-        (view.id !== 'issues' || showIssues) &&
-        (view.id !== 'jira' || showJira),
-    )
-    .map((view) => ({
-      id: `${view.extensionId}.open.${view.id}`,
-      title: `Open ${view.title}`,
-      ...(view.navigationGroup === 'settings' && view.keywords ? { aliases: [view.keywords] } : {}),
-      run: () => navigateSection(view.id),
-    }))
+  const navigationAvailability = {
+    ...workspaceModes,
+    botsOverviewEnabled,
+    browserWorkspaceEnabled,
+    artifactsEnabled,
+    showIssues,
+    showJira,
+  }
   if (captureContent) return <StudioHostProvider api={api}>{captureContent}</StudioHostProvider>
   return (
     <StudioHostProvider api={api}>
@@ -1098,20 +1092,7 @@ function WorkbenchContent({
                 onUpdate={updates ? () => void updates.install() : undefined}
                 onCheckUpdates={updates ? () => void updates.check() : undefined}
                 views={catalog.views.filter((view) =>
-                  !workspaceModeVisible(view.id, workspaceModes) ||
-                  (view.id === 'bots' && !botsOverviewEnabled)
-                    ? false
-                    : view.id === 'workspace'
-                      ? unifiedWorkspaceEnabled
-                      : view.id === 'browser'
-                        ? browserWorkspaceEnabled
-                        : view.id === 'artifacts'
-                          ? artifactsEnabled
-                          : view.id === 'issues'
-                            ? showIssues
-                            : view.id === 'jira'
-                              ? showJira
-                              : true,
+                  navigationViewVisible(view, navigationAvailability),
                 )}
                 activeId={settingsTarget?.viewId ?? target.viewId}
                 onSelect={(viewId) => {
@@ -1220,7 +1201,15 @@ function WorkbenchContent({
               {browser && onOpenLink && (
                 <ExternalBrowserLinkChooser
                   subscribe={onOpenLink}
-                  onOpen={() => navigate({ viewId: 'browser' })}
+                  onOpen={(tabId) =>
+                    navigate(
+                      !browserWindowId &&
+                        !threadWindow &&
+                        !workspaceModeVisible('browser', workspaceModes)
+                        ? { viewId: 'workspace', entityId: tabId }
+                        : { viewId: 'browser' },
+                    )
+                  }
                 />
               )}
               {(browserWorkspaceEnabled || unifiedWorkspaceEnabled) && browser && (
@@ -1378,19 +1367,32 @@ function WorkbenchContent({
           <CommandPalette
             open={palette}
             onOpenChange={setPalette}
-            commands={[
-              ...new Map(
-                [
-                  ...navigationCommands,
-                  ...readAppPreferences().savedFilterViews.map((view) => ({
-                    id: `saved-view.${view.id}`,
-                    title: `Open saved ${view.kind} view: ${view.name}`,
-                    run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
-                  })),
-                  ...commands.current.values(),
-                ].map((command) => [command.id, command]),
-              ).values(),
-            ]}
+            commands={paletteCommands({
+              views: catalog.views,
+              availability: navigationAvailability,
+              openSection: navigateSection,
+              threadCommands: Object.values(threadCommands).map((command) => ({
+                ...command,
+                title: uiText(command.title),
+              })),
+              openThreadCommand: (id) =>
+                void runViewCommand(
+                  {
+                    viewId: 'tasks',
+                    entityId:
+                      id === threadCommands.newThread.id
+                        ? undefined
+                        : threadSelections.current.get(runtimeRegistry.activeId),
+                  },
+                  id,
+                ),
+              extra: readAppPreferences().savedFilterViews.map((view) => ({
+                id: `saved-view.${view.id}`,
+                title: `Open saved ${view.kind} view: ${view.name}`,
+                run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
+              })),
+              registered: commands.current.values(),
+            })}
           />
         </div>
       </SidebarHeaderLayout>

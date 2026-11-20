@@ -18,6 +18,7 @@ import { serverDoctor } from './server-doctor.js'
 import { protectionReportText } from './server-service-protection.js'
 import { ManagedPolicy } from '@dovo/runtime/managed-policy'
 import { runRemoteServerUpdate } from './server-remote-update.js'
+import { runTerminalCommand, terminalCliOptions, terminalHelp } from './terminal-cli.js'
 import {
   installService,
   removeService,
@@ -38,7 +39,10 @@ async function forwardNode(args: string[]) {
 async function main() {
   const { values, positionals } = parseArgs({
     allowPositionals: true,
+    // Terminal options include --no-remember.
+    allowNegative: true,
     options: {
+      ...terminalCliOptions,
       'data-dir': { type: 'string' },
       host: { type: 'string' },
       port: { type: 'string' },
@@ -78,8 +82,12 @@ async function main() {
     throw new Error(
       'This server is managed by Homebrew, mise or an archive install. Finish active work, stop the server, upgrade with your package manager, then run dovo-server start. Your data directory is preserved.',
     )
+  if (values.help && command === 'terminal') {
+    console.log(terminalHelp(cliName))
+    return
+  }
   if (values.help) {
-    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | studio-tools | doctor | policy show|check <file> | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove | service protect preview|status|enable|disable> [options]
+    console.log(`Usage: ${cliName} <setup | start | status | stop | restart | pair | connect | terminal | studio-tools | doctor | policy show|check <file> | backup | backups | restore | recovery-export | update | service install|status|restart|update|remove | service protect preview|status|enable|disable> [options]
   --data-dir <directory>    Workspace data directory (default: ~/.dovo)
   --host <host>             Setup: 0.0.0.0, an IP, local, tailscale, or netbird
   --port <number>           Setup: fixed port (default: 51464)
@@ -100,6 +108,7 @@ Service protect (Linux, opt-in) writes one reversible systemd user drop-in so an
 leaves the runtime running. Preview and status change nothing; disable removes only Dovo's drop-in.
 Connect on|off|status manages account-authorized internet access (browser sign-in, no device pairing).
 Pair accepts code/devices/relay-key/approve/deny and --network/--manual, like pnpm pair.
+Terminal start|list|read|send|attach|wait|events|close manages shells. Run ${cliName} terminal --help.
 ${
   packaged
     ? 'Update with Homebrew or mise after stopping the server, then start again. Data is preserved.'
@@ -128,8 +137,9 @@ Build first: pnpm --filter @dovo/api... -r build`
       'update',
       'service',
       'remote-update',
+      'terminal',
     ].includes(command) ||
-    (!['pair', 'connect', 'service', 'policy'].includes(command) && args.length) ||
+    (!['pair', 'connect', 'service', 'policy', 'terminal'].includes(command) && args.length) ||
     (command === 'policy' &&
       !((args[0] === 'show' && args.length === 1) || (args[0] === 'check' && args.length === 2))) ||
     (command === 'service' &&
@@ -143,6 +153,43 @@ Build first: pnpm --filter @dovo/api... -r build`
     await startStudioMcp()
     return
   }
+  const terminalValues = {
+    name: values.name,
+    command: values.command,
+    cwd: values.cwd,
+    project: values.project,
+    parent: values.parent,
+    children: values.children,
+    remember: values.remember,
+    enter: values.enter,
+    wait: values.wait,
+    'after-turn': values['after-turn'],
+    until: values.until,
+    timeout: values.timeout,
+    lines: values.lines,
+    tail: values.tail,
+  }
+  if (command === 'terminal') {
+    const others = Object.entries(values).filter(
+      ([key, value]) =>
+        value !== undefined && !(key in terminalCliOptions) && !['data-dir', 'json'].includes(key),
+    )
+    if (others.length)
+      throw new Error(`terminal does not accept ${others.map(([key]) => `--${key}`).join(', ')}.`)
+    process.exitCode = await runTerminalCommand(
+      serverDirectory(values['data-dir']),
+      args,
+      { ...terminalValues, json: values.json },
+      cliName,
+      { stdin: process.stdin, stdout: process.stdout, stderr: process.stderr, signals: process },
+    )
+    return
+  }
+  const providedTerminalOptions = Object.entries(terminalValues)
+    .filter(([, value]) => value !== undefined)
+    .map(([key]) => `--${key}`)
+  if (providedTerminalOptions.length)
+    throw new Error(`${providedTerminalOptions.join(', ')} only apply to terminal commands.`)
   if (command === 'policy') {
     const policy = ManagedPolicy.load(args[0] === 'check' ? resolve(args[1]) : undefined)
     const report = { managed: !!policy.summary, policy: policy.summary ?? null }

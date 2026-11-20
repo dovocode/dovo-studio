@@ -1,7 +1,11 @@
 import { checkCodeAccess } from '../agent-tools/code-access.js'
 import { visionTool } from '../vision/tool.js'
 import { attachmentOcr } from '../vision/attachment-ocr.js'
-import { attachmentOcrRequestSchema, attachmentIdsSchema } from '@dovo/protocol'
+import {
+  attachmentOcrRequestSchema,
+  attachmentIdsSchema,
+  taskSearchScopeSchema,
+} from '@dovo/protocol'
 import { databaseSpace } from '../storage/database-space.js'
 import { conversationRead, conversationReadSchema } from '../agent-tools/conversation-read.js'
 import { productHelp, productHelpSchema } from '../agent-tools/product-help.js'
@@ -47,6 +51,8 @@ import {
   sendThreadActionEffect,
 } from '../agent-tools/thread-actions.js'
 import { taskListAction } from './endpoints/task-list-action.js'
+import { pullCommentReceiptId, pullCommentStatus } from './endpoints/pull-comment-receipts.js'
+import { pullCommentSubmissionSchema } from '@dovo/protocol'
 import { agentBrowserRequestSchema } from '../previews/agent-browser.js'
 import { taskWaitingRequestSchema } from '@dovo/protocol'
 import { McpError } from '@modelcontextprotocol/sdk/types.js'
@@ -1640,17 +1646,18 @@ export function route(
         throw new HttpError(404, 'Unknown sharing action')
       }
       if (method === 'POST' && path === '/api/tasks/search') {
-        const { query, id, before } = decode(
+        const { query, id, before, scope } = decode(
           mutableStruct({
             query: maxValue(Schema.String, 500),
             id: Schema.optional(idSchema),
             before: Schema.optional(idSchema),
+            scope: Schema.optional(taskSearchScopeSchema),
           }),
-          yield* serviceResult(body(request, 4096)),
+          yield* serviceResult(body(request, 32 * 1024)),
         )
         if (before !== undefined && !id)
           throw new HttpError(400, 'Choose one thread for paged search')
-        return searchRuntimeHistory(s, query, id, before)
+        return searchRuntimeHistory(s, query, id, before, scope)
       }
       if (method === 'GET' && path === '/api/snapshot') {
         return yield* runtimeSnapshot(
@@ -1797,7 +1804,13 @@ export function route(
           throw new HttpError(403, 'Only paired human clients can change the spend limit')
         if (input && typeof input === 'object' && 'memory' in input)
           throw new HttpError(400, 'Configure memory through its scope settings')
-        const settings = s.preferences.save(input)
+        const mutationId = request.headers['x-dovo-mutation-id']
+        const settings = s.preferences.save(
+          input,
+          receipted && typeof mutationId === 'string'
+            ? { deviceId: device.id, id: mutationId }
+            : undefined,
+        )
         // Turning the limit on starts every family counter at this moment.
         s.tasks.spendLimit?.limitUsd()
         const profileStatus =
@@ -2132,6 +2145,33 @@ export function route(
         } else s.linearSettings.remove()
         s.store.update((workspace) => workspace)
         return { source: s.linearSettings.source() }
+      }
+      if (method === 'POST' && path === '/api/scm/pulls/comment-status') {
+        const { submissionId } = decode(
+          pullCommentSubmissionSchema,
+          yield* serviceResult(body(request, 4096)),
+        )
+        return pullCommentStatus(s.mutations.status(device.id, pullCommentReceiptId(submissionId)))
+      }
+      if (method === 'POST' && path === '/api/scm/pulls/comment') {
+        const input = yield* serviceResult(body(request))
+        const submission =
+          input && typeof input === 'object' && 'submissionId' in input
+            ? decode(pullCommentSubmissionSchema, { submissionId: input.submissionId })
+            : undefined
+        // One press of Post creates at most one comment. A repeat returns the first outcome.
+        if (submission)
+          return yield* serviceResult(
+            s.mutations.execute(
+              device.id,
+              pullCommentReceiptId(submission.submissionId),
+              { method, path, input },
+              () =>
+                runClientEffect(
+                  scmRoute(request, path).pipe(Effect.provideService(RuntimeServices, s)),
+                ),
+            ),
+          )
       }
       if (path.startsWith('/api/scm/')) return yield* scmRoute(request, path)
       throw new HttpError(404, 'Endpoint not found')

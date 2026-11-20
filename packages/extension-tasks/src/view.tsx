@@ -1,4 +1,4 @@
-import { matchesApplicationShortcut } from '@dovo/studio-core'
+import { matchesApplicationShortcut, threadCommands } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { botScope } from './bots/bot-scope'
 import type { WorkspaceControls } from './chat/composer/composer-workspace'
@@ -889,32 +889,29 @@ export default function TasksView({
   useEffect(
     () =>
       registerCommand({
-        id: 'tasks.new',
-        title: uiText('New thread'),
-        aliases: ['new thread', 'new chat', 'start conversation'],
+        ...threadCommands.newThread,
+        title: uiText(threadCommands.newThread.title),
         run: newThread,
       }),
-    [registerCommand, newThread],
+    [registerCommand, newThread, uiText],
   )
   useEffect(() => {
     const disposers = [
       registerCommand({
-        id: 'tasks.switch',
-        title: 'Go to thread…',
-        aliases: ['go to thread', 'find thread', 'find thread', 'switch thread', 'switch thread'],
+        ...threadCommands.goToThread,
+        title: uiText(threadCommands.goToThread.title),
         run: () => setSearching('tasks'),
       }),
       registerCommand({
-        id: 'tasks.search',
-        title: 'Search conversations…',
-        aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
+        ...threadCommands.searchConversations,
+        title: uiText(threadCommands.searchConversations.title),
         run: () => setSearching('messages'),
       }),
     ]
     return () => {
       for (const dispose of disposers) dispose()
     }
-  }, [registerCommand])
+  }, [registerCommand, uiText])
   useEffect(
     () =>
       registerCommand({
@@ -995,7 +992,10 @@ export default function TasksView({
     ])
   })
   const sideAttention = useSideThreadAttention()
+  /** Each explicit attention route. A repeated route to the same request is a new navigation. */
+  const attentionSerial = useRef(0)
   const [attentionRoute, setAttentionRoute] = useState<{
+    serial: number
     target: SideThreadRequest
     runtimeId: typeof activeRuntimeId
     runtimeIdentity: typeof runtimeIdentity
@@ -1055,6 +1055,7 @@ export default function TasksView({
       }))
     } else setSplitId(target.id)
     setAttentionRoute({
+      serial: ++attentionSerial.current,
       target,
       runtimeId: activeRuntimeId,
       runtimeIdentity,
@@ -1542,6 +1543,13 @@ export default function TasksView({
                           ? primaryAttention.requestId
                           : compact && attentionTarget?.kind === 'input'
                             ? attentionTarget.requestId
+                            : undefined
+                      }
+                      questionNavigation={
+                        primaryAttention?.kind === 'input'
+                          ? `navigation:${navigationKey ?? ''}`
+                          : compact && attentionTarget?.kind === 'input'
+                            ? `attention:${attentionRoute?.serial ?? ''}`
                             : undefined
                       }
                       historyLoaded={usingStartupDraft || historyLoaded}
@@ -2236,6 +2244,11 @@ export default function TasksView({
                     <TaskConversation
                       questionId={
                         attentionTarget?.kind === 'input' ? attentionTarget.requestId : undefined
+                      }
+                      questionNavigation={
+                        attentionTarget?.kind === 'input'
+                          ? `attention:${attentionRoute?.serial ?? ''}`
+                          : undefined
                       }
                       historyLoaded={splitHistoryLoaded}
                       historyError={splitHistoryError}

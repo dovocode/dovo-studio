@@ -1,6 +1,6 @@
 import {
   checkpointFileCount,
-  checkpointUndoTurn,
+  undoBackupTurn,
   taskMetadata,
   decode,
   mutableStruct,
@@ -24,7 +24,7 @@ function pagedTask(task: Task): Task {
   const visible = new Set(page.turns.map((turn) => turn.id))
   const older = task.turns?.filter((turn) => !visible.has(turn.id)) ?? []
   const budget = taskBudgetUsage({ turns: older })
-  const undoable = checkpointUndoTurn(older)
+  const backup = undoBackupTurn(older)
   const result = {
     ...task,
     messages: page.messages,
@@ -37,8 +37,8 @@ function pagedTask(task: Task): Task {
           hasChanges: older.some(
             (turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0,
           ),
-          undoableTurnId: undoable?.id,
-          pendingUndoTurnId: undoable?.checkpoint?.restorePending ? undoable.id : undefined,
+          undoBackupTurnId: backup?.id,
+          pendingUndoTurnId: backup?.checkpoint?.restorePending ? backup.id : undefined,
         }
       : undefined,
   }
@@ -164,9 +164,8 @@ const olderTurnSchema = mutableStruct({
   finished: Schema.NullOr(Schema.String),
   tokens: Schema.NullOr(Schema.Number),
   changed: Schema.Number,
-  undoable: Schema.Number,
+  backup: Schema.Number,
   pending: Schema.Number,
-  sharedCheckout: Schema.Number,
 })
 const storedPages = new WeakMap<TaskSummary, Task>()
 const olderBudgets = new WeakMap<object, Map<string, Task['historyTotals']>>()
@@ -192,26 +191,16 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
           + COALESCE(json_array_length(link.value, '$.omitted'), 0))
         FROM json_each(item.value, '$.checkpoint.linked') AS link), 0) > 0) AS changed,
     COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) AS pending,
-    COALESCE(json_extract(item.value, '$.checkpoint.sharedCheckout'), 0) AS sharedCheckout,
-    (json_extract(item.value, '$.status') != 'running'
-      AND (COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) = 1
-      OR (COALESCE(length(json_extract(item.value, '$.checkpoint.error')), 0) = 0
-      AND ((COALESCE(length(json_extract(item.value, '$.checkpoint.after')), 0) > 0
-        AND COALESCE(json_extract(item.value, '$.checkpoint.undone'), 0) = 0
-        AND COALESCE(json_array_length(item.value, '$.checkpoint.files'), 0)
-          + COALESCE(json_array_length(item.value, '$.checkpoint.omitted'), 0) > 0)
-      OR EXISTS (SELECT 1 FROM json_each(item.value, '$.checkpoint.linked') AS link
-        WHERE COALESCE(length(json_extract(link.value, '$.after')), 0) > 0
-          AND COALESCE(length(json_extract(link.value, '$.error')), 0) = 0
-          AND COALESCE(json_extract(link.value, '$.undone'), 0) = 0
-          AND COALESCE(json_array_length(link.value, '$.files'), 0)
-            + COALESCE(json_array_length(link.value, '$.omitted'), 0) > 0))))) AS undoable
+    (COALESCE(json_extract(item.value, '$.checkpoint.undoBackupReviewed'), 0) = 0 AND
+      (json_extract(item.value, '$.checkpoint.undone.backup') IS NOT NULL OR
+       EXISTS (SELECT 1 FROM json_each(item.value, '$.checkpoint.linked') AS link
+         WHERE json_extract(link.value, '$.undone.backup') IS NOT NULL))) AS backup
     FROM conversation_items AS item WHERE task_id = ? AND kind = 'turn'
       AND item_id NOT IN (SELECT value FROM json_each(?)) ORDER BY ordinal`)
   let tokens: number | undefined
   let milliseconds = 0
   let hasChanges = false
-  let undoableTurnId: string | undefined
+  let undoBackupTurnId: string | undefined
   let pendingUndoTurnId: string | undefined
   const now = Date.now()
   for (const value of rows.iterate(summary.id, JSON.stringify(visible))) {
@@ -221,15 +210,14 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
     const end = turn.finished ? Date.parse(turn.finished) : now
     if (Number.isFinite(start) && Number.isFinite(end)) milliseconds += Math.max(0, end - start)
     hasChanges ||= !!turn.changed
-    if (turn.undoable && turn.pending) pendingUndoTurnId ??= turn.id
-    if (turn.sharedCheckout) undoableTurnId = undefined
-    else if (turn.undoable) undoableTurnId = turn.id
+    if (turn.pending) pendingUndoTurnId ??= turn.id
+    if (turn.backup) undoBackupTurnId ??= turn.id
   }
   const totals = {
     tokens,
     milliseconds,
     hasChanges,
-    undoableTurnId: pendingUndoTurnId ?? undoableTurnId,
+    undoBackupTurnId: pendingUndoTurnId ?? undoBackupTurnId,
     pendingUndoTurnId,
   }
   if (earlier && latestVisible) {

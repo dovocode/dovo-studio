@@ -78,6 +78,7 @@ import {
 } from '../state/optimistic-tasks'
 import { nativeEffect, mobileWorkflow } from '../state/native-effect'
 import { useApplicationState } from '../state/application-state'
+import { nextAppForeground, subscribeAppResume } from '../state/app-active'
 import {
   createContext,
   useCallback,
@@ -208,7 +209,10 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const mutationRecoveryWorker = useRef<{
     refresh: (connection?: RuntimeConnection) => void
   } | null>(null)
+  // `appActive` flushes local caches on any interruption. `appForeground` owns connections and
+  // network polling, so an iOS `inactive` prompt does not restart them.
   const [appActive, setAppActive] = useApplicationState(AppState.currentState === 'active')
+  const [appForeground, setAppForeground] = useApplicationState(AppState.currentState === 'active')
   const sharedStateSync = useRef<SharedStateSynchronization | null>(null)
   const peerVersion = useSyncExternalStore(
     subscribePeerConnections,
@@ -252,6 +256,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     const subscription = AppState.addEventListener('change', (state) => {
       setPeerConnectionsAppState(state)
       setAppActive(state === 'active')
+      setAppForeground((previous) => nextAppForeground(previous, state))
     })
     return () => {
       disposed = true
@@ -634,7 +639,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   )
   const workspaceRefreshWorker = useRef<ReturnType<typeof startPolling> | null>(null)
   useEffect(() => {
-    if (!ready || !appActive) return
+    if (!ready || !appForeground) return
     const worker = startPolling(
       Effect.suspend(() =>
         Effect.forEach(
@@ -656,7 +661,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       workspaceRefreshWorker.current = null
       void worker.stop()
     }
-  }, [ready, appActive, registry.profiles, mutations, refreshProfileEffect])
+  }, [ready, appForeground, registry.profiles, mutations, refreshProfileEffect])
   useEffect(() => {
     workspaceRefreshWorker.current?.refresh()
   }, [mutationVersion])
@@ -782,12 +787,12 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       ? profile.connection.address
       : undefined
   useEffect(() => {
-    if (!appActive || !selectedPeerAddress || !registryLoaded) return
+    if (!appForeground || !selectedPeerAddress || !registryLoaded) return
     void preconnectPeerConnection(selectedPeerAddress).catch((error: unknown) => {
       // Normal requests publish connection status; retain the warmup failure for diagnostics.
       console.warn('Selected computer connection warmup failed:', error)
     })
-  }, [appActive, selectedPeerAddress, registryLoaded])
+  }, [appForeground, selectedPeerAddress, registryLoaded])
   const connection = profile?.connection ?? null
   const active =
     profile && sameRuntimeConnection(entries[profile.id]?.profile.connection, profile.connection)
@@ -1310,7 +1315,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     [readEffect, profile, refreshProfileEffect],
   )
   useEffect(() => {
-    if (!ready || recovering || !appActive) return
+    if (!ready || recovering || !appForeground) return
     // A computer with a weak connection must not hold up another computer's outbox.
     const workers = registry.profiles.map((owner) => ({
       owner,
@@ -1334,7 +1339,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       mutationRecoveryWorker.current = null
       for (const { worker } of workers) void worker.stop()
     }
-  }, [ready, recovering, appActive, registry.profiles, mutations])
+  }, [ready, recovering, appForeground, registry.profiles, mutations])
   const call = useCallback<Call>((...args) => runClientEffect(callEffect(...args)), [callEffect])
   useEffect(() => {
     let disposed = false
@@ -1431,17 +1436,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         Effect.ensuring(Effect.sync(() => setRecovering(false))),
       )
     void commands.run(recover)
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') void commands.run(recover)
-    })
+    const unsubscribe = subscribeAppResume(() => void commands.run(recover))
     return () => {
-      subscription.remove()
+      unsubscribe()
       void commands.stop()
     }
   }, [registryLoaded, storageLock, persistRegistryEffect, beforeReplace])
   useEffect(() => {
     // Connect while disk restoration runs. A live baseline must not wait for saved history.
-    if (!registryLoaded || recovering || !profile || !appActive) return
+    if (!registryLoaded || recovering || !profile || !appForeground) return
     let stopped = false
     let wakeFallback = () => {}
     let connecting = true
@@ -1523,13 +1526,21 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       live.stop()
       void polling.stop()
     }
-  }, [registryLoaded, recovering, profile, appActive, refreshProfileEffect, updateEntry, mutations])
+  }, [
+    registryLoaded,
+    recovering,
+    profile,
+    appForeground,
+    refreshProfileEffect,
+    updateEntry,
+    mutations,
+  ])
   useEffect(() => {
     // Once cache lookup finishes, an uncached computer needs its immediate HTTP fallback.
     if (ready) wakeSelectedFallback.current?.()
   }, [ready])
   useEffect(() => {
-    if (!ready || !appActive || computerRefresh === 'manual') return
+    if (!ready || !appForeground || computerRefresh === 'manual') return
     let initial = true
     const polling = startPolling(
       Effect.suspend(() => {
@@ -1565,16 +1576,15 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         onError: (error) => setStorageError(String(error)),
       },
     )
-    const subscription = AppState.addEventListener('change', (state) => {
-      if (state === 'active') polling.refresh()
-    })
+    // Returning from an iOS `inactive` prompt keeps the current schedule.
+    const unsubscribe = subscribeAppResume(polling.refresh)
     return () => {
       void polling.stop()
-      subscription.remove()
+      unsubscribe()
     }
   }, [
     ready,
-    appActive,
+    appForeground,
     registry.profiles,
     refreshAllEffect,
     refreshOverviewEffect,
@@ -1671,7 +1681,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       networkConnected,
     ],
   )
-  useStudioPairedComputers(overviews, registry, appActive, readRuntimeEffect)
+  useStudioPairedComputers(overviews, registry, appForeground, readRuntimeEffect)
   const [presetSyncError, setPresetSyncError] = useApplicationState('')
   const {
     sharedScopedSettings,
@@ -1768,8 +1778,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   ])
   const refreshSharedProfile = useRef(refreshProfile)
   refreshSharedProfile.current = refreshProfile
-  const sharedStateInput = useRef({ targets: overviews, ready, appActive })
-  sharedStateInput.current = { targets: overviews, ready, appActive }
+  const sharedStateInput = useRef({ targets: overviews, ready, appForeground })
+  sharedStateInput.current = { targets: overviews, ready, appForeground }
   useEffect(() => {
     const request = (profile: RuntimeProfile, path: string, input: unknown, signal: AbortSignal) =>
       runClientEffect(
@@ -1798,7 +1808,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     })
     sharedStateSync.current = synchronization
     const input = sharedStateInput.current
-    synchronization.update(input.targets, input.ready && input.appActive)
+    synchronization.update(input.targets, input.ready && input.appForeground)
     return () => {
       if (sharedStateSync.current === synchronization) sharedStateSync.current = null
       void synchronization
@@ -1807,8 +1817,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
     }
   }, [computerRefresh, setSettingsSyncError])
   useEffect(() => {
-    sharedStateSync.current?.update(overviews, ready && appActive)
-  }, [overviews, sharedScopedSettings, ready, appActive])
+    sharedStateSync.current?.update(overviews, ready && appForeground)
+  }, [overviews, sharedScopedSettings, ready, appForeground])
   const pendingMessages = useCallback(
     (task: Task) => (connection ? mutations.pendingMessages(connection, task) : []),
     [connection, mutations],

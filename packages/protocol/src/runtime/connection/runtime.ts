@@ -50,6 +50,8 @@ export const approvalSchema = mutableStruct({
   /** Native approval scopes offered by the provider for this request. Older runtimes omit them. */
   scopes: Schema.optional(
     mutableStruct({
+      /** False when the provider offers no single-use grant. Older runtimes omit it. */
+      once: Schema.optional(Schema.Boolean),
       session: Schema.Boolean,
       always: Schema.Boolean,
     }),
@@ -71,7 +73,19 @@ export const terminalTitleSchema = refine(
   (value) => value.trim().length > 0,
   'Expected a nonempty terminal title',
 )
+/** Opaque within one PTY. OSC 7501 uses ':' as its field separator. */
+export const terminalTurnIdPattern = /^[A-Za-z0-9_./+-]{1,128}$/
+export const terminalTurnIdSchema = refine(
+  terminalTextSchema,
+  (id) => terminalTurnIdPattern.test(id),
+  'Expected a terminal turn ID of 1 to 128 ASCII identifier characters',
+)
+export const terminalTurnIdHistoryLimit = 128
+export const terminalTurnIdsSchema = Schema.Array(terminalTurnIdSchema).pipe(
+  Schema.check(Schema.isMaxLength(terminalTurnIdHistoryLimit)),
+)
 export const terminalActivitySchema = mutableStruct({
+  turnId: Schema.optional(terminalTurnIdSchema),
   state: Schema.Literals(['idle', 'working', 'done', 'blocked', 'error']),
   app: Schema.optional(
     Schema.String.pipe(Schema.check(Schema.isPattern(/^[A-Za-z0-9_.+-]{1,32}$/))),
@@ -88,6 +102,26 @@ export const terminalActivitySchema = mutableStruct({
   ),
 })
 export type TerminalActivity = typeof terminalActivitySchema.Type
+export const terminalTurnSchema = refine(
+  Schema.Number,
+  (n) => Number.isSafeInteger(n) && n >= 0,
+  'Expected a nonnegative safe integer',
+)
+export const terminalChildActivityLimit = 32
+export const terminalChildIdSchema = refine(
+  terminalTextSchema,
+  (id) => id.length <= 128 && /^[A-Za-z0-9_.+-]+(?:\/[A-Za-z0-9_.+-]+)*$/.test(id),
+  'Expected a terminal child record ID',
+)
+export const terminalChildActivitySchema = mutableStruct({
+  id: terminalChildIdSchema,
+  activity: terminalActivitySchema,
+})
+export const terminalChildNoticeSchema = mutableStruct({
+  terminalId: maxValue(minValue(Schema.String, 1), 200),
+  state: Schema.Literals(['blocked', 'error', 'done', 'exited']),
+  turn: terminalTurnSchema,
+})
 export const terminalSchema = mutableStruct({
   repositoryId: Schema.optional(Schema.String),
   shellId: Schema.optional(Schema.String),
@@ -103,6 +137,16 @@ export const terminalSchema = mutableStruct({
   customTitle: Schema.optional(terminalTitleSchema),
   /** Explicit program activity from OSC 7501 or a supported tool lifecycle hook. */
   activity: Schema.optional(terminalActivitySchema),
+  turn: Schema.optional(terminalTurnSchema),
+  seenTurn: Schema.optional(terminalTurnSchema),
+  seenRevision: Schema.optional(terminalTurnSchema),
+  parentTerminalId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
+  childNotices: Schema.optional(
+    maxValue(mutableArray(terminalChildNoticeSchema), terminalChildActivityLimit),
+  ),
+  childActivities: Schema.optional(
+    maxValue(mutableArray(terminalChildActivitySchema), terminalChildActivityLimit),
+  ),
   /** Native PTY foreground process; absent on hosts without foreground inspection. */
   foregroundProcess: Schema.optional(
     mutableStruct({ name: terminalTitleSchema, idle: Schema.Boolean }),
@@ -122,15 +166,45 @@ export const terminalSchema = mutableStruct({
   exitCode: Schema.optional(Schema.Number.pipe(Schema.check(Schema.isFinite()))),
 })
 export const updateTerminalSchema = mutableStruct({
+  /** Detach a live or retained child without ending either terminal. */
+  parentTerminalId: Schema.optional(Schema.Null),
   id: maxValue(minValue(Schema.String, 1), 200),
+  view: Schema.optional(
+    mutableStruct({
+      turn: terminalTurnSchema,
+      expectedRevision: terminalTurnSchema,
+      seen: Schema.Boolean,
+    }),
+  ),
   /** Null resumes automatic naming from the terminal title or launch name. */
   title: Schema.optional(Schema.NullOr(terminalTitleSchema)),
   pinned: Schema.optional(Schema.Boolean),
   settled: Schema.optional(Schema.Boolean),
   snoozedUntil: Schema.optional(Schema.NullOr(isoDateTime(Schema.String))),
 })
+/** Guard a view action with the exact completion and read revision shown to this client. */
+export function terminalViewChange(session: TerminalInfo | undefined, supported?: boolean) {
+  if (!supported || !session?.turn) return undefined
+  return {
+    turn: session.turn,
+    expectedRevision: session.seenRevision ?? 0,
+    seen: session.turn > (session.seenTurn ?? 0),
+  }
+}
+export const terminalChildrenWaitSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  until: Schema.Literals(['any', 'all']),
+  waitMs: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20_000 }))),
+})
+export const terminalChildrenResultSchema = mutableStruct({
+  children: mutableArray(terminalSchema),
+  ready: Schema.Boolean,
+})
 export type UpdateTerminal = Schema.Schema.Type<typeof updateTerminalSchema>
 export const createWorkspaceTerminalSchema = mutableStruct({
+  name: Schema.optional(terminalTitleSchema),
+  workingDirectory: Schema.optional(maxValue(minValue(Schema.String, 1), 32768)),
+  requestId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   rememberSession: Schema.optional(Schema.Boolean),
   repositoryId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   command: Schema.optional(maxValue(minValue(Schema.String, 1), 20000)),
@@ -138,6 +212,7 @@ export const createWorkspaceTerminalSchema = mutableStruct({
   execution: Schema.optional(Schema.Literals(['main', 'worktree'])),
   existingWorktreePath: Schema.optional(maxValue(minValue(Schema.String, 1), 32768)),
   worktreeBaseBranch: Schema.optional(maxValue(minValue(Schema.String, 1), 1000)),
+  parentTerminalId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
   sourceTerminalId: Schema.optional(maxValue(minValue(Schema.String, 1), 200)),
 })
 export type CreateWorkspaceTerminal = Schema.Schema.Type<typeof createWorkspaceTerminalSchema>
@@ -258,10 +333,20 @@ export const snapshotSchema = mutableStruct({
   taskListUndoSupported: Schema.optional(Schema.Literal(true)),
   attachmentPreparationSupported: Schema.optional(Schema.Literal(true)),
   queueRestoreReceiptsSupported: Schema.optional(Schema.Literal(true)),
+  /** Prepared queue restores accept and compare `expectedPlan` and `expectedDraftPlan`. */
+  queueRestorePlanSupported: Schema.optional(Schema.Literal(true)),
   checkedDraftMoveSupported: Schema.optional(Schema.Literal(true)),
   threadServersSupported: Schema.optional(Schema.Boolean),
   workspaceRoutingSelectionsSupported: Schema.optional(Schema.Literal(true)),
   terminalRecoverySupported: Schema.optional(Schema.Boolean),
+  terminalLiveRecoverySupported: Schema.optional(Schema.Literal(true)),
+  terminalScreenSupported: Schema.optional(Schema.Literal(true)),
+  terminalChildrenSupported: Schema.optional(Schema.Literal(true)),
+  terminalTurnsSupported: Schema.optional(Schema.Literal(true)),
+  terminalTurnIdsSupported: Schema.optional(Schema.Literal(true)),
+  terminalActivityWaitSupported: Schema.optional(Schema.Literal(true)),
+  workspaceTerminalLaunchOptionsSupported: Schema.optional(Schema.Literal(true)),
+  workspaceTerminalRequestIdSupported: Schema.optional(Schema.Literal(true)),
   settingsScopesSupported: Schema.optional(Schema.Boolean),
   stateReplicationVersion: Schema.optional(Schema.Literal(1)),
   threadReplicationVersion: Schema.optional(Schema.Literal(1)),
@@ -276,6 +361,7 @@ export const snapshotSchema = mutableStruct({
   planModeSupported: Schema.optional(Schema.Literal(true)),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
   promptQueueStagingSupported: Schema.optional(Schema.Boolean),
+  retryUsesCurrentFiles: Schema.optional(Schema.Boolean),
   terminalWorkspaceToolsSupported: Schema.optional(Schema.Boolean),
   /** Automatic additions can preserve a pause made by another client. */
   queuePausePreservationSupported: Schema.optional(Schema.Literal(true)),
@@ -285,6 +371,8 @@ export const snapshotSchema = mutableStruct({
   messageSetupSupported: Schema.optional(Schema.Literal(true)),
   /** The first `/api/tasks/message` can carry its unsent draft as `createTask`. */
   threadStartSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/tasks/search` applies `scope` (project and archive) before its message-hit limit. */
+  taskSearchScopeSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
   botBackupSupported: Schema.optional(Schema.Literal(true)),
@@ -320,6 +408,8 @@ export const snapshotSchema = mutableStruct({
   routineProvenanceSupported: Schema.optional(Schema.Literal(true)),
   routineRunProvenanceSupported: Schema.optional(Schema.Literal(true)),
   questionDraftReuseSupported: Schema.optional(Schema.Literal(true)),
+  /** `/api/scm/pulls/comment` accepts `submissionId`, and `/api/scm/pulls/comment-status` reports it. */
+  pullCommentReceiptsSupported: Schema.optional(Schema.Literal(true)),
   problemReportTimelineSupported: Schema.optional(Schema.Literal(true)),
   routineFindingGroupsSupported: Schema.optional(Schema.Literal(true)),
   /** `Task.bot.resources` and `/api/bots/update` `resources`. */
@@ -435,6 +525,20 @@ export const patchSchema = mutableStruct({
   ),
   create: Schema.optional(Schema.Unknown),
 })
+export const terminalScreenRequestSchema = mutableStruct({
+  id: maxValue(minValue(Schema.String, 1), 200),
+  lines: Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 1, maximum: 300 }))),
+})
+export const terminalScreenSchema = mutableStruct({
+  id: Schema.String,
+  cols: Schema.Int,
+  rows: Schema.Int,
+  buffer: Schema.Literals(['normal', 'alternate']),
+  cursor: mutableStruct({ row: Schema.Int, column: Schema.Int }),
+  text: Schema.String,
+  truncated: Schema.Boolean,
+})
+export type TerminalScreen = Schema.Schema.Type<typeof terminalScreenSchema>
 export const terminalInputSchema = Schema.Union([
   mutableStruct({
     type: Schema.Literal('ack'),
@@ -524,9 +628,9 @@ export function approvalRememberLabel(approval: Pick<Approval, 'title' | 'rememb
 export function approvalActions(
   approval: Pick<Approval, 'title' | 'rememberRule' | 'scopes'>,
 ): Array<{ decision: ApprovalDecision; label: string }> {
-  const actions: Array<{ decision: ApprovalDecision; label: string }> = [
-    { decision: 'approve', label: 'Allow once' },
-  ]
+  const actions: Array<{ decision: ApprovalDecision; label: string }> = []
+  // The runtime rejects a decision whose scope the provider did not offer.
+  if (approval.scopes?.once !== false) actions.push({ decision: 'approve', label: 'Allow once' })
   if (approval.scopes?.session) actions.push({ decision: 'session', label: 'Allow for session' })
   if (approval.scopes?.always)
     actions.push({ decision: 'always', label: approvalRememberLabel(approval) ?? 'Always allow' })

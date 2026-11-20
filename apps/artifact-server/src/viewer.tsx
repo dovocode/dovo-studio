@@ -302,7 +302,7 @@ function App() {
     } catch (error) {
       if (!(error instanceof RequestError) || error.status !== 401) throw error
       setLogin(undefined)
-      message('Sign-in expired. Start again', true)
+      message('Sign-in did not finish. Start again', true)
       return
     }
     await load()

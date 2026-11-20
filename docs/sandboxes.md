@@ -369,11 +369,24 @@ runs installs in a separate short-lived container with network access.
   release after 2 idle minutes, so a stopped container is usually not in use. Starting it again
   takes about a second.
 - **Runtime restart.** On start, Dovo removes containers whose thread is gone or archived, and stops
-  the rest. Their processes belonged to the previous runtime process.
+  the rest. Their processes belonged to the previous runtime process. A new sandbox waits until this
+  cleanup finishes. Other runtime work does not wait. A thread that the runtime keeps but cannot
+  read, for example one with a status from a newer version, counts as present. Dovo only stops its
+  container and keeps its state folder, private harness folders and Git record.
+- **Runtime shutdown.** Shutdown stops new sandbox starts, including starts that wait for startup
+  cleanup. It waits for the running cleanup command and idle stops before the database closes, so a
+  new runtime never cleans up beside the old one. Each cleanup command has a 60-second limit.
+  Containers keep running, and the next startup cleanup stops them.
 - **Archive and delete.** Archiving or deleting a thread removes its container, state folder and
-  private harness folders. Restoring a thread creates a new container on its next turn. The recorded
-  Git layout stays until the thread is deleted. Dovo removes the records of deleted threads when the
-  runtime starts.
+  private harness folders. This applies to manual and automatic archives, and to project deletion.
+  Dovo removes them only after the archive or deletion commits. If that write fails, they stay. If
+  the removal fails after the commit, the change stays: delete the thread again, or restart the
+  runtime. Startup cleanup removes the container and private folders of every thread that is gone or
+  archived. Dovo holds the thread from the start of an archive or deletion until the removal ends.
+  In that window a restore, a new turn or a message returns a conflict. A sandbox start for the
+  thread waits until the removal ends, so the removal never deletes new work. Restoring a thread
+  creates a new container on its next turn. The recorded Git layout stays until the thread is
+  deleted. Dovo removes the records of deleted threads when the runtime starts.
 
 Stop works inside the container. Dovo tags every process with a launch ID and stops all of them,
 including processes that started their own session.

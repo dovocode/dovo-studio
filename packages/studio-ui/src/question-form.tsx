@@ -19,6 +19,23 @@ import {
 import { humanInputShortcutTarget } from './human-input-shortcuts'
 import { QuestionField } from './question-field'
 import { Button } from './components/ui/button'
+
+/** Number keys choose options in the question that holds focus, or in the first question while
+ * focus is elsewhere in the form. They never change a question the user is not in. */
+function questionShortcutQuestion(
+  questions: readonly AgentQuestion[],
+  focusedQuestionId: string | null | undefined,
+) {
+  return focusedQuestionId
+    ? questions.find((question) => question.id === focusedQuestionId)
+    : questions[0]
+}
+
+function focusedQuestionId(target: EventTarget | null) {
+  return target instanceof Element
+    ? target.closest<HTMLElement>('[data-question-id]')?.dataset.questionId
+    : undefined
+}
 export function QuestionForm({
   request,
   connected,
@@ -76,11 +93,22 @@ export function QuestionForm({
   }
   const submitting = useRef(false)
   const form = useRef<HTMLFormElement>(null)
+  const [shortcutQuestionId, setShortcutQuestionId] = useApplicationState<string | undefined>(
+    undefined,
+  )
+  const shortcutQuestion = questionShortcutQuestion(request.prompt.questions, shortcutQuestionId)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (!connected || busy || event.shiftKey || humanInputShortcutTarget(event) !== form.current)
+      if (
+        busy ||
+        attachmentsBusy ||
+        event.shiftKey ||
+        humanInputShortcutTarget(event) !== form.current
+      )
         return
       if (event.key === 'Enter') {
+        // Offline edits stay in the form. Sending waits for the runtime to confirm the request.
+        if (!connected) return
         if (
           event.target instanceof Element &&
           event.target.closest('button, a, summary, [role="button"]')
@@ -92,7 +120,10 @@ export function QuestionForm({
       }
       const index = Number(event.key) - 1
       if (!Number.isInteger(index) || index < 0 || index > 8) return
-      const question = request.prompt.questions[0]
+      const question = questionShortcutQuestion(
+        request.prompt.questions,
+        focusedQuestionId(event.target),
+      )
       const option = question?.options[index]
       if (!question || !option) return
       event.preventDefault()
@@ -103,7 +134,7 @@ export function QuestionForm({
     }
     window.addEventListener('keydown', onKeyDown, true)
     return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [request, connected, busy])
+  }, [request, connected, busy, attachmentsBusy])
   const submit = async (answers: QuestionAnswers | null, outcomes?: QuestionOutcomes) => {
     if (submitting.current || !connected || attachmentsBusy) return
     const invalid =
@@ -138,6 +169,7 @@ export function QuestionForm({
         event.preventDefault()
         void submit(questionDraftAnswers(drafts))
       }}
+      onFocus={(event) => setShortcutQuestionId(focusedQuestionId(event.target))}
     >
       <div className="flex items-center gap-2.5 border-b border-border/60 bg-muted/20 px-4 py-3 text-xs">
         <MessageCircleQuestion className="size-4 shrink-0 text-muted-foreground" />
@@ -154,13 +186,14 @@ export function QuestionForm({
         tabIndex={0}
         className="max-h-[min(60dvh,28rem)] space-y-5 overflow-auto p-4"
       >
-        {request.prompt.questions.map((q, index) => (
-          <div key={q.id} className="space-y-2">
+        {request.prompt.questions.map((q) => (
+          <div key={q.id} data-question-id={q.id} className="space-y-2">
             <QuestionField
               question={Object.hasOwn(references, q.id) ? { ...q, custom: false, options: [] } : q}
               value={drafts[q.id]}
-              disabled={busy || !connected || attachmentsBusy}
-              shortcutNumbers={index === 0}
+              // Offline edits stay recoverable. Only the actions that answer need the runtime.
+              disabled={busy || attachmentsBusy}
+              shortcutNumbers={shortcutQuestion?.id === q.id}
               onChange={(draft) => {
                 setDrafts((current) => ({
                   ...current,
@@ -241,7 +274,9 @@ export function QuestionForm({
           </Button>
         )}
         {!connected && (
-          <span className="text-[0.625rem] text-muted-foreground">Reconnect to answer</span>
+          <span role="status" className="text-[0.625rem] text-muted-foreground">
+            Offline. You can keep editing. Reconnect to send.
+          </span>
         )}
         <span className="flex-1" />
         <Button

@@ -19,6 +19,8 @@ it('registers a launchd user service with a private environment file and persist
   expect(definition).toContain('<key>KeepAlive</key><true/>')
   expect(definition).toContain('Server &amp; Data')
   expect(definition).toContain('DOVO_RUNTIME_ENV_FILE')
+  expect(definition).toContain('<key>DOVO_TERMINAL_HOLDER_SUPERVISOR</key><string>launchd</string>')
+  expect(definition).not.toContain('AbandonProcessGroup')
   expect(definition).not.toContain('ANTHROPIC_API_KEY')
 })
 
@@ -34,6 +36,8 @@ it('registers a restartable systemd user service with escaped paths', () => {
     'ExecStart="/home/test/Server %% Data/service-launcher" "service" "run"',
   )
   expect(definition).toContain('Restart=on-failure')
+  expect(definition).toContain('Environment=DOVO_TERMINAL_HOLDER_SUPERVISOR=systemd')
+  expect(definition).not.toMatch(/^KillMode=(process|none)$/m)
   expect(definition).toContain('WantedBy=default.target')
   expect(definition).not.toContain('ANTHROPIC_API_KEY')
 })

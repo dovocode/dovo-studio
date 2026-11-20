@@ -31,6 +31,8 @@ import { replicationIdentity } from './replication-identity.js'
 import { sharedStateJournal } from './shared-state-journal.js'
 
 const channel = 'shared-settings:v1'
+/** At most one settings list per import; `sharedSettingsSchema` accepts 300 entries. */
+const HISTORY_PAGE = 100
 type Session = {
   name: string
   runtimeId: string
@@ -83,12 +85,18 @@ export class SharedStateReplication {
   }
 
   private async capture(state: DurableState<ScopedSettingsValue>) {
-    const versions = this.defaults.sharedVersions(this.imported)
-    const current = this.defaults.get().scopedSettings?.shared ?? []
+    // History can hold more versions than one settings list accepts. Import it in pages and
+    // advance the cursor only after each page commits, so a failure resumes at that page.
+    for (;;) {
+      const page = this.defaults.sharedVersions(this.imported, HISTORY_PAGE)
+      if (!page.length) break
+      await state.importVersions(sharedSettingsVersions(page.map(({ entry }) => entry)))
+      this.imported = Math.max(this.imported, page.at(-1)!.sequence)
+      if (page.length < HISTORY_PAGE) break
+    }
     await state.importVersions(
-      sharedSettingsVersions([...versions.map(({ entry }) => entry), ...current]),
+      sharedSettingsVersions(this.defaults.get().scopedSettings?.shared ?? []),
     )
-    this.imported = versions.at(-1)?.sequence ?? this.imported
   }
   private publish(state: DurableState<ScopedSettingsValue>) {
     const shared = sharedSettingsFromVersions(state.latest())

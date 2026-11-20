@@ -143,6 +143,29 @@ createInterface({ input: process.stdin }).on('line', (line) => {
     }
     if (p.input[0].text === 'hold') return
     if (p.input[0].text === 'disconnect') return setTimeout(() => process.exit(0), 10)
+    if (p.input[0].text === 'approval-persistent-only') {
+      event('approval/requested', {
+        approvalId: 'approve',
+        itemId: 'tool',
+        taskId: 'task',
+        toolCallId: 'tool',
+        judgeEscalated: false,
+        protectedWrite: false,
+        rawArgs: 'pwd',
+        currentRequirementId: 'requirement',
+        subject: { kind: 'shell', command: 'pwd' },
+        availableChoices: [
+          { choiceId: 'deny', decision: 'denied', scope: 'once', label: 'Deny' },
+          {
+            choiceId: 'always',
+            decision: 'approvedPolicyAmendment',
+            scope: 'localPersistent',
+            label: 'Always allow',
+          },
+        ],
+      })
+      return
+    }
     if (p.input[0].text === 'approval') {
       event('approval/requested', {
         approvalId: 'approve',

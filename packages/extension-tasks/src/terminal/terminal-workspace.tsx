@@ -1,3 +1,4 @@
+import { terminalViewChange, terminalFamilyLinks } from '@dovo/protocol'
 import { Activity, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { ArrowUpRight, ChevronDown, Monitor, Pencil, Plus, Search, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
@@ -128,7 +129,16 @@ function TerminalResourceActions({
       setPending(false)
     }
   }
+  const view = terminalViewChange(session, owner.snapshot?.terminalTurnsSupported)
   const actions: WorkspaceResourceMenuProps = {
+    detachParent:
+      session.parentTerminalId && owner.snapshot?.terminalChildrenSupported
+        ? () => void change({ parentTerminalId: null })
+        : undefined,
+    readAction: view && {
+      label: view.seen ? 'Mark read' : 'Mark unread',
+      run: () => void change({ view }),
+    },
     title: session.title,
     pinned: session.pinned ?? false,
     settled: Boolean(session.settledAt),
@@ -149,6 +159,7 @@ function TerminalResourceActions({
 export function WorkspaceTerminalSurface({
   target,
   onHide,
+  onFamilyOpen,
   onNew,
   embedded = false,
   onLifecycleError,
@@ -157,6 +168,7 @@ export function WorkspaceTerminalSurface({
 }: {
   target: TerminalTarget
   onHide: () => void
+  onFamilyOpen: (target: TerminalTarget) => void
   onNew?: () => void
   embedded?: boolean
   onLifecycleError?: (message: string) => void
@@ -176,7 +188,12 @@ export function WorkspaceTerminalSurface({
   if (knownSession.current?.key !== targetKey) knownSession.current = undefined
   if (currentSession) knownSession.current = { key: targetKey, session: currentSession }
   const session = currentSession ?? knownSession.current?.session
-  const status = session ? terminalStatus(session, owner?.connected ?? false) : undefined
+  const status = session
+    ? terminalStatus(session, owner?.connected ?? false, owner?.snapshot?.terminals)
+    : undefined
+  const family = session
+    ? terminalFamilyLinks(session, owner?.snapshot?.terminals ?? [], !!owner?.connected)
+    : []
   const thread = owner?.snapshot?.workspace.tasks.find((task) => task.id === session?.taskId)
   if (!owner)
     return (
@@ -305,6 +322,35 @@ export function WorkspaceTerminalSurface({
               {tools}
             </header>
           </HeaderContent>
+          {!!family.length && (
+            <nav
+              aria-label="Related terminals"
+              className="max-h-24 shrink-0 overflow-auto border-b px-3 py-1"
+            >
+              {family.map((link) => (
+                <button
+                  className="block text-left text-xs underline"
+                  type="button"
+                  key={link.id}
+                  onClick={() => onFamilyOpen({ runtimeId: target.runtimeId, id: link.id })}
+                >
+                  {link.label}
+                </button>
+              ))}
+            </nav>
+          )}
+          {status?.childDetails && (
+            <ul
+              aria-label="Child agents needing input"
+              className="max-h-24 shrink-0 overflow-y-auto border-b px-3 py-1 text-xs text-status-warning"
+            >
+              {status.childDetails.map((line) => (
+                <li key={line} className="break-words">
+                  {line}
+                </li>
+              ))}
+            </ul>
+          )}
           {error && (
             <p role="alert" className="border-b p-2 text-xs text-destructive">
               {error}
@@ -464,7 +510,11 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
               {(['Pinned', 'Needs input', 'Working', 'Active', 'Snoozed', 'Settled'] as const).map(
                 (group) => {
                   const entries = matches.filter(({ owner, session }) => {
-                    const activity = terminalStatus(session, owner.connected)
+                    const activity = terminalStatus(
+                      session,
+                      owner.connected,
+                      owner.snapshot?.terminals,
+                    )
                     const status = session.pinned
                       ? 'Pinned'
                       : session.settledAt
@@ -509,7 +559,11 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                       </summary>
                       {openSections[group] &&
                         entries.map(({ owner, session }) => {
-                          const activity = terminalStatus(session, owner.connected)
+                          const activity = terminalStatus(
+                            session,
+                            owner.connected,
+                            owner.snapshot?.terminals,
+                          )
                           const active =
                             selected?.id === session.id && selected.runtimeId === owner.profile.id
                           const repository = owner.snapshot?.workspace.repositories.find(
@@ -553,6 +607,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                                   state={activity.label}
                                   stateTone={activity.tone}
                                   stateDetail={activity.detail}
+                                  childAttention={activity.childAttention}
                                   computer={runtimeComputerName(owner)}
                                   runtimeIcon={owner.snapshot?.runtimeIcon}
                                   pinned={session.pinned ?? false}
@@ -604,6 +659,7 @@ export default function TerminalWorkspace({ entityId }: StudioViewProps) {
                 <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                   <WorkspaceTerminalSurface
                     target={tab}
+                    onFamilyOpen={openTerminal}
                     command={
                       visible &&
                       terminalCommand?.target.runtimeId === tab.runtimeId &&

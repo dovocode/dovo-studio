@@ -1,6 +1,6 @@
 import { beforeEach, afterEach, expect, it, vi } from 'vite-plus/test'
 import { EventEmitter } from 'node:events'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { BrowserDeviceAnswer, BrowserDeviceChoice } from './browser-device-chooser'
@@ -218,4 +218,30 @@ it.each(['hid', 'serial'] as const)('wires %s selection and exact-device checks'
   if (kind === 'hid') session.emit('hid-device-revoked', {}, { origin: origin + '/', device })
   else session.emit('serial-port-revoked', {}, { origin: origin + '/', port: device })
   expect(check({ deviceType: kind, origin, device })).toBe(false)
+})
+
+it('answers every device path when saved website settings cannot be read', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const { contents, choose, session, permitted } = fixture()
+  await mkdir(join(f.root, 'browser-permissions'), { recursive: true })
+  await writeFile(join(f.root, 'browser-permissions', 'work.json'), '{"helpers": [', 'utf8')
+  expect(permitted()).toBe(false)
+  const usbAnswer = choose()
+  await flush()
+  expect(usbAnswer).toHaveBeenCalledExactlyOnceWith()
+  const bluetooth = vi.fn<(...args: unknown[]) => void>()
+  contents.emit(
+    'select-bluetooth-device',
+    { preventDefault: vi.fn<(...args: unknown[]) => void>() },
+    [{ deviceId: 'a', deviceName: 'First' }],
+    bluetooth,
+  )
+  expect(bluetooth).toHaveBeenCalledExactlyOnceWith('')
+  const pairing = vi.fn<(...args: unknown[]) => void>()
+  const pair = session.setBluetoothPairingHandler.mock.calls[0]![0] as (...args: unknown[]) => void
+  pair({ frame: contents.mainFrame, deviceId: 'a', pairingKind: 'confirm' }, pairing)
+  expect(pairing).toHaveBeenCalledExactlyOnceWith({ confirmed: false })
+  expect(() => session.emit('usb-device-revoked', {}, { origin, device: usb })).not.toThrow()
+  expect(f.choosers).toHaveLength(0)
+  logged.mockRestore()
 })

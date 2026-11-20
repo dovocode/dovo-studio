@@ -707,8 +707,12 @@ export class Attachments {
         .all()
         .map((row) => decode(mutableStruct({ id: Schema.String }), row).id),
     ])
+    // A task row that the runtime kept but could not load still owns its files. Its draft,
+    // queue and edit references cannot be read, so keep every file it owns until the row loads
+    // again or the task is deleted.
+    const unreadable = new Set(this.store.unreadableTaskIds())
     // Edits keep uploads separate from the ordinary draft. Unreferenced uploads can be collected after a day.
-    const taskIds = new Set(this.store.get().tasks.map((task) => task.id))
+    const taskIds = new Set([...this.store.get().tasks.map((task) => task.id), ...unreadable])
     const pendingUploads = this.db
       .prepare('SELECT id, task, created_at FROM queued_attachment_uploads')
       .all()
@@ -740,12 +744,13 @@ export class Attachments {
         removeCancellation.run(cancelled.id)
     }
     const rows = this.db
-      .prepare('SELECT id FROM attachments')
+      .prepare('SELECT id, task FROM attachments')
       .all()
-      .map((row) => decode(mutableStruct({ id: Schema.String }), row).id)
+      .map((row) => decode(mutableStruct({ id: Schema.String, task: Schema.String }), row))
     const remove = this.db.prepare('DELETE FROM attachments WHERE id=?')
     this.db.transaction(() => {
-      for (const id of rows) if (!retained.has(id)) remove.run(id)
+      for (const row of rows)
+        if (!retained.has(row.id) && !unreadable.has(row.task)) remove.run(row.id)
     })()
     let entries: string[]
     try {

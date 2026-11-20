@@ -16,21 +16,39 @@ memory and show an error. Keep the window open if local storage fails.
 Ordinary question answers use one shared recovery store on both clients. Web uses local storage.
 Mobile uses AsyncStorage with ordered writes. Each record includes the runtime credential scope,
 thread ID, request ID, selected choices, exact custom text and supported attachment references.
-Typed secret answers stay in the mounted form. The store excludes secret answers and secret
-attachments. Secret references keep their existing send path. Mobile notification answers restore
-only when there are no newer ordinary edits.
+Typed secret answers stay in the mounted form. On mobile, the form also clears them when Dovo leaves
+the foreground, the same as the secure input card. Ordinary answers stay. The store excludes secret
+answers and secret attachments. Secret references keep their existing send path. Mobile notification
+answers restore only when there are no newer ordinary edits.
+
+Answer fields stay editable while the computer is offline, so the text stays in recovery. **Send
+answers**, **Decline** and **Dismiss** wait until the computer reconnects and still lists the same
+request. On mobile, an explicit **Send answers** with a missing or invalid answer marks that
+question, scrolls to it and moves focus to its text field or its label. Each question is one
+labelled group for screen readers.
+
+A link or notification that names a request opens only that request. If it is already answered or
+closed, the thread shows that status instead of another pending question. Select **Show pending
+questions** to see the others.
 
 Navigation does not remove ordinary answers. A confirmed answer clears its unchanged record.
 Declining, cancelling or expiring a request leaves edited answers available under **Saved answers**
 in its thread. Select and copy the content to use it elsewhere. **Discard saved answers** removes
 that record. Recovery does not append text to a message draft or change its order. Child-thread
-answers remain available in the child thread.
+answers remain available in the child thread. On mobile, the parent thread shows a card with **Open
+saved answers** for them. **Use in draft** in the child adds them to the child's draft, never to the
+parent's.
 
 Saved attachment recovery records contain metadata and IDs, not another copy of the file. Existing
 upload receipts and retention of referenced files still apply. Unreferenced queued uploads can
 expire after a day. Before sending or editing a message, or answering with files, clients check
 availability on runtimes that advertise `attachmentPreparationSupported`. This check renews pending
 uploads for another day. It does not add files to the current draft.
+
+A thread that the runtime keeps but cannot read, for example one with a status from a newer version,
+keeps every attachment it owns. This includes threads that an old release saved in the first storage
+format, which the runtime keeps only in its migration backup. Draft, queued and pending edit files
+stay until the thread loads again or you delete it.
 
 Desktop can restore missing bytes while the mounted composer still holds the source `File`. It uses
 the same upload ID and keeps the current draft unchanged. It releases those source files when the
@@ -170,3 +188,69 @@ not return a cursor supports only the first page.
 Send cancels pending older-page requests and keeps the recalled preview active until the native text
 snapshot completes. A failed send keeps the recalled text for retry. A real draft change during that
 read still blocks the send.
+
+## Mobile editor drafts
+
+The phone keeps unsent text from these editors after the app closes or the OS stops it:
+
+- PR line comments, PR comments, replies, reviews and PR edits
+- New pull requests
+- Issue, comment, transition and pipeline run forms
+- Commit messages
+- Thread side chat questions and thread file edits
+- Bot settings, new Bots and Bot memory notes
+- Restored automation definitions
+- Response, automation and new-thread action cards
+
+Each draft is a separate record in app storage. Its key has the computer's profile ID and runtime ID
+and the edited item. PR and issue drafts also include the repository account. Renewed pairing of the
+same computer keeps its drafts. Another computer paired at the same address does not see them. A new
+Bot draft belongs to the phone, so it follows a change of computer. Submitting removes only that
+draft.
+
+At startup, Dovo reads the saved drafts before it saves anything. A field typed before that read
+finishes is newer, so it replaces that field of the saved draft. The other saved fields of the item
+still load. Discarding or submitting a draft before the read deletes the saved copy, so it does not
+come back. Defaults that an editor fills in by itself are not edits. Examples are the computer for a
+new Bot, the destination of a new pull request and the first pipeline of a run form. A saved draft
+that loads later replaces them, and a default never replaces a value that is already set. Slow or
+failed storage at startup therefore cannot remove saved text.
+
+Some data stays in memory only:
+
+- Send receipts for requests with an unknown outcome. A restart drops the receipt and keeps the
+  text.
+- Any draft with a typed MCP credential, such as an environment or header value in Bot tools or an
+  agent harness. Credentials saved on the computer arrive as references, so those drafts are saved.
+- Drafts larger than 512,000 characters, for example a large file edit.
+- List filters, selected tabs and other navigation state.
+
+Secret prompts use secure input and never enter these drafts.
+
+The editor shows a notice when the phone does not hold the latest copy:
+
+- The saved drafts could not be read. Dovo saves nothing until a read works, so it writes nothing
+  over them. **Retry saving drafts** reads them again. Opening the editor again also retries. After
+  a successful read, fields typed during the failure replace those fields of the saved copy.
+- A save failed. The text stays in memory. **Retry saving drafts** saves it again. The next edit
+  also retries.
+- The draft holds a credential or is too large. Dovo removes the older saved copy, so it cannot
+  replace the newer text later.
+- A saved draft from another app version could not be opened. Dovo keeps it until you edit that
+  item.
+
+Verify the store and a real editor:
+
+```sh
+pnpm exec vp test run apps/mobile/src/runtime/state/detail-drafts.test.ts
+pnpm exec playwright install chromium
+node scripts/check-mobile-detail-drafts-browser.mjs
+```
+
+The browser check renders the PR line comment, Create Bot, Create pull request and pipeline run
+editors in Chromium. It uses browser storage in place of AsyncStorage and a page reload in place of
+an OS stop. It covers a failed save, a failed read, retry, restore and submit. For the other
+editors, it holds or fails the startup read while each editor fills its default. It also holds the
+pipeline list until after the read. It checks that saved text comes back, that nothing is written
+before the read and that a field typed during startup stays next to the saved fields. It does not
+run on a phone.

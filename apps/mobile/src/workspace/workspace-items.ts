@@ -128,7 +128,7 @@ export function workspaceItems(
     for (const terminal of owner.snapshot?.terminals ?? []) {
       if (terminal.taskId !== STUDIO_TERMINAL_SCOPE) continue
       const repository = workspace?.repositories.find((entry) => entry.id === terminal.repositoryId)
-      const status = terminalStatus(terminal, owner.connected)
+      const status = terminalStatus(terminal, owner.connected, owner.snapshot?.terminals)
       const section: WorkspaceSection = terminal.settledAt
         ? 'settled'
         : terminal.snoozedUntil && Date.parse(terminal.snoozedUntil) > now
@@ -144,7 +144,7 @@ export function workspaceItems(
         repository,
         title: terminal.title,
         detail: `${repository?.name ?? 'Home folder'}${terminal.checkoutBranch ? ` · ${terminal.checkoutBranch}` : ''} · ${computer}`,
-        status: status.label,
+        status: [status.label, status.childAttention].filter(Boolean).join(' · '),
         section,
         pinned: !!terminal.pinned,
         offline: !owner.connected,

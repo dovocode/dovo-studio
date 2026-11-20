@@ -71,7 +71,12 @@ export function requestCommonBrowserPermission(
   windowId?: number,
   file?: { filePath?: string; fileAccessType?: string; isDirectory?: boolean },
 ): Promise<boolean> {
-  browserPermissions(profileId).recordRequest(origin, permission)
+  try {
+    browserPermissions(profileId).recordRequest(origin, permission)
+  } catch (error) {
+    // Keep the promise contract: callers answer the page from their rejection handler.
+    return Promise.reject(error)
+  }
   const current = pending.get(contents)
   if (current) return current.permission === permission ? current.promise : Promise.resolve(false)
   const promise = request(contents, profileId, origin, permission, windowId, file).finally(() =>

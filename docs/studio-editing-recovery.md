@@ -30,7 +30,9 @@ proof is absent, Studio keeps the host draft and retains a competing edit for re
 Mobile detail forms keep up to 40 drafts per form type in memory. The cache removes clean entries
 first. At capacity, it keeps unsaved text and allows edits to existing drafts. It blocks edits to a
 new item and shows **Draft limit reached**. Save or discard an existing draft of that type, then
-edit the new item. These drafts do not survive an app process exit.
+edit the new item. Unsent text from these forms stays on the phone after the app process ends. See
+[Mobile editor drafts](composer-recovery.md#mobile-editor-drafts) for the forms, the saved scope and
+the retry notices.
 
 Browser profile forms retain edited fields when another window or computer changes the saved
 profile. Untouched fields use the new saved values. Unsaved profile changes and saves in progress
@@ -59,6 +61,60 @@ Select **Discard changes** to leave without saving. Cancelling Quit keeps the ru
 saving. Failed update preparation reopens Studio. These guards do not recover edits after a process
 crash or power loss. Code references use the text currently shown in the editor, including a draft
 whose save failed.
+
+## File saves
+
+The task file editor and Git changes save through the same runtime code. Studio writes the new text
+to a private temporary file in the same folder, checks its size and syncs it. Then Studio renames it
+over the original. The original stays complete until the rename. A full disk or a file-size limit
+returns 507 and leaves the file unchanged. The editor keeps the draft and shows **Retry save**.
+
+- A symlink keeps pointing at the same target. Studio saves the target file.
+- The saved file keeps its permission bits, including setuid and setgid, and its owner and group. A
+  new file gets the normal permissions from the runtime's umask.
+- Studio never writes the original in place. It refuses a save that a rename cannot finish safely
+  and leaves the file unchanged:
+  - The runtime account cannot open the file for writing. This returns 403.
+  - The folder does not allow new files, so a temporary file cannot be created. This returns 403.
+  - The file has other hard links. A rename would leave the old text under the other names. This
+    returns 409. Edit the file in an editor that writes in place, or replace the links with copies.
+  - The runtime account cannot keep the file's owner or group. This returns 409. Save the file as
+    the account that owns it.
+  - On Linux, GNU `/bin/cp` copies permissions, ACLs and extended attributes to the staged file. It
+    leaves the staged text in place. A missing utility, unsupported option, warning or copy error
+    returns 409 and keeps the original. This also works on systems without `getfattr` or `getfacl`.
+  - On macOS, Studio checks BSD flags and refuses to replace files with ACLs or extended attributes,
+    including Finder tags. On Windows it checks the owner, group, discretionary ACL and file
+    attributes. It refuses a file with a named data stream. A failed metadata check keeps the draft.
+  - The system refuses the rename, for example because another Windows program has the file open.
+    This returns 409. Close the other program, then save again.
+- If another program replaces the file or changes its contents, mode, owner or links while Studio
+  writes the copy, the save returns 409. Reload the file, then save again.
+
+On Windows the check excludes the audit ACL, NTFS extended attributes, object IDs and short names.
+Use an editor that preserves those properties for files that require them.
+
+A crash while Studio writes the temporary copy can leave a hidden `.<name>.dovo-<id>.tmp` file next
+to the original. The runtime loads `signal-exit`, so a file-size limit set with `ulimit -f` stops
+the runtime process instead of returning an error. The original stays unchanged, but the temporary
+file remains. Delete it after you check the original.
+
+Run the save checks on Linux or macOS:
+
+```sh
+pnpm exec vp test packages/runtime/src/scm/git/save-failure.test.ts packages/runtime/src/scm/repositories/file-writes.test.ts
+pnpm prove -- packages/runtime/src/scm/git/save-failure.test.ts
+```
+
+The first file saves through the Git service and the task editor's HTTP route in child processes.
+The file-size cases run under a real `ulimit -f` below the size of the original. The tests cover an
+ordinary file, a hard link, a read-only folder and a read-only file, and check the bytes, inode,
+link count, mode and leftover temporary files. The second file uses real files for modes, umask and
+hard links. On Linux it sets ACLs with `setfacl` and a binary user attribute with Python 3. The
+attribute test runs the save with the inspection tools off the search path. These fixture tools are
+optional for tests and are separate from the runtime's GNU `cp`. It injects a refused owner change,
+a refused rename and changes by another program during the save. Tests that need file modes skip
+when they run as root. Windows skips the size, link and mode tests.
 
 ## Mobile send storage
 
@@ -241,3 +297,17 @@ The app journal string adapter reuses encoded text for immutable retained entrie
 benchmark with 5,000 messages (9.77 MiB of message text) measured a median metadata edit of 6.1 ms,
 compared with 37.1 ms before this change. This excludes device disk I/O, networking and UI
 rendering.
+
+## Startup and offline workspace drafts
+
+A fresh thread saves its first text with its task ID and project before the workspace outbox
+finishes writing. If Studio closes during that write, reopen the Threads starter on the same paired
+computer to recover the text. Threads that already have a workspace row open through the thread
+list.
+
+You can switch computers while edited data waits in the local outbox. Studio keeps the pending edits
+with the computer where you made them. You can return to that computer offline if Studio has a saved
+workspace or a pending edit for it. The edits sync when that computer reconnects.
+
+Run `pnpm test:workspace-modes:browser` and `pnpm test:workspace-recovery:browser` to check draft
+recovery and offline switching with simulated runtime responses.

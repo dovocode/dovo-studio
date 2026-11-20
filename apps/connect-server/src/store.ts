@@ -1,7 +1,8 @@
 import { DatabaseSync } from 'node:sqlite'
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
 import type { AccountDirectory, AccountServer } from '@dovo/protocol'
 import type { AccountIdentity } from './oidc.js'
+import { RequestError } from './http.js'
 import { PeopleStore } from './people-store.js'
 export const secret = () => randomBytes(32).toString('base64url')
 export const hash = (value: string) => createHash('sha256').update(value).digest('base64url')
@@ -35,6 +36,7 @@ export class AccountStore {
       CREATE TABLE IF NOT EXISTS organization_identities(user TEXT PRIMARY KEY,organization TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS servers(user TEXT NOT NULL,id TEXT NOT NULL,name TEXT NOT NULL,address TEXT NOT NULL,PRIMARY KEY(user,id));
       CREATE TABLE IF NOT EXISTS artifact_sessions(token TEXT PRIMARY KEY,audience TEXT NOT NULL,parent TEXT);
+      CREATE TABLE IF NOT EXISTS reusable_grants(token TEXT PRIMARY KEY,nonce TEXT NOT NULL,purpose TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS artifact_feed_grants(token TEXT PRIMARY KEY,publication TEXT NOT NULL);`)
     this.db.exec(
       'CREATE TABLE IF NOT EXISTS sharing_key_recovery(user TEXT PRIMARY KEY,sealed TEXT NOT NULL)',
@@ -46,11 +48,15 @@ export class AccountStore {
         .some((row) => row.name === 'verified')
     )
       this.db.exec('ALTER TABLE deleted_accounts ADD COLUMN verified INTEGER NOT NULL DEFAULT 0')
+    this.migratePendingDeletions()
     this.people = new PeopleStore(this)
   }
   cleanup() {
     this.db.prepare('DELETE FROM logins WHERE expires<=?').run(this.now())
     this.db.prepare('DELETE FROM sessions WHERE expires<=?').run(this.now())
+    this.db
+      .prepare('DELETE FROM reusable_grants WHERE token NOT IN (SELECT token FROM sessions)')
+      .run()
     this.cleanupSharingKeys()
     this.db
       .prepare('DELETE FROM organization_sessions WHERE token NOT IN (SELECT token FROM sessions)')
@@ -99,6 +105,11 @@ export class AccountStore {
       .prepare('INSERT OR REPLACE INTO logins VALUES(?,?,?)')
       .run(login.id, JSON.stringify(login), login.expires)
   }
+  cancelLogin(login: Login) {
+    this.db
+      .prepare('DELETE FROM logins WHERE id=? AND value=?')
+      .run(login.id, JSON.stringify(login))
+  }
   login(id: string): Login | undefined {
     const row = this.db
       .prepare('SELECT value FROM logins WHERE id=? AND expires>?')
@@ -142,7 +153,8 @@ export class AccountStore {
     return !!this.db.prepare('SELECT user FROM organization_identities WHERE user=?').get(user)
   }
   approve(login: Login, user: AccountIdentity) {
-    if (this.deleting(user.id)) throw new Error('Account deletion has started')
+    if (this.deleting(user.id))
+      throw new RequestError(409, 'This account is deleted or its deletion is in progress.')
     if (
       user.organization &&
       this.organizations.get(user.organization.id) !== user.organization.policy
@@ -196,31 +208,52 @@ export class AccountStore {
     if (typeof session?.user !== 'string' || (!allowDeleting && this.deleting(session.user))) return
     return session.user
   }
-  artifactGrant(token: string, audience: string, publicationId?: string) {
+  artifactGrant(
+    token: string,
+    audience: string,
+    publicationId?: string,
+    purpose?: 'artifacts' | 'sharing',
+  ) {
     this.cleanup()
-    const directory = this.directory(token)
-    if (!directory) return
-    if (
-      Number(
-        this.db
-          .prepare(`SELECT count(*) AS n FROM artifact_sessions a WHERE parent=? AND NOT EXISTS
-            (SELECT 1 FROM artifact_feed_grants f WHERE f.token=a.token AND f.publication=? AND a.audience=?)`)
-          .get(hash(token), publicationId ?? null, audience)?.n,
-      ) >= 32
-    )
-      throw new Error('Too many active artifact sessions; try again later')
-    const parent = this.db.prepare('SELECT expires FROM sessions WHERE token=?').get(hash(token))
-    if (typeof parent?.expires !== 'number') return
-    const grant = secret(),
-      expiresAt = Math.min(this.now() + (publicationId ? 30 * 86400_000 : 600_000), parent.expires)
+    const parent = hash(token)
+    const derive = (nonce: string) =>
+      createHmac('sha256', token)
+        .update(JSON.stringify(['artifact-session-v1', audience, purpose, nonce]))
+        .digest('base64url')
     this.db.exec('BEGIN IMMEDIATE')
     try {
+      const user = this.sessionUser(token)
+      const session = this.db.prepare('SELECT expires FROM sessions WHERE token=?').get(parent)
+      if (!user || typeof session?.expires !== 'number') {
+        this.db.exec('COMMIT')
+        return
+      }
+      if (purpose && !publicationId) {
+        const existing = this.db
+          .prepare(`SELECT r.nonce,s.expires FROM artifact_sessions a
+          JOIN sessions s ON s.token=a.token JOIN reusable_grants r ON r.token=a.token
+          WHERE a.parent=? AND a.audience=? AND r.purpose=? AND s.expires>=?
+          ORDER BY s.expires DESC LIMIT 1`)
+          // Allow the hosted request to finish within its 30-second timeout. A child
+          // cannot outlive its parent, so reuse the final grant until both expire.
+          .get(parent, audience, purpose, Math.min(this.now() + 30_000, session.expires))
+        if (typeof existing?.nonce === 'string' && typeof existing.expires === 'number') {
+          this.db.exec('COMMIT')
+          return { token: derive(existing.nonce), expiresAt: existing.expires, origin: audience }
+        }
+      }
+      const nonce = secret()
+      const grant = purpose && !publicationId ? derive(nonce) : nonce
+      const expiresAt = Math.min(
+        this.now() + (publicationId ? 30 * 86400_000 : 600_000),
+        session.expires,
+      )
       if (publicationId) {
         // Reapproval replaces this parent's previous writer for the same publication.
         this.db
           .prepare(`DELETE FROM sessions WHERE token IN
           (SELECT a.token FROM artifact_sessions a JOIN artifact_feed_grants f ON f.token=a.token WHERE a.parent=? AND f.publication=? AND a.audience=?)`)
-          .run(hash(token), publicationId, audience)
+          .run(parent, publicationId, audience)
         this.db
           .prepare('DELETE FROM artifact_sessions WHERE token NOT IN (SELECT token FROM sessions)')
           .run()
@@ -230,26 +263,34 @@ export class AccountStore {
           )
           .run()
       }
-      this.db
-        .prepare('INSERT INTO sessions VALUES(?,?,?)')
-        .run(hash(grant), directory.user.id, expiresAt)
+      const count = this.db
+        .prepare(`SELECT count(*) AS n FROM artifact_sessions a
+        LEFT JOIN artifact_feed_grants f ON f.token=a.token WHERE a.parent=? AND (f.token IS NOT NULL)=?`)
+        .get(parent, publicationId ? 1 : 0)
+      if (Number(count?.n) >= 32)
+        throw new RequestError(429, 'Too many active artifact sessions. Try again later.')
+      this.db.prepare('INSERT INTO sessions VALUES(?,?,?)').run(hash(grant), user, expiresAt)
       this.db
         .prepare('INSERT INTO artifact_sessions VALUES(?,?,?)')
-        .run(hash(grant), audience, hash(token))
+        .run(hash(grant), audience, parent)
       if (publicationId)
         this.db
           .prepare('INSERT INTO artifact_feed_grants VALUES(?,?)')
           .run(hash(grant), publicationId)
+      else if (purpose)
+        this.db
+          .prepare('INSERT INTO reusable_grants VALUES(?,?,?)')
+          .run(hash(grant), nonce, purpose)
       this.db.exec('COMMIT')
+      return {
+        token: grant,
+        expiresAt,
+        origin: audience,
+        ...(publicationId ? { publicationId } : {}),
+      }
     } catch (error) {
       this.db.exec('ROLLBACK')
       throw error
-    }
-    return {
-      token: grant,
-      expiresAt,
-      origin: audience,
-      ...(publicationId ? { publicationId } : {}),
     }
   }
   artifactSession(token: string, feed = false) {
@@ -310,11 +351,62 @@ export class AccountStore {
   unlink(user: string, id: string) {
     this.db.prepare('DELETE FROM servers WHERE user=? AND id=?').run(user, id)
   }
+  /**
+   * Keeps the raw subject only until deletion finishes, so Connect can retry without a session.
+   * Runs at every start. A Connect version from before this table records a started deletion only
+   * as a hashed marker, also after a rollback once the table exists. A user row with a marker is
+   * a deletion that never finished, so it gets a pending row. Users that finished deletion have no
+   * row and keep only their marker. Existing pending rows keep their retry order.
+   */
+  private migratePendingDeletions() {
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.exec(
+        'CREATE TABLE IF NOT EXISTS pending_account_deletions(user TEXT PRIMARY KEY,attempted INTEGER NOT NULL DEFAULT 0)',
+      )
+      const insert = this.db.prepare(
+        'INSERT OR IGNORE INTO pending_account_deletions(user) VALUES(?)',
+      )
+      for (const row of this.db
+        .prepare(
+          'SELECT id FROM users WHERE id NOT IN (SELECT user FROM pending_account_deletions)',
+        )
+        .all())
+        if (typeof row.id === 'string' && this.deleting(row.id)) insert.run(row.id)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
   deleting(user: string) {
     return !!this.db.prepare('SELECT id FROM deleted_accounts WHERE id=?').get(hash(user))
   }
   beginDeletion(user: string) {
-    this.db.prepare('INSERT OR IGNORE INTO deleted_accounts(id) VALUES(?)').run(hash(user))
+    this.db.exec('BEGIN IMMEDIATE')
+    try {
+      this.db.prepare('INSERT OR IGNORE INTO deleted_accounts(id) VALUES(?)').run(hash(user))
+      this.db.prepare('INSERT OR IGNORE INTO pending_account_deletions(user) VALUES(?)').run(user)
+      this.db.exec('COMMIT')
+    } catch (error) {
+      this.db.exec('ROLLBACK')
+      throw error
+    }
+  }
+  /** Least recently attempted first, so one failing account cannot block the others. */
+  pendingDeletions(): string[] {
+    return this.db
+      .prepare('SELECT user FROM pending_account_deletions ORDER BY attempted,user')
+      .all()
+      .flatMap((row) => (typeof row.user === 'string' ? [row.user] : []))
+  }
+  deletionPending(user: string) {
+    return !!this.db.prepare('SELECT 1 FROM pending_account_deletions WHERE user=?').get(user)
+  }
+  attemptDeletion(user: string) {
+    this.db
+      .prepare('UPDATE pending_account_deletions SET attempted=? WHERE user=?')
+      .run(this.now(), user)
   }
   deletionVerified(user: string) {
     return (
@@ -328,7 +420,8 @@ export class AccountStore {
   deleteAccount(user: string) {
     this.db.exec('BEGIN IMMEDIATE')
     try {
-      this.beginDeletion(user)
+      this.db.prepare('INSERT OR IGNORE INTO deleted_accounts(id) VALUES(?)').run(hash(user))
+      this.db.prepare('DELETE FROM pending_account_deletions WHERE user=?').run(user)
       this.people.deleteAccount(user)
       this.db.prepare('DELETE FROM sessions WHERE user=?').run(user)
       this.db.prepare('DELETE FROM servers WHERE user=?').run(user)

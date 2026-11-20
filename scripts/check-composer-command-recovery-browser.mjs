@@ -14,7 +14,7 @@ const mocks = {
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '@dovo/studio-ui': `export {BotAvatar} from '../studio-ui/src/bot-avatar';export {Dialog,DialogContent,DialogTitle,DialogDescription,DialogFooter} from '../studio-ui/src/components/ui/dialog';export {SearchField} from '../studio-ui/src/search-field';export {ComposerSettingsControls} from '../studio-ui/src/composer-settings-controls';export * as Popover from '@radix-ui/react-popover';export {ChoicePicker} from '../studio-ui/src/choice-picker';export const useHarnessCatalog=()=>({catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});export * as DropdownMenu from '@radix-ui/react-dropdown-menu';export {permissionPolicyUIIssue} from '../studio-ui/src/permission-policy-fields';export {Queue,QueueSectionTrigger,QueueList,QueueItem,QueueItemIndicator,QueueItemContent} from '../studio-ui/src/components/ai-elements/queue.tsx';import React from 'react';export const cn=(...values)=>values.filter(Boolean).join(' ');import {Button} from '../studio-ui/src/components/ui/button';export {Button};export const IconButton=({label,children,...props})=><Button aria-label={label} {...props}>{children}</Button>;export {ComposerSurface,ComposerSubmit} from '../studio-ui/src/composer-surface';`,
   './use-attachments': `export const useAttachments=task=>({submissionFiles:task.draftAttachments??[],failedUploads:[],canSubmitWhileUploading:false,waitForUploads:async()=>{},files:task.draftAttachments??[],previews:[],uploading:[],busy:false,error:'',upload:files=>{window.dropped.push(files.map(file=>({name:file.name,size:file.size})))},remove:()=>{}});`,
-  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,onCommand})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <><textarea aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><button type="button" onClick={()=>onCommand('undo')}>Open undo</button></>};`,
+  './composer-editor': `import {useSyncExternalStore} from 'react';export const ComposerEditor=({controller,onCommand})=>{const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <><textarea aria-label="Message" value={text} onChange={event=>controller.update(event.target.value)}/><button type="button" onClick={()=>onCommand('new-session')}>New session</button></>};`,
 }
 for (const [path, name] of [
   ['../../dialogs/harness-dialog', 'HarnessDialog'],
@@ -36,14 +36,14 @@ const built = await build({
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {WorkspaceHarness} from '@dovo/studio-core';import {Composer} from './src/chat/composer/composer.tsx';
 const profiles=['local','remote'].map(id=>({id,name:id,connection:{address:'http://'+id,token:'token-'+id}}));
 const turn=id=>({id,status:'completed',checkpoint:{before:'before',after:'after',files:[{path:'src/task.ts',before:'old',after:'new',viewed:false}],omitted:[]}});
-const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[turn('older'),turn('last')],queue:[{id:'queued',text:'Keep this queue',role:'user'}],draft:'Keep this draft',files:[],example:false};
-window.requests=[];window.refreshes=[];window.flushes=0;window.failUndo=true;window.failRefresh=false;window.refreshMode='same';window.holdRefresh=false;
-const request=async(path,input)=>{window.requests.push({path,input});if(path==='/api/tasks/turn/restore'&&window.failUndo)throw Error('The checkout changed. Refresh before trying again.');return {ok:true}};
+const initial={id:'task',title:'Task',repositoryId:'repo',agentId:'agent',status:'draft',messages:[],turns:[{...turn('older'),checkpoint:{...turn('older').checkpoint,restorePending:true,undone:{at:'now',backup:'saved'}}},turn('last')],queue:[{id:'queued',text:'Keep this queue',role:'user'}],draft:'Keep this draft',files:[],example:false};
+window.requests=[];
+const request=async(path,input)=>{window.requests.push({path,input});return {ok:true}};
 function App(){
+ const [supportsReview,setSupportsReview]=useState(false);window.setSupportsReview=setSupportsReview;
  const [runtime,setRuntime]=useState(0);const [connected,setConnected]=useState(true);const [workspace,setWorkspace]=useState({tasks:[initial],repositories:[],agents:[],skills:[],mcpServers:[]});
  window.setRuntime=setRuntime;window.setConnected=setConnected;window.setTask=update=>setWorkspace(old=>({...old,tasks:[update(old.tasks[0])]}));window.current=workspace.tasks[0];
- const refreshRuntime=async profile=>{window.refreshes.push(profile.id);if(window.holdRefresh)await new Promise(resolve=>{window.finishRefresh=resolve});if(window.failRefresh)throw Error('Refresh failed');if(window.refreshMode==='older')window.setTask(task=>({...task,turns:[task.turns[0],{...task.turns[1],checkpoint:{...task.turns[1].checkpoint,undone:{backup:'saved'}}}]}));if(window.refreshMode==='running')window.setTask(task=>({...task,status:'running'}));};
- const value={workspace,setWorkspace,request,connected,runtimes:[],runtimeRegistry:{profiles,activeId:profiles[runtime].id},activeRuntimeId:profiles[runtime].id,connection:profiles[runtime].connection,refreshRuntime,flush:async()=>{window.flushes++},snapshot:{workspace,questions:[],approvals:[],runs:[]}};
+ const value={workspace,setWorkspace,request,connected,runtimes:[],runtimeRegistry:{profiles,activeId:profiles[runtime].id},activeRuntimeId:profiles[runtime].id,connection:profiles[runtime].connection,refreshRuntime:async()=>{},flush:async()=>{},snapshot:{retryUsesCurrentFiles:supportsReview,workspace,questions:[],approvals:[],runs:[]}};
  return <WorkspaceHarness value={value}><Composer task={workspace.tasks[0]} onPending={()=>{}}/></WorkspaceHarness>
 }createRoot(document.getElementById('app')).render(<App/>);
 `,
@@ -89,127 +89,29 @@ try {
       .join('\n'),
   })
   await page.addScriptTag({ content: built.outputFiles[0].text })
-  const undo = page.getByRole('button', { name: 'Undo changes', exact: true })
-  const refresh = page.getByRole('button', { name: 'Refresh thread', exact: true })
-  const open = async () => {
-    await page.getByRole('button', { name: 'Open undo', exact: true }).click()
-    await page.getByRole('dialog').waitFor()
-  }
-  const fail = async () => {
-    await undo.click()
-    await refresh.waitFor()
-    assert.equal(await undo.isDisabled(), true)
-    assert.equal(await refresh.getAttribute('data-variant'), 'default')
-    assert.equal(await undo.getAttribute('data-variant'), 'outline')
-    await page.waitForFunction(() => document.activeElement?.textContent === 'Refresh thread')
-  }
-  await page.getByRole('textbox', { name: 'Message' }).fill('Typed just before undo')
-  await open()
-  await fail()
-  assert.deepEqual(await page.evaluate(() => window.requests[0].input), {
-    id: 'task',
-    turnId: 'last',
-    direction: 'undo',
-  })
+  const backup = page.getByRole('button', { name: 'Review saved Undo backup', exact: true })
+  await page.getByText('Update the runtime to review the saved Undo backup.').waitFor()
+  assert.equal(await backup.count(), 0)
+  await page.evaluate(() => window.setSupportsReview(true))
+  await backup.click()
   await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await open()
-  assert.equal(await undo.isDisabled(), true, 'Reopening bypassed required refresh')
-  await page.evaluate(() => {
-    window.failRefresh = true
-  })
-  await refresh.click()
-  await page.getByRole('alert').filter({ hasText: 'Refresh failed' }).waitFor()
-  assert.equal(await undo.isDisabled(), true, 'Failed refresh enabled stale undo')
-  await page.evaluate(() => window.setConnected(false))
-  await page.getByRole('status').filter({ hasText: 'Connect to this thread' }).waitFor()
-  assert.equal(await refresh.isDisabled(), true)
-  await page.evaluate(() => {
-    window.setConnected(true)
-    window.failRefresh = false
-    window.holdRefresh = true
-  })
-  await refresh.click()
-  await page.getByRole('button', { name: 'Refreshing…', exact: true }).waitFor()
-  assert.equal(await undo.isDisabled(), true)
-  assert.equal(await page.getByRole('button', { name: 'Cancel', exact: true }).isDisabled(), true)
-  await page.keyboard.press('Escape')
-  assert.equal(await page.getByRole('dialog').count(), 1, 'Busy refresh dialog closed')
-  await page.evaluate(() => window.finishRefresh())
-  await page.waitForFunction(
-    () =>
-      !Array.from(document.querySelectorAll('button')).find(
-        (button) => button.textContent === 'Undo changes',
-      )?.disabled,
-  )
-  assert.deepEqual(await page.evaluate(() => window.refreshes), ['local', 'local'])
-  assert.equal(
-    await page.evaluate(() => window.requests.length),
-    1,
-    'Refresh automatically retried undo',
-  )
-  assert.equal(await page.evaluate(() => window.current.draft), 'Typed just before undo')
+  assert.equal(await page.evaluate(() => window.requests.length), 0)
+  await backup.click()
+  await page.getByRole('button', { name: 'Keep current files', exact: true }).click()
+  await page.getByRole('dialog').waitFor({ state: 'hidden' })
+  assert.deepEqual(await page.evaluate(() => window.requests), [
+    { path: '/api/tasks/turn/review-backup', input: { id: 'task', turnId: 'older' } },
+  ])
+  assert.equal(await page.evaluate(() => window.current.draft), 'Keep this draft')
   assert.equal(await page.evaluate(() => window.current.queue[0].text), 'Keep this queue')
-  await page.evaluate(() => {
-    window.failUndo = false
-    window.holdRefresh = false
-  })
-  await undo.click()
+  await page.evaluate(() => window.setTask((task) => ({ ...task, turns: [] })))
+  await backup.waitFor({ state: 'hidden' })
+  await page.getByRole('button', { name: 'New session' }).click()
+  await page.getByRole('button', { name: 'Start fresh' }).click()
   await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  assert.equal(await page.evaluate(() => window.requests.length), 2)
-  assert.deepEqual(await page.evaluate(() => window.requests[1].input), {
-    id: 'task',
-    turnId: 'last',
-    direction: 'undo',
-  })
-  // If refresh reveals the turn was already undone, never fall back to an older turn.
-  await page.evaluate(() => {
-    window.failUndo = true
-    window.refreshMode = 'older'
-  })
-  await open()
-  await fail()
-  await refresh.click()
-  await refresh.waitFor({ state: 'hidden' })
-  assert.equal(await undo.isDisabled(), true, 'Refresh silently targeted an older turn')
-  await page.getByText('This turn is no longer available to undo.', { exact: false }).waitFor()
-  assert.equal(await page.evaluate(() => window.requests.length), 3)
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  await page.evaluate(() => {
-    window.refreshMode = 'running'
-  })
-  await open()
-  await fail()
-  await refresh.click()
-  await page.getByRole('status').filter({ hasText: 'Wait for the agent' }).waitFor()
-  assert.equal(await undo.isDisabled(), true, 'Running thread allowed undo after refresh')
-  await page.evaluate(() => window.setTask((task) => ({ ...task, status: 'draft' })))
-  await page.waitForFunction(
-    () =>
-      !Array.from(document.querySelectorAll('button')).find(
-        (button) => button.textContent === 'Undo changes',
-      )?.disabled,
-  )
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  // A delayed response from another runtime must not reopen/clear the current dialog.
-  await page.evaluate(() => {
-    window.refreshMode = 'same'
-    window.holdRefresh = true
-  })
-  await open()
-  await fail()
-  await refresh.click()
-  await page.getByRole('button', { name: 'Refreshing…', exact: true }).waitFor()
-  await page.evaluate(() => window.setRuntime(1))
-  await page.getByRole('dialog').waitFor({ state: 'hidden' })
-  await open()
-  await page.evaluate(() => window.finishRefresh())
-  assert.equal(await page.getByRole('dialog').count(), 1)
-  assert.equal(await undo.isEnabled(), true)
-  assert.equal(await page.evaluate(() => window.refreshes.at(-1)), 'local')
+  assert.equal(await page.evaluate(() => window.requests.at(-1).path), '/api/tasks/new-session')
   assert.deepEqual(errors, [])
-  console.log(
-    'Composer command recovery passed: refresh gate, failure/offline/busy states, preserved draft/queue, scoped runtime, captured turn and late response guards.',
-  )
+  console.log('Legacy Undo backup recovery and new session checks passed.')
 } finally {
   await browser.close()
 }

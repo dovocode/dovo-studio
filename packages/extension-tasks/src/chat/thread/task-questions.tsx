@@ -11,16 +11,46 @@ import { responses, useWorkspace } from '@dovo/studio-core'
 import { QuestionForm } from '@dovo/studio-ui'
 import { Schema } from 'effect'
 import { mutableStruct, questionRecoveryDraft } from '@dovo/protocol'
+/** An explicit request ID never falls back to another request. */
+function selectTaskQuestion<T extends { id: string; prompt: { blocking?: boolean } }>(
+  questions: readonly T[],
+  questionId: string | undefined,
+) {
+  if (questionId) return questions.find((q) => q.id === questionId)
+  return questions.find((q) => q.prompt.blocking !== false) ?? questions[0]
+}
+
 export function TaskQuestions({
   taskId,
   questionId,
+  questionNavigation,
   onUseDraft,
 }: {
   taskId: string
   questionId?: string
+  /** Changes with each explicit navigation, so a repeated link asks for consent again. */
+  questionNavigation?: string
   onUseDraft: (text: string, done: () => void) => void
 }) {
-  const { snapshot, connection } = useWorkspace()
+  const { snapshot, connection, connected } = useWorkspace()
+  // An explicit request opens only that request. "Show pending questions" releases it for this
+  // navigation only. Another request, a new navigation or another thread or computer ends it.
+  const owner = JSON.stringify([connection?.runtimeId, connection?.address, taskId])
+  const [released, setReleased] = useState<{
+    id: string
+    navigation: string | undefined
+    owner: string
+  }>()
+  if (released && (released.id !== questionId || released.owner !== owner)) setReleased(undefined)
+  const target =
+    questionId &&
+    !(
+      released?.id === questionId &&
+      released.navigation === questionNavigation &&
+      released.owner === owner
+    )
+      ? questionId
+      : undefined
   const questions =
     snapshot?.questions.filter((q) => taskInputVisible(snapshot.workspace.tasks, taskId, q)) ?? []
   const recovery = (
@@ -30,11 +60,37 @@ export function TaskQuestions({
       onUseDraft={onUseDraft}
     />
   )
-  if (!questions.length) return recovery
-  const pending =
-    questions.find((q) => q.id === questionId) ??
-    questions.find((q) => q.prompt.blocking !== false) ??
-    questions[0]
+  const exact = selectTaskQuestion(questions, target)
+  if (target && !exact)
+    return (
+      <div className="mx-auto w-full max-w-[var(--chat-max)] shrink-0 space-y-2 px-5 pb-2">
+        {recovery}
+        <div
+          role="status"
+          data-request-kind="input"
+          data-request-id={target}
+          tabIndex={-1}
+          className="space-y-2 rounded-xl border px-3 py-2.5 text-xs"
+        >
+          <p>
+            {connected
+              ? 'This question has already been answered or is no longer pending.'
+              : 'Reconnect to check this question.'}
+          </p>
+          {questions.length > 0 && (
+            <button
+              type="button"
+              className="underline"
+              onClick={() => setReleased({ id: target, navigation: questionNavigation, owner })}
+            >
+              Show pending questions ({questions.length})
+            </button>
+          )}
+        </div>
+      </div>
+    )
+  const pending = exact
+  if (!pending) return recovery
   return (
     <div
       className="mx-auto w-full max-w-[var(--chat-max)] shrink-0 px-5 pb-2"
@@ -54,7 +110,7 @@ export function TaskQuestions({
         </p>
       )}
       {recovery}
-      {pending.id === questionId && (
+      {pending.id === target && (
         <p
           data-request-kind="input"
           data-request-id={pending.id}

@@ -594,3 +594,50 @@ it('isolates an unreadable push registration without deleting it or preventing s
     f.db.prepare('SELECT value FROM push_devices WHERE device_id=?').pluck().get(f.device),
   ).toBe('not-json')
 })
+it('backs off a failing device without delaying another device', async () => {
+  const f = setup()
+  const healthy = f.devices.add('Tablet', 'tablet-token')
+  f.service.register(healthy, { ...f.registration, token: 'b'.repeat(64) })
+  await f.service.flush()
+  const sent: string[] = []
+  f.send.mockImplementation(async (message) => {
+    sent.push(message.token)
+    if (message.token === f.registration.token) throw new Error('Phone provider unavailable')
+    return { delivered: true, invalidToken: false }
+  })
+  f.input([
+    { id: 'first', preview: 'First question' },
+    { id: 'second', preview: 'Second question' },
+  ])
+  await f.service.flush()
+  await f.service.flush()
+  // One attempt for the failing phone, then both messages wait. The tablet receives both.
+  expect(sent.filter((token) => token === f.registration.token)).toHaveLength(1)
+  expect(sent.filter((token) => token === 'b'.repeat(64))).toHaveLength(2)
+  expect(
+    f.db.prepare('SELECT device_id AS deviceId, attempt FROM push_outbox ORDER BY attempt').all(),
+  ).toEqual([
+    { deviceId: f.device, attempt: 0 },
+    { deviceId: f.device, attempt: 1 },
+  ])
+  expect(f.service.status(f.device).error).toContain('Push delivery failed')
+
+  // A new message for the tablet is still delivered while the phone waits.
+  f.input([
+    { id: 'first', preview: 'First question' },
+    { id: 'second', preview: 'Second question' },
+    { id: 'third', preview: 'Third question' },
+  ])
+  await f.service.flush()
+  expect(sent.filter((token) => token === 'b'.repeat(64))).toHaveLength(3)
+  expect(sent.filter((token) => token === f.registration.token)).toHaveLength(1)
+  expect(f.service.status(f.device).error).toContain('Push delivery failed')
+  expect(f.service.status(healthy).error).toBeNull()
+
+  // When the retry time arrives, the phone receives its messages again.
+  f.send.mockResolvedValue({ delivered: true, invalidToken: false })
+  f.db.prepare('UPDATE push_outbox SET next=0').run()
+  await f.service.flush()
+  expect(f.db.prepare('SELECT id FROM push_outbox').all()).toEqual([])
+  expect(f.service.status(f.device).error).toBeNull()
+})

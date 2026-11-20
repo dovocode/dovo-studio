@@ -1,10 +1,37 @@
-/** The "@query" being typed at the caret, or undefined. The @ must start the text or follow
- * whitespace, so e-mail addresses and decorators do not open file suggestions. */
+import type { MentionTrigger } from './resource-mentions.js'
+
+/** File picker trigger at the caret, including the bare @file shortcut. */
 export function mentionQuery(text: string, caret: number) {
-  const before = text.slice(0, caret)
-  const match = /(^|\s)@([^\s@]*)$/.exec(before)
+  const match = /(^|\s)@file(?::([^\s]*))?$/.exec(text.slice(0, caret))
   if (!match) return undefined
-  return { start: caret - match[2].length - 1, query: match[2] }
+  return { start: match.index + match[1].length, query: match[2] ?? '' }
+}
+
+/** Match one complete explicit file token. The first group holds its leading boundary. */
+const fileTokens = /(^|\s)@file:("(?:\\.|[^"\\])*"|[^\s"][^\s]*)(?=\s|$)/g
+
+export function explicitFileMentions(text: string) {
+  const files: { start: number; end: number; path: string }[] = []
+  for (const match of text.matchAll(fileTokens)) {
+    let path = match[2]
+    if (path.startsWith('"')) {
+      try {
+        path = JSON.parse(path)
+      } catch {
+        continue
+      }
+    }
+    files.push({ start: match.index + match[1].length, end: match.index + match[0].length, path })
+  }
+  return files
+}
+
+/** Keep UTF-16 offsets while hiding filenames from other mention parsers. */
+export function maskFileMentions(text: string) {
+  return text.replace(
+    fileTokens,
+    (token, space: string) => space + 'x'.repeat(token.length - space.length),
+  )
 }
 
 /** Replaces the mention at `start` with trigger + value + space; returns text and caret. */
@@ -13,9 +40,10 @@ export function insertMention(
   start: number,
   caret: number,
   value: string,
-  trigger: '@' | '$' | '/' | '#' = '@',
+  trigger: MentionTrigger = '@file:',
 ) {
-  const mention = `${trigger}${value} `
+  const token = trigger === '@file:' && /[\s"\\]/.test(value) ? JSON.stringify(value) : value
+  const mention = `${trigger}${token} `
   return {
     text: text.slice(0, start) + mention + text.slice(caret),
     caret: start + mention.length,

@@ -25,6 +25,7 @@ import {
   encryptedSuggestionSchema,
   SHARE_MAX_BYTES,
 } from '@dovo/protocol'
+import { clientAddress } from '@dovo/protocol/client-address'
 import { marked } from 'marked'
 import { ArtifactStore, ShareError } from './store.js'
 import { artifactPage } from './pages.js'
@@ -64,6 +65,7 @@ export function createArtifactServer(options: {
   origin: string
   connectOrigin: string
   serviceKey: string
+  trustedProxies?: readonly string[]
   viewerScript?: string
   sharingScript?: string
   brokerNamespace?: 'artifacts' | 'sharing'
@@ -172,31 +174,19 @@ export function createArtifactServer(options: {
       throw new ShareError(429, 'Too many requests. Try again later')
     windows.set(key, window)
   }
+  const address = clientAddress(options.trustedProxies ?? [])
+  const requestSlots = 8
   let active = 0
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
-    res.setHeader('Cache-Control', 'no-store')
-    res.setHeader('Referrer-Policy', 'no-referrer')
-    res.setHeader('X-Content-Type-Options', 'nosniff')
-    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive')
-    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
-    // srcdoc inherits this policy. Inline scripts must be permitted for interactive guests;
-    // their own stricter policy removes same-origin scripts/network, and the opaque sandbox
-    // prevents host access. Keep all publisher content out of the trusted shell's DOM sinks.
-    res.setHeader(
-      'Content-Security-Policy',
-      "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: blob:; font-src data:; media-src data: blob:; frame-src about:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'",
-    )
     const url = new URL(req.url ?? '/', origin),
       path = url.pathname
     if (path.startsWith('/v1/') || path.startsWith('/v2/')) {
       res.setHeader('Access-Control-Allow-Origin', '*')
-      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type')
+      res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type, If-None-Match')
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS')
     }
     if (req.method === 'OPTIONS') return json(res, 204, {})
-    if (req.method === 'GET' && path === '/health')
-      return json(res, 200, { ok: true, service: 'dovo-artifacts' })
-    limit('ip:' + (req.socket.remoteAddress ?? ''), 1200)
+    limit('ip:' + address(req), 1200)
     if (req.method === 'GET' && path === '/viewer.js') {
       res.writeHead(200, { 'Content-Type': 'text/javascript; charset=utf-8' })
       return res.end(script)
@@ -232,7 +222,7 @@ export function createArtifactServer(options: {
     )
       throw new ShareError(403, 'Start this action from Dovo Artifacts')
     if (req.method === 'POST' && path === '/auth/start') {
-      limit('login:' + (req.socket.remoteAddress ?? ''), 10)
+      limit('login:' + address(req), 10)
       const login = decode(accountLoginSchema, await broker('/v1/artifacts/login', '', 'POST'))
       if (
         !tokenPattern.test(login.token) ||
@@ -337,8 +327,16 @@ export function createArtifactServer(options: {
           token,
           session?.sharingOrganizations,
         )
-        if (req.method === 'GET') return json(res, 200, viewed)
-        limit('suggestion:' + id + ':' + (req.socket.remoteAddress ?? ''), 5)
+        if (req.method === 'GET') {
+          const tag = `"${viewed.version}"`
+          res.setHeader('ETag', tag)
+          if (req.headers['if-none-match'] === tag) {
+            res.writeHead(304)
+            return res.end()
+          }
+          return json(res, 200, viewed)
+        }
+        limit('suggestion:' + id + ':' + address(req), 5)
         const input = decode(encryptedSuggestionSchema, await body(req, 100000))
         // Revocation during upload must also block the write.
         const current = await identity(req, false)
@@ -524,7 +522,26 @@ export function createArtifactServer(options: {
     throw new ShareError(404, 'Not found')
   }
   const server = createServer((req, res) => {
-    if (active >= 8) return json(res, 503, { error: 'Artifact service is busy' })
+    res.setHeader('Cache-Control', 'no-store')
+    res.setHeader('Referrer-Policy', 'no-referrer')
+    res.setHeader('X-Content-Type-Options', 'nosniff')
+    res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive')
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=(), payment=()')
+    // srcdoc inherits this policy. Inline scripts must be permitted for interactive guests;
+    // their own stricter policy removes same-origin scripts/network, and the opaque sandbox
+    // prevents host access. Keep all publisher content out of the trusted shell's DOM sinks.
+    res.setHeader(
+      'Content-Security-Policy',
+      "default-src 'none'; script-src 'self' 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; img-src data: blob:; font-src data:; media-src data: blob:; frame-src about:; frame-ancestors 'none'; base-uri 'none'; form-action 'none'; object-src 'none'; worker-src 'none'",
+    )
+    if (req.method === 'GET' && req.url?.split('?', 1)[0] === '/health') {
+      return json(res, 200, { ok: true, service: 'dovo-artifacts' })
+    }
+    if (req.method === 'GET' && req.url?.split('?', 1)[0] === '/ready') {
+      const ready = active < requestSlots
+      return json(res, ready ? 200 : 503, { ready })
+    }
+    if (active >= requestSlots) return json(res, 503, { error: 'Artifact service is busy' })
     active++
     void handle(req, res)
       .catch((error) => {

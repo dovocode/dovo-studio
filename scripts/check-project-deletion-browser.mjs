@@ -120,7 +120,7 @@ try {
         ],
       },
       {},
-      'Finish the pending undo or redo',
+      'Review the saved Undo backup in the linked thread',
     ],
     [{ tasks: [{ ...task, status: 'running' }] }, {}, 'Stop active turns and agents'],
     [

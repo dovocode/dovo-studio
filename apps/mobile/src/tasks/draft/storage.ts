@@ -38,6 +38,9 @@ const recordSchema = mutableStruct({
       attachmentIds: mutableArray(Schema.String),
       turnSettings: Schema.NullOr(turnSettingsSchema),
       draftTurnSettings: Schema.NullOr(turnSettingsSchema),
+      /** Plan values seen when the restore was prepared. Records from older builds omit them. */
+      plan: Schema.optional(Schema.Boolean),
+      draftPlan: Schema.optional(Schema.Boolean),
       connection: Schema.String,
     }),
   ),

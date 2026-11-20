@@ -1,85 +1,17 @@
-# Automations
+# Source control
 
-Jobs run on the selected computer. The runtime must stay running for schedules, webhooks and task
-execution; closing the phone or desktop client does not stop a run.
+Source control connections, linked checkouts, worktrees, pull requests and commit review all run on
+the computer that hosts the project. Open **Settings → Source control** on that computer to add a
+connection, then link it in the project's source-control settings. Set up a provider with its guide:
 
-## Create and edit on mobile
+- [GitHub](github-integration.md): GitHub CLI login, accounts and API behavior.
+- [Forgejo and Gitea](forgejo-gitea.md): instance URL, token scopes and project binding.
+- [Bitbucket Cloud and Azure DevOps Services](bitbucket-azure.md): connection setup and
+  capabilities.
+- [Issues, pipelines and Jira](issues-pipelines-jira.md): connected issue and pipeline sources.
 
-Open **Settings → Coding → Automations**, select the computer, then **New automation**. Give it a
-name, choose a trigger and configure its ordered steps:
-
-- **Task:** instructions, project, harness, model, thinking level, permissions and local checkout or
-  new worktree. Built-in providers and installed ACP agents work directly; a saved agent
-  configuration is optional.
-- **Review:** pause for approval before the next step. Open the preceding task to inspect its chat
-  and changes, then approve or reject the run.
-- Reorder or remove steps in the editor. At least one task and one trigger are required.
-
-Schedules support common presets or a custom cron expression and time zone. The saved time zone
-controls the schedule even when the phone travels. Webhook credentials are configured on the host
-desktop; paired phones do not gain access to owner-only credentials.
-
-New automations have automatic triggers paused. Save and run one manually before enabling its
-schedule or webhook. Editing an existing automation updates future runs; an active or failed run
-keeps the step definitions it started with. Mobile edits use compare-and-set writes: conflicting
-desktop edits are reported instead of overwritten.
-
-The mobile editor supports a single ordered path. Existing branching graphs remain visible and
-runnable, and their connections are preserved. Edit those in the desktop/web canvas.
-
-## Follow a run
-
-Each run records the current step, completed steps, review gates, failures, task links and start/end
-times. Expand run details on mobile or open **Runs** beside the desktop canvas. Steps distinguish
-queued work from work that is running, awaiting review, completed, failed or cancelled.
-
-Only one run of an automation may be active or waiting for review at a time. Different automations
-can run at the same time. Tasks that use the same checkout share its files and uncommitted changes.
-Use separate worktrees to isolate changes.
-
-## Retry and stop
-
-**Retry** resumes a failed or cancelled run. It preserves completed steps and reuses the unfinished
-step's task, conversation and checkout. A review that was rejected must be approved again before
-execution can continue. Retry waits for cancellation to finish and refuses to overlap another run of
-the same automation.
-
-Retry does not roll back files or guarantee that an interrupted tool command had no effect. Inspect
-the failed task's output and changes when the error happened during an external action. Retrying
-uses the original run configuration; to use edited instructions, start a new run.
-
-**Cancel** stops the current task and prevents later steps from starting. After a runtime restart,
-interrupted runs are marked failed with an explicit recovery message. Retry reconciles tasks that
-already completed before the run saved its next step, avoiding an unnecessary second execution.
-Waiting review gates survive restarts.
-
-## Delivery and scheduling
-
-Manual starts accept an optional `requestId` at `POST /api/jobs/run`. Repeating an accepted request
-for the same automation returns its original run ID, including after restart. Clients retain the ID
-after a lost response so retrying the request does not create a second run.
-
-Webhooks require a credential and unique `X-Idempotency-Key`. Duplicate deliveries return HTTP 409.
-Delivery acceptance and run creation commit together. Retry an existing run with
-`POST /api/jobs/retry` and `{ "id": "run-id" }`.
-
-Schedules do not replay downtime. Missed ticks while the runtime is running are coalesced, and
-overlapping runs are skipped. Invalid schedules are isolated so they do not stop other automations.
-
-## Multiple projects in a task step
-
-Task steps can include **Linked projects** on the same computer. Each link selects a main checkout,
-an existing worktree, or a new worktree, with reference-only or edit access. New worktrees have
-unique branch suffixes per task, so separate automation runs do not reuse each other's checkout.
-Tasks can edit the same existing worktree or main checkout at the same time.
-
-The primary project supplies agent defaults and tools. Each linked project's own worktree setup
-command runs before execution. Editable Git checkouts have separate checkpoint files and can be
-reviewed from the thread's Changes project selector. Reference-only is conveyed through harness
-permissions and instructions; it is not an operating-system sandbox.
-
-New step threads use the normal title generator with their submitted instructions. Generation runs
-independently of the task; a failure keeps the step name, and a manually edited title is preserved.
+Automation triggers, steps, runs and linked projects in task steps are in
+[Automations](automations.md).
 
 ## Linked projects and worktrees
 
@@ -133,11 +65,32 @@ available in Changes and when opening a terminal. Agents receive their paths, pr
 access modes, and can create separate commits and PRs in each project. A child agent can target a
 link by its checkout ID; reference-only links cap child permissions at read-only.
 
-Each editable Git checkout gets independent checkpoint previews. Undo and redo restore all recorded
-checkouts together, with backup snapshots for recovery. When threads run at the same time in a
-checkout, their diffs can include each other's changes. Automatic restore is unavailable for those
-checkpoints. Checkpoint history remains available after a link is removed. Worktree cleanup protects
-links used by unarchived threads and refuses to remove dirty worktrees.
+Each editable Git checkout has its own checkpoint previews. In a turn diff, select a file to restore
+its contents from before the turn. Checkpoints cover the full Git worktree even when an imported
+session starts in a subfolder. Studio can restore a symlink without following its target. If the
+selected file exists on disk but is missing from the Git backup, move it to a safe location before
+restoring. If a directory replaced that file, Studio keeps the directory and stops the restore.
+Concurrent edits can appear in the same diff. Studio blocks file restoration for checkpoints that
+overlap another running thread. To continue work from an earlier turn in a separate checkout, fork
+that turn. Checkpoint history remains available after removal of a linked project. Worktree cleanup
+protects links used by unarchived threads and dirty worktrees.
+
+#### Recover files saved by an earlier Undo
+
+Older runtimes saved a Git tree in each affected repository before applying Undo. For a thread with
+a saved backup, select **Review saved Undo backup**, then **Keep current files**. Studio adds the
+tree IDs to the conversation and releases any interrupted Undo. This action leaves the checkout and
+Git index intact. Use the tree ID for the matching project. List its files, read a file, or save a
+copy to a new location with these commands. Replace `TREE` and the example paths first.
+
+```sh
+git ls-tree -r --name-only TREE
+git show TREE:path/to/file
+git show TREE:path/to/file > /path/to/new-copy
+```
+
+For an older client, update Studio to review backups. Update the paired runtime to use **Try again**
+with the current files.
 
 ### Pull request workspace
 

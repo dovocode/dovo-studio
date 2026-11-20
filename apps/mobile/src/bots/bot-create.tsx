@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from 'react'
 import { Pressable, View } from 'react-native'
 import { randomUUID } from 'expo-crypto'
 import { runClientEffect } from '@dovo/client-runtime'
+import { Schema } from 'effect'
 import {
   botCreateSchema,
   botResultSchema,
   decode,
+  mutableStruct,
   resolveTaskDefaults,
   runtimeComputerName,
   RuntimeRequestError,
@@ -17,7 +19,9 @@ import {
   type RuntimeOverview,
 } from '@dovo/protocol'
 import { RuntimeScope, useRuntime, type Runtime } from '../runtime/connection/provider'
-import { createDetailDrafts, useDetailDraft } from '../runtime/state/detail-drafts'
+import { createDetailDrafts, deviceDraftKey, useDetailDraft } from '../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../ui/content/draft-storage-notice'
 import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Icon } from '../ui/controls/icon'
@@ -38,8 +42,24 @@ type CreateDraft = {
   runtimeId?: string
   pending?: PendingCreate
 }
-const drafts = createDetailDrafts<CreateDraft>()
-const draftKey = 'new-bot'
+// The text stays on the device after the app restarts. The pending request holds a pairing and
+// a send receipt, so it stays in memory only.
+const drafts = createDetailDrafts<CreateDraft>({
+  isClean: (draft) =>
+    !draft.pending && !draft.name && !draft.role && !draft.responsibilities && !draft.firstTask,
+  persist: {
+    name: 'bot-create',
+    schema: mutableStruct({
+      name: Schema.String,
+      role: Schema.String,
+      responsibilities: Schema.String,
+      firstTask: Schema.String,
+      runtimeId: Schema.optional(Schema.String),
+    }),
+    storage: detailDraftStorage,
+  },
+})
+const draftKey = deviceDraftKey('new-bot')
 const emptyDraft = (): CreateDraft => ({ name: '', role: '', responsibilities: '', firstTask: '' })
 
 type BotText = Pick<CreateDraft, 'name' | 'role' | 'responsibilities'>
@@ -186,7 +206,11 @@ export function CreateBot({
 
   const runtime = useRuntime()
   const { colors, styles } = useTheme()
-  const { draft, setField, clear } = useDetailDraft(drafts, draftKey, emptyDraft)
+  const { draft, setField, initializeField, clear, persistence } = useDetailDraft(
+    drafts,
+    draftKey,
+    emptyDraft,
+  )
   const { busy, error, act } = useAction()
   const [choosing, setChoosing] = useState(false)
   const [discarding, setDiscarding] = useState(false)
@@ -202,10 +226,11 @@ export function CreateBot({
 
   const pending = draft.pending
   const fallback = defaultHost(runtime)
-  // Fix the default once, so a later status change never moves the Bot to another computer.
+  // Fix the default once, so a later status change never moves the Bot to another computer. A
+  // default is not an edit, so a saved draft that loads after it keeps its text and computer.
   useEffect(() => {
-    if (!draft.runtimeId && !draft.pending && fallback) setField('runtimeId', fallback)
-  }, [draft.runtimeId, draft.pending, fallback, setField])
+    if (!draft.runtimeId && !draft.pending && fallback) initializeField('runtimeId', fallback)
+  }, [draft.runtimeId, draft.pending, fallback, initializeField])
   const targetId = pending?.runtimeId ?? draft.runtimeId ?? fallback
   const target = runtime.overviews.find((entry) => entry.profile.id === targetId)
   const targetName = target ? runtimeComputerName(target) : 'This computer'
@@ -313,6 +338,7 @@ export function CreateBot({
       onClose={onClose}
       footer={
         <View style={{ gap: 8 }}>
+          <DraftStorageNotice persistence={persistence} />
           {!!error && (
             <Text accessibilityRole="alert" style={styles.error}>
               {error}

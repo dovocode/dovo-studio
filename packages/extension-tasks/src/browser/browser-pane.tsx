@@ -205,13 +205,15 @@ export type BrowserLifecycleRequest = { requestId: string; tabId: string } & (
   | { action: 'pin' | 'unpin' | 'settle' | 'wake' | 'toggle-mute' }
   | { action: 'snooze'; until: number }
 )
-type OpenLink = {
+export type BrowserOpenLink = {
   id: string
   url: string
   remote?: boolean
   runtimeId?: string | null
   profileId?: string
+  onResult?: (result: { tabId: string } | { error: string }) => void
 }
+const browserTabLimitError = 'Close a tab before opening more than 100 tabs.'
 type BrowserPreviewBackground = {
   tabId: string
   url: string
@@ -309,7 +311,7 @@ export function BrowserPane({
 }: {
   taskId: string
   onClose?: () => void
-  openLink?: OpenLink | null
+  openLink?: BrowserOpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
@@ -347,7 +349,7 @@ function PreviewPane({
   taskId: string
   onClose?: () => void
   mode: 'remote' | 'devices'
-  openLink?: OpenLink | null
+  openLink?: BrowserOpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
@@ -395,7 +397,7 @@ function BrowserContent({
 }: {
   scope: string
   storageWindowId?: string
-  openLink?: OpenLink | null
+  openLink?: BrowserOpenLink | null
   onLinkOpened?: () => void
   shared?: boolean
   workspaceControl?: BrowserWorkspaceControl
@@ -907,6 +909,7 @@ function BrowserContent({
     setPreviewPlacement('floating')
     selectTab(tab)
   }
+  const atTabLimit = () => shared && currentTabs.current.length >= 100
   const newTab = (
     target = '',
     kind: BrowserTab['kind'] = browser ? 'web' : 'remote',
@@ -915,8 +918,8 @@ function BrowserContent({
     title = '',
     favicon?: string,
   ) => {
-    if (shared && tabs.length >= 100) {
-      setError('Close a tab before opening more than 100 tabs.')
+    if (atTabLimit()) {
+      setError(browserTabLimitError)
       return
     }
     if (isPrivateBrowserProfile(profileId)) profileId = `private-${randomUUID()}`
@@ -931,6 +934,7 @@ function BrowserContent({
       visitedAt: target ? Date.now() : 0,
       lastActiveAt: Date.now(),
     }
+    currentTabs.current = [...currentTabs.current, tab]
     setTabs((previous) => [...previous, tab])
     selectTab(tab)
     setOptionsOpen(false)
@@ -1006,25 +1010,27 @@ function BrowserContent({
   }
   useEffect(() => {
     if (!openLink || openedLink.current === openLink.id) return
-    if (
-      !newTab(
-        previewUrl(openLink.url),
-        browser &&
-          !openLink.remote &&
-          (!openLink.runtimeId || openLink.runtimeId === store.localRuntimeId)
-          ? 'web'
-          : 'remote',
-        openLink.profileId ??
-          (browser && !openLink.remote
-            ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
-            : 'default'),
-        openLink.runtimeId ?? activeRuntimeId ?? undefined,
-      )
-    ) {
-      workspaceControl?.onSelect(activeTab)
+    openedLink.current = openLink.id
+    if (atTabLimit()) {
+      if (openLink.onResult) openLink.onResult({ error: browserTabLimitError })
+      else setError(browserTabLimitError)
+      onLinkOpened?.()
       return
     }
-    openedLink.current = openLink.id
+    const tab = newTab(
+      previewUrl(openLink.url),
+      browser &&
+        !openLink.remote &&
+        (!openLink.runtimeId || openLink.runtimeId === store.localRuntimeId)
+        ? 'web'
+        : 'remote',
+      openLink.profileId ??
+        (browser && !openLink.remote
+          ? (browserLinkProfile(openLink.url, profiles) ?? 'default')
+          : 'default'),
+      openLink.runtimeId ?? activeRuntimeId ?? undefined,
+    )
+    if (tab) openLink.onResult?.({ tabId: tab.id })
     onLinkOpened?.()
   }, [openLink?.id, browser, onLinkOpened, tabs.length])
   const [preset, setPreset] = useApplicationState('fill'),

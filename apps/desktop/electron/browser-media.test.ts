@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
@@ -810,7 +810,7 @@ it('suppresses in-view toasts without changing notification permission or blocki
   browserPermissions('work').setNotification('https://meet.example', false)
   display()
   expect(answer).toHaveBeenLastCalledWith(false)
-  await expect(call.invoke('browser-permission:notifications')).resolves.toBe('denied')
+  expect(await call.invoke('browser-permission:notifications')).toBe('denied')
 })
 
 it('keeps notification permission requests tied to their main frame and live document', async () => {
@@ -1049,4 +1049,43 @@ it('notifies the owning window before desktop discovery finishes and again when 
   )
   await media.decide(1, { key: 'call', requestId: request!.id, decision: 'deny' })
   expect(host.changed).toHaveBeenCalledTimes(2)
+})
+
+it('denies every permission path when saved website settings cannot be read', async () => {
+  const { media, session, call } = setup()
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const origin = 'https://meet.example'
+  const ask = vi.fn<(allow: boolean) => void>()
+  session.request?.(call, 'notifications', ask, { isMainFrame: true, requestingUrl: origin })
+  const [waiting] = media.snapshot(1).mediaRequests!
+  const damage = () =>
+    writeFile(join(root, 'browser-permissions', 'work.json'), '{"helpers": [', 'utf8')
+  await damage()
+  // A failed save of the remembered answer still answers the page.
+  await expect(
+    media.decide(1, { key: 'call', requestId: waiting!.id, decision: 'deny' }),
+  ).rejects.toThrow('could not be read')
+  expect(ask).toHaveBeenCalledExactlyOnceWith(false)
+  const answers = ['media', 'clipboard-read', 'midi', 'usb', 'notifications'].map((permission) => {
+    const answer = vi.fn<(allowed: boolean) => void>()
+    session.request?.(call, permission, answer, {
+      isMainFrame: true,
+      requestingUrl: origin,
+      mediaTypes: ['audio'],
+    })
+    return answer
+  })
+  await new Promise((resolve) => setImmediate(resolve))
+  for (const answer of answers) expect(answer).toHaveBeenCalledExactlyOnceWith(false)
+  for (const permission of ['media', 'notifications', 'clipboard-read', 'usb'])
+    expect(
+      session.check?.(call, permission, origin, { isMainFrame: true, mediaType: 'audio' }),
+    ).toBe(false)
+  expect(session.check?.(null, 'notifications', origin, {})).toBe(false)
+  expect(await call.invoke('browser-permission:notifications')).toBe('denied')
+  expect(await call.invoke('browser-permission:idle-state')).toBe('denied')
+  expect(await call.invoke('browser-permission:local-fonts')).toBe(false)
+  expect(media.snapshot(1).mediaRequests).toBeUndefined()
+  expect(logged).toHaveBeenCalled()
+  logged.mockRestore()
 })

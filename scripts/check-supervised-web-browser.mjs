@@ -285,6 +285,67 @@ try {
     'Focused Deny keeps its Enter action',
   )
   await page.evaluate(() => window.approvalDialog(false))
+  // A provider without a single-use scope: no Allow once, and Y or Enter submits nothing.
+  await page.evaluate(() =>
+    window.approval({ scopes: { once: false, session: true, always: false }, rememberRule: null }),
+  )
+  await desktop.getByRole('button', { name: 'Allow for session', exact: true }).waitFor()
+  for (const id of ['mobile', 'desktop']) {
+    const ui = page.locator(`#${id}`)
+    await ui.getByRole('button', { name: 'Allow for session', exact: true }).waitFor()
+    assert.equal(await ui.getByRole('button', { name: /^Allow once/ }).count(), 0)
+  }
+  assert.equal(await desktop.getByText('Y / Enter', { exact: true }).count(), 0)
+  assert.equal(
+    await desktop.locator('[data-approval-id="approval"]').getAttribute('aria-keyshortcuts'),
+    'N',
+  )
+  const restricted = await page.evaluate(() => window.writes.length)
+  await desktop.locator('[data-approval-id="approval"]').focus()
+  await page.keyboard.press('y')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.writes.length),
+    restricted,
+    'Y and Enter submit nothing without Allow once',
+  )
+  for (const [id, decision] of [
+    ['mobile', 'session'],
+    ['desktop', 'session'],
+  ]) {
+    const count = await page.evaluate(() => window.writes.length)
+    await page
+      .locator(`#${id}`)
+      .getByRole('button', { name: 'Allow for session', exact: true })
+      .click()
+    await page.waitForFunction((count) => window.writes.length === count + 1, count)
+    assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+      id: 'approval',
+      allow: true,
+      decision,
+    })
+  }
+  await desktop.locator('[data-approval-id="approval"]').focus()
+  const denyCount = await page.evaluate(() => window.writes.length)
+  await page.keyboard.press('n')
+  await page.waitForFunction((count) => window.writes.length === count + 1, denyCount)
+  assert.deepEqual(await page.evaluate(() => window.writes.at(-1).input), {
+    id: 'approval',
+    allow: false,
+    decision: 'deny',
+  })
+  assert.equal(
+    await page
+      .locator('#desktop [data-approval-id="approval"]')
+      .evaluate((element) => element.getAttribute('aria-keyshortcuts')),
+    'N',
+  )
+  await page.evaluate(() => window.approval({}))
+  await desktop.getByRole('button', { name: /^Allow once/ }).waitFor()
+  assert.equal(
+    await desktop.locator('[data-approval-id="approval"]').getAttribute('aria-keyshortcuts'),
+    'Y Enter N',
+  )
   const writesBeforeDetails = await page.evaluate(() => window.writes.length)
   const requestDetail = {
     threadId: 'provider-thread-id',
@@ -536,7 +597,7 @@ try {
   }
   assert.deepEqual(errors, [])
   console.log(
-    'Supervised web approvals: mobile and desktop remembering, once, deny, offline, compatibility, and revocation passed.',
+    'Supervised web approvals: mobile and desktop remembering, once, restricted scopes without Allow once, deny, offline, compatibility, and revocation passed.',
   )
 } finally {
   await browser.close()

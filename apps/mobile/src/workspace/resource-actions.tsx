@@ -1,7 +1,12 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRef, useState } from 'react'
 import { Alert } from 'react-native'
-import { responses, type TerminalInfo, type UpdateTerminal } from '@dovo/protocol'
+import {
+  terminalViewChange,
+  responses,
+  type TerminalInfo,
+  type UpdateTerminal,
+} from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
 import { useTaskLifecycle, chooseSnoozeDuration } from '../tasks/detail/use-task-lifecycle'
 import { useBrowserWorkspace } from '../browser/browser-workspace'
@@ -40,7 +45,14 @@ export function useTerminalActions(runtimeId: string, terminal: TerminalInfo | u
       setBusy(false)
     }
   }
-  return { busy, disabled: busy || !owner?.connected, update }
+  const view = terminalViewChange(terminal, owner?.snapshot?.terminalTurnsSupported)
+  return {
+    busy,
+    disabled: busy || !owner?.connected,
+    update,
+    toggleRead: view && (() => update({ view })),
+    unread: !!view?.seen,
+  }
 }
 
 export function ResourceActions({ item, onClose }: { item: WorkspaceItem; onClose: () => void }) {
@@ -148,7 +160,7 @@ export function useStandaloneActions(item: Exclude<WorkspaceItem, { kind: 'threa
       }
     }
   }
-  return { disabled, change }
+  return { disabled, change, toggleRead: terminal.toggleRead, unread: terminal.unread }
 }
 function StandaloneActions({
   item,
@@ -159,7 +171,7 @@ function StandaloneActions({
 }) {
   const uiText = useInterfaceText()
 
-  const { disabled, change: update } = useStandaloneActions(item)
+  const { disabled, change: update, toggleRead, unread } = useStandaloneActions(item)
   const change = (action: 'pin' | 'settle' | 'wake', until?: string) => {
     update(action, until)
     onClose()
@@ -169,6 +181,17 @@ function StandaloneActions({
       <Text>
         {item.detail} · {item.status}
       </Text>
+      {toggleRead && (
+        <Action
+          secondary
+          label={unread ? uiText('Mark read') : uiText('Mark unread')}
+          disabled={disabled}
+          onPress={() => {
+            void toggleRead()
+            onClose()
+          }}
+        />
+      )}
       <Action
         secondary
         label={item.pinned ? uiText('Unpin') : uiText('Pin')}

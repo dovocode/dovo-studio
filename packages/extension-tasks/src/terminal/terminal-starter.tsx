@@ -3,12 +3,15 @@ import { Folder, House, Terminal } from 'lucide-react'
 import { Schema } from 'effect'
 import {
   terminalShellsResponseSchema,
+  randomUUID,
+  RuntimeRequestError,
   runtimeComputerName,
   type CreateWorkspaceTerminal,
   type RuntimeOverview,
 } from '@dovo/protocol'
 import { StartupHeading } from '../task-creation/startup-heading'
 import { TerminalCheckoutControls, useTerminalCheckout } from './terminal-checkout'
+import { TerminalParentPicker } from './terminal-parent-picker'
 import { TerminalRecoveryControl } from './terminal-recovery-control'
 import { responses, useAppPreferences, useWorkspace } from '@dovo/studio-core'
 import {
@@ -41,6 +44,7 @@ export function TerminalStarter({
   )
   const [repositoryId, setRepositoryId] = useState('')
   const [command, setCommand] = useState('')
+  const [parentTerminalId, setParentTerminalId] = useState('')
   const [shellId, setShellId] = useState('default')
   const [rememberSession, setRememberSession] = useState(true)
   const [busy, setBusy] = useState(false)
@@ -57,7 +61,8 @@ export function TerminalStarter({
   const connected = owner?.connected ?? false
   const checkout = useTerminalCheckout({ owner, repositoryId })
   const readRuntime = store.readRuntime
-  const attempt = useRef(0)
+  const attempt = useRef<{ key: string; id: string }>(undefined)
+  const launching = useRef(false)
   // Activity pauses effects while hidden. Keep the result and open it only when this
   // starter is visible again, without losing a completed launch or stealing navigation.
   useEffect(() => {
@@ -190,9 +195,14 @@ export function TerminalStarter({
             }
             onSubmit={(event) => {
               event.preventDefault()
-              if (!profile || !connected || busy || !shellReady || !checkout.ready) return
-              const generation = ++attempt.current
+              if (!profile || !connected || launching.current || !shellReady || !checkout.ready)
+                return
+              if (parentTerminalId && !owner?.snapshot?.terminalChildrenSupported) {
+                setError('Update this computer to launch a child terminal or choose no parent.')
+                return
+              }
               const input: CreateWorkspaceTerminal = {
+                ...(parentTerminalId ? { parentTerminalId } : {}),
                 rememberSession:
                   rememberSession && owner?.snapshot?.terminalRecoverySupported === true,
                 repositoryId: repositoryId || undefined,
@@ -200,6 +210,16 @@ export function TerminalStarter({
                 shellId,
                 ...checkout.input,
               }
+              const key = JSON.stringify([
+                runtimeId,
+                profile.connection.address,
+                profile.connection.token,
+                input,
+              ])
+              if (attempt.current?.key !== key) attempt.current = { key, id: randomUUID() }
+              if (owner?.snapshot?.workspaceTerminalRequestIdSupported)
+                input.requestId = attempt.current.id
+              launching.current = true
               setBusy(true)
               setError('')
               void readRuntime(
@@ -209,15 +229,13 @@ export function TerminalStarter({
                 responses.terminal,
                 'POST',
               )
-                .then((session) => {
-                  if (generation === attempt.current) setCreated({ runtimeId, id: session.id })
-                })
+                .then((session) => setCreated({ runtimeId, id: session.id }))
                 .catch((cause: unknown) => {
-                  if (generation === attempt.current)
-                    setError(cause instanceof Error ? cause.message : String(cause))
-                })
-                .finally(() => {
-                  if (generation === attempt.current) setBusy(false)
+                  launching.current = false
+                  if (cause instanceof RuntimeRequestError && cause.mutationRejected)
+                    attempt.current = undefined
+                  setError(cause instanceof Error ? cause.message : String(cause))
+                  setBusy(false)
                 })
             }}
           >
@@ -236,7 +254,7 @@ export function TerminalStarter({
           <ComposerWorkspaceBar>
             <TerminalRecoveryControl
               enabled={rememberSession}
-              supported={owner?.snapshot?.terminalRecoverySupported === true}
+              snapshot={owner?.snapshot}
               disabled={busy}
               onChange={setRememberSession}
             />
@@ -246,8 +264,8 @@ export function TerminalStarter({
               value={runtimeId}
               disabled={busy}
               onValueChange={(id) => {
-                attempt.current++
                 setRuntimeId(id)
+                setParentTerminalId('')
                 setRepositoryId('')
                 setShellId('default')
                 setError('')
@@ -261,6 +279,12 @@ export function TerminalStarter({
                 </option>
               ))}
             </ChoicePicker>
+            <TerminalParentPicker
+              snapshot={owner?.snapshot}
+              value={parentTerminalId}
+              onChange={setParentTerminalId}
+              disabled={busy || !connected}
+            />
             <TerminalCheckoutControls checkout={checkout} disabled={busy || !connected} />
           </ComposerWorkspaceBar>
         </div>

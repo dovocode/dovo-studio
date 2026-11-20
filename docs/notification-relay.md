@@ -113,10 +113,12 @@ private LAN/VPN deployments; HTTPS is optional.
 The runtime registers push tokens only for authenticated paired devices. Tokens and delivery records
 stay in its private database and are excluded from workspace snapshots and activity logs. Revoking a
 paired device stops future delivery. Delivery records survive runtime restarts and retry temporary
-relay failures with bounded backoff for up to one hour. Invalid device tokens are removed and the
-phone registers a replacement on its next connection. Each pending request carries its own identity.
-Pending input notifications are discarded if the exact request has already been answered or
-replaced. Notifications for archived threads and superseded runs are also discarded before delivery.
+relay failures with bounded backoff for up to one hour. Backoff applies to each device: while one
+phone's notification waits for its retry, that phone's other notifications wait too, and other
+devices still receive theirs. Invalid device tokens are removed and the phone registers a
+replacement on its next connection. Each pending request carries its own identity. Pending input
+notifications are discarded if the exact request has already been answered or replaced.
+Notifications for archived threads and superseded runs are also discarded before delivery.
 Notification delivery is best effort: provider outages, OS settings, and relay restarts can affect
 timing. The relay's retry cache is in memory; runtime records are durable.
 
@@ -173,13 +175,31 @@ input-request notifications with a task title and short preview. Tapping a notif
 originating thread and computer, including from cold launch. Question notifications include an
 **Answer question** action that opens the full form for that exact request, including all choices
 and fields, alongside its thread, computer, and project. An answered request is shown as no longer
-pending instead of silently opening another question. Permission is opt-in; input requests show
+pending instead of silently opening another question. A question from a delegated child thread on
+another computer opens on the computer that owns it when the phone is paired with that computer;
+otherwise it opens the directly paired child thread. Permission is opt-in; input requests show
 foreground banners and sound, while other task events remain quiet in the foreground. Turning the
 setting off unregisters it from reachable runtimes; disconnected runtimes can only unregister when
-they reconnect. Changes during registration are applied after the in-flight request finishes.
-Revoking system notification permission unregisters reachable runtimes on the next foreground sync;
-restoring permission registers them again if Task notifications remain enabled. Revoking the device
-on the runtime also stops delivery.
+they reconnect. Until then, Dovo shows no banner, sound or Notification Center entry for their
+pushes while it is open, and the same applies to a computer whose notifications are off. The
+operating system still shows such pushes while Dovo is in the background. In-app input notices
+follow their own setting. Changes during registration are applied after the in-flight request
+finishes. Revoking system notification permission unregisters reachable runtimes on the next
+foreground sync; restoring permission registers them again if Task notifications remain enabled.
+Revoking the device on the runtime also stops delivery.
+
+The runtime sends a delegated child thread's request as a notification for the parent thread. While
+Dovo is open and that request's form shows on screen, Dovo shows no banner, sound or in-app notice
+for it. An open thread is not enough. If the thread shows a different request, or another pane or a
+sheet covers the form, Dovo shows the in-app notice. The notice stays until the form itself shows on
+screen. Tapping the notice or the system notification opens that exact question or permission
+request. If the request has closed, the thread shows its recorded decision, including a child's
+request opened from its parent, or says that it ended with no decision. **Return to** then opens the
+thread you left, with the same question or permission request and parent thread. This applies in the
+parent thread, in the child thread on the same computer and in the child thread on its own computer
+when the phone can see the parent. The notification stays in Notification Center, and background
+delivery does not change. A notification tap during cold launch keeps its thread open, even when
+**Open on launch** names another tab.
 
 Push-capable iOS builds enable Live Activity push tokens and frequent updates by default. Set
 `DOVO_LIVE_ACTIVITY_PUSH=0` to opt out, or `DOVO_PUSH_NOTIFICATIONS=0` for a local-only build. Live

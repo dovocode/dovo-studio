@@ -8,6 +8,7 @@ import {
   randomUUID,
   writeRuntimeSnapshotCache,
   RuntimeMutations,
+  RuntimeRequestError,
   requestNeedsWorkspaceSync,
   requestReadWorkspaceDependency,
   requestWorkspaceTask,
@@ -624,6 +625,7 @@ export function WorkspaceProvider({
       persist = true,
     ) => {
       synchronization.bind(profile.connection, outbox)
+      installedSnapshot.current = null
       setConnection(profile.connection)
       setSnapshot(value, profile.connection)
       if (outbox) install(outbox.workspace)
@@ -653,7 +655,7 @@ export function WorkspaceProvider({
     [install, installSnapshot, saveRegistry, synchronization],
   )
   const openProfileEffect = useCallback(
-    (profile: RuntimeProfile, proof?: PairingProof) =>
+    (profile: RuntimeProfile, proof?: PairingProof, selectSaved = false) =>
       Effect.acquireUseRelease(
         Effect.try({
           try: () => {
@@ -685,11 +687,11 @@ export function WorkspaceProvider({
                 previousConnection.token !== profile.connection.token)
             const replacingActive = replacing && registryRef.current.activeId === profile.id
             if (replacing && previousConnection) yield* beforeReplace(previousConnection)
-            if (!replacingActive) yield* synchronization.flushEffect()
+            if (!replacingActive && !selectSaved) yield* synchronization.flushEffect()
             const saved = yield* synchronization.savedEffect()
             const checkpoint = saved.checkpoint
             const accepts = () =>
-              replacingActive
+              replacingActive || selectSaved
                 ? synchronization.acceptsSaved(checkpoint)
                 : synchronization.accepts(checkpoint)
             let outbox: WorkspaceOutbox | null = yield* Effect.tryPromise({
@@ -715,14 +717,47 @@ export function WorkspaceProvider({
               !proof && !replacing
                 ? recentSnapshot(profile, overviewsRef.current[profile.id])
                 : null
+            let offlineError: string | null = null
             const value =
               cached ??
-              (yield* createRuntimeClient(profile.connection).requestEffect(
-                runtimeSnapshotPath(profile.connection),
-                undefined,
-                snapshotSchema,
-                { method: 'GET' },
-              ))
+              (yield* createRuntimeClient(profile.connection)
+                .requestEffect(runtimeSnapshotPath(profile.connection), undefined, snapshotSchema, {
+                  method: 'GET',
+                })
+                .pipe(
+                  Effect.catch((error) =>
+                    Effect.gen(function* () {
+                      if (
+                        !selectSaved ||
+                        replacing ||
+                        !(error instanceof RuntimeRequestError) ||
+                        !(
+                          error.kind === 'connection' ||
+                          error.kind === 'timeout' ||
+                          error.status === 502 ||
+                          error.status === 503 ||
+                          error.status === 504
+                        )
+                      )
+                        return yield* Effect.fail(error)
+                      const retained = currentRuntimeOverview(
+                        profile,
+                        overviewsRef.current[profile.id],
+                      )?.snapshot
+                      const stored = retained
+                        ? undefined
+                        : yield* Effect.tryPromise({
+                            try: () =>
+                              cacheFor(profile).read('snapshot', runtimeSnapshotCacheSchema),
+                            catch: connectionError,
+                          })
+                      const fallback = retained ?? stored?.value.snapshot ?? null
+                      if (!fallback && !outbox) return yield* Effect.fail(error)
+                      offlineError = error.message
+                      return fallback
+                    }),
+                  ),
+                ))
             if (attempt !== connecting.current)
               return yield* Effect.fail(new Error('Another runtime connection was selected'))
             if (!accepts())
@@ -732,21 +767,22 @@ export function WorkspaceProvider({
                 ),
               )
             // Saved edits, caches and windows follow the profile ID: keep it on the same computer.
-            const verified = replacing
-              ? yield* Effect.try({
-                  try: () =>
-                    verifyRuntimeReplacement(
-                      replacedRuntimeConnection(
-                        previousConnection,
-                        previousProfile?.connection,
-                        overviewsRef.current[profile.id],
+            const verified =
+              replacing && value
+                ? yield* Effect.try({
+                    try: () =>
+                      verifyRuntimeReplacement(
+                        replacedRuntimeConnection(
+                          previousConnection,
+                          previousProfile?.connection,
+                          overviewsRef.current[profile.id],
+                        ),
+                        profile.connection,
+                        value,
                       ),
-                      profile.connection,
-                      value,
-                    ),
-                  catch: connectionError,
-                })
-              : profile.connection
+                    catch: connectionError,
+                  })
+                : profile.connection
             yield* Effect.tryPromise({
               try: () =>
                 writeWorkspaceDocument(
@@ -767,7 +803,7 @@ export function WorkspaceProvider({
             const named = {
               ...profile,
               connection: verified,
-              name: runtimeComputerName({ profile, snapshot: value }),
+              name: offlineError ? profile.name : runtimeComputerName({ profile, snapshot: value }),
               nameIsCustom: runtimeHasCustomName(profile),
             }
             const previous = overviewsRef.current[profile.id]
@@ -785,14 +821,29 @@ export function WorkspaceProvider({
                         ? beforeReplace(previousConnection)
                         : Effect.void
                       ).pipe(
-                        Effect.flatMap(() =>
-                          persistRegistryEffect(upsertRuntime(registryRef.current, named)),
-                        ),
+                        Effect.flatMap(() => {
+                          if (!selectSaved)
+                            return persistRegistryEffect(upsertRuntime(registryRef.current, named))
+                          const target = resolveRuntimeTarget(registryRef.current.profiles, profile)
+                          if (!target)
+                            return Effect.fail(
+                              new Error('The saved computer changed. Select it again.'),
+                            )
+                          return persistRegistryEffect({
+                            ...registryRef.current,
+                            activeId: target.id,
+                          })
+                        }),
                       ),
                 ),
               )
               .pipe(Effect.uninterruptible)
-            adopt(named, value, true, outbox, false)
+            const selected = selectSaved
+              ? resolveRuntimeTarget(registryRef.current.profiles, profile)
+              : named
+            if (!selected || (selectSaved && registryRef.current.activeId !== selected.id))
+              return yield* Effect.fail(new Error('The saved computer changed. Select it again.'))
+            adopt(selected, value, offlineError === null, outbox, false)
             if (replacing && previousConnection && outbox) {
               const transferredIds = outbox.ids ?? []
               yield* Effect.tryPromise({
@@ -816,11 +867,11 @@ export function WorkspaceProvider({
               ...(previous?.profile.connection.token === profile.connection.token
                 ? previous
                 : idleRuntimeOverview(named)),
-              profile: named,
+              profile: selected,
               snapshot: value,
-              connected: true,
-              lastSeen: new Date().toISOString(),
-              error: null,
+              connected: offlineError === null,
+              lastSeen: offlineError ? (previous?.lastSeen ?? null) : new Date().toISOString(),
+              error: offlineError,
             })
           }),
         () =>
@@ -835,12 +886,13 @@ export function WorkspaceProvider({
       storageLock,
       persistRegistryEffect,
       beforeReplace,
+      cacheFor,
       runtimeId,
     ],
   )
   const openProfile = useCallback(
-    (profile: RuntimeProfile, proof?: PairingProof) =>
-      runClientEffect(openProfileEffect(profile, proof)),
+    (profile: RuntimeProfile, proof?: PairingProof, selectSaved = false) =>
+      runClientEffect(openProfileEffect(profile, proof, selectSaved)),
     [openProfileEffect],
   )
   useEffect(() => {
@@ -914,7 +966,7 @@ export function WorkspaceProvider({
     async (id: string) => {
       const profile = registryRef.current.profiles.find((entry) => entry.id === id)
       if (!profile) throw new Error('This runtime is no longer saved')
-      await openProfile(profile)
+      await openProfile(profile, undefined, true)
     },
     [openProfile],
   )

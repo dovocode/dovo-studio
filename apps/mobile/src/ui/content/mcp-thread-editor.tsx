@@ -1,9 +1,24 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
-import { RuntimeRequestError, type LauncherAgent, type Repository } from '@dovo/protocol'
+import {
+  RuntimeRequestError,
+  mutableStruct,
+  taskHarnessSchema,
+  taskModelSelectionDifficultySchema,
+  taskModelSelectionSchema,
+  type LauncherAgent,
+  type Repository,
+} from '@dovo/protocol'
+import { Schema } from 'effect'
 import { useRuntime } from '../../runtime/connection/provider'
-import { createDetailDrafts, useDetailDraft } from '../../runtime/state/detail-drafts'
+import {
+  createDetailDrafts,
+  useDetailDraft,
+  type SavedDraftKey,
+} from '../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from './draft-storage-notice'
 import { TaskLauncherControls } from '../../tasks/creation/task-launcher-controls'
 import { permissionPolicyUIIssue } from '../../agents/permission-policy-controls'
 import { Sheet } from '../layout/sheet'
@@ -15,7 +30,29 @@ import { useTheme } from '../theme'
 
 export type McpThreadSelection = { prompt: string; selection: LauncherAgent; repositoryId?: string }
 type Draft = McpThreadSelection & { attempt?: McpThreadSelection }
-const drafts = createDetailDrafts<Draft>()
+// The prompt and choices stay on the device after the app restarts. `attempt` is a send receipt
+// and stays in memory only. A harness with a typed MCP credential is not saved.
+const drafts = createDetailDrafts<Draft>({
+  persist: {
+    name: 'mcp-thread',
+    schema: mutableStruct({
+      prompt: Schema.String,
+      repositoryId: Schema.optional(Schema.String),
+      selection: mutableStruct({
+        modelSelectionDifficulty: Schema.optional(taskModelSelectionDifficultySchema),
+        modelSelection: Schema.optional(taskModelSelectionSchema),
+        key: Schema.String,
+        name: Schema.String,
+        agentId: Schema.optional(Schema.String),
+        provider: taskHarnessSchema.fields.provider,
+        model: Schema.optional(Schema.String),
+        acpInstallationId: Schema.optional(Schema.String),
+        harness: Schema.optional(taskHarnessSchema),
+      }),
+    }),
+    storage: detailDraftStorage,
+  },
+})
 
 /** Preparing and editing a proposal never submits a thread. Only Send calls the owner. */
 export function McpThreadEditor({
@@ -27,7 +64,7 @@ export function McpThreadEditor({
   onSend,
   onClose,
 }: {
-  draftKey: string
+  draftKey: SavedDraftKey
   initial: McpThreadSelection
   repository: Repository
   standalone?: boolean
@@ -48,7 +85,7 @@ export function McpThreadEditor({
   )
   const { snapshot, connected } = useRuntime()
   const { styles } = useTheme()
-  const { draft, setField, clear } = useDetailDraft(drafts, draftKey, () => initial)
+  const { draft, setField, clear, persistence } = useDetailDraft(drafts, draftKey, () => initial)
   const { act, busy, error } = useAction()
   const sending = useRef(false)
   const locked = busy || !!draft.attempt
@@ -133,6 +170,7 @@ export function McpThreadEditor({
             {blocked}
           </Text>
         )}
+        <DraftStorageNotice persistence={persistence} />
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}

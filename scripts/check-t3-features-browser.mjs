@@ -6,7 +6,7 @@ const root = fileURLToPath(new URL('../', import.meta.url))
 const native = `
 export const View=({children})=><div>{children}</div>;export const ScrollView=View;
 export const Text=({children,accessibilityRole})=><span role={accessibilityRole}>{children}</span>;
-export const Keyboard={dismiss(){}};export const Linking={openSettings(){}};export const Platform={OS:'ios'};export const Alert={alert(){}};
+export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:()=>({remove(){}})};export const AccessibilityInfo={setAccessibilityFocus(){}};export const findNodeHandle=()=>null;export const Linking={openSettings(){}};export const Platform={OS:'ios'};export const Alert={alert(){}};
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
 export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={editable===false} onChange={event=>onChangeText(event.target.value)}/>;
 export const SettingsField=Field;export const SettingsChoice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select></label>;

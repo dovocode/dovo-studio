@@ -138,8 +138,12 @@ sample data or the simulated outcome to test another path. Warnings show current
 make a real run fail or not start, such as a paused Bot or paused triggers.
 
 For a monitored source, the instructions show the sample content. After the first successful run, a
-real run also adds a **Previous successful source** block. The dry run cannot show that block, so it
-lists it under **Not tested by this dry run**.
+real run also adds a **Previous successful source** block. An automatic run ends as **Unchanged**
+without work when the source matches the last successful run and the latest run of the automation
+completed. The runtime stores that outcome with the source, so the check still works after the
+30-day run history cleanup. After a failed or cancelled run, the next run processes the source
+again, even when it has not changed. Manual runs always process the source. The dry run cannot show
+that block, so it lists it under **Not tested by this dry run**.
 
 A dry run never fires a trigger, creates a thread, posts to a Bot, sends a notification or reads a
 monitored source. The runtime does not store dry runs. They do not appear in Runs, use a schedule
@@ -187,8 +191,9 @@ uses the original run configuration; to use edited instructions, start a new run
 
 **Cancel** stops the current task and prevents later steps from starting. After a runtime restart,
 interrupted runs are marked failed with an explicit recovery message. Retry reconciles tasks that
-already completed before the run saved its next step, avoiding an unnecessary second execution.
-Waiting review gates survive restarts.
+already completed before the run saved its next step, avoiding an unnecessary second execution. It
+recovers the worker's saved answer and attachments for any later steps that use them. Waiting review
+gates survive restarts.
 
 ## Delivery and scheduling
 

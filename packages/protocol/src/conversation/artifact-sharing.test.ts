@@ -32,7 +32,7 @@ function fixture({ changed = false, revoke = false, override = '' } = {}) {
         return Response.json({ user: { id: 'owner', name: 'Owner' }, servers: [] })
       if (url.endsWith('/v1/artifacts/service'))
         return Response.json({ origin: 'https://artifacts.test' })
-      if (url.endsWith('/v1/artifacts/session')) {
+      if (new URL(url).pathname === '/v1/artifacts/session') {
         if (revoke) await client.signOut()
         return Response.json({
           origin: changed ? 'https://different.test' : 'https://artifacts.test',
@@ -133,6 +133,9 @@ it('restores hosted versions using a restricted grant, refreshes deletions and c
     publicationOrigin: 'https://artifacts.test',
     publicationError: '',
   })
+  expect(
+    f.calls.some((call) => call.url === 'https://connect.test/v1/artifacts/session?reuse=1'),
+  ).toBe(true)
   expect(new Headers(indexCalls[0].headers).get('Authorization')).toBe('Bearer ' + scoped)
   expect(indexCalls[0]).toMatchObject({ credentials: 'omit', redirect: 'error' })
   publications = []

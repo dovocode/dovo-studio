@@ -15,7 +15,6 @@ import {
   questionAllowsAttachments,
   questionAttachmentIdsSchema,
   type QuestionAttachmentIds,
-  type Attachment,
   type QuestionPrompt,
   type QuestionAnswers,
   type PendingQuestion,
@@ -24,8 +23,26 @@ import {
 } from '@dovo/protocol'
 import type { Activity } from '../../storage/activity.js'
 import type { Attachments } from '../../storage/attachments.js'
+import type { QuestionResponseReceipt } from '../../storage/workspace.js'
 import { HttpError } from '../../errors.js'
-type ResponseReceipt = { id: string; fingerprint: string; attachments?: Attachment[] }
+type ResponseReceipt = QuestionResponseReceipt
+/** Key-order independent JSON, so the same prompt always gives the same identity. */
+function canonical(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(canonical)
+  if (!value || typeof value !== 'object') return value
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([, item]) => item !== undefined)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([key, item]) => [key, canonical(item)]),
+  )
+}
+/** Identity of the exact question in its thread. A reused key must match it. */
+function promptIdentity(taskId: string, prompt: QuestionPrompt) {
+  return createHash('sha256')
+    .update(JSON.stringify(canonical([taskId, prompt])))
+    .digest('hex')
+}
 type Pending = {
   signal: AbortSignal
   info: PendingQuestion
@@ -71,12 +88,17 @@ function answerFingerprint(
     .digest('hex')
 }
 export class Questions {
-  private answered = new Map<string, string>()
+  /** Recent answers with the identity of the prompt they answered. */
+  private answered = new Map<string, { fingerprint: string; prompt: string }>()
   private requests = new Map<string, Pending>()
   private responding = new Map<string, { fingerprint: string; promise: Promise<void> }>()
   constructor(
     private activity: Pick<Activity, 'add'>,
-    private receipts?: { questionResponse: (id: string) => string | undefined },
+    private receipts?: {
+      questionResponse: (id: string) => string | undefined
+      /** Undefined without a receipt; null for a receipt written before prompt identity. */
+      questionPrompt?: (id: string) => string | null | undefined
+    },
   ) {}
   private secrets?: Pick<SecretReferences, 'value' | 'invalidate'>
   setSecretReferences(secrets: Pick<SecretReferences, 'value' | 'invalidate'>) {
@@ -143,7 +165,8 @@ export class Questions {
   ) {
     if (signal.aborted) return Promise.resolve(null)
     const prompt = decode(questionPromptSchema, value),
-      id = requestId ?? randomUUID()
+      id = requestId ?? randomUUID(),
+      identity = promptIdentity(taskId, prompt)
     // Stable IDs are used by fire-and-forget task-tool forms. Retrying registration
     // never opens a second card or delivers a second follow-up.
     if (requestId) {
@@ -153,7 +176,21 @@ export class Questions {
           throw new HttpError(409, 'This question key is already in use. Use a new key.')
         return Promise.resolve(null)
       }
-      if (this.status(id) === 'answered') return Promise.resolve(null)
+      if (this.status(id) === 'answered') {
+        // The durable receipt covers eviction and restart. Older receipts have no identity.
+        const answered = this.answered.get(id)?.prompt ?? this.receipts?.questionPrompt?.(id)
+        if (!answered)
+          throw new HttpError(
+            409,
+            'This question key was already answered, and this runtime cannot confirm it was the same question. Use a new key.',
+          )
+        if (answered !== identity)
+          throw new HttpError(
+            409,
+            'This question key was already answered for a different question. Use a new key.',
+          )
+        return Promise.resolve(null)
+      }
     }
     const info: PendingQuestion = {
       id,
@@ -193,7 +230,10 @@ export class Questions {
       ) => {
         if (!this.requests.has(id)) return
         // Admission must succeed before resolving or remembering the response.
-        const accepted = receipt ?? { id, fingerprint: answerFingerprint(answers, {}, outcomes) }
+        const accepted = {
+          ...(receipt ?? { id, fingerprint: answerFingerprint(answers, {}, outcomes) }),
+          prompt: identity,
+        }
         if (status !== 'cancelled') onResponse?.(answers, accepted)
         const unanswered: QuestionOutcomes =
           status !== 'cancelled' && prompt.unanswered
@@ -229,7 +269,7 @@ export class Questions {
           console.error('Could not record question response', error)
         }
         if (status !== 'cancelled') {
-          this.answered.set(id, accepted.fingerprint)
+          this.answered.set(id, { fingerprint: accepted.fingerprint, prompt: identity })
           if (this.answered.size > 256) this.answered.delete(this.answered.keys().next().value!)
         }
         if (status !== 'cancelled') onUnanswered?.(unanswered)
@@ -278,7 +318,7 @@ export class Questions {
       return
     }
     if (!request) {
-      if (this.answered.get(id) === answerFingerprint(answers, {}, outcomes)) return
+      if (this.answered.get(id)?.fingerprint === answerFingerprint(answers, {}, outcomes)) return
       throw new HttpError(409, 'This question was already answered or cancelled')
     }
     this.validateOutcomes(request.info, answers, outcomes)
@@ -328,7 +368,7 @@ export class Questions {
     references: QuestionSecretReferences = {},
   ) {
     const replay = () => {
-      const previous = this.receipts?.questionResponse(id) ?? this.answered.get(id)
+      const previous = this.receipts?.questionResponse(id) ?? this.answered.get(id)?.fingerprint
       if (!previous) return false
       if (previous !== fingerprint)
         throw new HttpError(409, 'This question was already answered differently')

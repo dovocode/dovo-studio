@@ -1,10 +1,23 @@
-import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import {
+  chmodSync,
+  closeSync,
+  constants,
+  existsSync,
+  fstatSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  readSync,
+  renameSync,
+  writeFileSync,
+} from 'node:fs'
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path'
 import { homedir } from 'node:os'
-import { pathToFileURL } from 'node:url'
+import { isDeepStrictEqual } from 'node:util'
 import { Schema } from 'effect'
-import { decode } from '@dovo/protocol'
-import { quote } from 'shell-quote'
+import { decode, terminalTurnIdPattern, terminalTurnIdHistoryLimit } from '@dovo/protocol'
+import { parse, quote } from 'shell-quote'
 
 const marker = '// Dovo terminal session recovery v1\n'
 const objectSchema = Schema.Record(Schema.String, Schema.Unknown)
@@ -12,9 +25,15 @@ function object(value: unknown) {
   return { ...decode(objectSchema, value) }
 }
 function ownedFile(path: string, source: string) {
-  if (existsSync(path) && !readFileSync(path, 'utf8').startsWith(marker))
-    throw new Error(`Recovery integration already exists and is not owned by Dovo: ${path}`)
-  atomicFile(path, marker + source)
+  const content = marker + source
+  const stat = lstatSync(path, { throwIfNoEntry: false })
+  if (stat) {
+    const previous = stat.isFile() ? readFileSync(path, 'utf8') : ''
+    if (previous === content) return
+    if (!previous.startsWith(marker))
+      throw new Error(`Recovery integration already exists and is not owned by Dovo: ${path}`)
+  }
+  atomicFile(path, content)
 }
 function atomicFile(path: string, source: string) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
@@ -22,31 +41,114 @@ function atomicFile(path: string, source: string) {
   writeFileSync(temporary, source, { mode: 0o600 })
   renameSync(temporary, path)
 }
-function addHooks(path: string, command: string, events: readonly string[]) {
+type HookProvider = 'codex' | 'claude'
+
+function hookCommand(executable: string, reporter: string, provider: HookProvider) {
+  return process.platform === 'win32'
+    ? `set "ELECTRON_RUN_AS_NODE=1" && "${executable}" "${reporter}" ${provider}`
+    : `ELECTRON_RUN_AS_NODE=1 ${quote([executable, reporter, provider])}`
+}
+
+function ownedReporter(file: string) {
+  // A hook may point to an arbitrary user path. Read only the marker of a regular file.
+  let fd: number | undefined
+  try {
+    if (!lstatSync(file, { throwIfNoEntry: false })?.isFile()) return false
+    fd = openSync(file, constants.O_RDONLY | constants.O_NONBLOCK | (constants.O_NOFOLLOW ?? 0))
+    if (!fstatSync(fd).isFile()) return false
+    const header = Buffer.alloc(marker.length)
+    return (
+      readSync(fd, header, 0, header.length, 0) === header.length && header.toString() === marker
+    )
+  } catch {
+    // A missing, unreadable or redirected legacy file cannot establish ownership.
+    return false
+  } finally {
+    if (fd !== undefined) closeSync(fd)
+  }
+}
+
+function ownedHookCommand(source: string, provider: HookProvider) {
+  let executable: string, reporter: string
+  if (process.platform === 'win32') {
+    const match = /^set "ELECTRON_RUN_AS_NODE=1" && "([^"]+)" "([^"]+)" (?:codex|claude)$/.exec(
+      source,
+    )
+    if (!match) return false
+    executable = match[1]!
+    reporter = match[2]!
+  } else {
+    if (!source.startsWith('ELECTRON_RUN_AS_NODE=1 ')) return false
+    let words: ReturnType<typeof parse>
+    try {
+      words = parse(source)
+    } catch {
+      return false
+    }
+    if (words.length !== 4 || typeof words[1] !== 'string' || typeof words[2] !== 'string')
+      return false
+    executable = words[1]
+    reporter = words[2]
+  }
+  return (
+    isAbsolute(executable) &&
+    isAbsolute(reporter) &&
+    basename(reporter) === 'report.cjs' &&
+    source === hookCommand(executable, reporter, provider) &&
+    ownedReporter(reporter)
+  )
+}
+
+function hookGroup(command: string) {
+  return { hooks: [{ type: 'command', command, timeout: 3 }] }
+}
+
+function addHooks(
+  path: string,
+  provider: HookProvider,
+  reporter: string,
+  events: readonly string[],
+) {
   const config = existsSync(path) ? object(JSON.parse(readFileSync(path, 'utf8'))) : {}
   const hooks = config.hooks === undefined ? {} : object(config.hooks)
+  const command = hookCommand(process.execPath, reporter, provider)
+  const owned = new Map<string, boolean>([[command, true]])
+  let changed = false
   for (const name of events) {
     const groups =
       hooks[name] === undefined ? [] : decode(Schema.Array(Schema.Unknown), hooks[name])
-    // Keep the supported hook schema; identify our entry by its exact command.
-    hooks[name] = [
-      ...groups.filter((group) => {
-        const handlers = object(group).hooks
-        return (
-          !Array.isArray(handlers) ||
-          handlers.length !== 1 ||
-          object(handlers[0]).command !== command
-        )
-      }),
-      { hooks: [{ type: 'command', command, timeout: 3 }] },
-    ]
+    let found = false
+    const next: unknown[] = []
+    for (const group of groups) {
+      const handlers =
+        group && typeof group === 'object' && 'hooks' in group ? group.hooks : undefined
+      const handler: unknown = Array.isArray(handlers) ? handlers[0] : undefined
+      const source =
+        handler && typeof handler === 'object' && 'command' in handler ? handler.command : undefined
+      if (typeof source === 'string' && isDeepStrictEqual(group, hookGroup(source))) {
+        if (!owned.has(source)) owned.set(source, ownedHookCommand(source, provider))
+        if (owned.get(source)) {
+          if (!found) next.push(hookGroup(command))
+          found = true
+          continue
+        }
+      }
+      next.push(group)
+    }
+    if (!found) next.push(hookGroup(command))
+    if (!isDeepStrictEqual(next, groups)) {
+      hooks[name] = next
+      changed = true
+    }
   }
-  config.hooks = hooks
-  atomicFile(path, JSON.stringify(config, null, 2) + '\n')
+  if (changed) {
+    config.hooks = hooks
+    atomicFile(path, JSON.stringify(config, null, 2) + '\n')
+  }
 }
 
-// Plain JavaScript assets are generated into the owning runtime's private data directory.
-// They run inside the tools' supported lifecycle APIs, never by parsing terminal screen text.
+// Each provider config owns its reporter. The terminal's environment selects the runtime.
+// The tools report activity through their lifecycle APIs.
 export const recoveryReporterSource = String.raw`
 const fs = require('node:fs');
 const path = require('node:path');
@@ -68,23 +170,103 @@ exports.report = function(provider, sessionId, directory, ended = false) {
   fs.writeFileSync(temporary, JSON.stringify({target}), {mode: 0o600});
   fs.renameSync(temporary, file);
 };
+// A token rename grants one writer the whole read/modify/write operation. A killed
+// writer leaves its unique token behind, so another process can recover it safely.
+function withStatusLock(root, write) {
+  const lock = path.join(root, 'activity.lock');
+  const available = path.join(lock, 'available');
+  const owner = process.pid + '.' + require('node:crypto').randomUUID();
+  if (!fs.existsSync(lock)) {
+    const temporary = lock + '.' + owner;
+    fs.mkdirSync(temporary, {mode:0o700});
+    try {
+      fs.writeFileSync(path.join(temporary, 'available'), '', {mode:0o600});
+      try { fs.renameSync(temporary, lock); }
+      catch (error) { if (!fs.existsSync(lock)) throw error; }
+    } finally { fs.rmSync(temporary, {recursive:true, force:true}); }
+  }
+  const mine = path.join(lock, owner);
+  const wait = new Int32Array(new SharedArrayBuffer(4));
+  const deadline = performance.now() + 2000; // provider hook timeout is three seconds
+  for (;;) {
+    try { fs.renameSync(available, mine); break; }
+    catch (error) { if (error.code !== 'ENOENT') throw error; }
+    for (const name of fs.readdirSync(lock)) {
+      const match = /^(\d+)\.[a-f0-9-]+$/.exec(name);
+      if (!match) continue;
+      try { process.kill(Number(match[1]), 0); }
+      catch (error) {
+        if (error.code === 'EPERM') continue;
+        if (error.code !== 'ESRCH') throw error;
+        try { fs.renameSync(path.join(lock, name), available); }
+        catch (moved) { if (moved.code !== 'ENOENT') throw moved; }
+      }
+    }
+    if (performance.now() >= deadline) throw new Error('Timed out waiting for the terminal activity writer');
+    Atomics.wait(wait, 0, 0, 5);
+  }
+  try { if (!fs.existsSync(path.join(root, 'closing'))) write(); }
+  finally { fs.renameSync(mine, available); }
+}
 // Hook stdout is captured by agent CLIs. Publish to the owning terminal's private
 // status file instead of printing escape sequences into hook output.
-exports.status = function(provider, sessionId, activity) {
+exports.status = function(provider, sessionId, activity, turnId = activity?.turnId) {
   const root = process.env.DOVO_TERMINAL_STATUS_DIRECTORY || process.env.DOVO_TERMINAL_RECOVERY_DIRECTORY;
   if (!root || !fs.existsSync(root) || fs.existsSync(path.join(root, 'closing'))) return;
   if (process.env.TMUX || process.env.HC_SCOPE) return;
   if (typeof sessionId !== 'string' || !sessionId || sessionId.length > 4000 || /[\x00-\x1f\x7f]/.test(sessionId)) return;
-  const file = path.join(root, 'activity.json');
-  if (fs.existsSync(file)) {
-    const previous = JSON.parse(fs.readFileSync(file, 'utf8'));
-    if (previous.provider !== provider || previous.sessionId !== sessionId) {
-      if (!activity || activity.state !== 'idle') return;
+  // Keep a legacy state report usable when a provider sends an invalid identifier.
+  if (typeof turnId !== 'string' || !${terminalTurnIdPattern}.test(turnId)) turnId = undefined;
+  withStatusLock(root, () => {
+    const file = path.join(root, 'activity.json');
+    let previous;
+    if (fs.existsSync(file)) {
+      previous = JSON.parse(fs.readFileSync(file, 'utf8'));
+      if (previous.provider !== provider || previous.sessionId !== sessionId) {
+        if (!activity || activity.state !== 'idle') return;
+      }
     }
-  }
-  const temporary = file + '.' + process.pid + '.' + require('node:crypto').randomUUID();
-  fs.writeFileSync(temporary, JSON.stringify({id: require('node:crypto').randomUUID(), at:Date.now(), provider, sessionId, activity: activity && {...activity, app:provider}}), {mode:0o600});
-  fs.renameSync(temporary, file);
+    // More reports can arrive between polls than fit in the transition history.
+    // Keep a bounded count of independent jobs at the source as well.
+    const wasWorking = previous?.activity?.state === 'working';
+    const working = activity?.state === 'working';
+    const previousTurnId = previous?.activity?.turnId ?? previous?.turnId;
+    const id = turnId ?? (!working && wasWorking ? previousTurnId : undefined);
+    let openTurns = previous?.openTurns ?? (wasWorking && previousTurnId ? [previousTurnId] : []);
+    let completedTurns = previous?.completedTurns ?? [];
+    // Positions line up with completedTurns. An older writer has IDs without positions.
+    let completionPositions = previous?.completionPositions ?? completedTurns.map(() => null);
+    const sequence = (previous?.sequence ?? 0) + 1;
+    let turn = previous?.turn ?? 0;
+    if (id) {
+      if (!completedTurns.includes(id)) {
+        const open = openTurns.includes(id);
+        if (working && !open) openTurns = [...openTurns, id].slice(-${terminalTurnIdHistoryLimit});
+        if (!working && (open || (wasWorking && !previousTurnId))) {
+          turn++;
+          if (open) openTurns = openTurns.filter(value => value !== id);
+          completedTurns = [...completedTurns, id].slice(-${terminalTurnIdHistoryLimit});
+          completionPositions = [...completionPositions, [sequence, turn]].slice(-${terminalTurnIdHistoryLimit});
+        }
+      }
+    } else if (wasWorking && !working) turn++;
+    const transitions = previous?.transitions ?? [];
+    if (previous?.sequence !== undefined && (previous.activity?.state !== activity?.state || previousTurnId !== turnId)) {
+      // Keep recent state boundaries so the holder can merge both sources between polls.
+      transitions.push({sequence:previous.sequence, turn:previous.turn, state:previous.activity?.state ?? null, turnId:previousTurnId});
+    }
+    const temporary = file + '.' + process.pid + '.' + require('node:crypto').randomUUID();
+    const event = {
+      id: require('node:crypto').randomUUID(), at: Date.now(), turn, sequence, provider, sessionId,
+      openTurns: openTurns.length ? openTurns : undefined,
+      completedTurns: completedTurns.length ? completedTurns : undefined,
+      completionPositions: completionPositions.length ? completionPositions : undefined,
+      transitions: transitions.slice(-32), turnId: activity ? undefined : turnId,
+      activity: activity && {...activity, turnId, app:provider},
+    };
+    fs.writeFileSync(temporary, JSON.stringify(event), {mode:0o600});
+    fs.renameSync(temporary, file);
+  });
 };
 exports.hook = function(provider, event) {
   if (event.agent_id) return;
@@ -104,7 +286,12 @@ exports.hook = function(provider, event) {
     if (event.notification_type === 'idle_prompt') activity = {state:'idle'};
     if (event.notification_type === 'elicitation_dialog') activity = {state:'blocked',kind:'question'};
   }
-  if (activity !== undefined) exports.status(provider, event.session_id, activity);
+  if (activity !== undefined) {
+    // Session lifecycle hooks are outside a user turn. Claude can include the last prompt ID.
+    const turnId = name === 'SessionStart' || name === 'SessionEnd' ? undefined
+      : provider === 'codex' ? event.turn_id : provider === 'claude' ? event.prompt_id : undefined;
+    exports.status(provider, event.session_id, activity, turnId);
+  }
 };
 if (require.main === module) {
   let input = '';
@@ -180,10 +367,20 @@ child.on('exit', (code, signal) => {
 });
 `
 
+export type RecoveryIntegrationProvider = 'codex' | 'claude' | 'pi' | 'opencode'
+export type RecoveryIntegrationFailure = {
+  provider: RecoveryIntegrationProvider
+  message: string
+}
+
+/**
+ * Installs the shared reporter and launchers, then each provider integration on its own. Throws
+ * when the shared files fail. Returns failed providers. Their files stay unchanged.
+ */
 export function installRecoveryIntegrations(
   directory: string,
   environment: NodeJS.ProcessEnv = process.env,
-) {
+): RecoveryIntegrationFailure[] {
   const reporter = join(directory, 'report.cjs')
   ownedFile(reporter, recoveryReporterSource)
   ownedFile(join(directory, 'launch.cjs'), recoveryLauncherSource)
@@ -200,41 +397,56 @@ export function installRecoveryIntegrations(
       chmodSync(file, 0o700)
     }
   }
-  const command = (provider: string) =>
-    process.platform === 'win32'
-      ? `set "ELECTRON_RUN_AS_NODE=1" && "${process.execPath}" "${reporter}" ${provider}`
-      : `ELECTRON_RUN_AS_NODE=1 ${quote([process.execPath, reporter, provider])}`
   const codex = environment.CODEX_HOME || join(homedir(), '.codex')
   const claude = environment.CLAUDE_CONFIG_DIR || join(homedir(), '.claude')
   const pi = environment.PI_CODING_AGENT_DIR || join(homedir(), '.pi', 'agent')
   const opencode = join(environment.XDG_CONFIG_HOME || join(homedir(), '.config'), 'opencode')
-  addHooks(join(codex, 'hooks.json'), command('codex'), [
-    'SessionStart',
-    'SessionEnd',
-    'UserPromptSubmit',
-    'PreToolUse',
-    'PostToolUse',
-    'PermissionRequest',
-    'Stop',
-    'Interrupt',
-  ])
-  addHooks(join(claude, 'settings.json'), command('claude'), [
-    'SessionStart',
-    'SessionEnd',
-    'UserPromptSubmit',
-    'PreToolUse',
-    'PostToolUse',
-    'PostToolUseFailure',
-    'PermissionRequest',
-    'Notification',
-    'Stop',
-    'StopFailure',
-  ])
-  const module = JSON.stringify(pathToFileURL(reporter).href)
-  ownedFile(
-    join(pi, 'extensions', 'dovo-terminal-recovery.ts'),
-    `
-import reporter from ${module};
+  const configReporter = (config: string) => {
+    const path = resolve(config, 'dovo-terminal-recovery', 'report.cjs')
+    ownedFile(path, recoveryReporterSource)
+    return path
+  }
+  // Each provider owns its own config. A user file that Dovo cannot read must not stop the others.
+  const failures: RecoveryIntegrationFailure[] = []
+  const install = (provider: RecoveryIntegrationProvider, write: () => void) => {
+    try {
+      write()
+    } catch (error) {
+      failures.push({ provider, message: error instanceof Error ? error.message : String(error) })
+    }
+  }
+  install('codex', () =>
+    addHooks(join(codex, 'hooks.json'), 'codex', configReporter(codex), [
+      'SessionStart',
+      'SessionEnd',
+      'UserPromptSubmit',
+      'PreToolUse',
+      'PostToolUse',
+      'PermissionRequest',
+      'Stop',
+      'Interrupt',
+    ]),
+  )
+  install('claude', () =>
+    addHooks(join(claude, 'settings.json'), 'claude', configReporter(claude), [
+      'SessionStart',
+      'SessionEnd',
+      'UserPromptSubmit',
+      'PreToolUse',
+      'PostToolUse',
+      'PostToolUseFailure',
+      'PermissionRequest',
+      'Notification',
+      'Stop',
+      'StopFailure',
+    ]),
+  )
+  install('pi', () => {
+    configReporter(pi)
+    ownedFile(
+      join(pi, 'extensions', 'dovo-terminal-recovery.ts'),
+      `
+import reporter from '../dovo-terminal-recovery/report.cjs';
 export default function(pi) {
   pi.on('session_start', (_event, ctx) => {
     const file = ctx.sessionManager.getSessionFile();
@@ -251,11 +463,14 @@ export default function(pi) {
   });
 }
 `,
-  )
-  ownedFile(
-    join(opencode, 'plugins', 'dovo-terminal-recovery.js'),
-    `
-import reporter from ${module};
+    )
+  })
+  install('opencode', () => {
+    configReporter(opencode)
+    ownedFile(
+      join(opencode, 'plugins', 'dovo-terminal-recovery.js'),
+      `
+import reporter from '../dovo-terminal-recovery/report.cjs';
 export const DovoTerminalRecovery = async ({ directory }) => {
  let current;
  const children = new Set();
@@ -288,5 +503,7 @@ export const DovoTerminalRecovery = async ({ directory }) => {
  };
 };
 `,
-  )
+    )
+  })
+  return failures
 }

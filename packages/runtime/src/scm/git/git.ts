@@ -70,7 +70,7 @@ import type { Task } from '@dovo/protocol'
 import { exec, ProcessError, processEnvironment } from '../../process.js'
 import { HttpError, errorMessage } from '../../errors.js'
 import { repositoryPath, safeFile } from '../repositories/paths.js'
-import { withFileWrite } from '../repositories/file-writes.js'
+import { replaceFileContents, withFileWrite } from '../repositories/file-writes.js'
 /** Recorded fork point of a task branch; see `Task['worktreeBase']`. */
 export type BranchBase = { branch?: string; ref?: string; commit?: string }
 export type GithubAccount = {
@@ -779,6 +779,87 @@ export class GitService {
       })
       child.stdin?.end(limits.input)
     })
+  }
+  /**
+   * Reads NUL-delimited Git output one record at a time and keeps distinct records. Git stops
+   * after `limit` records, so a large listing never has to fit in one output buffer.
+   */
+  async nulRecords(cwd: string, args: string[], limit: number, timeout = 30_000) {
+    const executable = this.settings().git
+    this.audit?.(cwd, [executable, ...args])
+    try {
+      const call = await this.hardenedCall(cwd, args, processEnvironment())
+      try {
+        const result = await new Promise<{ records: string[]; truncated: boolean }>(
+          (resolve, reject) => {
+            const child = spawn(executable, call.args, {
+              cwd,
+              env: call.env,
+              windowsHide: true,
+              stdio: ['ignore', 'pipe', 'pipe'],
+            })
+            const records = new Set<string>()
+            let rest: Buffer = Buffer.alloc(0)
+            let stderr = ''
+            let truncated = false
+            let failure: Error | undefined
+            const timer = setTimeout(() => {
+              failure = new Error(`git ${args.join(' ')} timed out`)
+              child.kill()
+            }, timeout)
+            child.stdout.on('data', (chunk: Buffer) => {
+              if (truncated) return
+              const data = rest.length ? Buffer.concat([rest, chunk]) : chunk
+              let start = 0
+              for (let end = data.indexOf(0); end !== -1; end = data.indexOf(0, start)) {
+                if (end > start) records.add(data.toString('utf8', start, end))
+                start = end + 1
+                if (records.size > limit) {
+                  truncated = true
+                  child.kill()
+                  return
+                }
+              }
+              rest = Buffer.from(data.subarray(start))
+            })
+            child.stderr.setEncoding('utf8').on('data', (data: string) => {
+              if (stderr.length < 64 * 1024) stderr += data
+            })
+            child.once('error', (error) => {
+              clearTimeout(timer)
+              reject(error)
+            })
+            child.once('close', (code, signal) => {
+              clearTimeout(timer)
+              if (failure) return reject(failure)
+              if (truncated) return resolve({ records: [...records].slice(0, limit), truncated })
+              if (code !== 0) {
+                const message = `git ${args.join(' ')} exited ${code ?? signal}: ${stderr}`
+                return reject(
+                  new ProcessError({
+                    message,
+                    cause: new Error(message),
+                    code: code ?? undefined,
+                    signal,
+                    stdout: '',
+                    stderr,
+                  }),
+                )
+              }
+              if (rest.length) records.add(rest.toString('utf8'))
+              resolve({ records: [...records], truncated: false })
+            })
+          },
+        )
+        this.audit?.(cwd, [executable, ...args], {})
+        return result
+      } finally {
+        await call.dispose()
+      }
+    } catch (error) {
+      this.audit?.(cwd, [executable, ...args], { error: errorMessage(error) })
+      throw error
+    }
   }
   /** Preparation timings are retained with command activity for startup diagnostics. */
   async measureCheckout<T>(cwd: string, stage: string, operation: () => Promise<T>): Promise<T> {
@@ -1739,6 +1820,8 @@ export class GitService {
   }
   async snapshot(cwd: string, ref: string, signal?: AbortSignal) {
     signal?.throwIfAborted()
+    // Imported sessions can start in a subfolder and edit elsewhere in the same worktree.
+    cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')
     const directory = await mkdtemp(join(tmpdir(), 'dovo-checkpoint-'))
     const index = join(directory, 'index')
     try {
@@ -1782,8 +1865,47 @@ export class GitService {
     signal?: AbortSignal,
   ) {
     // Snapshot paths belong to the repository tree, even for a thread started in a subfolder.
-    cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).trim()
+    cwd = (await this.command(cwd, ['rev-parse', '--show-toplevel'])).replace(/\r?\n$/, '')
     const current = await this.snapshot(cwd, backupRef, signal)
+    if (only) {
+      const root = resolve(cwd)
+      const conflict = () =>
+        new HttpError(409, 'Cannot restore a single file across a directory change.')
+      if (!only.length) return current
+      const backedUp = new Set(
+        (
+          await this.command(cwd, [
+            '--literal-pathspecs',
+            'ls-tree',
+            '--name-only',
+            '-z',
+            current,
+            '--',
+            ...only,
+          ])
+        ).split('\0'),
+      )
+      // Git does not list ignored files in a snapshot. Forced checkout can still remove
+      // their directory, or replace a parent symlink to create the selected path.
+      for (const name of only) {
+        const path = await safeFile(root, name, { followFinalSymlink: false })
+        for (let entry = path; entry !== root; entry = dirname(entry)) {
+          try {
+            const info = await lstat(entry)
+            if (entry === path ? info.isDirectory() : !info.isDirectory()) throw conflict()
+            if (entry === path && !backedUp.has(name))
+              throw new HttpError(
+                409,
+                'This file is missing from the backup. Move it to a safe location before restoring.',
+              )
+          } catch (error) {
+            if (error instanceof Error && 'code' in error && error.code === 'ENOTDIR')
+              throw conflict()
+            if (!(error instanceof Error && 'code' in error && error.code === 'ENOENT')) throw error
+          }
+        }
+      }
+    }
     if (current === target) return current
     const names = (
       await this.command(cwd, [
@@ -1802,6 +1924,8 @@ export class GitService {
     )
       .split('\0')
       .filter(Boolean)
+    if (only && names.some((name) => !only.includes(name)))
+      throw new HttpError(409, 'Cannot restore a single file across a directory change.')
     const directory = await mkdtemp(join(tmpdir(), 'dovo-restore-'))
     const index = join(directory, 'index')
     try {
@@ -2118,7 +2242,7 @@ export class GitService {
       }
       if (current !== expected)
         throw new HttpError(409, 'File changed on disk. Refresh before applying your draft.')
-      await writeFile(target, contents)
+      await replaceFileContents(target, contents)
     })
   }
   async stage(path: string, names: string[]) {

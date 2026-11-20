@@ -452,6 +452,8 @@ export class Conversations {
     needle: string,
     limit = 50,
     before?: string,
+    /** Threads that may supply hits. `taskIds` still lists every matching thread. */
+    hitTaskIds?: ReadonlySet<string>,
   ): TaskSearchResult {
     const terms = taskSearchTerms(needle)
     if (!terms.length || !orderedTaskIds.length) return { taskIds: [], hits: [] }
@@ -472,7 +474,7 @@ export class Conversations {
     // SQLite encodes strings as UTF-8. For malformed UTF-16, replacement characters, and
     // NULs, match original JSON text in JS to preserve the protocol's exact semantics.
     if (/[\ud800-\udfff]/u.test(needle) || needle.includes('\ufffd') || needle.includes('\0'))
-      return this.searchOriginalText(orderedTaskIds, needle, limit, end)
+      return this.searchOriginalText(orderedTaskIds, needle, limit, end, hitTaskIds)
     this.boundSearchOverlay(orderedTaskIds)
     const candidates = this.searchCandidates(terms)
     const candidateJson = candidates === undefined ? undefined : JSON.stringify(candidates)
@@ -509,6 +511,7 @@ export class Conversations {
     const query = JSON.stringify(terms)
     if (orderedTaskIds.length === 1) {
       const taskId = orderedTaskIds[0]
+      const hitLimit = hitTaskIds && !hitTaskIds.has(taskId) ? 0 : Math.max(0, limit)
       const rows = decode(
         valuesSchema,
         this.db
@@ -517,13 +520,13 @@ export class Conversations {
         WHERE ${narrowed}
           entry.task_id = ? AND entry.kind = 'message' AND ${matches} AND entry.ordinal < ?
         ORDER BY entry.ordinal DESC LIMIT ?`)
-          .all(...parameters, taskId, query, end, Math.max(1, limit)),
+          .all(...parameters, taskId, query, end, Math.max(1, hitLimit)),
       )
       const hits = rows.flatMap((row) => {
         const hit = taskSearchHit(taskId, decode(messageSchema, JSON.parse(row.value)), needle)
         return hit ? [hit] : []
       })
-      return { taskIds: hits.length ? [taskId] : [], hits: hits.slice(0, Math.max(0, limit)) }
+      return { taskIds: hits.length ? [taskId] : [], hits: hits.slice(0, hitLimit) }
     }
     // Narrow by task before scanning common terms. Keep the global trigram index for rare
     // terms, but never scan unrelated histories when the caller already supplied a scope.
@@ -547,7 +550,7 @@ export class Conversations {
     for (const taskId of orderedTaskIds) {
       if (!matching.has(taskId)) continue
       result.taskIds.push(taskId)
-      if (result.hits.length >= limit) continue
+      if (result.hits.length >= limit || (hitTaskIds && !hitTaskIds.has(taskId))) continue
       for (const row of decode(
         valuesSchema,
         read.all(...parameters, taskId, query, limit - result.hits.length),
@@ -583,6 +586,7 @@ export class Conversations {
     needle: string,
     limit: number,
     end: number,
+    hitTaskIds?: ReadonlySet<string>,
   ) {
     const result: TaskSearchResult = { taskIds: [], hits: [] }
     const read = this.db.prepare(
@@ -595,7 +599,7 @@ export class Conversations {
         const hit = taskSearchHit(taskId, decode(messageSchema, JSON.parse(stored.value)), needle)
         if (!hit) continue
         matched = true
-        if (result.hits.length >= limit) break
+        if (result.hits.length >= limit || (hitTaskIds && !hitTaskIds.has(taskId))) break
         result.hits.push(hit)
       }
       if (matched) result.taskIds.push(taskId)

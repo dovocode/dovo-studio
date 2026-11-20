@@ -5,6 +5,9 @@ import {
   createComposerRecovery,
 } from './composer-recovery'
 import { createComposerDraft } from '../../../extension-tasks/src/chat/composer/composer-draft'
+import * as recoveryModule from './composer-recovery'
+import { createTask } from './actions'
+import { createWorkspace } from './seed'
 afterEach(() => {
   vi.unstubAllGlobals()
   vi.useRealTimers()
@@ -12,6 +15,10 @@ afterEach(() => {
 function disk() {
   const data = new Map<string, string>()
   vi.stubGlobal('localStorage', {
+    get length() {
+      return data.size
+    },
+    key: (index: number) => [...data.keys()][index] ?? null,
     getItem: (key: string) => data.get(key) ?? null,
     setItem: (key: string, value: string) => data.set(key, value),
     removeItem: (key: string) => data.delete(key),
@@ -28,6 +35,57 @@ test('a reload before debounce restores the exact offline draft', () => {
   expect(write).not.toHaveBeenCalled()
   expect(createComposerRecovery('thread').text).toBe('Offline\nunsent text')
   draft.flush()
+})
+test('a startup draft finds its task ID again before the workspace saves it', () => {
+  vi.useFakeTimers()
+  const data = disk()
+  const connection = { address: 'http://lan:3000', token: 'paired' }
+  const workspace = createWorkspace()
+  const repositoryId = workspace.repositories[0].id
+  const task = createTask({ title: 'New thread', agentId: '', objective: '', repositoryId })
+  const key = composerRecoveryKey(connection, task.id, 'paired-profile')
+  const journal = createComposerRecovery(key, repositoryId)
+  const save = vi.fn<(text: string) => void>()
+  const draft = createComposerDraft('', save, vi.fn(), journal.protect)
+  draft.update('Unsaved first text')
+  expect(save).not.toHaveBeenCalled()
+  expect(JSON.parse(data.get(key) ?? '{}')).toMatchObject({
+    text: 'Unsaved first text',
+    startup: { repositoryId },
+  })
+  expect(
+    recoveryModule.recoverStartupComposer(
+      { ...connection, runtimeId: 'learned-during-startup' },
+      'paired-profile',
+      workspace,
+    ),
+  ).toMatchObject({
+    taskId: task.id,
+    repositoryId,
+  })
+  expect(
+    recoveryModule.recoverStartupComposer(
+      { ...connection, token: 'another pairing' },
+      'paired-profile',
+      workspace,
+    ),
+  ).toBeUndefined()
+  expect(
+    recoveryModule.recoverStartupComposer(connection, 'paired-profile', {
+      ...workspace,
+      tasks: [task],
+    }),
+  ).toBeUndefined()
+  draft.flush()
+  const reopened = createComposerRecovery(key)
+  reopened.protect('Text typed after the thread opens')
+  expect(
+    recoveryModule.recoverStartupComposer(connection, 'paired-profile', workspace)?.taskId,
+  ).toBe(task.id)
+  reopened.retire(reopened.checkpoint())
+  expect(
+    recoveryModule.recoverStartupComposer(connection, 'paired-profile', workspace),
+  ).toBeUndefined()
 })
 test('delayed acknowledgements cannot clear newer or identical remounted edits', () => {
   disk()

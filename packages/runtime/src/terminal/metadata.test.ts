@@ -1,10 +1,11 @@
 import { expect, it } from 'vite-plus/test'
-import type { TerminalActivity } from '@dovo/protocol'
-import { TerminalMetadata } from './metadata.js'
+import type { TerminalActivity, TerminalInfo } from '@dovo/protocol'
+import { TerminalMetadata, updateChildActivities } from './metadata.js'
 
 function observer() {
   const events: Array<{
-    type: 'title' | 'activity'
+    type: 'title' | 'activity' | 'children'
+    id?: string
     title?: string
     activity?: TerminalActivity
   }> = []
@@ -58,8 +59,8 @@ it.each([
   'state=future',
   'app=build',
   '?',
-  'state=blocked:id=worker',
-  'state=clear:id=worker',
+  'state=blocked:id=invalid#id',
+  `state=blocked:id=${'x'.repeat(129)}`,
   'state=working:id=',
   'state=working:id=bad//id',
   'state=working:abcdefghijklmnopq=x',
@@ -84,7 +85,7 @@ it('clears transient reports at prompts and exit, retains done/error, and honors
     parser.write(report(`state=${state}`))
     parser.write('\x1b]133;A;aid=prompt\x07')
     parser.endProcess()
-    expect(events.at(-1)?.activity).toEqual(
+    expect(events.filter(({ type }) => type === 'activity').at(-1)?.activity).toEqual(
       ['done', 'error'].includes(state) ? { state } : undefined,
     )
     parser.write(report('state=clear'))
@@ -118,4 +119,71 @@ it('rejects unsafe/oversized titles, accepts bounded Unicode and allows an expli
     { type: 'title', title: '项目 🙂' },
     { type: 'title', title: undefined },
   ])
+})
+
+it('keeps scoped reports separate from root reports across chunk boundaries', () => {
+  const stream =
+    report('state=working') +
+    report('state=blocked:id=workers/check') +
+    report('state=clear:id=workers')
+  for (let split = 0; split <= stream.length; split++) {
+    const { parser, events } = observer()
+    parser.write(stream.slice(0, split))
+    parser.write(stream.slice(split))
+    expect(events).toEqual([
+      { type: 'activity', activity: { state: 'working' } },
+      { type: 'children', id: 'workers/check', activity: { state: 'blocked' } },
+      { type: 'children', id: 'workers' },
+    ])
+  }
+})
+
+it('bounds children and clears only the named subtree, including when its parent has no record', () => {
+  let children: TerminalInfo['childActivities']
+  const parser = new TerminalMetadata((event) => {
+    if (event.type === 'children') children = updateChildActivities(children, event)
+  })
+  for (let i = 1; i <= 32; i++) parser.write(report(`state=working:id=w${i}`))
+  parser.write(report('state=done:id=w1'))
+  parser.write(report('state=blocked:id=workers/check/build'))
+  expect(children).toHaveLength(32)
+  expect(children?.some(({ id }) => id === 'w2')).toBe(false)
+  parser.write(report('state=clear:id=workers'))
+  expect(children).toHaveLength(31)
+  expect(children?.at(-1)).toEqual({ id: 'w1', activity: { state: 'done' } })
+  parser.write(report('state=clear'))
+  expect(children).toBeUndefined()
+  for (const reset of ['\x1bc', '\x1b]133;A\x07']) {
+    parser.write(report('state=blocked:id=child') + reset)
+    expect(children).toBeUndefined()
+  }
+})
+
+it('preserves turn IDs on root, child and clear reports across PTY chunks', () => {
+  const turnId = 'codex/Abc_1.2+3-4'
+  const stream =
+    report(`state=working:turnId=${turnId}`) +
+    report(`state=done:id=worker:turnId=${turnId}`) +
+    report(`state=clear:turnId=${turnId}`)
+  for (let split = 0; split <= stream.length; split++) {
+    const { parser, events } = observer()
+    parser.write(stream.slice(0, split))
+    parser.write(stream.slice(split))
+    expect(events).toEqual([
+      { type: 'activity', activity: { state: 'working', turnId } },
+      { type: 'children', id: 'worker', activity: { state: 'done', turnId } },
+      { type: 'children' },
+      { type: 'activity', activity: undefined, turnId },
+    ])
+  }
+})
+
+it('rejects malformed turn IDs without changing the current activity', () => {
+  const { parser, events } = observer()
+  for (const value of ['', 'a b', 'a=b', 'x'.repeat(129), 'bad\u202eid'])
+    parser.write(report(`state=done:turnId=${value}`))
+  expect(events).toEqual([])
+  const turnId = 'a'.repeat(128)
+  parser.write(report(`state=done:turnId=${turnId}`))
+  expect(events).toEqual([{ type: 'activity', activity: { state: 'done', turnId } }])
 })

@@ -10,6 +10,7 @@ import {
   type TaskSummary,
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
+import { removeThreadSandboxes } from './thread-deletion.js'
 import { listWorktreesEffect, removeWorktreeEffect } from '../../scm/git/worktrees.js'
 
 const day = 86_400_000
@@ -126,9 +127,6 @@ export async function archiveTask(
         s.deviceHosts.closeTask(member),
         s.agents.releaseTask(member),
       ])
-      // Provider processes are gone; the thread's container goes with the archive.
-      const sandbox = await Promise.allSettled([s.sandboxes.remove(member)])
-      cleanup.push(...sandbox)
       for (const result of cleanup) if (result.status === 'rejected') throw result.reason
     }
     const latest = s.store.get().tasks.find((task) => task.id === id)
@@ -142,22 +140,31 @@ export async function archiveTask(
       !eligible(latest)
     )
       return false
-    s.store.transaction(() => {
-      s.store.update((workspace) => ({
-        ...workspace,
-        tasks: workspace.tasks.map((task) =>
-          ids.has(task.id)
-            ? {
-                ...task,
-                archived: true,
-                archivedAt: task.archivedAt ?? new Date(now).toISOString(),
-                snoozedUntil: null,
-              }
-            : task,
-        ),
-      }))
-      s.activity.add('task', id, reason)
-    })
+    // Hold the family from the commit until the sandbox removal ends, so a restore or a new turn
+    // cannot start work that the removal then deletes. No await separates the checks above.
+    const reservation = s.tasks.reserveDeletion([...ids])
+    try {
+      s.store.transaction(() => {
+        s.store.update((workspace) => ({
+          ...workspace,
+          tasks: workspace.tasks.map((task) =>
+            ids.has(task.id)
+              ? {
+                  ...task,
+                  archived: true,
+                  archivedAt: task.archivedAt ?? new Date(now).toISOString(),
+                  snoozedUntil: null,
+                }
+              : task,
+          ),
+        }))
+        s.activity.add('task', id, reason)
+      })
+      // The container and its private files go only after the archive commits.
+      await Effect.runPromise(removeThreadSandboxes(s, ids))
+    } finally {
+      s.tasks.releaseDeletion([...ids], reservation)
+    }
     return true
   } catch {
     return false

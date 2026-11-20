@@ -4,8 +4,16 @@ import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { Effect } from 'effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { useEffect, useRef, type ReactNode } from 'react'
-import { Keyboard, ScrollView, View } from 'react-native'
+import { useEffect, useRef, type ComponentRef, type ReactNode } from 'react'
+import {
+  AccessibilityInfo,
+  AppState,
+  Keyboard,
+  ScrollView,
+  View,
+  findNodeHandle,
+  type TextInput,
+} from 'react-native'
 import { Text } from '../../ui/content/text'
 import {
   questionAnswerError,
@@ -25,6 +33,35 @@ import { Action } from '../../ui/controls/action'
 import { useTheme } from '../../ui/theme'
 import { notificationAnswerDraft, clearNotificationAnswerDraft } from '../../notifications/answers'
 import { NotificationInputView } from '../../notifications/viewport-view'
+
+/** The first question that `questionAnswerError` rejects, so submit can show it in place. */
+export function invalidQuestion(
+  questions: readonly AgentQuestion[],
+  answers: QuestionAnswers,
+  attachments: QuestionAttachmentIds,
+) {
+  for (const question of questions) {
+    const error = questionAnswerError(
+      [question],
+      Object.hasOwn(answers, question.id) ? { [question.id]: answers[question.id] } : {},
+      Object.hasOwn(attachments, question.id) ? { [question.id]: attachments[question.id] } : {},
+    )
+    if (error) return { id: question.id, error }
+  }
+}
+
+/** Provider-marked secret text must not outlive the foreground. Other text stays as a draft. */
+export function withoutSecretDrafts(
+  questions: readonly AgentQuestion[],
+  drafts: Record<string, QuestionDraft>,
+) {
+  if (!questions.some((q) => q.secret && (drafts[q.id]?.text || drafts[q.id]?.selected.length)))
+    return drafts
+  const next = { ...drafts }
+  for (const q of questions) if (q.secret) next[q.id] = { selected: [], text: '' }
+  return next
+}
+
 export function QuestionForm({
   request,
   connected,
@@ -37,6 +74,8 @@ export function QuestionForm({
   attachmentsBusy = false,
   runtimeId,
   notificationAccessible,
+  notificationTaskId,
+  notificationRuntimeIdentity,
 }: {
   request: PendingQuestion
   connected: boolean
@@ -53,6 +92,10 @@ export function QuestionForm({
   attachmentsBusy?: boolean
   runtimeId?: string
   notificationAccessible: boolean
+  /** The owning thread that receives this question's push notification. */
+  notificationTaskId?: string
+  /** This computer's identity, which a parent on another computer uses in its push. */
+  notificationRuntimeIdentity?: string
 }) {
   const uiText = useInterfaceText()
 
@@ -88,8 +131,40 @@ export function QuestionForm({
     setLocalDrafts(next)
     onDraftsChange?.(next)
   }
+  const setDraftsRef = useRef(setDrafts)
+  setDraftsRef.current = setDrafts
   const submitting = useRef(false)
   const edited = useRef(false)
+  const [invalid, setInvalid] = useApplicationState<{ id: string; error: string } | null>(null)
+  const scroll = useRef<ComponentRef<typeof ScrollView>>(null)
+  const positions = useRef(new Map<string, number>())
+  const inputs = useRef(new Map<string, ComponentRef<typeof TextInput>>())
+  const labels = useRef(new Map<string, ComponentRef<typeof View>>())
+  useEffect(() => {
+    if (!request.prompt.questions.some((q) => q.secret)) return
+    const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'active') return
+      // Match the secure input card. A typed secret is gone when the app returns.
+      const next = withoutSecretDrafts(request.prompt.questions, draftsRef.current)
+      if (next !== draftsRef.current) setDraftsRef.current(() => next)
+    })
+    return () => subscription.remove()
+  }, [request])
+  const showInvalid = (target: { id: string; error: string }) => {
+    setInvalid(target)
+    const y = positions.current.get(target.id)
+    if (y !== undefined) scroll.current?.scrollTo({ y: Math.max(0, y - 8), animated: true })
+    requestAnimationFrame(() => {
+      const input = inputs.current.get(target.id)
+      if (input) {
+        input.focus()
+        return
+      }
+      const label = labels.current.get(target.id)
+      const node = label && findNodeHandle(label)
+      if (node) AccessibilityInfo.setAccessibilityFocus(node)
+    })
+  }
   useEffect(() => {
     if (!runtimeId) return
     let disposed = false
@@ -118,17 +193,23 @@ export function QuestionForm({
     return runClientEffect(
       mobileWorkflow(function* () {
         if (submitting.current || !connected || attachmentsBusy) return
-        const invalid =
-          answers &&
-          questionAnswerError(
+        const referenced = answers && questionReferenceAnswers(answers, outcomes ? {} : references)
+        const failed =
+          referenced &&
+          questionAnswerError(request.prompt.questions, referenced, attachmentIdsByQuestion)
+        if (referenced && failed) {
+          const question = invalidQuestion(
             request.prompt.questions,
-            questionReferenceAnswers(answers, outcomes ? {} : references),
+            referenced,
             attachmentIdsByQuestion,
           )
-        if (invalid) {
-          setError(invalid)
+          if (question) {
+            setError('')
+            showInvalid(question)
+          } else setError(failed)
           return
         }
+        setInvalid(null)
         Keyboard.dismiss()
         submitting.current = true
         setError('')
@@ -162,7 +243,14 @@ export function QuestionForm({
     <NotificationInputView
       input={
         runtimeId
-          ? { runtimeId, taskId: request.taskId, inputId: request.id, inputType: 'question' }
+          ? {
+              runtimeId,
+              taskId: request.taskId,
+              ownerTaskId: notificationTaskId,
+              runtimeIdentity: notificationRuntimeIdentity,
+              inputId: request.id,
+              inputType: 'question',
+            }
           : undefined
       }
       enabled={notificationAccessible && connected && !busy}
@@ -191,6 +279,7 @@ export function QuestionForm({
         </Text>
       )}
       <ScrollView
+        ref={scroll}
         style={{
           maxHeight: 200,
         }}
@@ -200,11 +289,25 @@ export function QuestionForm({
         keyboardShouldPersistTaps="handled"
       >
         {request.prompt.questions.map((q) => (
-          <View key={q.id} style={{ gap: 8 }}>
+          <View
+            key={q.id}
+            style={{ gap: 8 }}
+            onLayout={(event) => positions.current.set(q.id, event.nativeEvent.layout.y)}
+          >
             <QuestionField
               question={Object.hasOwn(references, q.id) ? { ...q, custom: false, options: [] } : q}
               draft={drafts[q.id]}
-              disabled={busy || !connected || attachmentsBusy}
+              // Offline edits stay recoverable. Only the actions that answer need the runtime.
+              disabled={busy || attachmentsBusy}
+              error={invalid?.id === q.id ? invalid.error : undefined}
+              inputRef={(node) => {
+                if (node) inputs.current.set(q.id, node)
+                else inputs.current.delete(q.id)
+              }}
+              labelRef={(node) => {
+                if (node) labels.current.set(q.id, node)
+                else labels.current.delete(q.id)
+              }}
               onChange={(draft) => {
                 edited.current = true
                 setDrafts((current) => ({
@@ -212,6 +315,7 @@ export function QuestionForm({
                   [q.id]: draft,
                 }))
                 setError('')
+                setInvalid((current) => (current?.id === q.id ? null : current))
               }}
             />
             {request.secretReferences && q.secret && q.custom && (
@@ -287,7 +391,7 @@ export function QuestionForm({
       </View>
       {!connected && (
         <Text style={styles.muted}>
-          <InterfaceText>{'Reconnect to answer'}</InterfaceText>
+          <InterfaceText>{'Offline. You can keep editing. Reconnect to send.'}</InterfaceText>
         </Text>
       )}
       {!!error && (

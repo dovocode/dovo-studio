@@ -87,39 +87,36 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
           disabled={busy}
           onPress={() => void client.deleteAccount()}
         />
-      ) : directory ? (
+      ) : client.sessionId() ? (
         <>
           <Action
             label={uiText('Refresh linked computers')}
             disabled={busy}
             onPress={() => void client.refresh()}
           />
-          <Action
-            label={uiText('Sign out')}
-            disabled={busy}
-            onPress={() => void client.signOut()}
-          />
-          <Action
-            destructive
-            label={uiText('Delete account')}
-            disabled={busy}
-            onPress={() =>
-              Alert.alert(
-                uiText('Delete your Dovo account?'),
-                uiText(
-                  'This permanently deletes your hosted identity, linked computers and notification permissions on all devices. Files, threads and separate pairings on your computers remain. Service backups expire within 14 days. This cannot be undone.',
-                ),
-                [
-                  { text: uiText('Cancel'), style: 'cancel' },
-                  {
-                    text: uiText('Delete account'),
-                    style: 'destructive',
-                    onPress: () => void client.deleteAccount(),
-                  },
-                ],
-              )
-            }
-          />
+          {directory && (
+            <Action
+              destructive
+              label={uiText('Delete account')}
+              disabled={busy}
+              onPress={() =>
+                Alert.alert(
+                  uiText('Delete your Dovo account?'),
+                  uiText(
+                    'This permanently deletes your hosted identity, linked computers and notification permissions on all devices. Files, threads and separate pairings on your computers remain. Service backups expire within 14 days. This cannot be undone.',
+                  ),
+                  [
+                    { text: uiText('Cancel'), style: 'cancel' },
+                    {
+                      text: uiText('Delete account'),
+                      style: 'destructive',
+                      onPress: () => void client.deleteAccount(),
+                    },
+                  ],
+                )
+              }
+            />
+          )}
         </>
       ) : (
         <Action
@@ -128,7 +125,10 @@ export function AccountPanel({ onPair }: { onPair: (address: string) => void }) 
           onPress={() => void client.signIn()}
         />
       )}
-      {!!error && (
+      {!login && !deletionPending && client.sessionId() && (
+        <Action label={uiText('Sign out')} disabled={busy} onPress={() => void client.signOut()} />
+      )}
+      {!!error && !client.sessionId() && (
         <Action
           label={uiText('Retry account')}
           disabled={busy}

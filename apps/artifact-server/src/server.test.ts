@@ -1,5 +1,5 @@
 import { afterEach, expect, it } from 'vite-plus/test'
-import { once } from 'node:events'
+import { EventEmitter, once } from 'node:events'
 import { randomBytes, randomUUID } from 'node:crypto'
 import { createServer, type Server } from 'node:http'
 import {
@@ -34,7 +34,7 @@ async function listen(server: Server) {
   if (!address || typeof address === 'string') throw new Error('Missing test port')
   return 'http://127.0.0.1:' + address.port
 }
-async function fixture() {
+async function fixture(trustedProxies: string[] = []) {
   let now = Date.now()
   const accounts = new AccountStore(':memory:', () => now),
     store = new ArtifactStore(':memory:', () => now)
@@ -44,10 +44,12 @@ async function fixture() {
   )
   const serviceKey = randomBytes(32).toString('base64url'),
     origin = 'https://artifacts.test'
+  let pause: (() => Promise<void>) | undefined
   let broker: Server
   let ownerResponse: { status: number; body: unknown } | undefined
   const connectOrigin = await listen(
-    createServer((req, res) => {
+    createServer(async (req, res) => {
+      if (pause && req.url === '/v1/artifacts/session') await pause()
       if (ownerResponse && req.url === '/v1/artifacts/owners') {
         res.writeHead(ownerResponse.status, { 'Content-Type': 'application/json' })
         res.end(JSON.stringify(ownerResponse.body))
@@ -64,7 +66,14 @@ async function fixture() {
     authorize: async () => 'https://sso.test',
     exchange: async () => ({ id: 'unused', name: 'Unused' }),
   })
-  const app = createArtifactServer({ store, origin, connectOrigin, serviceKey, viewerScript: '' })
+  const app = createArtifactServer({
+    trustedProxies,
+    store,
+    origin,
+    connectOrigin,
+    serviceKey,
+    viewerScript: '',
+  })
   const address = await listen(app.server)
   const login = (id: string) => {
     const result = accounts.createLogin()
@@ -108,6 +117,9 @@ async function fixture() {
     return decode(artifactPublicationResponseSchema, await response.json()).publication
   }
   return {
+    pauseSessions: (wait: () => Promise<void>) => {
+      pause = wait
+    },
     accounts,
     store,
     owner,
@@ -611,6 +623,12 @@ it('keeps organisation content encrypted and follows membership on reads and pro
   f.accounts.people.mutate('invited', { action: 'acceptOrganization', organizationId: org.id })
   const read = await f.request(url, 'GET', undefined, invited)
   expect(read.status).toBe(200)
+  const etag = read.headers.get('etag')
+  expect(etag).toBeTruthy()
+  const condition = { 'If-None-Match': etag! }
+  const unchanged = await f.request(url, 'GET', undefined, invited, condition)
+  expect(unchanged.status).toBe(304)
+  expect(await unchanged.text()).toBe('')
   const encrypted = await read.text()
   expect(encrypted).not.toContain('Private conversation')
   expect(encrypted).not.toContain('Encrypted roadmap')
@@ -631,7 +649,7 @@ it('keeps organisation content encrypted and follows membership on reads and pro
     organizationId: org.id,
     userId: 'invited',
   })
-  expect((await f.request(url, 'GET', undefined, invited)).status).toBe(404)
+  expect((await f.request(url, 'GET', undefined, invited, condition)).status).toBe(404)
   expect((await f.request(suggestionsUrl, 'POST', suggestion, invited)).status).toBe(404)
   f.accounts.people.mutate('owner', {
     action: 'inviteMember',
@@ -642,4 +660,40 @@ it('keeps organisation content encrypted and follows membership on reads and pro
   expect((await f.request(url, 'GET', undefined, stranger)).status).toBe(200)
   f.accounts.people.mutate('owner', { action: 'deleteOrganization', organizationId: org.id })
   expect((await f.request(url, 'GET', undefined, stranger)).status).toBe(404)
+})
+
+it('keeps the health check available while all request slots wait for Connect', async () => {
+  const f = await fixture()
+  expect((await f.request('/ready')).status).toBe(200)
+  const gate = new EventEmitter()
+  const started = once(gate, 'started')
+  const resume = once(gate, 'resume')
+  let pending = 0
+  f.pauseSessions(async () => {
+    if (++pending === 8) gate.emit('started')
+    await resume
+  })
+  const token = f.grant(f.owner)
+  const requests = Promise.all(
+    Array.from({ length: 8 }, () => f.request('/v1/me', 'GET', undefined, token)),
+  )
+  try {
+    await started
+    expect((await f.request('/v1/me')).status).toBe(503)
+    expect((await f.request('/health')).status).toBe(200)
+    expect((await f.request('/ready')).status).toBe(503)
+  } finally {
+    gate.emit('resume')
+    await requests
+  }
+  expect((await f.request('/ready')).status).toBe(200)
+})
+
+it('limits hosted sign-ins per client behind a configured proxy', async () => {
+  const f = await fixture(['127.0.0.1'])
+  const start = (client: string) =>
+    f.request('/auth/start', 'POST', {}, undefined, { Origin: f.origin, 'X-Forwarded-For': client })
+  for (let i = 0; i < 10; i++) expect((await start('192.0.2.1')).status).toBe(200)
+  expect((await start('192.0.2.1')).status).toBe(429)
+  expect((await start('192.0.2.2')).status).toBe(200)
 })

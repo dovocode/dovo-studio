@@ -13,6 +13,7 @@ const mocks = {
     export * from '@dovo/protocol';
     export {createTask,updateTask} from '../studio-core/src/workspace/actions';
     export {TemporaryTaskWorkspace} from '../studio-core/src/workspace/temporary-task';
+    export {recoverStartupComposer} from '../studio-core/src/workspace/composer-recovery';
     export {WorkspaceContext,useWorkspace} from '../studio-core/src/workspace/context';
     export {WorkspaceValueProvider,useWorkspaceSelector,sameWorkspaceFields} from '../studio-core/src/workspace/selector';
     const host={}; export const useStudioHost=()=>host;

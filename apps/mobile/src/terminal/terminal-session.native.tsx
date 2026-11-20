@@ -1,3 +1,4 @@
+import { useTerminalViewed } from './use-terminal-viewed'
 // iOS/Android entry: adapts the app runtime, preferences and theme to the package's native
 // Ghostty session. Binaries built without expo-libghostty keep the WebView renderer.
 import { useCallback } from 'react'
@@ -28,6 +29,7 @@ export function TerminalSession(props: MobileTerminalSessionProps) {
 function GhosttyTerminalSession({
   id,
   visible = true,
+  covered = false,
   readOnly = false,
   reconnectToken,
 }: MobileTerminalSessionProps) {
@@ -40,6 +42,11 @@ function GhosttyTerminalSession({
     error: '',
     notice: '',
   })
+  const viewError = useTerminalViewed(
+    id,
+    visible && (state.inputReady || (readOnly && !state.status && !state.error)),
+    covered,
+  )
   // A new loader identity (runtime, device token or terminal change) reconnects the session.
   const openSocket = useCallback(async () => {
     if (!connection) throw new Error('Not connected to a computer.')
@@ -50,6 +57,7 @@ function GhosttyTerminalSession({
   }, [call, connection, id])
   return (
     <View style={styles.screen}>
+      {!!viewError && <Text accessibilityRole="alert">{viewError}</Text>}
       <NativeTerminalSession
         id={id}
         visible={visible && !!connection && connected}

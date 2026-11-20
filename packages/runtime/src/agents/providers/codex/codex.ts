@@ -383,8 +383,16 @@ export function createCodexAdapter(): AgentAdapter {
           native && interactions
             ? {
                 ...run,
-                approve: (title, detail, kind, options) =>
-                  interactions.approve(title, detail, transport.lifetime.signal, kind, options),
+                approve: (title, detail, kind, options, signal) =>
+                  interactions.approve(
+                    title,
+                    detail,
+                    signal
+                      ? AbortSignal.any([signal, transport.lifetime.signal])
+                      : transport.lifetime.signal,
+                    kind,
+                    options,
+                  ),
                 ask: (prompt, signal, validate) =>
                   interactions.ask(
                     prompt,
@@ -430,28 +438,40 @@ export function createCodexAdapter(): AgentAdapter {
             typeof context === 'object' &&
             'protocol' in context &&
             ['http', 'https'].includes(String(context.protocol))
-          const allowed =
-            requestRun.tools !== 'none' &&
-            requestRun.agent.permission !== 'read-only' &&
-            requestRun.agent.approvalPolicy !== 'never' &&
-            !(
-              requestRun.agent.sandboxMode &&
-              requestRun.agent.sandboxMode !== 'danger-full-access' &&
-              (scope?.additionalPermissions || scope?.grantRoot)
-            ) &&
-            (await requestRun.approve(
-              web
-                ? 'Web request'
-                : method.includes('command')
-                  ? 'Run command'
-                  : 'Apply file changes',
-              JSON.stringify(params, null, 2),
-              web
-                ? 'web'
-                : method === 'item/commandExecution/requestApproval'
-                  ? 'command'
-                  : undefined,
-            )) !== 'deny'
+          // Codex withdraws a request with serverRequest/resolved. Close the pending card then.
+          const controller = new AbortController()
+          const cancellation = token.onCancellationRequested(() => controller.abort())
+          if (token.isCancellationRequested) controller.abort()
+          let allowed = false
+          try {
+            allowed =
+              requestRun.tools !== 'none' &&
+              requestRun.agent.permission !== 'read-only' &&
+              requestRun.agent.approvalPolicy !== 'never' &&
+              !(
+                requestRun.agent.sandboxMode &&
+                requestRun.agent.sandboxMode !== 'danger-full-access' &&
+                (scope?.additionalPermissions || scope?.grantRoot)
+              ) &&
+              (await requestRun.approve(
+                web
+                  ? 'Web request'
+                  : method.includes('command')
+                    ? 'Run command'
+                    : 'Apply file changes',
+                JSON.stringify(params, null, 2),
+                web
+                  ? 'web'
+                  : method === 'item/commandExecution/requestApproval'
+                    ? 'command'
+                    : undefined,
+                undefined,
+                controller.signal,
+              )) !== 'deny' &&
+              !controller.signal.aborted
+          } finally {
+            cancellation.dispose()
+          }
           return {
             decision: allowed ? 'accept' : 'decline',
           }

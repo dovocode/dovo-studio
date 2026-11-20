@@ -1,17 +1,10 @@
 import { app, BrowserWindow, shell } from 'electron'
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  realpathSync,
-  renameSync,
-  unlinkSync,
-  writeFileSync,
-} from 'node:fs'
+import { existsSync, mkdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
 import { isPrivateBrowserProfile } from '@dovo/protocol'
+import { readBrowserProfileStore } from './browser-profile-store.js'
 
 const itemSchema = Schema.Struct({
   id: Schema.Number,
@@ -35,6 +28,17 @@ const itemSchema = Schema.Struct({
   incognito: Schema.Boolean,
 })
 export type BrowserDownload = Schema.Schema.Type<typeof itemSchema>
+const storeSchema = Schema.Struct({ nextId: Schema.Number, items: Schema.Array(itemSchema) })
+type DownloadStore = Schema.Schema.Type<typeof storeSchema>
+/** Keep each valid download record. The next ID is derived again from the kept records. */
+const salvageStore = (value: unknown): DownloadStore => {
+  const items: unknown = value && typeof value === 'object' ? Reflect.get(value, 'items') : []
+  const nextId: unknown = value && typeof value === 'object' ? Reflect.get(value, 'nextId') : 1
+  return {
+    nextId: typeof nextId === 'number' && Number.isFinite(nextId) ? nextId : 1,
+    items: Array.isArray(items) ? items.filter((item) => Schema.is(itemSchema)(item)) : [],
+  }
+}
 export type DownloadOptions = {
   url: string
   filename?: string
@@ -112,17 +116,23 @@ export function createBrowserDownloads(
   profileId: string,
   emit: (event: string, value: unknown) => void,
 ) {
-  const storeSchema = Schema.Struct({ nextId: Schema.Number, items: Schema.Array(itemSchema) })
   const directory = join(app.getPath('userData'), 'browser-downloads')
   const path = join(directory, `${profileId}.json`)
   const privateProfile = isPrivateBrowserProfile(profileId)
-  let stored: { nextId: number; items: readonly BrowserDownload[] } = { nextId: 1, items: [] }
+  const write = (store: DownloadStore) => {
+    mkdirSync(directory, { recursive: true })
+    const temporary = `${path}.${randomUUID()}.tmp`
+    writeFileSync(temporary, JSON.stringify(store), { mode: 0o600 })
+    renameSync(temporary, path)
+  }
+  let stored: DownloadStore = { nextId: 1, items: [] }
   if (!privateProfile) {
     try {
-      stored = Schema.decodeUnknownSync(storeSchema)(JSON.parse(readFileSync(path, 'utf8')))
+      stored =
+        readBrowserProfileStore(path, Schema.decodeUnknownSync(storeSchema), salvageStore, write) ??
+        stored
     } catch (error) {
-      if (!(error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT'))
-        throw new Error('Browser download history could not be read.')
+      throw new Error('Browser download history could not be read.', { cause: error })
     }
   }
   const records = new Map<number, BrowserDownload>(
@@ -147,14 +157,7 @@ export function createBrowserDownloads(
   >()
   const persist = () => {
     if (privateProfile) return
-    mkdirSync(directory, { recursive: true })
-    const temporary = `${path}.${randomUUID()}.tmp`
-    writeFileSync(
-      temporary,
-      JSON.stringify({ nextId, items: [...records.values()].slice(-10_000) }),
-      { mode: 0o600 },
-    )
-    renameSync(temporary, path)
+    write({ nextId, items: [...records.values()].slice(-10_000) })
   }
   const save = () => {
     try {
@@ -303,6 +306,17 @@ export function createBrowserDownloads(
   }
   session.on('will-download', willDownload)
   const search = (query: DownloadQuery) => {
+    // Compare instants, not ISO strings: offsets and fractional seconds change string order.
+    const instant = (value: string | undefined) => {
+      if (value === undefined) return undefined
+      const time = Date.parse(value)
+      if (Number.isNaN(time)) throw new Error('Invalid query filter')
+      return time
+    }
+    const startedAfter = instant(query.startedAfter),
+      startedBefore = instant(query.startedBefore),
+      endedAfter = instant(query.endedAfter),
+      endedBefore = instant(query.endedBefore)
     const urlRegex = query.urlRegex === undefined ? undefined : new RegExp(query.urlRegex)
     const filenameRegex =
       query.filenameRegex === undefined ? undefined : new RegExp(query.filenameRegex)
@@ -328,11 +342,13 @@ export function createBrowserDownloads(
           (query.totalBytesLess !== undefined && item.totalBytes >= query.totalBytesLess)
         )
           return false
+        const started = Date.parse(item.startTime),
+          ended = item.endTime === undefined ? Number.NaN : Date.parse(item.endTime)
         if (
-          (query.startedAfter && item.startTime <= query.startedAfter) ||
-          (query.startedBefore && item.startTime >= query.startedBefore) ||
-          (query.endedAfter && (!item.endTime || item.endTime <= query.endedAfter)) ||
-          (query.endedBefore && (!item.endTime || item.endTime >= query.endedBefore))
+          (startedAfter !== undefined && !(started > startedAfter)) ||
+          (startedBefore !== undefined && !(started < startedBefore)) ||
+          (endedAfter !== undefined && !(ended > endedAfter)) ||
+          (endedBefore !== undefined && !(ended < endedBefore))
         )
           return false
         if (
@@ -461,6 +477,16 @@ export function createBrowserDownloads(
         request.close()
       }
       requests.clear()
+      // A private profile closes with its last tab, and its downloads would run on with no way to
+      // pause or cancel them. Cancel them, as Chromium does when the last incognito window
+      // closes. Each done event still releases its destination.
+      if (privateProfile)
+        for (const item of live.values())
+          try {
+            item.cancel()
+          } catch (error) {
+            console.error('Could not cancel a private browser download.', error)
+          }
       save()
     },
   }

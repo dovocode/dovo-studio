@@ -63,6 +63,7 @@ export function TaskConversation({
   onArtifact,
   revealMessage,
   questionId,
+  questionNavigation,
   onRevealHandled,
   onAside,
   visible,
@@ -92,6 +93,8 @@ export function TaskConversation({
   onArtifact?: (reference: ArtifactReference) => void
   revealMessage?: string
   questionId?: string
+  /** Changes with each explicit navigation to `questionId`, including a repeat of the same one. */
+  questionNavigation?: string
   onRevealHandled?: () => void
   /** Opens side chats, showing a newly created draft agent side chat when provided. */
   onAside?: (childId?: string) => void
@@ -430,6 +433,7 @@ export function TaskConversation({
           <TaskQuestions
             taskId={task.id}
             questionId={questionId}
+            questionNavigation={questionNavigation}
             onUseDraft={(text, done) => {
               setComposerCollapsed(false)
               setRecoveryInsert({

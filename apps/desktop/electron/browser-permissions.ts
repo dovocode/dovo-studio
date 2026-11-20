@@ -43,6 +43,53 @@ export function forgetPrivateBrowserPermissions(profileId: string) {
   privatePermissions.delete(profileId)
 }
 
+/**
+ * Answer an Electron permission request once. A storage failure denies the request, so the page
+ * never waits for an answer that cannot come.
+ */
+export function denyPermissionRequestOnFailure<Contents, Permission, Details>(
+  handler: (
+    contents: Contents,
+    permission: Permission,
+    callback: (granted: boolean) => void,
+    details: Details,
+  ) => void,
+) {
+  return (
+    contents: Contents,
+    permission: Permission,
+    callback: (granted: boolean) => void,
+    details: Details,
+  ) => {
+    let answered = false
+    const answer = (granted: boolean) => {
+      if (answered) return
+      answered = true
+      callback(granted)
+    }
+    try {
+      handler(contents, permission, answer, details)
+    } catch (error) {
+      console.error('Could not check browser permission.', error)
+      answer(false)
+    }
+  }
+}
+
+/** A synchronous Electron permission check that fails closed when storage cannot be read. */
+export function denyPermissionCheckOnFailure<Args extends unknown[]>(
+  check: (...args: Args) => boolean,
+) {
+  return (...args: Args) => {
+    try {
+      return check(...args)
+    } catch (error) {
+      console.error('Could not check browser permission.', error)
+      return false
+    }
+  }
+}
+
 /** Only the main process reads or writes approvals; website data never supplies these keys. */
 export function browserPermissions(profileId: string) {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(profileId)) throw new Error('Invalid browser profile.')

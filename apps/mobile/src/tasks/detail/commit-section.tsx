@@ -23,12 +23,22 @@ import { Field } from '../../ui/controls/field'
 import { useAction } from '../../ui/controls/use-action'
 import { useTheme } from '../../ui/theme'
 import {
+  computerDraftKey,
   createDetailDrafts,
-  detailDraftKey,
   useDetailDraft,
 } from '../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../ui/content/draft-storage-notice'
 
-const commitDrafts = createDetailDrafts<{ message: string }>({ isClean: (draft) => !draft.message })
+// An unsent commit message stays on the device after the app restarts.
+const commitDrafts = createDetailDrafts({
+  isClean: (draft) => !draft.message,
+  persist: {
+    name: 'task-commit',
+    schema: mutableStruct({ message: Schema.String }),
+    storage: detailDraftStorage,
+  },
+})
 
 const messageSchema = mutableStruct({ message: Schema.String })
 const commitSchema = mutableStruct({
@@ -64,8 +74,10 @@ export function CommitSection({ task }: { task: Task }) {
     task.existingWorktreePath,
     task.checkoutBranch,
   ])
-  const draftKey = detailDraftKey(profile?.connection ?? null, 'task-commit', key)
-  const { draft, setField } = useDetailDraft(commitDrafts, draftKey, () => ({ message: '' }))
+  const draftKey = computerDraftKey(profile, 'task-commit', key)
+  const { draft, setField, persistence } = useDetailDraft(commitDrafts, draftKey, () => ({
+    message: '',
+  }))
   const message = draft.message
   const setMessage = (message: string) => setField('message', message)
   const [result, setResult] = useApplicationState<{
@@ -258,6 +270,7 @@ export function CommitSection({ task }: { task: Task }) {
         </Text>
       )}
       {!!status && <Text style={styles.muted}>{status}</Text>}
+      <DraftStorageNotice persistence={persistence} />
       {!!(error || current?.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || current?.error}

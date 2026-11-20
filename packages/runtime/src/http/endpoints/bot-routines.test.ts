@@ -1,4 +1,4 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import { randomUUID } from 'node:crypto'
 import { createServer } from 'node:http'
 import {
@@ -375,9 +375,15 @@ it('stops a budget-limited worker and retains its partial transcript and the Bot
   expect(b.s().store.taskSummary(b.id).status).toBe('draft')
 })
 
-it('defers successful Bot reports through restart during quiet hours and delivers once afterward', async () => {
+it('delivers the original successful Bot result once after quiet hours and restart', async () => {
   const b = await bot()
   await configure(b)
+  const originalEnding = 'Original conclusion at the end of the worker answer'
+  const original = 'x'.repeat(34000) + originalEnding
+  const followUp = 'Unrelated manual work after the routine'
+  b.f.runtime.run.mockImplementation(async (input) =>
+    input.onText(input.prompt.includes(followUp) ? followUp : original),
+  )
   const now = Date.now(),
     hour = new Date(now).getUTCHours()
   const start = String(hour).padStart(2, '0') + ':00',
@@ -393,15 +399,110 @@ it('defers successful Bot reports through restart during quiet hours and deliver
   await terminal(b, run)
   await waitForRuntime(() => expect(b.s().jobs.detail(run).reportDeferred).toBe(true))
   expect(b.s().store.task(b.id).messages).toHaveLength(0)
+  const workerId = step(b, run)!.taskId!
+  expect(b.s().store.task(workerId).messages.at(-1)?.text).toBe(original)
+  expect(
+    (
+      await b.f.request('/api/tasks/message', {
+        id: workerId,
+        messageId: randomUUID(),
+        text: followUp,
+      })
+    ).status,
+  ).toBe(200)
+  await waitForRuntime(() => {
+    expect(b.s().store.taskSummary(workerId).activeRunId).toBeUndefined()
+    expect(b.s().store.task(workerId).messages.at(-1)?.text).toContain(followUp)
+  })
   await b.f.restart()
   b.s().jobs.tick(now + 2 * 3600_000)
   b.s().jobs.tick(now + 2 * 3600_000)
   expect(b.s().jobs.detail(run).reportDeferred).toBe(false)
+  const reports = b
+    .s()
+    .store.task(b.id)
+    .messages.filter((m) => m.source?.kind === 'automation')
+  expect(reports).toHaveLength(1)
+  expect(reports[0]?.text).toContain(originalEnding)
+  expect(reports[0]?.text.length).toBeLessThan(3300)
+  expect(reports[0]?.text).not.toContain(followUp)
+})
+
+it('compares the full Bot answer when only the middle of a long result changes', async () => {
+  const b = await bot()
+  await configure(b)
+  let observation = 'first change outside the saved excerpts'
+  const ending = 'z'.repeat(3000)
+  b.f.runtime.run.mockImplementation(async (input) =>
+    input.onText('x'.repeat(32768) + observation + ending),
+  )
+  const first = b.s().jobs.start('routine-a')
+  await terminal(b, first)
+  observation = 'second change outside the saved excerpts'
+  const changed = b.s().jobs.start('routine-a')
+  await terminal(b, changed)
+  await terminal(b, b.s().jobs.start('routine-a'))
+  const reports = b
+    .s()
+    .store.task(b.id)
+    .messages.filter((m) => m.source?.kind === 'automation')
+  expect(reports).toHaveLength(2)
+  for (const report of reports) expect(report.text.endsWith(ending)).toBe(true)
+})
+
+it('continues other schedules and retries while a saved Bot report cannot be delivered', async () => {
+  const b = await bot()
+  const now = Date.now()
+  const hour = new Date(now).getUTCHours()
+  const hourText = (value: number) => `${String(value % 24).padStart(2, '0')}:00`
+  const reportFlow = routine('report', b.id, 'DEFERRED-REPORT')
+  reportFlow.policy = {
+    quietHours: { start: hourText(hour), end: hourText(hour + 2), timezone: 'UTC' },
+  }
+  const scheduled = routine('scheduled', b.id, 'NEXT-SCHEDULE')
+  scheduled.enabled = true
+  scheduled.nodes[0]!.data = {
+    ...scheduled.nodes[0]!.data,
+    trigger: 'schedule',
+    schedule: '* * * * *',
+  }
+  const retryFlow = routine('retry', b.id, 'PROVIDER-RETRY')
+  retryFlow.enabled = true
+  retryFlow.policy = { startupRetry: true }
+  b.s().store.update((w) => ({ ...w, automations: [reportFlow, scheduled, retryFlow] }))
+  const report = b.s().jobs.start('report')
+  await terminal(b, report)
+  expect(b.s().jobs.detail(report).reportDeferred).toBe(true)
+  b.f.runtime.run.mockRejectedValueOnce(new Error('API Error: 529 overloaded'))
+  const retry = b.s().jobs.start('retry', `schedule:${now}`)
+  await terminal(b, retry, 'waiting')
+  expect(b.s().jobs.detail(retry).retryAt).toBeDefined()
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+  b.s().db.exec(`CREATE TRIGGER fail_report BEFORE INSERT ON documents
+    WHEN NEW.id = 'bot-routine-finding:${b.id}:report'
+    BEGIN SELECT RAISE(ABORT, 'Bot report storage unavailable'); END`)
+  const outsideQuietHours = now + 3 * 3600_000
+  b.s().jobs.tick(outsideQuietHours)
+  b.s().jobs.tick(outsideQuietHours + 60_000)
+  await terminal(b, retry)
+  await waitForRuntime(() =>
+    expect(
+      b
+        .s()
+        .jobs.list()
+        .find((run) => run.automationId === 'scheduled')?.status,
+    ).toBe('completed'),
+  )
+  expect(b.s().jobs.detail(report).reportDeferred).toBe(true)
+  expect(log).toHaveBeenCalledWith('Could not deliver saved Bot report', report, expect.any(Error))
+  b.s().db.exec('DROP TRIGGER fail_report')
+  b.s().jobs.tick(outsideQuietHours + 60_000)
+  expect(b.s().jobs.detail(report).reportDeferred).toBe(false)
   expect(
     b
       .s()
       .store.task(b.id)
-      .messages.filter((m) => m.source?.kind === 'automation'),
+      .messages.filter((m) => m.source?.kind === 'automation' && m.source.runId === report),
   ).toHaveLength(1)
 })
 
@@ -639,6 +740,47 @@ it('retries the saved source batch after failure instead of losing it to a newer
     await terminal(b, newer)
     expect(b.f.inputs.at(-1)?.prompt).toContain('"second"')
     expect(b.f.inputs.at(-1)?.prompt).toContain('Previous successful source')
+  } finally {
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('skips an unchanged observation after a successful retry of an earlier run', async () => {
+  let source = 'First observation'
+  const server = createServer((_request, response) => response.end(source))
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  try {
+    const address = server.address()
+    if (!address || typeof address === 'string') throw Error('No source address')
+    const b = await bot()
+    b.s().store.update((w) => ({
+      ...w,
+      automations: [
+        {
+          ...routine('monitor', b.id, 'Read observation'),
+          monitor: { url: `http://127.0.0.1:${address.port}` },
+        },
+      ],
+    }))
+    b.f.runtime.run.mockRejectedValueOnce(new Error('Provider unavailable'))
+    const earlier = b.s().jobs.start('monitor', 'schedule:first')
+    await terminal(b, earlier, 'failed')
+    source = 'Second observation'
+    b.f.runtime.run.mockRejectedValueOnce(new Error('Provider unavailable'))
+    const later = b.s().jobs.start('monitor', 'schedule:second')
+    await terminal(b, later, 'failed')
+    expect(b.s().jobs.detail(later).retryAt).toBeUndefined()
+    b.f.runtime.run.mockImplementation(async (input) => input.onText('Processed'))
+    b.s().jobs.retry(earlier)
+    await terminal(b, earlier)
+    expect(b.f.inputs.at(-1)?.prompt).toContain('First observation')
+    const calls = b.f.inputs.length
+    await b.f.restart()
+    source = 'First observation'
+    const repeated = b.s().jobs.start('monitor', 'schedule:third')
+    await terminal(b, repeated)
+    expect(b.s().jobs.detail(repeated).outcome).toBe('unchanged')
+    expect(b.f.inputs).toHaveLength(calls)
   } finally {
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

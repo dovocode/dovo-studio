@@ -1,5 +1,5 @@
 import { EventEmitter } from 'node:events'
-import { mkdir, mkdtemp, rm, symlink } from 'node:fs/promises'
+import { mkdir, mkdtemp, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
@@ -132,4 +132,73 @@ it('retains assigned native ownership through a setup and cancellation failure u
   expect(third.getSavePath()).toBe(join(f.root, 'report.csv'))
   second.emit('done', {}, 'cancelled')
   third.emit('done', {}, 'cancelled')
+})
+
+it('filters by start and end instants, not by ISO string order', async () => {
+  const work = profile('work')
+  const native = item()
+  await start(work, native)
+  // The download starts at 1970-01-01T00:00:00.000Z. Both filters name the same instant
+  // range in other forms that sort differently as strings.
+  const ids = (query: Parameters<typeof work.tracker.search>[0]) =>
+    work.tracker.search(query).map((download) => download.id)
+  const [id] = ids({})
+  expect(ids({ startedAfter: '1970-01-01T01:00:00+02:00' })).toEqual([id])
+  expect(ids({ startedBefore: '1970-01-01T00:00:00.5Z' })).toEqual([id])
+  expect(ids({ startedBefore: '1969-12-31T19:00:00-05:00' })).toEqual([])
+  expect(ids({ endedAfter: '1970-01-01T00:00:00Z' })).toEqual([])
+  expect(() => ids({ startedAfter: 'yesterday' })).toThrow('Invalid query filter')
+  native.emit('done', {}, 'cancelled')
+})
+
+it('cancels a running private download when its profile closes, but not a saved profile download', async () => {
+  const privateProfile = profile('private-00000000-0000-4000-8000-000000000000'),
+    work = profile('work')
+  const hidden = item(),
+    saved = item()
+  const cancelHidden = vi.spyOn(hidden, 'cancel'),
+    cancelSaved = vi.spyOn(saved, 'cancel')
+  await start(privateProfile, hidden)
+  await start(work, saved)
+  privateProfile.tracker.dispose()
+  work.tracker.dispose()
+  expect(cancelHidden).toHaveBeenCalledOnce()
+  expect(cancelSaved).not.toHaveBeenCalled()
+  hidden.emit('done', {}, 'cancelled')
+  saved.emit('done', {}, 'cancelled')
+})
+
+it('keeps valid records from a damaged store and preserves the original', async () => {
+  const logged = vi.spyOn(console, 'error').mockImplementation(() => {})
+  const directory = join(f.root, 'browser-downloads')
+  await mkdir(directory, { recursive: true })
+  const record = {
+    id: 4,
+    url: 'https://example.test/kept.csv',
+    finalUrl: 'https://example.test/kept.csv',
+    filename: join(f.root, 'kept.csv'),
+    mime: 'text/csv',
+    startTime: '2026-01-01T00:00:00.000Z',
+    endTime: '2026-01-01T00:00:01.000Z',
+    state: 'complete',
+    paused: false,
+    canResume: false,
+    danger: 'safe',
+    bytesReceived: 1,
+    totalBytes: 1,
+    fileSize: 1,
+    exists: true,
+    incognito: false,
+  }
+  const damaged = JSON.stringify({ nextId: 9, items: [record, { id: 'broken' }] })
+  await writeFile(join(directory, 'work.json'), damaged)
+  const work = profile('work')
+  expect(work.tracker.search({}).map((download) => download.id)).toEqual([4])
+  const [backup] = (await readdir(directory)).filter((name) => name.includes('.damaged-'))
+  expect(await readFile(join(directory, backup!), 'utf8')).toBe(damaged)
+  // Erased IDs are not reused: the next ID survives recovery.
+  const native = item()
+  await expect(start(work, native)).resolves.toBe(9)
+  native.emit('done', {}, 'cancelled')
+  logged.mockRestore()
 })

@@ -3,14 +3,16 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { readMobilePreferences } from '../../../runtime/preferences/app-preferences'
 import { mobileWorkflow, nativeEffect } from '../../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
-import { Effect } from 'effect'
+import { Effect, Schema } from 'effect'
 import { useApplicationState } from '../../../runtime/state/application-state'
-import { decode } from '@dovo/protocol'
+import { decode, mutableStruct } from '@dovo/protocol'
 import {
+  computerIntegrationDraftKey,
   createDetailDrafts,
-  integrationDraftKey,
   useDetailDraft,
 } from '../../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
 import { useRef } from 'react'
 import { Alert } from 'react-native'
 import {
@@ -32,16 +34,23 @@ export type PullActionTarget = {
   comment?: PullComment
 }
 // Drafts retain user input only. Each opened sheet targets the revision it was opened against.
-const actionDrafts = createDetailDrafts<{
-  title: string
-  body: string
-  base: string
-  reviewers: string
-  teams: string
-  event: string
-  method: string
-  operation: string
-}>()
+// Unsent comments and reviews stay on the device after the app restarts.
+const actionDrafts = createDetailDrafts({
+  persist: {
+    name: 'pull-action',
+    schema: mutableStruct({
+      title: Schema.String,
+      body: Schema.String,
+      base: Schema.String,
+      reviewers: Schema.String,
+      teams: Schema.String,
+      event: Schema.String,
+      method: Schema.String,
+      operation: Schema.String,
+    }),
+    storage: detailDraftStorage,
+  },
+})
 export function PullActionSheet({
   repositoryId,
   detail: initialDetail,
@@ -60,12 +69,12 @@ export function PullActionSheet({
   const detail = useRef(initialDetail).current
   const { styles } = useTheme()
 
-  const { connected, callEffect, connection, snapshot } = useRuntime()
-  const { draft, setField, clear } = useDetailDraft(
+  const { connected, callEffect, profile, snapshot } = useRuntime()
+  const { draft, setField, clear, persistence } = useDetailDraft(
     actionDrafts,
     useRef(
-      integrationDraftKey(
-        connection,
+      computerIntegrationDraftKey(
+        profile,
         snapshot,
         repositoryId,
         undefined,
@@ -391,6 +400,7 @@ export function PullActionSheet({
           </InterfaceText>
         </Text>
       )}
+      <DraftStorageNotice persistence={persistence} />
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

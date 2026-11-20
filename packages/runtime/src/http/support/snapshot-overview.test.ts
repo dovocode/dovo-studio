@@ -60,7 +60,7 @@ it('negotiates paging without changing legacy snapshots or losing budget and cha
   expect(paged.messages).toHaveLength(20)
   expect(paged.turns).toHaveLength(10)
   expect(paged.historyBefore).toBe('m60')
-  expect(paged.historyTotals?.undoableTurnId).toBe('turn0')
+  expect(paged.historyTotals?.undoBackupTurnId).toBeUndefined()
   expect(paged.historyTotals?.hasChanges).toBe(true)
   expect(taskBudgetUsage(paged)).toEqual(taskBudgetUsage(task))
   expect(scopedWorkspace(workspace, [task.id], true).tasks[0]).toBe(paged)
@@ -187,8 +187,8 @@ it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error', 'shar
       expect(paged.turns).toEqual(expected.turns)
       expect(paged.historyBefore).toBe(expected.historyBefore)
       expect(paged.historyTotals).toEqual(expected.historyTotals)
-      expect(paged.historyTotals?.undoableTurnId).toBe(
-        mode === 'error' || mode === 'undone' || mode === 'shared' ? undefined : 'turn0',
+      expect(paged.historyTotals?.undoBackupTurnId).toBe(
+        ['pending', 'pending-error', 'undone'].includes(mode) ? 'turn0' : undefined,
       )
       expect(taskBudgetUsage(paged)).toEqual(taskBudgetUsage(source))
       expect(store.retainedHistories().tasks).toEqual([])

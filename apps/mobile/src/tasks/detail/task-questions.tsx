@@ -11,11 +11,13 @@ import {
   type PendingQuestion,
   type QuestionAttachments as AnswerFiles,
 } from '@dovo/protocol'
-import { taskInputVisible } from '@dovo/protocol'
+import { taskInputOwner, taskInputVisible, taskRemoteHumanInputs } from '@dovo/protocol'
+import { remoteNotificationInputId } from '../../notifications/target'
 import { runtimeComputerName } from '@dovo/protocol'
 import { mobileWorkflow } from '../../runtime/state/native-effect'
 import { runClientEffect } from '@dovo/client-runtime'
 import { router } from 'expo-router'
+import { taskHref } from '../../shell/task-route'
 import { Action } from '../../ui/controls/action'
 import { View } from 'react-native'
 import { responses } from '@dovo/protocol'
@@ -42,6 +44,14 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
   )?.name
   const recovery = <RecoveredAnswers taskId={taskId} pendingIds={questions.map((q) => q.id)} />
   if (questionId && snapshot?.secureInputs?.some((input) => input.id === questionId))
+    return recovery
+  // A delegated child's request belongs to another computer; its review card opens the owner.
+  if (
+    questionId &&
+    !pending &&
+    task &&
+    taskRemoteHumanInputs(task).some((input) => remoteNotificationInputId(input) === questionId)
+  )
     return recovery
   if (questionId && !pending)
     return (
@@ -95,7 +105,7 @@ export function TaskQuestions({ taskId, questionId }: { taskId: string; question
           pending.id,
         ])}
         pending={pending}
-        notificationAccessible={visible && pending.taskId === taskId}
+        notificationAccessible={visible}
       />
     </View>
   )
@@ -158,6 +168,10 @@ function QuestionCard({
       connected={connected}
       runtimeId={profile?.id}
       notificationAccessible={notificationAccessible}
+      notificationTaskId={
+        snapshot ? taskInputOwner(snapshot.workspace.tasks, pending.taskId) : undefined
+      }
+      notificationRuntimeIdentity={snapshot?.runtimeId}
       attachmentIdsByQuestion={ids}
       attachmentsBusy={Object.values(uploading).some(Boolean)}
       renderAttachments={(q, disabled) =>
@@ -254,15 +268,25 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
   const { profile, connected, snapshot, callEffect, legacyDraftRuntimeId } = useRuntime()
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const entries = store
+  const saved = store
     .entries(scope)
     .filter(
       (entry) =>
-        entry.request.taskId === taskId &&
         !pendingIds.includes(entry.request.id) &&
         (Object.values(entry.drafts).some((draft) => draft.text || draft.selected.length) ||
           Object.values(entry.files).some((files) => files.length)),
     )
+  const entries = saved.filter((entry) => entry.request.taskId === taskId)
+  // An answer typed on the parent's card for a child's question belongs to the child. The parent
+  // links to it, and reuse stays in the child so its draft and files go to the original thread.
+  const childEntries = snapshot
+    ? saved.filter(
+        (entry) =>
+          entry.request.taskId !== taskId &&
+          taskInputVisible(snapshot.workspace.tasks, taskId, entry.request),
+      )
+    : []
+  const parentTitle = snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title
   return (
     <View style={{ gap: 8 }}>
       {!!error && (
@@ -282,6 +306,54 @@ function RecoveredAnswers({ taskId, pendingIds }: { taskId: string; pendingIds: 
           />
         </View>
       )}
+      {childEntries.map((entry) => (
+        <View
+          key={JSON.stringify([entry.request.taskId, entry.request.id])}
+          style={[styles.card, { padding: 12, gap: 8 }]}
+        >
+          <Text style={styles.text}>
+            <InterfaceText
+              values={{
+                value0: entry.request.prompt.title,
+                value1:
+                  snapshot?.workspace.tasks.find((task) => task.id === entry.request.taskId)
+                    ?.title ?? entry.request.taskId,
+              }}
+            >
+              {'Saved answers · {value0} · For child thread: {value1}'}
+            </InterfaceText>
+          </Text>
+          <Text style={styles.muted}>
+            <InterfaceText>
+              {
+                'This request is no longer pending. Open the child thread to copy or reuse these answers.'
+              }
+            </InterfaceText>
+          </Text>
+          <Action
+            label={uiText('Open saved answers')}
+            secondary
+            disabled={!profile}
+            onPress={() => {
+              if (!profile) return
+              router.push(
+                taskHref(
+                  profile.id,
+                  entry.request.taskId,
+                  undefined,
+                  {
+                    runtimeId: profile.id,
+                    runtimeIdentity: snapshot?.runtimeId,
+                    taskId,
+                    title: parentTitle ?? uiText('Thread'),
+                  },
+                  snapshot?.runtimeId,
+                ),
+              )
+            }}
+          />
+        </View>
+      ))}
       {entries.map((entry) => (
         <View key={entry.request.id} style={[styles.card, { padding: 12, gap: 8 }]}>
           <Text style={styles.text}>

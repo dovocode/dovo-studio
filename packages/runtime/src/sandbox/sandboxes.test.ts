@@ -9,10 +9,13 @@ import {
   rmSync,
   symlinkSync,
 } from 'node:fs'
+import { Server } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vite-plus/test'
 import { decode, mcpServerSchema, type AgentDiscovery } from '@dovo/protocol'
+import { Tasks } from '../agents/tasks/tasks.js'
+import { startRuntime } from '../index.js'
 import type { CliRunner } from './container-cli.js'
 import { resolveGitLayout } from './git-mounts.js'
 import { Sandboxes, type SandboxesOptions } from './sandboxes.js'
@@ -288,6 +291,102 @@ describe('Sandboxes', () => {
     ).toBe(true)
   })
 
+  it('admits a sandbox only after startup cleanup finishes', async () => {
+    const fake = fakeRunner()
+    const cwd = temp('dovo-checkout-')
+    const first = sandboxes({}, fake)
+    await first.service.ensure(request(cwd))
+    await first.service.dispose()
+    let releaseList = () => {}
+    const listing = new Promise<void>((resolve) => (releaseList = resolve))
+    const runner: CliRunner = async (command, args, run) => {
+      if (args[0] === 'ps') await listing
+      return fake.runner(command, args, run)
+    }
+    const restarted = sandboxes({ root: first.root }, { ...fake, runner })
+    const calls = fake.calls.length
+    const cleanup = restarted.service.reconcile()
+    const progress: string[] = []
+    const pending = restarted.service.ensure({
+      ...request(cwd),
+      progress: (text) => progress.push(text),
+    })
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(fake.calls.slice(calls)).toEqual([])
+    expect(progress).toEqual(['Waiting for sandbox startup cleanup'])
+    releaseList()
+    await cleanup
+    const session = await pending
+    const container = [...fake.containers.values()][0]!
+    expect(container.running).toBe(true)
+    expect(restarted.service.current('task-1')).toBe(session)
+    const names = fake.calls.slice(calls).map((call) => call.args[0])
+    expect(names.indexOf('ps')).toBe(0)
+    expect(names.lastIndexOf('stop')).toBeLessThan(names.lastIndexOf('start'))
+    await restarted.service.dispose()
+  })
+
+  it('refuses new sandboxes once shutdown starts and waits for startup cleanup', async () => {
+    const fake = fakeRunner()
+    const cwd = temp('dovo-checkout-')
+    const first = sandboxes({}, fake)
+    await first.service.ensure(request(cwd))
+    await first.service.dispose()
+    let listed = () => {}
+    let releaseList = () => {}
+    const started = new Promise<void>((resolve) => (listed = resolve))
+    const listing = new Promise<void>((resolve) => (releaseList = resolve))
+    const runner: CliRunner = async (command, args, run) => {
+      if (args[0] === 'ps') {
+        listed()
+        await listing
+      }
+      return fake.runner(command, args, run)
+    }
+    const restarted = sandboxes({ root: first.root }, { ...fake, runner })
+    const calls = fake.calls.length
+    const cleanup = restarted.service.reconcile()
+    const waiting = restarted.service.ensure(request(cwd))
+    await started
+    let disposed = false
+    const disposing = restarted.service.dispose().then(() => (disposed = true))
+    await expect(waiting).rejects.toThrow('The runtime is shutting down')
+    await expect(restarted.service.ensure(request(cwd))).rejects.toThrow(
+      'The runtime is shutting down',
+    )
+    expect(disposed).toBe(false)
+    releaseList()
+    await Promise.all([cleanup, disposing])
+    expect(fake.calls.slice(calls).map((call) => call.args[0])).toEqual(['ps'])
+    expect([...fake.containers.values()][0]!.running).toBe(true)
+    expect(restarted.service.current('task-1')).toBeUndefined()
+    await restarted.service.reconcile()
+    expect(fake.calls.slice(calls).map((call) => call.args[0])).toEqual(['ps'])
+  })
+
+  it('starts sandbox cleanup before the runtime accepts requests or resumes turns', async () => {
+    const reconcile = vi.spyOn(Sandboxes.prototype, 'reconcile')
+    const listen = vi.spyOn(Server.prototype, 'listen')
+    const resume = vi.spyOn(Tasks.prototype, 'continueAfterRestart')
+    const runtime = await startRuntime({
+      databasePath: ':memory:',
+      ownerToken: 'sandbox-startup-owner-token-with-32-characters',
+      port: 0,
+    })
+    try {
+      expect(reconcile).toHaveBeenCalledTimes(1)
+      expect(reconcile.mock.invocationCallOrder[0]).toBeLessThan(
+        listen.mock.invocationCallOrder[0]!,
+      )
+      expect(reconcile.mock.invocationCallOrder[0]).toBeLessThan(
+        resume.mock.invocationCallOrder[0]!,
+      )
+    } finally {
+      await runtime.close()
+      vi.restoreAllMocks()
+    }
+  })
+
   it('installs the latest harness when the host version is not published', async () => {
     const fake = fakeRunner({ failInstall: (spec) => spec.endsWith('@0.50.0') })
     const { service } = sandboxes({}, fake)
@@ -513,4 +612,29 @@ describe('Sandboxes', () => {
       expect(mounts.some((mount) => mount.includes('.git'))).toBe(false)
     })
   })
+})
+
+it('starts a sandbox for a thread only after a pending removal of that thread ends', async () => {
+  const fake = fakeRunner()
+  let release!: () => void
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  const runner: CliRunner = async (command, args, run) => {
+    if (args[0] === 'rm') await gate
+    return fake.runner(command, args, run)
+  }
+  const { service } = sandboxes({}, { ...fake, runner })
+  const cwd = temp('dovo-checkout-')
+  const first = await service.ensure(request(cwd))
+  const removal = service.remove('task-1')
+  const restarted = service.ensure(request(cwd))
+  await new Promise((resolve) => setTimeout(resolve, 20))
+  expect(fake.calls.filter((call) => call.args[0] === 'create')).toHaveLength(1)
+  release()
+  await removal
+  const second = await restarted
+  const calls = fake.calls.map((call) => call.args[0])
+  expect(calls.lastIndexOf('rm')).toBeLessThan(calls.lastIndexOf('create'))
+  expect(fake.containers.has(second.container)).toBe(true)
+  expect(existsSync(second.stateDirectory)).toBe(true)
+  expect(second.container).toBe(first.container)
 })

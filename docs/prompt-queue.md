@@ -31,5 +31,15 @@ copy ID. Completed duplicate requests allow a subsequent intentional copy. Rejec
 not block later actions. Older runtimes retain their foreground queue controls; staging requires an
 updated runtime.
 
+**Return to composer** on mobile and the cancel button on a queued prompt on desktop and web send
+the Plan values shown on screen for the prompt and the draft. The runtime rejects the restore if
+another client changed either value. The prompt stays in the queue and the draft stays as it is.
+Check the composer, then try again. Mobile also saves the restore on the phone before it sends the
+request. It compares text, attachments and model settings too. To retry or discard a saved restore,
+use the controls mobile shows for it. Clients send Plan values only to runtimes that advertise
+`queueRestorePlanSupported`. If a request has no Plan values, for example from an older client, it
+cannot change Plan. If the prompt and the draft have different Plan values, match Plan in the
+composer or update Dovo on that device.
+
 If a reorder unblocks a prompt but the runtime cannot start it, the new order stays saved and the
 queue pauses with a resumable error. The successful reorder is still acknowledged.

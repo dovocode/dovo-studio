@@ -310,12 +310,41 @@ it('maps scoped approval decisions to the native choice and names the subject', 
   const approve = vi.fn<AgentRun['approve']>(async () => 'session' as const)
   await f.adapter.run({ ...f.run, prompt: 'approval', approve })
   expect(approve).toHaveBeenCalledWith('Muse shell command: pwd', 'pwd', undefined, {
+    once: true,
     session: true,
     always: true,
   })
   expect(
     (await f.messages()).find((frame) => frame.method === 'approval/decide')?.params,
   ).toMatchObject({ choiceId: 'session' })
+})
+
+it('offers only the exact scopes of a restricted request and never widens full access', async () => {
+  const f = await fixture()
+  const approve = vi.fn<AgentRun['approve']>(async () => 'deny' as const)
+  await f.adapter.run({ ...f.run, prompt: 'approval-persistent-only', approve })
+  expect(approve).toHaveBeenCalledWith('Muse shell command: pwd', 'pwd', undefined, {
+    once: false,
+    session: false,
+    always: true,
+  })
+  expect(
+    (await f.messages()).find((frame) => frame.method === 'approval/decide')?.params,
+  ).toMatchObject({ choiceId: 'deny' })
+
+  const automatic = await fixture()
+  const unused = vi.fn<AgentRun['approve']>(async () => 'approve' as const)
+  await automatic.adapter.run({
+    ...automatic.run,
+    agent: { ...automatic.run.agent, permission: 'full-access' },
+    prompt: 'approval-persistent-only',
+    approve: unused,
+  })
+  expect(unused).not.toHaveBeenCalled()
+  // Full access approves single-use or session grants, not a persistent Muse policy.
+  expect(
+    (await automatic.messages()).find((frame) => frame.method === 'approval/decide')?.params,
+  ).toMatchObject({ choiceId: 'deny' })
 })
 
 it('surfaces retry, usage and todo events from the session', async () => {
@@ -406,11 +435,51 @@ it('derives serve arguments, custom selections, approval helpers and versions', 
     ],
   }
   expect(museApprovalTitle(request)).toBe('Muse shell command: pwd')
-  expect(museApprovalScopes(request)).toEqual({ session: true, always: false })
+  expect(museApprovalScopes(request)).toEqual({ once: true, session: true, always: false })
   expect(museApprovalChoice(request, 'approve')?.choiceId).toBe('once')
   expect(museApprovalChoice(request, 'session')?.choiceId).toBe('sess')
   expect(museApprovalChoice(request, 'deny')?.choiceId).toBe('abort')
   expect(museApprovalChoice(request, 'always')).toBeUndefined()
+  // Restricted choice sets: each Dovo decision selects only its exact Muse scope.
+  const deny = { choiceId: 'deny', decision: 'denied', scope: 'once', label: 'Deny' }
+  const session = {
+    rawArgs: 'pwd',
+    availableChoices: [
+      deny,
+      { choiceId: 'sess', decision: 'approvedForSession', scope: 'session', label: 'Session' },
+    ],
+  }
+  expect(museApprovalScopes(session)).toEqual({ once: false, session: true, always: false })
+  expect(museApprovalChoice(session, 'approve')).toBeUndefined()
+  expect(museApprovalChoice(session, 'session')?.choiceId).toBe('sess')
+  const persistent = {
+    rawArgs: 'pwd',
+    availableChoices: [
+      deny,
+      {
+        choiceId: 'keep',
+        decision: 'approvedPolicyAmendment',
+        scope: 'localPersistent',
+        label: 'Always',
+      },
+    ],
+  }
+  expect(museApprovalScopes(persistent)).toEqual({ once: false, session: false, always: true })
+  expect(museApprovalChoice(persistent, 'approve')).toBeUndefined()
+  expect(museApprovalChoice(persistent, 'session')).toBeUndefined()
+  expect(museApprovalChoice(persistent, 'always')?.choiceId).toBe('keep')
+  expect(museApprovalChoice(persistent, 'deny')?.choiceId).toBe('deny')
+  // A contradictory or unknown pair offers no scope at all.
+  const unknown = {
+    rawArgs: 'pwd',
+    availableChoices: [
+      deny,
+      { choiceId: 'odd', decision: 'approvedForSession', scope: 'once', label: 'Odd' },
+      { choiceId: 'new', decision: 'approved', scope: 'workspace', label: 'New' },
+    ],
+  }
+  expect(museApprovalScopes(unknown)).toEqual({ once: false, session: false, always: false })
+  expect(museApprovalChoice(unknown, 'approve')).toBeUndefined()
   expect(parseMuseVersion('muse 1.3.0-R2\n')).toBe('1.3.0-R2')
   expect(parseMuseVersion('no version')).toBeUndefined()
 })

@@ -3,7 +3,16 @@ import { agentSecretReferenceSchema } from '@dovo/protocol'
 import { spreadsheetPreview } from '../../scm/repositories/spreadsheet-preview.js'
 import { isSpreadsheet } from '@dovo/protocol'
 import { botPaused } from '@dovo/protocol'
-import { forgetThreadActions } from '../../agent-tools/thread-actions.js'
+import {
+  deleteThreadRecords,
+  releaseThreadResources,
+  removeDeletedThreadFiles,
+  removeThreadSandboxes,
+  retireDeletedThreadInputs,
+  retryDeletedThreadFiles,
+  threadFamily,
+  type ThreadLifecycleAction,
+} from '../../agents/tasks/thread-deletion.js'
 import { validateShared } from '../../storage/shared-settings-validation.js'
 import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import {
@@ -28,7 +37,7 @@ import { decodeResult } from '@dovo/protocol'
 import { codexNetworkDiagnostics } from '../../agents/execution/codex-network-diagnostics.js'
 import { checkAdapterUpdates } from '../../agents/execution/diagnostics.js'
 import { modelPreferencesSchema, agentPresetSchema, mutableArray } from '@dovo/protocol'
-import { canChangeTaskCheckout, taskFamilyIds, taskSchema } from '@dovo/protocol'
+import { canChangeTaskCheckout, taskSchema } from '@dovo/protocol'
 import { taskMachineDraftState, taskMachineDraftStateSchema } from '@dovo/protocol'
 import { isDeepStrictEqual } from 'node:util'
 import { runtimeDefaultsSchema } from '@dovo/protocol'
@@ -49,10 +58,10 @@ import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { tmpdir } from 'node:os'
 import { createFilePreview } from '../../scm/git/file-preview.js'
-import { readFile, stat, writeFile } from 'node:fs/promises'
+import { readFile, stat } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
 import { openContainedPreview } from '../../scm/repositories/file-preview-open.js'
-import { withFileWrite } from '../../scm/repositories/file-writes.js'
+import { replaceFileContents, withFileWrite } from '../../scm/repositories/file-writes.js'
 import { searchRegistry } from '../../agents/catalogs/registry.js'
 import { configuredModelCatalogKey } from '../../agents/catalogs/model-cache.js'
 import { agentDiscoveryCache } from '../../agents/catalogs/discovery-cache.js'
@@ -892,6 +901,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             turnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
             expectedDraftTurnSettings: Schema.optional(Schema.NullOr(turnSettingsSchema)),
+            expectedDraftPlan: Schema.optional(Schema.Boolean),
             attachmentIds: Schema.optional(attachmentIdsSchema),
             expectedAttachmentIds: Schema.optional(attachmentIdsSchema),
             runId: Schema.optional(idSchema),
@@ -926,6 +936,8 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             expectedTurnSettings: input.expectedTurnSettings,
             expectedDraftTurnSettings: input.expectedDraftTurnSettings,
             expectedAttachmentIds: input.expectedAttachmentIds,
+            expectedPlan: input.expectedPlan,
+            expectedDraftPlan: input.expectedDraftPlan,
           })
           // Replaying a receipt acknowledges the restore without starting a later queued turn.
           if (!applied) return yield* serviceResult({ ok: true })
@@ -987,7 +999,15 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             }))
           else yield* s.tasks.startEffect(input.id)
         } else
-          s.tasks.queue.change(input.id, input.action, input.messageId, input.expectedMessageIds)
+          s.tasks.queue.change(
+            input.id,
+            input.action,
+            input.messageId,
+            input.expectedMessageIds,
+            input.action === 'restore'
+              ? { plan: input.expectedPlan, draftPlan: input.expectedDraftPlan }
+              : undefined,
+          )
         if (
           wasBlockedByMessage &&
           ['move', 'up', 'down', 'remove', 'restore'].includes(input.action)
@@ -1367,15 +1387,17 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
         )
       }
       if (method === 'POST' && path === '/api/tasks/turn/restore') {
+        throw new HttpError(
+          410,
+          'Whole-turn restore has been removed. Review the checkpoint to restore a selected file.',
+        )
+      }
+      if (method === 'POST' && path === '/api/tasks/turn/review-backup') {
         const input = decode(
-          strictStruct({
-            id: idSchema,
-            turnId: idSchema,
-            direction: Schema.Literals(['undo', 'redo']),
-          }),
+          strictStruct({ id: idSchema, turnId: idSchema }),
           yield* serviceResult(body(request)),
         )
-        return yield* serviceResult(s.tasks.restoreTurn(input.id, input.turnId, input.direction))
+        return s.tasks.reviewUndoBackup(input.id, input.turnId)
       }
       if (method === 'POST' && path === '/api/tasks/files') {
         const input = decode(
@@ -1393,9 +1415,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           canChangeTaskCheckout(task) && repo.kind !== 'scratch'
             ? repo.path
             : yield* serviceResult(s.checkouts.directory(input.id))
-        return {
-          files: yield* serviceResult(s.projectFiles.search(cwd, input.query, 8, !!repo.kind)),
-        }
+        return yield* serviceResult(s.projectFiles.search(cwd, input.query, 8, !!repo.kind))
       }
       if (
         method === 'POST' &&
@@ -1588,7 +1608,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
                   throw new HttpError(415, 'Binary files cannot be edited')
                 if (current !== expectedContents)
                   throw new HttpError(409, 'File changed on disk. Reload it before saving.')
-                await writeFile(target, contents, 'utf8')
+                await replaceFileContents(target, contents)
               }),
             ),
           )
@@ -1700,95 +1720,47 @@ import { retainChangedFiles } from '../../scm/git/retain-changes.js'
 export function taskLifecycle(
   s: Services,
   id: string,
-  action: 'archive' | 'restore' | 'delete',
+  action: ThreadLifecycleAction,
   removeWorktrees?: boolean,
   deletionReservation?: symbol,
   beforeDelete?: () => void,
 ) {
+  // A reservation this call takes for itself. Released when the call ends.
+  let owned: { ids: string[]; reservation: symbol } | undefined
   return routeProgram(
     Effect.gen(function* () {
-      // Missing deletes are successful retries after a lost response.
-      if (action === 'delete' && !s.store.get().tasks.some((task) => task.id === id))
+      // Missing deletes are successful retries after a lost response. They also retry file
+      // cleanup that failed after the first deletion committed.
+      if (action === 'delete' && !s.store.get().tasks.some((task) => task.id === id)) {
+        yield* retryDeletedThreadFiles(s, id)
         return yield* serviceResult({
           ok: true,
         })
-      const lifecycleIds = () => {
-        const tasks = s.store.get().tasks
-        const ids = taskFamilyIds(tasks, id)
-        if (action === 'delete' && s.store.taskSummary(id).bot)
-          for (const task of tasks)
-            if (task.botConversation?.botId === id)
-              for (const childId of taskFamilyIds(tasks, task.id)) ids.add(childId)
-        return ids
       }
-      const ids = lifecycleIds()
-      const deletingBot = action === 'delete' && !!s.store.taskSummary(id).bot
-      const requireIdle = () => {
-        for (const taskId of ids) {
-          const task = s.store.taskSummary(taskId)
-          const handoff = task.machineHandoff
-          if (
-            deletingBot &&
-            s.threadWatch
-              .list(taskId)
-              .some(
-                (watch) =>
-                  watch.delegated &&
-                  watch.status === 'watching' &&
-                  watch.snapshot?.phase !== 'completed',
-              )
-          )
-            throw new HttpError(
-              409,
-              'Stop or unlink delegated work on other computers before deleting this Bot. Reconnect offline workers if their state is unknown.',
-            )
-          if (
-            handoff &&
-            !(handoff.state === 'staged' && action === 'delete') &&
-            (handoff.state !== 'moved' ||
-              action === 'restore' ||
-              s.projectTransfers.list().find((job) => job.id === handoff.id)?.state !== 'completed')
-          )
-            throw new HttpError(
-              409,
-              'Finish this thread’s computer transfer first. Its source stays available for recovery.',
-            )
-          s.tasks.requireIdle(taskId, deletionReservation)
-          s.jobs.requireTaskIdle(taskId)
-          if (action === 'delete') s.botAvatars.requireIdle(taskId)
-        }
-        if (
-          action !== 'restore' &&
-          s.terminals.list().some((terminal) => ids.has(terminal.taskId) && !terminal.exited)
-        )
-          throw new HttpError(
-            409,
-            'Close this thread’s and its child agents’ terminals before archiving or deleting it.',
-          )
+      // Archive and delete await cleanup before and after they commit. Reserving the family makes
+      // a restore, a start, an answer or a queued message fail with 409 in that window instead of
+      // starting work that the cleanup then removes. The reservation ends with this call.
+      if (action !== 'restore' && !deletionReservation) {
+        const familyIds = [...threadFamily(s, id, action).ids]
+        owned = { ids: familyIds, reservation: s.tasks.reserveDeletion(familyIds) }
       }
+      const { ids, requireIdle, requireUnchanged } = threadFamily(
+        s,
+        id,
+        action,
+        deletionReservation ?? owned?.reservation,
+      )
       requireIdle()
       if (action === 'archive' && [...ids].some((taskId) => s.store.taskSummary(taskId)?.bot))
         throw new HttpError(400, 'Bots cannot be archived. Pause the Bot in its settings.')
       if (action !== 'restore') {
-        for (const taskId of ids) {
-          const cleanup = yield* serviceResult(
-            Promise.allSettled([
-              s.browsers.closeTask(taskId),
-              s.simulators.closeTask(taskId),
-              s.deviceHosts.closeTask(taskId),
-              s.agents.releaseTask(taskId),
-            ]),
-          )
-          for (const result of cleanup) if (result.status === 'rejected') throw result.reason
-          // After its provider processes stop, archive or delete removes the thread container.
-          yield* serviceResult(s.sandboxes.remove(taskId))
-        }
-        const latestIds = lifecycleIds()
-        if (latestIds.size !== ids.size || [...latestIds].some((taskId) => !ids.has(taskId)))
-          throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+        yield* releaseThreadResources(s, ids)
+        requireUnchanged()
         requireIdle()
       }
-      if (action !== 'restore') for (const taskId of ids) s.titles.cancelSideChats(taskId)
+      // Archive and delete retire side chats, pending questions and approvals, but only after
+      // the thread records commit. A failed write leaves every input answerable. Restore does
+      // not reopen them; the agent can ask again in a new turn.
       if (action === 'delete') {
         const cleanup = removeWorktrees ?? s.preferences.get().removeWorktreesOnThreadDelete
         // Retain older checkout identities before their owning threads disappear, even when cleanup is off.
@@ -1797,26 +1769,20 @@ export function taskLifecycle(
           ? worktrees.filter((entry) => entry.threadIds.some((threadId) => ids.has(threadId)))
           : []
         // Listing involves Git I/O; make sure the family is unchanged and idle before deletion.
-        const currentIds = lifecycleIds()
-        if (currentIds.size !== ids.size || [...currentIds].some((taskId) => !ids.has(taskId)))
-          throw new HttpError(409, 'This thread’s child agents changed. Refresh and retry.')
+        requireUnchanged()
         requireIdle()
         for (const terminal of s.terminals.list())
           if (ids.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
         beforeDelete?.()
-        s.store.transaction(() => {
-          for (const taskId of ids) {
-            s.projectTransfers.discardStagedThread(taskId)
-            s.db.prepare('DELETE FROM activity WHERE scope = ?').run(taskId)
-            s.memory.removeBot(taskId)
-            forgetThreadActions(s, taskId)
-          }
-          s.store.update((workspace) => ({
-            ...workspace,
-            tasks: workspace.tasks.filter((task) => !ids.has(task.id)),
-          }))
-        })
-        yield* serviceResult(s.attachments.prune())
+        // Closing terminals awaits. Check again with no await before the commit, for any path
+        // that starts work without checking the reservation.
+        requireUnchanged()
+        requireIdle()
+        const deleted = s.store.get().tasks.filter((task) => ids.has(task.id))
+        s.store.transaction(() => deleteThreadRecords(s, ids))
+        retireDeletedThreadInputs(s, ids)
+        yield* removeThreadSandboxes(s, ids)
+        yield* removeDeletedThreadFiles(s, deleted)
         for (const entry of candidates) {
           if (
             entry.dirty ||
@@ -1858,10 +1824,24 @@ export function taskLifecycle(
               : task,
           ),
         }))
+        if (action === 'archive') {
+          for (const taskId of ids) {
+            s.titles.cancelSideChats(taskId)
+            s.questions.cancelTask(taskId)
+            s.approvals.cancelTask(taskId)
+          }
+          yield* removeThreadSandboxes(s, ids)
+        }
       }
       return yield* serviceResult({
         ok: true,
       })
-    }),
+    }).pipe(
+      Effect.ensuring(
+        Effect.sync(() => {
+          if (owned) s.tasks.releaseDeletion(owned.ids, owned.reservation)
+        }),
+      ),
+    ),
   )
 }

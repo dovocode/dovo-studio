@@ -11,7 +11,7 @@ import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { useRef } from 'react'
-import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
+import { approvalShortcutKeys, useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ApprovalDetails } from './approval-details'
@@ -70,8 +70,11 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
     root: controls,
     disabled: !connected || busy || !approvals.length,
     onAnswer: (id, allow) => {
-      if (approvals.some((approval) => approval.id === id))
-        return act('/api/approvals', { id, allow, decision: allow ? 'approve' : 'deny' })
+      const approval = approvals.find((approval) => approval.id === id)
+      // Y and Enter mean "Allow once". A request without that scope ignores them.
+      const decision = allow ? 'approve' : 'deny'
+      if (approval && approvalActions(approval).some((action) => action.decision === decision))
+        return act('/api/approvals', { id, allow, decision })
     },
   })
   const executionHost = runtimeComputerName({
@@ -181,7 +184,7 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
             data-approval-id={approval.id}
             tabIndex={0}
             aria-label={approval.title}
-            aria-keyshortcuts="Y N Enter"
+            aria-keyshortcuts={approvalShortcutKeys(approvalActions(approval))}
           >
             <p className="mb-1 text-[0.6875rem] text-muted-foreground">
               Permission request · {executionHost}

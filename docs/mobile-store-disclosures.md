@@ -83,11 +83,11 @@ account is not deleted. Organization OIDC accounts are removed from Dovo, not fr
 organization's identity provider.
 
 A deletion marker blocks account access, grants and old in-flight logins before deleting the hosted
-identity. Failures preserve a deletion-only retry path. Success transactionally removes Connect
-sessions, push subscriptions through cascading, directory links and the profile. A one-way hash of
-the deleted Dovo subject prevents stale identity callbacks from recreating the account. Runtime
-pairings and workspace files are independent. Private backups expire according to operator
-retention.
+identity. If Auth is unavailable, Connect keeps a pending deletion and finishes it when Auth
+recovers, also after a restart or session expiry. Success transactionally removes Connect sessions,
+push subscriptions through cascading, directory links and the profile. A one-way hash of the deleted
+Dovo subject prevents stale identity callbacks from recreating the account. Runtime pairings and
+workspace files are independent. Private backups expire according to operator retention.
 
 The separate Auth service uses backend-only `DOVO_AUTH_SECRET`, `DOVO_AUTH_GITHUB_CLIENT_ID` and
 `DOVO_AUTH_GITHUB_CLIENT_SECRET`; Connect uses a separate server-only service key for identity

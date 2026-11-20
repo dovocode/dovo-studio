@@ -44,6 +44,7 @@ import {
   type TransferOwnership,
 } from './project-transfer-worktrees.js'
 import { withThreadCheckpoint, requireHandoffInputIdle } from '../../agents/tasks/thread-handoff.js'
+import { clearFence, createFenceTable, recordFence } from './project-transfer-fences.js'
 import {
   prepareThreadTransfer,
   readThreadTransfer,
@@ -125,6 +126,7 @@ export class ProjectTransfers {
     s.db.exec(
       'CREATE TABLE IF NOT EXISTS project_transfers (id TEXT PRIMARY KEY, value TEXT NOT NULL); CREATE TABLE IF NOT EXISTS project_transfer_receipts (id TEXT PRIMARY KEY, value TEXT NOT NULL)',
     )
+    createFenceTable(s.db)
     for (const row of decode(
       rowsSchema,
       s.db.prepare('SELECT value FROM project_transfers ORDER BY rowid').all(),
@@ -157,6 +159,18 @@ export class ProjectTransfers {
             ),
           )
       }
+      // A source lock commits with its transfer request. A lock without one never reached a
+      // destination, so the source can safely own its thread again.
+      const store = this.services().store
+      store.transaction(() => {
+        for (const task of store.get().tasks)
+          if (task.machineHandoff?.state === 'preparing' && !this.jobs.has(task.machineHandoff.id))
+            store.updateTask(task.id, (current) => ({
+              ...current,
+              archived: current.machineHandoff?.sourceArchived,
+              machineHandoff: undefined,
+            }))
+      })
       const managedRoot = await realpath(this.projectsRoot).catch((error: unknown) => {
         if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
         throw error
@@ -301,6 +315,21 @@ export class ProjectTransfers {
     const saved = this.jobs.get(id)
     if (saved) this.save({ ...saved.job, ...changes })
   }
+  /** Saves a transfer request and any source change in one transaction. */
+  private record(saved: typeof savedSchema.Type, change?: () => void) {
+    const previous = this.jobs.get(saved.job.id)
+    try {
+      this.services().store.transaction(() => {
+        change?.()
+        this.jobs.set(saved.job.id, saved)
+        this.save(saved.job)
+      })
+    } catch (error) {
+      if (previous) this.jobs.set(saved.job.id, previous)
+      else this.jobs.delete(saved.job.id)
+      throw error
+    }
+  }
   async start(input: ProjectTransferStart, device: string, authorize: () => void) {
     if (this.starting)
       throw new HttpError(409, 'Wait for the current project copy to finish preparing')
@@ -338,6 +367,20 @@ export class ProjectTransfers {
         .repositories.some((repo) => repo.id === input.repositoryId && repo.kind !== 'scratch')
     )
       throw new HttpError(404, 'Project not found')
+    const job: ProjectTransfer = {
+      id: input.id,
+      repositoryId: input.repositoryId,
+      sourceTaskId: input.handoff?.taskId,
+      worktreePath: input.worktreePath,
+      targetId: input.targetId,
+      targetName: peer.name,
+      state: 'preparing',
+      transport: input.ssh ? 'ssh' : 'p2p',
+      bytes: 0,
+      totalBytes: 0,
+      updatedAt: Math.max(Date.now(), (existing?.job.updatedAt ?? 0) + 1),
+    }
+    const request = { job, input, fingerprint, device }
     if (input.handoff) {
       if (input.thread)
         throw new HttpError(400, 'Choose a thread handoff or a new thread, not both')
@@ -374,18 +417,22 @@ export class ProjectTransfers {
             authorize()
             await s.tasks.releaseProviderForHandoff(task.id)
             requireHandoffInputIdle(s, task.id)
-            s.store.updateTask(task.id, (current) => ({
-              ...current,
-              machineHandoff: {
-                id: input.id,
-                targetRuntimeId: input.targetId,
-                state: 'preparing',
-                sourceArchived: current.archived,
-                checkpoint,
-              },
-              quotaContinuation: undefined,
-              restartRecovery: undefined,
-            }))
+            // The source lock and the saved request commit together, so a lock always has a
+            // transfer to retry or cancel.
+            this.record(request, () =>
+              s.store.updateTask(task.id, (current) => ({
+                ...current,
+                machineHandoff: {
+                  id: input.id,
+                  targetRuntimeId: input.targetId,
+                  state: 'preparing',
+                  sourceArchived: current.archived,
+                  checkpoint,
+                },
+                quotaContinuation: undefined,
+                restartRecovery: undefined,
+              })),
+            )
           },
         )
       } else if (
@@ -393,22 +440,8 @@ export class ProjectTransfers {
         task.machineHandoff.targetRuntimeId !== input.targetId
       )
         throw new HttpError(409, 'Finish this thread’s existing transfer first')
-    }
-    const job: ProjectTransfer = {
-      id: input.id,
-      repositoryId: input.repositoryId,
-      sourceTaskId: input.handoff?.taskId,
-      worktreePath: input.worktreePath,
-      targetId: input.targetId,
-      targetName: peer.name,
-      state: 'preparing',
-      transport: input.ssh ? 'ssh' : 'p2p',
-      bytes: 0,
-      totalBytes: 0,
-      updatedAt: Math.max(Date.now(), (existing?.job.updatedAt ?? 0) + 1),
-    }
-    this.jobs.set(job.id, { job, input, fingerprint, device })
-    this.save(job)
+      else this.record(request)
+    } else this.record(request)
     // Bound copy history. A fenced source keeps its recovery job, including activation retries.
     for (const [id, saved] of this.jobs)
       if (
@@ -510,16 +543,20 @@ export class ProjectTransfers {
       )
     }
     const recoverDiscarded = (): Partial<ProjectTransfer> => {
-      if (input.handoff)
-        s.store.updateTask(input.handoff.taskId, (task) => {
-          if (task.machineHandoff?.id !== input.id) return task
-          if (task.machineHandoff.state === 'staged')
-            throw new HttpError(409, 'The source handoff changed')
-          return {
-            ...task,
-            archived: task.machineHandoff.sourceArchived,
-            machineHandoff: undefined,
-          }
+      const handoff = input.handoff
+      if (handoff)
+        s.store.transaction(() => {
+          s.store.updateTask(handoff.taskId, (task) => {
+            if (task.machineHandoff?.id !== input.id) return task
+            if (task.machineHandoff.state === 'staged')
+              throw new HttpError(409, 'The source handoff changed')
+            return {
+              ...task,
+              archived: task.machineHandoff.sourceArchived,
+              machineHandoff: undefined,
+            }
+          })
+          clearFence(s.db, handoff.taskId, input.id)
         })
       return {
         state: cancelOnly || signal.aborted ? 'cancelled' : 'failed',
@@ -537,14 +574,14 @@ export class ProjectTransfers {
             409,
             'The destination did not receive the thread. Update it and retry.',
           )
-        s.store.updateTask(input.handoff.taskId, (task) => {
-          if (task.machineHandoff?.id !== input.id)
-            throw new HttpError(409, 'The source handoff changed')
-          return {
-            ...task,
-            machineHandoff: { ...task.machineHandoff, state: 'moved', targetTaskId: result.taskId },
-            archived: true,
-          }
+        const taskId = input.handoff.taskId
+        s.store.transaction(() => {
+          const handoff = s.store.taskSummary(taskId).machineHandoff
+          if (handoff?.id !== input.id) throw new HttpError(409, 'The source handoff changed')
+          const moved = { ...handoff, state: 'moved' as const, targetTaskId: result.taskId }
+          s.store.updateTask(taskId, (task) => ({ ...task, machineHandoff: moved, archived: true }))
+          // The fence survives a backup restore of this computer.
+          recordFence(s.db, taskId, moved)
         })
         await call(
           'activate',
@@ -809,7 +846,10 @@ export class ProjectTransfers {
       savedIncomingSchema,
       JSON.parse(decode(mutableStruct({ value: Schema.String }), row).value),
     )
-    if (saved.result?.taskId !== taskId || saved.discarded)
+    // A restore can bring back a staged thread whose discard is already recorded. It can
+    // never activate, so deleting it needs no new proof.
+    if (saved.discarded) return
+    if (saved.result?.taskId !== taskId)
       throw new HttpError(409, 'The staged thread receipt changed')
     s.db
       .prepare('UPDATE project_transfer_receipts SET value=? WHERE id=?')

@@ -63,14 +63,15 @@ export class RuntimeDefaults {
         .run(id, JSON.stringify(entry))
     }
   }
-  sharedVersions(after = 0) {
+  /** Accepted versions after a sequence, oldest first. `limit` bounds one page. */
+  sharedVersions(after = 0, limit = -1) {
     return decode(
       Schema.Array(mutableStruct({ sequence: Schema.Int, value: Schema.String })),
       this.db
         .prepare(
-          'SELECT rowid AS sequence,value FROM shared_state_versions WHERE rowid>? ORDER BY rowid',
+          'SELECT rowid AS sequence,value FROM shared_state_versions WHERE rowid>? ORDER BY rowid LIMIT ?',
         )
-        .all(after),
+        .all(after, limit),
     ).map((row) => ({
       sequence: row.sequence,
       entry: decode(sharedSettingsEntrySchema, JSON.parse(row.value)),

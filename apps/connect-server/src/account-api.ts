@@ -6,9 +6,18 @@ import {
   accountServerSchema,
   accountServerAddress,
   peopleActionSchema,
+  type AccountDeletionPending,
 } from '@dovo/protocol'
 import { AccountStore } from './store.js'
 import { json, readJson, bearerToken, RequestError } from './http.js'
+import { finishDeletion } from './account-deletion.js'
+
+// `deletion` tells clients that Connect finishes the deletion without their session.
+const deletionStarted: AccountDeletionPending = {
+  error:
+    'Account deletion has started. Connect finishes it when the identity service is available.',
+  deletion: 'durable',
+}
 
 export function accountApi(
   store: AccountStore,
@@ -48,21 +57,15 @@ export function accountApi(
       }
       if (!deleteIdentity)
         throw new RequestError(503, 'Account deletion is temporarily unavailable')
-      // Block all ordinary account access and in-flight sign-ins before contacting the identity service.
-      // Keep this session solely for retrying deletion if the provider response is interrupted.
+      // Block all ordinary account access and in-flight sign-ins before contacting the identity
+      // service. The pending deletion lets Connect finish without this session. Keep the session
+      // only so the client can retry sooner.
       store.beginDeletion(account.user.id)
       try {
-        await deleteIdentity(account.user.id, {
-          verified: store.deletionVerified(account.user.id),
-          verify: () => store.verifyDeletion(account.user.id),
-        })
+        await finishDeletion(store, deleteIdentity, account.user.id)
       } catch {
-        throw new RequestError(
-          409,
-          'Account deletion has started. Retry to finish deleting your account.',
-        )
+        return json(res, 409, deletionStarted)
       }
-      store.deleteAccount(account.user.id)
       return json(res, 200, { ok: true })
     }
     const directory = store.directory(bearer)
@@ -73,11 +76,7 @@ export function accountApi(
       return json(res, 200, { ready: false })
     }
     if (!directory) {
-      if (store.directory(bearer, true))
-        throw new RequestError(
-          409,
-          'Account deletion has started. Retry to finish deleting your account.',
-        )
+      if (store.directory(bearer, true)) return json(res, 409, deletionStarted)
       throw new RequestError(401, 'Sign in to see your linked computers')
     }
     if (url.pathname === '/v1/people') {

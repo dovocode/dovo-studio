@@ -75,6 +75,30 @@ it('keeps complete paths containing Markdown punctuation', () => {
   expect(reference.label).toBe('my_file.ts')
 })
 
+it('reads explicit files and scoped agent references in sent prose', () => {
+  const source =
+    '🚀 @file:Makefile @file:"docs/Review Notes.md" @Review Bot (`agent:home/project/review`)'
+  expect(
+    messageReferences(source, resources).map(({ kind, label, start, end }) => [
+      kind,
+      label,
+      source.slice(start, end),
+    ]),
+  ).toEqual([
+    ['file', 'Makefile', '@file:Makefile'],
+    ['file', 'Review Notes.md', '@file:"docs/Review Notes.md"'],
+    ['agent', '@Review Bot', '@Review Bot (`agent:home/project/review`)'],
+  ])
+  for (const literal of [
+    '@file:"incomplete path',
+    '`example @file:README`',
+    '`@file:Makefile`',
+    '# @file:Makefile',
+    '[@file:Makefile](url)',
+  ])
+    expect(messageReferences(literal, resources)).toEqual([])
+})
+
 it('uses the referenced harness for model icons, including custom agents and ACP installs', () => {
   const agents = [{ id: 'work', provider: 'claude' as const }]
   for (const [harness, provider] of [

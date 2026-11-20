@@ -109,31 +109,35 @@ it('refreshes directory presence without starting an account operation or fetchi
   expect(f.client.snapshot().busy).toBe(false)
   expect(fetch).toHaveBeenCalledTimes(1)
 })
-it('ignores a directory response arriving after cancellation or sign-out', async () => {
-  const f = fixture()
-  await f.client.signIn()
-  let respond: (response: Response) => void = () => {
-    throw new Error('No pending request')
-  }
-  vi.stubGlobal('fetch', (url: string) =>
-    new URL(url).pathname === '/v1/servers'
-      ? new Promise<Response>((resolve) => {
-          respond = resolve
-        })
-      : Promise.resolve(Response.json({ ok: true })),
-  )
-  const controller = new AbortController()
-  const refresh = f.client.refreshDirectory(controller.signal)
-  controller.abort()
-  respond(Response.json(directory))
-  await expect(refresh).rejects.toThrow('cancelled')
-  const afterSignOut = f.client.refreshDirectory()
-  await f.client.signOut()
-  respond(Response.json(directory))
-  await expect(afterSignOut).rejects.toThrow('cancelled')
-  expect(f.client.snapshot().directory).toBeNull()
-  expect(f.client.sessionId()).toBeNull()
-})
+it.each([200, 409])(
+  'ignores a directory response with HTTP %i arriving after cancellation or sign-out',
+  async (status) => {
+    const f = fixture()
+    await f.client.signIn()
+    let respond: (response: Response) => void = () => {
+      throw new Error('No pending request')
+    }
+    vi.stubGlobal('fetch', (url: string) =>
+      new URL(url).pathname === '/v1/servers'
+        ? new Promise<Response>((resolve) => {
+            respond = resolve
+          })
+        : Promise.resolve(Response.json({ ok: true })),
+    )
+    const controller = new AbortController()
+    const refresh = f.client.refreshDirectory(controller.signal)
+    controller.abort()
+    respond(Response.json(directory))
+    await expect(refresh).rejects.toThrow('cancelled')
+    const afterSignOut = f.client.refreshDirectory()
+    await f.client.signOut()
+    respond(Response.json(directory, { status }))
+    await expect(afterSignOut).rejects.toThrow('Account refresh cancelled')
+    expect(f.client.snapshot().deletionPending).toBe(false)
+    expect(f.client.snapshot().directory).toBeNull()
+    expect(f.client.sessionId()).toBeNull()
+  },
+)
 it('does not replace account authorization when the broker denies renewed computer access', async () => {
   const f = fixture()
   await f.client.signIn()
@@ -225,6 +229,95 @@ it('restores the deletion retry flow after restarting without discarding its sec
   expect(calls).toEqual([origin + '/v1/servers', origin + '/v1/account'])
 })
 
+it('clears a pending deletion when its session expires because Connect finishes it', async () => {
+  let saved: string | null = token
+  let deletion = 409
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      Response.json({ error: 'Deletion pending', deletion: 'durable' }, { status: deletion }),
+    ),
+  )
+  const client = new AccountClient(
+    {
+      read: async () => saved,
+      write: async (value) => {
+        saved = value
+      },
+    },
+    async () => {},
+    origin,
+  )
+  await client.load()
+  await client.deleteAccount()
+  expect(client.snapshot()).toMatchObject({
+    deletionPending: true,
+    error: expect.stringContaining('Connect finishes it'),
+  })
+  deletion = 401
+  await client.deleteAccount()
+  expect(client.snapshot()).toMatchObject({ deletionPending: false, directory: null, error: '' })
+  expect(client.sessionId()).toBeFalsy()
+  expect(saved).toBeNull()
+})
+it.each([
+  ['no deletion signal', { error: 'Deletion pending' }],
+  ['an unknown deletion signal', { error: 'Deletion pending', deletion: 'eventual' }],
+  ['a body that is not JSON', 'Conflict'],
+])('reports a 409 with %s as a deletion that needs this session', async (_case, body) => {
+  let saved: string | null = token
+  let deletion = 409
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () =>
+      typeof body === 'string'
+        ? new Response(body, { status: deletion })
+        : Response.json(body, { status: deletion }),
+    ),
+  )
+  const client = new AccountClient(
+    {
+      read: async () => saved,
+      write: async (value) => {
+        saved = value
+      },
+    },
+    async () => {},
+    origin,
+  )
+  await client.load()
+  expect(client.snapshot()).toMatchObject({
+    deletionPending: true,
+    error: 'Account deletion has started. Retry to finish deleting your account.',
+  })
+  await client.deleteAccount()
+  expect(client.snapshot().error).toBe(
+    'Account deletion has started. Retry to finish deleting your account.',
+  )
+  expect(saved).toBe(token)
+  // An older Connect cannot finish without the session, so its 401 does not confirm deletion.
+  deletion = 401
+  await client.deleteAccount()
+  expect(client.snapshot()).toMatchObject({
+    deletionPending: false,
+    directory: null,
+    error: expect.stringContaining('before it confirmed account deletion'),
+  })
+  expect(client.sessionId()).toBeNull()
+  expect(saved).toBeNull()
+})
+it('keeps the account session when deletion is refused without a pending deletion', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  vi.stubGlobal(
+    'fetch',
+    vi.fn<typeof fetch>(async () => Response.json({ error: 'Expired' }, { status: 401 })),
+  )
+  await f.client.deleteAccount()
+  expect(f.client.snapshot().error).toBe('Sign in again to see your computers.')
+  expect(f.saved()).toBe(token)
+})
+
 it('keeps account sessions out of paired setup and revokes a grant when completion fails', async () => {
   const f = fixture()
   await f.client.signIn()
@@ -296,4 +389,75 @@ it('refuses another runtime or a signout during setup before issuing its account
   ).rejects.toThrow('cancelled')
   expect(complete).not.toHaveBeenCalled()
   expect(f.calls.some((call) => call.path === '/v1/internet/hosts')).toBe(false)
+})
+
+it('forgets the saved account before waiting for remote sign-out while offline', async () => {
+  const f = fixture()
+  await f.client.signIn()
+  let fail!: () => void
+  const remote = vi.fn<(url: string, options: RequestInit) => Promise<Response>>(
+    () =>
+      new Promise<Response>((_resolve, reject) => {
+        fail = () => reject(new TypeError('Offline'))
+      }),
+  )
+  vi.stubGlobal('fetch', remote)
+  const signingOut = f.client.signOut()
+  await vi.waitFor(() => expect(remote).toHaveBeenCalledTimes(1))
+  expect(f.saved()).toBeNull()
+  expect(f.client.sessionId()).toBeNull()
+  expect(f.client.snapshot().directory).toBeNull()
+  expect(new Headers(remote.mock.calls[0][1].headers).get('Authorization')).toBe('Bearer ' + token)
+  fail()
+  await signingOut
+  expect(f.client.snapshot().error).toContain('could not confirm revocation')
+  await f.client.load()
+  expect(f.client.sessionId()).toBeNull()
+  expect(remote).toHaveBeenCalledTimes(1)
+})
+
+it('keeps the session available when secure storage cannot remove it', async () => {
+  const client = new AccountClient(
+    {
+      read: async () => token,
+      write: async () => {
+        throw new Error('Storage is locked')
+      },
+    },
+    async () => {},
+    origin,
+  )
+  const remote = vi.fn<typeof fetch>(async () => Response.json(directory))
+  vi.stubGlobal('fetch', remote)
+  await client.load()
+  await client.signOut()
+  expect(client.snapshot().error).toBe('Storage is locked')
+  expect(client.snapshot().directory).toEqual(directory)
+  expect(client.sessionId()).toBeTruthy()
+  expect(remote).toHaveBeenCalledTimes(1)
+})
+
+it('can finish sign-out after an offline restart when the remote session has expired', async () => {
+  let saved: string | null = token
+  const client = new AccountClient(
+    {
+      read: async () => saved,
+      write: async (value) => {
+        saved = value
+      },
+    },
+    async () => {},
+    origin,
+  )
+  vi.stubGlobal('fetch', async () => {
+    throw new TypeError('Offline')
+  })
+  await client.load()
+  expect(client.sessionId()).toBeTruthy()
+  expect(client.snapshot().directory).toBeNull()
+  vi.stubGlobal('fetch', async () => Response.json({}, { status: 401 }))
+  await client.signOut()
+  expect(saved).toBeNull()
+  expect(client.sessionId()).toBeNull()
+  expect(client.snapshot().error).toBe('')
 })

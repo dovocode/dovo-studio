@@ -91,7 +91,7 @@ NativeTabs.Trigger=Object.assign(()=>null,{Icon:()=>null,Label:()=>null});export
   {
     path: '../runtime/preferences/app-preferences',
     importer: workbench,
-    contents: `export const preferencesReady=Promise.resolve();export const readMobilePreferences=()=>{window.launchReads=(window.launchReads??0)+1;return {launchTab:window.fixture.launchTab??'tasks',carMode:window.fixture.car}};export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({ready:true,browserWorkspaceEnabled:!!window.fixture.browser,terminalWorkspaceEnabled:!!window.fixture.terminal,unifiedWorkspaceEnabled:true,unifiedWorkspaceActive:true});`,
+    contents: `export const preferencesReady={then:resolve=>window.fixture.holdPreferences?window.preferenceWaiters.push(resolve):Promise.resolve().then(resolve)};export const readMobilePreferences=()=>{window.launchReads=(window.launchReads??0)+1;return {launchTab:window.fixture.launchTab??'tasks',carMode:window.fixture.car}};export const useCarMode=()=>window.fixture.car;export const useMobilePreferences=()=>({ready:true,browserWorkspaceEnabled:!!window.fixture.browser,terminalWorkspaceEnabled:!!window.fixture.terminal,unifiedWorkspaceEnabled:true,unifiedWorkspaceActive:true});`,
   },
   {
     path: '../runtime/connection/provider',
@@ -160,6 +160,7 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';import {useState} from 'react';
 import {Workbench,WorkbenchScene,WorkbenchTabs,WorkbenchDetailRoute} from './apps/mobile/src/shell/workbench.tsx';
 import {unstable_settings} from './apps/mobile/src/app/(tabs)/_layout.tsx';window.tabSettings=unstable_settings;
+import {claimLaunchRoute} from './apps/mobile/src/shell/launch-route.ts';window.claimLaunchRoute=claimLaunchRoute;window.preferenceWaiters=[];
 window.WorkbenchScene=WorkbenchScene;window.WorkbenchTabs=WorkbenchTabs;window.WorkbenchDetailRoute=WorkbenchDetailRoute;window.routes=[];window.nativeSelections=[];window.keyboardListeners={};
 window.fixture={path:'/pulls',platform:'ios',car:false,runtime:{ready:true,activeId:'a',profiles:[{id:'a'}],overviews:[{profile:{id:'a'},connected:true,snapshot:{artifactsEnabled:true}}]}};
 function App(){const [version,setVersion]=useState(0);window.updateFixture=changes=>{window.fixture={...window.fixture,...changes};setVersion(v=>v+1)};return <Workbench key={window.fixture.platform+':'+(window.fixture.mount??0)}/>}
@@ -414,6 +415,34 @@ try {
     )
     await page.waitForFunction((reads) => window.launchReads > reads, reads)
     assert.deepEqual(await page.evaluate(() => window.routes), scenario.expected)
+  }
+  // A notification tap can open its thread while saved preferences still load. The thread stays,
+  // whether the router path has already updated or the tap only claimed the launch route.
+  for (const routed of [true, false]) {
+    const reads = await page.evaluate(() => window.launchReads)
+    await page.evaluate((mount) => {
+      window.routes = []
+      window.updateFixture({
+        path: '/',
+        launchTab: 'pulls',
+        car: false,
+        platform: 'ios',
+        sidebar: false,
+        holdPreferences: true,
+        mount,
+      })
+    }, ++mount)
+    await page.waitForFunction(() => window.preferenceWaiters.length)
+    await page.evaluate((routed) => {
+      if (routed) window.updateFixture({ path: '/thread/a/question' })
+      else window.claimLaunchRoute()
+    }, routed)
+    await page.evaluate(() => {
+      window.fixture.holdPreferences = false
+      window.preferenceWaiters.splice(0).forEach((resolve) => resolve())
+    })
+    await page.waitForFunction((reads) => window.launchReads > reads, reads)
+    assert.deepEqual(await page.evaluate(() => window.routes), [])
   }
   await page.evaluate(() => window.updateFixture({ detail: true, bottomInset: true }))
   const draft = page.getByRole('textbox', { name: 'Retained draft' })

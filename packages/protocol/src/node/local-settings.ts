@@ -24,6 +24,15 @@ export function writeLocalSettingsSection(
   update: (previous: unknown) => unknown,
   path = localSettingsPath(),
 ) {
+  writeLocalSettingsSections((document) => ({ [section]: update(document[section]) }), path)
+}
+
+/** Replaces the returned sections in one atomic file write. Other sections stay unchanged.
+ * `update` reads the current document while the lock is held. Return undefined to write nothing. */
+export function writeLocalSettingsSections(
+  update: (previous: Readonly<Record<string, unknown>>) => Record<string, unknown> | undefined,
+  path = localSettingsPath(),
+) {
   mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
   let release: (() => void) | undefined
   for (let attempt = 0; attempt < 20; attempt++) {
@@ -45,7 +54,9 @@ export function writeLocalSettingsSection(
   const temporary = `${path}.${randomUUID()}.tmp`
   try {
     const document = readDocument(path)
-    const next = { ...document, [section]: update(document[section]) }
+    const sections = update(document)
+    if (!sections) return
+    const next = { ...document, ...sections }
     writeFileSync(temporary, JSON.stringify(next, null, 2) + '\n', { mode: 0o600 })
     renameSync(temporary, path)
   } finally {

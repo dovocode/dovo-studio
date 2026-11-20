@@ -207,8 +207,10 @@ computers keep their broker until disabled and enabled again. `DOVO_CONNECT_ORIG
 initial/headless default before first startup. Loopback HTTP is accepted only for local integration
 testing. The reverse proxy must forward WebSocket upgrades and allow idle connections longer than
 the 25-second heartbeat. Use one signaling instance: room state is bounded, ephemeral and in memory,
-and is not replicated between processes. Account-authorized connections require a signed-in session
-and explicit owner enablement. Legacy QR-based internet pairing and operator-approved relay
+and is not replicated between processes. On `SIGTERM` or `SIGINT`, Connect closes all signaling
+sockets first, then waits for HTTP requests to finish. Connected computers reconnect to the new
+process with their normal backoff. Account-authorized connections require a signed-in session and
+explicit owner enablement. Legacy QR-based internet pairing and operator-approved relay
 installations remain supported for existing connections. Do not log WebSocket bodies or pairing
 links. Set `DOVO_CONNECT_TRUSTED_PROXIES` to the exact immediate proxy address after verifying that
 proxy sanitizes client-supplied forwarded headers. Never trust all private networks or arbitrary

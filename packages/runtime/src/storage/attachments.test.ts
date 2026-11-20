@@ -1,4 +1,6 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { Schema } from 'effect'
+import { decode, mutableStruct, type Task } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { readFile, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -1446,4 +1448,174 @@ it('compares the destination text before issuing an element-image upload guard',
   store.updateTask(task.id, (item) => ({ ...item, draft: '' }))
   expect((await guard('Selected browser element')).status).toBe(409)
   expect(store.task(task.id).draftAttachments ?? []).toEqual([])
+})
+
+it('keeps draft and queued files of an unreadable task until the task loads again or is deleted', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const databasePath = join(f.directory, '.git', 'runtime.sqlite')
+  let runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+  runtime.services.store.update(() => f.workspace)
+  const task = runtime.services.tasks.create({
+    title: 'Unreadable owner',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+  })
+  const draft = await runtime.services.attachments.uploadRecoverable('device', {
+    taskId: task.id,
+    id: randomUUID(),
+    name: 'draft.png',
+    data: png,
+  })
+  runtime.services.attachments.acknowledgeUpload('device', draft.attachment.id)
+  expect(runtime.services.store.task(task.id).draftAttachments).toEqual([draft.attachment])
+  const queued = (
+    await runtime.services.attachments.upload({
+      taskId: task.id,
+      id: randomUUID(),
+      name: 'queued.txt',
+      data: Buffer.from('queued').toString('base64'),
+      detached: true,
+    })
+  ).attachment
+  runtime.services.store.updateTask(task.id, (current) => ({
+    ...current,
+    queuePaused: true,
+    queue: [{ id: 'queued', role: 'user', text: 'next', createdAt: '', attachments: [queued] }],
+  }))
+  const files = [draft.attachment.id, queued.id]
+  const readable = () =>
+    files.map((id) => runtime.services.attachments.read(task.id, id).attachment.id)
+  await runtime.services.attachments.prune()
+  expect(readable()).toEqual(files)
+  await runtime.close()
+
+  // A newer runtime wrote a status that this runtime cannot read.
+  const db = openDatabase(databasePath)
+  const { value: stored } = decode(
+    mutableStruct({ value: Schema.String }),
+    db.prepare('SELECT value FROM workspace_tasks WHERE task_id = ?').get(task.id),
+  )
+  db.prepare('UPDATE workspace_tasks SET value = ? WHERE task_id = ?').run(
+    JSON.stringify({ ...JSON.parse(stored), status: 'status-from-a-newer-runtime' }),
+    task.id,
+  )
+  db.close()
+  const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+  runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+  error.mockRestore()
+  expect(runtime.services.store.get().tasks.some((entry) => entry.id === task.id)).toBe(false)
+  expect(
+    runtime.services.db
+      .prepare('SELECT 1 AS kept FROM workspace_tasks WHERE task_id = ?')
+      .get(task.id),
+  ).toEqual({ kept: 1 })
+  await runtime.services.attachments.prune()
+  expect(readable()).toEqual(files)
+  await runtime.close()
+
+  // Restoring a compatible row brings back the task with its files.
+  const restore = openDatabase(databasePath)
+  restore.prepare('UPDATE workspace_tasks SET value = ? WHERE task_id = ?').run(stored, task.id)
+  restore.close()
+  runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+  cleanups.push(() => runtime.close())
+  expect(runtime.services.store.task(task.id).draftAttachments).toEqual([draft.attachment])
+  expect(readable()).toEqual(files)
+
+  // Explicit deletion releases the files.
+  runtime.services.store.update((current) => ({
+    ...current,
+    tasks: current.tasks.filter((entry) => entry.id !== task.id),
+  }))
+  await runtime.services.attachments.prune()
+  for (const id of files)
+    expect(() => runtime.services.attachments.read(task.id, id)).toThrow('not found')
+})
+
+it('keeps files of an unreadable version 1 task through migration and restart until it is deleted', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const databasePath = join(f.directory, '.git', 'runtime.sqlite')
+  const current: Task = {
+    id: 'current-task',
+    title: 'Current',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    status: 'draft',
+    createdAt: '2025-01-01T00:00:00Z',
+    draft: '',
+    files: [],
+    example: false,
+    messages: [],
+  }
+  const bytes = Buffer.from(png, 'base64')
+  const file = { id: randomUUID(), name: 'legacy.png', mime: 'image/png', size: bytes.length }
+  // An old release saved this draft file. This release cannot read the task's status.
+  const legacy = {
+    ...current,
+    id: 'legacy-task',
+    title: 'Legacy',
+    status: 'from-an-old-release',
+    draftAttachments: [file],
+  }
+  const seed = openDatabase(databasePath)
+  seed
+    .prepare('INSERT INTO documents VALUES (?, ?)')
+    .run('workspace', JSON.stringify({ ...f.workspace, tasks: [current, legacy] }))
+  seed.exec(
+    'CREATE TABLE attachments (id TEXT PRIMARY KEY, task TEXT NOT NULL, metadata TEXT NOT NULL, data BLOB NOT NULL)',
+  )
+  seed
+    .prepare('INSERT INTO attachments VALUES (?, ?, ?, ?)')
+    .run(file.id, legacy.id, JSON.stringify(file), bytes)
+  seed.close()
+  vi.spyOn(console, 'error').mockImplementation(() => {})
+  const start = async () => {
+    const runtime = await startRuntime({ databasePath, ownerToken: token, port: 0 })
+    cleanups.push(() => runtime.close())
+    await runtime.services.attachments.prune()
+    return runtime
+  }
+  const kept = (runtime: Awaited<ReturnType<typeof start>>) =>
+    runtime.services.attachments.read(legacy.id, file.id).data
+
+  // Migration moves the version 1 document, with the unreadable task, into its backup.
+  let runtime = await start()
+  expect(runtime.services.store.get().tasks.map((task) => task.id)).toEqual([current.id])
+  expect(
+    runtime.services.db
+      .prepare("SELECT 1 AS kept FROM documents WHERE id = 'workspace-before-history-v2'")
+      .get(),
+  ).toEqual({ kept: 1 })
+  expect(kept(runtime)).toBe(png)
+  await runtime.close()
+  runtime = await start()
+  expect(kept(runtime)).toBe(png)
+
+  // A runtime that migrated before this fix has the backup but no list of its unreadable tasks.
+  runtime.services.db
+    .prepare("DELETE FROM documents WHERE id = 'workspace-v1-unreadable-tasks'")
+    .run()
+  await runtime.close()
+  runtime = await start()
+  expect(kept(runtime)).toBe(png)
+
+  // A repaired task loads again with its file. Deleting it releases the file for good.
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: [...workspace.tasks, { ...legacy, status: 'draft' }],
+  }))
+  await runtime.services.attachments.prune()
+  expect(kept(runtime)).toBe(png)
+  runtime.services.store.update((workspace) => ({
+    ...workspace,
+    tasks: workspace.tasks.filter((task) => task.id !== legacy.id),
+  }))
+  await runtime.services.attachments.prune()
+  expect(() => kept(runtime)).toThrow('not found')
+  await runtime.close()
+  runtime = await start()
+  expect(() => kept(runtime)).toThrow('not found')
 })

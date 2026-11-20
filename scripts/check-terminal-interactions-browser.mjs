@@ -50,6 +50,11 @@ export const Context=createContext(null);
 export const useWorkspace=()=>useContext(Context);
 export const connection={address:'http://127.0.0.1:${port}',token:'fixture'};
 export const request=async(path,input)=>{
+  if(path==='/api/terminals/update'){
+    window.views.push(input.view);
+    window.setState({seenTurn:input.view.seen?input.view.turn:input.view.turn-1,revision:input.view.expectedRevision+1});
+    return {};
+  }
   if(path==='/api/terminals/ticket')return {ticket:'fixture'};
   if(path==='/api/terminals/quote-paths'){
     window.pathRequests.push(input);
@@ -114,7 +119,7 @@ import {createRoot} from 'react-dom/client';
 import {Context,connection,request} from '@dovo/studio-core';
 import {TerminalSession} from '/packages/extension-tasks/src/terminal/terminal-session.tsx';
 import '/packages/terminal/src/browser/styles.css';
-function App(){const [state,setState]=useState({active:true,readOnly:false,connected:true});window.state=state;window.setState=change=>setState(old=>({...old,...change}));return React.createElement(Context.Provider,{value:{connection,request,connected:state.connected}},React.createElement(TerminalSession,{id:'terminal',active:state.active,readOnly:state.readOnly}));}
+function App(){const [state,setState]=useState({active:true,readOnly:false,connected:true});window.state=state;window.setState=change=>setState(old=>({...old,...change}));return React.createElement(Context.Provider,{value:{connection,request,connected:state.connected,snapshot:{terminalTurnsSupported:true,terminals:[{id:"terminal",turn:state.turn??0,seenTurn:state.seenTurn??0,seenRevision:state.revision??0}]}}},React.createElement(TerminalSession,{id:'terminal',active:state.active,readOnly:state.readOnly}));}
 createRoot(document.getElementById('terminal')).render(React.createElement(App));`
       },
     },
@@ -141,6 +146,7 @@ try {
     if (message.type() === 'error') console.error(message.text())
   })
   await page.addInitScript(() => {
+    window.views = []
     window.copied = []
     window.clipboard = 'pasted text\nsecond line'
     window.dovoCopyText = async (text) => window.copied.push(text)
@@ -183,6 +189,22 @@ try {
     })
   const canvas = page.locator('.dovo-terminal-canvas')
   assert.equal(await canvas.evaluate((el) => getComputedStyle(el).cursor), 'text')
+  await page.evaluate(() => window.setState({ turn: 1 }))
+  await page.waitForFunction(() => window.state.revision === 1)
+  await canvas.click({ button: 'right' })
+  await page.getByRole('menuitem', { name: 'Mark unread' }).click()
+  await page.waitForFunction(() => window.state.revision === 2)
+  assert.equal(await page.evaluate(() => window.state.seenTurn), 0)
+  await page.evaluate(() => window.setState({ active: false, turn: 2 }))
+  await page.waitForFunction(() => !window.state.active && window.state.turn === 2)
+  assert.equal(await page.evaluate(() => window.views.length), 2)
+  await page.evaluate(() => window.setState({ active: true }))
+  await page.waitForFunction(() => window.state.revision === 3)
+  assert.deepEqual(await page.evaluate(() => window.views), [
+    { turn: 1, expectedRevision: 0, seen: true },
+    { turn: 1, expectedRevision: 1, seen: false },
+    { turn: 2, expectedRevision: 2, seen: true },
+  ])
   const drop = async () =>
     page.evaluate(() => {
       const dataTransfer = new DataTransfer()

@@ -4,6 +4,7 @@ import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url)).replace(/\/$/, '')
 const mocks = {
+  '../shell/navigation': `export const useNavigation=()=>({focused:true});`,
   '@dovo/protocol': `export * from '${root}/packages/protocol/src/index.ts';import {aggregateRuntimeTasks as aggregate,liveTaskProps as props} from '${root}/packages/protocol/src/index.ts';export const aggregateRuntimeTasks=(...args)=>{window.widgetProjections=(window.widgetProjections??0)+1;return aggregate(...args)};export const liveTaskProps=(...args)=>{window.activityProjections=(window.activityProjections??0)+1;return props(...args)};`,
   'react-native': `import React from 'react';const listeners=new Set();export const AppState={currentState:'active',addEventListener:(_,listener)=>{listeners.add(listener);return {remove:()=>listeners.delete(listener)}}};window.setAppState=state=>{AppState.currentState=state;for(const listener of listeners)listener(state)};export const Platform={OS:'ios'};export const View=({children,onLayout})=>{React.useEffect(()=>onLayout?.({nativeEvent:{layout:{width:100}}}),[]);return <div>{children}</div>};
 export const KeyboardAvoidingView=View;

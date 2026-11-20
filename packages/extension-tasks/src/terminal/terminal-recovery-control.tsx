@@ -1,17 +1,27 @@
+import { terminalRecoveryDescription, type RuntimeSnapshot } from '@dovo/protocol'
 import { History } from 'lucide-react'
 import { Button, cn } from '@dovo/studio-ui'
 
 export function TerminalRecoveryControl({
   enabled,
   disabled,
-  supported = true,
+  snapshot,
   onChange,
 }: {
   enabled: boolean
-  supported?: boolean
+  snapshot?: Pick<
+    RuntimeSnapshot,
+    'terminalRecoverySupported' | 'terminalLiveRecoverySupported'
+  > | null
   disabled?: boolean
   onChange: (enabled: boolean) => void
 }) {
+  const supported = snapshot?.terminalRecoverySupported === true
+  const description =
+    terminalRecoveryDescription(snapshot) +
+    (supported
+      ? ' This adds Dovo hooks to supported tools. Codex requires a one-time hook review.'
+      : '')
   return (
     <Button
       type="button"
@@ -21,11 +31,8 @@ export function TerminalRecoveryControl({
       disabled={disabled || !supported}
       onClick={() => onChange(!enabled)}
       className="h-7 gap-1.5 text-xs font-normal text-muted-foreground"
-      title={
-        supported
-          ? 'Restore this terminal after restart. Adds Dovo lifecycle integrations to agent configuration; Codex requires a one-time hook review.'
-          : 'Update Dovo on this computer to enable terminal session recovery.'
-      }
+      title={description}
+      aria-description={description}
     >
       <History className={cn('size-3.5', supported && enabled && 'text-primary')} />
       Remember session

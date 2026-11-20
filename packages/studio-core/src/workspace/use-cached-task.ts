@@ -30,12 +30,13 @@ export function useCachedTask(summary: Task | undefined) {
   const id = summary?.id
   const live = !!id && (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(id))
   const replica = id && readCache ? cachedRuntimeThread(readCache, id) : undefined
-  const retained =
-    replica && (replica.historyRevision ?? 0) === (summary?.historyRevision ?? 0)
-      ? replica
-      : undefined
+  const retained = useMemo(
+    () => (!live && summary && replica ? cachedThread(summary, replica) : summary),
+    [summary, live, replica],
+  )
+  const retainedHistory = retained !== summary
   useEffect(() => {
-    if (!id || !readCache || live || retained) return
+    if (!id || !readCache || readCache.closed || live || retainedHistory) return
     let stopped = false
     void readCache
       .read('snapshot', runtimeSnapshotCacheSchema)
@@ -56,7 +57,7 @@ export function useCachedTask(summary: Task | undefined) {
     return () => {
       stopped = true
     }
-  }, [id, summary?.historyRevision, readCache, live, retained, retryVersion])
+  }, [id, summary?.historyRevision, readCache, live, retainedHistory, retryVersion])
   useEffect(() => {
     recoveryAttempt.current++
     setRecovery(null)
@@ -87,20 +88,22 @@ export function useCachedTask(summary: Task | undefined) {
     } else setRecovery(null)
   }, [id, readCache, connection, activeRuntimeId, runtimeRegistry.profiles, refreshRuntime])
   const available =
-    !!summary &&
-    cached?.cache === readCache &&
-    cached.task.id === summary.id &&
-    (cached.task.historyRevision ?? 0) === (summary.historyRevision ?? 0)
-  const history = retained ?? (available ? cached?.task : undefined)
+    !!summary && !readCache?.closed && cached?.cache === readCache && cached.task.id === summary.id
+  const saved = available ? cached?.task : undefined
   const task = useMemo(
-    () => (summary && !live && history ? cachedThread(summary, history) : summary),
-    [summary, live, history],
+    () =>
+      retainedHistory
+        ? retained
+        : summary && !live && saved
+          ? cachedThread(summary, saved)
+          : summary,
+    [summary, live, retained, retainedHistory, saved],
   )
+  const loaded = live || task !== summary
   return {
     task,
-    loaded: live || !!history,
-    error:
-      !live && !history && failure?.cache === readCache && failure.id === id ? failure.error : '',
+    loaded,
+    error: !loaded && failure?.cache === readCache && failure.id === id ? failure.error : '',
     retry,
     retrying: recovery?.busy ?? false,
     retryError: recovery?.error ?? '',

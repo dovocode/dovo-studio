@@ -130,7 +130,11 @@ History is stored incrementally in `conversation_items`. Version 3 workspace sto
 `workspace_tasks` row per task, holding its metadata and history counts, and a small workspace
 document listing task order; a task update rewrites only its own row. Migration keeps the original
 document as `workspace-before-history-v2` (embedded histories) or `workspace-before-tasks-v3`
-(version 2 envelope) in the same transaction. Missing task or history rows fail closed instead of
+(version 2 envelope) in the same transaction. A task that the runtime cannot read keeps its version
+3 row. A version 1 task that it cannot read stays only in `workspace-before-history-v2`, so the
+migration also saves its ID in `workspace-v1-unreadable-tasks`. A runtime that migrated without that
+list builds it once from the backup. Attachment and sandbox cleanup keep everything that these tasks
+own until the task loads again or is deleted. Missing task or history rows fail closed instead of
 rewriting an incomplete workspace. Older binaries report the newer format and do not write it; use a
 full database backup when downgrading. Runtime exports still contain complete conversations.
 `conversation_index` is derived in the same transactions and rebuilt when missing or inconsistent;

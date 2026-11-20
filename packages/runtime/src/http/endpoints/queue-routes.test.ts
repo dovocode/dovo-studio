@@ -742,3 +742,85 @@ it('keeps review mode when duplicating a review prompt without changing prompt r
     await runtime.close()
   }
 })
+
+it('compares both Plan values in a prepared restore request and advertises support', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Plan', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (t) => ({ ...t, queuePaused: true }))
+    tasks.queue.add(task.id, 'queued', 'Queued text')
+    const headers = { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' }
+    const snapshot = await (
+      await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, { headers })
+    ).json()
+    expect(snapshot).toMatchObject({ queueRestorePlanSupported: true })
+    const restore = (expectedDraftPlan: boolean) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({
+          id: task.id,
+          action: 'restore',
+          messageId: 'queued',
+          restoreRequestId: `restore-${expectedDraftPlan}`,
+          expectedText: 'Queued text',
+          expectedTurnSettings: null,
+          expectedDraftTurnSettings: null,
+          expectedAttachmentIds: [],
+          expectedPlan: false,
+          expectedDraftPlan,
+        }),
+      })
+    // Another client turned Plan on after this client prepared the restore.
+    store.updateTask(task.id, (t) => ({ ...t, draftPlan: true }))
+    const conflict = await restore(false)
+    expect(conflict.status).toBe(409)
+    expect(await conflict.json()).toMatchObject({ error: expect.stringContaining('Plan mode') })
+    expect(store.taskSummary(task.id)).toMatchObject({
+      draft: '',
+      draftPlan: true,
+      queue: [{ id: 'queued' }],
+    })
+    store.updateTask(task.id, (t) => ({ ...t, draftPlan: undefined }))
+    expect((await restore(false)).status).toBe(200)
+    expect(store.taskSummary(task.id)).toMatchObject({ draft: 'Queued text', queue: [] })
+  } finally {
+    await runtime.close()
+  }
+})
+
+it('keeps the queued message and Plan when a bare restore request is out of date', async () => {
+  const ownerToken = 'queue-route-owner-token-at-least-thirty-two-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken, port: 0 })
+  try {
+    const { store, tasks } = runtime.services
+    const task = tasks.create({ title: 'Bare', repositoryId: '', agentId: '', objective: '' })
+    store.updateTask(task.id, (t) => ({ ...t, queuePaused: true }))
+    tasks.queue.add(task.id, 'queued', 'Queued text')
+    const restore = (plan: { expectedPlan?: boolean; expectedDraftPlan?: boolean }) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/queue`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: task.id, action: 'restore', messageId: 'queued', ...plan }),
+      })
+    // Another client turned Plan on after desktop rendered the queue.
+    store.updateTask(task.id, (t) => ({ ...t, draftPlan: true }))
+    for (const plan of [{}, { expectedPlan: false, expectedDraftPlan: false }]) {
+      const response = await restore(plan)
+      expect(response.status).toBe(409)
+      expect(await response.json()).toMatchObject({ error: expect.stringContaining('Plan mode') })
+    }
+    expect(store.taskSummary(task.id)).toMatchObject({
+      draft: '',
+      draftPlan: true,
+      queue: [{ id: 'queued' }],
+    })
+    expect((await restore({ expectedPlan: false, expectedDraftPlan: true })).status).toBe(200)
+    expect(store.taskSummary(task.id)).toMatchObject({ draft: 'Queued text', queue: [] })
+    expect(store.taskSummary(task.id).draftPlan).toBeUndefined()
+  } finally {
+    await runtime.close()
+  }
+})

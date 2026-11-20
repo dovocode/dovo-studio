@@ -1,5 +1,6 @@
 import { attachLocalPreviewSocket } from './support/local-preview-socket.js'
 import { BinaryTerminalStream } from '../terminal/binary-stream.js'
+import { createTerminalViewers } from '../terminal/viewers.js'
 import { STUDIO_BROWSER_SCOPE, isBrowserLoopbackAddress } from '@dovo/protocol'
 import { isRunToken } from '../auth/run-credentials.js'
 import { authorizeRunTerminal, authenticateRuntimeOperation } from '../auth/run-authorization.js'
@@ -217,6 +218,10 @@ export function createRuntimeServer(
   })
   // Record terminal input as a count per terminal, at most every few seconds.
   const typed = new Map<string, { characters: number; timer: ReturnType<typeof setTimeout> }>()
+  // Several sockets can watch one terminal. Only the one that typed last sets its grid.
+  const terminalViewers = createTerminalViewers((terminalId, size) =>
+    services.terminals.resize(terminalId, size.cols, size.rows),
+  )
   const recordInput = (terminalId: string, characters: number) => {
     const pending = typed.get(terminalId)
     if (pending) {
@@ -509,18 +514,26 @@ export function createRuntimeServer(
         const stream = binary
           ? new BinaryTerminalStream(client, services.terminals.pressure(ticket.resourceId))
           : undefined
-        let replay = true
-        const detach = services.terminals.attach(ticket.resourceId, (data) => {
-          if (stream) {
-            if (replay) stream.replay(data)
-            else stream.data(data)
-          } else if (client.readyState === WebSocket.OPEN) {
-            if (client.bufferedAmount > 2 * 1024 * 1024)
-              client.close(1013, 'Terminal client is too slow')
-            else client.send(data)
+        const detach = stream
+          ? services.terminals.attachScreen(
+              ticket.resourceId,
+              (data) => stream.replay(data),
+              (data) => stream.data(data),
+            )
+          : services.terminals.attach(ticket.resourceId, (data) => {
+              if (client.readyState !== WebSocket.OPEN) return
+              if (client.bufferedAmount > 2 * 1024 * 1024)
+                client.close(1013, 'Terminal client is too slow')
+              else client.send(data)
+            })
+        const viewer = terminalViewers.join(ticket.resourceId)
+        const leave = () => {
+          try {
+            viewer.leave()
+          } catch {
+            // The terminal is gone, so there is no grid left to hand over.
           }
-        })
-        replay = false
+        }
         client.on('message', (raw) => {
           try {
             if (isRunToken(ticket.token))
@@ -553,8 +566,14 @@ export function createRuntimeServer(
               stream.ack(input.bytes)
             } else if (input.type === 'input') {
               recordInput(ticket.resourceId, input.data.length)
-              services.terminals.input(ticket.resourceId, input.data)
-            } else services.terminals.resize(ticket.resourceId, input.cols, input.rows)
+              viewer.input()
+              try {
+                services.terminals.input(ticket.resourceId, input.data)
+              } catch (error) {
+                // A holder outage refuses input and notes it on the terminal. Keep the viewer.
+                if (!(error instanceof HttpError && error.status === 503)) throw error
+              }
+            } else viewer.resize(input.cols, input.rows)
           } catch {
             stream?.stop()
             client.close(1008, 'Invalid terminal request')
@@ -563,11 +582,13 @@ export function createRuntimeServer(
         client.on('error', () => {
           stream?.stop()
           detach()
+          leave()
           authenticated.delete(client)
         })
         client.on('close', () => {
           stream?.stop()
           detach()
+          leave()
           authenticated.delete(client)
         })
       })

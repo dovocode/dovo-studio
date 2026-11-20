@@ -44,6 +44,7 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/tasks/message'){if(window.deliverMessage===input.messageId)return Response.json({ok:true});throw new Error('Message delivery offline');}
   if(path==='/api/tasks/cancel')return Response.json({ok:true});
   if(path==='/api/workspace') {
+    if(window.offlineWorkspace && parsed.hostname==='host0.lan')throw new Error('Computer A is offline');
     if(window.autoReconcile)return Response.json({revision:window.server.revision,runtimeInstanceId:'test-instance',reconciled:true});
     if(window.failWorkspace)return Response.json({error:'Workspace conflict'},{status:409});
     const agent=window.server.workspace.agents.find(agent=>agent.id===input.id);
@@ -450,8 +451,62 @@ try {
     value: 'launcher recovered',
   })
   assert.deepEqual(errors, [])
+  const offline = await browser.newPage()
+  await offline.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await offline.goto('http://localhost/')
+  await offline.addScriptTag({ content: built.outputFiles[0].text })
+  await offline.waitForFunction(
+    () => window.workspaceContext?.connected && window.workspaceContext.runtimes[1]?.connected,
+  )
+  await offline.evaluate(async () => {
+    window.offlineWorkspace = true
+    window.failSnapshot = true
+    window.editWorkspace()
+    await window.workspaceContext.switchRuntime(window.profiles[1].id)
+  })
+  await offline.waitForFunction(
+    () => window.workspaceContext.activeRuntimeId === window.profiles[1].id,
+  )
+  await offline.evaluate(async () => {
+    await window.workspaceContext.refreshRuntime(window.profiles[0]).catch(() => {})
+    await window.workspaceContext.switchRuntime(window.profiles[0].id)
+  })
+  await offline.waitForFunction(
+    () =>
+      window.workspaceContext.activeRuntimeId === window.profiles[0].id &&
+      !window.workspaceContext.connected &&
+      window.workspaceContext.workspace.agents[0]?.name === 'Edited',
+  )
+  await offline.evaluate(async () => {
+    window.offlineWorkspace = false
+    window.failSnapshot = false
+    window.failWorkspace = false
+    await window.workspaceContext.refreshRuntime(window.profiles[0])
+    await window.workspaceContext.flush()
+  })
+  assert.equal(
+    await offline.evaluate(() => window.server.workspace.agents[0].name),
+    'Edited',
+    'The original computer receives its queued edit after reconnect',
+  )
+  assert.equal(
+    await offline.evaluate(async () => {
+      await window.workspaceContext.switchRuntime(window.profiles[1].id)
+      window.authFailed = true
+      await window.workspaceContext.refreshRuntime(window.profiles[0]).catch(() => {})
+      try {
+        await window.workspaceContext.switchRuntime(window.profiles[0].id)
+      } catch (error) {
+        return error.status
+      }
+    }),
+    401,
+    'A rejected pairing does not open using the offline fallback',
+  )
   console.log(
-    'Workspace recovery: six HTTP hosts, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation, Stop bypass, saved-command preservation and selective action recovery passed.',
+    'Workspace recovery: six HTTP hosts, offline switching and edit recovery, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation, Stop bypass and selective action recovery passed.',
   )
 } finally {
   await browser.close()

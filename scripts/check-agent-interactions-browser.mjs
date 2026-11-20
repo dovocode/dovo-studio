@@ -24,14 +24,17 @@ try {
 }
 const native = `
 const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
-export const View=({children,style,accessibilityLabel})=><div style={css(style)} aria-label={accessibilityLabel}>{children}</div>;
-export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel})=><div style={{...css(style),overflowY:'auto',flexShrink:1}} aria-label={accessibilityLabel}><div style={css(contentContainerStyle)}>{children}</div></div>;
+export const View=({children,style,accessibilityLabel,ref,role,accessible,'aria-label':ariaLabel})=><div ref={ref} role={role} tabIndex={accessible?-1:undefined} style={css(style)} aria-label={ariaLabel??accessibilityLabel}>{children}</div>;
+export const ScrollView=({children,style,contentContainerStyle,accessibilityLabel,ref})=><div ref={ref} style={{...css(style),overflowY:'auto',flexShrink:1}} aria-label={accessibilityLabel}><div style={css(contentContainerStyle)}>{children}</div></div>;
+export const AppState={currentState:'active',addEventListener:(type,listener)=>{(window.appStateListeners??=new Set()).add(listener);return {remove:()=>window.appStateListeners.delete(listener)}}};
+export const AccessibilityInfo={setAccessibilityFocus:node=>node?.focus?.()};
+export const findNodeHandle=node=>node;
 export const Pressable=({children,onPress,disabled,style,accessibilityRole,accessibilityLabel,accessibilityState})=><button style={css(style)} role={accessibilityRole} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} aria-checked={accessibilityState?.checked} disabled={disabled} onClick={onPress}>{children}</button>;
 export const Keyboard={dismiss:()=>{}};
 export const Text=({children,style,accessibilityRole,numberOfLines})=><span role={accessibilityRole} style={{...css(style),...(numberOfLines===1?{overflow:'hidden',whiteSpace:'nowrap',textOverflow:'ellipsis'}:{})}}>{children}</span>;
 export const Icon=()=>null;
 export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
-export const Field=({label,value,onChangeText,editable})=><input aria-label={label} value={value} disabled={!editable} onChange={event=>onChangeText(event.target.value)}/>;
+export const Field=({label,value,onChangeText,editable,inputRef,error,secureTextEntry})=><><input ref={inputRef} type={secureTextEntry?'password':'text'} aria-label={label} aria-invalid={!!error} value={value} disabled={!editable} onChange={event=>onChangeText(event.target.value)}/>{error&&<span role="alert">{error}</span>}</>;
 export const useTheme=()=>({styles:{card:{padding:12,border:'1px solid #555',borderRadius:8},text:{},muted:{},row:{display:'flex'},error:{color:'red'}},colors:{muted:'#aaa',accent:'#6af',success:'green',surface:'#222',border:'#555'}});
 `
 try {
@@ -70,10 +73,11 @@ try {
 import {useState,useSyncExternalStore} from 'react';import {RegistryProvider} from '@effect/atom-react';import {createRoot} from 'react-dom/client';import {decode,questionPromptSchema,nativeTodos,createQuestionRecovery,configureSharingRandom} from '@dovo/protocol';
 import {QuestionForm} from '${root}/${mobile ? 'apps/mobile/src/tasks/composer' : 'packages/studio-ui/src'}/question-form';
 import {NativeTodos} from '${root}/${mobile ? 'apps/mobile/src/tasks/conversation/components' : 'packages/extension-tasks/src/chat/thread'}/native-todos';
-const persisted=new Map();const recovery=createQuestionRecovery({getAllKeys:()=>[...persisted.keys()],getItem:key=>persisted.get(key)??null,setItem:(key,value)=>{persisted.set(key,value)}});window.recovery=recovery;void recovery.load('fixture');
+const persisted=new Map();const recovery=createQuestionRecovery({getAllKeys:()=>[...persisted.keys()],getItem:key=>persisted.get(key)??null,setItem:(key,value)=>{persisted.set(key,value)}});window.recovery=recovery;window.persisted=persisted;void recovery.load('fixture');
 ${mobile ? "const platformCrypto=globalThis.crypto;configureSharingRandom(bytes=>platformCrypto.getRandomValues(bytes));Object.defineProperty(globalThis,'crypto',{value:undefined,configurable:true});" : ''}
 const prompt=decode(questionPromptSchema,{title:'Choose a direction',blocking:false,questions:[{id:'choice',header:'Approach',question:'Which approach?',options:[{value:'small',label:'Small change',description:'Keep it focused'},{value:'large',label:'Larger change'}],custom:true},{id:'checks',header:'Checks',question:'Which checks?',multiple:true,custom:false,options:[{value:'types',label:'Typecheck'},{value:'browser',label:'Browser'}]}]});
-function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fixture'));const[status,setStatus]=useState('running');window.taskStatus=setStatus;const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',status,nativeTodos:items}}/>{request&&<QuestionForm ${mobile ? `runtimeId="host" savedDrafts={recovery.entries('fixture').find(entry=>entry.request.id===request.id)?.drafts} onDraftsChange={drafts=>recovery.update('fixture',request,drafts)}` : ''} key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);`,
+const secretPrompt=decode(questionPromptSchema,{title:'Connect the service',questions:[{id:'token',header:'Token',question:'Which API token?',options:[],custom:true,secret:true},{id:'note',header:'Note',question:'Anything else?',options:[],custom:true,required:false}]});
+function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fixture'));const[status,setStatus]=useState('running');window.taskStatus=setStatus;const[connected,setConnected]=useState(true),[request,setRequest]=useState({id:'question',taskId:'general',prompt,createdAt:''}),[items,setItems]=useState(Array.from({length:100},(_,i)=>({id:'step-'+i,text:'Step '+(i+1),status:i===0?'completed':i===1?'in-progress':'pending'})));window.nativeChecklist=(provider,payload,name)=>setItems(nativeTodos(name,payload,provider,[],'root'));window.connect=setConnected;window.items=setItems;window.reset=()=>setRequest({id:'question-'+Date.now(),taskId:'general',prompt,createdAt:''});window.secret=()=>setRequest({id:'secret-'+Date.now(),taskId:'general',prompt:secretPrompt,createdAt:''});return <div style={{display:'flex',flexDirection:'column',height:'100vh',minHeight:0}}><div style={{flex:'1 1 auto',minHeight:0,overflow:'auto'}}>Conversation content</div><div style={{flexShrink:0}}><NativeTodos task={{id:'general',status,nativeTodos:items}}/>{request&&<QuestionForm ${mobile ? `runtimeId="host" savedDrafts={recovery.entries('fixture').find(entry=>entry.request.id===request.id)?.drafts} onDraftsChange={drafts=>recovery.update('fixture',request,drafts)}` : ''} key={request.id} request={request} connected={connected} onAnswer={async answers=>{window.submissions.push(answers);if(window.fail)throw Error('Connection failed');setRequest(null)}}/>}<textarea aria-label="Message thread" defaultValue="Retained draft" style={{height:40,width:'100%'}}/></div></div>};window.submissions=[];window.fail=false;createRoot(document.getElementById('app')).render(<RegistryProvider><App/></RegistryProvider>);`,
       },
       bundle: true,
       write: false,
@@ -153,6 +157,34 @@ function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fix
     await page.getByRole('button', { name: 'Send answers', exact: true }).click()
     await page.getByRole('alert').waitFor()
     assert.equal(await page.evaluate(() => window.submissions.length), 0)
+    if (mobile) {
+      // Explicit submit marks the invalid question and moves focus to it, not the footer.
+      const approach = page.getByRole('textbox', { name: 'Answer: Approach', exact: true })
+      await page.waitForFunction(
+        () => document.activeElement?.getAttribute('aria-label') === 'Answer: Approach',
+      )
+      assert.equal(await approach.getAttribute('aria-invalid'), 'true')
+      assert.equal(await page.getByRole('alert').textContent(), 'Answer Approach')
+      assert.equal(
+        await page.getByRole('radiogroup', { name: 'Approach. Which approach?' }).count(),
+        1,
+      )
+      assert.equal(await page.getByRole('group', { name: 'Checks. Which checks?' }).count(), 1)
+    } else {
+      // Number keys belong to the question that holds focus, and its options show the hint.
+      const largeChange = page.getByRole('button', { name: /Larger change/ })
+      const browserCheck = page.getByRole('button', { name: /^Browser/ })
+      await page.getByRole('button', { name: /^Typecheck/ }).focus()
+      await page.keyboard.press('2')
+      assert.equal(await browserCheck.getAttribute('aria-pressed'), 'true')
+      assert.equal(await largeChange.getAttribute('aria-pressed'), 'false')
+      assert.equal(await page.locator('[data-question-id="checks"] kbd').count(), 2)
+      assert.equal(await page.locator('[data-question-id="choice"] kbd').count(), 0)
+      await page.keyboard.press('2')
+      assert.equal(await browserCheck.getAttribute('aria-pressed'), 'false')
+      await page.getByRole('button', { name: /Small change/ }).focus()
+      assert.equal(await page.locator('[data-question-id="choice"] kbd').count(), 2)
+    }
     const choice = mobile
       ? page.getByRole('radio', { name: 'Small change. Keep it focused', exact: true })
       : page.getByRole('button', { name: /Small change/ })
@@ -164,11 +196,17 @@ function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fix
     await checks('Typecheck').click()
     await checks('Browser').click()
     await page.evaluate(() => window.connect(false))
-    await page.getByText('Reconnect to answer', { exact: true }).waitFor()
+    await page
+      .getByText('Offline. You can keep editing. Reconnect to send.', { exact: true })
+      .waitFor()
     assert.equal(
       await page.getByRole('button', { name: 'Send answers', exact: true }).isDisabled(),
       true,
     )
+    // Offline text stays editable. Sending waits for the connection.
+    await page.getByRole('textbox', { name: 'Answer: Approach', exact: true }).fill('Offline edit')
+    await page.keyboard.press('Enter')
+    assert.equal(await page.evaluate(() => window.submissions.length), 0)
     await page.evaluate(() => {
       window.connect(true)
       window.fail = true
@@ -207,6 +245,30 @@ function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fix
     await page.getByRole('button', { name: 'Decline', exact: true }).click()
     await page.getByText('Choose a direction', { exact: true }).waitFor({ state: 'hidden' })
     assert.equal(await page.evaluate(() => window.submissions.at(-1)), null)
+    if (mobile) {
+      // A provider-marked secret is cleared when the app leaves the foreground. Other text stays.
+      await page.evaluate(() => window.secret())
+      const token = page.getByLabel('Answer: Token', { exact: true })
+      const note = page.getByLabel('Answer: Note', { exact: true })
+      await token.fill('dummy-secret-value')
+      await note.fill('Ordinary note')
+      await page.evaluate(() =>
+        window.appStateListeners.forEach((listener) => listener('inactive')),
+      )
+      await page.waitForFunction(
+        () => document.querySelector('[aria-label="Answer: Token"]')?.value === '',
+      )
+      assert.equal(await note.inputValue(), 'Ordinary note')
+      // Persistent draft storage never held the secret.
+      assert.equal(
+        await page
+          .evaluate(() => JSON.stringify([...window.persisted.values()]))
+          .then((text) => text.includes('dummy-secret-value')),
+        false,
+      )
+      await page.getByRole('button', { name: 'Decline', exact: true }).click()
+      await page.getByText('Connect the service', { exact: true }).waitFor({ state: 'hidden' })
+    }
     await page.evaluate(() => window.items([{ text: 'Finished', status: 'completed' }]))
     await page.getByText(/Checklist.*1 of 1 done/).waitFor()
     assert.equal(await page.getByText('Finished', { exact: true }).count(), 1)
@@ -279,7 +341,7 @@ function App(){useSyncExternalStore(recovery.subscribe,()=>recovery.version('fix
     await summary.waitFor({ state: 'hidden' })
     assert.deepEqual(errors, [])
     console.log(
-      `${mobile ? 'Mobile (browser adapters)' : 'Desktop'}: questions, custom/multiple answers, retry, offline, decline, retained draft, shared checklist updates and bounded scrolling passed.`,
+      `${mobile ? 'Mobile (browser adapters)' : 'Desktop'}: questions, custom/multiple answers, ${mobile ? 'validation focus, secret clearing' : 'focused number keys'}, retry, offline editing, decline, retained draft, shared checklist updates and bounded scrolling passed.`,
     )
     await page.close()
   }

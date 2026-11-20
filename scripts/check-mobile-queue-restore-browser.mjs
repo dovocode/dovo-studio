@@ -4,7 +4,7 @@ import { bundleBrowser, chromium } from './browser/harness.mjs'
 const root = fileURLToPath(new URL('../', import.meta.url))
 const actions = root + 'apps/mobile/src/tasks/conversation/state/'
 const draft = root + 'apps/mobile/src/tasks/draft/'
-const runtime = `import {useSyncExternalStore} from 'react';const listeners=new Set();window.host={connected:true,id:'computer-a',token:'original-token',supported:true};window.switchHost=next=>{window.host={...window.host,...next};listeners.forEach(fn=>fn())};export function useRuntime(){const host=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>window.host);return {connected:host.connected,activeId:host.id,profile:{connection:{address:'http://'+host.id+'.lan',token:host.token}},snapshot:{queueRestoreReceiptsSupported:host.supported,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request}}`
+const runtime = `import {useSyncExternalStore} from 'react';const listeners=new Set();window.host={connected:true,id:'computer-a',token:'original-token',supported:true};window.switchHost=next=>{window.host={...window.host,...next};listeners.forEach(fn=>fn())};export function useRuntime(){const host=useSyncExternalStore(fn=>{listeners.add(fn);return()=>listeners.delete(fn)},()=>window.host);return {connected:host.connected,activeId:host.id,profile:{connection:{address:'http://'+host.id+'.lan',token:host.token}},snapshot:{queueRestoreReceiptsSupported:host.supported,queueRestorePlanSupported:host.supported,permissionPolicySupported:true,workspace:{agents:[{id:'agent',name:'Agent',provider:'codex',model:'model',permission:'ask',instructions:'',args:[],endpoint:''}]}},pendingMessages:()=>[],attachmentUploads:()=>[],call:()=>{},readEffect:window.request,callEffect:window.request}}`
 const built = await bundleBrowser(
   {
     stdin: {
@@ -141,6 +141,14 @@ try {
   await page.getByRole('button', { name: 'Restore', exact: true }).click()
   await page.waitForFunction(() => window.finish)
   const operation = await page.evaluate(() => window.requests[0].input.restoreRequestId)
+  // The runtime compares both Plan values before it removes the queued message.
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const { expectedPlan, expectedDraftPlan } = window.requests[0].input
+      return { expectedPlan, expectedDraftPlan }
+    }),
+    { expectedPlan: false, expectedDraftPlan: false },
+  )
   const durable = await page.evaluate(() => localStorage.getItem('dovo.draft.computer-a.task'))
   assert.ok(durable.includes(operation), 'intent must be durable before request')
   await input.fill('New typing')
@@ -162,6 +170,8 @@ try {
   assert.equal(await input.inputValue(), 'New typing\n\nQueued text')
   assert.equal(await page.evaluate(() => window.commitCount), 1)
   assert.equal(await page.evaluate(() => window.requests.at(-1).input.restoreRequestId), operation)
+  // The retry after remount reads the Plan values from the saved restore.
+  assert.equal(await page.evaluate(() => window.requests.at(-1).input.expectedDraftPlan), false)
   await page.evaluate(() => window.remount())
   await page.waitForFunction(() => window.actions.draft.ready)
   assert.equal(await input.inputValue(), 'New typing\n\nQueued text')

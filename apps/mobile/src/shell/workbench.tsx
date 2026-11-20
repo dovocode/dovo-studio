@@ -17,6 +17,7 @@ import { taskHref } from './task-route'
 import { issueHref, jiraIssueHref, pipelineHref } from './source-route'
 import { collectionPaths as routes, workbenchRoute, type WorkbenchTab as Tab } from './route-paths'
 import { useShortcuts } from './shortcuts'
+import { launchRouteClaimed } from './launch-route'
 import { KeyboardCommands, type KeyboardCommand } from './keyboard-commands'
 import { dispatchKeyboardSearch, useKeyboardSearchAvailable } from './keyboard-search'
 import {
@@ -374,8 +375,11 @@ export function Workbench() {
       router.replace('/')
   }, [runtime.ready, runtime.profiles.length, active])
   // Settings → General → Open on launch: once per cold start, and only from the default Tasks
-  // tab, so deep links and notification taps still open where they point.
+  // tab, so deep links and notification taps still open where they point. Saved preferences can
+  // load after a notification tap opens a thread, so check the current route when they arrive.
   const launched = useRef(false)
+  const currentPath = useRef(pathname)
+  currentPath.current = pathname
   useEffect(() => {
     if (launched.current || !runtime.ready || !runtime.profiles.length) return
     launched.current = true
@@ -383,10 +387,10 @@ export function Workbench() {
       const { launchTab, carMode } = readMobilePreferences()
       // Car mode only has Tasks and Settings, so it always opens on Tasks.
       const tab = carMode ? 'tasks' : launchTab
-      if (pathname === '/' && tab !== 'tasks')
+      if (currentPath.current === '/' && !launchRouteClaimed() && tab !== 'tasks')
         router.replace(tab === 'jobs' ? '/settings/automations' : `/${tab}`)
     })
-  }, [runtime.ready, runtime.profiles.length, pathname])
+  }, [runtime.ready, runtime.profiles.length])
   // Car mode: Tasks and Settings only.
   const shortcuts = useShortcuts()
   const routedShortcut = useRef('')

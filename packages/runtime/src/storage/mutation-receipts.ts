@@ -130,7 +130,7 @@ export class MutationReceipts {
     id: string,
     request: unknown,
     run: () => Promise<unknown>,
-    safelyRepeat = false,
+    safelyRepeat: boolean | 'confirmed-rejection' = false,
     retryRejected = false,
   ): Promise<unknown> {
     const fingerprint = createHash('sha256').update(JSON.stringify(request)).digest('hex')
@@ -144,23 +144,26 @@ export class MutationReceipts {
         throw new HttpError(409, 'This action ID already belongs to another request.')
       const pending = this.pending.get(key)
       if (pending) return pending
+      let repeat = safelyRepeat === true
       if (previous.result !== null) {
         const result = decode(outcomeSchema, JSON.parse(previous.result))
         if ('retired' in result)
           throw new HttpError(409, 'This action was already acknowledged; it was not repeated.', {
             mutationRetired: true,
           })
-        if (!result.ok && !retryRejected)
+        if (result.ok) return result.value
+        const rejectedBeforeCommit =
+          safelyRepeat === 'confirmed-rejection' && result.mutationRejected === true
+        if (!retryRejected && !rejectedBeforeCommit)
           throw new HttpError(result.status, result.error, {
             mutationRejected: result.mutationRejected,
           })
-        if (result.ok) return result.value
-        // Only coordinators whose destination has its own stable receipt opt in.
+        repeat ||= rejectedBeforeCommit
         this.db
           .prepare('UPDATE mutation_receipts SET result=NULL WHERE device_id=? AND id=?')
           .run(deviceId, id)
       }
-      if (!safelyRepeat)
+      if (!repeat)
         throw new HttpError(
           409,
           this.failed.has(key)
@@ -229,6 +232,28 @@ export class MutationReceipts {
       .finally(() => this.pending.delete(key))
     this.pending.set(key, pending)
     return pending
+  }
+  /** The recorded outcome of one `execute` ID. It never runs or repeats the action. */
+  status(
+    deviceId: string,
+    id: string,
+  ):
+    | { status: 'unknown' | 'pending' | 'uncertain' }
+    | { status: 'succeeded'; value: unknown }
+    | { status: 'rejected'; error: string } {
+    if (this.pending.has(JSON.stringify([deviceId, id]))) return { status: 'pending' }
+    const row = this.db
+      .prepare('SELECT fingerprint,result FROM mutation_receipts WHERE device_id=? AND id=?')
+      .get(deviceId, id)
+    if (!row) return { status: 'unknown' }
+    const receipt = decode(receiptSchema, row)
+    // No result means the runtime restarted or failed while it was applying the action.
+    if (receipt.result === null) return { status: 'uncertain' }
+    const outcome = decode(outcomeSchema, JSON.parse(receipt.result))
+    if ('retired' in outcome) return { status: 'uncertain' }
+    return outcome.ok
+      ? { status: 'succeeded', value: outcome.value }
+      : { status: 'rejected', error: outcome.error }
   }
   uncertainCount(deviceId: string) {
     const rows = decode(

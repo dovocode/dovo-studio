@@ -9,6 +9,7 @@ import {
   automationActionSendSchema,
   decode,
   githubEventChoices,
+  mutableStruct,
   threadActionResultSchema,
   type AutomationActionSend,
   type AutomationData,
@@ -17,10 +18,14 @@ import {
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import {
+  computerDraftKey,
   createDetailDrafts,
-  detailDraftKey,
   useDetailDraft,
+  type SavedDraftKey,
 } from '../../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
+import { Schema } from 'effect'
 import { automationHref } from '../../../shell/source-route'
 import { Action } from '../../../ui/controls/action'
 import { Field } from '../../../ui/controls/field'
@@ -33,7 +38,15 @@ type Snapshot = NonNullable<ThreadAction['automation']>
 type Resource = Snapshot['resources'][number]
 /** `attempt` is the exact body of a start whose outcome is unknown. Retry resends it. */
 type Draft = { text: string; attempt?: AutomationActionSend; stale?: boolean }
-const drafts = createDetailDrafts<Draft>()
+// The context text stays on the device after the app restarts. `attempt` is a send receipt and
+// stays in memory only.
+const drafts = createDetailDrafts<Draft>({
+  persist: {
+    name: 'automation-action',
+    schema: mutableStruct({ text: Schema.String, stale: Schema.optional(Schema.Boolean) }),
+    storage: detailDraftStorage,
+  },
+})
 
 const botNotice =
   'This step runs in the Bot’s thread with the Bot’s own current settings and resources. Its private instructions and secrets stay with the Bot and are not shown or copied.'
@@ -181,7 +194,7 @@ function SnapshotView({ snapshot }: { snapshot: Snapshot }) {
  * pairing, thread and action: busy and error state never carry over to another scope. */
 export function AutomationActionCard({ task, action }: { task: Task; action: ThreadAction }) {
   const { profile } = useRuntime()
-  const key = detailDraftKey(profile?.connection ?? null, 'automation-action', task.id, action.id)
+  const key = computerDraftKey(profile, 'automation-action', task.id, action.id)
   return <AutomationActionBody key={key} draftKey={key} task={task} action={action} />
 }
 
@@ -190,7 +203,7 @@ function AutomationActionBody({
   task,
   action,
 }: {
-  draftKey: string
+  draftKey: SavedDraftKey
   task: Task
   action: ThreadAction
 }) {
@@ -202,7 +215,9 @@ function AutomationActionBody({
   const { act, busy, error } = useAction()
   const [reviewing, setReviewing] = useState(false)
   const [receipt, setReceipt] = useState<{ key: string; action: ThreadAction }>()
-  const { draft, setField } = useDetailDraft(drafts, key, () => ({ text: action.prompt }))
+  const { draft, setField, persistence } = useDetailDraft(drafts, key, () => ({
+    text: action.prompt,
+  }))
   const sending = useRef(false)
   // Late replies must not touch a card that now shows another runtime, thread or action.
   const live = useRef<string | undefined>(key)
@@ -225,7 +240,7 @@ function AutomationActionBody({
     : paused
       ? 'This automation is paused. Resume it in Automations, then refresh the review.'
       : undefined
-  const write = (target: string, value: Draft | undefined) => {
+  const write = (target: SavedDraftKey, value: Draft | undefined) => {
     if (value) drafts.write(target, value)
     else drafts.remove(target)
   }
@@ -379,6 +394,7 @@ function AutomationActionBody({
               </InterfaceText>
             </Text>
             {!!blocked && <Text accessibilityRole="alert">{blocked}</Text>}
+            <DraftStorageNotice persistence={persistence} />
             {!!error && (
               <Text accessibilityRole="alert" style={styles.error}>
                 {error}

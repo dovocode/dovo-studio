@@ -37,6 +37,8 @@ it('installs a private, persistent service for a fresh Mac profile', async () =>
   const plist = await readFile(path, 'utf8')
   expect(plist).toContain('Dovo &amp; Studio')
   expect(plist).toContain('<key>KeepAlive</key><true/>')
+  expect(plist).toContain('<key>DOVO_TERMINAL_HOLDER_SUPERVISOR</key><string>launchd</string>')
+  expect(plist).not.toContain('AbandonProcessGroup')
   expect(plist).not.toContain('DOVO_OWNER_TOKEN')
   expect((await stat(path)).mode & 0o777).toBe(0o600)
   expect(

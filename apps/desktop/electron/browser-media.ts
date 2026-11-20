@@ -13,7 +13,11 @@ import {
   requestCommonBrowserPermission,
   revokeCommonBrowserPermissions,
 } from './browser-common-permissions.js'
-import { browserPermissions } from './browser-permissions.js'
+import {
+  browserPermissions,
+  denyPermissionCheckOnFailure,
+  denyPermissionRequestOnFailure,
+} from './browser-permissions.js'
 import { createBrowserDevices, browserDevicePermission } from './browser-devices.js'
 import { openRemoteMedia } from './browser-remote-media.js'
 import { prepareScreenRecording } from './browser-screen-permission.js'
@@ -499,154 +503,158 @@ export function createBrowserMedia(host: MediaHost) {
               },
             )
       })
-      session.setPermissionRequestHandler((contents, nativePermission, callback, details) => {
-        // Electron requests midiSysex even for requestMIDIAccess({ sysex: false }).
-        const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
-        if (!contents) return callback(false)
-        const tab = host.tabFor(contents)
-        if (!tab || tab.profileId !== profileId) return callback(false)
-        const origin = webOrigin(details.requestingUrl)
-        if (permission === 'fullscreen') {
-          const allowed =
-            !!origin && !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
-          if (allowed) host.prepareFullscreen(contents)
-          return callback(allowed)
-        }
-        if (!details.isMainFrame) return callback(false)
-        if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
-        // This permits opening a chooser, not access to any device. The separate device
-        // permission handler only accepts the exact devices selected by this website.
-        if (browserDevicePermission(permission)) {
-          browserPermissions(profileId).recordRequest(origin, permission)
-          return callback(
-            browserPermissions(profileId).site(origin).permissions[permission] !== 'block',
+      session.setPermissionRequestHandler(
+        denyPermissionRequestOnFailure((contents, nativePermission, callback, details) => {
+          // Electron requests midiSysex even for requestMIDIAccess({ sysex: false }).
+          const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
+          if (!contents) return callback(false)
+          const tab = host.tabFor(contents)
+          if (!tab || tab.profileId !== profileId) return callback(false)
+          const origin = webOrigin(details.requestingUrl)
+          if (permission === 'fullscreen') {
+            const allowed =
+              !!origin && !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
+            if (allowed) host.prepareFullscreen(contents)
+            return callback(allowed)
+          }
+          if (!details.isMainFrame) return callback(false)
+          if (!origin || webOrigin(contents.mainFrame.url) !== origin) return callback(false)
+          // This permits opening a chooser, not access to any device. The separate device
+          // permission handler only accepts the exact devices selected by this website.
+          if (browserDevicePermission(permission)) {
+            browserPermissions(profileId).recordRequest(origin, permission)
+            return callback(
+              browserPermissions(profileId).site(origin).permissions[permission] !== 'block',
+            )
+          }
+          if (commonBrowserPermission(permission)) {
+            void requestCommonBrowserPermission(
+              contents,
+              profileId,
+              origin,
+              permission,
+              tab.windowId,
+              permission === 'fileSystem' &&
+                'filePath' in details &&
+                typeof details.filePath === 'string'
+                ? {
+                    filePath: details.filePath,
+                    ...('fileAccessType' in details && typeof details.fileAccessType === 'string'
+                      ? { fileAccessType: details.fileAccessType }
+                      : {}),
+                    ...('isDirectory' in details && typeof details.isDirectory === 'boolean'
+                      ? { isDirectory: details.isDirectory }
+                      : {}),
+                  }
+                : undefined,
+            ).then(
+              (allowed) => {
+                if (permission === 'idle-detection') notifyIdlePermission(profileId, origin)
+                callback(allowed)
+              },
+              (error: unknown) => {
+                console.error('Could not request website permission.', error)
+                callback(false)
+              },
+            )
+            return
+          }
+          if (permission === 'notifications') {
+            // requestPermission uses the explicit bridge below. This native path also runs
+            // immediately before Electron displays a toast, so apply the current view policy.
+            requestNotifications(tab, origin, (allowed) =>
+              callback(allowed && !host.notificationInView?.(contents)),
+            )
+            return
+          }
+          // getDisplayMedia still waits for the display handler above before anything is shared.
+          if (permission === 'display-capture') return callback(true)
+          const types = permission === 'media' ? mediaTypes(details) : undefined
+          if (!types) return callback(false)
+          browserPermissions(profileId).recordRequest(
+            origin,
+            ...(types.audio ? ['microphone' as const] : []),
+            ...(types.video ? ['camera' as const] : []),
           )
-        }
-        if (commonBrowserPermission(permission)) {
-          void requestCommonBrowserPermission(
-            contents,
+          const settings = browserPermissions(profileId).site(origin).permissions
+          if (
+            (types.audio && settings.microphone === 'block') ||
+            (types.video && settings.camera === 'block')
+          )
+            return callback(false)
+          const granted = grantFor(contents, profileId, origin)
+          const saved = browserPermissions(profileId).media(origin)
+          if (saved && (!types.audio || saved.audio) && (!types.video || saved.video)) {
+            retainDevices(contents, profileId, origin, types)
+            return callback(true)
+          }
+          if (granted && (!types.audio || granted.audio) && (!types.video || granted.video))
+            return callback(true)
+          add({
+            kind: 'user-media',
+            key: tab.key,
             profileId,
             origin,
-            permission,
-            tab.windowId,
-            permission === 'fileSystem' &&
-              'filePath' in details &&
-              typeof details.filePath === 'string'
-              ? {
-                  filePath: details.filePath,
-                  ...('fileAccessType' in details && typeof details.fileAccessType === 'string'
-                    ? { fileAccessType: details.fileAccessType }
-                    : {}),
-                  ...('isDirectory' in details && typeof details.isDirectory === 'boolean'
-                    ? { isDirectory: details.isDirectory }
-                    : {}),
-                }
-              : undefined,
-          ).then(
-            (allowed) => {
-              if (permission === 'idle-detection') notifyIdlePermission(profileId, origin)
-              callback(allowed)
-            },
-            (error: unknown) => {
-              console.error('Could not request website permission.', error)
-              callback(false)
-            },
+            ...types,
+            windowId: tab.windowId,
+            contents,
+            answer: (allow) => callback(allow !== false),
+          })
+        }),
+      )
+      session.setPermissionCheckHandler(
+        denyPermissionCheckOnFailure((contents, nativePermission, origin, details) => {
+          const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
+          if (!contents)
+            return (
+              permission === 'notifications' &&
+              !!webOrigin(origin) &&
+              browserPermissions(profileId).notification(webOrigin(origin)!) === true
+            )
+          const tab = host.tabFor(contents)
+          const page = webOrigin(origin)
+          if (!tab || tab.profileId !== profileId || !page) return false
+          if (permission === 'fullscreen')
+            return !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
+          // Chromium checks this before getDisplayMedia reaches the display handler, which still
+          // waits for the user's choice; only the tab's own page origin passes.
+          if (permission === 'display-capture') return webOrigin(contents.mainFrame.url) === page
+          if (permission === 'notifications')
+            return (
+              webOrigin(contents.mainFrame.url) === page &&
+              browserPermissions(profileId).notification(page) === true
+            )
+          if (browserDevicePermission(permission))
+            return (
+              details.isMainFrame &&
+              webOrigin(contents.mainFrame.url) === page &&
+              browserPermissions(profileId).site(page).permissions[permission] !== 'block'
+            )
+          if (commonBrowserPermission(permission))
+            return (
+              webOrigin(contents.mainFrame.url) === page &&
+              details.isMainFrame &&
+              commonBrowserPermissionAllowed(contents, profileId, page, permission)
+            )
+          if (permission !== 'media') return false
+          if (webOrigin(contents.mainFrame.url) !== page) return false
+          const settings = browserPermissions(profileId).site(page).permissions
+          const requestedType: unknown = Reflect.get(details, 'mediaType')
+          if (
+            (requestedType === 'audio' && settings.microphone === 'block') ||
+            (requestedType === 'video' && settings.camera === 'block')
           )
-          return
-        }
-        if (permission === 'notifications') {
-          // requestPermission uses the explicit bridge below. This native path also runs
-          // immediately before Electron displays a toast, so apply the current view policy.
-          requestNotifications(tab, origin, (allowed) =>
-            callback(allowed && !host.notificationInView?.(contents)),
-          )
-          return
-        }
-        // getDisplayMedia still waits for the display handler above before anything is shared.
-        if (permission === 'display-capture') return callback(true)
-        const types = permission === 'media' ? mediaTypes(details) : undefined
-        if (!types) return callback(false)
-        browserPermissions(profileId).recordRequest(
-          origin,
-          ...(types.audio ? ['microphone' as const] : []),
-          ...(types.video ? ['camera' as const] : []),
-        )
-        const settings = browserPermissions(profileId).site(origin).permissions
-        if (
-          (types.audio && settings.microphone === 'block') ||
-          (types.video && settings.camera === 'block')
-        )
-          return callback(false)
-        const granted = grantFor(contents, profileId, origin)
-        const saved = browserPermissions(profileId).media(origin)
-        if (saved && (!types.audio || saved.audio) && (!types.video || saved.video)) {
-          retainDevices(contents, profileId, origin, types)
-          return callback(true)
-        }
-        if (granted && (!types.audio || granted.audio) && (!types.video || granted.video))
-          return callback(true)
-        add({
-          kind: 'user-media',
-          key: tab.key,
-          profileId,
-          origin,
-          ...types,
-          windowId: tab.windowId,
-          contents,
-          answer: (allow) => callback(allow !== false),
-        })
-      })
-      session.setPermissionCheckHandler((contents, nativePermission, origin, details) => {
-        const permission = nativePermission === 'midiSysex' ? 'midi' : nativePermission
-        if (!contents)
-          return (
-            permission === 'notifications' &&
-            !!webOrigin(origin) &&
-            browserPermissions(profileId).notification(webOrigin(origin)!) === true
-          )
-        const tab = host.tabFor(contents)
-        const page = webOrigin(origin)
-        if (!tab || tab.profileId !== profileId || !page) return false
-        if (permission === 'fullscreen')
-          return !!webOrigin(contents.mainFrame.url) && host.canFullscreen(contents)
-        // Chromium checks this before getDisplayMedia reaches the display handler, which still
-        // waits for the user's choice; only the tab's own page origin passes.
-        if (permission === 'display-capture') return webOrigin(contents.mainFrame.url) === page
-        if (permission === 'notifications')
-          return (
-            webOrigin(contents.mainFrame.url) === page &&
-            browserPermissions(profileId).notification(page) === true
-          )
-        if (browserDevicePermission(permission))
-          return (
-            details.isMainFrame &&
-            webOrigin(contents.mainFrame.url) === page &&
-            browserPermissions(profileId).site(page).permissions[permission] !== 'block'
-          )
-        if (commonBrowserPermission(permission))
-          return (
-            webOrigin(contents.mainFrame.url) === page &&
-            details.isMainFrame &&
-            commonBrowserPermissionAllowed(contents, profileId, page, permission)
-          )
-        if (permission !== 'media') return false
-        if (webOrigin(contents.mainFrame.url) !== page) return false
-        const settings = browserPermissions(profileId).site(page).permissions
-        const requestedType: unknown = Reflect.get(details, 'mediaType')
-        if (
-          (requestedType === 'audio' && settings.microphone === 'block') ||
-          (requestedType === 'video' && settings.camera === 'block')
-        )
-          return false
-        const granted = grantFor(contents, profileId, page)
-        const saved = browserPermissions(profileId).media(page)
-        const type: unknown = Reflect.get(details, 'mediaType')
-        return type === 'audio'
-          ? !!(granted?.audio || saved?.audio)
-          : type === 'video'
-            ? !!(granted?.video || saved?.video)
-            : false
-      })
+            return false
+          const granted = grantFor(contents, profileId, page)
+          const saved = browserPermissions(profileId).media(page)
+          const type: unknown = Reflect.get(details, 'mediaType')
+          return type === 'audio'
+            ? !!(granted?.audio || saved?.audio)
+            : type === 'video'
+              ? !!(granted?.video || saved?.video)
+              : false
+        }),
+      )
     },
     /** Track the page's capture lifecycle for one shared-browser tab. */
     attachTab: (contents: Electron.WebContents) => {
@@ -658,27 +666,44 @@ export function createBrowserMedia(host: MediaHost) {
         const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)
         if (!tab || !origin || event.senderFrame !== contents.mainFrame) return 'denied'
         return new Promise<NotificationPermission>((resolve) => {
-          requestNotifications(tab, origin, (allowed) =>
-            resolve(
-              allowed
-                ? 'granted'
-                : browserPermissions(tab.profileId).notification(origin) === false
-                  ? 'denied'
-                  : 'default',
-            ),
-          )
+          const deny = (error: unknown) => {
+            console.error('Could not check browser permission.', error)
+            resolve('denied')
+          }
+          try {
+            requestNotifications(tab, origin, (allowed) => {
+              try {
+                resolve(
+                  allowed
+                    ? 'granted'
+                    : browserPermissions(tab.profileId).notification(origin) === false
+                      ? 'denied'
+                      : 'default',
+                )
+              } catch (error) {
+                deny(error)
+              }
+            })
+          } catch (error) {
+            deny(error)
+          }
         })
       })
       contents.ipc.handle('browser-permission:idle-state', (event) => {
         const tab = host.tabFor(contents)
         const origin = !contents.isDestroyed() && webOrigin(contents.mainFrame.url)
         if (!tab || !origin || event.senderFrame !== contents.mainFrame) return 'denied'
-        if (commonBrowserPermissionAllowed(contents, tab.profileId, origin, 'idle-detection'))
-          return 'granted'
-        return browserPermissions(tab.profileId).site(origin).permissions['idle-detection'] ===
-          'block'
-          ? 'denied'
-          : 'prompt'
+        try {
+          if (commonBrowserPermissionAllowed(contents, tab.profileId, origin, 'idle-detection'))
+            return 'granted'
+          return browserPermissions(tab.profileId).site(origin).permissions['idle-detection'] ===
+            'block'
+            ? 'denied'
+            : 'prompt'
+        } catch (error) {
+          console.error('Could not check browser permission.', error)
+          return 'denied'
+        }
       })
       contents.ipc.handle('browser-permission:local-fonts', async (event) => {
         const tab = host.tabFor(contents)
@@ -690,7 +715,11 @@ export function createBrowserMedia(host: MediaHost) {
           origin,
           'local-fonts',
           tab.windowId,
-        )
+        ).catch((error: unknown) => {
+          // The preload turns false into NotAllowedError, as Chromium reports a denial.
+          console.error('Could not request website permission.', error)
+          return false
+        })
       })
       contents.ipc.on('browser-media:track', (event, raw: unknown) => {
         if (!raw || typeof raw !== 'object') return
@@ -767,9 +796,14 @@ export function createBrowserMedia(host: MediaHost) {
       if (!request || request.windowId !== windowId || request.key !== command.key)
         throw new Error('This media request is no longer waiting for an answer.')
       if (command.decision === 'deny') {
-        if (request.kind === 'notifications' && unchanged(request))
-          browserPermissions(request.profileId).setNotification(request.origin, false)
-        return settle(request, false)
+        // The page gets its denial even when the remembered answer cannot be saved.
+        try {
+          if (request.kind === 'notifications' && unchanged(request))
+            browserPermissions(request.profileId).setNotification(request.origin, false)
+        } finally {
+          settle(request, false)
+        }
+        return
       }
       if (!unchanged(request)) {
         settle(request, false)

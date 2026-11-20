@@ -395,8 +395,10 @@ sprint data loads when you open the view or retry it. Explicit refresh adds no d
 Loaded list and comment pages stay visible during refresh. Dovo checks older pages on the first
 available poll after two minutes, or when page one changes or you refresh. A failed later page keeps
 the previous list or discussion. Filters, pagination depth, drafts and account/destination guards
-remain in effect. See [performance verification](performance.md#jira-reads) for commands, measured
-fixture results and device-test limits.
+remain in effect. On mobile, unsent issue, comment, transition and run forms stay on the phone after
+the app closes. Submitting a form removes only its own draft. See
+[performance verification](performance.md#jira-reads) for commands, measured fixture results and
+device-test limits.
 
 ## Read Linear issues
 

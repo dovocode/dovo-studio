@@ -41,7 +41,6 @@ const noWrite = async (): Promise<never> => {
 export function DesktopFollowUp({ name }: { name: string | null }) {
   const { workspace, runtimeRegistry } = useWorkspace()
   const [open, setOpen] = useState(true)
-  const [undoRefreshed, setUndoRefreshed] = useState(false)
   const task = workspace.tasks[0]
   const repository = workspace.repositories.find((entry) => entry.id === task?.repositoryId)
   const close = () => setOpen(false)
@@ -158,26 +157,17 @@ export function DesktopFollowUp({ name }: { name: string | null }) {
           onRestoreFocus={noop}
         />
       )
-    case 'undo':
+    case 'undo-backup':
     case 'new-session':
-    case 'undo-error':
       return (
         <ComposerCommandDialog
-          command={name === 'new-session' ? 'new-session' : 'undo'}
+          command={name === 'new-session' ? 'new-session' : 'backup'}
           commandBusy={false}
-          refreshing={false}
-          needsRefresh={name === 'undo-error' && !undoRefreshed}
-          canUndo
           connected
           running={false}
-          error={
-            name === 'undo-error' && !undoRefreshed
-              ? 'The checkout changed since this turn. Refresh before trying again.'
-              : ''
-          }
+          error=""
           onClose={close}
           onConfirm={noWrite}
-          onRefresh={() => setUndoRefreshed(true)}
         />
       )
     case 'harness':

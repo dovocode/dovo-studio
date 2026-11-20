@@ -70,7 +70,7 @@ const listeners = new Set(); let preferences = { sendWith: 'enter', richTextComp
 export const readAppPreferences = () => preferences;
 export const updateAppPreferences = changes => { preferences = { ...preferences, ...changes }; listeners.forEach(listener => listener()) };
 export const useAppPreferences = () => useSyncExternalStore(listener => { listeners.add(listener); return () => listeners.delete(listener) }, () => preferences);
-const workspace = { workspace: {tasks:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files')return {files:[]}; if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
+const workspace = { workspace: {tasks:[{id:'review-bot',title:'Release helper',bot:{role:'review',state:'active'}},{id:'ordinary',title:'Release helper'}], agents:[{id:'custom-reviewer',name:'Release helper',provider:'codex'}], repositories:[]}, connected: false, snapshot: { modelMentionsSupported: true }, request: async path => { if(path === '/api/tasks/files'){window.fileQueries=(window.fileQueries??0)+1;return window.filesTruncated?{files:[],truncated:true}:{files:['docs/Review Notes.md']};} if(path === '/api/agents/model-mentions'){ if(window.failCatalog)throw Error('Catalog temporarily unavailable'); return {models:[{name:'GPT Exact',provider:'Codex',model:'gpt/exact',reference:'model:harness%3Acodex/gpt%2Fexact'}],unavailable:[]}; } throw Error('Unexpected request') } }; window.workspace = workspace;
 export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
@@ -310,7 +310,24 @@ try {
   const modelOption = page.getByRole('option').filter({ hasText: 'GPT Exact' })
   await modelOption.click()
   assert.equal(await text(), '`model:harness%3Acodex/gpt%2Fexact` ')
+  await source.fill('@release')
+  await source.press('End')
+  await page.getByRole('option').filter({ hasText: 'Agent · codex' }).click()
+  assert.equal(await text(), '@Release helper (`agent:local//custom-reviewer`) ')
+  assert.equal(await page.evaluate(() => window.fileQueries ?? 0), 0)
+  await source.fill('@file')
+  await source.press('End')
+  await page.getByRole('listbox', { name: 'Files', exact: true }).getByRole('option').click()
+  assert.equal(await text(), '@file:"docs/Review Notes.md" ')
+  // A partial file listing says so, even when nothing matched.
   await page.evaluate(() => {
+    window.filesTruncated = true
+  })
+  await source.fill('@file:huge')
+  await source.press('End')
+  await page.getByRole('status').filter({ hasText: 'more files than file search covers' }).waitFor()
+  await page.evaluate(() => {
+    window.filesTruncated = false
     window.failCatalog = true
   })
   await source.fill('@other')
@@ -320,6 +337,22 @@ try {
   // Chips retain source through selection, copy, atomic deletion, undo, and editor swaps.
   await source.press('ControlOrMeta+Shift+m')
   await editor.waitFor()
+  await setDraft('')
+  await editor.pressSequentially('@release')
+  await page.getByRole('option').filter({ hasText: 'Agent · codex' }).click()
+  await editor.locator('[data-reference-kind="agent"]').waitFor()
+  assert.equal(await text(), '@Release helper (`agent:local//custom-reviewer`) ')
+  await setDraft('')
+  await editor.pressSequentially('@release')
+  assert.equal(await page.getByRole('option').filter({ hasText: 'Thread ·' }).count(), 0)
+  await page.getByRole('option').filter({ hasText: 'Bot ·' }).click()
+  await editor.locator('[data-reference-kind="bot"]').waitFor()
+  assert.equal(await text(), '@Release helper (`studio:local:thread:review-bot`) ')
+  await setDraft('')
+  await editor.pressSequentially('@file')
+  await page.getByRole('listbox', { name: 'Files', exact: true }).getByRole('option').click()
+  await editor.locator('[data-reference-kind="file"]').waitFor()
+  assert.equal(await editor.locator('[data-reference-kind="file"]').innerText(), 'Review Notes.md')
   const chipDraft =
     '🚀 Review @src/file.ts $review @docs and `model:harness%3Acodex/gpt%2Fexact` please'
   await setDraft(chipDraft)

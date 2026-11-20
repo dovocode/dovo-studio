@@ -69,7 +69,7 @@ export function ExternalBrowserLinkChooser({
   onOpen,
 }: {
   subscribe: (listener: (url: string) => void) => () => void
-  onOpen: () => void
+  onOpen: (tabId: string) => void
 }) {
   const { browser } = useStudioHost()
   const { runtimes, localRuntimeId } = useWorkspace()
@@ -115,7 +115,7 @@ export function ExternalBrowserLinkChooser({
         },
       })
       updateAppPreferences({ browserWorkspaceEnabled: true })
-      onOpen()
+      onOpen(link.id)
       setLinks((previous) => previous.filter((item) => item.id !== link.id))
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))

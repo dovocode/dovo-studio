@@ -573,7 +573,8 @@ export const linkedCheckpointSchema = mutableStruct({
 export type LinkedCheckpoint = Schema.Schema.Type<typeof linkedCheckpointSchema>
 export const turnCheckpointSchema = mutableStruct({
   sharedCheckout: Schema.optional(Schema.Literal(true)),
-  // Durable undo intent. Repeat undo to finish or redo to recover after an interrupted restore.
+  // Legacy recovery state. Reviewing the backup releases an interrupted restore.
+  undoBackupReviewed: Schema.optional(Schema.Literal(true)),
   restorePending: Schema.optional(Schema.Literal(true)),
   linked: Schema.optional(mutableArray(linkedCheckpointSchema)),
   before: Schema.String,
@@ -581,8 +582,7 @@ export const turnCheckpointSchema = mutableStruct({
   files: mutableArray(fileSchema),
   omitted: mutableArray(Schema.String),
   error: Schema.optional(Schema.String),
-  // Set while this turn's file changes are undone; `backup` is the snapshot taken just before
-  // undoing, so redo can bring back exactly what was there (including later edits).
+  // Older runtimes saved this tree before Undo. Keep it available after backup review.
   undone: Schema.optional(mutableStruct({ at: Schema.String, backup: Schema.String })),
 })
 export const turnSchema = mutableStruct({
@@ -762,6 +762,7 @@ export const taskSchema = mutableStruct({
       tokens: Schema.optional(Schema.Number),
       milliseconds: Schema.Number,
       hasChanges: Schema.Boolean,
+      undoBackupTurnId: Schema.optional(Schema.String),
       undoableTurnId: Schema.optional(Schema.String),
       pendingUndoTurnId: Schema.optional(Schema.String),
     }),

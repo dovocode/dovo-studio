@@ -30,10 +30,10 @@ it('keeps repository-root checkpoint paths from subfolders with diff.relative en
   await git.command(f.directory, ['add', '.'])
   await git.commit(f.directory, 'Add nested file')
   await git.command(f.directory, ['config', 'diff.relative', 'true'])
-  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/before')
+  const before = await git.snapshot(nested, 'refs/dovo/checkpoints/relative/before')
   await writeFile(join(f.directory, 'hello.txt'), 'outside edit\n')
   await writeFile(join(nested, 'inside.txt'), 'inside edit\n')
-  const after = await git.snapshot(f.directory, 'refs/dovo/checkpoints/relative/after')
+  const after = await git.snapshot(nested, 'refs/dovo/checkpoints/relative/after')
   const changes = await git.checkpointChanges(nested, before, after)
   expect(changes.files).toEqual(
     expect.arrayContaining([
@@ -52,6 +52,49 @@ it('keeps repository-root checkpoint paths from subfolders with diff.relative en
   expect(
     (await git.checkpointFilePreview(nested, before, after, 'nested/inside.txt')).after,
   ).toMatchObject({ kind: 'text', text: 'inside edit\n' })
+})
+it('keeps later directory contents when restoring a single file', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const file = join(f.directory, 'hello.txt')
+  const before = await git.snapshot(f.directory, 'refs/dovo/checkpoints/directory/before')
+  await rm(file)
+  await mkdir(file)
+  await writeFile(join(file, 'later.txt'), 'keep me')
+  await expect(
+    git.restoreSnapshot(f.directory, before, 'refs/dovo/file-restore/directory', ['hello.txt']),
+  ).rejects.toThrow('directory')
+  expect(await readFile(join(file, 'later.txt'), 'utf8')).toBe('keep me')
+  await writeFile(join(f.directory, '.gitignore'), 'later.txt\n')
+  await expect(
+    git.restoreSnapshot(f.directory, before, 'refs/dovo/file-restore/ignored', ['hello.txt']),
+  ).rejects.toThrow('directory')
+  expect(await readFile(join(file, 'later.txt'), 'utf8')).toBe('keep me')
+})
+it('preserves ignored local settings even if the target tree has no entry', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const git = new GitService()
+  const head = await git.headTree(f.directory)
+  await git.command(f.directory, ['rm', '--cached', 'hello.txt'])
+  await writeFile(join(f.directory, '.gitignore'), 'hello.txt\n')
+  await writeFile(join(f.directory, 'hello.txt'), 'local settings')
+  const withoutFile = await git.snapshot(f.directory, 'refs/dovo/test/without-file')
+  for (const tree of [head, withoutFile]) {
+    await expect(
+      git.restoreSnapshot(f.directory, tree, 'refs/dovo/file-restore/ignored', ['hello.txt']),
+    ).rejects.toThrow('missing from the backup')
+    expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('local settings')
+  }
+  expect(
+    await git.command(f.directory, [
+      'ls-tree',
+      '-r',
+      '--name-only',
+      'refs/dovo/file-restore/ignored',
+    ]),
+  ).not.toContain('hello.txt')
 })
 it('captures same-size edits when the source index considers the file racily clean', async () => {
   const f = await fixture()

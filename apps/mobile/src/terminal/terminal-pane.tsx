@@ -5,6 +5,7 @@ import { Choice } from '../ui/controls/choice'
 import {
   runtimeComputerName,
   terminalGroups,
+  terminalViewChange,
   splitTerminal,
   type TerminalGroup,
 } from '@dovo/protocol'
@@ -86,6 +87,7 @@ export function TerminalPane({
           ?.sessions.includes(terminal.id),
       ) ??
       terminals[0]
+  const view = terminalViewChange(active, snapshot?.terminalTurnsSupported)
   const renameTarget = terminals.find((terminal) => terminal.id === renaming)
   const groups = terminalGroups(
     savedGroups,
@@ -208,6 +210,18 @@ export function TerminalPane({
             disabled={!connected || busy || !shellReady}
             onPress={() => openShell()}
           />
+          {active && view && (
+            <Action
+              secondary
+              label={view.seen ? uiText('Mark read') : uiText('Mark unread')}
+              disabled={!connected || busy}
+              onPress={() =>
+                act(() =>
+                  callEffect('/api/terminals/update', { id: active.id, view }, responses.terminal),
+                )
+              }
+            />
+          )}
           {active && !active.exited && (
             <Action
               secondary
@@ -350,6 +364,7 @@ export function TerminalPane({
                   readOnly={!!terminal.exited}
                   reconnectToken={reconnectTokens[terminal.id]}
                   visible={visible}
+                  covered={!!renameTarget || !!closing}
                 />
               </View>
             ))}

@@ -13,6 +13,8 @@ import { Action } from '../../ui/controls/action'
 import { Choice } from '../../ui/controls/choice'
 import { Field } from '../../ui/controls/field'
 import { useTheme } from '../../ui/theme'
+import type { DraftPersistence } from '../../runtime/state/detail-drafts'
+import { DraftStorageNotice } from '../../ui/content/draft-storage-notice'
 
 export type ThreadFileDraft = {
   path: string
@@ -37,10 +39,12 @@ export function TaskFiles({
   task,
   draft,
   onDraftChange,
+  draftPersistence,
 }: {
   task: Task
   draft: ThreadFileDraft | null
   onDraftChange: (draft: ThreadFileDraft | null) => void
+  draftPersistence?: DraftPersistence
 }) {
   const uiText = useInterfaceText()
 
@@ -297,6 +301,7 @@ export function TaskFiles({
               {saveError}
             </Text>
           )}
+          {editing && <DraftStorageNotice persistence={draftPersistence} />}
           {!file && connected && !editing && !sheetPreview && (
             <Text style={styles.muted}>
               <InterfaceText>{'Loading file…'}</InterfaceText>

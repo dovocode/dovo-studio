@@ -6,6 +6,7 @@ type Event = { senderFrame: { url: string }; sender: { mainFrame: { url: string 
 const f = vi.hoisted(() => ({
   directory: '',
   available: true,
+  failWrites: false,
   handlers: new Map<string, (event: Event, ...args: unknown[]) => Promise<unknown>>(),
 }))
 vi.mock('./runtime-data-directory.js', () => ({ desktopRuntimeDirectory: () => f.directory }))
@@ -17,7 +18,10 @@ vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => f.available,
     getSelectedStorageBackend: () => 'keychain',
-    encryptString: (value: string) => Buffer.from('encrypted:' + value),
+    encryptString: (value: string) => {
+      if (f.failWrites) throw new Error('Keychain write failed')
+      return Buffer.from('encrypted:' + value)
+    },
     decryptString: (value: Buffer) => value.toString().slice('encrypted:'.length),
   },
 }))
@@ -25,6 +29,7 @@ import { registerAccountStorage } from './account-storage.js'
 beforeEach(async () => {
   f.directory = await mkdtemp(join(tmpdir(), 'dovo-account-'))
   f.available = true
+  f.failWrites = false
   registerAccountStorage('/app/index.html')
 })
 afterEach(async () => {
@@ -101,4 +106,22 @@ it('protects sharing key IPC with renderer, identity, format and keychain valida
   expect(() => save('a'.repeat(64), '')).toThrow('Invalid sharing identity')
   f.available = false
   expect(() => save('a'.repeat(64))).toThrow('Unlock your system keychain')
+})
+it('reports a failed account or sharing key write to its caller only', async () => {
+  const origin = 'https://connect.company.test',
+    key = 'a'.repeat(64)
+  const readKey = () => f.handlers.get('sharing-key:read')!(event(), origin, 'owner')
+  const saveKey = () => f.handlers.get('sharing-key:write')!(event(), key, origin, 'owner')
+  await write('a'.repeat(43))
+  f.failWrites = true
+  await expect(write('b'.repeat(43))).rejects.toThrow('Keychain write failed')
+  expect(await read()).toBe('a'.repeat(43))
+  expect(await readKey()).toBeNull()
+  await expect(saveKey()).rejects.toThrow('Keychain write failed')
+  expect(await read()).toBe('a'.repeat(43))
+  expect(await readKey()).toBeNull()
+  f.failWrites = false
+  await saveKey()
+  expect(await readKey()).toBe(key)
+  expect(await readdir(f.directory)).toHaveLength(2)
 })

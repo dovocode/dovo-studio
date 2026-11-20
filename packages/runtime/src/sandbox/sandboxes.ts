@@ -7,7 +7,7 @@ import {
   rmSync,
   type WriteStream,
 } from 'node:fs'
-import { copyFile, lstat, mkdir, readFile, realpath, rm } from 'node:fs/promises'
+import { copyFile, lstat, mkdir, readFile, readdir, realpath, rm } from 'node:fs/promises'
 import { connect, createServer, type Server } from 'node:net'
 import { homedir } from 'node:os'
 import { basename, dirname, join, resolve } from 'node:path'
@@ -47,12 +47,16 @@ import { gitMounts, resolveGitLayout, verifyGitLayout } from './git-mounts.js'
 import { hostCommandWritable } from './host-commands.js'
 import { SandboxRecords, type RecordedCheckout } from './sandbox-records.js'
 import type { PinnedGitLayout } from '../scm/git/hardened-git.js'
+import type { WorkspaceStore } from '../storage/workspace.js'
 
 const MISE_VOLUME = 'dovo-sandbox-mise'
 const LABEL = 'dev.dovo.sandbox'
 /** Provider processes release after two idle minutes (warm-processes.ts). A container waits
  * longer, so a quick follow-up turn, terminal or warm release does not pay a restart. */
 const SANDBOX_IDLE_STOP_MS = 10 * 60_000
+/** Cleanup commands run during startup and shutdown. A hung container CLI must not hold either. */
+const CLEANUP_TIMEOUT_MS = 60_000
+const SHUTTING_DOWN = 'The runtime is shutting down'
 const TOOLS_PATH = '/opt/dovo/lib/agent-tools.mjs'
 const TOOLS_COMMAND = '/opt/dovo/lib/dovo-task-tools'
 
@@ -85,6 +89,9 @@ export type SandboxesOptions = {
   keepThread: (taskId: string) => boolean
   /** Thread exists, also when archived. Others lose their recorded Git layout on reconcile. */
   threadExists?: (taskId: string) => boolean
+  /** Threads that keep their private folders. Reconcile removes the folders of other threads,
+   * which outlive their container when removal fails after an archive or deletion commits. */
+  keptThreads?: () => readonly string[]
   acpDistribution?: (installationId: string) => Promise<AcpSandboxDistribution>
   runner?: CliRunner
   detect?: () => Promise<{ cli?: ContainerCli; message?: string }>
@@ -150,6 +157,30 @@ async function defaultHostVersion(command: string, env: Record<string, string>) 
     return undefined
   }
 }
+/**
+ * Which threads keep their sandbox through startup cleanup. A task row that the runtime kept but
+ * could not load still owns its container, private files and Git records: its archive state is
+ * unknown, so its container only stops. Cleanup removes them after the task is deleted.
+ */
+export function sandboxThreadRetention(
+  store: Pick<WorkspaceStore, 'get' | 'unreadableTaskIds'>,
+): Pick<SandboxesOptions, 'keepThread' | 'threadExists' | 'keptThreads'> {
+  const unreadable = (id: string) => store.unreadableTaskIds().includes(id)
+  return {
+    keepThread: (id) =>
+      unreadable(id) ||
+      store.get().tasks.some((task) => task.id === id && !task.archived && !task.archivedAt),
+    threadExists: (id) => unreadable(id) || store.get().tasks.some((task) => task.id === id),
+    keptThreads: () => [
+      ...store.unreadableTaskIds(),
+      ...store
+        .get()
+        .tasks.filter((task) => !task.archived && !task.archivedAt)
+        .map((task) => task.id),
+    ],
+  }
+}
+
 /** One container per sandboxed thread: created lazily, reused across turns and runtime
  * restarts, stopped when idle and removed with its thread. */
 export class Sandboxes {
@@ -157,9 +188,19 @@ export class Sandboxes {
   private cli?: ContainerCli
   private unavailable?: string
   private detecting?: Promise<void>
+  /** Startup cleanup in progress. New sandboxes wait for it. */
+  private reconciling?: Promise<void>
+  /** Idle stops in progress. Shutdown waits for them. */
+  private background = new Set<Promise<void>>()
+  private closed = false
+  private disposing?: Promise<void>
+  /** Resolves when shutdown starts, so a sandbox start stops waiting for startup cleanup. */
+  private shutdownStarted = () => {}
+  private readonly shutdown = new Promise<void>((resolve) => (this.shutdownStarted = resolve))
   private threads = new Map<string, ContainerSandboxThreadStatus>()
   private containers = new Map<string, Container>()
   private pending = new Map<string, Promise<SandboxSession>>()
+  private removals = new Map<string, Promise<void>>()
   private builds = new Map<string, Promise<string>>()
   private installs = new Map<string, Promise<string>>()
   private versions = new Map<string, { value?: string; expires: number }>()
@@ -411,11 +452,33 @@ export class Sandboxes {
   }
 
   ensure(request: SandboxRequest): Promise<SandboxSession> {
+    // A removal after an archive or deletion may still run. Start new work after it, so the
+    // old cleanup never removes the new container or its folders.
+    const removing = this.removals.get(request.taskId)
+    if (removing) return removing.then(() => this.ensure(request))
     const running = this.pending.get(request.taskId)
     if (running) return running.then(() => this.ensure(request))
     const work = this.prepare(request).finally(() => this.pending.delete(request.taskId))
     this.pending.set(request.taskId, work)
     return work
+  }
+
+  /** Startup cleanup stops and removes containers from the previous runtime process. A sandbox
+   * admitted during that cleanup could lose its container while Dovo still uses it. */
+  private async admit(request: SandboxRequest) {
+    this.checkOpen(request)
+    if (!this.reconciling) return
+    request.progress?.('Waiting for sandbox startup cleanup')
+    this.setThread(request.taskId, 'preparing', 'Waiting for sandbox startup cleanup')
+    // Reconcile reports its own failure. After it ends, no cleanup runs against this sandbox.
+    await Promise.race([this.reconciling.catch(() => undefined), this.shutdown])
+    this.checkOpen(request)
+  }
+
+  /** Stop a sandbox start when its caller aborts or the runtime shuts down. */
+  private checkOpen(request: SandboxRequest) {
+    if (this.closed) throw new Error(SHUTTING_DOWN)
+    request.signal?.throwIfAborted()
   }
 
   private async prepare(request: SandboxRequest): Promise<SandboxSession> {
@@ -425,6 +488,7 @@ export class Sandboxes {
       this.setThread(taskId, 'preparing', text)
     }
     try {
+      await this.admit(request)
       await this.detect()
       const cli = this.cli
       if (!cli) throw new Error(this.unavailable ?? sandboxSetupMessage)
@@ -436,7 +500,7 @@ export class Sandboxes {
       }
       progress('Preparing the sandbox image')
       const image = await this.image(cli, taskId, progress)
-      request.signal?.throwIfAborted()
+      this.checkOpen(request)
       const commands = new Map<string, string[]>()
       const harness = agent ? harnessProfiles[agent.provider] : undefined
       const env = agent?.env ?? {}
@@ -458,7 +522,7 @@ export class Sandboxes {
       // install (Grok, Muse) resolve through the container PATH, for example from mise.toml.
       for (const name of harness?.executables ?? [])
         commands.set(name, [harness?.tool ? `/opt/dovo/harness/${name}` : name])
-      request.signal?.throwIfAborted()
+      this.checkOpen(request)
       const editable = (request.linked ?? []).flatMap((item) =>
         item.access === 'edit' ? [item.path] : [],
       )
@@ -485,6 +549,8 @@ export class Sandboxes {
       ]
       await this.recordWritable(taskId, mounts)
       const container = await this.container(cli, image, request, mounts, progress)
+      // No socket or session after shutdown starts. The next startup stops this container.
+      this.checkOpen(request)
       if (this.socketTransport) await this.socket(taskId, state)
       await this.setup(cli, container, request, installed, progress)
       this.setThread(taskId, 'running', container.projectWarning)
@@ -551,9 +617,11 @@ export class Sandboxes {
       this.leases.delete(taskId)
       const timer = setTimeout(() => {
         this.idle.delete(taskId)
-        void this.stopIdle(taskId).catch((error: unknown) =>
+        const stop = this.stopIdle(taskId).catch((error: unknown) =>
           console.error('Could not stop idle sandbox', taskId, error),
         )
+        this.background.add(stop)
+        void stop.then(() => this.background.delete(stop))
       }, this.options.idleStopMs ?? SANDBOX_IDLE_STOP_MS)
       timer.unref()
       this.idle.set(taskId, timer)
@@ -562,9 +630,18 @@ export class Sandboxes {
 
   private async stopIdle(taskId: string) {
     const container = this.containers.get(taskId)
-    if (!container || !this.cli || this.leases.get(taskId) || this.pending.has(taskId)) return
+    if (
+      this.closed ||
+      !container ||
+      !this.cli ||
+      this.leases.get(taskId) ||
+      this.pending.has(taskId)
+    )
+      return
     this.sessions.delete(taskId)
-    await runChecked(this.runner, this.cli.command, ['stop', '--time', '5', container.name])
+    await runChecked(this.runner, this.cli.command, ['stop', '--time', '5', container.name], {
+      timeout: CLEANUP_TIMEOUT_MS,
+    })
     container.prepared = false
     container.harnesses.clear()
     this.setThread(taskId, 'stopped')
@@ -1015,8 +1092,38 @@ export class Sandboxes {
     this.sockets.set(taskId, server)
   }
 
-  /** Remove a thread's container and state. Used when the thread is archived or deleted. */
-  async remove(taskId: string) {
+  /** Removes private state and harness folders whose thread is gone or archived. */
+  private async pruneFolders(kept: readonly string[]) {
+    const names = new Set(kept.map((taskId) => hash(taskId).slice(0, 16)))
+    for (const folder of ['threads', 'homes']) {
+      const parent = join(this.options.root, folder)
+      const entries = await readdir(parent).catch((error: unknown) => {
+        if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return []
+        throw error
+      })
+      for (const name of entries)
+        if (/^[0-9a-f]{16}$/.test(name) && !names.has(name) && !this.closed)
+          await rm(join(parent, name), { recursive: true, force: true }).catch((error: unknown) =>
+            console.error('Could not remove sandbox folders of a removed thread', name, error),
+          )
+    }
+  }
+
+  /** Remove a thread's container and state. Used after an archive or deletion commits. A
+   * sandbox start for the same thread waits until the removal ends. */
+  remove(taskId: string): Promise<void> {
+    const work = this.removeNow(taskId)
+    const settled = work.then(
+      () => undefined,
+      () => undefined,
+    )
+    this.removals.set(taskId, settled)
+    void settled.then(() => {
+      if (this.removals.get(taskId) === settled) this.removals.delete(taskId)
+    })
+    return work
+  }
+  private async removeNow(taskId: string) {
     clearTimeout(this.idle.get(taskId))
     this.idle.delete(taskId)
     this.sockets.get(taskId)?.close()
@@ -1026,11 +1133,11 @@ export class Sandboxes {
     this.leases.delete(taskId)
     if (this.threads.delete(taskId)) this.changed()
     if (this.cli) {
-      const result = await this.runner(this.cli.command, [
-        'rm',
-        '--force',
-        this.containerName(taskId),
-      ])
+      const result = await this.runner(
+        this.cli.command,
+        ['rm', '--force', this.containerName(taskId)],
+        { timeout: CLEANUP_TIMEOUT_MS },
+      )
       if (result.code !== 0 && !/No such container|no container with name/i.test(result.stderr))
         throw new Error(`Could not remove the sandbox: ${tail(result.stderr, 3)}`)
     }
@@ -1039,23 +1146,40 @@ export class Sandboxes {
   }
 
   /** On startup: remove containers whose thread is gone or archived, and stop the rest. Their
-   * processes belonged to the previous runtime process. */
-  async reconcile() {
+   * processes belonged to the previous runtime process. `ensure` waits until this finishes, so
+   * start it before the runtime accepts work. After `dispose` starts, it runs no further command
+   * and `dispose` waits for the current one. */
+  reconcile(): Promise<void> {
+    if (this.closed) return Promise.resolve()
+    return (this.reconciling ??= this.reconcileContainers().finally(() => {
+      this.reconciling = undefined
+    }))
+  }
+
+  private async reconcileContainers() {
     if (this.options.threadExists) this.records.prune(this.options.threadExists)
+    if (this.options.keptThreads) await this.pruneFolders(this.options.keptThreads())
     // A runtime that never ran a sandbox has nothing to reconcile and runs no container CLI.
     if (!existsSync(join(this.options.root, 'threads'))) return
     await this.detect()
     const cli = this.cli
-    if (!cli) return
-    const listed = await runChecked(this.runner, cli.command, [
-      'ps',
-      '--all',
-      '--filter',
-      `label=${LABEL}.runtime=${this.options.runtimeId}`,
-      '--format',
-      `{{.Names}}\t{{.Label "${LABEL}.thread"}}\t{{.State}}`,
-    ])
+    if (!cli || this.closed) return
+    const listed = await runChecked(
+      this.runner,
+      cli.command,
+      [
+        'ps',
+        '--all',
+        '--filter',
+        `label=${LABEL}.runtime=${this.options.runtimeId}`,
+        '--format',
+        `{{.Names}}\t{{.Label "${LABEL}.thread"}}\t{{.State}}`,
+      ],
+      { timeout: CLEANUP_TIMEOUT_MS },
+    )
     for (const line of listed.stdout.split('\n')) {
+      // The next runtime process repeats the cleanup that this one leaves.
+      if (this.closed) return
       const [name, taskId, state] = line.trim().split('\t')
       if (!name || !taskId) continue
       if (!this.options.keepThread(taskId)) {
@@ -1065,18 +1189,32 @@ export class Sandboxes {
         continue
       }
       if (state === 'running')
-        await runChecked(this.runner, cli.command, ['stop', '--time', '5', name]).catch(
-          (error: unknown) =>
-            console.error('Could not stop sandbox from a previous runtime', name, error),
+        await runChecked(this.runner, cli.command, ['stop', '--time', '5', name], {
+          timeout: CLEANUP_TIMEOUT_MS,
+        }).catch((error: unknown) =>
+          console.error('Could not stop sandbox from a previous runtime', name, error),
         )
       this.setThread(taskId, 'stopped')
     }
   }
 
-  async dispose() {
-    for (const timer of this.idle.values()) clearTimeout(timer)
-    this.idle.clear()
-    for (const server of this.sockets.values()) server.close()
-    this.sockets.clear()
+  /**
+   * Stop admitting sandboxes and wait for cleanup that this runtime started: startup reconcile and
+   * idle stops. Each of their commands has a timeout. The runtime calls this before SQLite closes,
+   * so a replacement runtime never runs its own cleanup beside this one. Containers keep running;
+   * the next runtime's startup cleanup stops them. Sandbox starts belong to their turns and
+   * terminals, which stop at their next check.
+   */
+  dispose(): Promise<void> {
+    this.disposing ??= (async () => {
+      this.closed = true
+      this.shutdownStarted()
+      for (const timer of this.idle.values()) clearTimeout(timer)
+      this.idle.clear()
+      for (const server of this.sockets.values()) server.close()
+      this.sockets.clear()
+      await Promise.allSettled([this.reconciling, ...this.background])
+    })()
+    return this.disposing
   }
 }

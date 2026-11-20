@@ -113,10 +113,13 @@ provider-version checks and desktop quit-shortcut controls. `$` still finds skil
 skills are disabled. The composer stores and sends plain Markdown.
 
 Reduced background activity slows overview refreshes to two minutes. Balanced keeps the existing
-30-second visible-window cadence; input preview retains its faster refresh. Provider diagnostics
-inspect the selected computer; SDK updates remain part of Dovo updates. The native quit menu remains
-available when the shortcut is disabled. Hold mode waits 600 ms or accepts two presses within 500
-ms.
+30-second visible-window cadence; input preview retains its faster refresh. On iOS, Face ID, Control
+Center, the app switcher and permission prompts make the app inactive. The live connection, outbox
+retries and refresh schedule continue through that state. They stop when the app goes to the
+background. With automatic refresh, a return from the background refreshes other computers once.
+Drafts and the offline cache still save at each interruption. Provider diagnostics inspect the
+selected computer; SDK updates remain part of Dovo updates. The native quit menu remains available
+when the shortcut is disabled. Hold mode waits 600 ms or accepts two presses within 500 ms.
 
 Agents & tools includes the per-computer Titles & dictation editor. Version and release-track
 controls use the existing desktop update bridge. Mobile-specific driving, speech, widgets and

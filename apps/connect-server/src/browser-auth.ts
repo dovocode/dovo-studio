@@ -61,23 +61,28 @@ export function browserAuth(
       const login = browserLogin()
       if (!login.state || url.searchParams.get('state') !== login.state)
         throw new RequestError(400, 'Sign-in request did not match')
-      if (url.searchParams.has('error'))
-        throw new RequestError(400, 'Sign-in was cancelled. Return to Studio and try again.')
-      const code = url.searchParams.get('code')
-      if (!code || code.length > 4096) throw new RequestError(400, 'Missing sign-in code')
       // Consume browser state before the network exchange to reject concurrent callback replay.
       const state = login.state
       login.state = undefined
       store.saveLogin(login)
-      const organization = options.organizations?.find((item) => item.id === login.organization)
-      if (login.organization && !organization)
-        throw new RequestError(403, 'Organization sign-in is unavailable')
-      const user = await (organization?.provider ?? options).exchange(
-        { ...login, state },
-        code,
-        req.headers,
-      )
-      store.approve(login, user)
+      try {
+        if (url.searchParams.has('error'))
+          throw new RequestError(400, 'Sign-in was cancelled. Return to Studio and try again.')
+        const code = url.searchParams.get('code')
+        if (!code || code.length > 4096) throw new RequestError(400, 'Missing sign-in code')
+        const organization = options.organizations?.find((item) => item.id === login.organization)
+        if (login.organization && !organization)
+          throw new RequestError(403, 'Organization sign-in is unavailable')
+        const user = await (organization?.provider ?? options).exchange(
+          { ...login, state },
+          code,
+          req.headers,
+        )
+        store.approve(login, user)
+      } catch (error) {
+        store.cancelLogin(login)
+        throw error
+      }
       res.setHeader('Set-Cookie', `${cookieName}=; Max-Age=0; ${cookieFlags}`)
       html(res, 200, connectSuccess(login.artifactsOrigin))
       return true

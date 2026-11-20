@@ -24,6 +24,8 @@ const lifecycle = mutableStruct({
   viewerCanEnableAutoMerge: Schema.Boolean,
   viewerCanDisableAutoMerge: Schema.Boolean,
   autoMergeRequest: Schema.NullOr(mutableStruct({ mergeMethod: Schema.String })),
+  /** Null when the target branch does not require a review. Undefined when GitHub omits it. */
+  reviewDecision: Schema.optional(Schema.NullOr(Schema.String)),
 })
 
 export async function githubLifecycle(json: GithubJSON, repo: GithubLocation, number: number) {
@@ -35,7 +37,7 @@ export async function githubLifecycle(json: GithubJSON, repo: GithubLocation, nu
     await githubGraphql(
       json,
       repo,
-      `query($owner:String!,$name:String!,$number:Int!,$head:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid state isDraft mergeStateStatus isInMergeQueue viewerCanUpdate viewerCanUpdateBranch baseRef{compare(headRef:$head){behindBy}} viewerCanEnableAutoMerge viewerCanDisableAutoMerge autoMergeRequest{mergeMethod}}}}`,
+      `query($owner:String!,$name:String!,$number:Int!,$head:String!){repository(owner:$owner,name:$name){pullRequest(number:$number){id headRefOid state isDraft mergeStateStatus isInMergeQueue viewerCanUpdate viewerCanUpdateBranch baseRef{compare(headRef:$head){behindBy}} viewerCanEnableAutoMerge viewerCanDisableAutoMerge autoMergeRequest{mergeMethod} reviewDecision}}}`,
       [
         '-f',
         `owner=${owner}`,

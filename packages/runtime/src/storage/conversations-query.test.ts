@@ -67,6 +67,24 @@ it('preserves substring search through trigram narrowing, quotes, wildcards and 
   }
 })
 
+it('omits hits outside the scope when there is only one matching thread', () => {
+  const only = task('only', ['needle one', 'needle two'])
+  const { db, conversations } = setup([only])
+  try {
+    expect(
+      conversations.search([only.id], 'needle', 50, undefined, new Set(['elsewhere'])),
+    ).toEqual({
+      taskIds: [only.id],
+      hits: [],
+    })
+    expect(conversations.search([only.id], 'needle', 50, undefined, new Set([only.id]))).toEqual(
+      searchTaskMessages([only], 'needle'),
+    )
+  } finally {
+    db.close()
+  }
+})
+
 it('matches original JSON strings for malformed UTF-16, replacement characters and NULs', () => {
   const tasks = [
     task('one', [

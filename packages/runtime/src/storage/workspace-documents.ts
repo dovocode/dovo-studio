@@ -45,6 +45,19 @@ export interface StoredWorkspace {
   /** Serialized history summaries of version 3 tasks, where present. */
   historySummaries: ReadonlyMap<string, string>
 }
+/** IDs of version 1 tasks that the runtime could not load. Version 1 migration keeps those tasks
+ * only inside `workspace-before-history-v2`, so this list keeps their files owned. */
+const legacyUnreadableId = 'workspace-v1-unreadable-tasks'
+/** IDs of tasks in a version 1 document that fail validation. Tasks without an ID own nothing. */
+function unreadableVersion1Tasks(workspace: unknown) {
+  const parsed = decodeResult(mutableStruct({ tasks: mutableArray(Schema.Unknown) }), workspace)
+  if (!parsed.success) return []
+  return parsed.data.tasks.flatMap((task) => {
+    if (decodeResult(taskSchema, task).success) return []
+    const identity = decodeResult(mutableStruct({ id: Schema.String }), task)
+    return identity.success && identity.data.id ? [identity.data.id] : []
+  })
+}
 const corrupt = () =>
   new Error(
     'The workspace history manifest is invalid. Restore the runtime database from a backup.',
@@ -65,9 +78,64 @@ export class WorkspaceDocuments {
     { value: string; messages: number; turns: number }
   >()
   private checkedLegacyRecovery = false
+  private version1Unreadable: string[] = []
+  /** Set until the version 1 list is saved in a committed write. */
+  private version1Pending = false
   committed() {
     this.recoveredTasks.clear()
     this.checkedLegacyRecovery = false
+    this.version1Pending = false
+  }
+  /** IDs of stored task rows that the runtime kept but could not load. */
+  unreadable(): readonly string[] {
+    return this.unreadableTaskIds
+  }
+  /** IDs of version 1 tasks that the runtime could not load, also after migration. The list never
+   * shrinks; callers ignore an ID that is loaded again or deleted. */
+  unreadableVersion1(): readonly string[] {
+    return this.version1Unreadable
+  }
+  /** Version 1 migration kept unreadable tasks only in its backup. Find them in the current
+   * document, the saved list, or once in the backup of a runtime that migrated without a list. */
+  private findVersion1Unreadable(stored: StoredWorkspace) {
+    if (stored.version === 1) {
+      this.version1Unreadable = unreadableVersion1Tasks(stored.workspace)
+      this.version1Pending = true
+      return
+    }
+    const saved = decode(
+      valueSchema,
+      this.db.prepare('SELECT value FROM documents WHERE id = ?').get(legacyUnreadableId),
+    )
+    if (saved) {
+      let value: unknown
+      try {
+        value = JSON.parse(saved.value)
+      } catch {
+        value = undefined
+      }
+      const ids = decodeResult(mutableArray(Schema.String), value)
+      if (ids.success) {
+        this.version1Unreadable = ids.data
+        return
+      }
+      // The backup holds the same facts; build the list again from it.
+    }
+    const backup = decode(
+      valueSchema,
+      this.db.prepare("SELECT value FROM documents WHERE id = 'workspace-before-history-v2'").get(),
+    )
+    if (!backup) return
+    let parsed: unknown
+    try {
+      parsed = JSON.parse(backup.value)
+    } catch {
+      throw new Error(
+        'The version 1 workspace backup is not valid JSON. Restore it from a runtime backup.',
+      )
+    }
+    this.version1Unreadable = unreadableVersion1Tasks(parsed)
+    this.version1Pending = true
   }
   constructor(private readonly db: Database.Database) {
     db.exec(`CREATE TABLE IF NOT EXISTS workspace_tasks (
@@ -78,6 +146,7 @@ export class WorkspaceDocuments {
   }
   preserveUnreadableTasks(stored: StoredWorkspace | undefined, tasks: readonly { id: string }[]) {
     if (!stored) return
+    this.findVersion1Unreadable(stored)
     const loaded = new Set(tasks.map((task) => task.id))
     if (stored.version === 3)
       this.unreadableTaskIds = [...stored.taskRows.keys()].filter((id) => !loaded.has(id))
@@ -291,6 +360,11 @@ export class WorkspaceDocuments {
       this.db
         .prepare('INSERT INTO workspace_tasks VALUES (?, ?, ?, ?) ON CONFLICT(task_id) DO NOTHING')
         .run(id, row.value, row.messages, row.turns)
+    // Saved with the migration that moves the version 1 document into its backup.
+    if (this.version1Pending)
+      this.db
+        .prepare('INSERT OR REPLACE INTO documents VALUES (?, ?)')
+        .run(legacyUnreadableId, JSON.stringify(this.version1Unreadable))
     if (this.checkedLegacyRecovery)
       this.db
         .prepare("INSERT OR IGNORE INTO documents VALUES ('workspace-v2-recovery-checked', 'done')")

@@ -38,6 +38,7 @@ import {
 import {
   ACCOUNT_DIRECTORY_URL,
   connectServiceOrigin,
+  accountDeletionPendingSchema,
   accountDirectorySchema,
   accountLoginSchema,
   type AccountDirectory,
@@ -57,6 +58,9 @@ export type AccountState = {
   publicationOrigin: string
 }
 export type PublishedArtifact = { publicationId: string; url: string; manageUrl: string }
+const durableDeletionMessage =
+  'Account deletion has started. Connect finishes it when the identity service is available.'
+const legacyDeletionMessage = 'Account deletion has started. Retry to finish deleting your account.'
 class AccountError extends Error {
   constructor(
     readonly status: number,
@@ -68,6 +72,8 @@ class AccountError extends Error {
 export class AccountClient {
   readonly sharing: SharingClient
   private token: string | null = null
+  /** Connect said it stores the pending deletion and finishes it without this session. */
+  private durableDeletion = false
   private controller: AbortController | null = null
   private listeners = new Set<() => void>()
   private state: AccountState = {
@@ -202,7 +208,7 @@ export class AccountClient {
     return request
   }
   artifactManagementUrl = async (publicationId: string, expectedOrigin: string) => {
-    const grant = await this.artifactGrant(expectedOrigin)
+    const grant = await this.artifactGrant(expectedOrigin, false)
     return expectedOrigin + '/manage/' + publicationId + '#session=' + grant
   }
   artifactAccessRequest = async (origin: string, path: string, method = 'GET', data?: unknown) => {
@@ -230,13 +236,19 @@ export class AccountClient {
       throw new Error('Could not manage the existing hosted artifact. Refresh and try again.')
     return (await response.json()) as unknown
   }
-  private artifactGrant = async (expectedOrigin: string) => {
+  private artifactGrant = async (expectedOrigin: string, reuse = true) => {
     const token = this.token
     if (!token || !this.state.directory || this.state.deletionPending)
       throw new Error('Sign in to manage hosted artifacts')
     const grant = decode(
       artifactGrantSchema,
-      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+      await this.request(
+        reuse ? '/v1/artifacts/session?reuse=1' : '/v1/artifacts/session',
+        'POST',
+        undefined,
+        undefined,
+        token,
+      ),
     )
     if (
       this.token !== token ||
@@ -325,7 +337,7 @@ export class AccountClient {
     )
     const grant = decode(
       artifactGrantSchema,
-      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+      await this.request('/v1/artifacts/session?reuse=1', 'POST', undefined, undefined, token),
     )
     if (
       artifactServiceOrigin(writer.origin) !== expectedOrigin ||
@@ -393,7 +405,7 @@ export class AccountClient {
       throw new Error('Sign in to stop the hosted feed')
     const grant = decode(
       artifactGrantSchema,
-      await this.request('/v1/artifacts/session', 'POST', undefined, undefined, token),
+      await this.request('/v1/artifacts/session?reuse=1', 'POST', undefined, undefined, token),
     )
     if (
       artifactServiceOrigin(grant.origin) !== expectedOrigin ||
@@ -549,28 +561,44 @@ export class AccountClient {
         body: body ? JSON.stringify(body) : undefined,
         signal: controller.signal,
       })
-      if (response.status === 409 && (path === '/v1/account' || path === '/v1/servers'))
+      // Older Connect versions send 409 without `deletion`. They finish a started deletion only
+      // when the client retries with its session, so do not tell the user that Connect finishes.
+      const deletion =
+        response.status === 409 && (path === '/v1/account' || path === '/v1/servers')
+          ? Schema.is(accountDeletionPendingSchema)(await response.json().catch(() => null))
+            ? 'durable'
+            : 'legacy'
+          : undefined
+      if (deletion && token && this.token === token && !signal?.aborted) {
+        this.durableDeletion = deletion === 'durable'
         this.set({ deletionPending: true })
+      }
       if (!response.ok)
         throw new AccountError(
           response.status,
-          path === '/v1/sharing-recovery'
-            ? response.status === 404 || response.status === 405
-              ? 'Update Connect to enable account-managed sharing recovery.'
-              : response.status === 401
-                ? 'Sign in again to restore sharing access.'
-                : response.status === 409
-                  ? 'Sharing recovery changed. Refresh and try again.'
-                  : 'Account sharing recovery is unavailable. Check Connect and try again.'
-            : /^\/v1\/(?:artifacts|sharing)\//.test(path)
-              ? response.status === 401
-                ? 'Sign in to use hosted artifact sharing.'
-                : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'
-              : response.status === 401
-                ? 'Sign in again to see your computers.'
-                : response.status === 409
-                  ? 'Account deletion has started. Retry to finish deleting your account.'
-                  : 'Account service is unavailable. Please try again.',
+          path === '/v1/login' && response.status === 401
+            ? 'Sign-in did not finish. Start again.'
+            : path === '/v1/sharing-recovery'
+              ? response.status === 404 || response.status === 405
+                ? 'Update Connect to enable account-managed sharing recovery.'
+                : response.status === 401
+                  ? 'Sign in again to restore sharing access.'
+                  : response.status === 409
+                    ? 'Sharing recovery changed. Refresh and try again.'
+                    : 'Account sharing recovery is unavailable. Check Connect and try again.'
+              : /^\/v1\/(?:artifacts|sharing)\//.test(path)
+                ? response.status === 401
+                  ? 'Sign in to use hosted artifact sharing.'
+                  : response.status === 429
+                    ? 'Too many active sharing sessions. Try again later.'
+                    : 'Hosted artifact sharing is not configured or is unavailable on this Connect broker.'
+                : response.status === 401
+                  ? 'Sign in again to see your computers.'
+                  : deletion === 'durable'
+                    ? durableDeletionMessage
+                    : deletion === 'legacy'
+                      ? legacyDeletionMessage
+                      : 'Account service is unavailable. Please try again.',
         )
       const value: unknown = response.status === 204 ? null : await response.json()
       return value
@@ -594,6 +622,7 @@ export class AccountClient {
   }
   private setToken(token: string | null) {
     if (token !== this.token) {
+      this.durableDeletion = false
       this.publicationsRevision++
       this.publicationsRequest = undefined
       this.set({
@@ -627,12 +656,8 @@ export class AccountClient {
       this.set({ directory })
       return directory
     } catch (error) {
-      if (
-        !signal?.aborted &&
-        error instanceof AccountError &&
-        error.status === 401 &&
-        this.token === token
-      ) {
+      if (signal?.aborted || this.token !== token) throw new Error('Account refresh cancelled')
+      if (error instanceof AccountError && error.status === 401) {
         await this.storage.write(null, this.origin)
         if (this.token === token) {
           this.setToken(null)
@@ -708,7 +733,7 @@ export class AccountClient {
   }
   signOut = () =>
     this.work(async () => {
-      await this.request('/v1/session', 'DELETE')
+      const token = this.token
       await this.storage.write(null, this.origin)
       this.setToken(null)
       this.set({
@@ -718,10 +743,31 @@ export class AccountClient {
         publications: null,
         publicationError: '',
       })
+      if (!token) return
+      try {
+        await this.request('/v1/session', 'DELETE', undefined, undefined, token)
+      } catch (error) {
+        if (!(error instanceof AccountError && error.status === 401))
+          throw new Error(
+            'Signed out on this device. Connect could not confirm revocation of the server session.',
+            { cause: error },
+          )
+      }
     })
   deleteAccount = () =>
     this.work(async () => {
-      await this.request('/v1/account', 'DELETE', { confirm: 'DELETE' })
+      const pending = this.state.deletionPending
+      const durable = pending && this.durableDeletion
+      let unconfirmed = false
+      try {
+        await this.request('/v1/account', 'DELETE', { confirm: 'DELETE' })
+      } catch (error) {
+        if (!(pending && error instanceof AccountError && error.status === 401)) throw error
+        // A current Connect keeps the started deletion and finishes it without this session, so
+        // a 401 leaves nothing to retry. An older Connect needs this session to finish. Its 401
+        // means another device finished or the session expired first, and it cannot tell which.
+        unconfirmed = !durable
+      }
       this.setToken(null)
       this.set({
         directory: null,
@@ -732,6 +778,10 @@ export class AccountClient {
         publicationError: '',
       })
       await this.storage.write(null, this.origin)
+      if (unconfirmed)
+        throw new Error(
+          'Connect ended this session before it confirmed account deletion. This Connect version cannot finish the deletion without a session. Ask the Connect operator to check it.',
+        )
     })
   subscribePush = async (registration: ManagedPushSubscription) => {
     if (!this.token || !this.state.directory)

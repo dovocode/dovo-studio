@@ -31,6 +31,8 @@ import { transferPath, projectTransferRemote } from './project-transfer-files.js
 import { runClientEffect } from '@dovo/client-runtime'
 import { listWorktreesEffect, worktreeChoicesEffect } from '../git/worktrees.js'
 import { TaskCheckout } from '../tasks/task-checkout.js'
+import { backupRuntimeDatabase } from '../../storage/backup.js'
+import { restoreRuntimeBackup } from '../../storage/backups.js'
 vi.mock('node:fs/promises', async (importOriginal) => {
   const files = await importOriginal<typeof import('node:fs/promises')>()
   return { ...files, rm: vi.fn<typeof files.rm>(files.rm) }
@@ -1486,3 +1488,236 @@ it('finishes a lost activation reply after the active destination was deleted, k
   expect(sourceDeletion.status).toBe(200)
   expect(source.services.store.get().tasks).toHaveLength(0)
 })
+it('commits the source lock with its transfer request and releases a lock without one on restart', async () => {
+  const { root, source, task, input } = await handoffFixture(false, true)
+  source.services.db.exec(
+    "CREATE TRIGGER fail_transfer_insert BEFORE INSERT ON project_transfers BEGIN SELECT RAISE(ABORT, 'Injected disk fault'); END",
+  )
+  expect((await source.post('start', input)).status).toBeGreaterThanOrEqual(500)
+  expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
+  expect(source.services.projectTransfers.list()).toEqual([])
+  source.services.db.exec('DROP TRIGGER fail_transfer_insert')
+  // A runtime before this fix could commit the lock alone. Restart releases it.
+  source.services.store.updateTask(task.id, (current) => ({
+    ...current,
+    machineHandoff: {
+      id: randomUUID(),
+      targetRuntimeId: input.targetId,
+      state: 'preparing',
+      sourceArchived: false,
+    },
+  }))
+  await source.close()
+  const restarted = await host(join(root, 'source.sqlite'))
+  await waitForRuntime(() =>
+    expect(restarted.services.store.task(task.id).machineHandoff).toBeUndefined(),
+  )
+  expect(restarted.services.store.task(task.id).archived).toBe(false)
+})
+it('keeps a completed move fenced after the source restores a backup from before the move', async () => {
+  const { root, source, target, task, input, result } = await handoffFixture(false, true)
+  const path = join(root, 'source.sqlite'),
+    backup = join(root, 'before-move.sqlite')
+  await backupRuntimeDatabase(path, backup)
+  expect((await source.post('start', input)).status).toBe(200)
+  await result()
+  const moved = target.services.store.get().tasks[0]!
+  const reconnect = (runtime: Awaited<ReturnType<typeof host>>) =>
+    runtime.services.retrievalPeers.register('owner', {
+      sessionId: 'copy',
+      peers: [
+        {
+          id: target.services.runtimeId,
+          name: 'Destination',
+          connection: {
+            address: `http://127.0.0.1:${target.port}`,
+            token: owner,
+            runtimeId: target.services.runtimeId,
+          },
+        },
+      ],
+    })
+  const restore = async (runtime: Awaited<ReturnType<typeof host>>) => {
+    await runtime.close()
+    await restoreRuntimeBackup(path, backup)
+    return host(path)
+  }
+  let restored = await restore(source)
+  // Offline: the restored source holds the thread again, but its move stays in force.
+  expect(restored.services.store.task(task.id).machineHandoff).toMatchObject({
+    id: input.id,
+    state: 'moved',
+    targetTaskId: moved.id,
+  })
+  await expect(restored.services.tasks.start(task.id)).rejects.toThrow(/another computer/)
+  await expect(
+    restored.services.tasks.send(task.id, 'after-restore', 'Do not run twice'),
+  ).rejects.toThrow(/another computer/)
+  expect(restored.services.projectTransfers.list()[0]).toMatchObject({
+    id: input.id,
+    state: 'completed',
+  })
+  // After reconnecting, a retry confirms the move and never creates a second destination.
+  reconnect(restored)
+  expect((await restored.post('retry', { id: input.id })).status).toBe(200)
+  expect(restored.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  expect(target.services.store.get().tasks).toHaveLength(1)
+  expect(target.services.store.task(moved.id).machineHandoff).toBeUndefined()
+  // The fence outlives deletion of the read-only source.
+  const deletion = await fetch(`http://127.0.0.1:${restored.port}/api/tasks/lifecycle`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: task.id, action: 'delete', removeWorktrees: false }),
+  })
+  expect(deletion.status).toBe(200)
+  restored = await restore(restored)
+  expect(restored.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+  await expect(restored.services.tasks.start(task.id)).rejects.toThrow(/another computer/)
+})
+it('lets the current decision win when the source restores a snapshot after a return or a later move', async () => {
+  const { root, source, target, task, input } = await handoffFixture(false, true)
+  const path = join(root, 'source.sqlite'),
+    snapshot = join(root, 'first-move.sqlite')
+  const peers = (runtime: Awaited<ReturnType<typeof host>>) =>
+    runtime.services.retrievalPeers.register('owner', {
+      sessionId: 'copy',
+      peers: [
+        {
+          id: target.services.runtimeId,
+          name: 'Destination',
+          connection: {
+            address: `http://127.0.0.1:${target.port}`,
+            token: owner,
+            runtimeId: target.services.runtimeId,
+          },
+        },
+      ],
+    })
+  const restore = async (runtime: Awaited<ReturnType<typeof host>>) => {
+    await runtime.close()
+    await restoreRuntimeBackup(path, snapshot)
+    const restored = await host(path)
+    peers(restored)
+    return restored
+  }
+  const job = (runtime: Awaited<ReturnType<typeof host>>, id: string) =>
+    runtime.services.projectTransfers.list().find((entry) => entry.id === id)
+  // Move 1 stops before activation, then the staged destination is discarded.
+  const activate = vi.spyOn(target.services.projectTransfers, 'activate').mockImplementation(() => {
+    throw new Error('Activation unavailable')
+  })
+  expect((await source.post('start', input)).status).toBe(200)
+  await waitForRuntime(() => expect(job(source, input.id)?.state).toBe('failed'))
+  expect(source.services.store.task(task.id).machineHandoff).toMatchObject({
+    id: input.id,
+    state: 'moved',
+  })
+  await backupRuntimeDatabase(path, snapshot)
+  activate.mockRestore()
+  const staged = target.services.store.get().tasks[0]!
+  const discard = await fetch(`http://127.0.0.1:${target.port}/api/tasks/lifecycle`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: staged.id, action: 'delete', removeWorktrees: false }),
+  })
+  expect(discard.status).toBe(200)
+  expect((await source.post('retry', { id: input.id })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(source.services.store.task(task.id).machineHandoff).toBeUndefined(),
+  )
+  // The returned ownership wins over the snapshot's stale move.
+  let restored = await restore(source)
+  expect(restored.services.store.task(task.id).machineHandoff).toBeUndefined()
+  expect(restored.services.store.task(task.id).archived).toBeFalsy()
+  expect(job(restored, input.id)?.state).not.toBe('completed')
+  // Move 2 completes. Restoring the move 1 snapshot keeps move 2, not move 1.
+  const second = { ...input, id: randomUUID() }
+  expect((await restored.post('start', second)).status).toBe(200)
+  await waitForRuntime(() => expect(job(restored, second.id)?.state).toBe('completed'))
+  const moved = job(restored, second.id)!.targetTaskId
+  expect(target.services.store.task(moved!).machineHandoff).toBeUndefined()
+  restored = await restore(restored)
+  expect(restored.services.store.task(task.id).machineHandoff).toMatchObject({
+    id: second.id,
+    state: 'moved',
+    targetTaskId: moved,
+  })
+  await expect(restored.services.tasks.start(task.id)).rejects.toThrow(/another computer/)
+  expect(job(restored, second.id)?.state).toBe('completed')
+  expect((await restored.post('retry', { id: second.id })).status).toBe(200)
+  expect(target.services.store.get().tasks).toHaveLength(1)
+  // A database from before fence rows migrates its moved threads once at startup.
+  restored.services.db.exec(
+    "DELETE FROM project_transfer_fences; DELETE FROM documents WHERE id='project-transfer-fences:authority'",
+  )
+  await restored.close()
+  const migrated = await host(path)
+  expect(migrated.services.store.task(task.id).machineHandoff?.id).toBe(second.id)
+  expect(
+    migrated.services.db
+      .prepare('SELECT 1 FROM project_transfer_fences WHERE task_id=?')
+      .get(task.id),
+  ).toBeDefined()
+})
+it.each(['activated', 'discarded'] as const)(
+  'keeps the %s destination decision when the destination restores a staged snapshot',
+  async (decision) => {
+    const { root, source, target, task, input } = await handoffFixture(true)
+    const path = join(root, 'target.sqlite'),
+      snapshot = join(root, 'staged.sqlite')
+    const activate = vi
+      .spyOn(target.services.projectTransfers, 'activate')
+      .mockImplementation(() => {
+        throw new Error('Activation unavailable')
+      })
+    expect((await source.post('start', input)).status).toBe(200)
+    await waitForRuntime(() =>
+      expect(source.services.projectTransfers.list()[0]?.state).toBe('failed'),
+    )
+    const staged = target.services.store.get().tasks[0]!
+    expect(staged.machineHandoff?.state).toBe('staged')
+    await backupRuntimeDatabase(path, snapshot)
+    activate.mockRestore()
+    if (decision === 'activated') {
+      expect((await source.post('retry', { id: input.id })).status).toBe(200)
+      await waitForRuntime(() =>
+        expect(source.services.projectTransfers.list()[0]?.state).toBe('completed'),
+      )
+    } else {
+      const discard = await fetch(`http://127.0.0.1:${target.port}/api/tasks/lifecycle`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: staged.id, action: 'delete', removeWorktrees: false }),
+      })
+      expect(discard.status).toBe(200)
+      expect((await source.post('retry', { id: input.id })).status).toBe(200)
+      await waitForRuntime(() =>
+        expect(source.services.store.task(task.id).machineHandoff).toBeUndefined(),
+      )
+    }
+    await target.close()
+    await restoreRuntimeBackup(path, snapshot)
+    const restored = await host(path)
+    const thread = restored.services.store.task(staged.id)
+    if (decision === 'activated') {
+      // The activation stands: the restored copy runs here, and the source stays moved.
+      expect(thread.machineHandoff).toBeUndefined()
+      expect(thread.archivedAt).toBeUndefined()
+      expect(restored.services.projectTransfers.activate(input.id, 'owner').taskId).toBe(staged.id)
+      expect(source.services.store.task(task.id).machineHandoff?.state).toBe('moved')
+    } else {
+      // The discard stands: the restored copy never activates, and it can be deleted.
+      expect(thread.machineHandoff?.state).toBe('staged')
+      expect(() => restored.services.projectTransfers.activate(input.id, 'owner')).toThrow(
+        /deleted/,
+      )
+      const deletion = await fetch(`http://127.0.0.1:${restored.port}/api/tasks/lifecycle`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: staged.id, action: 'delete', removeWorktrees: false }),
+      })
+      expect(deletion.status).toBe(200)
+      expect(source.services.store.task(task.id).machineHandoff).toBeUndefined()
+    }
+  },
+)

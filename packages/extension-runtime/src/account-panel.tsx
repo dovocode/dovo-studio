@@ -135,21 +135,21 @@ function AccountPanelContent({
         </Button>
       ) : (
         <div className="flex gap-2">
-          {directory ? (
-            <>
-              <Button variant="outline" disabled={busy} onClick={() => void client.refresh()}>
-                Refresh linked computers
-              </Button>
-              <Button variant="ghost" disabled={busy} onClick={() => void client.signOut()}>
-                Sign out
-              </Button>
-            </>
+          {client.sessionId() ? (
+            <Button variant="outline" disabled={busy} onClick={() => void client.refresh()}>
+              Refresh linked computers
+            </Button>
           ) : (
             <Button disabled={busy || !loaded} onClick={() => void client.signIn()}>
               {busy ? 'Connecting…' : 'Sign in'}
             </Button>
           )}
-          {error && (
+          {client.sessionId() && (
+            <Button variant="ghost" disabled={busy} onClick={() => void client.signOut()}>
+              Sign out
+            </Button>
+          )}
+          {error && !client.sessionId() && (
             <Button variant="outline" disabled={busy} onClick={() => void client.load()}>
               Retry account
             </Button>

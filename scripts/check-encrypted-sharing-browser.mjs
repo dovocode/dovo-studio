@@ -150,6 +150,10 @@ try {
   await page.goto(url)
   await page.getByRole('heading', { name: 'Encrypted thread title' }).waitFor()
   await page.getByText('the cause', { exact: true }).waitFor()
+  const unchanged = await page.waitForResponse(
+    (response) => response.url().includes('/read?access=') && response.status() === 304,
+  )
+  assert.ok(unchanged.request().headers()['if-none-match'])
   assert.equal(await page.evaluate(() => window.compromised), undefined)
   assert.equal(await page.getByText('Unsent private draft', { exact: true }).count(), 0)
   const log = page.getByRole('log', { name: 'Shared thread messages' })

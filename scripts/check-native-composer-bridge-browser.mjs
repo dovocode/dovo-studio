@@ -21,7 +21,7 @@ import {NativeComposerInput,NativeReferenceMessage,nativeComposerAvailable,nativ
 import {resolveScopedAgents,messageReferences} from '@dovo/protocol';
 window.available=nativeComposerAvailable;window.messageAvailable=nativeReferenceMessagesAvailable;window.dismiss=dismissComposerKeyboard;
 const resources={skills:[{name:'review'}],mcpServers:[{name:'docs',enabled:true}],agents:resolveScopedAgents(undefined,undefined,[])};
-function App(){const input=useRef();window.read=()=>input.current.readText();const [value,setValue]=useState('🚀 @src/file.ts $review @docs '+String.fromCharCode(96)+'model:agent%3Adovo%3Acodex/gpt'+String.fromCharCode(96)+' ');const [revision,setRevision]=useState('first');
+function App(){const input=useRef();window.read=()=>input.current.readText();const tick=String.fromCharCode(96);const [value,setValue]=useState('🚀 @file:"docs/Release notes.md" $review @docs '+tick+'model:agent%3Adovo%3Acodex/gpt'+tick+' @Reviewer ('+tick+'agent:mac/project/reviewer'+tick+') ');const [revision,setRevision]=useState('first');
 const [message,setMessage]=useState(false);window.showMessage=()=>setMessage(true);
 window.external=text=>flushSync(()=>{setRevision('next');setValue(text)});
 if(message){const text='🚀 @src/file.ts https://github.com/team/repo/pull/42';const start=text.indexOf('https:');return <div style={{width:320,display:'flex',alignItems:'flex-end'}}><div data-message-bubble style={{maxWidth:'88%',display:'flex',padding:13,border:'1px solid'}}><NativeReferenceMessage text={text} references={messageReferences(text,resources)} links={[{start,end:text.length,url:text.slice(start)}]} onLink={url=>window.link=url}/></div></div>}
@@ -84,9 +84,17 @@ try {
       await page.waitForFunction(() => !!window.nativeProps)
       assert.deepEqual(
         await page.evaluate(() => window.nativeProps.content.references.map(({ kind }) => kind)),
-        ['file', 'skill', 'mcp', 'model'],
+        ['file', 'skill', 'mcp', 'model', 'agent'],
       )
       assert.equal(await page.evaluate(() => window.nativeProps.content.references[0].start), 3)
+      assert.equal(
+        await page.evaluate(() => window.nativeProps.content.references[0].label),
+        'Release notes.md',
+      )
+      assert.equal(
+        await page.evaluate(() => window.nativeProps.content.references[4].label),
+        '@Reviewer',
+      )
       assert.ok(
         await page.evaluate(() =>
           window.nativeProps.content.references.every((reference) =>

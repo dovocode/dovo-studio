@@ -35,7 +35,8 @@ type Session = {
   known: SharedSettingsEntry[]
   error: string
   fingerprint: string
-  received: boolean
+  /** Remote settings revision applied from the legacy endpoint. */
+  received?: string
   worker?: Worker
 }
 export interface SharedStateSyncOptions {
@@ -60,6 +61,9 @@ const key = (target: Target) =>
     target.snapshot?.runtimeId,
     target.snapshot?.stateReplicationVersion ?? 0,
   ])
+// Older runtimes have no durable exchange. Their snapshot settings are the only revision signal.
+const remoteRevision = (target: Target) =>
+  JSON.stringify(target.snapshot?.defaults?.scopedSettings?.shared ?? [])
 const sharedValue = (state: DurableState<ScopedSettingsValue>) =>
   sharedSettingsFromVersions(state.latest())
 
@@ -193,10 +197,13 @@ export class SharedStateSynchronization {
           previous.known,
           target.snapshot.defaults?.scopedSettings?.shared ?? [],
         )
-        if (JSON.stringify(known) !== JSON.stringify(previous.known)) {
-          previous.known = known
+        const changed = JSON.stringify(known) !== JSON.stringify(previous.known)
+        previous.known = known
+        if (
+          changed ||
+          (previous.received !== undefined && previous.received !== remoteRevision(target))
+        )
           previous.worker?.retry()
-        }
         continue
       }
       const session: Session = {
@@ -204,7 +211,6 @@ export class SharedStateSynchronization {
         error: '',
         known: target.snapshot.defaults?.scopedSettings?.shared ?? [],
         fingerprint: '',
-        received: false,
       }
       this.sessions.set(id, session)
       const valid = () =>
@@ -272,6 +278,7 @@ export class SharedStateSynchronization {
             try: async (signal) => {
               await state.refresh()
               await prepare()
+              const remote = remoteRevision(session.target)
               const pending = pendingSharedSettings(
                 sharedValue(state),
                 session.known,
@@ -279,7 +286,7 @@ export class SharedStateSynchronization {
                   ? []
                   : projectOrganizationCategories,
               )
-              if (!pending.length && session.received) {
+              if (!pending.length && session.received === remote) {
                 if (valid()) {
                   session.error = ''
                   this.report()
@@ -301,9 +308,10 @@ export class SharedStateSynchronization {
                   'Shared settings require a compatible app version; saved data was kept',
                 )
               await state.importVersions(sharedSettingsVersions(result.success.shared))
-              session.received = true
               session.known = mergeSharedSettings(session.known, result.success.shared)
               await publish()
+              // A failed or superseded apply leaves the revision unreceived, so the next poll fetches.
+              if (valid()) session.received = remote
             },
             catch: (error) => (error instanceof Error ? error : new Error(String(error))),
           }),

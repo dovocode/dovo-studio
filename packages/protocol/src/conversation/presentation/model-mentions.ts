@@ -1,3 +1,4 @@
+import { maskFileMentions } from './file-mentions.js'
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from '../../shared/schema.js'
 import { insertPrompt } from './resource-mentions.js'
@@ -45,7 +46,9 @@ export function insertModelMention(text: string, start: number, caret: number, r
 /** Decode only explicit inline references. Plain @ names remain normal prose. */
 export function modelMentionContext(text: string) {
   const references = new Map<string, { harness: string; model: string }>()
-  for (const match of text.matchAll(/`model:([^`\s/]{1,600})\/([^`\s]{1,1000})`/g)) {
+  for (const match of maskFileMentions(text).matchAll(
+    /`model:([^`\s/]{1,600})\/([^`\s]{1,1000})`/g,
+  )) {
     try {
       const harness = decodeURIComponent(match[1]),
         model = decodeURIComponent(match[2])

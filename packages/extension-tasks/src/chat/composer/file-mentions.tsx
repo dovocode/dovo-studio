@@ -11,13 +11,15 @@ import { Schema } from 'effect'
 import { Bot, FileText, Hash, Plug, Settings2, Sparkles, SquareSlash } from 'lucide-react'
 import {
   modelMentionsSchema,
+  agentMentionSuggestions,
+  insertAgentMention,
+  resolveScopedAgents,
   contextMentionSuggestions,
   insertThreadMention,
   insertBotMention,
   runtimeComputerName,
   insertModelMention,
   type ModelMention,
-  type BotMention,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -40,7 +42,8 @@ import { composerSelection, selectComposerInput } from './composer-input'
 import { selectConversationConnection } from '../thread/workspace-selection'
 import type { RichComposerHandle } from './rich-composer-editor'
 
-const sameBotMentions = (a: BotMention[], b: BotMention[]) =>
+type IdentityMention = { reference: string; name: string; detail: string; avatar?: string }
+const sameBotMentions = (a: IdentityMention[], b: IdentityMention[]) =>
   a.length === b.length &&
   a.every(
     (item, i) =>
@@ -50,9 +53,13 @@ const sameBotMentions = (a: BotMention[], b: BotMention[]) =>
       item.avatar === b[i]?.avatar,
   )
 
-const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
+const filesSchema = mutableStruct({
+  files: mutableArray(Schema.String),
+  // Older runtimes omit this; they also never report a partial file listing.
+  truncated: Schema.optional(Schema.Boolean),
+})
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread' | 'agent'
   avatar?: string
   /** Prompt suggestions: shown name, while `detail` previews the text. */
   name?: string
@@ -69,6 +76,7 @@ const icons = {
   prompt: Hash,
   model: Sparkles,
   bot: Bot,
+  agent: Bot,
   thread: FileText,
 }
 type MentionKey = {
@@ -79,7 +87,7 @@ type MentionKey = {
   isComposing?: boolean
 }
 
-/** Composer mentions like other agent apps: "@" for Bots, files and MCP servers, "$" for skills
+/** Composer mentions like other agent apps: "@" for Bots, agents, models and MCP servers, "@file:" for files, "$" for skills
  * anywhere, and "/" for skills at the start of a line. Arrow keys and Enter or Tab pick;
  * Escape dismisses. */
 export function useFileMentions({
@@ -130,7 +138,12 @@ export function useFileMentions({
   const [caret, setCaret] = useState(0)
   const [richText, setRichText] = useState('')
   const source = rich ? richText : draft
-  const [lookup, setLookup] = useState<{ key: string; files: string[]; error: string }>()
+  const [lookup, setLookup] = useState<{
+    key: string
+    files: string[]
+    error: string
+    truncated?: boolean
+  }>()
   const [retry, setRetry] = useState(0)
   const list = useRef<HTMLDivElement>(null)
   const menuId = useId()
@@ -173,6 +186,26 @@ export function useFileMentions({
     [trigger, query],
   )
   const bots = useWorkspaceSelector(selectBots, sameBotMentions)
+  const selectAgents = useCallback(
+    (state: WorkspaceContextValue) => {
+      if (trigger !== '@' || query?.toLowerCase().startsWith('thread:')) return []
+      const repositoryId = state.workspace.tasks.find((task) => task.id === taskId)?.repositoryId
+      const repository = state.workspace.repositories?.find((repo) => repo.id === repositoryId)
+      const agents = resolveScopedAgents(
+        state.snapshot?.defaults,
+        repository,
+        state.workspace.agents ?? [],
+      )
+      return agentMentionSuggestions(
+        state.snapshot?.runtimeId ?? state.connection?.runtimeId ?? 'local',
+        repositoryId,
+        agents,
+        query ?? '',
+      )
+    },
+    [trigger, query, taskId],
+  )
+  const agents = useWorkspaceSelector(selectAgents, sameBotMentions)
   const resourceItems: Suggestion[] = mention
     ? resourceSuggestions(resources, mention.trigger, mention.query)
         .filter((item) => mention.trigger !== '/' || showSkillsInSlashMenu || item.kind !== 'skill')
@@ -228,10 +261,17 @@ export function useFileMentions({
   ])
   const files = lookup?.key === lookupKey ? lookup.files : []
   const lookupError = lookup?.key === lookupKey ? lookup.error : ''
+  const lookupTruncated = lookup?.key === lookupKey && lookup.truncated === true
   const modelError =
     modelMentionsSupported && modelLookup?.key === lookupKey ? modelLookup.error : ''
-  const searching = trigger === '@' && connected && lookup?.key !== lookupKey
+  const searching = trigger === '@file:' && connected && lookup?.key !== lookupKey
   const suggestions: Suggestion[] = [
+    ...agents.map((agent) => ({
+      kind: agent.kind,
+      value: agent.reference,
+      name: agent.name,
+      detail: agent.detail,
+    })),
     ...bots.map((bot) => ({
       kind: bot.kind ?? ('bot' as const),
       value: bot.reference,
@@ -250,7 +290,7 @@ export function useFileMentions({
     ...promptItems,
     ...commandItems,
     ...resourceItems,
-    ...(trigger === '@' ? files.map((path) => ({ kind: 'file' as const, value: path })) : []),
+    ...(trigger === '@file:' ? files.map((path) => ({ kind: 'file' as const, value: path })) : []),
   ]
   const itemKey = (item: Suggestion) => `${item.kind}:${item.value}`
   const active = Math.max(
@@ -265,10 +305,11 @@ export function useFileMentions({
     (suggestions.length > 0 ||
       searching ||
       !!lookupError ||
+      lookupTruncated ||
       !!modelError ||
       (managing && !mention.query))
   useEffect(() => {
-    if (trigger !== '@' || query === undefined || !connected) {
+    if (trigger !== '@file:' || query === undefined || !connected) {
       setLookup(undefined)
       return
     }
@@ -277,7 +318,12 @@ export function useFileMentions({
       void request('/api/tasks/files', { id: taskId, query }, filesSchema).then(
         (result) => {
           if (disposed) return
-          setLookup({ key: lookupKey, files: result.files, error: '' })
+          setLookup({
+            key: lookupKey,
+            files: result.files,
+            error: '',
+            truncated: result.truncated,
+          })
         },
         (cause: unknown) => {
           if (!disposed)
@@ -295,7 +341,14 @@ export function useFileMentions({
     }
   }, [trigger, query, taskId, connected, request, lookupKey])
   useEffect(() => {
-    if (trigger !== '@' || !query || query.length < 2 || !connected || !modelMentionsSupported)
+    if (
+      trigger !== '@' ||
+      !query ||
+      query.toLowerCase().startsWith('thread:') ||
+      query.length < 2 ||
+      !connected ||
+      !modelMentionsSupported
+    )
       return
     let stopped = false
     const timer = setTimeout(() => {
@@ -370,12 +423,14 @@ export function useFileMentions({
   }
   const choose = (item: Suggestion | undefined) => {
     if (!mention || !item) return
-    if (item.kind === 'bot') {
+    if (item.kind === 'bot' || item.kind === 'agent') {
+      const insertIdentity = item.kind === 'bot' ? insertBotMention : insertAgentMention
       apply(
-        insertBotMention(source, mention.start, caret, {
-          name: item.name ?? 'Bot',
+        insertIdentity(source, mention.start, caret, {
+          name: item.name ?? item.kind,
           reference: item.value,
         }),
+        true,
       )
       return
     }
@@ -442,12 +497,14 @@ export function useFileMentions({
       role="listbox"
       aria-label={
         trigger === '@'
-          ? 'Bots, files, models and MCP servers'
-          : trigger === '/'
-            ? 'Commands and skills'
-            : trigger === '#'
-              ? 'Saved prompts'
-              : 'Skills'
+          ? 'Bots, agents, models and MCP servers'
+          : trigger === '@file:'
+            ? 'Files'
+            : trigger === '/'
+              ? 'Commands and skills'
+              : trigger === '#'
+                ? 'Saved prompts'
+                : 'Skills'
       }
       className="absolute bottom-full left-2 right-2 z-20 mb-1 max-h-64 overflow-y-auto rounded-md border bg-popover p-1 text-popover-foreground shadow-md"
     >
@@ -457,7 +514,10 @@ export function useFileMentions({
         const label =
           item.kind === 'file'
             ? item.value.slice(slash + 1)
-            : item.kind === 'model' || item.kind === 'bot'
+            : item.kind === 'model' ||
+                item.kind === 'bot' ||
+                item.kind === 'thread' ||
+                item.kind === 'agent'
               ? item.name
               : item.kind === 'command'
                 ? `/${item.value}`
@@ -504,6 +564,12 @@ export function useFileMentions({
       {searching && (
         <p role="status" className="px-2 py-1.5 text-xs text-muted-foreground">
           Searching files…
+        </p>
+      )}
+      {lookupTruncated && (
+        <p role="status" className="px-2 py-1 text-xs text-muted-foreground">
+          This project has more files than file search covers. Type more of the path if a file is
+          missing.
         </p>
       )}
       {lookupError && (

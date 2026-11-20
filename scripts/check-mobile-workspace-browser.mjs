@@ -35,7 +35,7 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
   { path: 'expo-crypto', contents: 'let id=0;export const randomUUID=()=>`workspace-${++id}`;' },
   {
     path: 'expo-router',
-    contents: `export const router={navigate:target=>window.routes.push(target),replace:target=>window.routes.push(target),back:()=>window.routes.push('back')};`,
+    contents: `export const router={push:target=>window.routes.push(target),navigate:target=>window.routes.push(target),replace:target=>window.routes.push(target),back:()=>window.routes.push('back')};`,
   },
   {
     path: '@react-native-async-storage/async-storage',
@@ -99,7 +99,7 @@ export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button
     path: '../ui/controls/switch',
     importer: workspace,
     contents:
-      'export const Switch=({accessibilityLabel,value,onValueChange,disabled})=><input type="checkbox" aria-label={accessibilityLabel} checked={value} onChange={e=>onValueChange(e.target.checked)} disabled={disabled}/>;',
+      'export const Switch=({accessibilityLabel,accessibilityHint,value,onValueChange,disabled})=><input type="checkbox" aria-label={accessibilityLabel} aria-description={accessibilityHint} checked={value} onChange={e=>onValueChange(e.target.checked)} disabled={disabled}/>;',
   },
   {
     path: '../ui/content/text',
@@ -176,7 +176,7 @@ import {WorkspaceViewProvider} from './apps/mobile/src/workspace/workspace-view'
 import {decode,snapshotSchema} from '@dovo/protocol';
 window.emptySnapshot=decode(snapshotSchema,{revision:1,owner:false,approvals:[],terminals:[],runs:[],devices:[],pendingDevices:[],workspace:{version:1,runtimeAddress:'',automations:[],repositories:[],agents:[],tasks:[]}});
 window.storage={};window.routes=[];window.requests=[];window.focused=true;window.version=0;const listeners=new Set();window.subscribe=fn=>{listeners.add(fn);return()=>listeners.delete(fn)};
-const owner=id=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'private-'+id}},connected:true,snapshot:{terminalRecoverySupported:true,workspace:{repositories:[{id:'general-'+id,name:'General',kind:'scratch',path:'/scratch',branch:''},{id:'project',name:'Project '+id,path:'/project',branch:'main'}],agents:[],tasks:[{id:'existing-'+id,title:'Existing '+id}]}}});window.owners=[owner('a'),owner('b')];
+const owner=id=>({profile:{id,name:id,connection:{address:'http://'+id+'.lan',token:'private-'+id}},connected:true,snapshot:{terminalRecoverySupported:true,...(id==='b'?{terminalLiveRecoverySupported:true,terminalChildrenSupported:true,terminals:[{id:'parent-b',taskId:'studio:terminals',title:'Build worker',exited:false}]}:{}),workspaceTerminalRequestIdSupported:true,workspace:{repositories:[{id:'general-'+id,name:'General',kind:'scratch',path:'/scratch',branch:''},{id:'project',name:'Project '+id,path:'/project',branch:'main'}],agents:[],tasks:[{id:'existing-'+id,title:'Existing '+id}]}}});window.owners=[owner('a'),owner('b')];
 window.publish=()=>{window.version++;listeners.forEach(fn=>fn())};
 window.addTerminal=()=>{window.owners=window.owners.map((owner,index)=>index?owner:{...owner,snapshot:{...owner.snapshot,terminals:[{id:'created-terminal',taskId:'studio:terminals',title:'Created shell',exited:false}]}});window.publish()};
 window.refresh=async()=>{if(window.refreshPublishes){window.addTerminal();await new Promise(resolve=>window.finishRefresh=resolve)}if(window.failRefresh){window.failRefresh=false;throw Error('Refresh unavailable')}};
@@ -188,7 +188,7 @@ if(path==='/api/agents/models/cached')return {models:[{id:'gpt-6.1-sol',name:'So
 if(path==='/api/terminals/shells')return {shells:[{id:'default',label:'Default '+profile.id,path:'/bin/zsh',args:[]},{id:'bash',label:'Bash '+profile.id,path:'/bin/bash',args:[]}]};
 if(path==='/api/scm/branches')return {current:'main',branches:[{name:'main',ref:'refs/heads/main'}]};
 if(path==='/api/scm/worktrees/choices')return {worktrees:[{path:'/worktree-'+profile.id,branch:'branch-'+profile.id}]};
-if(path==='/api/terminals/workspace')return {id:'created-terminal',taskId:'studio:terminals',title:'Shell',exited:false};
+if(path==='/api/terminals/workspace'){if(window.failLaunch){window.failLaunch=false;throw Error('Lost terminal response')}return {id:'created-terminal',taskId:'studio:terminals',title:'Shell',exited:false}};
 if(path==='/api/workspace')return {revision:1,outcome:'applied'};
 if(path==='/api/tasks/message'){if(window.holdMessage)await new Promise(resolve=>window.finishMessage=resolve);if(window.failMessage){window.failMessage=false;throw Error('Lost message response')}return {ok:true}};
 throw Error('Unexpected endpoint '+path)};
@@ -242,12 +242,20 @@ try {
     .getByRole('textbox', { name: 'Workspace request', exact: true })
     .fill('http://app.lan:3000')
   await page.getByRole('button', { name: 'Open browser', exact: true }).click()
-  await page.waitForFunction(() => window.routes.includes('/workspace/browser'))
+  await page.waitForFunction(() => window.routes.includes('/browser'))
   assert.equal(await page.evaluate(() => window.tabs.at(-1).url), 'http://app.lan:3000/')
 
   await reset()
   await page.getByLabel('Destination', { exact: true }).selectOption('terminal')
   await page.getByLabel('Computer', { exact: true }).selectOption('b')
+  const recoverySwitch = page.getByRole('checkbox', { name: 'Remember terminal session' })
+  await page.getByRole('button', { name: 'Workspace options', exact: true }).click()
+  assert.match(
+    await recoverySwitch.getAttribute('aria-description'),
+    /running commands alive when the Dovo runtime restarts/,
+  )
+  await page.getByLabel('Parent terminal', { exact: true }).selectOption('parent-b')
+  await page.getByRole('button', { name: 'Done', exact: true }).click()
   await page.getByLabel('Shell', { exact: true }).selectOption('bash')
   await page.getByRole('button', { name: 'Open terminal', exact: true }).click()
   await page.waitForFunction(() => window.routes.length)
@@ -257,19 +265,38 @@ try {
   assert.equal(created.owner, 'b')
   assert.equal(created.input.repositoryId, undefined)
   assert.equal(created.input.shellId, 'bash')
+  assert.equal(created.input.parentTerminalId, 'parent-b')
   assert.equal(created.input.rememberSession, true)
 
   await reset()
   await page.getByLabel('Destination', { exact: true }).selectOption('terminal')
   await page.getByLabel('Project', { exact: true }).selectOption('project')
   await page.getByRole('button', { name: 'Workspace options', exact: true }).click()
+  assert.match(await recoverySwitch.getAttribute('aria-description'), /Other running commands stop/)
+  await page.evaluate(() => {
+    window.owners[0].snapshot.terminalRecoverySupported = false
+    window.publish()
+  })
+  await page
+    .getByText('Update this computer to enable persistent terminal recovery.', { exact: true })
+    .waitFor()
+  assert.equal(await recoverySwitch.isDisabled(), true)
+  await page.evaluate(() => {
+    window.owners[0].snapshot.terminalRecoverySupported = true
+    window.publish()
+  })
   await page.getByLabel('Checkout', { exact: true }).selectOption('existing')
   await page.getByLabel('Worktree', { exact: true }).selectOption('/worktree-a')
   await page.getByRole('button', { name: 'Done', exact: true }).click()
-  await page.getByRole('textbox', { name: 'Terminal command', exact: true }).fill('codex resume')
+  await page
+    .getByRole('textbox', { name: 'Terminal command', exact: true })
+    .fill('  codex resume  ')
   await page.evaluate(() => {
+    window.failLaunch = true
     window.failRefresh = true
   })
+  await page.getByRole('button', { name: 'Run command', exact: true }).click()
+  await page.getByText('Error: Lost terminal response').waitFor()
   await page.getByRole('button', { name: 'Run command', exact: true }).click()
   await page.getByText('Error: Refresh unavailable').waitFor()
   await page.getByRole('button', { name: 'Run command', exact: true }).click()
@@ -277,7 +304,10 @@ try {
   const launches = await page.evaluate(() =>
     window.requests.filter((r) => r.path === '/api/terminals/workspace'),
   )
-  assert.equal(launches.length, 1)
+  assert.equal(launches.length, 2)
+  assert.ok(launches[0].input.requestId)
+  assert.equal(launches[1].input.requestId, launches[0].input.requestId)
+  assert.equal(launches[0].input.command, '  codex resume  ')
   assert.equal(launches[0].input.execution, 'worktree')
   assert.equal(launches[0].input.existingWorktreePath, '/worktree-a')
 
@@ -523,6 +553,38 @@ try {
     ),
     1,
   )
+
+  await page.evaluate(() => {
+    window.showScreen('terminal')
+    window.addTerminal()
+    Object.assign(window.owners[0].snapshot.terminals[0], {
+      activity: { state: 'idle' },
+      childActivities: [
+        {
+          id: 'checks/build',
+          activity: { state: 'blocked', kind: 'permission', message: 'Write files?' },
+        },
+        {
+          id: 'checks/test',
+          activity: { state: 'blocked', kind: 'question', message: 'Which branch?' },
+        },
+      ],
+    })
+    window.owners[0].snapshot.terminals.push({
+      id: 'child-a',
+      taskId: 'studio:terminals',
+      title: 'Check build',
+      parentTerminalId: 'created-terminal',
+      exited: false,
+      activity: { state: 'blocked', kind: 'permission' },
+    })
+    window.publish()
+  })
+  await page.getByText('checks/build needs permission · Write files?', { exact: true }).waitFor()
+  await page.getByText('checks/test has a question · Which branch?', { exact: true }).waitFor()
+
+  await page.getByRole('button', { name: 'Child: Check build needs permission' }).click()
+  assert.equal(await page.evaluate(() => window.routes.at(-1)?.params?.terminalId), 'child-a')
 
   // Missing is a fact only after an online snapshot confirms absence.
   await page.evaluate(() => {

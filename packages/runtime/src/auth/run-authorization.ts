@@ -50,6 +50,8 @@ const allowed = new Set([
   '/api/device-hosts/forward/stop',
   '/api/terminals/run',
   '/api/terminals/summary',
+  '/api/terminals/send',
+  '/api/terminals/screen',
   '/api/terminals/close',
   '/api/terminals/update',
   '/api/terminals/ticket',
@@ -89,7 +91,15 @@ export function authorizeRunRoute(
       denied()
     return grant
   }
-  if (['/api/terminals/ticket', '/api/terminals/close', '/api/terminals/summary'].includes(path)) {
+  if (
+    [
+      '/api/terminals/ticket',
+      '/api/terminals/close',
+      '/api/terminals/summary',
+      '/api/terminals/send',
+      '/api/terminals/screen',
+    ].includes(path)
+  ) {
     authorizeRunTerminal(s, token, typeof input.id === 'string' ? input.id : '')
     return grant
   }

@@ -3,14 +3,19 @@ import { Schema } from 'effect'
 import {
   decode,
   mutableStruct,
-  terminalActivitySchema,
   terminalSchema,
+  terminalTurnSchema,
   STUDIO_TERMINAL_SCOPE,
 } from '@dovo/protocol'
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { delimiter, dirname, isAbsolute, join, resolve, win32 } from 'node:path'
 import { quoteTerminalPaths } from './file-paths.js'
-import { installRecoveryIntegrations } from './recovery-integrations.js'
+import {
+  installRecoveryIntegrations,
+  type RecoveryIntegrationFailure,
+} from './recovery-integrations.js'
+import { terminalTurnProgressSchema } from './turn-state.js'
+import { readTerminalHookActivity } from './hook-activity.js'
 
 export const recoveryTargetSchema = mutableStruct({
   provider: Schema.Literals(['codex', 'claude', 'pi', 'opencode', 'tmux', 'herdr']),
@@ -25,6 +30,10 @@ const recordSchema = mutableStruct({
   info: terminalSchema,
   shell: mutableStruct({ command: Schema.String, args: Schema.Array(Schema.String) }),
   target: Schema.optional(recoveryTargetSchema),
+  /** The terminal holder owns the process. A restart reattaches instead of starting a shell. */
+  held: Schema.optional(Schema.Boolean),
+  holderTurn: Schema.optional(terminalTurnSchema),
+  turnProgress: Schema.optional(terminalTurnProgressSchema),
 })
 export type TerminalRecoveryRecord = typeof recordSchema.Type
 export function validateRecoveryShell(shell: TerminalRecoveryRecord['shell']) {
@@ -62,6 +71,8 @@ export class TerminalRecovery {
   readonly directory: string
   private records = new Map<string, TerminalRecoveryRecord>()
   private installed = false
+  /** Providers that failed on the last install. A later terminal start tries them again. */
+  integrationFailures: readonly RecoveryIntegrationFailure[] = []
   constructor(
     private db: Database.Database,
     directory = join(dirname(resolve(db.name)), 'terminal-recovery'),
@@ -88,6 +99,10 @@ export class TerminalRecovery {
   list() {
     return [...this.records.values()]
   }
+  /** Private holder state. A UUID session directory cannot use this name. */
+  get holderDirectory() {
+    return join(this.directory, 'holder')
+  }
   private save() {
     this.db
       .prepare(
@@ -112,6 +127,9 @@ export class TerminalRecovery {
     mkdirSync(directory, { recursive: true, mode: 0o700 })
     writeFileSync(join(directory, 'closing'), '', { mode: 0o600 })
   }
+  unfreeze(id: string) {
+    rmSync(join(this.sessionDirectory(id), 'closing'), { force: true })
+  }
   event(id: string): RecoveryTarget | null | undefined {
     const file = join(this.sessionDirectory(id), 'state.json')
     if (!existsSync(file)) return undefined
@@ -125,30 +143,19 @@ export class TerminalRecovery {
     return event.target
   }
   activity(id: string) {
-    const file = join(this.sessionDirectory(id), 'activity.json')
-    if (!existsSync(file)) return undefined
-    const bytes = readFileSync(file)
-    if (bytes.length > 16384) throw new Error('Terminal activity event is too large')
-    return decode(
-      mutableStruct({
-        id: Schema.String,
-        at: Schema.Number,
-        activity: Schema.NullOr(terminalActivitySchema),
-      }),
-      JSON.parse(bytes.toString('utf8')),
-    )
+    return readTerminalHookActivity(this.sessionDirectory(id))
   }
   clearSession(id: string) {
     rmSync(this.sessionDirectory(id), { recursive: true, force: true })
   }
   environment(id: string, searchPath: string, rememberSession = true) {
     if (!this.installed) {
-      installRecoveryIntegrations(this.directory)
-      this.installed = true
+      this.integrationFailures = installRecoveryIntegrations(this.directory)
+      this.installed = this.integrationFailures.length === 0
     }
     const directory = this.sessionDirectory(id)
     mkdirSync(directory, { recursive: true, mode: 0o700 })
-    rmSync(join(directory, 'closing'), { force: true })
+    this.unfreeze(id)
     rmSync(join(directory, 'state.json'), { force: true })
     rmSync(join(directory, 'activity.json'), { force: true })
     return {

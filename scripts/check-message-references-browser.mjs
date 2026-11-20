@@ -147,6 +147,14 @@ try {
     'https://github.com/team/repo/pull/42/files#note',
   ])
   assert.match(await page.locator('#mobile').textContent(), /Keep  two spaces & <tags>\./)
+  const scopedMessage =
+    'Ask @Reviewer (`agent:home/project/reviewer`) about @file:"docs/Release Notes.md"'
+  await show(scopedMessage)
+  assert.equal(await desktop.locator('[data-reference-kind="agent"]').innerText(), '@Reviewer')
+  assert.equal(
+    await desktop.locator('[data-reference-kind="file"]').innerText(),
+    'Release Notes.md',
+  )
   await show('Authored [link](https://dovo-reference.invalid/0) and @src/real.ts')
   await desktop.locator('[data-reference-kind="file"]').waitFor()
   assert.deepEqual(await desktop.locator('.dovo-composer-reference').allTextContents(), ['real.ts'])

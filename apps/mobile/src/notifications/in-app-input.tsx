@@ -13,32 +13,32 @@ import {
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../runtime/connection/provider'
 import { readMobilePreferences, useMobilePreferences } from '../runtime/preferences/app-preferences'
-import { taskHref } from '../shell/task-route'
+import { taskHref, type TaskRouteParams } from '../shell/task-route'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { registerInAppNotification } from './in-app-delivery'
-import { reconcileInputNotices, sameNoticeThread, type InAppInputNotice } from './in-app-notices'
+import { notificationRemoteInput } from './target'
+import {
+  delegatedNoticeInputId,
+  noticeHref,
+  noticeReturnRoute,
+  noticeVisible,
+  reconcileInputNotices,
+  sameNoticeThread,
+  type InAppInputNotice,
+} from './in-app-notices'
+import { subscribeAccessibleNotificationInputs } from './visibility'
 
 /** One foreground surface, independent of system push permission and without polling. */
 export function InAppInputNotifications() {
-  const { overviews, ready } = useRuntime()
+  const { overviews, profiles, ready } = useRuntime()
   const { inAppNotifications: enabled } = useMobilePreferences()
   const { colors, highContrast } = useTheme()
   const uiText = useInterfaceText()
   const insets = useSafeAreaInsets()
   const navigation = useRootNavigationState()
   const pathname = usePathname()
-  const params = useGlobalSearchParams<{
-    runtimeId?: string
-    taskId?: string
-    runtimeIdentity?: string
-    nativeAgentKey?: string
-    questionId?: string
-    parentRuntimeId?: string
-    parentRuntimeIdentity?: string
-    parentTaskId?: string
-    parentTitle?: string
-  }>()
+  const params = useGlobalSearchParams<TaskRouteParams>()
   const active: NotificationTarget | undefined =
     pathname.startsWith('/thread/') && params.runtimeId && params.taskId
       ? { runtimeId: params.runtimeId, viewId: 'tasks', entityId: params.taskId }
@@ -90,8 +90,19 @@ export function InAppInputNotifications() {
           .map((entry) => entry.profile.id),
       ),
     }
-    setNotices((pending) => reconcileInputNotices(pending, states, events, active))
+    setNotices((pending) => reconcileInputNotices(pending, states, events))
   }, [overviews, ready, enabled, foreground, active?.runtimeId, active?.entityId])
+  // A banner stays until its own request card is on screen, not merely its thread.
+  useEffect(
+    () =>
+      subscribeAccessibleNotificationInputs(() =>
+        setNotices((pending) => {
+          const next = pending.filter((notice) => !noticeVisible(notice))
+          return next.length === pending.length ? pending : next
+        }),
+      ),
+    [],
+  )
   useLayoutEffect(
     () =>
       registerInAppNotification((target) => {
@@ -113,8 +124,13 @@ export function InAppInputNotifications() {
           viewId: 'tasks',
           entityId: taskId,
         }
-        if (sameNoticeThread(destination, current.active)) return true
-        const inputId = JSON.stringify([target.inputType, target.inputId])
+        // A delegated child on another computer has the live state's delegated ID, not `identity:id`.
+        const remote = notificationRemoteInput(target, current.overviews)
+        const inputId = remote
+          ? delegatedNoticeInputId(remote)
+          : JSON.stringify([target.inputType, target.inputId])
+        // Delivered only when the user can see the request card itself.
+        if (noticeVisible({ target: destination, inputId })) return true
         const key = JSON.stringify([JSON.stringify([target.runtimeId, taskId]), 'input', inputId])
         const title =
           entry?.snapshot?.workspace.tasks.find((task) => task.id === taskId)?.title ??
@@ -178,32 +194,34 @@ export function InAppInputNotifications() {
             accessibilityLabel={uiText('Open {value0}', { value0: notice.title })}
             style={{ flex: 1, minWidth: 0, padding: 14, gap: 3 }}
             onPress={() => {
+              const href = noticeHref(notice, { profiles, overviews })
+              setNotices((pending) => pending.filter((pending) => pending.key !== notice.key))
+              if (
+                active &&
+                href.params.runtimeId === active.runtimeId &&
+                href.params.taskId === active.entityId
+              ) {
+                // Another request in the open thread: select it in place.
+                router.setParams({
+                  questionId: 'questionId' in href.params ? href.params.questionId : undefined,
+                  approvalId: 'approvalId' in href.params ? href.params.approvalId : undefined,
+                })
+                return
+              }
               if (active) {
                 const origin = computer(active)
                 setReturnTo({
-                  href: taskHref(
-                    active.runtimeId,
-                    active.entityId,
-                    params.questionId,
-                    params.parentRuntimeId && params.parentTaskId
-                      ? {
-                          runtimeId: params.parentRuntimeId,
-                          runtimeIdentity: params.parentRuntimeIdentity,
-                          taskId: params.parentTaskId,
-                          title: params.parentTitle ?? uiText('Thread'),
-                        }
-                      : undefined,
-                    params.runtimeIdentity,
-                    params.nativeAgentKey,
+                  ...noticeReturnRoute(
+                    { ...params, runtimeId: active.runtimeId, taskId: active.entityId },
+                    href,
+                    uiText('Thread'),
                   ),
-                  destination: notice.target,
                   title:
                     origin?.snapshot?.workspace.tasks.find((task) => task.id === active.entityId)
                       ?.title ?? uiText('Thread'),
                 })
               }
-              router.push(taskHref(notice.target.runtimeId, notice.target.entityId))
-              setNotices((pending) => pending.filter((pending) => pending.key !== notice.key))
+              router.push(href)
             }}
           >
             <Text style={{ color: colors.accent, fontSize: 12, fontWeight: '600' }}>

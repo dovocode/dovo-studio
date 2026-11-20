@@ -304,8 +304,15 @@ own.
 The runtime checks active PRs every 30 seconds while babysitting is enabled. Normal feedback
 watching keeps its two-minute interval. New check failures, review feedback, conflicts and target
 branch changes wake the thread's agent. Passing checks produce one readiness update per changed
-state. Missing or failed reads never establish success. Ten consecutive feedback-only wakeups pause
-babysitting to stop reply loops. Explicitly restart the watch after reviewing the loop.
+state. Missing or failed reads never establish success. A readiness update also needs a known review
+decision and a resolved state for every review thread. Requested changes or an unresolved thread
+block it. If the forge does not report a review decision, the status shows **review state
+unavailable** and no readiness update is sent. On GitHub, each feedback read fetches the review
+decision and review threads. A null decision means the target branch requires no review. Ten
+consecutive feedback-only wakeups pause babysitting to stop reply loops. The agent reports the pause
+and does not restart on its own. After you review the loop, ask the agent in that thread to watch
+the PR again. It restarts the watch with `pull_request_watch` (`action: "watch"` and the PR URL),
+which resets the wakeup count.
 
 For GitHub, Dovo reads the comparison against the current target branch. When the PR is behind and
 the thread is idle, it uses GitHub's **Update branch** action. It requests `MERGE` and sends

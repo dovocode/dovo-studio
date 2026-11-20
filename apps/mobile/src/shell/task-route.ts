@@ -28,3 +28,40 @@ export function taskHref(
     },
   }
 }
+
+/** The search parameters that `taskHref` writes. Expo Router returns them as strings. */
+export type TaskRouteParams = {
+  runtimeId?: string
+  taskId?: string
+  runtimeIdentity?: string
+  nativeAgentKey?: string
+  questionId?: string
+  approvalId?: string
+  parentRuntimeId?: string
+  parentRuntimeIdentity?: string
+  parentTaskId?: string
+  parentTitle?: string
+}
+
+/** Rebuilds the open thread route, including its request and parent, so a return keeps all of it. */
+export function taskRouteHref(
+  params: TaskRouteParams & { runtimeId: string; taskId: string },
+  fallbackParentTitle: string,
+) {
+  return taskHref(
+    params.runtimeId,
+    params.taskId,
+    params.questionId,
+    params.parentRuntimeId && params.parentTaskId
+      ? {
+          runtimeId: params.parentRuntimeId,
+          runtimeIdentity: params.parentRuntimeIdentity,
+          taskId: params.parentTaskId,
+          title: params.parentTitle ?? fallbackParentTitle,
+        }
+      : undefined,
+    params.runtimeIdentity,
+    params.nativeAgentKey,
+    params.approvalId,
+  )
+}

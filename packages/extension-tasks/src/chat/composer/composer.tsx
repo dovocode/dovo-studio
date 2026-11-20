@@ -27,7 +27,7 @@ import {
 } from '@dovo/protocol'
 import { ComposerDictation } from './composer-dictation'
 import { permissionPolicyUIIssue } from '@dovo/studio-ui'
-import { randomUUID, checkpointUndoTurn, taskForkResultSchema, taskSchema } from '@dovo/protocol'
+import { randomUUID, taskUndoBackupId, taskForkResultSchema, taskSchema } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { pendingMessageDestination, type PendingMessage } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -147,8 +147,6 @@ export function Composer({
     flush,
     snapshot,
     activeRuntimeId,
-    runtimeRegistry,
-    refreshRuntime,
   } = useWorkspaceSelector(selectComposerWorkspace, sameComposerWorkspace)
   const loadComposerHistory = useCommittedCallback((signal: AbortSignal, before?: string) => {
     if (!connected) return Promise.reject(new Error('Reconnect to recall earlier messages.'))
@@ -411,11 +409,9 @@ export function Composer({
     activeRuntimeId,
     task.id,
   ])
-  const [command, setCommand] = useState<'new-session' | 'undo' | null>(null)
+  const [command, setCommand] = useState<'new-session' | 'backup' | null>(null)
   const [commandBusy, setCommandBusy] = useState(false)
   const [commandError, setCommandError] = useState('')
-  const [commandRefreshing, setCommandRefreshing] = useState(false)
-  const [commandNeedsRefresh, setCommandNeedsRefresh] = useState(false)
   const commandWorking = useRef(false)
   const commandTarget = useRef<{
     taskId: string
@@ -435,8 +431,6 @@ export function Composer({
     commandWorking.current = false
     setCommand(null)
     setCommandBusy(false)
-    setCommandRefreshing(false)
-    setCommandNeedsRefresh(false)
     setCommandError('')
     return () => {
       commandTarget.current = null
@@ -461,14 +455,8 @@ export function Composer({
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
       .finally(() => setCompactBusy(false))
   }
-  const undoable = checkpointUndoTurn(task.turns ?? [])
-  const undoableId =
-    (undoable?.checkpoint?.restorePending ? undoable.id : task.historyTotals?.pendingUndoTurnId) ??
-    undoable?.id ??
-    (task.turns?.some((turn) => turn.checkpoint?.sharedCheckout)
-      ? undefined
-      : task.historyTotals?.undoableTurnId)
-  const runCommand = (id: ComposerCommandId) => {
+  const backupTurnId = taskUndoBackupId(task)
+  const runCommand = (id: ComposerCommandId | 'backup') => {
     if (commandWorking.current) return
     setCommandError('')
     if (id === 'review')
@@ -483,7 +471,7 @@ export function Composer({
         taskId: task.id,
         runtimeId: activeRuntimeId,
         connection,
-        turnId: undoableId,
+        turnId: backupTurnId,
       }
       setCommand(id)
     }
@@ -493,7 +481,6 @@ export function Composer({
     commandTarget.current = null
     setCommand(null)
   }
-  const canUndoCommand = !!undoableId && commandTarget.current?.turnId === undoableId
   const confirmCommand = () => {
     const target = commandTarget.current
     if (
@@ -503,7 +490,8 @@ export function Composer({
       commandWorking.current ||
       !connected ||
       task.status === 'running' ||
-      (command === 'undo' && (!canUndoCommand || commandNeedsRefresh))
+      (command === 'backup' &&
+        (!backupTurnId || target.turnId !== backupTurnId || !snapshot?.retryUsesCurrentFiles))
     )
       return
     commandWorking.current = true
@@ -514,11 +502,11 @@ export function Composer({
         ? request('/api/tasks/new-session', { id: target.taskId }, responses.ok)
         : target.turnId
           ? request(
-              '/api/tasks/turn/restore',
-              { id: target.taskId, turnId: target.turnId, direction: 'undo' },
+              '/api/tasks/turn/review-backup',
+              { id: target.taskId, turnId: target.turnId },
               responses.ok,
             )
-          : Promise.reject(new Error('There is no turn with file changes to undo.'))
+          : Promise.reject(new Error('No saved Undo backup for this turn.'))
     void work
       .then(() => {
         if (!commandIsCurrent(target)) return
@@ -530,47 +518,11 @@ export function Composer({
       .catch((cause: unknown) => {
         if (!commandIsCurrent(target)) return
         setCommandError(cause instanceof Error ? cause.message : String(cause))
-        if (command === 'undo') setCommandNeedsRefresh(true)
       })
       .finally(() => {
         if (!commandIsCurrent(target)) return
         commandWorking.current = false
         setCommandBusy(false)
-      })
-  }
-  const refreshCommand = () => {
-    const target = commandTarget.current
-    if (!target || !commandIsCurrent(target) || commandWorking.current || !connected) return
-    const profile = runtimeRegistry.profiles.find((entry) => entry.id === target.runtimeId)
-    if (!profile) {
-      setCommandError('This thread’s computer is no longer saved. Reopen the thread to continue.')
-      return
-    }
-    commandWorking.current = true
-    setCommandRefreshing(true)
-    setCommandError('')
-    // Flush and merge the captured runtime's snapshot; never discard local edits or reconnect.
-    void Promise.resolve()
-      .then(() => {
-        if (!commandIsCurrent(target)) return
-        composerDraft.flush()
-        return flush()
-      })
-      .then(() => {
-        if (!commandIsCurrent(target)) return
-        return refreshRuntime(profile)
-      })
-      .then(() => {
-        if (commandIsCurrent(target)) setCommandNeedsRefresh(false)
-      })
-      .catch((cause: unknown) => {
-        if (commandIsCurrent(target))
-          setCommandError(cause instanceof Error ? cause.message : String(cause))
-      })
-      .finally(() => {
-        if (!commandIsCurrent(target)) return
-        commandWorking.current = false
-        setCommandRefreshing(false)
       })
   }
   const resources = useMemo(
@@ -1944,18 +1896,30 @@ export function Composer({
           onClose={() => setManagingPrompts(false)}
         />
       )}
+      {snapshot && !snapshot.retryUsesCurrentFiles && backupTurnId && (
+        <p className="text-sm text-muted-foreground">
+          Update the runtime to review the saved Undo backup.
+        </p>
+      )}
+      {snapshot?.retryUsesCurrentFiles && backupTurnId && (
+        <Button
+          type="button"
+          size="sm"
+          variant="outline"
+          disabled={!connected || commandBusy}
+          onClick={() => runCommand('backup')}
+        >
+          Review saved Undo backup
+        </Button>
+      )}
       <ComposerCommandDialog
         command={command}
         commandBusy={commandBusy}
-        refreshing={commandRefreshing}
-        needsRefresh={commandNeedsRefresh}
-        canUndo={canUndoCommand}
         connected={connected}
         running={task.status === 'running'}
         error={commandError}
         onClose={closeCommand}
         onConfirm={confirmCommand}
-        onRefresh={refreshCommand}
       />
       {startup ? (
         <div className={pendingQuestion ? 'hidden' : undefined} inert={machineMoving || undefined}>

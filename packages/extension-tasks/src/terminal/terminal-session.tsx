@@ -3,7 +3,7 @@ import { terminalFileLinks, type TerminalFileLink } from './terminal-file-links'
 import { createRuntimeClient } from '@dovo/protocol'
 import { startReconnecting, useAppPreferences, fontStack, systemMonoFont } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useLayoutEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef } from 'react'
 import {
   BrowserTerminal,
   openElectronTerminalPort,
@@ -15,6 +15,8 @@ import { responses, useWorkspace, useStudioTheme, useResolvedTheme } from '@dovo
 import { terminalSelection } from './terminal-selection'
 import { ContextMenu } from '@dovo/studio-ui'
 import { copyTextToClipboard, readTextFromClipboard } from '@dovo/studio-ui/clipboard'
+
+import { useForegroundCompletion } from '../use-foreground-completion'
 
 const menuItem =
   'cursor-default rounded px-2 py-1.5 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-50'
@@ -37,13 +39,36 @@ export function TerminalSession({
 }) {
   const uiText = useInterfaceText()
 
-  const { connection, request, connected } = useWorkspace(),
+  const { connection, request, connected, snapshot, activeRuntimeId } = useWorkspace(),
     container = useRef<HTMLDivElement>(null),
     [error, setError] = useApplicationState('')
   const [selectionError, setSelectionError] = useApplicationState('')
   const [hasSelection, setHasSelection] = useApplicationState(false)
   const [writable, setWritable] = useApplicationState(false)
   const [actionError, setActionError] = useApplicationState('')
+  const session = snapshot?.terminals.find((item) => item.id === id)
+  const turn = session?.turn ?? 0
+  const revision = session?.seenRevision ?? 0
+  const unread = turn > (session?.seenTurn ?? 0)
+  const supportsView = !!snapshot?.terminalTurnsSupported && turn > 0
+  const scope = JSON.stringify([activeRuntimeId, connection?.address, connection?.token, id, turn])
+  const setSeen = useCallback(
+    async (seen = true) => {
+      await request(
+        '/api/terminals/update',
+        { id, view: { turn, expectedRevision: revision, seen } },
+        responses.terminal,
+      )
+    },
+    [request, id, turn, revision],
+  )
+  const viewed = useForegroundCompletion(
+    active && connected && writable && supportsView,
+    scope,
+    JSON.stringify([scope, revision]),
+    unread,
+    setSeen,
+  )
   const fileHandler = useRef(onOpenFile)
   fileHandler.current = onOpenFile
   const actionScope = useRef(0)
@@ -313,9 +338,9 @@ export function TerminalSession({
               {selectionError}
             </p>
           )}
-          {(actionError || error) && (
+          {(actionError || error || viewed.error) && (
             <p role="alert" className="absolute bottom-0 bg-card p-2 text-xs text-destructive">
-              {actionError || error}
+              {actionError || error || viewed.error}
             </p>
           )}
         </div>
@@ -356,6 +381,17 @@ export function TerminalSession({
           >
             Jump to latest
           </ContextMenu.Item>
+          {supportsView && (
+            <ContextMenu.Item
+              className={menuItem}
+              disabled={!active || !connected}
+              onSelect={() =>
+                void setSeen(unread).catch((cause: unknown) => setActionError(String(cause)))
+              }
+            >
+              {unread ? 'Mark read' : 'Mark unread'}
+            </ContextMenu.Item>
+          )}
           {onAddSelection && (
             <>
               <ContextMenu.Separator className="my-1 h-px bg-border" />

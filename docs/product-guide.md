@@ -81,7 +81,10 @@ guide before creating a separate workspace.
   cancellation.
 - Task conversations provide commit and pull request creation from Changes, generated commit and
   pull request text, approval shortcuts (Y/N and question options 1–9), bookmarks, and a tool-based
-  summary after each turn. A finished turn with file changes refreshes its browser preview.
+  summary after each turn. Y and Enter work only when the request offers **Allow once**. Number keys
+  choose options in the question that has focus, and that question shows the key hints. With focus
+  elsewhere in the form, they choose options in the first question. A finished turn with file
+  changes refreshes its browser preview.
 - Project approval rules remember exact approved commands and can also always allow web browsing and
   search. Desktop project actions manage both rules; the mobile thread menu manages web permission.
   Project instructions can be edited with a diff and a disk-change check.
@@ -196,12 +199,13 @@ pnpm pair deny <request-id>
 Use the actual runtime port. The code expires after two minutes and automatically approves one
 device. Every code is single use. Use `pnpm pair --manual` for a single-use code that requires
 approving its request. Generate a separate code for each device. `devices` shows pending requests
-and paired devices, not live network presence. `--json` supports scripting;
-`--connection /path/to/runtime-connection.json` selects a specific runtime. `--public-address` only
-changes the displayed address; the runtime must already listen on a reachable interface. An explicit
-`--public-address` takes precedence over `--network` discovery, including an HTTPS reverse proxy.
-Discovery deduplicates interface aliases and reports malformed optional VPN status without blocking
-pairing over the other available addresses.
+and paired devices, not live network presence. Every command reads the runtime's snapshot overview,
+without conversation history. An older runtime that sends a full snapshot still works. `--json`
+supports scripting; `--connection /path/to/runtime-connection.json` selects a specific runtime.
+`--public-address` only changes the displayed address; the runtime must already listen on a
+reachable interface. An explicit `--public-address` takes precedence over `--network` discovery,
+including an HTTPS reverse proxy. Discovery deduplicates interface aliases and reports malformed
+optional VPN status without blocking pairing over the other available addresses.
 
 `pnpm pair` lists detected reachable-interface addresses; `--network` selects LAN, Tailscale or
 NetBird. These are advertised interface addresses, not a guarantee that a remote device's firewall
@@ -223,6 +227,15 @@ application-data directory. Desktop and runtime preferences are in `~/.dovo/sett
 Development desktop uses `~/.dovo-dev` with a separate Electron profile and workspace. Provider
 authentication stays on the host. Packaged desktop builds include Node 26 and the complete runtime
 dependency closure. Development builds can use `DOVO_NODE_PATH` when Node is absent from PATH.
+
+The `runtimeSaves` section in that file has a save counter and the IDs of the last 200 computer
+preference saves from paired devices. The runtime writes it in the same locked file write as the
+preferences, and it makes its checks on the file it reads under that lock. If a device retries a
+save whose reply was lost, the runtime finds the save there and returns the current preferences. It
+does not write the old values over a newer save. If the runtime cannot find the save and another
+save has happened since, it rejects the retry with 409. Review the current preferences and save
+again. After an update, a save that an older runtime left unfinished gets the same check. The
+runtime accepts its retry only if the retry would change nothing.
 
 For browser access, serve the web frontend over your private network too. An HTTPS frontend needs an
 HTTPS/WSS runtime endpoint, supplied by your local reverse proxy; browsers block mixed content.
@@ -299,6 +312,12 @@ client storage; paired devices are trusted to operate this personal workspace.
 Desktop and web settings use a grouped sidebar with search (matching words inside each page, such as
 "shell", "resume" or "worktree"). Per-computer pages have a computer picker.
 
+The desktop and web command palette (⌘/Ctrl+K) lists a section only while the sidebar shows it, and
+**Open Browser** focuses a detached browser window first, as the sidebar does. Settings pages appear
+as **Open … settings**, for example **Open Browser settings**. **New thread**, **Go to thread…** and
+**Search conversations…** work from every view while Threads is in the sidebar. Outside Threads they
+open Threads first.
+
 - **This app** (stored on this device only):
   - **General** — project organization, default task sort, navigation, 12- or 24-hour time,
     confirmations and background activity.
@@ -312,9 +331,10 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
     profiles stay on their computer. Enable **Keep signed in across restarts** and save a profile to
     retain its session cookies. This is off by default; disabling it discards the saved
     session-cookie copy. Explicit logout, cookie clearing and server-side session expiry still
-    apply. Desktop session cookies require OS credential storage and are saved encrypted. Remote
-    profiles retain them on a clean browser-context close in owner-readable files; an abrupt runtime
-    stop can lose them. Private profiles never retain cookies across restarts.
+    apply. Desktop session cookies require OS credential storage and are saved encrypted. If the
+    keychain is locked at launch, the next tab or navigation retries the restore after you unlock
+    it. Remote profiles retain them on a clean browser-context close in owner-readable files; an
+    abrupt runtime stop can lose them. Private profiles never retain cookies across restarts.
   - **Updates & about** — version, release channel, update preferences and open-source notices.
 - **Agents**:
   - **Agents** — built-in Codex, Claude Code and other provider profiles, plus custom
@@ -352,9 +372,10 @@ Desktop and web settings use a grouped sidebar with search (matching words insid
 On iPhone, **Settings → This app → General** sets the tab to open on launch, the default task sort,
 12- or 24-hour time, whether tool activity starts expanded, the preferred merge method, whether new
 pull requests start as drafts, whether the screen stays on while an open task is running, and
-whether archiving or stopping a task asks for confirmation. **Car mode** (in General → Driving, or
-the car button on Tasks) enlarges text, keeps only the Tasks and Settings tabs, shows tasks as title
-and state without search, filters or row menus, hides tool activity, timestamps and the change and
+whether archiving or stopping a task asks for confirmation. A notification tap or link that opens
+the app keeps its own screen instead of the launch tab. **Car mode** (in General → Driving, or the
+car button on Tasks) enlarges text, keeps only the Tasks and Settings tabs, shows tasks as title and
+state without search, filters or row menus, hides tool activity, timestamps and the change and
 terminal buttons in conversations, and keeps the screen on while a task runs. Replies start with
 speech: one large **Tap to talk** button records and finishes dictation, the transcript shows in
 large text with **Send** and **Clear**, and **Type instead** opens the regular composer. These
@@ -723,9 +744,17 @@ controls.
 - The task sidebar shows pinned tasks first and supports priority, recent activity, newest, project
   and title sorting. It can show collapsible status or project sections, or an ungrouped list.
   Search includes message text; filters include working, review, failed, snoozed and settled tasks.
-  Mobile offers the same grouping choices in its task filters. Settle retains the conversation,
-  queue and checkout; reopen it from the Settled filter. Car Mode keeps the project name beside each
-  task's status.
+  On mobile, message search applies the project and archive filters on each computer before it
+  limits results to 50 messages, so newer matches in other projects cannot hide the selected
+  project's matches. With a project filter, mobile searches only the computers that have that
+  project. A history change on one computer searches that computer again and keeps the other
+  computers' results. To retry a computer that failed, clear and re-enter the query or return to the
+  Tasks screen. Results from other computers stay available. Runtimes advertise filter support with
+  `taskSearchScopeSupported`. An older runtime returns its 50 newest matches from every project, and
+  mobile filters them on the phone. When that page is full, the list shows **Update … to search
+  every message in this filter**. Mobile offers the same grouping choices in its task filters.
+  Settle retains the conversation, queue and checkout; reopen it from the Settled filter. Car Mode
+  keeps the project name beside each task's status.
 - Task settings lets you rename a task, select a reusable agent and override its model/reasoning.
   Model discovery uses the configured provider executable. Overrides never mutate the reusable
   agent; changes start a fresh provider session. Stop the active turn before changing settings.
@@ -754,7 +783,9 @@ controls.
   in the task list. Choose options, select multiple answers where supported, or write your own
   response. No answer is preselected. The card temporarily replaces the composer; existing drafts
   are retained. **Send answers** continues the provider request; **Decline** explicitly declines it.
-  **Stop**, provider cancellation and runtime shutdown dismiss pending questions.
+  **Stop**, provider cancellation and runtime shutdown dismiss pending questions. Archiving or
+  deleting a thread cancels the pending questions and approvals of the thread and its child threads.
+  Restore does not reopen them, so the agent must ask again in a new turn.
 - Codex supports `item/tool/requestUserInput` and standard MCP form elicitation; Claude supports
   `AskUserQuestion` and MCP forms; OpenCode supports both question API versions; ACP advertises form
   elicitation. Availability depends on the connected provider. Codex opts into its experimental
@@ -763,11 +794,14 @@ controls.
   support text, numbers, booleans and enumerated lists, with validation before accepting answers.
   URL/browser elicitation and extended `openai/form` schemas are not supported.
 - Questions can be answered from any paired device. An already resolved request rejects later
-  replies, so another device cannot overwrite an answer. The activity log retains the question,
-  result and non-secret answers. Fields marked secret are masked in question history and omitted
-  from HTTP request-body logs; a provider's own output may still echo submitted values. Pending
-  questions belong to the live turn and are cancelled on restart, rather than replayed into a new
-  provider session.
+  replies, so another device cannot overwrite an answer. An agent that reuses a question key with
+  different wording, or in another thread, gets an error after the first answer. The old answer does
+  not count for the new question. The saved answer keeps this check after a restart. An answer saved
+  by an older runtime has no prompt identity, so reusing its key fails, even with the same wording.
+  The activity log retains the question, result and non-secret answers. Fields marked secret are
+  masked in question history and omitted from HTTP request-body logs; a provider's own output may
+  still echo submitted values. Pending questions belong to the live turn and are cancelled on
+  restart, rather than replayed into a new provider session.
 
 ### Attachments and branches
 
@@ -850,9 +884,8 @@ retain their commit reference, not their internal working-tree edits. Text previ
 without text previews. Snapshot trees retain file contents independently of preview limits. Runtime
 interruption preserves the starting snapshot and marks the unfinished checkpoint explicitly.
 External file changes during a turn also appear in its diff. Desktop and web can revert a file from
-its turn checkpoint or undo a supported turn's recorded file changes. File restoration does not
-rewind the provider conversation. See [Source control](source-control.md) for linked checkouts and
-recovery snapshots.
+its turn checkpoint. File restoration does not rewind the provider conversation. See
+[Source control](source-control.md) for linked checkouts and recovery snapshots.
 
 Desktop/web thread rows show the task title, repository, checkout branch, agent/provider icon,
 runtime host and agent icons, and working/input status or relative finish time in three compact
@@ -882,6 +915,14 @@ search permission across that project's threads and runtime restarts. This leave
 file changes, read-only restrictions, and requests requiring policy review under their existing
 rules. Change the setting in desktop **Project actions → Manage approval rules** or the mobile
 thread menu's **Project approval rules**. The **Ask before web requests** action revokes it.
+
+Approval cards offer only the scopes the provider offers for that request. When a Muse request has
+no single-use choice, the card does not show **Allow once**. An older client can still show it, but
+the runtime rejects that choice and keeps the request pending. If a provider withdraws a request,
+its card closes and a later decision cannot save a rule. The runtime keeps the outcome of the last
+256 finished approvals. Sending the same decision again after a lost response succeeds. A different
+decision fails with the original outcome, for example "This approval was already answered: Allow
+once."
 
 The computer-wide **Always allow web requests on this computer** switch covers all projects and
 threads, including threads without a project. It is off by default and saved in the computer's
@@ -1328,8 +1369,9 @@ Failed turns, including provider rate limits (429) and exhausted connection retr
 in desktop and mobile conversations. This explicitly continues the existing context and keeps
 current files and unsent drafts. Queued messages remain paused; retry does not undo changes or
 automatically resubmit other prompts. Offline and already-running tasks cannot be retried. **Try
-again** in a turn’s menu remains the separate operation that reruns a request from scratch and
-undoes that turn’s edits.
+again** in a turn’s menu repeats the latest request using the current checkout files. Choose the
+same model or another model from the same provider. To revisit the saved files separately, fork the
+turn.
 
 ## Project organization and managed runtimes
 
@@ -1368,7 +1410,10 @@ the completion event required by this adapter. Preserve the adjacent
 `<database filename>.pi-sessions` directory when moving or backing up the runtime database; the
 SQLite-only backup does not include these native session files. Dovo's saved transcript history
 remains in SQLite, but native continuation requires its private Pi session file and project
-checkout.
+checkout. Deleting an imported Pi thread, or its project, removes Dovo's private copy and keeps the
+terminal's original file. If the file removal fails, repeat the deletion or restart the runtime. If
+the runtime stops after the deletion but before it removes the copy, the next start removes it. A
+copy stays when a backup restore removes its thread without a recorded deletion.
 
 Imported Pi threads start in **Text only** mode. Built-in read, shell, edit and write tools require
 explicit **Full access**, approvals set to **Never**, and no stricter sandbox or read-only linked

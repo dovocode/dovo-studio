@@ -105,7 +105,6 @@ export class PushNotifications {
   private scheduler?: ReturnType<typeof startPolling>
   private pending?: Promise<void>
   private stopped = false
-  private nextAttempt = 0
   private error: string | null
   constructor(
     private db: Database.Database,
@@ -139,10 +138,18 @@ export class PushNotifications {
   }
   status(deviceId: string) {
     const registration = this.registration(deviceId)
+    // Another device's success clears the shared error; this device's own retry still shows.
+    const waiting = this.db
+      .prepare('SELECT 1 FROM push_outbox WHERE device_id=? AND attempt>0 LIMIT 1')
+      .get(deviceId)
     return {
       configured: !!this.relay.send || !!registration?.managedToken,
       registered: !!registration,
-      error: this.error,
+      error:
+        this.error ??
+        (waiting
+          ? 'Push delivery failed. Check the relay connection and provider credentials.'
+          : null),
     }
   }
   async test(deviceId: string) {
@@ -379,18 +386,27 @@ export class PushNotifications {
   }
   private async deliver() {
     this.capture()
-    if (Date.now() < this.nextAttempt) return
+    // Backoff belongs to each device. While a failed message waits for its retry, the device's
+    // other messages wait too, and other devices still receive their due messages.
+    const failed = new Set<string>()
+    const now = Date.now()
     const rows = this.db
       .prepare(
-        'SELECT id,device_id AS deviceId,value,attempt FROM push_outbox WHERE next<=? ORDER BY expires LIMIT 20',
+        `SELECT id,device_id AS deviceId,value,attempt FROM push_outbox AS due
+        WHERE next<=? AND NOT EXISTS (
+          SELECT 1 FROM push_outbox AS waiting
+          WHERE waiting.device_id=due.device_id AND waiting.attempt>0 AND waiting.next>?
+        )
+        ORDER BY expires LIMIT 20`,
       )
-      .all(Date.now())
+      .all(now, now)
     for (const raw of rows) {
       if (this.stopped) break
       const entry = decode(
         mutableStruct({ ...record.fields, id: Schema.String, attempt: Schema.Number }),
         raw,
       )
+      if (failed.has(entry.deviceId)) continue
       if (
         entry.deviceId !== 'owner' &&
         !this.devices.list().some((device) => device.id === entry.deviceId && !device.revokedAt)
@@ -449,19 +465,15 @@ export class PushNotifications {
         } else if (result.delivered)
           this.db.prepare('DELETE FROM push_outbox WHERE id=?').run(entry.id)
         else throw new Error('Notification was not delivered')
-        this.error = null
+        if (!failed.size) this.error = null
       } catch {
         this.error = 'Push delivery failed. Check the relay connection and provider credentials.'
         const attempt = entry.attempt + 1
-        this.nextAttempt = Date.now() + Math.min(30_000 * 2 ** Math.min(attempt - 1, 5), 900_000)
+        const next = Date.now() + Math.min(30_000 * 2 ** Math.min(attempt - 1, 5), 900_000)
+        failed.add(entry.deviceId)
         this.db
           .prepare('UPDATE push_outbox SET attempt=?,next=? WHERE id=?')
-          .run(
-            attempt,
-            Date.now() + Math.min(30_000 * 2 ** Math.min(attempt - 1, 5), 900_000),
-            entry.id,
-          )
-        break
+          .run(attempt, next, entry.id)
       }
     }
   }

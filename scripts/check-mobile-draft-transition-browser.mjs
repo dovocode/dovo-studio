@@ -212,6 +212,11 @@ mocks['../../ui/controls/field'] =
 const mobileRequire = createRequire(root + 'apps/mobile/package.json')
 mocks['../ui/controls/action'] = mocks['../../ui/controls/action']
 mocks['../ui/content/text'] = mocks['../../ui/content/text']
+// The real TaskReview renders the real DraftStorageNotice. Keep the native Action, theme and Text
+// controls it imports from ui/content on the same boundaries as every other mobile control here.
+mocks['../controls/action'] = mocks['../../ui/controls/action']
+mocks['../theme'] = mocks['../../ui/theme']
+mocks['./text'] = mocks['../../ui/content/text']
 mocks['../runtime/connection/provider'] = `export * from '../../runtime/connection/provider';`
 mocks['../runtime/state/application-state'] = mocks['../../runtime/state/application-state']
 mocks['./navigation'] = `export * from '../../shell/navigation';`

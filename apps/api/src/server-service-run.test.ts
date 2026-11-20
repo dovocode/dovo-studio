@@ -10,8 +10,9 @@ import {
   realpathSync,
 } from 'node:fs'
 import { DatabaseSync } from 'node:sqlite'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { createHash } from 'node:crypto'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { ChildProcess, spawn } from 'node:child_process'
 import { runService } from './server-service'
@@ -56,6 +57,8 @@ it('loads saved CA and credentials before starting Node and preserves configured
     }),
   )
   vi.stubEnv('NODE_EXTRA_CA_CERTS', '/old.pem')
+  vi.stubEnv('DOVO_TERMINAL_HOLDER_SUPERVISOR', undefined)
+  vi.stubEnv('INVOCATION_ID', 'unrelated-service')
   const child = new ChildProcess()
   vi.mocked(spawn).mockImplementation(() => {
     queueMicrotask(() => child.emit('exit', 0))
@@ -76,8 +79,40 @@ it('loads saved CA and credentials before starting Node and preserves configured
       }),
     }),
   )
+  expect(vi.mocked(spawn).mock.calls[0]?.[2]?.env?.DOVO_TERMINAL_HOLDER_SUPERVISOR).toBeUndefined()
   expect(process.listenerCount('SIGTERM')).toBe(listeners)
 })
+
+it.skipIf(process.platform !== 'darwin' && process.platform !== 'linux')(
+  'supplies the holder supervisor for a service registered before the marker was added',
+  async () => {
+    directory = mkdtempSync(join(tmpdir(), 'dovo-service-env-'))
+    const databasePath = join(directory, 'runtime.sqlite')
+    writeFileSync(
+      join(directory, 'server.json'),
+      JSON.stringify({ version: 1, host: '127.0.0.1', port: 8000, databasePath }),
+    )
+    const name = `dovo-server-${createHash('sha256').update(resolve(directory)).digest('hex').slice(0, 12)}`
+    const path =
+      process.platform === 'darwin'
+        ? join(homedir(), 'Library', 'LaunchAgents', `com.dovo.${name}.plist`)
+        : join(homedir(), '.config', 'systemd', 'user', `${name}.service`)
+    writeFileSync(
+      join(directory, 'server-service.json'),
+      JSON.stringify({ platform: process.platform, name, path, launcher: '/fixture/server' }),
+    )
+    vi.stubEnv('DOVO_TERMINAL_HOLDER_SUPERVISOR', undefined)
+    const child = new ChildProcess()
+    vi.mocked(spawn).mockImplementation(() => {
+      queueMicrotask(() => child.emit('exit', 0))
+      return child
+    })
+    await runService(directory)
+    expect(vi.mocked(spawn).mock.calls[0]?.[2]?.env?.DOVO_TERMINAL_HOLDER_SUPERVISOR).toBe(
+      process.platform === 'darwin' ? 'launchd' : 'systemd',
+    )
+  },
+)
 
 it('rejects unsupported environment entries before spawning a runtime', async () => {
   directory = mkdtempSync(join(tmpdir(), 'dovo-service-env-'))

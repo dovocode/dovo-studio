@@ -1,5 +1,6 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '@dovo/protocol'
+import type { StudioCommand } from './frontend'
 
 const binding = Schema.optional(Schema.NullOr(Schema.String))
 export const shortcutOverridesSchema = mutableStruct({
@@ -104,3 +105,22 @@ export function applicationShortcutLabel(id: ApplicationShortcut, overrides: Sho
       .replace('Control', 'Ctrl') ?? 'Unassigned'
   )
 }
+/** Thread actions the command palette offers in every view. The Threads view registers them with
+ * these IDs; in other views the shell opens Threads first, then runs the registered command. */
+export const threadCommands = {
+  newThread: {
+    id: 'tasks.new',
+    title: 'New thread',
+    aliases: ['new thread', 'new chat', 'start conversation'],
+  },
+  goToThread: {
+    id: 'tasks.switch',
+    title: 'Go to thread…',
+    aliases: ['go to thread', 'find thread', 'switch thread'],
+  },
+  searchConversations: {
+    id: 'tasks.search',
+    title: 'Search conversations…',
+    aliases: ['search messages', 'find message', 'search thread', 'find in conversation'],
+  },
+} as const satisfies Record<string, Omit<StudioCommand, 'run'>>

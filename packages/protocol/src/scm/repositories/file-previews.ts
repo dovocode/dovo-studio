@@ -1,6 +1,6 @@
 import { Schema } from 'effect'
 import { mutableStruct } from '../../shared/schema.js'
-import type { ChangedFile, TaskTurn } from '../../workspace.js'
+import type { ChangedFile, Task, TaskTurn } from '../../workspace.js'
 
 /** Expanded text is loaded only on request, never embedded in workspace snapshots. */
 export const FULL_FILE_DIFF_LIMIT = 8 * 1024 * 1024
@@ -100,12 +100,30 @@ export function checkpointFileCount(checkpoint: TaskTurn['checkpoint']) {
   )
 }
 
-export function checkpointCanUndo(checkpoint: TaskTurn['checkpoint']) {
-  if (checkpoint?.restorePending) return true
-  if (!checkpoint || checkpoint.error || checkpoint.sharedCheckout) return false
-  return [checkpoint, ...(checkpoint.linked ?? [])].some(
-    (item) =>
-      !!item.after && !item.error && !item.undone && item.files.length + item.omitted.length > 0,
+export function hasUndoBackup(checkpoint: TaskTurn['checkpoint']) {
+  return (
+    !!checkpoint &&
+    !checkpoint.undoBackupReviewed &&
+    !!(
+      checkpoint.restorePending ||
+      checkpoint.undone ||
+      checkpoint.linked?.some((link) => link.undone)
+    )
+  )
+}
+
+export function undoBackupTurn(turns: readonly TaskTurn[]) {
+  return (
+    turns.find((turn) => turn.checkpoint?.restorePending) ??
+    turns.find((turn) => hasUndoBackup(turn.checkpoint))
+  )
+}
+
+export function taskUndoBackupId(task: Pick<Task, 'turns' | 'historyTotals'>) {
+  return (
+    task.historyTotals?.pendingUndoTurnId ??
+    undoBackupTurn(task.turns ?? [])?.id ??
+    task.historyTotals?.undoBackupTurnId
   )
 }
 
@@ -118,15 +136,4 @@ export function checkpointRestoreNotice(turns: readonly TaskTurn[], turnId: stri
   if (turns[index]?.checkpoint?.sharedCheckout) return sharedCheckoutCheckpointNotice
   if (turns.slice(index + 1).some((turn) => turn.checkpoint?.sharedCheckout))
     return 'Restoring this turn could overwrite changes from other threads.'
-}
-
-/** Finish an interrupted undo before undoing another turn. */
-export function checkpointUndoTurn(turns: readonly TaskTurn[]) {
-  const pending = turns.find((turn) => turn.status !== 'running' && turn.checkpoint?.restorePending)
-  if (pending) return pending
-  for (let index = turns.length - 1; index >= 0; index--) {
-    const turn = turns[index]
-    if (turn.checkpoint?.sharedCheckout) break
-    if (turn.status !== 'running' && checkpointCanUndo(turn.checkpoint)) return turn
-  }
 }

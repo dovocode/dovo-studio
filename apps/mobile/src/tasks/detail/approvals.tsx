@@ -1,13 +1,12 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useOperationGuard } from '../../runtime/state/use-operation-guard'
-import { taskHref } from '../../shell/task-route'
 import {
   runtimeComputerName,
-  resolveThreadRuntime,
   activitySchema,
-  type ApprovalDecision,
   approvalActions,
+  taskFamilyIds,
+  taskInputOwner,
   taskInputVisible,
   taskRemoteHumanInputs,
 } from '@dovo/protocol'
@@ -22,9 +21,14 @@ import { useAction } from '../../ui/controls/use-action'
 import { ApprovalDetails } from './approval-details'
 import { useEffect, useMemo, useState } from 'react'
 import { clientScopeKey, runClientEffect } from '@dovo/client-runtime'
-import { recordedApprovalDecision, selectTaskApprovals } from './approval-selection'
+import {
+  recordedApprovalOutcome,
+  selectTaskApprovals,
+  type RecordedApprovalOutcome,
+} from './approval-selection'
 import { useConversationSelector } from '../conversation/state/provider'
 import { NotificationInputView } from '../../notifications/viewport-view'
+import { remoteInputHref } from '../../notifications/target'
 export function TaskApprovals({ taskId }: { taskId: string }) {
   const uiText = useInterfaceText()
 
@@ -58,22 +62,25 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
   const [receipt, setReceipt] = useState<{
     scope: string
     attempt: number
-    decision?: ApprovalDecision
+    outcome?: RecordedApprovalOutcome
     failed?: true
   }>()
   const result = receipt?.scope === scope && receipt.attempt === attempt ? receipt : undefined
-  const decision = result?.decision
-  const lookup = !!task && !!approvalId && !approvals.length && connected && visible && !decision
+  const outcome = result?.outcome
+  // The runtime records an approval under the thread that asked. A child's approval opened from
+  // its parent is in the child's scope, so match the exact ID anywhere in the visible family.
+  const family = useMemo(
+    () => (snapshot ? [...taskFamilyIds(snapshot.workspace.tasks, taskId)] : [taskId]),
+    [snapshot, taskId],
+  )
+  const familyKey = JSON.stringify(family)
+  const lookup = !!task && !!approvalId && !approvals.length && connected && visible && !outcome
   useEffect(() => {
     if (!lookup || !approvalId) return
     const controller = new AbortController()
     setReceipt(undefined)
     void runClientEffect(
-      readEffect(
-        '/api/activity',
-        { scope: taskId, kind: 'approval', query: approvalId },
-        activitySchema,
-      ),
+      readEffect('/api/activity', { kind: 'approval', query: approvalId }, activitySchema),
       controller.signal,
     ).then(
       ({ events }) => {
@@ -81,7 +88,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           setReceipt({
             scope,
             attempt,
-            decision: recordedApprovalDecision(events, taskId, approvalId),
+            outcome: recordedApprovalOutcome(events, new Set(family), approvalId),
           })
       },
       () => {
@@ -89,17 +96,29 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
       },
     )
     return () => controller.abort()
-  }, [lookup, approvalId, taskId, scope, attempt, readEffect])
+  }, [lookup, approvalId, familyKey, scope, attempt, readEffect])
+  const decision = outcome && 'decision' in outcome ? outcome.decision : undefined
+  const ended = outcome && 'ended' in outcome ? outcome.ended : undefined
   const decisionLabel =
-    decision === 'deny'
-      ? uiText('Recorded decision: Not approved')
-      : decision === 'approve'
-        ? uiText('Recorded decision: Approved once')
-        : decision === 'session'
-          ? uiText('Recorded decision: Approved for this session')
-          : decision === 'always'
-            ? uiText('Recorded decision: Always allowed')
-            : undefined
+    ended === 'withdrawn'
+      ? uiText('This approval request was withdrawn, or its turn ended. No decision was recorded.')
+      : ended === 'expired'
+        ? uiText('This approval expired. No decision was recorded.')
+        : ended === 'access-changed'
+          ? uiText('Access changed, so this approval expired. No decision was recorded.')
+          : ended === 'cancelled'
+            ? uiText('This approval was cancelled. No decision was recorded.')
+            : ended === 'other'
+              ? uiText('This approval ended without a decision.')
+              : decision === 'deny'
+                ? uiText('Recorded decision: Not approved')
+                : decision === 'approve'
+                  ? uiText('Recorded decision: Approved once')
+                  : decision === 'session'
+                    ? uiText('Recorded decision: Approved for this session')
+                    : decision === 'always'
+                      ? uiText('Recorded decision: Always allowed')
+                      : undefined
   const receiptStatus =
     decisionLabel ??
     (!connected
@@ -137,10 +156,19 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           style={styles.card}
           input={
             profile?.id
-              ? { runtimeId: profile.id, taskId, inputId: item.id, inputType: 'approval' }
+              ? {
+                  runtimeId: profile.id,
+                  taskId: item.taskId,
+                  ownerTaskId: snapshot
+                    ? taskInputOwner(snapshot.workspace.tasks, item.taskId)
+                    : undefined,
+                  runtimeIdentity: snapshot?.runtimeId,
+                  inputId: item.id,
+                  inputType: 'approval',
+                }
               : undefined
           }
-          enabled={visible && connected && !busy && item.taskId === taskId}
+          enabled={visible && connected && !busy}
         >
           <Text style={styles.muted}>
             <InterfaceText
@@ -216,30 +244,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           <Action
             label={uiText('Review request')}
             secondary
-            onPress={() => {
-              const owner = resolveThreadRuntime(
-                { runtimeId: input.runtimeId, runtimeIdentity: input.ownerRuntimeIdentity },
-                profiles,
-                overviews,
-              )
-              const ownerSnapshot = overviews.find(
-                (entry) => entry.profile.id === owner?.id,
-              )?.snapshot
-              const question = ownerSnapshot?.questions.some(
-                (request) => request.id === input.id && request.taskId === input.ownerTaskId,
-              )
-              router.push(
-                taskHref(
-                  owner?.id ?? input.runtimeId,
-                  owner ? input.ownerTaskId : input.taskId,
-                  question ? input.id : undefined,
-                  undefined,
-                  owner ? input.ownerRuntimeIdentity : input.runtimeIdentity,
-                  undefined,
-                  owner && input.kind === 'approval' ? input.id : undefined,
-                ),
-              )
-            }}
+            onPress={() => router.push(remoteInputHref(input, profiles, overviews))}
           />
         </View>
       ))}

@@ -102,6 +102,48 @@ it('keeps live delivery synchronous and ordered and isolates failing clients', a
   }
 })
 
+it('keeps incomplete screen tokens and queued live output in their original order', async () => {
+  const { terminals, id } = terminal()
+  try {
+    pty.data!('\x1b[?1049h\x1b[Htop panel')
+    await terminals.screen(id)
+    const replay: string[] = []
+    const live: string[] = []
+    pty.data!('\x1b[')
+    const detach = terminals.attachScreen(
+      id,
+      (data) => replay.push(data),
+      (data) => live.push(data),
+    )
+    pty.data!('2;4H\ud83d')
+    pty.data!('\ude42only once')
+    await vi.waitFor(() => {
+      expect(replay).toEqual(['\x1b[?1049h\x1b[Htop panel\x1b['])
+      expect(live).toEqual(['2;4H🙂only once'])
+    })
+    detach()
+
+    const restored: string[] = []
+    const updates: string[] = []
+    const leave = terminals.attachScreen(
+      id,
+      (data) => restored.push(data),
+      (data) => updates.push(data),
+    )
+    pty.data!('\x1b[3;1Hlive after replay')
+    await vi.waitFor(() => {
+      expect(restored).toHaveLength(1)
+      expect(restored[0]).toContain('🙂only once')
+      expect(restored[0]).not.toContain('live after replay')
+      expect(updates).toEqual(['\x1b[3;1Hlive after replay'])
+    })
+    leave()
+  } finally {
+    pty.exit!({ exitCode: 0 })
+    await terminals.dispose()
+  }
+})
+
 it('keeps the PTY paused until every pressured subscriber releases it', async () => {
   const { terminals, id } = terminal()
   const first = terminals.pressure(id)

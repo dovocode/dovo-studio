@@ -9,7 +9,15 @@ import { Effect } from 'effect'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { routeProgram, serviceResult } from '../../http/support/effect.js'
-import { taskLifecycle } from '../../http/endpoints/agents-routes.js'
+import {
+  deleteThreadRecords,
+  releaseThreadResources,
+  removeDeletedThreadFiles,
+  removeThreadSandboxes,
+  retireDeletedThreadInputs,
+  threadFamily,
+} from '../../agents/tasks/thread-deletion.js'
+import { listWorktreesEffect } from '../git/worktrees.js'
 
 const projectReferences = (
   task: {
@@ -52,7 +60,7 @@ export function deleteProjectEffect(s: Services, value: unknown) {
         )
           throw new HttpError(
             409,
-            'Finish the pending undo or redo in a linked thread before deleting this project.',
+            'Review the saved Undo backup in the linked thread before deleting this project.',
           )
       }
 
@@ -112,43 +120,45 @@ export function deleteProjectEffect(s: Services, value: unknown) {
       try {
         taskReservation = s.tasks.reserveDeletion([...guardedTaskIds])
         automationReservation = s.jobs.reserveDeletion([...flowIds])
-        if (flowIds.size)
-          s.store.update((current) => ({
-            ...current,
-            automations: current.automations.map((flow) =>
-              flowIds.has(flow.id) ? { ...flow, enabled: false } : flow,
-            ),
-          }))
+        // Check every thread before any cleanup starts, so a conflict changes nothing.
+        const families = roots.map((task) => threadFamily(s, task.id, 'delete', taskReservation))
+        const familyIds = new Set(families.flatMap((family) => [...family.ids]))
+        const requireFamilies = () => {
+          for (const family of families) {
+            family.requireUnchanged()
+            family.requireIdle()
+          }
+        }
+        requireFamilies()
 
         yield* serviceResult(s.artifactFeeds.stopTasks([...deletedTaskIds]))
         yield* serviceResult(s.sharedThreads.stopTasks([...deletedTaskIds]))
         try {
-          const reservedTasks = taskReservation
-          for (const task of roots) yield* taskLifecycle(s, task.id, 'delete', false, reservedTasks)
-
-          const remainingProjectTasks = s.store
-            .get()
-            .tasks.filter((task) => task.repositoryId === repositoryId)
-          if (remainingProjectTasks.length)
-            throw new HttpError(
-              409,
-              'Project threads changed during deletion. Refresh and try again.',
-            )
+          for (const family of families) yield* releaseThreadResources(s, family.ids)
+          // Retain older checkout identities before their owning threads disappear.
+          yield* listWorktreesEffect(s)
+          requireFamilies()
+          for (const terminal of s.terminals.list())
+            if (familyIds.has(terminal.taskId)) yield* serviceResult(s.terminals.close(terminal.id))
 
           // Tasks linked to the deleted project remain intact, with only the dangling checkout
           // reference removed. Repository and worktree paths are never passed to a remover here.
           // Removing this checkout must not delete metadata shared with other machines.
           // Explicit settings resets retain their per-category tombstones through sync.
-
-          const deleted = new Set(deletedTaskIds)
+          // Threads, the project and automation changes commit together. A failure keeps all.
+          const deleted = s.store.get().tasks.filter((task) => familyIds.has(task.id))
           s.store.transaction(() => {
-            for (const id of deleted) s.db.prepare('DELETE FROM activity WHERE scope=?').run(id)
-            s.threadWatch.forgetTasks([...deleted])
+            deleteThreadRecords(s, familyIds)
+            if (s.store.get().tasks.some((task) => task.repositoryId === repositoryId))
+              throw new HttpError(
+                409,
+                'Project threads changed during deletion. Refresh and try again.',
+              )
+            s.threadWatch.forgetTasks([...familyIds])
             s.store.update((current) => ({
               ...current,
               repositories: current.repositories.filter((entry) => entry.id !== repositoryId),
               tasks: current.tasks.map((task) => {
-                if (deleted.has(task.id)) return task
                 const active = task.linkedCheckouts ?? []
                 const pending = task.pendingLinkedCheckouts ?? []
                 const removedLinkIds = new Set(
@@ -171,7 +181,7 @@ export function deleteProjectEffect(s: Services, value: unknown) {
                 (link) => link.repositoryId !== repositoryId,
               ),
               planLimits: current.planLimits?.filter(
-                (limit) => !limit.sourceTaskId || !deleted.has(limit.sourceTaskId),
+                (limit) => !limit.sourceTaskId || !familyIds.has(limit.sourceTaskId),
               ),
               automations: current.automations.map((flow) => {
                 if (!flowIds.has(flow.id)) return flow
@@ -197,7 +207,9 @@ export function deleteProjectEffect(s: Services, value: unknown) {
               }),
             }))
           })
-          yield* serviceResult(s.attachments.prune())
+          retireDeletedThreadInputs(s, familyIds)
+          yield* removeThreadSandboxes(s, familyIds)
+          yield* removeDeletedThreadFiles(s, deleted)
         } finally {
           s.artifactFeeds.releaseTasks([...deletedTaskIds])
         }

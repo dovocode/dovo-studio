@@ -22,42 +22,42 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
     if (!block.isTextblock) return true
     // Headings and code blocks deliberately accept text only.
     if (!block.type.contentMatch.matchType(richSchema.nodes.context_reference)) return false
-    if (block.textContent.includes('studio:')) {
-      let botRun = ''
-      let botOffsets: number[] = []
-      const flushBots = () => {
-        for (const reference of composerReferences(botRun, resources).filter(
-          (reference) => reference.kind === 'bot',
+    if (/(?:studio|agent):/.test(block.textContent)) {
+      let identityRun = ''
+      let identityOffsets: number[] = []
+      const flushIdentities = () => {
+        for (const reference of composerReferences(identityRun, resources).filter(
+          (reference) => reference.kind === 'bot' || reference.kind === 'agent',
         ))
           matches.push({
             ...reference,
-            start: botOffsets[reference.start],
-            end: botOffsets[reference.end],
+            start: identityOffsets[reference.start],
+            end: identityOffsets[reference.end],
           })
-        botRun = ''
-        botOffsets = []
+        identityRun = ''
+        identityOffsets = []
       }
       block.forEach((node, offset) => {
         if (!node.isText || node.marks.some((mark) => mark.type === richSchema.marks.link)) {
-          flushBots()
+          flushIdentities()
           return
         }
         const start = position + 1 + offset
         const code = node.marks.some((mark) => mark.type === richSchema.marks.code)
-        if (!botOffsets.length) botOffsets.push(start)
+        if (!identityOffsets.length) identityOffsets.push(start)
         if (code) {
-          botRun += '`'
-          botOffsets.push(start)
+          identityRun += '`'
+          identityOffsets.push(start)
         }
         const text = node.text ?? ''
-        botRun += text
-        for (let i = 0; i < text.length; i++) botOffsets.push(start + i + 1)
+        identityRun += text
+        for (let i = 0; i < text.length; i++) identityOffsets.push(start + i + 1)
         if (code) {
-          botRun += '`'
-          botOffsets.push(start + text.length)
+          identityRun += '`'
+          identityOffsets.push(start + text.length)
         }
       })
-      flushBots()
+      flushIdentities()
     }
     let run = ''
     let runStart = 0
@@ -99,10 +99,12 @@ function referenceTransaction(state: EditorState, resources: ComposerReferenceRe
   const tr = state.tr
   for (const { position, node, provider } of updates)
     tr.setNodeMarkup(position, undefined, { ...node.attrs, provider: provider ?? null })
-  const bots = matches.filter((match) => match.kind === 'bot')
+  const identities = matches.filter((match) => match.kind === 'bot' || match.kind === 'agent')
   const distinct = matches.filter(
     (match) =>
-      match.kind === 'bot' || !bots.some((bot) => match.start < bot.end && match.end > bot.start),
+      match.kind === 'bot' ||
+      match.kind === 'agent' ||
+      !identities.some((entry) => match.start < entry.end && match.end > entry.start),
   )
   for (const match of distinct.sort((a, b) => b.start - a.start))
     tr.replaceWith(
@@ -182,7 +184,8 @@ export function referenceNodeView(node: Node) {
       kind === 'skill' ||
       kind === 'mcp' ||
       kind === 'model' ||
-      kind === 'bot'
+      kind === 'bot' ||
+      kind === 'agent'
     ) {
       const key = composerReferenceIcon({ kind, label: String(node.attrs.label) })
       const icon = document.createElement('span')

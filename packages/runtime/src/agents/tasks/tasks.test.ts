@@ -560,14 +560,10 @@ it('runs two threads in the same checkout and stops only the selected thread', a
       after: expect.any(String),
       files: [expect.objectContaining({ path: 'hello.txt', after: 'shared change\n' })],
     })
-    await expect(s.tasks.restoreTurn(id, turn.id, 'undo')).rejects.toMatchObject({ status: 409 })
     await expect(s.tasks.restoreFile(id, 'hello.txt', turn.id)).rejects.toMatchObject({
       status: 409,
     })
   }
-  await expect(s.tasks.restoreTurn(task.id, earlierTurn.id, 'undo')).rejects.toThrow(
-    'could overwrite changes from other threads',
-  )
   await expect(s.tasks.restoreFile(task.id, 'hello.txt', earlierTurn.id)).rejects.toThrow(
     'could overwrite changes from other threads',
   )
@@ -588,7 +584,7 @@ it('runs two threads in the same checkout and stops only the selected thread', a
   expect(s.store.task(second.id).turns).toHaveLength(2)
   const turn = s.store.task(second.id).turns!.at(-1)!
   expect(turn.checkpoint?.sharedCheckout).toBeUndefined()
-  await expect(s.tasks.restoreTurn(second.id, turn.id, 'undo')).resolves.toEqual({ ok: true })
+  await expect(s.tasks.restoreFile(second.id, 'hello.txt', turn.id)).resolves.toEqual({ ok: true })
   expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('shared change\n')
 })
 it('holds a queued follow-up when another thread in the checkout has not stopped', async () => {

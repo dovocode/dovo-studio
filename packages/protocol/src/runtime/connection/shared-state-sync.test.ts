@@ -230,6 +230,48 @@ it('uses the legacy endpoint for older runtimes and confirms a lost response wit
   )
 })
 
+it('fetches a changed legacy runtime revision without local edits', async () => {
+  vi.useFakeTimers()
+  let remote: SharedSettingsEntry[] = []
+  const request = vi.fn<SharedStateSyncOptions['request']>(async (_profile, path, input) => {
+    expect(path).toBe('/api/agents/settings/sync')
+    expect(input).toEqual({ shared: [] })
+    return { shared: remote }
+  })
+  const h = harness([], request)
+  h.synchronization.update([target('legacy', [], false)], true)
+  await flush()
+  expect(request).toHaveBeenCalledTimes(1)
+  remote = [entry('global', 2, 'changed on desktop')]
+  h.synchronization.update([target('legacy', remote, false)], true)
+  await flush()
+  expect(request).toHaveBeenCalledTimes(2)
+  expect(h.shared()[0]?.value.taskDefaults?.setupCommand).toBe('changed on desktop')
+  // An unchanged revision does not cause another request.
+  h.synchronization.update([target('legacy', remote, false)], true)
+  h.synchronization.retry()
+  await flush()
+  expect(request).toHaveBeenCalledTimes(2)
+})
+
+it('fetches a legacy revision again when applying its response failed', async () => {
+  vi.useFakeTimers()
+  const remote = [entry('global', 2, 'remote')]
+  const request = vi.fn<SharedStateSyncOptions['request']>(async () => ({ shared: remote }))
+  const h = harness([], request)
+  h.refreshed.mockRejectedValueOnce(new Error('Refresh failed'))
+  h.synchronization.update([target('legacy', remote, false)], true)
+  await flush()
+  expect(h.error).toHaveBeenCalledWith(expect.stringContaining('Refresh failed'))
+  // The failed apply is not marked received, so the next run fetches and applies it again.
+  expect(request).toHaveBeenCalledTimes(2)
+  expect(h.refreshed).toHaveBeenCalledTimes(2)
+  expect(h.error).toHaveBeenLastCalledWith('')
+  h.synchronization.retry()
+  await flush()
+  expect(request).toHaveBeenCalledTimes(2)
+})
+
 it('reports failures from every connected computer', async () => {
   vi.useFakeTimers()
   const h = harness([entry('global', 1, 'share')], async (profile) => {

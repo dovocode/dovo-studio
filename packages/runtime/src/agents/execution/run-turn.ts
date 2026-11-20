@@ -1966,9 +1966,16 @@ export class TaskTurnRunner {
                         )
                       : Promise.resolve(null),
                 },
-                approve: (title, detail, kind, options) =>
+                approve: (title, detail, kind, options, signal) =>
                   acceptsProviderEvents()
-                    ? this.approvals.request(id, title, detail, questionSignal, kind, options)
+                    ? this.approvals.request(
+                        id,
+                        title,
+                        detail,
+                        signal ? AbortSignal.any([questionSignal, signal]) : questionSignal,
+                        kind,
+                        options,
+                      )
                     : Promise.resolve('deny' as const),
                 ask: (prompt, signal, validate, onUnanswered) =>
                   acceptsProviderEvents()

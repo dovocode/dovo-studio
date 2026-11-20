@@ -140,12 +140,12 @@ Browser sessions use HttpOnly, host-only, SameSite cookies; public HTTPS uses th
 Invited users must sign in with the exact identity that was granted access.
 
 Account revocation, expiry and organization session invalidation block subsequent authenticated
-operations. Signing out of the app invalidates grants derived from that app session; signing out of
-the hosted viewer revokes its own session. Previously published copies and independent share links
-persist until explicitly revoked/deleted. Account deletion blocks hosted access immediately while
-Connect is reachable, and its hosted copies are removed on the next access or cleanup (every
-minute). If Connect cannot verify account/session status, access fails closed; network errors never
-trigger data deletion. Deletion/SSO behavior otherwise follows
+operations. When Connect confirms app sign-out, it invalidates grants derived from that app session.
+Signing out of the hosted viewer revokes its own session. Previously published copies and
+independent share links persist until explicitly revoked/deleted. Account deletion blocks hosted
+access immediately while Connect is reachable, and its hosted copies are removed on the next access
+or cleanup (every minute). If Connect cannot verify account/session status, access fails closed;
+network errors never trigger data deletion. Deletion/SSO behavior otherwise follows
 [Optional accounts](optional-accounts.md) and [Organization SSO](custom-turn-and-sso.md), including
 the documented IdP revocation limitations.
 
@@ -233,3 +233,10 @@ cannot request tools or refreshes.
 Local/offline previews and static exports do not execute or carry a live feed. Only the hosted
 viewer supplies these events. Native feed setup and OS-specific external sharing behavior still need
 physical-device verification.
+
+For a service behind a reverse proxy, set `DOVO_ARTIFACTS_TRUSTED_PROXIES` to the comma-separated IP
+addresses or CIDRs of the proxy hops. The service uses forwarded client addresses for rate limits
+only when the connection comes from a trusted proxy. The default uses the socket address. Docker
+uses `GET /health` to check that the process responds. Use `GET /ready` to check request capacity.
+It returns HTTP 503 when all eight request slots are busy and HTTP 200 when a slot is free. Both
+checks run locally. To verify Connect and storage, sign in and read a private publication.

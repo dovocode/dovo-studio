@@ -61,6 +61,103 @@ always show.
 In the desktop app, choose **DevTools** from the right pane's **+** menu to inspect the current
 local browser page in Chrome DevTools. The inspector opens below the page in the same pane.
 
+When two devices view the same terminal, the first viewer controls its size. Opening or rotating a
+phone keeps the desktop grid intact. Typing on the phone transfers control to its grid. When the
+active viewer disconnects, a remaining viewer takes control.
+
+## Terminal CLI
+
+Use `dovo-server terminal` on the runtime computer. In a source checkout, use
+`pnpm server terminal`. The CLI uses the running server's local connection file. Pass `--data-dir`
+to select another local runtime. Names and IDs belong to that runtime.
+
+The following example starts a shell in the current directory and leaves it running after you
+detach. Press Ctrl+] to detach from the interactive view.
+
+```sh
+dovo-server terminal start --name review --cwd "$PWD"
+dovo-server terminal list
+dovo-server terminal send review 'git status --short' --enter
+dovo-server terminal read review
+dovo-server terminal attach review
+dovo-server terminal close review
+```
+
+Use `read review` to see the current screen, including an active full-screen application. Use
+`read review --lines 100` to include up to 100 lines of screen and scrollback. Use
+`read review --tail` for the last 3,000 characters of output. If the runtime cannot restore the
+screen, a plain `read` prints a notice and shows the output tail. With `--lines` it reports an
+error.
+
+For a Unix command whose exit code matters, replace the interactive shell with the program. A status
+wait can also return when an agent reports that it needs input.
+
+```sh
+dovo-server terminal start --name build --cwd "$PWD" --command 'exec pnpm build'
+dovo-server terminal wait build --timeout 120 --json
+dovo-server terminal read build
+dovo-server terminal close build
+```
+
+For an agent that reports permission prompts, use
+`dovo-server terminal wait review --until blocked --timeout 60 --json`. This returns at once if the
+agent is already blocked. Program exit also ends the wait. A timeout sets the CLI exit status
+to 124.
+
+Use `--wait` to send input and wait for a completed turn after delivery. Use `--after-turn` to wait
+from a known turn number. Replace `5` with the `turn` from an earlier JSON result.
+
+```sh
+dovo-server terminal send review 'Review this patch' --enter --wait --timeout 60 --json
+dovo-server terminal wait review --after-turn 5 --timeout 60 --json
+```
+
+The `turn` counts completed working periods reported by the terminal's root program. `afterTurn` in
+the send result includes earlier reports that the PTY holder already processed when it accepted the
+input. Other clients can still advance the count. If the connection drops before the holder confirms
+delivery, Dovo reports that the input may have been sent. Check the terminal before sending it
+again. Use `--until` to require a reported state as well as a newer turn. A plain shell that sends
+no activity reports can still wait for process exit. Turn options require a runtime that supports
+them. An older runtime rejects `send --wait` before sending input.
+
+Run `dovo-server terminal events review` to watch one terminal. Omit the name to watch all
+terminals. The command writes one JSON object per line. The first object lists the current
+terminals. Later objects report changes, closures and connection status. Press Ctrl+C to stop. The
+stream reconnects after a connection loss. Changes that happen between snapshots can merge. JSON
+output from `list`, `read` and `events` includes the root turn and explicit child records when the
+runtime reports them.
+
+### Coordinate child terminals
+
+Choose **Parent terminal** when opening a terminal in Studio. The picker lists live standalone
+terminals on the selected computer. The CLI accepts a parent name or ID. Inside a Dovo terminal, use
+`--parent self` to use its `DOVO_TERMINAL_ID`. Supply the same runtime connection settings you use
+for other CLI commands.
+
+```sh
+dovo-server terminal start --name coordinator
+dovo-server terminal start --name reviewer --parent coordinator
+dovo-server terminal wait coordinator --children any --timeout 60 --json
+dovo-server terminal wait coordinator --children all --timeout 60 --json
+dovo-server terminal events coordinator
+dovo-server terminal detach-parent reviewer
+```
+
+These waits inspect the current direct children each time. **Any** returns the children that have
+exited, failed, blocked, or completed work. **All** returns when each child has exited or reported a
+state other than Working. A blocked child can satisfy either wait. A live child with no report keeps
+an all-children wait open. Both return immediately with an empty list when there are no children. On
+timeout the CLI returns exit status 124 and lists the direct children. A remembered child keeps its
+last Done or Error report after it exits. A settled child that sleeps still satisfies the wait.
+
+A parent event includes `childNotices`, with the latest notice per child, its terminal ID, state and
+turn. Read the child for its current activity and message. From inside the parent, run
+`dovo-server terminal events "$DOVO_TERMINAL_ID"` to subscribe without writing to the parent's
+input. Studio links parents and children on their owning computer. Closing a parent or detaching a
+child leaves the child process running. If the runtime cannot confirm that the parent stopped, it
+keeps the parent and its child links so you can retry Close. A split, a thread, or an OSC record
+inside a PTY does not create a parent link.
+
 ## Standalone shell recovery
 
 Thread, Unified and Terminal starters share the same heading, project selection and composer design,
@@ -68,18 +165,31 @@ including the minimal composer preference. Terminal replaces the model picker wi
 **Remember session** is enabled by default on runtimes that support recovery; older paired runtimes
 show a disabled control until updated. This retains terminal identity, title, checkout, shell,
 pin/settle/snooze state and the exact supported application's conversation identity on the owning
-computer. Active sessions reopen when that runtime starts again, including after a computer reboot.
-Settled sessions remain asleep until restored; snoozed sessions wake when due. Neither environment
-variables nor terminal input, startup commands or scrollback are saved. Ordinary shells reopen in
-their directory without replaying commands. Missing directories and recovery failures remain visible
-so the session can be restored after the problem is resolved.
+computer. On a runtime with live recovery, a local Dovo process owns the PTY. Closing a viewer or
+restarting the runtime leaves the shell, foreground program and its in-memory environment running.
+Closing the terminal ends the program. On managed Linux and macOS installations the holder has its
+own user service. An older runtime or a Windows runtime reopens the shell in its directory.
+
+If the machine reboots or the holder is lost, Dovo can reopen a shell or resume a supported tool
+using its saved session identity. It never replays the submitted command. Settled sessions remain
+asleep until restored. Snoozed sessions wake when due. A missing directory or a failed recovery
+appears in the terminal so you can retry after fixing the problem.
 
 Remembered terminals install scoped lifecycle integrations for **Codex**, **Claude**, **Pi** and
 **OpenCode**, preserving existing configuration. Codex requires its normal one-time hook review;
 review the Dovo hook with `/hooks` if prompted. Integrations load on the application's next start.
-Recovery uses the exact captured conversation ID or Pi session file, never the latest session in a
-directory. Custom tool configuration directories must be set before opening the terminal. Native
-tool conversation files must remain available on the owning computer.
+Each provider keeps its reporter in `dovo-terminal-recovery/report.cjs` under its config directory.
+Two runtimes on the same computer can share that reporter. It writes to the terminal that invoked
+it. When updating older hooks, Dovo keeps edited entries and entries whose reporter it cannot
+identify. Recovery uses the exact captured conversation ID or Pi session file, never the latest
+session in a directory. Custom tool configuration directories must be set before opening the
+terminal. Native tool conversation files must remain available on the owning computer.
+
+Dovo installs each provider integration separately. If Dovo cannot read or update one provider's
+configuration, for example a malformed Codex `hooks.json`, it leaves that file unchanged. The other
+integrations still install, and the shell still gets the terminal status and recovery environment.
+The terminal shows `Could not install the Codex terminal integration:` followed by the error. Fix
+the file, then open a new terminal. Dovo tries the failed provider again without a runtime restart.
 
 On Unix, named **tmux** and **Herdr Core** (`hc attach`) launches also remember their canonical
 session identity. They reattach to the existing multiplexer instead of launching a duplicate agent.
@@ -168,8 +278,13 @@ precedence and is cleared when another foreground command takes over. Hosts with
 inspection or supported activity reports display **Live session**; output alone never implies work.
 Working and Needs input terminals join the corresponding sections, while completion does not
 automatically settle a session. Offline computers and exited shells take precedence over activity
-reports. This observer supports root reports, clearing and prompt/exit cleanup; it does not
-advertise full OSC 7501 support, answer capability queries or aggregate child records.
+reports. A program can report up to 32 child records using an explicit OSC 7501 `id`. A blocked
+child puts the terminal in Needs input. The parent keeps its own status and turn number.
+
+The runtime counts a turn when the root program leaves Working. Open the terminal in the foreground
+to mark its latest completion read across paired devices. Use **Mark unread** to restore its
+completion badge. Reading output through the CLI leaves the read state alone. Blocked activity stays
+visible until the program clears or changes it.
 
 Session names follow OSC 0/2 shell titles. Click the terminal's title to rename it; **Use automatic
 title** restores shell naming. Renaming never restarts the shell. Metadata is observed on the owning
@@ -179,6 +294,33 @@ example, a program can report that it needs approval with:
 ```sh
 printf '\033]7501;state=blocked:kind=permission:app=my-agent\033\\'
 ```
+
+Programs can send a `turnId` with OSC 7501 activity reports. Use the same ID on Working and its
+result. If a hook reports the same work, send the same ID through the hook. Give independent jobs
+different IDs, even when they finish together. IDs are case-sensitive, scoped to one terminal, and
+accept 1 to 128 ASCII letters, digits, underscores, periods, slashes, plus signs or hyphens. The
+`id` field identifies a child record. The `turnId` field identifies work on that record.
+
+```sh
+printf '\033]7501;state=working:turnId=review-42\007'
+printf '\033]7501;state=done:turnId=review-42\007'
+```
+
+The numeric `turn` remains the cursor for `wait --after-turn`. The runtime keeps up to 128 open IDs
+and the last 128 completed IDs per terminal to recognize delayed or repeated reports. Generate a
+fresh ID for each job. A hook report includes its last 32 activity changes and the positions of its
+last 128 identified completions. After an outage, the runtime can still match those completions to
+OSC reports even if the activity changes have expired. Older hooks can provide less history. Once an
+ID expires, the runtime has only the counter for that older work. Runtimes that support turn IDs
+advertise `terminalTurnIdsSupported` in their snapshot.
+
+The Codex hook uses `turn_id`. The Claude Code hook uses `prompt_id` when Claude supplies it. Pi,
+OpenCode and older hooks can report activity without a shared turn ID. For these reports, Dovo uses
+the order of activity changes to estimate when a turn ends. Two simultaneous jobs without IDs can
+count as one.
+[Codex hook fields](https://github.com/openai/codex/blob/51f4b8af01db1fb04e0cc6235444573ecceda716/codex-rs/hooks/src/schema.rs#L568-L592)
+·
+[Claude hook fields](https://github.com/anthropics/claude-agent-sdk-python/blob/69846cdf82aef59add3b14a26b4f16d1ccee26ba/src/claude_agent_sdk/types.py#L349-L356)
 
 The shared input uses the **post-trained Dovo GLiClass run-09** classifier, based on
 `knowledgator/gliclass-base-v3.0` (186.5 million parameters). The exact Mac Studio export is pinned
@@ -198,8 +340,11 @@ shell before explicitly opening or submitting anything. **⌘+Enter** (or **Ctrl
 choosing and starting in one step: it applies the inferred selections, waits for the selected
 computer's shell catalog when needed, then opens the page, runs the command or sends the thread
 request. Editing the draft or selections, or navigating away while inference/catalog loading is in
-progress, cancels that automatic start. Normal submission keeps the review step. Continuing an
-explicitly selected thread keeps that thread's own model and project. Older runtimes without the
+progress, cancels that automatic start. Returning to Home does not start the canceled request. Home
+keeps unsent text and the selected computer when you switch Studio modes in the same window. Review
+the destination again when you return. If the browser has 100 tabs, Home keeps the address. Close a
+tab and submit the address again. Normal submission keeps the review step. Continuing an explicitly
+selected thread keeps that thread's own model and project. Older runtimes without the
 picker-suggestion capability continue accepting destination-only requests.
 
 All routing and picker inference comes from model logits. URL/shell rules do not override its
@@ -226,6 +371,17 @@ without stripping computer/project prose or rewriting commands. Review or edit i
 manual destination selection allows editing without reclassification. Thread submission preserves
 the request and applies an explicitly chosen model only to a new thread. **New terminal** retains
 the complete shell/worktree starter.
+
+If a launch loses its response, submit the same command and selections again. You can retry after
+switching Studio modes in the same window. Runtimes that support terminal request IDs return the
+existing terminal and run its startup command once. When a launch succeeds while you are away, Home
+clears the submitted draft and keeps any newer text. If the terminal closed after launch, the retry
+reports that it is unavailable. If the runtime could not start the shell because its checkout was
+unavailable, retry when the checkout returns. For an older runtime, check Terminals for the session
+before trying again.
+
+On desktop, choosing a browser profile for an external link selects its new page in Unified when the
+normal workspace modes are hidden.
 
 The [small-model comparison](workspace-routing-model-comparison.md) records the earlier Julia, Laya,
 Kev and instruction-model experiments. GLiClass training/export measurements are recorded

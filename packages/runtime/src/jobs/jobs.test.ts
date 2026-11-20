@@ -834,7 +834,7 @@ it('shuts down running jobs before storage closes and resumes interrupted work e
   expect(runtime.services.jobs.list()[0].taskIds).toEqual([taskId])
 })
 it.each([false, true])(
-  'recovers completed tasks without rerunning them after a crash (legacy metadata: %s)',
+  'recovers completed task results without rerunning them after a crash (legacy metadata: %s)',
   async (legacy) => {
     const f = await fixture()
     cleanups.push(f.cleanup)
@@ -845,13 +845,35 @@ it.each([false, true])(
     }
     let runtime = await startRuntime(options)
     cleanups.push(() => runtime.close())
+    const flow = createFlow()
+    flow.nodes.push({
+      ...flow.nodes[1]!,
+      id: 'next',
+      data: { ...flow.nodes[1]!.data, inputFrom: ['task'], inputFiles: true },
+    })
+    flow.edges.push({ id: 'next-edge', source: 'review', target: 'next' })
     runtime.services.store.update(() => ({
       ...f.workspace,
-      automations: [createFlow()],
+      automations: [flow],
     }))
     vi.spyOn(runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
-      run: async (run) => run.onText('Done'),
+      run: async (run) => {
+        run.onText('Saved first result')
+        const taskId = run.taskId!
+        const { attachment } = await runtime.services.attachments.upload({
+          taskId,
+          id: randomUUID(),
+          name: 'recovered.txt',
+          data: Buffer.from('Saved first file').toString('base64'),
+        })
+        runtime.services.store.updateTaskHistory(taskId, (task) => ({
+          ...task,
+          messages: task.messages.map((message) =>
+            message.role === 'assistant' ? { ...message, attachments: [attachment] } : message,
+          ),
+        }))
+      },
     })
     const id = runtime.services.jobs.start('flow')
     await waitForJob(() => {
@@ -865,7 +887,7 @@ it.each([false, true])(
     // Simulate a crash after the task persisted success but before Jobs committed the step.
     const stored = {
       ...original,
-      flow: createFlow(),
+      flow,
       status: 'running',
       completedNodes: ['trigger'],
       waitingNodeId: undefined,
@@ -902,6 +924,11 @@ it.each([false, true])(
     expect(runtime.services.jobs.list()[0].taskIds).toEqual(original.taskIds)
     expect(runtime.services.store.get().tasks).toHaveLength(1)
     expect(execute).not.toHaveBeenCalled()
+    runtime.services.jobs.approve(id, true)
+    await waitForJob(() => expect(runtime.services.jobs.detail(id).status).toBe('completed'))
+    expect(execute).toHaveBeenCalledTimes(1)
+    expect(execute.mock.calls[0]?.[0].prompt).toContain('Saved first result')
+    expect(execute.mock.calls[0]?.[0].attachments?.[0]?.name).toBe('recovered.txt')
   },
 )
 it('rolls back task creation when persisting its step association fails', async () => {
@@ -1376,6 +1403,32 @@ it('watches selected JSON values through the real scheduler and keeps the succes
   expect(prompts[1]).toContain('"version":2')
   expect(prompts[1]).toContain('Previous successful source')
   expect(prompts[1]).toContain('"version":1')
+  const readBaseline = () =>
+    s.db.prepare('SELECT value FROM documents WHERE id=?').pluck().get('automation-source:flow')
+  const baseline = readBaseline()
+  s.db.exec(`CREATE TRIGGER fail_baseline BEFORE INSERT ON documents
+    WHEN NEW.id = 'automation-source:flow'
+    BEGIN SELECT RAISE(ABORT, 'Monitor baseline storage unavailable'); END`)
+  content = '{"release":{"version":3}}'
+  const interrupted = s.jobs.start('flow', 'schedule:baseline-write-failed')
+  await waitForJob(() => expect(s.jobs.detail(interrupted).status).not.toBe('running'))
+  expect(s.jobs.detail(interrupted)).toMatchObject({
+    status: 'failed',
+    error: expect.stringContaining('Monitor baseline storage unavailable'),
+  })
+  // The source stays as the last success. Only the latest outcome changes.
+  expect(JSON.parse(String(readBaseline()))).toEqual({
+    ...JSON.parse(String(baseline)),
+    lastStatus: 'failed',
+  })
+  expect(prompts).toHaveLength(3)
+  s.db.exec('DROP TRIGGER fail_baseline')
+  s.jobs.retry(interrupted)
+  await waitForJob(() => expect(s.jobs.detail(interrupted).status).toBe('completed'))
+  const recoveredBaseline = readBaseline()
+  if (typeof recoveredBaseline !== 'string') throw new Error('Missing monitor baseline')
+  expect(JSON.parse(recoveredBaseline)).toMatchObject({ text: '{"version":3}' })
+  expect(prompts).toHaveLength(3)
   content = '{"release":{"version":2},"alias":{"version":2}}'
   s.store.update((w) => ({
     ...w,
@@ -1383,8 +1436,88 @@ it('watches selected JSON values through the real scheduler and keeps the succes
   }))
   const newPointer = s.jobs.start('flow', 'schedule:new-pointer')
   await waitForJob(() => expect(s.jobs.detail(newPointer).status).toBe('completed'))
+  expect(prompts).toHaveLength(4)
+  expect(prompts[3]).not.toContain('Previous successful source')
+})
+
+it('keeps the last monitor outcome with its source after run history expires', async () => {
+  let content = '{"release":{"version":1}}'
+  const source = createServer((_req, res) => res.end(content))
+  await new Promise<void>((resolve) => source.listen(0, '127.0.0.1', resolve))
+  cleanups.push(() => new Promise<void>((resolve) => source.close(() => resolve())))
+  const address = source.address()
+  if (!address || typeof address === 'string') throw Error('Missing source address')
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'monitor-owner-token-at-least-32-characters',
+    port: 0,
+  })
+  cleanups.push(() => runtime.close())
+  const s = runtime.services
+  const flow = {
+    ...createFlow(),
+    monitor: { url: `http://127.0.0.1:${address.port}`, jsonPointer: '/release' },
+  }
+  flow.nodes = flow.nodes.filter((n) => n.id !== 'review')
+  flow.edges = flow.edges.filter((e) => e.target !== 'review')
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const prompts: string[] = []
+  let failAgent = false
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (input) => {
+      prompts.push(input.prompt)
+      if (failAgent) throw new Error('Provider disconnected')
+      input.onText('Done')
+    },
+  })
+  // Each later run starts after every earlier run has passed the 30-day retention window.
+  let day = 0
+  const expire = () => {
+    day += 31
+    s.jobs.prune(Date.now() + day * 86_400_000)
+    expect(s.jobs.list()).toEqual([])
+  }
+  const run = async (key: string, status: 'completed' | 'failed') => {
+    const id = s.jobs.start('flow', `schedule:${key}`)
+    await waitForJob(() => expect(s.jobs.detail(id).status).toBe(status))
+    return s.jobs.detail(id)
+  }
+
+  await run('first', 'completed')
+  expect(prompts).toHaveLength(1)
+  expire()
+  expect(await run('unchanged-after-retention', 'completed')).toMatchObject({
+    outcome: 'unchanged',
+  })
+  expect(prompts).toHaveLength(1)
+
+  // A failed run of a changed source does not replace the successful baseline.
+  content = '{"release":{"version":2}}'
+  failAgent = true
+  await run('changed-failed', 'failed')
+  expect(prompts).toHaveLength(2)
+  expire()
+  failAgent = false
+  const retried = await run('changed-after-failure', 'completed')
+  expect(retried.outcome).toBeUndefined()
   expect(prompts).toHaveLength(3)
-  expect(prompts[2]).not.toContain('Previous successful source')
+  expect(prompts[2]).toContain('"version":2')
+  expect(prompts[2]).toContain('Previous successful source')
+  expire()
+  expect(await run('changed-unchanged', 'completed')).toMatchObject({ outcome: 'unchanged' })
+  expect(prompts).toHaveLength(3)
+
+  // A failed run makes the next run process the source again, even when it matches the baseline.
+  content = '{"clock":1}'
+  await run('source-missing', 'failed')
+  expire()
+  content = '{"release":{"version":2}}'
+  const reprocessed = await run('baseline-after-failure', 'completed')
+  expect(reprocessed.outcome).toBeUndefined()
+  expect(prompts).toHaveLength(4)
 })
 
 it('passes only selected preceding results and destination-owned files through a review gate', async () => {

@@ -34,10 +34,17 @@ it('ignores streamed workspace content but observes defaults, questions and conn
     connection: null,
     flush: async () => {},
     activeRuntimeId: null,
-    runtimeRegistry: { version: 1, activeId: null, profiles: [] },
-    refreshRuntime: async () => {},
   }
   const first = selectComposerWorkspace(value)
+  expect(
+    sameComposerWorkspace(
+      first,
+      selectComposerWorkspace({
+        ...value,
+        snapshot: { ...snapshot, retryUsesCurrentFiles: true },
+      }),
+    ),
+  ).toBe(false)
   expect(
     sameComposerWorkspace(
       first,

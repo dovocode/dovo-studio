@@ -1,7 +1,13 @@
-import { afterEach, expect, it } from 'vite-plus/test'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { startRuntime } from '../index'
 import { WorkspaceStore } from '../storage/workspace'
-import { decode, conversationPageSchema, snapshotSchema, type Task } from '@dovo/protocol'
+import {
+  decode,
+  conversationPageSchema,
+  questionPromptSchema,
+  snapshotSchema,
+  type Task,
+} from '@dovo/protocol'
 const cleanup: Array<() => Promise<void>> = []
 afterEach(async () => {
   for (const close of cleanup.splice(0)) await close()
@@ -316,4 +322,164 @@ it('loads the latest 50 user messages for composer recall independently of trans
   expect(older.messages.map((m) => m.id)).toEqual(Array.from({ length: 15 }, (_, i) => `u${i}`))
   expect(older.before).toBeUndefined()
   expect((await read(token, 'missing')).status).toBe(409)
+})
+it('retires pending questions and approvals when a thread family is archived or deleted', async () => {
+  const { store, questions, approvals, action, address } = await setup()
+  addChildren(store)
+  const prompt = decode(questionPromptSchema, {
+    title: 'Pick one',
+    questions: [{ id: 'choice', header: 'Choice', question: 'Which one?', custom: true }],
+  })
+  const answer = (id: string) =>
+    fetch(`${address}/api/tasks/answer`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ id, answers: { choice: ['late'] } }),
+    })
+  const ask = (taskId: string) => {
+    const pending = questions.request(taskId, prompt, new AbortController().signal)
+    return { pending, id: questions.list().at(-1)!.id }
+  }
+  // A non-blocking form can outlive its turn, so the thread is idle with a question pending.
+  const parent = ask(task.id)
+  const child = ask('nested')
+  const unrelated = ask('other')
+  const approval = approvals.request('child', 'Run command', '{}', new AbortController().signal)
+  expect((await action('archive')).status).toBe(200)
+  await expect(parent.pending).resolves.toBeNull()
+  await expect(child.pending).resolves.toBeNull()
+  await expect(approval).resolves.toBe('deny')
+  expect(questions.list().map((item) => item.id)).toEqual([unrelated.id])
+  expect(approvals.list()).toEqual([])
+  expect(questions.status(parent.id)).toBeUndefined()
+  expect((await answer(parent.id)).status).toBe(409)
+
+  // Restore does not reopen the retired question.
+  expect((await action('restore')).status).toBe(200)
+  expect(questions.list().map((item) => item.id)).toEqual([unrelated.id])
+  const again = ask(task.id)
+  expect((await action('delete')).status).toBe(200)
+  await expect(again.pending).resolves.toBeNull()
+  expect(questions.list().map((item) => item.id)).toEqual([unrelated.id])
+  expect((await answer(again.id)).status).toBe(409)
+  expect((await answer(unrelated.id)).status).not.toBe(409)
+})
+it('keeps questions, approvals and side chats when the archive or delete write fails', async () => {
+  const { store, questions, approvals, titles, db, action } = await setup()
+  const ids = addChildren(store)
+  const prompt = decode(questionPromptSchema, {
+    title: 'Pick one',
+    questions: [{ id: 'choice', header: 'Choice', question: 'Which one?', custom: true }],
+  })
+  const ask = (taskId: string) => {
+    const pending = questions.request(taskId, prompt, new AbortController().signal)
+    return { pending, id: questions.list().at(-1)!.id }
+  }
+  const sideChats = vi.spyOn(titles, 'cancelSideChats')
+  const parent = ask(task.id)
+  const child = ask('child')
+  const approval = approvals.request('nested', 'Run command', '{}', new AbortController().signal)
+  const pendingIds = () => questions.list().map((item) => item.id)
+
+  // Fail at the child's row, after the parent's row in the same write.
+  db.exec(
+    "CREATE TRIGGER fail_child_archive BEFORE UPDATE ON workspace_tasks WHEN NEW.task_id = 'child' BEGIN SELECT RAISE(ABORT, 'disk failure'); END",
+  )
+  expect((await action('archive')).status).toBe(500)
+  for (const id of ids) expect(store.taskSummary(id).archivedAt).toBeUndefined()
+  expect(pendingIds()).toEqual([parent.id, child.id])
+  expect(approvals.list()).toHaveLength(1)
+  expect(sideChats).not.toHaveBeenCalled()
+  db.exec('DROP TRIGGER fail_child_archive')
+
+  db.exec(
+    "CREATE TRIGGER fail_child_delete BEFORE DELETE ON workspace_tasks WHEN OLD.task_id = 'child' BEGIN SELECT RAISE(ABORT, 'disk failure'); END",
+  )
+  expect((await action('delete')).status).toBe(500)
+  for (const id of ids) expect(store.get().tasks.some((item) => item.id === id)).toBe(true)
+  expect(pendingIds()).toEqual([parent.id, child.id])
+  expect(approvals.list()).toHaveLength(1)
+  expect(sideChats).not.toHaveBeenCalled()
+  db.exec('DROP TRIGGER fail_child_delete')
+
+  // The same inputs retire once the delete commits, with no audit rows left for the threads.
+  expect((await action('delete')).status).toBe(200)
+  await expect(parent.pending).resolves.toBeNull()
+  await expect(child.pending).resolves.toBeNull()
+  await expect(approval).resolves.toBe('deny')
+  expect(pendingIds()).toEqual([])
+  expect(approvals.list()).toEqual([])
+  expect(sideChats.mock.calls.map(([id]) => id).sort()).toEqual([...ids].sort())
+  const scopes = db
+    .prepare(`SELECT COUNT(*) AS count FROM activity WHERE scope IN (${ids.map(() => '?').join()})`)
+    .get(...ids)
+  expect(scopes).toEqual({ count: 0 })
+})
+it('blocks new work while a delete awaits terminal cleanup and checks again before committing', async () => {
+  const { store, terminals, tasks, agents, action } = await setup()
+  const ids = addChildren(store)
+  const session = terminals.create('child', process.cwd())
+  cleanup.push(async () => {
+    if (terminals.list().some((entry) => entry.id === session.id)) await terminals.close(session.id)
+  })
+  // The terminal's process has exited; delete closes the retained record and awaits it.
+  const list = terminals.list.bind(terminals)
+  vi.spyOn(terminals, 'list').mockImplementation(() =>
+    list().map((entry) => (entry.id === session.id ? { ...entry, exited: true } : entry)),
+  )
+  const close = terminals.close.bind(terminals)
+  let entered = () => {}
+  let release = () => {}
+  const closing = vi.spyOn(terminals, 'close').mockImplementation(async (id) => {
+    entered()
+    await new Promise<void>((resolve) => (release = resolve))
+    return close(id)
+  })
+  const provider = vi.spyOn(agents, 'get')
+
+  // An intervening answer or message on any family member fails instead of starting work.
+  const waiting = new Promise<void>((resolve) => (entered = resolve))
+  const deletion = action('delete')
+  await waiting
+  for (const id of [task.id, 'nested'])
+    await expect(tasks.send(id, `late-${id}`, 'Late answer')).rejects.toThrow('being deleted')
+  release()
+  expect((await deletion).status).toBe(200)
+  for (const id of ids) expect(store.get().tasks.some((item) => item.id === id)).toBe(false)
+  expect(provider).not.toHaveBeenCalled()
+  expect(closing).toHaveBeenCalledTimes(1)
+  // The reservation ends with the request.
+  expect(() => tasks.requireIdle('other')).not.toThrow()
+})
+
+it('keeps the family when it becomes busy while a delete awaits terminal cleanup', async () => {
+  const { store, terminals, tasks, action } = await setup()
+  const ids = addChildren(store)
+  const session = terminals.create('child', process.cwd())
+  cleanup.push(async () => {
+    if (terminals.list().some((entry) => entry.id === session.id)) await terminals.close(session.id)
+  })
+  const list = terminals.list.bind(terminals)
+  vi.spyOn(terminals, 'list').mockImplementation(() =>
+    list().map((entry) => (entry.id === session.id ? { ...entry, exited: true } : entry)),
+  )
+  const close = terminals.close.bind(terminals)
+  let entered = () => {}
+  let release = () => {}
+  vi.spyOn(terminals, 'close').mockImplementation(async (id) => {
+    entered()
+    await new Promise<void>((resolve) => (release = resolve))
+    return close(id)
+  })
+  const waiting = new Promise<void>((resolve) => (entered = resolve))
+  const deletion = action('delete')
+  await waiting
+  // A path that ignores the reservation still cannot have its work deleted.
+  store.updateTask('nested', (current) => ({ ...current, status: 'running' }))
+  release()
+  expect((await deletion).status).toBe(409)
+  for (const id of ids) expect(store.get().tasks.some((item) => item.id === id)).toBe(true)
+  // The failed delete released its reservation.
+  store.updateTask('nested', (current) => ({ ...current, status: 'review' }))
+  expect(() => tasks.requireIdle(task.id)).not.toThrow()
 })

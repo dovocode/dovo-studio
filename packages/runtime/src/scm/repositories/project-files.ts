@@ -69,20 +69,27 @@ export class ProjectFiles {
     if (cached && !fresh) return cached.files
     const files = plain
       ? this.folderFiles(cwd)
-      : this.git
-          .command(cwd, ['ls-files', '--cached', '--others', '--exclude-standard', '-z'])
-          .then((output) => {
-            const files = [...new Set(output.split('\0').filter(Boolean))]
-            return { files: files.slice(0, MAX_FILES), truncated: files.length > MAX_FILES }
-          })
+      : // Stream the listing: long paths in a large index exceed any fixed output buffer.
+        this.git
+          .nulRecords(
+            cwd,
+            ['ls-files', '--cached', '--others', '--exclude-standard', '-z'],
+            MAX_FILES,
+          )
+          .then(({ records, truncated }) => ({ files: records, truncated }))
     this.cache.set(key, { files, expires: now + TTL })
     files.catch(() => {
       if (this.cache.get(key)?.files === files) this.cache.delete(key)
     })
     return files
   }
+  /** Ranked suggestions. `truncated` is set when matches beyond the file cap were not searched. */
   async search(cwd: string, query: string, limit = 8, plain = false) {
-    return rankPaths((await this.list(cwd, plain)).files, query, limit)
+    const listing = await this.list(cwd, plain)
+    return {
+      files: rankPaths(listing.files, query, limit),
+      ...(listing.truncated ? { truncated: true } : {}),
+    }
   }
   async all(cwd: string, plain = false, fresh = false) {
     return this.list(cwd, plain, fresh)

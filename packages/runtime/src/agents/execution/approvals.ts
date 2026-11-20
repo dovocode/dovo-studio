@@ -10,6 +10,7 @@ import {
 } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { WorkspaceStore } from '../../storage/workspace.js'
+import type { ApprovalScopes } from './types.js'
 import type { RuntimePreferences } from '../../storage/runtime-preferences.js'
 // These are command execution inputs and display/context fields, never permission grants.
 const commandFields = new Set([
@@ -46,6 +47,22 @@ function commandForApproval(detail: string, projectPath: string | undefined) {
     return undefined
   }
 }
+/** How a request left the pending list. Only `decided` records a user or rule decision. */
+type ApprovalEnd = 'decided' | 'withdrawn' | 'expired' | 'access-changed' | 'cancelled'
+const endedMessages: Record<Exclude<ApprovalEnd, 'decided'>, string> = {
+  withdrawn: 'This approval request was withdrawn, or its turn ended.',
+  expired: 'This approval expired.',
+  'access-changed': 'Access changed. This approval has expired.',
+  cancelled: 'This approval was cancelled.',
+}
+const decisionLabels: Record<ApprovalDecision, string> = {
+  approve: 'Allow once',
+  session: 'Allow for session',
+  always: 'Always allow',
+  deny: 'Deny',
+}
+/** Enough to confirm a lost response after reconnecting. Older outcomes return 404. */
+const outcomeLimit = 256
 export class Approvals {
   constructor(
     private activity?: Pick<Activity, 'add'>,
@@ -59,9 +76,10 @@ export class Approvals {
       web: boolean
       command?: string
       policy?: PermissionPolicy
-      resolve: (decision: ApprovalDecision) => void
+      resolve: (decision: ApprovalDecision, end?: ApprovalEnd, recorded?: ApprovalDecision) => void
     }
   >()
+  private outcomes = new Map<string, { end: ApprovalEnd; decision: ApprovalDecision }>()
   list() {
     return [...this.requests.values()].map((r) => r.info)
   }
@@ -71,7 +89,7 @@ export class Approvals {
     detail: string,
     signal: AbortSignal,
     kind?: 'web' | 'command',
-    scopes?: { session?: boolean; always?: boolean },
+    scopes?: ApprovalScopes,
   ): Promise<ApprovalDecision> {
     if (signal.aborted) return Promise.resolve('deny' as const)
     // Provider adapters classify rule eligibility; tool names and display text are not authority.
@@ -95,25 +113,37 @@ export class Approvals {
     const id = randomUUID()
     this.activity?.add('approval', taskId, title, { id, detail, status: 'requested' })
     return new Promise<ApprovalDecision>((resolve) => {
-      const finish = (decision: ApprovalDecision) => {
+      const finish = (
+        decision: ApprovalDecision,
+        end: ApprovalEnd = 'decided',
+        recorded: ApprovalDecision = decision,
+      ) => {
+        if (!this.requests.has(id)) return
         clearTimeout(timer)
         signal.removeEventListener('abort', abort)
         this.requests.delete(id)
+        this.outcomes.set(id, { end, decision: recorded })
+        if (this.outcomes.size > outcomeLimit)
+          this.outcomes.delete(this.outcomes.keys().next().value!)
         // The agent waits on this promise: a failed audit write must not leave it waiting.
+        // The audit keeps the user's decision. A saved web rule answers the provider with a
+        // single approval, but clients must show "Always allowed".
         try {
           this.activity?.add('approval', taskId, title, {
             id,
             allow: decision !== 'deny',
-            decision,
+            decision: recorded,
             status: 'resolved',
+            ...(end === 'decided' ? {} : { reason: end }),
           })
         } catch (error) {
           console.error('Could not record approval', error)
         }
         resolve(decision)
       }
-      const abort = () => finish('deny')
-      const timer = setTimeout(abort, 10 * 60 * 1000)
+      // The signal aborts when the turn ends or the provider withdraws this request.
+      const abort = () => finish('deny', 'withdrawn')
+      const timer = setTimeout(() => finish('deny', 'expired'), 10 * 60 * 1000)
       this.requests.set(id, {
         web,
         command,
@@ -124,7 +154,15 @@ export class Approvals {
           title,
           detail,
           createdAt: new Date().toISOString(),
-          ...(scopes ? { scopes: { session: !!scopes.session, always: !!scopes.always } } : {}),
+          ...(scopes
+            ? {
+                scopes: {
+                  once: scopes.once ?? true,
+                  session: !!scopes.session,
+                  always: !!scopes.always,
+                },
+              }
+            : {}),
           rememberRule: project && (command || web) ? (web ? 'web' : 'command') : null,
         },
         resolve: finish,
@@ -137,12 +175,18 @@ export class Approvals {
   }
   decide(id: string, decision: ApprovalDecision) {
     const request = this.requests.get(id)
-    if (!request) throw new HttpError(404, 'Approval expired')
+    if (!request) return this.replay(id, decision)
+    // Older clients always offer "Allow once". Never widen it to another scope.
+    if (decision === 'approve' && request.info.scopes?.once === false)
+      throw new HttpError(
+        400,
+        'This approval does not offer Allow once. Choose one of the scopes it offers.',
+      )
     const current = this.store?.get().tasks.find((task) => task.id === request.info.taskId)
     const policy =
       current && this.store ? resolveTaskAgent(current, this.store.get().agents) : undefined
     if (decision !== 'deny' && !samePermissionPolicy(request.policy, policy)) {
-      request.resolve('deny')
+      request.resolve('deny', 'access-changed')
       throw new HttpError(409, 'Access changed. This approval has expired.')
     }
     if (decision === 'always') {
@@ -183,6 +227,7 @@ export class Approvals {
       }))
       // Concurrent searches already waiting for this same project need no second approval.
       if (web) {
+        request.resolve('approve', 'decided', 'always')
         this.applyWebRules()
         return
       }
@@ -190,6 +235,21 @@ export class Approvals {
     if (decision === 'session' && !request.info.scopes?.session)
       throw new HttpError(400, 'This approval does not offer a session scope.')
     request.resolve(decision)
+  }
+  /** A repeated identical decision confirms the original outcome. A conflicting one fails. */
+  private replay(id: string, decision: ApprovalDecision) {
+    const outcome = this.outcomes.get(id)
+    if (!outcome) throw new HttpError(404, 'Approval expired')
+    if (outcome.end === 'decided') {
+      if (outcome.decision === decision) return
+      throw new HttpError(
+        409,
+        `This approval was already answered: ${decisionLabels[outcome.decision]}.`,
+      )
+    }
+    // Nothing ran without an approval, so a denial matches every other ending.
+    if (decision === 'deny') return
+    throw new HttpError(409, endedMessages[outcome.end])
   }
   /** Apply saved rules to requests already waiting when a setting is enabled. */
   applyWebRules() {
@@ -200,7 +260,7 @@ export class Approvals {
       const task = workspace?.tasks.find((item) => item.id === pending.info.taskId)
       const policy = task && workspace ? resolveTaskAgent(task, workspace.agents) : undefined
       if (!samePermissionPolicy(pending.policy, policy)) {
-        pending.resolve('deny')
+        pending.resolve('deny', 'access-changed')
         continue
       }
       const project = workspace?.repositories.find((item) => item.id === task?.repositoryId)
@@ -208,10 +268,10 @@ export class Approvals {
     }
   }
   dispose() {
-    for (const request of this.requests.values()) request.resolve('deny')
+    for (const request of this.requests.values()) request.resolve('deny', 'cancelled')
   }
   cancelTask(taskId: string) {
     for (const request of this.requests.values())
-      if (request.info.taskId === taskId) request.resolve('deny')
+      if (request.info.taskId === taskId) request.resolve('deny', 'cancelled')
   }
 }

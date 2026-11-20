@@ -12,7 +12,10 @@ import {
   responses,
   resolveTaskDefaults,
   runtimeComputerName,
+  terminalRecoveryDescription,
+  terminalParentChoices,
   terminalShellsResponseSchema,
+  RuntimeRequestError,
   threadStartMessage,
   workspacePatchResultSchema,
   workspaceRouteSchema,
@@ -90,6 +93,7 @@ export function WorkspaceStarter({
   const [threadId, setThreadId] = useState('')
   const [model, setModel] = useState<{ key: string; fields: StarterModel } | null>(null)
   const [draftId] = useState(randomUUID)
+  const [parentTerminalId, setParentTerminalId] = useState('')
   const [shellId, setShellId] = useState('default')
   const [remember, setRemember] = useState(true)
   const [checkout, setCheckout] = useState<'main' | 'existing' | 'worktree'>('main')
@@ -136,6 +140,7 @@ export function WorkspaceStarter({
     if (!focused) revision.current++
   }, [focused])
   const owner = runtime.overviews.find((entry) => entry.profile.id === runtimeId)
+  const recoveryHint = uiText(terminalRecoveryDescription(owner?.snapshot))
   const profile = owner?.profile
   const connected = !!owner?.connected
   const repositories = owner?.snapshot?.workspace.repositories ?? []
@@ -285,6 +290,7 @@ export function WorkspaceStarter({
       current = false
     }
   }, [mode, browserProfilesKey])
+  const parents = terminalParentChoices(owner?.snapshot)
   const availableShells = shells.key === ownerKey ? shells.items : undefined
   const availableCheckouts = choices.key === checkoutKey ? choices.items : undefined
   const shellReady = !!availableShells?.some((shell) => shell.id === shellId)
@@ -315,7 +321,7 @@ export function WorkspaceStarter({
       visible.current &&
       revision.current === attempt &&
       currentOwnerKey.current === ownerKey
-    const original = text.trim()
+    const original = mode === 'terminal' ? text : text.trim()
     try {
       if (mode === 'auto') {
         if (!profile || !connected)
@@ -354,6 +360,7 @@ export function WorkspaceStarter({
           if (changed) {
             setThreadId('')
             setShellId('default')
+            setParentTerminalId('')
             setModel(null)
           }
           if (changed || result.repositoryId !== repositoryId) {
@@ -398,6 +405,7 @@ export function WorkspaceStarter({
         repositoryId,
         threadId,
         shellId,
+        mode === 'terminal' ? parentTerminalId : '',
         checkout,
         checkoutValue,
         remember,
@@ -430,7 +438,7 @@ export function WorkspaceStarter({
           const id = submission.tab.id
           browser.change((state) => visitTab(state, id))
           Keyboard.dismiss()
-          router.navigate('/workspace/browser')
+          router.navigate('/browser')
         }
       } else {
         if (!profile || !connected) throw new Error('This computer is offline or no longer paired.')
@@ -438,9 +446,17 @@ export function WorkspaceStarter({
           throw new Error('This project is no longer available. Choose another project.')
         if (mode === 'terminal') {
           if (!submission.terminalId) {
+            if (parentTerminalId && !owner?.snapshot?.terminalChildrenSupported)
+              throw new Error(
+                'Update this computer to launch a child terminal or choose no parent.',
+              )
             const input: CreateWorkspaceTerminal = {
+              ...(parentTerminalId ? { parentTerminalId } : {}),
               repositoryId: repositoryId || undefined,
-              command: original || undefined,
+              command: original.trim() ? original : undefined,
+              requestId: owner?.snapshot?.workspaceTerminalRequestIdSupported
+                ? submission.messageId
+                : undefined,
               shellId,
               rememberSession: remember && owner?.snapshot?.terminalRecoverySupported === true,
               execution: repositoryId && checkout !== 'main' ? 'worktree' : 'main',
@@ -462,6 +478,7 @@ export function WorkspaceStarter({
           await refreshRuntime(profile)
           if (valid()) {
             Keyboard.dismiss()
+            setParentTerminalId('')
             router.replace(terminalHref(runtimeId, submission.terminalId))
           }
         } else {
@@ -530,6 +547,8 @@ export function WorkspaceStarter({
         setSuggested(false)
       }
     } catch (cause: unknown) {
+      if (mode === 'terminal' && cause instanceof RuntimeRequestError && cause.mutationRejected)
+        receipt.current = null
       if (valid())
         setError(
           `${receipt.current?.created && !receipt.current.sent ? 'Thread saved. Retry to send to the same thread. ' : ''}${String(cause)}`,
@@ -642,6 +661,7 @@ export function WorkspaceStarter({
                     setRepositoryId('')
                     setThreadId('')
                     setShellId('default')
+                    setParentTerminalId('')
                     setCheckout('main')
                     setCheckoutValue('')
                   }}
@@ -914,6 +934,7 @@ export function WorkspaceStarter({
                   setRepositoryId('')
                   setThreadId('')
                   setShellId('default')
+                  setParentTerminalId('')
                   setCheckout('main')
                   setCheckoutValue('')
                 }
@@ -1003,6 +1024,7 @@ export function WorkspaceStarter({
                 </Text>
                 <Switch
                   accessibilityLabel={uiText('Remember terminal session')}
+                  accessibilityHint={recoveryHint}
                   value={remember && owner?.snapshot?.terminalRecoverySupported === true}
                   disabled={busy || !owner?.snapshot?.terminalRecoverySupported}
                   onValueChange={(value) => {
@@ -1011,13 +1033,28 @@ export function WorkspaceStarter({
                   }}
                 />
               </View>
-              <Text style={styles.muted}>
-                {owner?.snapshot?.terminalRecoverySupported
-                  ? uiText(
-                      'Recover supported tools after a computer restart. Settling idle sessions lets them sleep.',
-                    )
-                  : uiText('Update this computer to enable persistent terminal recovery.')}
-              </Text>
+              <Text style={styles.muted}>{recoveryHint}</Text>
+              {(!!parents.length || !!parentTerminalId) && (
+                <Choice
+                  label={uiText('Parent terminal')}
+                  value={parentTerminalId}
+                  disabled={busy || !connected}
+                  items={[
+                    { id: '', name: uiText('No parent terminal') },
+                    ...(parentTerminalId && !parents.some((item) => item.id === parentTerminalId)
+                      ? [{ id: parentTerminalId, name: uiText('Parent unavailable') }]
+                      : []),
+                    ...parents.map((item) => ({
+                      id: item.id,
+                      name: `${item.title} · ${item.id.slice(0, 8)}`,
+                    })),
+                  ]}
+                  onChange={(id) => {
+                    invalidate()
+                    setParentTerminalId(id)
+                  }}
+                />
+              )}
             </View>
           )}
           <Action label={uiText('Done')} onPress={() => setOptions(false)} />

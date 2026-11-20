@@ -103,8 +103,8 @@ try {
   await page.evaluate(() => window.finishAnswer())
   await page.waitForFunction(() => !document.querySelector('button[disabled]'))
   assert.deepEqual(await page.evaluate(() => window.answers), [
-    { key: 'request-1', answer: true },
-    { key: 'request-1', answer: false },
+    { key: 'request-1', answer: true, decision: 'approve' },
+    { key: 'request-1', answer: false, decision: 'deny' },
   ])
   await page.evaluate(() =>
     window.updatePreview({
@@ -233,6 +233,60 @@ try {
     6,
     'Composition, held keys and modifiers are ignored',
   )
+  // The popup offers the request's own scopes. Each button sends its exact decision.
+  await page.evaluate(() =>
+    window.updatePreview({
+      ...window.initialPreview,
+      key: 'request-4',
+      request: {
+        kind: 'approval',
+        value: {
+          ...window.initialPreview.request.value,
+          id: 'approval-4',
+          scopes: { session: true, always: false },
+        },
+      },
+    }),
+  )
+  await page.getByRole('button', { name: 'Allow for session', exact: true }).click()
+  await page.waitForFunction(() => window.answers.length === 7)
+  assert.deepEqual(await page.evaluate(() => window.answers.at(-1)), {
+    key: 'request-4',
+    answer: true,
+    decision: 'session',
+  })
+  assert.equal(await page.getByRole('button', { name: /Always allow/ }).count(), 0)
+  await page.waitForFunction(() => !document.querySelector('button[disabled]'))
+  // Without a single-use scope, the popup offers no Allow once and Y or Enter sends nothing.
+  await page.evaluate(() =>
+    window.updatePreview({
+      ...window.initialPreview,
+      key: 'request-5',
+      request: {
+        kind: 'approval',
+        value: {
+          ...window.initialPreview.request.value,
+          id: 'approval-5',
+          scopes: { once: false, session: true, always: false },
+        },
+      },
+    }),
+  )
+  await page.locator('[data-approval-id="approval-5"]').waitFor()
+  assert.equal(await page.getByRole('button', { name: /^Allow once/ }).count(), 0)
+  assert.equal(await page.getByText('Y / Enter', { exact: true }).count(), 0)
+  assert.equal(
+    await page.locator('[data-approval-id="approval-5"]').getAttribute('aria-keyshortcuts'),
+    'N',
+  )
+  await page.locator('[data-approval-id="approval-5"]').focus()
+  await page.keyboard.press('y')
+  await page.keyboard.press('Enter')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    7,
+    'Y and Enter send nothing without Allow once',
+  )
   await page.evaluate(() =>
     window.updatePreview({
       ...window.initialPreview,
@@ -268,7 +322,7 @@ try {
   await page.keyboard.press('Enter')
   assert.equal(
     await page.evaluate(() => window.answers.length),
-    6,
+    7,
     'Unfocused question ignores shortcuts',
   )
   assert.equal(await page.getByRole('alert').count(), 0)
@@ -277,20 +331,20 @@ try {
   await page.getByRole('alert').waitFor()
   assert.equal(
     await page.evaluate(() => window.answers.length),
-    6,
+    7,
     'Enter in a question dialog still validates required answers',
   )
   await page.keyboard.press('1')
   await page.getByRole('button', { name: /Continue/, pressed: true }).waitFor()
   await page.keyboard.press('Enter')
-  await page.waitForFunction(() => window.answers.length === 7)
+  await page.waitForFunction(() => window.answers.length === 8)
   assert.deepEqual(await page.evaluate(() => window.answers.at(-1)), {
     key: 'question-1',
     answer: { next: ['continue'] },
   })
   assert.deepEqual(errors, [])
   console.log(
-    'Permission popup: formatted fields, Full JSON, plain text, escaping, narrow layout, offline/busy gating, keyboard approvals, question submission and answer routing passed.',
+    'Permission popup: formatted fields, Full JSON, plain text, escaping, narrow layout, offline/busy gating, keyboard approvals, exact approval scopes, question submission and answer routing passed.',
   )
 } finally {
   await browser.close()

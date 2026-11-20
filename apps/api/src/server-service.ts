@@ -71,9 +71,9 @@ export function serviceDefinition(
 ) {
   if (platform === 'darwin') {
     const items = args.map((part) => `<string>${xml(part)}</string>`).join('')
-    return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.dovo.${name}</string><key>ProgramArguments</key><array>${items}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>EnvironmentVariables</key><dict><key>DOVO_RUNTIME_ENV_FILE</key><string>${xml(envPath)}</string></dict><key>StandardOutPath</key><string>${xml(join(directory, 'service.log'))}</string><key>StandardErrorPath</key><string>${xml(join(directory, 'service.log'))}</string></dict></plist>\n`
+    return `<?xml version="1.0" encoding="UTF-8"?><!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd"><plist version="1.0"><dict><key>Label</key><string>com.dovo.${name}</string><key>ProgramArguments</key><array>${items}</array><key>RunAtLoad</key><true/><key>KeepAlive</key><true/><key>EnvironmentVariables</key><dict><key>DOVO_RUNTIME_ENV_FILE</key><string>${xml(envPath)}</string><key>DOVO_TERMINAL_HOLDER_SUPERVISOR</key><string>launchd</string></dict><key>StandardOutPath</key><string>${xml(join(directory, 'service.log'))}</string><key>StandardErrorPath</key><string>${xml(join(directory, 'service.log'))}</string></dict></plist>\n`
   }
-  return `[Unit]\nDescription=Dovo server (${name})\nAfter=network-online.target\n[Service]\nType=simple\nWorkingDirectory=${directory.replaceAll('%', '%%')}\nExecStart=${args.map(systemd).join(' ')}\nEnvironment=DOVO_RUNTIME_ENV_FILE=${systemd(envPath)}\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n`
+  return `[Unit]\nDescription=Dovo server (${name})\nAfter=network-online.target\n[Service]\nType=simple\nWorkingDirectory=${directory.replaceAll('%', '%%')}\nExecStart=${args.map(systemd).join(' ')}\nEnvironment=DOVO_RUNTIME_ENV_FILE=${systemd(envPath)}\nEnvironment=DOVO_TERMINAL_HOLDER_SUPERVISOR=systemd\nRestart=on-failure\nRestartSec=3\n[Install]\nWantedBy=default.target\n`
 }
 export function repairServiceDefinition(definition: string, directory: string) {
   return definition.replace(
@@ -102,6 +102,15 @@ function readService(directory: string): ServiceRecord {
   )
     throw new Error(`Invalid server service record: ${path}`)
   return value as ServiceRecord
+}
+function registeredHolderSupervisor(directory: string) {
+  if (!existsSync(recordPath(directory))) return undefined
+  try {
+    const { platform } = readService(directory)
+    if (platform === process.platform) return platform === 'darwin' ? 'launchd' : 'systemd'
+  } catch {
+    // Only valid service records identify a managed launcher.
+  }
 }
 async function run(command: string, args: string[], cwd?: string, env?: NodeJS.ProcessEnv) {
   const child = spawn(command, args, {
@@ -267,6 +276,10 @@ export async function runService(directory: string) {
     selectedLauncher &&
     realpathSync(selectedEntrypoint(directory)) !==
       realpathSync(join(dirname(selectedLauncher), '..', 'libexec', 'server', 'dist', 'index.js'))
+  // Existing service definitions predate the marker. A registered launcher supplies it without
+  // rewriting the operator's service.
+  const holderSupervisor =
+    process.env.DOVO_TERMINAL_HOLDER_SUPERVISOR ?? registeredHolderSupervisor(directory)
   const child = spawn(
     redirect ? selectedLauncher : process.execPath,
     redirect ? ['service', 'run', '--data-dir', directory] : [selectedEntrypoint(directory)],
@@ -279,6 +292,7 @@ export async function runService(directory: string) {
         DOVO_HOST: config.host,
         PORT: String(config.port),
         DOVO_RUNTIME_ENV_FILE: environmentPath,
+        DOVO_TERMINAL_HOLDER_SUPERVISOR: holderSupervisor,
         ELECTRON_RUN_AS_NODE: undefined,
         ...(selectedLauncher ? { DOVO_SERVER_LAUNCHER: selectedLauncher } : {}),
         // A redirected launcher is itself a supervisor and releases its runtime's children.

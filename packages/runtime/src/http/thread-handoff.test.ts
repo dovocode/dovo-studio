@@ -138,7 +138,7 @@ it('rejects queued input and computer fences, including forged client handoff fi
   }))
   expect((await post('/api/tasks/continue-harness', input)).status).toBe(409)
   await expect(s.tasks.start(task.id)).rejects.toThrow(/another computer/)
-  await expect(s.tasks.restoreTurn(task.id, 'old-turn', 'undo')).rejects.toThrow(/another computer/)
+  expect(() => s.tasks.reviewUndoBackup(task.id, 'old-turn')).toThrow(/another computer/)
   await expect(s.tasks.restoreFile(task.id, 'hello.txt')).rejects.toThrow(/another computer/)
   expect(() => s.tasks.removeFeedback(task.id, 'old-message')).toThrow(/another computer/)
   await expect(s.tasks.send(task.id, 'new-message', 'Do not run twice')).rejects.toThrow(

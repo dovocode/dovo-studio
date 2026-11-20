@@ -8,10 +8,9 @@ import { jobsExtension } from '../../extension-jobs/src/index'
 import { appSettingsExtension } from './app-extension'
 import { createExtensionCatalog } from './extension-catalog'
 it('contributes views before loading and disposes activated commands', async () => {
-  const unregister = vi.fn<() => void>()
   const api: StudioHostApi = {
     navigate: vi.fn<StudioHostApi['navigate']>(),
-    registerCommand: vi.fn<StudioHostApi['registerCommand']>(() => unregister),
+    registerCommand: vi.fn<StudioHostApi['registerCommand']>(() => () => {}),
   }
   const load = vi.fn<StudioView['load']>(async () => ({ default: () => null }))
   const extension = defineStudioExtension({ id: 'feature', name: 'Feature', version: '1' }, [
@@ -24,9 +23,12 @@ it('contributes views before loading and disposes activated commands', async () 
   await catalog.views[0].load()
   expect(load).toHaveBeenCalledOnce()
   expect(catalog.host.get('feature')?.state).toBe('active')
-  expect(api.registerCommand).toHaveBeenCalledOnce()
+  // The workbench builds palette entries with sidebar rules, so activation adds none of its own.
+  expect(api.registerCommand).not.toHaveBeenCalled()
+  await catalog.host.executeCommand('feature.open.feature.view')
+  expect(api.navigate).toHaveBeenCalledWith({ viewId: 'feature.view' })
   await catalog.host.dispose()
-  expect(unregister).toHaveBeenCalledOnce()
+  await expect(catalog.host.executeCommand('feature.open.feature.view')).rejects.toThrow()
 })
 
 it('keeps detail-only views addressable without contributing navigation commands', async () => {
@@ -58,14 +60,14 @@ it('keeps detail-only views addressable without contributing navigation commands
   const pipeline = catalog.views.find((view) => view.id === 'pipelines')
   expect(pipeline).toBeDefined()
   await pipeline!.load()
-  expect(api.registerCommand).toHaveBeenCalledOnce()
-  expect(api.registerCommand).toHaveBeenCalledWith(
-    expect.objectContaining({ id: 'scm.open.pulls' }),
-  )
+  await catalog.host.executeCommand('scm.open.pulls')
+  expect(api.navigate).toHaveBeenCalledWith({ viewId: 'pulls' })
+  await expect(catalog.host.executeCommand('scm.open.pipelines')).rejects.toThrow()
   await catalog.host.dispose()
 })
-it('reuses settings keywords as command aliases without loading the settings component', async () => {
+it('activates settings without loading the settings component', async () => {
   const registerCommand = vi.fn<StudioHostApi['registerCommand']>(() => () => {})
+  const navigate = vi.fn<StudioHostApi['navigate']>()
   const load = vi.fn<StudioView['load']>(async () => ({ default: () => null }))
   const extension = defineStudioExtension({ id: 'settings', name: 'Settings', version: '1' }, [
     {
@@ -78,15 +80,12 @@ it('reuses settings keywords as command aliases without loading the settings com
       load,
     },
   ])
-  const catalog = createExtensionCatalog([extension], { navigate: () => {}, registerCommand })
+  const catalog = createExtensionCatalog([extension], { navigate, registerCommand })
   await catalog.host.activate('settings')
+  await catalog.host.executeCommand('settings.open.appearance')
   expect(load).not.toHaveBeenCalled()
-  expect(registerCommand).toHaveBeenCalledWith(
-    expect.objectContaining({
-      id: 'settings.open.appearance',
-      aliases: ['fonts typography themes'],
-    }),
-  )
+  expect(registerCommand).not.toHaveBeenCalled()
+  expect(navigate).toHaveBeenCalledWith({ viewId: 'appearance' })
   await catalog.host.dispose()
 })
 

@@ -859,8 +859,12 @@ export class PullRequestWatch {
           const revisionChanged =
             state.careHead !== detail.pull.headSha || state.careBase !== detail.pull.baseSha
           const behind = detail.pull.behindBy
+          // Readiness needs a known review decision and a resolved state for every review thread.
+          // GitHub reports a null decision when the target branch does not require a review.
+          const reviewDecisionKnown = detail.pull.reviewDecision !== undefined
           const ready =
             !detail.warnings.length &&
+            reviewDecisionKnown &&
             detail.pull.mergeable === true &&
             behind === 0 &&
             detail.checks.length > 0 &&
@@ -870,9 +874,7 @@ export class PullRequestWatch {
                 ['neutral', 'skipped', 'not_applicable'].includes(check.status.toLowerCase()),
             ) &&
             detail.pull.reviewDecision?.toUpperCase() !== 'CHANGES_REQUESTED' &&
-            !detail.comments.some(
-              (comment) => comment.kind === 'inline' && comment.resolved === false,
-            )
+            detail.comments.every((comment) => comment.kind !== 'inline' || comment.resolved)
           const chunks: string[] = []
           let size = 0
           let remaining = false
@@ -960,7 +962,7 @@ export class PullRequestWatch {
               )
             if (ready && !state.careReady)
               append(
-                'Reported checks passed and the branch is current with its target. Check review requirements and report readiness. Merge still needs the user’s approval.',
+                'Reported checks passed, the branch is current with its target, no reviewer requested changes and every review thread is resolved. Check other review requirements and report readiness. Merge still needs the user’s approval.',
               )
             next.careMergeable = detail.pull.mergeable
             next.careStarted = true
@@ -976,15 +978,19 @@ export class PullRequestWatch {
                     ? 'Babysitting PR · ready for review or merge approval'
                     : behind === undefined
                       ? 'Babysitting PR · branch freshness unavailable'
-                      : 'Babysitting PR · waiting for checks and reviews'
+                      : !reviewDecisionKnown
+                        ? 'Babysitting PR · review state unavailable'
+                        : 'Babysitting PR · waiting for checks and reviews'
           }
           for (const check of failures) {
             const key = checkKey(detail, check)
+            // The first babysitting poll re-reports known failures; they are already in the cursor.
             if (knownFailures.has(key) && (!babysitting || state.careStarted)) continue
             if (
               append(
                 `Failed check: ${check.name.slice(0, 300)} (${check.status.slice(0, 100)})\n${check.url ?? ''}\n${(check.summary ?? '').slice(0, 1200)}`,
-              )
+              ) &&
+              !next.failedChecks.includes(key)
             )
               next.failedChecks.push(key)
           }
@@ -1012,7 +1018,7 @@ export class PullRequestWatch {
               next.carePaused = true
               next.careStatus = 'PR babysitting paused · repeated review feedback needs your input'
               chunks.push(
-                'PR babysitting paused after 10 feedback-only wakeups without a new revision or check result. Ask the user to review the loop. Do not continue posting replies or restart automatically.',
+                'PR babysitting paused after 10 feedback-only wakeups without a new revision or check result. Ask the user to review the loop. Do not continue posting replies or restart automatically. Restart only when the user asks: call pull_request_watch with action "watch" and this PR URL.',
               )
             }
           }

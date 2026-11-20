@@ -23,7 +23,7 @@ import {
   type Task,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { detailDraftKey } from '../runtime/state/detail-drafts'
+import { computerDraftKey, detailDraftKey } from '../runtime/state/detail-drafts'
 import { HarnessSettings } from '../tasks/detail/harness-settings'
 import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
@@ -93,7 +93,7 @@ function BotSettingsEditor({
   const lifecycle = botLifecyclePresentation(bot.state, task)
   return (
     <BotEditor
-      draftKey={detailDraftKey(profile?.connection ?? null, 'bot', task.id)}
+      draftKey={computerDraftKey(profile, 'bot', task.id)}
       initial={{
         name: task.title,
         role: bot.role,

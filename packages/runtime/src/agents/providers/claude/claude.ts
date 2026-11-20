@@ -19,7 +19,7 @@ import {
   type SDKMessage,
   type SDKUserMessage,
 } from '@anthropic-ai/claude-agent-sdk'
-import type { AgentAdapter, AgentRun } from '../../execution/types.js'
+import type { AgentAdapter, AgentRun, ApprovalScopes } from '../../execution/types.js'
 import { processEnvironment } from '../../../process.js'
 import {
   claudeEffectiveEnvironment,
@@ -292,6 +292,9 @@ function claudeOptions(
               : name === 'Bash'
                 ? 'command'
                 : undefined,
+            undefined,
+            // Claude aborts this signal when it withdraws the tool request during the turn.
+            options.signal,
           )) !== 'deny')
       return allowed
         ? {
@@ -610,12 +613,17 @@ export function createClaudeAdapter(): AgentAdapter {
             title: string,
             detail: string,
             kind?: 'web' | 'command',
-            options?: { session?: boolean; always?: boolean },
+            options?: ApprovalScopes,
+            requestSignal?: AbortSignal,
           ) =>
             interactions.approve(
               title,
               detail,
-              AbortSignal.any([session.controller.signal, signal]),
+              AbortSignal.any([
+                session.controller.signal,
+                signal,
+                ...(requestSignal ? [requestSignal] : []),
+              ]),
               kind,
               options,
             ),

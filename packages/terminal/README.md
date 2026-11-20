@@ -29,9 +29,28 @@ able to access those paths. Browser-created files without native paths report an
 PTYs stay in the runtime's existing `node-pty` service, including local/background and WSL sessions.
 Desktop MessagePorts bridge the authenticated WebSocket to the worker. Web/mobile connect directly.
 `stream=binary-v1` supplies UTF-8 output with replay boundaries, consumption acknowledgements and
-bounded server credit. Controls remain JSON. Older text-stream runtimes remain compatible. Runtime
-replay retains its existing bounded output suffix; browser history uses a separate 16 MiB Ghostty
-budget (`scrollbackBytes`, measured in bytes, not rows).
+bounded server credit. Controls remain JSON. The runtime normally replays the last 1 Mi UTF-16 code
+units. For a late binary connection to an alternate screen or after the output buffer fills, the
+runtime sends the parsed screen and up to 256 rows of scrollback. It uses raw replay if the headless
+parser exceeds its queue limit or has an unfinished VT token. The parser pauses the PTY briefly when
+its queue builds up and resumes it when it catches up. Text-stream clients use the raw replay. The
+parser stops tracking a session if the backlog exceeds 2 Mi UTF-16 code units or 2048 writes before
+the pause can take effect. The browser keeps a separate 16 MiB Ghostty history budget
+(`scrollbackBytes`, measured in bytes).
+
+`POST /api/terminals/screen` accepts `{ "id": "…", "lines": 80 }`. Omit `lines` to read the visible
+screen. Set it to 1–300 to read the last rows, including retained scrollback on the normal screen.
+The alternate screen has no scrollback. The response includes the active buffer, grid size,
+zero-based cursor position, and text. The read has the same access rules as the terminal summary.
+`terminalScreenSupported` identifies runtimes that offer screen reads. Use the output summary if
+screen state is unavailable. The runtime models the PTY grid. A viewer with a different size can
+wrap the replay differently until it takes control of the grid.
+
+For remembered terminals owned by the terminal holder, a new runtime restores the held grid and
+screen checkpoint before processing later output. The terminal summary still uses raw output. The
+screen read returns unavailable if the holder can only supply raw history. Run
+`pnpm test:terminal-restart` on Linux to verify the checkpoint and live process after a graceful
+runtime stop and a forced kill.
 
 The native renderer accepts output sequentially before acknowledging it. On iOS the library queues
 accepted bytes to its IO thread, so acknowledgement does not assert painting or parser completion.

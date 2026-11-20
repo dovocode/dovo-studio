@@ -1,5 +1,5 @@
 import { Schema } from 'effect'
-import { mutableArray, mutableStruct } from '../shared/schema.js'
+import { maxValue, mutableArray, mutableStruct } from '../shared/schema.js'
 import type { Task } from '../workspace.js'
 export const taskSearchSchema = mutableStruct({
   taskIds: mutableArray(Schema.String),
@@ -15,6 +15,16 @@ export const taskSearchSchema = mutableStruct({
   ),
 })
 export type TaskSearchResult = Schema.Schema.Type<typeof taskSearchSchema>
+/**
+ * Limits which threads can supply message hits in a global search, before the hit limit applies.
+ * `taskIds` still lists every matching thread. Older runtimes ignore this field.
+ */
+export const taskSearchScopeSchema = mutableStruct({
+  archived: Schema.optional(Schema.Boolean),
+  /** Project IDs on the searched computer. An empty string selects threads without a project. */
+  repositoryIds: Schema.optional(maxValue(mutableArray(maxValue(Schema.String, 200)), 100)),
+})
+export type TaskSearchScope = Schema.Schema.Type<typeof taskSearchScopeSchema>
 export type TaskSearchHit = TaskSearchResult['hits'][number]
 /** Case- and accent-folded query. Double quotes keep a literal phrase together. */
 export function taskSearchNeedle(query: string) {
@@ -100,7 +110,13 @@ export function taskSearchHit(
     snippet: `${start ? '…' : ''}${message.text.slice(start, end).replace(/\s+/g, ' ').trim()}${end < message.text.length ? '…' : ''}`,
   }
 }
-export function searchTaskMessages(tasks: readonly Task[], query: string, limit = 50) {
+/** Message hits in one global search. A full page can omit older matches. */
+export const taskSearchHitLimit = 50
+export function searchTaskMessages(
+  tasks: readonly Task[],
+  query: string,
+  limit = taskSearchHitLimit,
+) {
   const needle = taskSearchNeedle(query)
   if (!needle) return { taskIds: [], hits: [] }
   const taskIds: string[] = []

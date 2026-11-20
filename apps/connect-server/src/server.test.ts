@@ -31,7 +31,8 @@ async function fixture(trustedProxies: string[] = []) {
       login.verifier = 'verifier'
       return 'https://auth.test/authorize'
     },
-    exchange: async (login) => {
+    exchange: async (login, code) => {
+      if (code === 'failed-exchange') throw new Error('Identity provider unavailable')
       expect(login.nonce).toBe('nonce')
       return { id: login.code === 'USERB' ? 'user-b' : 'user-a', name: 'Dominic' }
     },
@@ -565,4 +566,61 @@ it('only resets legacy sharing with the expected fingerprint and invalidates old
   expect((await save({ key, reset: { keyHash: fingerprint } })).status).toBe(200)
   expect(f.store.db.prepare('SELECT * FROM sharing_key_sync').all()).toEqual([])
   expect((await save({ key, reset: { keyHash: fingerprint } })).status).toBe(409)
+})
+
+it.each(['error=access_denied', 'code=failed-exchange'])(
+  'ends a matched login immediately when the callback fails with %s',
+  async (query) => {
+    const f = await fixture()
+    const login = await f.login()
+    const start = await f.request('/auth/start?id=' + login.id)
+    const headers = {
+      Cookie: start.headers.get('set-cookie')!.split(';')[0],
+      Origin: 'http://connect.test',
+    }
+    await f.request('/auth/authorize', { method: 'POST', headers })
+    expect((await f.request('/auth/callback?state=wrong&' + query, { headers })).status).toBe(400)
+    const poll = () => f.request('/v1/login', { headers: login.headers })
+    expect(await (await poll()).json()).toEqual({ ready: false })
+    expect((await f.request('/auth/callback?state=verified-state&' + query, { headers })).ok).toBe(
+      false,
+    )
+    expect((await poll()).status).toBe(401)
+    await f.approve(await f.login())
+  },
+)
+
+it('reuses active hosted grants by account session, destination and service until revoked or expired', async () => {
+  const f = await fixture()
+  const login = await f.login()
+  await f.approve(login)
+  const origin = 'https://share.test'
+  const grant = () => f.store.artifactGrant(login.token, origin, undefined, 'sharing')!
+  const initial = grant()
+  for (let i = 0; i < 40; i++) expect(grant()).toEqual(initial)
+  const browser = f.store.artifactGrant(login.token, origin)!
+  const otherBrowser = f.store.artifactGrant(login.token, origin)!
+  expect(browser.token).not.toBe(otherBrowser.token)
+  f.store.revoke(browser.token)
+  expect(f.store.artifactSession(otherBrowser.token)).toBeDefined()
+  expect(f.store.artifactGrant(login.token, origin, undefined, 'artifacts')!.token).not.toBe(
+    initial.token,
+  )
+  expect(f.store.artifactGrant(login.token, 'https://other.test')!.token).not.toBe(initial.token)
+  f.advance(599995)
+  const next = grant()
+  expect(grant()).toEqual(next)
+  expect(f.store.artifactSession(initial.token)).toBeDefined()
+  f.advance(10)
+  expect(f.store.artifactSession(initial.token)).toBeUndefined()
+  expect(f.store.artifactSession(next.token)).toBeDefined()
+  expect(next.token).not.toBe(initial.token)
+  f.store.revoke(next.token)
+  expect(grant().token).not.toBe(next.token)
+  const writer = (id: string) => f.store.artifactGrant(login.token, origin, id)!
+  for (let i = 0; i < 32; i++) writer(String(i))
+  expect(() => writer('extra')).toThrow('Too many active artifact sessions')
+  expect(grant()).toBeDefined()
+  f.store.revoke(login.token)
+  expect(grant()).toBeUndefined()
 })

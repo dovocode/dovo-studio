@@ -66,6 +66,12 @@
       "development": "./src/secure-input.ts",
       "import": "./dist/secure-input.js",
       "default": "./dist/secure-input.js"
+    },
+    "./client-address": {
+      "types": "./src/node/client-address.ts",
+      "development": "./src/node/client-address.ts",
+      "import": "./dist/node/client-address.js",
+      "default": "./dist/node/client-address.js"
     }
   },
   "scripts": {

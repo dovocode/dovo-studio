@@ -1049,8 +1049,7 @@ const tools: Array<
         },
         {
           name: 'terminal_run',
-          description:
-            'Run in a terminal. check:true reports exit code, test failures and a short tail.',
+          description: 'Run a command. check:true returns exit code, test failures and tail.',
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -1069,8 +1068,7 @@ const tools: Array<
         },
         {
           name: 'terminal_rename',
-          description:
-            'Set the saved tab name of a terminal opened by this tool session. Null restores the automatic shell title.',
+          description: "Name this session's terminal tab. Null restores its shell title.",
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -1088,8 +1086,7 @@ const tools: Array<
         },
         {
           name: 'terminal_close',
-          description:
-            "Close this tool session's terminal after reading output. Stops the process and removes retained output.",
+          description: "Close this session's terminal. Stops its process and discards output.",
           inputSchema: {
             type: 'object' as const,
             properties: { id: { type: 'string' as const } },
@@ -1099,13 +1096,27 @@ const tools: Array<
         {
           name: 'terminal_read',
           description:
-            'Read terminal output. summary:true returns status and tail. waitMs waits for exit.',
+            'Read output or summary:true for status and tail. Wait for exit, an until state, or a turn later than afterTurn.',
           inputSchema: {
             type: 'object' as const,
             properties: {
               id: { type: 'string' as const },
               summary: { type: 'boolean' as const },
               waitMs: { type: 'integer' as const, minimum: 0, maximum: 20000 },
+              afterTurn: {
+                type: 'integer' as const,
+                minimum: 0,
+                maximum: Number.MAX_SAFE_INTEGER,
+              },
+              until: {
+                type: 'array' as const,
+                items: {
+                  type: 'string' as const,
+                  enum: ['blocked', 'done', 'idle', 'error'],
+                },
+                minItems: 1,
+                uniqueItems: true,
+              },
             },
             required: ['id'],
           },
@@ -1113,7 +1124,7 @@ const tools: Array<
         {
           name: 'terminal_input',
           description:
-            "Send raw data to this tool session's terminal id. Set submit:true to append Enter (CR); use empty data for Enter alone. Omit submit to preserve raw bytes. Never send secrets.",
+            "Send raw data to this session's terminal. submit:true appends Enter (CR), even to empty data. Never send secrets.",
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -1627,6 +1638,23 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
         if (name === 'terminal_input') writable()
         const id = string(input.id, 'id')
         if (!terminals.has(id)) throw new Error('Open this task terminal with terminal_run first')
+        if (
+          name === 'terminal_read' &&
+          (input.until !== undefined || input.afterTurn !== undefined)
+        ) {
+          const summary = await post('/api/terminals/summary', {
+            id,
+            waitMs: input.waitMs,
+            until: input.until,
+            afterTurn: input.afterTurn,
+          })
+          // An older runtime ignores until and would only wait for exit.
+          if (!summary || typeof summary !== 'object' || !('waitResult' in summary))
+            throw new Error('Update the runtime to wait for reported terminal activity')
+          if (input.afterTurn !== undefined && !('turn' in summary))
+            throw new Error('Update the runtime to wait for terminal turns')
+          return text(summary)
+        }
         if (name === 'terminal_read' && (input.summary === true || input.waitMs !== undefined))
           return text(await post('/api/terminals/summary', { id, waitMs: input.waitMs }))
         const data = name === 'terminal_input' ? terminalInputData(input) : undefined

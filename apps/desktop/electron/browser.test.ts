@@ -1,6 +1,6 @@
 import { configureBrowserDoNotTrack } from './browser-user-agent'
 import { afterAll, afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { decode, desktopBrowserHostSchema } from '@dovo/protocol'
@@ -268,6 +268,11 @@ vi.mock('electron', () => ({
     removeListener: vi.fn<(name: string, listener: unknown) => void>(),
   },
   shell: { openExternal: mocks.openExternal },
+  session: {
+    fromPartition: (partition: string) => ({
+      storagePath: join(visibilityDirectory, 'partitions', partition),
+    }),
+  },
 }))
 import { registerBrowser } from './browser'
 afterEach(async () => {
@@ -4382,4 +4387,35 @@ it('returns a native video PiP to its source tab and restores its minimized owni
     'shared',
   )
   expect(mocks.contents.loadURL).not.toHaveBeenCalled()
+})
+
+it('clears saved session cookies for opted-out profiles from the saved app settings shape', () => {
+  handler()
+  const privateId = 'private-00000000-0000-4000-8000-000000000000'
+  const snapshot = (partition: string) =>
+    join(visibilityDirectory, 'partitions', partition, 'dovo-session-cookies.enc')
+  const partitions = (profileId: string) => [
+    `persist:dovo-browser-workspace:${profileId}`,
+    `persist:dovo-preview:${profileId}`,
+  ]
+  for (const profileId of ['unopened', 'kept', 'invalid'])
+    for (const partition of partitions(profileId)) {
+      mkdirSync(join(snapshot(partition), '..'), { recursive: true })
+      writeFileSync(snapshot(partition), 'saved')
+    }
+  // The renderer saves app preferences as one flat object. "unopened" has no tab.
+  registrations.at(-1)!.refreshSessionCookies({
+    theme: 'dark',
+    browserProfiles: [
+      { id: 'unopened', name: 'Unopened' },
+      { id: 'kept', name: 'Kept', keepSessionCookies: true },
+      { id: 'not a valid id', name: 'Invalid' },
+      { id: privateId, name: 'Private' },
+    ],
+  })
+  for (const partition of partitions('unopened'))
+    expect(existsSync(snapshot(partition))).toBe(false)
+  for (const profileId of ['kept', 'invalid'])
+    for (const partition of partitions(profileId))
+      expect(existsSync(snapshot(partition))).toBe(true)
 })

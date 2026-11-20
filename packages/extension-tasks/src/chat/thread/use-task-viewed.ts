@@ -1,5 +1,5 @@
-import { useApplicationState } from '@dovo/studio-core/state'
-import { useEffect, useRef } from 'react'
+import { useForegroundCompletion } from '../../use-foreground-completion'
+import { useCallback } from 'react'
 import {
   clientScopeKey,
   hasUnviewedTaskCompletion,
@@ -23,114 +23,14 @@ export function useTaskViewed(task: Task, visible: boolean) {
     turnId,
     expectedRevision,
   ])
-  const [failure, setFailure] = useApplicationState<{
-    identity: string
-    message: string
-  } | null>(null)
-  const [attempt, setAttempt] = useApplicationState(0)
-  const attempted = useRef('')
-  useEffect(() => {
-    if (!visible || !connected) {
-      attempted.current = ''
-      return
-    }
-    if (!turnId) return
-    let stopped = false
-    let pending = false
-    let acknowledged = false
-    const modalOpen = () =>
-      [...document.querySelectorAll('[role="dialog"], [role="alertdialog"]')].some(
-        (dialog) => dialog.getClientRects().length > 0,
-      )
-    let covered = modalOpen()
-    const acknowledge = async () => {
-      if (
-        stopped ||
-        pending ||
-        acknowledged ||
-        attempted.current === completion ||
-        document.visibilityState !== 'visible' ||
-        !document.hasFocus() ||
-        modalOpen()
-      )
-        return
-      // Preserve an explicit Mark unread action until this conversation is revisited.
-      // Snapshot updates alone must not acknowledge the same completion again.
-      attempted.current = completion
-      if (!unread) return
-      pending = true
-      try {
-        await request(
-          '/api/tasks/viewed',
-          {
-            id: task.id,
-            turnId,
-            expectedRevision,
-          },
-          responses.ok,
-        )
-        acknowledged = true
-        if (!stopped) setFailure(null)
-      } catch (error) {
-        if (!stopped)
-          setFailure({
-            identity,
-            message: error instanceof Error ? error.message : String(error),
-          })
-      } finally {
-        pending = false
-      }
-    }
-    const onVisible = () => void acknowledge()
-    const onInactive = () => {
-      attempted.current = ''
-      acknowledged = false
-    }
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') onVisible()
-      else onInactive()
-    }
-    onVisible()
-    window.addEventListener('focus', onVisible)
-    window.addEventListener('blur', onInactive)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    // A modal can close without a window-focus event. Retry only when it reveals the chat,
-    // not on every DOM mutation (including an acknowledgement failure message).
-    const observer = new MutationObserver(() => {
-      const next = modalOpen()
-      if (covered && !next) onVisible()
-      covered = next
-    })
-    observer.observe(document.body, {
-      childList: true,
-      subtree: true,
-      attributes: true,
-      attributeFilter: ['style', 'hidden', 'data-state'],
-    })
-    return () => {
-      stopped = true
-      window.removeEventListener('focus', onVisible)
-      window.removeEventListener('blur', onInactive)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-      observer.disconnect()
-    }
-  }, [
-    request,
-    connected,
-    visible,
-    task.id,
-    turnId,
-    unread,
-    expectedRevision,
-    identity,
+  const write = useCallback(async () => {
+    await request('/api/tasks/viewed', { id: task.id, turnId, expectedRevision }, responses.ok)
+  }, [request, task.id, turnId, expectedRevision])
+  return useForegroundCompletion(
+    visible && connected && !!turnId,
     completion,
-    attempt,
-  ])
-  return {
-    error: unread && failure?.identity === identity ? failure.message : '',
-    retry: () => {
-      attempted.current = ''
-      setAttempt((value) => value + 1)
-    },
-  }
+    identity,
+    unread,
+    write,
+  )
 }

@@ -99,6 +99,15 @@ category resolve by revision and change ID; stale saves on a runtime return a co
 overwriting newer data. Older runtimes do not receive unsupported settings writes and need an update
 to expose these editors.
 
+Each runtime keeps every accepted shared settings version as history. At startup and before each
+exchange, the runtime adds new history to its replication state in pages of 100 versions. It saves
+its place after each page. A long history, such as 300 edits to one setting, does not stop sync.
+
+Runtimes without durable state exchange use `/api/agents/settings/sync`. A client sends its pending
+edits there. It also fetches again when the runtime's snapshot shows changed shared settings, even
+without local edits. The client marks that revision received only after it applies the response. A
+failed apply fetches again on the next poll.
+
 Category revisions are additive wire metadata; legacy entries retain their whole-entry revision as
 the baseline. Older clients/runtimes that strip category revisions still use whole-entry merging;
 upgrade all participating runtimes and clients to preserve independent offline edits end to end.

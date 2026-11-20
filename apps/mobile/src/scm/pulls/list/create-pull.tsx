@@ -5,6 +5,8 @@ import {
   projectDisplayName,
   pullDetailSchema,
   pullHeadBranch,
+  pullSummarySchema,
+  taskPullSchema,
   type PullDetail,
   type PullSummary,
 } from '@dovo/protocol'
@@ -16,10 +18,12 @@ import { decode, mutableStruct } from '@dovo/protocol'
 
 const describedSchema = mutableStruct({ title: Schema.String, body: Schema.String })
 import {
+  computerIntegrationDraftKey,
   createDetailDrafts,
-  integrationDraftKey,
   useDetailDraft,
 } from '../../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
 import { useEffect, useRef } from 'react'
 import { View } from 'react-native'
 import { Switch } from '../../../ui/controls/switch'
@@ -34,17 +38,43 @@ import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 type ParentDraft = Pick<PullDetail['pull'], 'number' | 'title' | 'head' | 'url' | 'headSha'>
+// Unsent PR text stays on the device after the app restarts. A form without typed text is clean.
 const createDrafts = createDetailDrafts<{
   repositoryId: string
-  expectedDestination: string | undefined
+  expectedDestination?: string
   title: string
   body: string
   head: string
   base: string
   draft: boolean
-  parent: ParentDraft | undefined
+  parent?: ParentDraft
   sourceTask: string
-}>()
+}>({
+  isClean: (fields) => !fields.title && !fields.body && !fields.head && !fields.sourceTask,
+  persist: {
+    name: 'create-pull',
+    schema: mutableStruct({
+      repositoryId: Schema.String,
+      expectedDestination: Schema.optional(Schema.String),
+      title: Schema.String,
+      body: Schema.String,
+      head: Schema.String,
+      base: Schema.String,
+      draft: Schema.Boolean,
+      parent: Schema.optional(
+        mutableStruct({
+          number: pullSummarySchema.fields.number,
+          title: pullSummarySchema.fields.title,
+          head: pullSummarySchema.fields.head,
+          url: pullSummarySchema.fields.url,
+          headSha: taskPullSchema.fields.headSha,
+        }),
+      ),
+      sourceTask: Schema.String,
+    }),
+    storage: detailDraftStorage,
+  },
+})
 const parentDraft = (pull: ParentDraft): ParentDraft => ({
   number: pull.number,
   title: pull.title,
@@ -67,17 +97,19 @@ export function CreatePull({
 
   const { styles } = useTheme()
 
-  const { connected, snapshot, callEffect, connection } = useRuntime()
+  const { connected, snapshot, callEffect, profile } = useRuntime()
   const repos = snapshot?.workspace.repositories ?? []
   const {
     draft: fields,
     setField,
+    initializeField,
     clear,
+    persistence,
   } = useDetailDraft(
     createDrafts,
     useRef(
-      integrationDraftKey(
-        connection,
+      computerIntegrationDraftKey(
+        profile,
         snapshot,
         initial || repos[0]?.id,
         undefined,
@@ -103,9 +135,11 @@ export function CreatePull({
     fields
   const source = useSourceReader(repositoryId)
   const read = source.read
+  // A known reader fills the destination at once. That is not an edit, so a saved draft that
+  // loads later keeps its text.
   useEffect(() => {
     if (expectedDestination === undefined && source.identity)
-      setField('expectedDestination', source.identity.destination)
+      initializeField('expectedDestination', source.identity.destination)
   }, [expectedDestination, source.identity?.destination])
   const setRepository = (value: string) => setField('repositoryId', value)
   const setTitle = (value: string) => setField('title', value)
@@ -408,6 +442,7 @@ export function CreatePull({
           />
         </View>
       )}
+      <DraftStorageNotice persistence={persistence} />
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

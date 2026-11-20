@@ -51,6 +51,37 @@ try {
       }
     });
   });
+  // Remembered Unix terminals run in the separate holder entry from the same deployed tree.
+  if (process.platform !== 'win32') {
+    const { mkdtemp, rm } = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const { TerminalHolder } = await import(new URL('./terminal/holder-client.js', import.meta.resolve('@dovo/runtime')));
+    const directory = await mkdtemp(join(tmpdir(), 'dovo-holder-smoke-'));
+    try {
+      // No service manager: the packaging check must not register a user service.
+      delete process.env.DOVO_TERMINAL_HOLDER_SUPERVISOR;
+      const holder = new TerminalHolder(join(directory, 'holder'));
+      const held = holder.open('00000000-0000-4000-8000-000000000000', {
+        file: process.execPath,
+        args: ['-e', "console.log('DOVO_HOLDER_READY'); setInterval(() => {}, 1000)"],
+        cwd: directory, env: {}, cols: 80, rows: 24,
+      });
+      await new Promise((resolve, reject) => {
+        let output = '';
+        const timeout = setTimeout(() => reject(new Error('Packaged terminal holder did not respond: ' + JSON.stringify(output.slice(-2000)))), 15000);
+        held.onFailure((error) => { clearTimeout(timeout); reject(error); });
+        held.onData((chunk) => {
+          output += chunk;
+          if (output.includes('DOVO_HOLDER_READY')) { clearTimeout(timeout); resolve(); }
+        });
+      });
+      await held.close();
+    } finally {
+      // Removing its socket also stops the holder.
+      await rm(directory, { recursive: true, force: true });
+    }
+  }
 } finally {
   await runtime.close();
 }

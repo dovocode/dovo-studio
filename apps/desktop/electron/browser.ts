@@ -4,6 +4,7 @@ import { configureBrowserIdentity } from './browser-user-agent.js'
 import {
   createBrowserSessionCookies,
   clearSavedBrowserSessionCookies,
+  sessionCookieOptOuts,
 } from './browser-session-cookies.js'
 import { documentPipDisallowsReturn, isTeamsBrowserUrl } from './browser-document-pip-policy.js'
 import { createBrowserZoom, nextBrowserZoom } from './browser-zoom.js'
@@ -29,8 +30,6 @@ import {
   browserElementSchema,
   browserDefaultKeepAwake,
   browserTabBadge,
-  browserProfilesResultSchema,
-  decodeResult,
   isPrivateBrowserProfile,
   type BrowserWorkspaceTab,
   type BrowserWorkspaceState,
@@ -119,7 +118,8 @@ type Entry = {
   browserSession: Electron.Session
   nativeUserAgent: string
   prepareNavigation: (url: string) => void
-  cookiesReady?: Promise<void>
+  /** Restores saved session cookies. Call it again to retry after a failed restore. */
+  cookiesReady?: () => Promise<void> | undefined
   url: string
   failedLoadUrl?: string
   /** Created by Chromium itself, retaining target names, opener and deferred navigation. */
@@ -162,7 +162,8 @@ const isAborted = (error: unknown) =>
     /^\(-3\) loading ['"]/.test(error.message))
 /** A live renderer can be shown while images or other subresources are still loading. */
 async function loadUntilReady(entry: Entry, url: string) {
-  if (entry.cookiesReady) await entry.cookiesReady
+  const cookiesReady = entry.cookiesReady?.()
+  if (cookiesReady) await cookiesReady
   entry.routeNavigation = undefined
   const contents = entry.view.webContents
   let domReady = false
@@ -888,9 +889,8 @@ export function registerBrowser(
       browserSession: view.webContents.session,
       nativeUserAgent,
       prepareNavigation,
-      cookiesReady: sessionCookies(view.webContents.session, () =>
-        keepBrowserSessionCookies(profileId),
-      ),
+      cookiesReady: () =>
+        sessionCookies(view.webContents.session, () => keepBrowserSessionCookies(profileId)),
       url: '',
     }
     if (workspace) {
@@ -2908,16 +2908,13 @@ export function registerBrowser(
       return true
     },
     refreshSessionCookies: (settings: unknown) => {
-      const result = decodeResult(browserProfilesResultSchema, settings)
-      if (result.success)
-        for (const profile of result.data.profiles) {
-          if (profile.keepSessionCookies === true || isPrivateBrowserProfile(profile.id)) continue
-          for (const partition of [
-            workspacePartition(profile.id),
-            `persist:dovo-preview:${profile.id}`,
-          ])
-            clearSavedBrowserSessionCookies(session.fromPartition(partition))
-        }
+      // Also covers profiles without an open tab, whose sessions are not attached yet.
+      for (const profileId of sessionCookieOptOuts(settings))
+        for (const partition of [
+          workspacePartition(profileId),
+          `persist:dovo-preview:${profileId}`,
+        ])
+          clearSavedBrowserSessionCookies(session.fromPartition(partition))
       sessionCookies.refresh()
     },
     dispose: async () => {

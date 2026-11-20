@@ -160,12 +160,12 @@ export class BotAvatars {
         onSession: () => {},
         onActivity: () => {},
         onText: () => {},
-        approve: (title, detail, kind, scopes) =>
+        approve: (title, detail, kind, scopes, signal) =>
           this.s.approvals.request(
             id,
             `Bot avatar: ${title}`,
             detail,
-            controller.signal,
+            signal ? AbortSignal.any([controller.signal, signal]) : controller.signal,
             kind,
             scopes,
           ),

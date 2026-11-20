@@ -10,6 +10,28 @@ Select **Switch revision** after the new files load. Dovo keeps the selected fil
 part of the diff. Viewed marks stay for files with the same review fingerprint. Line drafts do not
 move to new lines or revisions automatically.
 
+On mobile, unsent line comments, PR comments, replies and reviews stay on the phone after the app
+closes or the OS stops it. Each draft belongs to its computer, repository account and PR. Posting
+removes only that draft. Renewed pairing of the same computer keeps its drafts. Another computer at
+the same address does not see them.
+
+Each press of **Post comment** on a line comment saves a submission ID with the draft. Dovo sends
+the comment only after the phone confirms that it holds the ID. While storage is slow, the editor
+shows that it is saving and offers **Cancel posting**. If storage fails, Dovo does not send the
+comment. Select **Retry saving drafts**, then post again. The computer keeps the outcome of each ID
+for the paired phone in its database. If the response is lost, the editor asks the computer about
+the same ID before anything posts again. A posted comment then closes the editor and removes the
+draft. If the phone cannot remove the posted draft, the editor stays open, says the comment was
+posted and offers **Retry removing saved copy**. If the app stops first, the reopened draft is
+checked before **Post comment** is enabled. A posted comment shows **Remove saved copy**. Receipts
+belong to one paired phone on one computer database. After a renewed pairing or a restored computer,
+"no record" does not prove that the comment was never posted. For that answer, an uncertain outcome
+or an older computer, **Post comment** stays off. Check the PR, then select **Post anyway**. A retry
+of an ID without a record keeps that ID, so a receipt the computer can still see returns its first
+outcome instead of posting again. Computers without `pullCommentReceiptsSupported` cannot confirm
+outcomes. The editor says so before you post, and again after a failed post or for a draft that has
+a submission ID.
+
 ## Start a review
 
 Enable **Experimental code reviews** in the connected computer's settings. Open the PR overview.

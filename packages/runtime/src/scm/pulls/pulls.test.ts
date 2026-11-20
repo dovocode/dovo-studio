@@ -29,7 +29,7 @@ const comment = {
   created_at: '2026-09-07T10:00:00Z',
 }
 afterEach(() => vi.restoreAllMocks())
-it('loads background PR feedback and branch readiness without files, thread metadata, repository settings or annotations', async () => {
+it('loads background PR feedback, review state and branch readiness without files, repository settings or annotations', async () => {
   const git = new GitService()
   const run = vi.spyOn(git, 'github').mockImplementation(async (_cwd, args) => {
     if (args[0] === 'repo')
@@ -44,6 +44,31 @@ it('loads background PR feedback and branch readiness without files, thread meta
         ],
       })
     const endpoint = args[3]
+    if (endpoint === 'graphql' && args.some((arg) => arg.includes('reviewThreads')))
+      return JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: [
+                  {
+                    id: 'THREAD_3',
+                    isResolved: false,
+                    isOutdated: false,
+                    viewerCanResolve: true,
+                    viewerCanUnresolve: false,
+                    comments: {
+                      nodes: [{ databaseId: 3 }],
+                      pageInfo: { hasNextPage: false, endCursor: null },
+                    },
+                  },
+                ],
+                pageInfo: { hasNextPage: false, endCursor: null },
+              },
+            },
+          },
+        },
+      })
     if (endpoint === 'graphql') {
       return JSON.stringify({
         data: {
@@ -61,6 +86,7 @@ it('loads background PR feedback and branch readiness without files, thread meta
               viewerCanEnableAutoMerge: false,
               viewerCanDisableAutoMerge: false,
               autoMergeRequest: null,
+              reviewDecision: 'CHANGES_REQUESTED',
             },
           },
         },
@@ -107,14 +133,21 @@ it('loads background PR feedback and branch readiness without files, thread meta
   expect(result.files).toEqual([])
   expect(result.warnings).toEqual([])
   expect(result.pull.behindBy).toBe(2)
+  // A PR watch needs both values to decide readiness.
+  expect(result.pull.reviewDecision).toBe('CHANGES_REQUESTED')
+  expect(result.comments.find((item) => item.id === 'inline-3')).toMatchObject({
+    threadId: 'THREAD_3',
+    resolved: false,
+  })
   expect(result.capabilities?.actions).toContain('update-branch')
+  expect(result.capabilities?.actions).not.toContain('resolve')
   const graphql = run.mock.calls.filter(([, args]) => args[3] === 'graphql')
-  expect(graphql).toHaveLength(1)
-  expect(graphql[0]?.[1]).toContain('head=refs/pull/7/head')
-  const query = graphql[0]?.[1].find((arg) => arg.startsWith('query='))
+  expect(graphql).toHaveLength(2)
+  const lifecycle = graphql.find(([, args]) => args.includes('head=refs/pull/7/head'))?.[1]
+  const query = lifecycle?.find((arg) => arg.startsWith('query='))
   expect(query).toContain('baseRef{compare(headRef:$head){behindBy}}')
-  expect(query).not.toContain('reviewThreads')
-  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(8)
+  expect(query).toContain('reviewDecision')
+  expect(run.mock.calls.filter(([, args]) => args[0] !== 'repo')).toHaveLength(9)
   expect(
     run.mock.calls.filter(([, args]) => args[0] !== 'repo').every(([, , background]) => background),
   ).toBe(true)

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { checkpointCanUndo, resolveTaskAgent, type TaskTurn } from '@dovo/protocol'
+import { resolveTaskAgent, type TaskTurn } from '@dovo/protocol'
 import { responses, useWorkspace, type TaskHarness } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { useHarnessCatalog } from '../composer/harness-catalog'
@@ -10,7 +10,7 @@ const item =
 
 /** Runs the latest request again with the same or another model of the task's provider. */
 export function RetryTurn({ taskId, turn }: { taskId: string; turn: TaskTurn }) {
-  const { workspace, request, connected } = useWorkspace()
+  const { workspace, request, connected, snapshot } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -26,7 +26,7 @@ export function RetryTurn({ taskId, turn }: { taskId: string; turn: TaskTurn }) 
   }) as TaskHarness
   const { catalog, loading } = useHarnessCatalog(harness, open && !!agent)
   const retry = (model?: string) => {
-    if (busy) return
+    if (busy || !snapshot?.retryUsesCurrentFiles) return
     setBusy(true)
     setError('')
     void request(
@@ -47,12 +47,12 @@ export function RetryTurn({ taskId, turn }: { taskId: string; turn: TaskTurn }) 
             size="icon"
             aria-label="Try again"
             title={
-              checkpointCanUndo(turn.checkpoint)
-                ? 'Try again, with this or another model. This turn’s file changes are undone first.'
-                : 'Try again with this or another model using the current files.'
+              snapshot?.retryUsesCurrentFiles
+                ? 'Try again with this or another model using the current files.'
+                : 'Update the computer to retry using the current files.'
             }
             className="size-6 text-muted-foreground"
-            disabled={!connected || busy}
+            disabled={!connected || busy || !snapshot?.retryUsesCurrentFiles}
           >
             <RotateCcw size={12} />
           </Button>

@@ -17,10 +17,10 @@ import {FileMentions} from '${mobile}src/tasks/conversation/components/file-ment
 window.requests=[];
 const call=(path,input)=>new Promise((resolve,reject)=>window.requests.push({path,input,resolve,reject}));
 function App(){
-  const [state,setState]=useState({text:'@old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},call});
+  const [state,setState]=useState({text:'@file:old',provider:'codex',taskId:'task1',activeId:'runtime1',connected:true,connection:{address:'http://one',token:'token'},agents:[],call});
   window.update=changes=>setState(previous=>({...previous,...changes}));
   window.runtime=state;
-  return <FileMentions provider={state.provider} taskId={state.taskId} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
+  return <FileMentions provider={state.provider} taskId={state.taskId} repositoryId={state.repositoryId} agents={state.agents} text={state.text} caret={state.text.length} resources={{skills:[{name:'enabled',description:'Review changes',enabled:true},{name:'disabled',description:'Review security',enabled:false},{name:'review-empty',enabled:true}],mcpServers:[{name:'review-server',enabled:true}]}} onChange={text=>window.update({text})} onSideChat={state.sidechat ? text=>window.sidechat=text : undefined}/>;
 }
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
@@ -81,7 +81,7 @@ try {
   const visible = (file) => page.getByRole('button', { name: `Mention file ${file}` })
 
   await waitRequests(1)
-  await update({ text: '@new' })
+  await update({ text: '@file:new' })
   await waitRequests(2)
   await resolve(1, 'new.ts')
   await visible('new.ts').waitFor()
@@ -89,7 +89,7 @@ try {
   await page.waitForTimeout(50)
   assert.equal(await visible('old.ts').count(), 0)
   assert.equal(await visible('new.ts').count(), 1)
-  await update({ text: '@different' })
+  await update({ text: '@file:different' })
   await page.waitForFunction(() => !document.querySelector('[aria-label="Mention file new.ts"]'))
 
   for (const [changes, stale] of [
@@ -101,7 +101,7 @@ try {
   ]) {
     await update({ text: 'reset' })
     await page.waitForTimeout(20)
-    await update({ text: '@pending', connected: true })
+    await update({ text: '@file:pending', connected: true })
     const index = await page.evaluate(() => window.requests.length)
     await waitRequests(index + 1)
     await update(changes)
@@ -124,6 +124,7 @@ try {
   const server = page.getByRole('button', { name: 'Mention MCP server review-server' })
   await server.waitFor()
   assert.equal(await server.locator('span').nth(1).innerText(), 'MCP server')
+  assert.equal(await page.getByRole('button', { name: /^Mention file / }).count(), 0)
   assert.deepEqual(errors, [])
   await update({ text: '/sidechat', sidechat: true })
   await page.getByRole('button', { name: 'Command sidechat: Start an agent side chat' }).click()
@@ -181,8 +182,12 @@ try {
       files: [],
       bot: { role: 'Releases', state: 'active' },
     }
+    const thread = { ...task, bot: undefined, id: 'notes', title: 'Release notes' }
     window.update({
       text: '@Release',
+      repositoryId: 'project',
+      agents: [{ id: 'release-agent', name: 'Release agent', provider: 'claude' }],
+      snapshot: { runtimeId: 'mac', modelMentionsSupported: true },
       overviews: ['mac', 'linux'].map((id) => ({
         profile: {
           id,
@@ -190,13 +195,22 @@ try {
           nameIsCustom: true,
           connection: { address: 'http://' + id, token: 'paired' },
         },
-        snapshot: { runtimeId: id, workspace: { tasks: [task] } },
+        snapshot: { runtimeId: id, workspace: { tasks: id === 'linux' ? [task, thread] : [task] } },
       })),
     })
   })
   const bots = page.getByRole('button', { name: /^Mention Bot Release helper:/ })
+  const agent = page.getByRole('button', { name: 'Mention agent Release agent', exact: true })
+  const thread = page.getByRole('button', { name: 'Mention thread Release notes: Thread · linux' })
   await bots.first().waitFor()
   assert.equal(await bots.count(), 2)
+  assert.equal(await thread.count(), 0)
+  await agent.click()
+  assert.equal(
+    await page.evaluate(() => window.runtime.text),
+    '@Release agent (`agent:mac/project/release-agent`) ',
+  )
+  await update({ text: '@Release' })
   await page
     .getByRole('button', { name: 'Mention Bot Release helper: Bot · mac', exact: true })
     .click()
@@ -210,9 +224,65 @@ try {
     ),
     false,
   )
+  await update({ text: '@thread:Release' })
+  await thread.waitFor()
+  assert.equal(await bots.count(), 0)
+  assert.equal(await agent.count(), 0)
+  await thread.click()
+  assert.equal(
+    await page.evaluate(() => window.runtime.text),
+    '[Release notes](dovo://thread?runtimeId=linux&threadId=notes) ',
+  )
+  await update({ text: '@file' })
+  await page.waitForFunction(() =>
+    window.requests.some(
+      (request) => request.path === '/api/tasks/files' && request.input.query === '',
+    ),
+  )
+  await page.evaluate(() =>
+    window.requests
+      .findLast((request) => request.path === '/api/tasks/files' && request.input.query === '')
+      .resolve({ files: ['docs/Release notes.md'] }),
+  )
+  await visible('docs/Release notes.md').click()
+  assert.equal(await page.evaluate(() => window.runtime.text), '@file:"docs/Release notes.md" ')
+  // A partial file listing says so, even when nothing matched.
+  await update({ text: '@file:huge' })
+  await page.waitForFunction(() =>
+    window.requests.some(
+      (request) => request.path === '/api/tasks/files' && request.input.query === 'huge',
+    ),
+  )
+  await page.evaluate(() =>
+    window.requests
+      .findLast((request) => request.path === '/api/tasks/files' && request.input.query === 'huge')
+      .resolve({ files: [], truncated: true }),
+  )
+  await page.getByText(/more files than file search covers/).waitFor()
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const queries = window.requests
+        .filter((request) => request.path === '/api/tasks/files')
+        .map((request) => request.input.query)
+      return queries.filter(
+        (query) => !['old', 'new', 'different', 'pending', '', 'huge'].includes(query),
+      )
+    }),
+    [],
+  )
+  assert.equal(
+    await page.evaluate(() =>
+      window.requests.some(
+        (request) =>
+          request.path === '/api/agents/model-mentions' &&
+          (request.input.query.startsWith('thread:') || request.input.query === 'file'),
+      ),
+    ),
+    false,
+  )
   assert.deepEqual(errors, [])
   console.log(
-    'Mobile file mention request races, resource details and native goal insertion passed',
+    'Mobile file, agent, Bot, thread and resource mentions, request races, and native goal insertion passed',
   )
 } finally {
   await browser.close()

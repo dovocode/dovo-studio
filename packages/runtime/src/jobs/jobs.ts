@@ -34,12 +34,24 @@ import { botStepState, botStepTurn } from './bot-step.js'
 import {
   storedRunSchema,
   runSteps,
+  reportStepOutput,
+  stepOutput,
   updateStep,
   reconcileCompletedTasks,
   type StoredRun,
 } from './run-state.js'
 const recordSchema = mutableStruct({
   value: Schema.String,
+})
+/** The source that the last successful monitor run used, with the outcome of the latest run.
+ * Run history expires after 30 days. This document keeps the decision without it. */
+const sourceBaselineSchema = mutableStruct({
+  url: Schema.String,
+  hash: Schema.String,
+  jsonPointer: Schema.optional(Schema.String),
+  text: Schema.optional(Schema.String),
+  /** Missing in documents from before the outcome was stored. */
+  lastStatus: Schema.optional(Schema.Literals(['completed', 'failed', 'cancelled'])),
 })
 /** One stable message per run step attempt, so restarts reconcile instead of resending. */
 export function botStepMessageId(runId: string, nodeId: string, attempt: number) {
@@ -172,7 +184,7 @@ export class Jobs {
       this.runs.set(run.id, run)
       this.revision++
       if (run.status === 'running') {
-        this.runs.set(run.id, reconcileCompletedTasks(run, store.get().tasks))
+        this.runs.set(run.id, this.reconcileCompletedTasks(run))
         this.finish(
           run.id,
           'failed',
@@ -317,12 +329,15 @@ export class Jobs {
       triggerPayload: run.triggerPayload === undefined ? undefined : 'Stored with the run',
     })
   }
-  private save(input: StoredRun) {
+  private save(input: StoredRun, commit?: () => void) {
     const run = {
       ...this.withTiming(input),
       updatedAt: new Date().toISOString(),
     }
-    this.db.transaction(() => this.write(run))()
+    this.db.transaction(() => {
+      commit?.()
+      this.write(run)
+    })()
     this.runs.set(run.id, run)
     this.revision++
     return run
@@ -457,7 +472,7 @@ export class Jobs {
     } catch (error) {
       throw new HttpError(400, errorMessage(error))
     }
-    const reconciled = reconcileCompletedTasks(existing, this.store.get().tasks)
+    const reconciled = this.reconcileCompletedTasks(existing)
     if (
       runSteps(reconciled).some(
         (step) =>
@@ -497,9 +512,13 @@ export class Jobs {
       retryAt: undefined,
       retryTurnId: undefined,
       finishedAt: undefined,
+      reportDeferred: undefined,
     })
     this.launch(id)
     return id
+  }
+  private reconcileCompletedTasks(run: StoredRun) {
+    return reconcileCompletedTasks(run, this.store.get().tasks, (id) => this.store.task(id))
   }
   approve(id: string, allow: boolean) {
     if (this.stopping) throw new HttpError(503, 'Runtime is shutting down')
@@ -606,32 +625,49 @@ export class Jobs {
           finishedAt,
         })
       : run
-    this.save({
-      ...next,
-      status,
-      error,
-      interrupted,
-      finishedAt,
-      currentNodeId: undefined,
-      waitingNodeId: undefined,
-      failedNodeId: status === 'failed' ? current?.nodeId : undefined,
-      retryAt: undefined,
-      retryTurnId: undefined,
-    })
-    const finished = this.runs.get(id)
-    if (finished) {
-      if (status === 'completed' && finished.sourceHash && finished.sourceUrl)
-        this.db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(
-          'automation-source:' + run.automationId,
-          JSON.stringify({
-            url: finished.sourceUrl,
-            hash: finished.sourceHash,
-            jsonPointer: finished.sourceJsonPointer,
-            text: finished.sourceText,
-          }),
-        )
-      this.reportBotRun(finished)
-    }
+    const finished = this.save(
+      {
+        ...next,
+        status,
+        error,
+        interrupted,
+        finishedAt,
+        currentNodeId: undefined,
+        waitingNodeId: undefined,
+        failedNodeId: status === 'failed' ? current?.nodeId : undefined,
+        retryAt: undefined,
+        retryTurnId: undefined,
+        reportDeferred:
+          next.outcome !== 'unchanged' && next.flow.nodes.some((node) => node.data.botId)
+            ? true
+            : undefined,
+      },
+      () => {
+        if (!next.flow.monitor) return
+        const key = 'automation-source:' + run.automationId
+        if (status === 'completed' && next.sourceHash && next.sourceUrl) {
+          this.db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)').run(
+            key,
+            JSON.stringify({
+              url: next.sourceUrl,
+              hash: next.sourceHash,
+              jsonPointer: next.sourceJsonPointer,
+              text: next.sourceText,
+              lastStatus: status,
+            }),
+          )
+          return
+        }
+        // Keep the successful source, but make the next run process it again. SQLite edits the
+        // field so that an unreadable baseline cannot block recording this outcome.
+        this.db
+          .prepare(
+            "UPDATE documents SET value=json_set(value,'$.lastStatus',?) WHERE id=? AND json_valid(value)",
+          )
+          .run(status, key)
+      },
+    )
+    if (finished.reportDeferred) this.tryReportBotRun(finished)
   }
   private launch(id: string) {
     if (this.active.has(id) || this.stopping) return
@@ -772,14 +808,16 @@ export class Jobs {
     if (!agent) throw new HttpError(409, 'Choose a harness for this Bot.')
     return { bot, agent }
   }
-  private reportBotRun(run: StoredRun, now = Date.now()) {
-    if (run.outcome === 'unchanged' || !run.flow.nodes.some((n) => n.data.botId)) return
-    if (run.status === 'completed' && routineQuietNow(run.flow.policy?.quietHours, now)) {
-      if (!run.reportDeferred) this.save({ ...run, reportDeferred: true })
-      return
+  private tryReportBotRun(run: StoredRun, now = Date.now()) {
+    try {
+      this.reportBotRun(run, now)
+    } catch (error) {
+      console.error('Could not deliver saved Bot report', run.id, error)
     }
-    if (run.reportDeferred) this.save({ ...run, reportDeferred: false })
+  }
+  private reportBotRun(run: StoredRun, now: number) {
     if (!['completed', 'failed', 'cancelled'].includes(run.status)) return
+    if (run.status === 'completed' && routineQuietNow(run.flow.policy?.quietHours, now)) return
     for (const botId of new Set(
       run.flow.nodes
         .filter((n) => n.data.kind === 'task')
@@ -788,25 +826,32 @@ export class Jobs {
     )) {
       const bot = this.store.get().tasks.find((t) => t.id === botId && t.bot && !t.archivedAt)
       if (!bot) continue
-      const steps = runSteps(run).filter(
-        (step) =>
-          run.flow.nodes.find((n) => n.id === step.nodeId)?.data.botId === botId &&
-          step.taskId !== botId,
-      )
+      const steps = runSteps(run)
+        .filter(
+          (step) =>
+            run.flow.nodes.find((n) => n.id === step.nodeId)?.data.botId === botId &&
+            step.taskId !== botId,
+        )
+        .map((step) => {
+          const task = this.store.get().tasks.find((t) => t.id === step.taskId)
+          const output = reportStepOutput(
+            run.outputs?.[step.nodeId],
+            () => task && this.store.task(task.id),
+            step.finishedAt ?? run.finishedAt,
+          )
+          return { label: step.label, taskId: task?.id, output }
+        })
       if (!steps.length) continue
       const result = steps
-        .map((step) => {
-          const task = step.taskId && this.store.get().tasks.find((t) => t.id === step.taskId)
-          const answer =
-            task &&
-            this.store
-              .task(task.id)
-              .messages.filter((m) => m.role === 'assistant')
-              .at(-1)?.text
-          return [step.label, task ? `Worker thread: ${task.id}` : '', answer?.slice(-3000)]
+        .map(({ label, taskId, output }) =>
+          [
+            label,
+            taskId ? `Worker thread: ${taskId}` : '',
+            output?.longAnswer?.excerpt ?? output?.text.slice(-3000),
+          ]
             .filter(Boolean)
-            .join('\n')
-        })
+            .join('\n'),
+        )
         .join('\n\n')
         .slice(0, 12000)
       const messageId = botStepMessageId(run.id, 'report', run.attempt ?? 1)
@@ -817,15 +862,11 @@ export class Jobs {
       const fingerprint = createHash('sha256')
         .update(
           JSON.stringify(
-            steps.map((step) => ({
-              label: matter ? undefined : step.label,
-              answer:
-                step.taskId && this.store.get().tasks.some((t) => t.id === step.taskId)
-                  ? this.store
-                      .task(step.taskId)
-                      .messages.filter((m) => m.role === 'assistant')
-                      .at(-1)?.text
-                  : undefined,
+            steps.map(({ label, output }) => ({
+              label: matter ? undefined : label,
+              ...(output?.longAnswer
+                ? { answerDigest: output.longAnswer.digest }
+                : { answer: output?.text }),
             })),
           ),
         )
@@ -835,35 +876,33 @@ export class Jobs {
         .pluck()
         .get(findingKey)
       if (run.status === 'completed' && previous === fingerprint) continue
+      if (this.store.task(botId).messages.some((message) => message.id === messageId)) continue
       this.store.transaction(() => {
-        this.store.updateTaskHistory(botId, (task) =>
-          task.messages.some((m) => m.id === messageId)
-            ? task
-            : {
-                ...task,
-                updatedAt: new Date().toISOString(),
-                messages: [
-                  ...task.messages,
-                  {
-                    id: messageId,
-                    role: 'assistant',
-                    createdAt: new Date().toISOString(),
-                    source: {
-                      kind: 'automation',
-                      automationId: run.automationId,
-                      runId: run.id,
-                      title: run.flow.name.slice(0, 400),
-                    },
-                    text: `Routine: ${run.flow.name}\nStatus: ${run.status}${run.error ? `\n${run.error}` : ''}\n\n${result}`,
-                  },
-                ],
+        this.store.updateTaskHistory(botId, (task) => ({
+          ...task,
+          updatedAt: new Date().toISOString(),
+          messages: [
+            ...task.messages,
+            {
+              id: messageId,
+              role: 'assistant',
+              createdAt: new Date().toISOString(),
+              source: {
+                kind: 'automation',
+                automationId: run.automationId,
+                runId: run.id,
+                title: run.flow.name.slice(0, 400),
               },
-        )
+              text: `Routine: ${run.flow.name}\nStatus: ${run.status}${run.error ? `\n${run.error}` : ''}\n\n${result}`,
+            },
+          ],
+        }))
         this.db
           .prepare('INSERT OR REPLACE INTO documents VALUES (?,?)')
           .run(findingKey, run.status === 'completed' ? fingerprint : `${run.status}:${messageId}`)
       })
     }
+    this.save({ ...run, reportDeferred: false })
   }
   private createTask(run: StoredRun, node: AutomationNode) {
     let next: StoredRun = run
@@ -984,6 +1023,13 @@ export class Jobs {
     this.revision++
     return task
   }
+  private sourceBaseline(automationId: string) {
+    const raw = this.db
+      .prepare('SELECT value FROM documents WHERE id=?')
+      .pluck()
+      .get('automation-source:' + automationId)
+    return typeof raw === 'string' ? decode(sourceBaselineSchema, JSON.parse(raw)) : undefined
+  }
   private advanceEffect(id: string) {
     return Effect.gen({ self: this }, function* () {
       const initial = this.runs.get(id)
@@ -1017,29 +1063,18 @@ export class Jobs {
           )
         })
         if (this.stopping || this.runs.get(id)?.status !== 'running') return
-        const raw = this.db
-          .prepare('SELECT value FROM documents WHERE id=?')
-          .pluck()
-          .get('automation-source:' + initial.automationId)
-        const baseline =
-          typeof raw === 'string'
-            ? decode(
-                mutableStruct({
-                  url: Schema.String,
-                  hash: Schema.String,
-                  jsonPointer: Schema.optional(Schema.String),
-                  text: Schema.optional(Schema.String),
-                }),
-                JSON.parse(raw),
-              )
-            : undefined
+        const baseline = this.sourceBaseline(initial.automationId)
+        // An older baseline has no outcome. Use run history while it remains. After it
+        // expires, the baseline is the last known outcome, and only a completed run writes it.
         const previous = [...this.runs.values()]
           .filter((r) => r.id !== id && r.automationId === initial.automationId)
+          .sort((a, b) => (a.finishedAt ?? a.createdAt).localeCompare(b.finishedAt ?? b.createdAt))
           .at(-1)
+        const lastStatus = baseline?.lastStatus ?? previous?.status ?? 'completed'
         const automatic = initial.deliveryKey && !initial.deliveryKey.startsWith('manual:')
         const unchanged =
           automatic &&
-          previous?.status === 'completed' &&
+          lastStatus === 'completed' &&
           baseline?.url === source.url &&
           baseline?.jsonPointer === initial.flow.monitor.jsonPointer &&
           baseline?.hash === source.hash
@@ -1095,6 +1130,7 @@ export class Jobs {
           waitingNodeId: node.data.kind === 'review' ? node.id : undefined,
         })
         if (node.data.kind === 'review') return
+        let output: NonNullable<StoredRun['outputs']>[string] | undefined
         if (node.data.kind === 'task' && node.data.botId && step.taskId === node.data.botId) {
           if (!(yield* this.runBotStep(run, node, node.data.botId))) return
         } else if (node.data.kind === 'task') {
@@ -1191,37 +1227,7 @@ export class Jobs {
             return yield* Effect.fail(
               new HttpError(409, completed.error ?? 'Delegated task did not complete'),
             )
-          const history = this.store.task(task.id)
-          const turn = history.turns?.at(-1)
-          const replies = history.messages.filter(
-            (message) =>
-              message.role === 'assistant' &&
-              (!turn ||
-                (message.createdAt
-                  ? message.createdAt >= turn.startedAt
-                  : message.id === turn.assistantId)),
-          )
-          const text = replies
-            .map((message) => message.text)
-            .filter(Boolean)
-            .join('\n\n')
-          const output = {
-            taskId: task.id,
-            text:
-              text.length > 32768
-                ? `${text.slice(0, 32768)}\n[Result truncated at 32768 characters. Read the preceding task for the rest.]`
-                : text,
-            attachments: [
-              ...new Map(
-                replies
-                  .flatMap((message) => message.attachments ?? [])
-                  .map((file) => [file.id, file]),
-              ).values(),
-            ],
-          }
-          const latest = this.runs.get(id)
-          if (latest?.status === 'running')
-            this.save({ ...latest, outputs: { ...latest.outputs, [node.id]: output } })
+          output = run.outputs?.[node.id] ?? stepOutput(this.store.task(task.id))
         }
         const current = this.runs.get(id)
         if (!current || current.status !== 'running' || this.stopping) return
@@ -1231,6 +1237,7 @@ export class Jobs {
             finishedAt: new Date().toISOString(),
           }),
           completedNodes: [...current.completedNodes, node.id],
+          ...(output ? { outputs: { ...current.outputs, [node.id]: output } } : {}),
           currentNodeId: undefined,
           retryTurnId: undefined,
         })
@@ -1395,9 +1402,7 @@ export class Jobs {
     }
   }
   private flushReports(now = Date.now()) {
-    for (const run of this.runs.values())
-      if (run.reportDeferred && !routineQuietNow(run.flow.policy?.quietHours, now))
-        this.reportBotRun(run, now)
+    for (const run of this.runs.values()) if (run.reportDeferred) this.tryReportBotRun(run, now)
   }
   private saveNext(id: string, next: { signature: string; at: number } | undefined) {
     if (next) {

@@ -24,8 +24,25 @@ export async function workspaceTerminalCheckout(
   s: Pick<Services, 'git' | 'store' | 'preferences'>,
   input: CreateWorkspaceTerminal,
   authorize: () => void,
+  beforeWorktreeCreation: () => void,
 ): Promise<WorkspaceTerminalCheckout> {
   authorize()
+  if (input.workingDirectory) {
+    let directory: string
+    try {
+      directory = await repositoryPath(input.workingDirectory)
+    } catch (cause) {
+      if (
+        cause instanceof Error &&
+        'code' in cause &&
+        (cause.code === 'ENOENT' || cause.code === 'ENOTDIR')
+      )
+        throw new HttpError(400, 'Working directory does not exist')
+      throw cause
+    }
+    authorize()
+    return { directory, execution: 'main' }
+  }
   const selected = input.repositoryId
     ? s.store.get().repositories.find((item) => item.id === input.repositoryId)
     : undefined
@@ -90,6 +107,7 @@ export async function workspaceTerminalCheckout(
   const branch = `${s.preferences.get().branchPrefix}${name}`
   await mkdir(root, { recursive: true })
   authorize()
+  beforeWorktreeCreation()
   await s.git.addWorktree(directory, target, ['-b', branch, target, base])
   const canonical = await repositoryPath(target)
   // Record already-created work even if access was revoked while Git was running.

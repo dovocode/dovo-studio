@@ -1,5 +1,10 @@
 import { expect, it } from 'vite-plus/test'
-import { modelMentionReference, insertModelMention, matchingModelMentions } from './model-mentions'
+import {
+  modelMentionContext,
+  modelMentionReference,
+  insertModelMention,
+  matchingModelMentions,
+} from './model-mentions'
 it('matches model family prefixes and keeps provider instance identities distinct', () => {
   const models = [
     {
@@ -23,4 +28,8 @@ it('matches model family prefixes and keeps provider instance identities distinc
   const inserted = insertModelMention('Ask @op about this', 4, 7, models[0].reference)
   expect(inserted.text).toContain('Ask `model:harness%3Aclaude/claude-opus%2F4.7` ')
   expect(inserted.text).toContain('about this')
+})
+
+it('ignores inline model IDs inside explicit filenames', () => {
+  expect(modelMentionContext('@file:"notes/`model:harness%3Acodex/gpt` summary"')).toBe('')
 })

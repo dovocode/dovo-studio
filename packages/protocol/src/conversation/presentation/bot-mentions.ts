@@ -1,5 +1,5 @@
 import { threadReferenceLink } from './studio-links.js'
-import type { Task } from '../../workspace.js'
+import type { Agent, Task } from '../../workspace.js'
 import { compareBotActivity } from '../../tasks/bot-activity.js'
 import { studioReference } from '../../runtime/studio-reference.js'
 import { insertPrompt } from './resource-mentions.js'
@@ -47,6 +47,24 @@ export function botMentionSuggestions(
     }))
 }
 
+export function agentMentionSuggestions(
+  runtimeId: string,
+  repositoryId: string | undefined,
+  agents: readonly Pick<Agent, 'id' | 'name' | 'provider'>[],
+  query: string,
+) {
+  const needle = query.toLowerCase()
+  return agents
+    .filter((agent) => agent.name.toLowerCase().includes(needle))
+    .slice(0, 8)
+    .map((agent) => ({
+      kind: 'agent' as const,
+      reference: `agent:${[runtimeId, repositoryId ?? '', agent.id].map(encodeURIComponent).join('/')}`,
+      name: agent.name,
+      detail: `Agent · ${agent.provider}`,
+    }))
+}
+
 export function insertBotMention(
   text: string,
   start: number,
@@ -55,6 +73,8 @@ export function insertBotMention(
 ) {
   return insertPrompt(text, start, caret, `@${bot.name} (\`${bot.reference}\`) `)
 }
+
+export const insertAgentMention = insertBotMention
 
 /** Only explicit saved mentions in sent prose, never bare IDs, code or historical messages. */
 export function botMentionTargets(text: string) {
@@ -73,28 +93,27 @@ export function contextMentionSuggestions(
 ): BotMention[] {
   const explicit = query.toLowerCase().startsWith('thread:')
   const needle = (explicit ? query.slice(7) : query).toLowerCase()
-  const threads: BotMention[] =
-    !explicit && !needle
-      ? []
-      : sources
-          .flatMap((source) =>
-            source.tasks
-              .filter(
-                (task) =>
-                  !task.bot &&
-                  !task.example &&
-                  !task.replica &&
-                  !task.delegation &&
-                  `${task.title} ${source.name}`.toLowerCase().includes(needle),
-              )
-              .map((task) => ({
-                kind: 'thread' as const,
-                reference: threadReferenceLink(source.runtimeId, task.id),
-                name: task.title || 'Untitled thread',
-                detail: `Thread · ${source.name}${task.archived || task.archivedAt ? ' · Archived' : ''}`,
-              })),
-          )
-          .slice(0, 8)
+  const threads: BotMention[] = !explicit
+    ? []
+    : sources
+        .flatMap((source) =>
+          source.tasks
+            .filter(
+              (task) =>
+                !task.bot &&
+                !task.example &&
+                !task.replica &&
+                !task.delegation &&
+                `${task.title} ${source.name}`.toLowerCase().includes(needle),
+            )
+            .map((task) => ({
+              kind: 'thread' as const,
+              reference: threadReferenceLink(source.runtimeId, task.id),
+              name: task.title || 'Untitled thread',
+              detail: `Thread · ${source.name}${task.archived || task.archivedAt ? ' · Archived' : ''}`,
+            })),
+        )
+        .slice(0, 8)
   return [...(explicit ? [] : botMentionSuggestions(sources, query)), ...threads]
 }
 export function insertThreadMention(

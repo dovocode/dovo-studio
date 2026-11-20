@@ -33,18 +33,24 @@ export function saveDraft(setWorkspace: Dispatch<SetStateAction<Workspace>>, tas
 /** The parent keys by runtime ID, address, credential and task; rebind stays in that scope. */
 export function useComposerDraft(
   task: Task,
-  immediate = false,
+  temporary = false,
   editController?: ReturnType<typeof createComposerDraft>,
 ) {
-  const { setWorkspace, connection, flush: sync } = useWorkspace()
-  const key = composerRecoveryKey(connection, task.id)
+  const { setWorkspace, connection, activeRuntimeId, flush: sync } = useWorkspace()
+  const startupKey = composerRecoveryKey(connection, task.id, activeRuntimeId)
+  const key = temporary ? startupKey : composerRecoveryKey(connection, task.id)
   const [error, setError] = useState('')
   const report = useCallback((cause: unknown) => {
     setError(`Could not save the draft. ${String(cause)}`)
   }, [])
   const [recovery] = useState<{ current: ReturnType<typeof createComposerRecovery> | null }>(() => {
     try {
-      return { current: createComposerRecovery(key) }
+      const current = createComposerRecovery(key, temporary ? task.repositoryId : undefined)
+      if (key !== startupKey && current.checkpoint() === null) {
+        const startup = createComposerRecovery(startupKey)
+        if (startup.startup) return { current: startup }
+      }
+      return { current }
     } catch (cause) {
       report(cause)
       return { current: null }
@@ -67,7 +73,7 @@ export function useComposerDraft(
       saveDraft(setWorkspace, task.id),
       report,
       (text, expected) => {
-        recovery.current ??= createComposerRecovery(key)
+        recovery.current ??= createComposerRecovery(key, temporary ? task.repositoryId : undefined)
         const protectedDraft = recovery.current.protect(text, expected)
         if (protectedDraft) setError('')
         return protectedDraft
@@ -161,9 +167,9 @@ export function useComposerDraft(
     (value: SetStateAction<string>) => {
       const next = typeof value === 'function' ? value(controller.text) : value
       controller.update(next)
-      if (immediate) controller.flush()
+      if (temporary) controller.flush()
     },
-    [controller, immediate],
+    [controller, temporary],
   )
   const accept = useCallback(
     (submitted: string, revision?: number) => {

@@ -20,6 +20,18 @@ const resources = {
 } as unknown as ResourceSettings
 
 it('detects the mention being typed for each trigger', () => {
+  for (const [token, query] of [
+    ['@file', ''],
+    ['@file:', ''],
+    ['@file:src/README', 'src/README'],
+  ])
+    expect(composerMention('see ' + token, 4 + token.length)).toEqual({
+      trigger: '@file:',
+      start: 4,
+      query,
+    })
+  for (const token of ['@@file', 'email@file:path'])
+    expect(composerMention(token, token.length)).toBeUndefined()
   expect(composerMention('Use $rev', 8)).toEqual({ trigger: '$', start: 4, query: 'rev' })
   expect(composerMention('/rel', 4)).toEqual({ trigger: '/', start: 0, query: 'rel' })
   expect(composerMention('line\n  /re', 10)).toEqual({ trigger: '/', start: 7, query: 're' })
@@ -29,6 +41,7 @@ it('detects the mention being typed for each trigger', () => {
 })
 
 it('suggests skills for $ and / and only enabled MCP servers for @', () => {
+  expect(resourceSuggestions(resources, '@file:', '')).toEqual([])
   expect(resourceSuggestions(resources, '$', '').map((item) => item.name)).toEqual([
     'review',
     'release-notes',
@@ -66,6 +79,18 @@ it('searches skill descriptions after name matches, preserving ordering and limi
     ])
   }
   expect(resourceSuggestions(searchable, '@', 'review')).toEqual([])
+})
+
+it('keeps reserved prefixes and filenames out of runtime resource selection', () => {
+  const settings = {
+    ...resources,
+    mcpServers: ['file', 'thread', 'linear'].map((name) => ({ ...resources.mcpServers[0], name })),
+  }
+  const text = '@file:Makefile @thread:history @file:"notes/with @linear $review.txt"'
+  expect(mentionedResources(text, settings)).toEqual({ skills: [], mcpServers: [] })
+  expect(
+    mentionedResources(text + ' @linear $review', settings).mcpServers.map((server) => server.name),
+  ).toEqual(['linear'])
 })
 
 it('finds the skills and servers a message names', () => {

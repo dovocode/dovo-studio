@@ -8,7 +8,7 @@ import { openContainedPreview } from '../../scm/repositories/file-preview-open.j
 import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import { verifiedGitUpdates } from '../../scm/tasks/external-git-updates.js'
 import { isRunToken } from '../../auth/run-credentials.js'
-import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
+import { authenticateRuntimeOperation, authorizeRunTerminal } from '../../auth/run-authorization.js'
 import { routeProgram, serviceResult } from '../support/effect.js'
 import { mutableStruct, threadServerRequestSchema, stopThreadServerSchema } from '@dovo/protocol'
 import {
@@ -17,9 +17,14 @@ import {
   updateTerminalSchema,
   createWorkspaceTerminalSchema,
   terminalShellsResponseSchema,
+  terminalChildrenWaitSchema,
+  terminalChildrenResultSchema,
+  terminalScreenRequestSchema,
   terminalTitleSchema,
-  type TerminalInfo,
+  terminalTurnSchema,
+  responses,
 } from '@dovo/protocol'
+import { runClientEffect } from '@dovo/client-runtime'
 import { minValue, maxValue, decode } from '@dovo/protocol'
 import type { IncomingMessage } from 'node:http'
 import { Schema, Effect } from 'effect'
@@ -31,19 +36,22 @@ import { body } from '../support/body.js'
 import { quoteTerminalPaths } from '../../terminal/file-paths.js'
 import { resolveTerminalShell, terminalShells } from '../../terminal/shell.js'
 import { workspaceTerminalCheckout } from '../../terminal/workspace-checkout.js'
+import { terminalWaitStateSchema, waitForTerminalActivity } from '../../terminal/activity-wait.js'
 const idSchema = maxValue(minValue(Schema.String, 1), 200)
 const waitTime = Schema.optional(Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 20000 })))
-function terminalSummary(
+async function withTerminalRequest<T>(
   request: IncomingMessage,
-  read: (
-    signal: AbortSignal,
-  ) => ReturnType<import('../../terminal/terminals.js').Terminals['checkSummary']>,
+  read: (signal: AbortSignal) => Promise<T>,
 ) {
   const controller = new AbortController()
-  const abort = () => controller.abort(new HttpError(409, 'Terminal summary request cancelled'))
+  const abort = () => controller.abort(new HttpError(409, 'Terminal request cancelled'))
   if (request.socket.destroyed) abort()
   request.socket.once('close', abort)
-  return read(controller.signal).finally(() => request.socket.off('close', abort))
+  try {
+    return await read(controller.signal)
+  } finally {
+    request.socket.off('close', abort)
+  }
 }
 function terminalCheckout(store: WorkspaceStore, taskId: string, checkoutId?: string) {
   const seen = new Set<string>()
@@ -148,88 +156,173 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         })
       }
       if (method === 'POST' && path === '/api/terminals/workspace') {
-        s.devices.authenticate(token)
+        const device = s.devices.authenticate(token)
         const input = decode(createWorkspaceTerminalSchema, yield* serviceResult(body(request)))
-        const { repositoryId, command, sourceTerminalId } = input
-        if (sourceTerminalId) {
+        if (input.parentTerminalId && input.sourceTerminalId)
+          throw new HttpError(400, 'Choose either a child terminal or a split')
+        const name = input.name?.trim()
+        const initialInput = input.command && `${input.command.replace(/\r?\n/g, '\r')}\r`
+        if (input.workingDirectory !== undefined) {
+          if (!device.owner)
+            throw new HttpError(403, 'Only the runtime owner can choose a local directory')
+          if (!isAbsolute(input.workingDirectory) || input.workingDirectory.includes('\0'))
+            throw new HttpError(400, 'Choose an absolute working directory')
           if (
-            repositoryId ||
-            input.shellId ||
-            input.execution ||
+            input.sourceTerminalId ||
+            input.repositoryId ||
             input.existingWorktreePath ||
-            input.worktreeBaseBranch
+            input.worktreeBaseBranch ||
+            input.execution === 'worktree'
           )
-            throw new HttpError(400, 'A split inherits its source terminal settings')
-          return yield* runtimeOperation(() => {
-            s.devices.authenticate(token)
-            const source = s.terminals.get(sourceTerminalId)
-            if (source.info.taskId !== STUDIO_TERMINAL_SCOPE)
-              throw new HttpError(400, 'Choose a standalone source terminal')
-            const session = s.terminals.createCommand(
-              STUDIO_TERMINAL_SCOPE,
-              source.directory,
-              source.launch,
-              `Terminal ${s.terminals.list().length + 1}`,
-              undefined,
-              source.info.repositoryId,
-              {
-                directory: source.directory,
-                shellId: source.info.shellId,
-                execution: source.info.execution,
-                checkoutBranch: source.info.checkoutBranch,
-                rememberSession: Boolean(source.recovery),
-              },
-            )
-            if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
-            return session
-          })
+            throw new HttpError(400, 'Choose either a local directory or a project checkout')
         }
-        const repository = repositoryId
-          ? s.store.get().repositories.find((item) => item.id === repositoryId)
-          : undefined
-        if (repositoryId && repositoryId !== SCRATCH_PROJECT_ID && !repository)
-          throw new HttpError(404, 'Project not found')
-        const authorize = () => {
-          s.devices.authenticate(token)
+        const checkName = () => {
           if (
-            repository &&
-            !isDeepStrictEqual(
-              repository,
-              s.store.get().repositories.find((item) => item.id === repositoryId),
-            )
+            name &&
+            s.terminals
+              .list()
+              .some((terminal) => terminal.customTitle === name || terminal.title === name)
           )
-            throw new HttpError(409, 'The project changed. Reopen the terminal.')
+            throw new HttpError(409, 'A terminal already uses this name')
         }
-        authorize()
-        const shell = yield* runtimeOperation(() =>
-          resolveTerminalShell(s.commands.get(), input.shellId),
-        )
-        authorize()
-        s.terminals.checkCapacity()
-        const checkout = yield* runtimeOperation(() =>
-          workspaceTerminalCheckout(s, input, authorize),
-        )
-        return yield* runtimeOperation(() => {
-          authorize()
-          let session: TerminalInfo
-          try {
-            session = s.terminals.createCommand(
-              STUDIO_TERMINAL_SCOPE,
-              checkout.directory,
-              shell,
-              `Terminal ${s.terminals.list().length + 1}`,
-              undefined,
-              checkout.repositoryId,
-              { ...checkout, shellId: shell.id, rememberSession: input.rememberSession },
+        let launchStarted = false
+        const beginLaunch = () => {
+          launchStarted = true
+        }
+        const create = routeProgram(
+          Effect.gen(function* () {
+            checkName()
+            const { repositoryId, sourceTerminalId } = input
+            if (sourceTerminalId) {
+              if (
+                repositoryId ||
+                input.shellId ||
+                input.execution ||
+                input.existingWorktreePath ||
+                input.worktreeBaseBranch
+              )
+                throw new HttpError(400, 'A split inherits its source terminal settings')
+              return yield* runtimeOperation(() => {
+                s.devices.authenticate(token)
+                const source = s.terminals.get(sourceTerminalId)
+                if (source.info.taskId !== STUDIO_TERMINAL_SCOPE)
+                  throw new HttpError(400, 'Choose a standalone source terminal')
+                checkName()
+                return s.terminals.createWorkspaceCommand(
+                  source.directory,
+                  source.launch,
+                  `Terminal ${s.terminals.list().length + 1}`,
+                  source.info.repositoryId,
+                  {
+                    customTitle: name,
+                    directory: source.directory,
+                    shellId: source.info.shellId,
+                    execution: source.info.execution,
+                    checkoutBranch: source.info.checkoutBranch,
+                    rememberSession: Boolean(source.recovery),
+                    beforeSpawn: beginLaunch,
+                    initialInput,
+                  },
+                )
+              })
+            }
+            const repository = repositoryId
+              ? s.store.get().repositories.find((item) => item.id === repositoryId)
+              : undefined
+            if (repositoryId && repositoryId !== SCRATCH_PROJECT_ID && !repository)
+              throw new HttpError(404, 'Project not found')
+            const authorize = () => {
+              s.devices.authenticate(token)
+              if (input.parentTerminalId) s.terminals.validateChildLaunch(input.parentTerminalId)
+              if (
+                repository &&
+                !isDeepStrictEqual(
+                  repository,
+                  s.store.get().repositories.find((item) => item.id === repositoryId),
+                )
+              )
+                throw new HttpError(409, 'The project changed. Reopen the terminal.')
+            }
+            authorize()
+            const shell = yield* runtimeOperation(() =>
+              resolveTerminalShell(s.commands.get(), input.shellId),
             )
-          } catch (error) {
-            if (checkout.execution !== 'worktree' || input.existingWorktreePath) throw error
-            const message = `${errorMessage(error)}\nWorktree kept at ${checkout.directory}`
-            if (error instanceof HttpError) throw new HttpError(error.status, message, error)
-            throw new Error(message, { cause: error })
-          }
-          if (command) s.terminals.input(session.id, `${command.replace(/\r?\n/g, '\r')}\r`)
-          return session
+            authorize()
+            s.terminals.checkCapacity()
+            const checkout = yield* runtimeOperation(() =>
+              workspaceTerminalCheckout(s, input, authorize, beginLaunch),
+            )
+            return yield* runtimeOperation(async () => {
+              authorize()
+              try {
+                checkName()
+                return await s.terminals.createWorkspaceCommand(
+                  checkout.directory,
+                  shell,
+                  `Terminal ${s.terminals.list().length + 1}`,
+                  checkout.repositoryId,
+                  {
+                    ...checkout,
+                    customTitle: name,
+                    parentTerminalId: input.parentTerminalId,
+                    shellId: shell.id,
+                    rememberSession: input.rememberSession,
+                    beforeSpawn: beginLaunch,
+                    initialInput,
+                  },
+                )
+              } catch (error) {
+                if (checkout.execution !== 'worktree' || input.existingWorktreePath) throw error
+                const message = `${errorMessage(error)}\nWorktree kept at ${checkout.directory}`
+                if (error instanceof HttpError) throw new HttpError(error.status, message, error)
+                throw new Error(message, { cause: error })
+              }
+            })
+          }),
+        )
+        if (!input.requestId) return yield* create
+        s.devices.authenticate(token)
+        const receipt = yield* runtimeOperation(() =>
+          s.mutations.execute(
+            device.id,
+            `workspace-terminal:${input.requestId}`,
+            input,
+            async () => {
+              try {
+                return await runClientEffect(create)
+              } catch (error) {
+                // Shell and checkout checks can fail before any worktree or process exists.
+                // An error after that boundary can still leave work on the runtime.
+                if (launchStarted) throw error
+                throw new HttpError(
+                  error instanceof HttpError ? error.status : 409,
+                  errorMessage(error),
+                  {
+                    mutationRejected: true,
+                  },
+                )
+              }
+            },
+            'confirmed-rejection',
+          ),
+        )
+        const { id } = decode(responses.terminal, receipt)
+        s.devices.authenticate(token)
+        return s.terminals.get(id).info
+      }
+      if (method === 'POST' && path === '/api/terminals/children') {
+        s.devices.authenticate(token)
+        const { id, until, waitMs } = decode(
+          terminalChildrenWaitSchema,
+          yield* serviceResult(body(request)),
+        )
+        return yield* runtimeOperation(async () => {
+          s.devices.authenticate(token)
+          const result = await withTerminalRequest(request, (signal) =>
+            s.terminals.waitForChildren(id, until, waitMs ?? 0, signal),
+          )
+          s.devices.authenticate(token)
+          return decode(terminalChildrenResultSchema, result)
         })
       }
       if (
@@ -291,15 +384,59 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         })
       }
       if (method === 'POST' && path === '/api/terminals/summary') {
-        const { id, waitMs } = decode(
-          mutableStruct({ id: idSchema, waitMs: waitTime }),
+        const { id, waitMs, until, afterTurn } = decode(
+          mutableStruct({
+            id: idSchema,
+            waitMs: waitTime,
+            // Omitted: waitMs waits for exit only, as before.
+            until: Schema.optional(
+              Schema.Array(terminalWaitStateSchema).check(Schema.isMinLength(1)),
+            ),
+            afterTurn: Schema.optional(terminalTurnSchema),
+          }),
           yield* serviceResult(body(request)),
         )
         return yield* runtimeOperation(async () => {
           authenticateRuntimeOperation(s, token)
-          const result = await terminalSummary(request, (signal) =>
-            s.terminals.checkSummary(id, waitMs ?? 0, signal),
-          )
+          const result = await withTerminalRequest(request, async (signal) => {
+            if (!until && afterTurn === undefined)
+              return s.terminals.checkSummary(id, waitMs ?? 0, signal)
+            const waitResult = await waitForTerminalActivity(
+              s.terminals,
+              id,
+              until,
+              waitMs ?? 0,
+              signal,
+              afterTurn,
+            )
+            if (waitResult === 'closed')
+              throw new HttpError(409, 'The terminal was closed while waiting')
+            const summary = await s.terminals.checkSummary(id, 0, signal)
+            return { ...summary, waitResult }
+          })
+          authenticateRuntimeOperation(s, token)
+          return result
+        })
+      }
+      if (method === 'POST' && path === '/api/terminals/send') {
+        const { id, data } = decode(
+          mutableStruct({ id: idSchema, data: maxValue(Schema.String, 65536) }),
+          yield* serviceResult(body(request, 400 * 1024)),
+        )
+        return yield* runtimeOperation(async () => {
+          if (isRunToken(token)) authorizeRunTerminal(s, token, id)
+          else s.devices.authenticate(token)
+          return { turn: await s.terminals.inputAtTurn(id, data) }
+        })
+      }
+      if (method === 'POST' && path === '/api/terminals/screen') {
+        const { id, lines } = decode(
+          terminalScreenRequestSchema,
+          yield* serviceResult(body(request)),
+        )
+        return yield* runtimeOperation(async () => {
+          authenticateRuntimeOperation(s, token)
+          const result = await s.terminals.screen(id, lines)
           authenticateRuntimeOperation(s, token)
           return result
         })
@@ -518,7 +655,7 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         if (isRunToken(token)) s.runCredentials.addTerminal(token, terminal.id)
         if (check)
           return yield* runtimeOperation(async () => {
-            const result = await terminalSummary(request, (signal) =>
+            const result = await withTerminalRequest(request, (signal) =>
               s.terminals.checkSummary(terminal.id, waitMs ?? 10000, signal),
             )
             authenticateRuntimeOperation(s, token)

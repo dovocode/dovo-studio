@@ -12,6 +12,8 @@ export interface WorkspaceResourceMenuProps {
   snoozedUntil?: string
   disabled?: boolean
   settleDisabled?: boolean
+  detachParent?: () => void
+  readAction?: { label: string; run: () => void }
   onPin: () => void
   onSettle: () => void
   onSnooze: (until: string | null) => void
@@ -28,6 +30,8 @@ export function useWorkspaceResourceActions({
   snoozedUntil,
   disabled = false,
   settleDisabled = false,
+  readAction,
+  detachParent,
   onPin,
   onSettle,
   onSnooze,
@@ -53,6 +57,11 @@ export function useWorkspaceResourceActions({
       aria-label={`Actions for ${title}`}
       className="studio-thread-actions flex h-6 items-center gap-1"
     >
+      {detachParent && (
+        <Button variant="ghost" size="sm" disabled={disabled} onClick={detachParent}>
+          Detach from parent
+        </Button>
+      )}
       <IconButton
         type="button"
         label={`${pinned ? 'Unpin' : 'Pin'} ${title}`}
@@ -131,6 +140,16 @@ export function useWorkspaceResourceActions({
   )
   const context = (
     <>
+      {detachParent && (
+        <ContextMenu.Item className={itemClass} disabled={disabled} onSelect={detachParent}>
+          Detach from parent
+        </ContextMenu.Item>
+      )}
+      {readAction && (
+        <ContextMenu.Item className={itemClass} disabled={disabled} onSelect={readAction.run}>
+          {readAction.label}
+        </ContextMenu.Item>
+      )}
       <ContextMenu.Item className={itemClass} disabled={disabled} onSelect={onPin}>
         {pinned ? <PinOff /> : <Pin />}
         {pinned ? 'Unpin' : 'Pin'}

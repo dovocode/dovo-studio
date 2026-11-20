@@ -10,13 +10,14 @@ import type { NotificationResponse } from 'expo-notifications'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import { router, useRootNavigationState } from 'expo-router'
 import { pushStatusSchema, responses } from '@dovo/protocol'
-import { notificationHref } from './target'
+import { notificationHref, notificationRemoteInput, notificationTarget } from './target'
 import { useRuntime } from '../runtime/connection/provider'
 import { useApplicationState } from '../runtime/state/application-state'
 import { configureNotificationAnswers } from './answers'
 import { createNotificationResponseConsumer } from './response-consumer'
-import { shouldAlertForNotification } from './visibility'
+import { foregroundNotificationPresentation } from './visibility'
 import { deliverInAppNotification } from './in-app-delivery'
+import { claimLaunchRoute } from '../shell/launch-route'
 
 const preferenceKey = 'dovo.push-notifications.enabled'
 const serverPreferenceKey = 'dovo.push-notifications.disabled-servers'
@@ -89,6 +90,20 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
     let toggling = false
     const registered = new Map<string, { key: string; at: number }>()
     const subscriptions: Array<{ remove: () => void }> = []
+    const preferences = (async () => {
+      const storedServers = await AsyncStorage.getItem(serverPreferenceKey)
+      const parsed: unknown = storedServers ? JSON.parse(storedServers) : []
+      if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === 'string'))
+        throw new Error('Invalid notification preferences')
+      if (disposed) return
+      setDisabledServers(parsed)
+      const saved = await AsyncStorage.getItem(preferenceKey)
+      if (disposed) return
+      managed = saved !== null
+      updateEnabled(saved === 'true')
+    })()
+    // initialize reports a failure; the handler only waits for the read to settle.
+    preferences.catch(() => {})
     const initialize = async () => {
       const Notifications = await import('expo-notifications')
       if (disposed) return
@@ -104,21 +119,29 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
         handleNotification: async (notification) => {
           const data = notification.request.content.data
           const active = AppState.currentState === 'active'
-          const delivered = deliverInAppNotification(data, active)
-          const alert = !delivered && shouldAlertForNotification(data, active)
-          return {
-            shouldPlaySound: alert,
-            shouldSetBadge: false,
-            shouldShowBanner: alert,
-            shouldShowList: true,
-          }
+          // A cold launch can receive a push before the saved preferences are read.
+          await preferences.catch(() => {})
+          const target = notificationTarget(data)
+          return foregroundNotificationPresentation(data, {
+            active,
+            delivered: deliverInAppNotification(data, active),
+            pushEnabled: enabledRef.current,
+            disabledServers: disabledServersRef.current,
+            remote: target ? notificationRemoteInput(target, latest.current.overviews) : undefined,
+          })
         },
       })
       subscriptions.push({ remove: () => Notifications.setNotificationHandler(null) })
       const consumer = createNotificationResponseConsumer({
         ready: () => latest.current.ready && navigationReady.current,
         open: (target) => {
-          router.push(notificationHref(target))
+          claimLaunchRoute()
+          router.push(
+            notificationHref(target, {
+              profiles: latest.current.profiles,
+              overviews: latest.current.overviews,
+            }),
+          )
           setResponseError('')
         },
         last: () => Notifications.getLastNotificationResponse(),
@@ -368,16 +391,8 @@ export function PushNotificationProvider({ children }: { children: ReactNode }) 
           if (!disposed) setBusy(false)
         }
       }
-      const storedServers = await AsyncStorage.getItem(serverPreferenceKey)
-      const parsed: unknown = storedServers ? JSON.parse(storedServers) : []
-      if (!Array.isArray(parsed) || !parsed.every((id): id is string => typeof id === 'string'))
-        throw new Error('Invalid notification preferences')
+      await preferences
       if (disposed) return
-      setDisabledServers(parsed)
-      const saved = await AsyncStorage.getItem(preferenceKey)
-      if (disposed) return
-      managed = saved !== null
-      updateEnabled(saved === 'true')
       const refresh = () => {
         void sync().catch(() => {
           if (!disposed)

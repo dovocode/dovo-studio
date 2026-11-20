@@ -2,7 +2,6 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { responseReply } from '@dovo/protocol'
 import {
   botResultSchema,
-  checkpointCanUndo,
   forkFileDescription,
   forkMessagePreview,
   messageForkBlocker,
@@ -99,7 +98,7 @@ export function MessageActions({
   const forkId = useRef<string | undefined>(undefined)
   const [retrying, setRetrying] = useState(false)
   const retry = (model?: string) => {
-    if (!turn) return
+    if (!turn || !snapshot?.retryUsesCurrentFiles) return
     setRetrying(true)
     void call(
       '/api/tasks/retry',
@@ -119,9 +118,12 @@ export function MessageActions({
     const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
     if (!agent || !turn || !profile) return
     const same = `Try again${agent.model ? ` with ${modelDisplayName(agent.model)}` : ''}`
-    const message = checkpointCanUndo(turn.checkpoint)
-      ? uiText('This turn’s file changes are undone first.')
-      : uiText('The next turn uses the current files.')
+    if (!snapshot?.retryUsesCurrentFiles)
+      return Alert.alert(
+        uiText('Try again'),
+        uiText('Update the computer to retry using the current files.'),
+      )
+    const message = uiText('The next turn uses the current files.')
     if (Platform.OS !== 'ios')
       return Alert.alert(uiText('Try again?'), message, [
         { text: uiText('Cancel'), style: 'cancel' },

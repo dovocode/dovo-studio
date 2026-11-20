@@ -11,6 +11,7 @@ import {
   supportsSettledSummaryPaging,
 } from '@dovo/protocol'
 import { useTaskSearch } from '../tasks/list/use-task-search'
+import { taskSearchScopes } from '../tasks/list/task-search-scopes'
 import { EmptyState } from '../ui/content/empty-state'
 import { useTaskPanes } from '../shell/task-panes'
 import { contentColumn } from '../ui/layout/content-column'
@@ -205,9 +206,6 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
           ),
     [listLimit, overviews],
   )
-  const historySearch = useTaskSearch(entries, query, focused)
-  const searchKeys = JSON.stringify([...historySearch.keys].sort())
-
   const projectGroups = useMemo(
     () =>
       projectMachineGroups(
@@ -231,6 +229,20 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
       ),
     [projectGroups, project],
   )
+  const searchScopes = useMemo(
+    () =>
+      taskSearchScopes(
+        entries.map((entry) => entry.profile.id),
+        {
+          archived,
+          project,
+          projects: projectGroups.find((group) => group.key === project)?.entries ?? [],
+        },
+      ),
+    [entries, archived, project, projectGroups],
+  )
+  const historySearch = useTaskSearch(entries, query, focused, searchScopes)
+  const searchKeys = JSON.stringify([...historySearch.keys].sort())
   const previousRows = useRef<ReadonlyMap<string, TaskListRowData>>(new Map())
   const rowData = useMemo(
     () => taskListProjection(overviews, now, previousRows.current),
@@ -704,9 +716,10 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
     if (
       project &&
       (!task ||
-        !(project === 'scratch'
-          ? !task.repositoryId
-          : projectMembers.has(runtimeResourceKey(hit.runtimeId, task.repositoryId))))
+        !(
+          (project === 'scratch' && !task.repositoryId) ||
+          projectMembers.has(runtimeResourceKey(hit.runtimeId, task.repositoryId))
+        ))
     )
       return []
     const projectName = task?.repositoryId
@@ -1034,6 +1047,14 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
             {historySearch.loading && (
               <Text accessibilityRole="status" style={styles.muted}>
                 <InterfaceText>{'Searching conversation history…'}</InterfaceText>
+              </Text>
+            )}
+            {!!historySearch.unscopedFull.length && (
+              <Text accessibilityRole="status" style={styles.muted}>
+                {uiText(
+                  'Update {value0} to search every message in this filter. Some matching messages may be missing.',
+                  { value0: historySearch.unscopedFull.join(', ') },
+                )}
               </Text>
             )}
             {historySearch.offline && (

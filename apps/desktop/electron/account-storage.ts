@@ -26,7 +26,14 @@ export function registerAccountStorage(rendererPath: string) {
         : `account-session-${createHash('sha256').update(normalized).digest('hex')}.enc`,
     )
   }
-  let writes: Promise<unknown> = Promise.resolve()
+  // Reads wait for queued writes. The queue never rejects: a failed write reports to its caller
+  // only, so it cannot block later reads or writes.
+  let writes: Promise<void> = Promise.resolve()
+  const queue = (save: () => Promise<void>) => {
+    const operation = writes.then(save)
+    writes = operation.catch(() => undefined)
+    return operation
+  }
   const unlocked = () => {
     if (
       !safeStorage.isEncryptionAvailable() ||
@@ -61,9 +68,7 @@ export function registerAccountStorage(rendererPath: string) {
         await rm(temporary, { force: true })
       }
     }
-    const operation = writes.then(save, save)
-    writes = operation
-    return operation
+    return queue(save)
   })
   ipcMain.handle('account:read', async (event, origin: unknown) => {
     requireTrustedRenderer(event, rendererPath)
@@ -96,8 +101,6 @@ export function registerAccountStorage(rendererPath: string) {
         await rm(temporary, { force: true })
       }
     }
-    const operation = writes.then(save, save)
-    writes = operation
-    return operation
+    return queue(save)
   })
 }

@@ -32,6 +32,15 @@ export function humanInputShortcutTarget(event: KeyboardEvent): HTMLElement | nu
   return panel
 }
 
+/** Y and Enter allow once and N denies, only when the request offers that action. */
+export function approvalShortcutKeys(actions: readonly { decision: string }[]) {
+  const keys = [
+    ...(actions.some((action) => action.decision === 'approve') ? ['Y', 'Enter'] : []),
+    ...(actions.some((action) => action.decision === 'deny') ? ['N'] : []),
+  ]
+  return keys.length ? keys.join(' ') : undefined
+}
+
 export function useApprovalShortcuts({
   root,
   disabled,

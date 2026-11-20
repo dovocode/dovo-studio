@@ -325,9 +325,14 @@ it('persists the plan flag through receipts, editing, duplication, restore and r
     reopened.updateTask('task', (task) => ({ ...task, draft: 'Unrelated draft', draftPlan: true }))
     expect(() => reopenedQueue.change('task', 'restore', 'normal')).not.toThrow()
     expect(reopened.taskSummary('task').draftPlan).toBe(true)
-    expect(() => reopenedQueue.change('task', 'restore', 'copy')).toThrow('different plan mode')
+    const seen = { plan: false, draftPlan: true }
+    expect(() => reopenedQueue.change('task', 'restore', 'copy', undefined, seen)).toThrow(
+      'different plan mode',
+    )
     reopened.updateTask('task', (task) => ({ ...task, draft: '' }))
-    reopenedQueue.change('task', 'restore', 'copy')
+    // A client that does not report Plan cannot clear it, even in an empty draft.
+    expect(() => reopenedQueue.change('task', 'restore', 'copy')).toThrow('Plan mode differs')
+    reopenedQueue.change('task', 'restore', 'copy', undefined, seen)
     expect(reopened.taskSummary('task')).toMatchObject({ draft: 'Copy', draftPlan: undefined })
   } finally {
     db.close()

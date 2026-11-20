@@ -15,7 +15,7 @@ const built = await build({
   stdin: {
     contents: `import React,{useState} from 'react'; import {createRoot} from 'react-dom/client'; import {Context} from '@dovo/studio-core'; import {MessageQueue} from './src/chat/thread/message-queue';
 const initial=['one','two','three'].map(id=>({id,role:'user',text:id}));
-function App(){const [queue,setQueue]=useState(initial); const [embedded,setEmbedded]=useState(true); const [pending,setPending]=useState([]); const [queuePaused,setQueuePaused]=useState(false); window.setQueuePaused=setQueuePaused; window.setPending=setPending; window.setEmbedded=setEmbedded; window.setQueue=setQueue; const task={id:'task',status:'running',queue,queuePaused,messages:[]}; const displayed={...task,queue:[...queue,...pending.map(item=>item.message)]}; const request=(path,input)=>{window.calls.push(input); return new Promise((resolve,reject)=>{window.accept=(result={ok:true})=>resolve(result);window.reject=()=>reject(Error('Rejected'))})}; return <Context.Provider value={{workspace:{tasks:[task]},connected:true,request,snapshot:{promptQueueStagingSupported:true}}}><MessageQueue task={displayed} pending={pending} embedded={embedded}/></Context.Provider>}; window.calls=[]; createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const [queue,setQueue]=useState(initial); const [embedded,setEmbedded]=useState(true); const [pending,setPending]=useState([]); const [queuePaused,setQueuePaused]=useState(false); const [draftPlan,setDraftPlan]=useState(false); const [planSupported,setPlanSupported]=useState(true); window.setDraftPlan=setDraftPlan; window.setPlanSupported=setPlanSupported; window.setQueuePaused=setQueuePaused; window.setPending=setPending; window.setEmbedded=setEmbedded; window.setQueue=setQueue; const task={id:'task',status:'running',queue,queuePaused,draftPlan,messages:[]}; const displayed={...task,queue:[...queue,...pending.map(item=>item.message)]}; const request=(path,input)=>{window.calls.push(input); return new Promise((resolve,reject)=>{window.accept=(result={ok:true})=>resolve(result);window.reject=()=>reject(Error('Rejected'))})}; return <Context.Provider value={{workspace:{tasks:[task]},connected:true,request,snapshot:{promptQueueStagingSupported:true,queueRestorePlanSupported:planSupported||undefined}}}><MessageQueue task={displayed} pending={pending} embedded={embedded}/></Context.Provider>}; window.calls=[]; createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
   },
@@ -269,6 +269,49 @@ try {
   await page.evaluate(() => window.reject())
   await page.getByRole('alert').waitFor()
   assert.equal(await page.getByText('one', { exact: true }).isVisible(), true)
+  // Return to composer reports the Plan values on screen, so the runtime can refuse a restore
+  // after another client changed Plan.
+  await page.evaluate(() => {
+    window.setDraftPlan(true)
+    window.setQueue((queue) =>
+      queue.map((item) => (item.id === 'two' ? { ...item, plan: true } : item)),
+    )
+  })
+  const restore = (index) =>
+    page
+      .getByRole('button', {
+        name: `Cancel queued message ${index} and return it to the composer`,
+      })
+      .click()
+  await restore(1)
+  // Compare the JSON body that the request sends.
+  assert.deepEqual(await page.evaluate(() => JSON.parse(JSON.stringify(window.calls.at(-1)))), {
+    id: 'task',
+    action: 'restore',
+    messageId: 'one',
+    expectedPlan: false,
+    expectedDraftPlan: true,
+  })
+  await page.evaluate(() => window.reject())
+  await page.getByRole('alert').waitFor()
+  await restore(2)
+  assert.deepEqual(
+    await page.evaluate(() => {
+      const { expectedPlan, expectedDraftPlan } = window.calls.at(-1)
+      return { expectedPlan, expectedDraftPlan }
+    }),
+    { expectedPlan: true, expectedDraftPlan: true },
+  )
+  await page.evaluate(() => window.reject())
+  await page.getByRole('alert').waitFor()
+  // An older runtime rejects unknown fields, so the request stays bare there.
+  await page.evaluate(() => window.setPlanSupported(false))
+  await restore(1)
+  const bare = await page.evaluate(() => window.calls.at(-1))
+  assert.equal(bare.action, 'restore')
+  assert.equal('expectedPlan' in bare || 'expectedDraftPlan' in bare, false)
+  await page.evaluate(() => window.reject())
+  await page.getByRole('alert').waitFor()
   console.log('Desktop queue handoff checks passed')
 } finally {
   await browser.close()

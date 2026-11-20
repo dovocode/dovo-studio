@@ -1,5 +1,5 @@
 import { Schema, Struct } from 'effect'
-import { checkpointUndoTurn, checkpointFileCount } from '../scm/repositories/file-previews.js'
+import { undoBackupTurn, checkpointFileCount } from '../scm/repositories/file-previews.js'
 import { pullReferencesInText } from '../scm/pulls/pull-links.js'
 import { mutableArray, mutableStruct } from '../shared/schema.js'
 import { taskSchema, turnSchema, type Task, type TaskTurn, type Workspace } from '../workspace.js'
@@ -107,13 +107,13 @@ function earlier(turns: readonly TaskTurn[], now: number) {
     const end = turn.finishedAt ? Date.parse(turn.finishedAt) : now
     if (Number.isFinite(start) && Number.isFinite(end)) milliseconds += Math.max(0, end - start)
   }
-  const undoable = checkpointUndoTurn(older)
+  const backup = undoBackupTurn(older)
   const totals = {
     tokens,
     milliseconds,
     hasChanges: older.some((turn) => !!turn.checkpoint && checkpointFileCount(turn.checkpoint) > 0),
-    undoableTurnId: undoable?.id,
-    pendingUndoTurnId: undoable?.checkpoint?.restorePending ? undoable.id : undefined,
+    undoBackupTurnId: backup?.id,
+    pendingUndoTurnId: backup?.checkpoint?.restorePending ? backup.id : undefined,
   }
   earlierTotals.set(turns, totals)
   return totals

@@ -5,6 +5,7 @@ import { BotMemoryLearning } from './bot-memory-learning'
 import { useEffect, useState } from 'react'
 import { View } from 'react-native'
 import { runClientEffect } from '@dovo/client-runtime'
+import { Schema } from 'effect'
 import {
   memoryListSchema,
   memoryEntrySchema,
@@ -14,7 +15,14 @@ import {
   type MemoryEntry,
 } from '@dovo/protocol'
 import { useRuntime } from '../runtime/connection/provider'
-import { createDetailDrafts, detailDraftKey, useDetailDraft } from '../runtime/state/detail-drafts'
+import {
+  computerDraftKey,
+  createDetailDrafts,
+  detailDraftKey,
+  useDetailDraft,
+} from '../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../ui/content/draft-storage-notice'
 import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Field } from '../ui/controls/field'
@@ -22,12 +30,19 @@ import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { useAction } from '../ui/controls/use-action'
 
-const drafts = createDetailDrafts<{
-  key: string
-  content: string
-  expectedRevision?: string
-  expiresAt: string
-}>()
+// An unsaved note stays on the device after the app restarts.
+const drafts = createDetailDrafts({
+  persist: {
+    name: 'bot-memory',
+    schema: mutableStruct({
+      key: Schema.String,
+      content: Schema.String,
+      expectedRevision: Schema.optional(Schema.String),
+      expiresAt: Schema.String,
+    }),
+    storage: detailDraftStorage,
+  },
+})
 export function BotMemory(props: { taskId: string; onClose: () => void }) {
   const { profile } = useRuntime()
   return (
@@ -262,9 +277,9 @@ function MemoryNote({
   const { profile, connected: online, snapshot, callEffect } = useRuntime()
   const connected = online && snapshot?.botsSupported === true
   const { styles } = useTheme()
-  const { draft, setField, clear } = useDetailDraft(
+  const { draft, setField, clear, persistence } = useDetailDraft(
     drafts,
-    detailDraftKey(profile?.connection ?? null, 'bot-memory', taskId, note?.key ?? 'new'),
+    computerDraftKey(profile, 'bot-memory', taskId, note?.key ?? 'new'),
     () => ({
       key: note?.key ?? '',
       content: note?.content ?? '',
@@ -313,6 +328,7 @@ function MemoryNote({
         editable={connected && !busy}
         onChangeText={(value) => setField('content', value)}
       />
+      <DraftStorageNotice persistence={persistence} />
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

@@ -151,6 +151,7 @@ curl --fail https://connect.example.com/health
 curl --fail https://auth.example.com/health
 curl --fail https://auth.example.com/api/auth/.well-known/openid-configuration
 curl --fail https://artifacts.example.com/health
+curl --fail https://artifacts.example.com/ready
 ```
 
 Then sign in from Studio with your selected URL, enable Connect on the source computer with explicit

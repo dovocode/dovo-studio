@@ -4,6 +4,7 @@ import { useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'reac
 import {
   createTask,
   defaultTaskProjectSelection,
+  recoverStartupComposer,
   resolveTaskDefaults,
   TemporaryTaskWorkspace,
   useWorkspace,
@@ -52,10 +53,18 @@ export function StartupDraft({
     task?: Task
   } | null>(null)
   const [committedTask, setCommittedTask] = useState<Task | null>(null)
+  const repositoryIds = JSON.stringify(store.workspace.repositories.map((item) => item.id))
+  const recovery = useMemo(() => {
+    try {
+      return recoverStartupComposer(store.connection, store.activeRuntimeId, store.workspace)
+    } catch {
+      return undefined
+    }
+  }, [store.activeRuntimeId, store.connection?.token, repositoryIds])
+  const selectedRepositoryId =
+    selection?.runtimeId === store.activeRuntimeId ? selection.repositoryId : recovery?.repositoryId
   const repository = store.workspace.repositories.find((item) =>
-    selection?.runtimeId === store.activeRuntimeId
-      ? item.id === selection.repositoryId
-      : item.kind === 'scratch',
+    selectedRepositoryId ? item.id === selectedRepositoryId : item.kind === 'scratch',
   )
   const autoProject =
     selection?.runtimeId === store.activeRuntimeId
@@ -81,9 +90,10 @@ export function StartupDraft({
             ? { modelSelection: selection.modelSelection }
             : {}),
       }),
+      ...(recovery && recovery.repositoryId === repository?.id ? { id: recovery.taskId } : {}),
       harnessCustomized: selection?.modelSelection ? true : undefined,
     }),
-    [store.activeRuntimeId, repository?.id],
+    [store.activeRuntimeId, repository?.id, store.connection?.token, recovery?.taskId],
   )
   // Once saved, repository updates must not create a replacement task/provider.
   const task =

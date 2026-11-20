@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { checkpointFiles, filePreviewLabel, checkpointUndoTurn } from './file-previews'
+import { checkpointFiles, filePreviewLabel, undoBackupTurn } from './file-previews'
 import { decode } from '../../shared/schema'
 import { fileSchema, type TaskTurn } from '../../workspace'
 
@@ -45,19 +45,19 @@ it('prioritizes durable pending undo recovery over newer completed turns', () =>
     id: 'newer',
     checkpoint: { ...turn.checkpoint!, restorePending: undefined, undone: undefined },
   }
-  expect(checkpointUndoTurn([turn, newer])?.id).toBe('pending')
+  expect(undoBackupTurn([turn, newer])?.id).toBe('pending')
   const shared: TaskTurn = {
     ...newer,
     id: 'shared',
     checkpoint: { ...newer.checkpoint!, sharedCheckout: true },
   }
-  expect(checkpointUndoTurn([newer, shared])).toBeUndefined()
-  expect(checkpointUndoTurn([turn, newer, shared])?.id).toBe('pending')
-  expect(checkpointUndoTurn([shared, newer])?.id).toBe('newer')
+  expect(undoBackupTurn([newer, shared])).toBeUndefined()
+  expect(undoBackupTurn([turn, newer, shared])?.id).toBe('pending')
+  expect(undoBackupTurn([shared, newer])).toBeUndefined()
   expect(
-    checkpointUndoTurn([
+    undoBackupTurn([
       { ...turn, checkpoint: { ...turn.checkpoint!, restorePending: undefined } },
       newer,
     ])?.id,
-  ).toBe('newer')
+  ).toBe('pending')
 })

@@ -119,6 +119,27 @@ it('finishes a split replay surrogate before the replay boundary', async () => {
   stream.stop()
 })
 
+it('reseeds the display without carrying an old partial surrogate into the new replay', async () => {
+  const sent: Uint8Array[] = []
+  const socket = {
+    readyState: WebSocket.OPEN,
+    send: (data: Uint8Array) => sent.push(data),
+    close: vi.fn<() => void>(),
+  } as unknown as WebSocket
+  const stream = new BinaryTerminalStream(socket)
+  stream.replay('old\ud83d')
+  stream.replay('restored')
+  stream.data('live')
+  await vi.waitFor(() => expect(sent).toHaveLength(7))
+  expect(
+    sent.map((data) => {
+      const frame = decodeTerminalStreamFrame(data)
+      return frame.type === 'data' ? new TextDecoder().decode(frame.data) : frame.type
+    }),
+  ).toEqual(['replayStart', 'old', 'replayEnd', 'replayStart', 'restored', 'replayEnd', 'live'])
+  stream.stop()
+})
+
 it('accepts a maximum retained replay and applies pressure to concurrent live output', () => {
   const pressure = vi.fn<(paused: boolean) => void>()
   const socket = {

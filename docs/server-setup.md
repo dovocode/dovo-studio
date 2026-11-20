@@ -740,12 +740,13 @@ The update command:
    release, then restarts the previous server when it was running. If a process cannot be stopped,
    it refuses to restore a database underneath that process and reports the recovery paths.
 
-Activation is a brief interruption. Remembered standalone terminals reopen after a runtime restart,
-resuming supported tools through their exact captured session identity. Ordinary shell commands and
-thread terminals are not replayed; active tasks may become interrupted/failed and require
-continuation. See [terminal recovery](unified-workspace.md) for sleep behavior and multiplexer
-limits. Finish or stop important running work before updating. Paired credentials and project paths
-are preserved. This updates the server, not installed mobile/desktop application binaries.
+Activation briefly disconnects clients. A remembered standalone terminal on a runtime with live
+recovery reattaches to its existing local PTY. After loss of the holder or on a runtime with shell
+recovery only, Dovo reopens its shell or resumes a supported tool by its saved session ID. Thread
+terminals and ordinary shell commands are never replayed. Running tasks may require continuation.
+See [terminal recovery](unified-workspace.md) for sleep behavior and multiplexer limits. Finish or
+stop important running work before updating. Paired credentials and project paths are preserved.
+This updates the server, not installed mobile/desktop application binaries.
 
 Releases and backups are retained for diagnosis/recovery; there is no automatic retention policy.
 The selected entrypoint and previous entrypoint are in `server-release.json`. Do not delete a
@@ -1147,7 +1148,9 @@ dovo-server start --data-dir ~/.dovo
 Restore verifies SQLite integrity, obtains the runtime's process lock, preserves the current
 database as another backup and replaces it atomically. It refuses a live runtime. Conversation data
 returns to the selected snapshot. When the current database and backup have the same runtime
-identity, restore keeps current device pairings, revocations and paired-runtime registrations. Host
+identity, restore keeps current device pairings, revocations and paired-runtime registrations. It
+also keeps the current thread moves, returns and activations. A thread that moved to another
+computer stays read-only after a restore, even if the backup predates the move. Host
 owner-token/configuration files remain in place. A new replication generation resumes sync without
 reusing cursors from the later database. Update clients and paired runtimes together. Newer thread
 history held by a peer returns as a separate archived copy marked `(recovered)`; it does not replace

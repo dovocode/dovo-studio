@@ -350,7 +350,8 @@ try {
       path: window.approvalReads[0].path,
       input: window.approvalReads[0].input,
     })),
-    { path: '/api/activity', input: { scope: 'thread', kind: 'approval', query: 'wanted' } },
+    // No scope filter: the exact ID is matched in the visible family on the client.
+    { path: '/api/activity', input: { kind: 'approval', query: 'wanted' } },
   )
   assert.equal(await page.getByText('Different pending approval', { exact: true }).count(), 0)
   await page.evaluate(() => window.approvalReads[0].fail())
@@ -393,9 +394,42 @@ try {
     assert.equal(await page.evaluate(() => window.route.params.taskId), 'child')
     assert.equal(await page.evaluate(() => window.route.params.parentTaskId), 'thread')
   }
+  // A child asked for the approval, so its receipt is in the child's scope. The parent finds it.
+  const receipt = async (approvalId, payload, text) => {
+    const count = await page.evaluate(() => window.approvalReads.length)
+    await page.evaluate((approvalId) => {
+      window.show('approval')
+      window.setApprovalRoute(approvalId)
+    }, approvalId)
+    await page.waitForFunction((count) => window.approvalReads.length === count + 1, count)
+    await page.evaluate((payload) => {
+      const event = (scope) => ({
+        id: scope + payload.id,
+        scope,
+        kind: 'approval',
+        time: '',
+        summary: '',
+        payload: JSON.stringify(payload),
+      })
+      window.approvalReads.at(-1).reply([event('different-thread'), event('child')])
+    }, payload)
+    await page.getByText(text, { exact: true }).waitFor()
+  }
+  await receipt(
+    'child-wanted',
+    { id: 'child-wanted', status: 'resolved', decision: 'session' },
+    'Recorded decision: Approved for this session',
+  )
+  // A withdrawn request is not a recorded denial.
+  await receipt(
+    'child-withdrawn',
+    { id: 'child-withdrawn', status: 'resolved', decision: 'deny', reason: 'withdrawn' },
+    'This approval request was withdrawn, or its turn ended. No decision was recorded.',
+  )
+  assert.equal(await page.getByText('Recorded decision: Not approved', { exact: true }).count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'React Native project panel: hidden editor controls, inline PR links, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers, pipeline graph and exact approval decision recovery passed.',
+    'React Native project panel: hidden editor controls, inline PR links, scripts, linked PRs, lifecycle overrides, PNG emoji picker, refresh, watchers, pipeline graph and exact approval decision recovery in the thread family passed.',
   )
 } finally {
   await browser.close()

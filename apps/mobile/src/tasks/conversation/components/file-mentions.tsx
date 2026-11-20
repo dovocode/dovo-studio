@@ -4,12 +4,15 @@ import { Pressable, ScrollView } from 'react-native'
 import { Schema } from 'effect'
 import {
   modelMentionsSchema,
+  agentMentionSuggestions,
   contextMentionSuggestions,
+  insertAgentMention,
   insertThreadMention,
   insertBotMention,
   runtimeComputerName,
   insertModelMention,
   type ModelMention,
+  type Agent,
   commandSuggestions,
   composerMention,
   insertMention,
@@ -26,9 +29,13 @@ import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { BotAvatar } from '../../../bots/bot-avatar'
 
-const filesSchema = mutableStruct({ files: mutableArray(Schema.String) })
+const filesSchema = mutableStruct({
+  files: mutableArray(Schema.String),
+  // Older runtimes omit this; they also never report a partial file listing.
+  truncated: Schema.optional(Schema.Boolean),
+})
 type Suggestion = {
-  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'bot' | 'thread'
+  kind: 'file' | 'skill' | 'mcp' | 'command' | 'prompt' | 'model' | 'agent' | 'bot' | 'thread'
   avatar?: string
   value: string
   name?: string
@@ -37,13 +44,14 @@ type Suggestion = {
 }
 export type ComposerCommandId = Exclude<ReturnType<typeof commandSuggestions>[number]['id'], 'goal'>
 
-/** Mention suggestions above the composer: "@" files and MCP servers, "$" skills, and "/"
- * skills at the start of a line. Tap one to insert it. */
+/** Show reference and command suggestions above the composer. Tap one to insert it. */
 export function FileMentions({
   taskId,
+  repositoryId,
   text,
   caret,
   resources,
+  agents,
   provider,
   onChange,
   onCommand,
@@ -51,9 +59,11 @@ export function FileMentions({
   prompts = [],
 }: {
   taskId: string
+  repositoryId?: string
   text: string
   caret: number
   resources: ResourceSettings
+  agents: readonly Pick<Agent, 'id' | 'name' | 'provider'>[]
   provider?: string
   onChange: (text: string) => void
   /** Runs a built-in "/" command; its text is removed from the draft. */
@@ -67,7 +77,12 @@ export function FileMentions({
   const { colors } = useTheme()
 
   const { call, connected, activeId, connection, snapshot, overviews } = useRuntime()
-  const [lookup, setLookup] = useState<{ key: string; call: typeof call; files: string[] }>()
+  const [lookup, setLookup] = useState<{
+    key: string
+    call: typeof call
+    files: string[]
+    truncated?: boolean
+  }>()
   const [modelLookup, setModelLookup] = useState<{
     key: string
     models: ModelMention[]
@@ -76,6 +91,9 @@ export function FileMentions({
   const mention = composerMention(text, caret)
   const trigger = mention?.trigger
   const query = mention?.query
+  const threadOnly = trigger === '@' && query?.toLowerCase().startsWith('thread:') === true
+  const modelQuery = trigger === '@' && !threadOnly ? query : undefined
+  const runtimeId = snapshot?.runtimeId ?? connection?.runtimeId ?? activeId
   const key = JSON.stringify([
     taskId,
     activeId,
@@ -85,9 +103,11 @@ export function FileMentions({
     query,
     connected,
   ])
-  const files = lookup?.key === key && lookup.call === call ? lookup.files : []
+  const current = lookup?.key === key && lookup.call === call ? lookup : undefined
+  const files = current?.files ?? []
+  const filesTruncated = current?.truncated === true
   useEffect(() => {
-    if (trigger !== '@' || query === undefined || !connected) {
+    if (trigger !== '@file:' || query === undefined || !connected) {
       setLookup(undefined)
       return
     }
@@ -96,7 +116,7 @@ export function FileMentions({
     const timer = setTimeout(() => {
       void call('/api/tasks/files', { id: taskId, query }, filesSchema).then(
         (result) => {
-          if (!disposed) setLookup({ key, call, files: result.files })
+          if (!disposed) setLookup({ key, call, files: result.files, truncated: result.truncated })
         },
         () => {
           if (!disposed) setLookup({ key, call, files: [] })
@@ -110,10 +130,14 @@ export function FileMentions({
   }, [trigger, query, taskId, connected, call, key])
   const modelsSupported = snapshot?.modelMentionsSupported === true
   useEffect(() => {
-    if (trigger !== '@' || !query || query.length < 2 || !connected || !modelsSupported) return
+    if (!modelQuery || modelQuery.length < 2 || !connected || !modelsSupported) return
     let stopped = false
     const timer = setTimeout(() => {
-      void call('/api/agents/model-mentions', { taskId, query }, modelMentionsSchema).then(
+      void call(
+        '/api/agents/model-mentions',
+        { taskId, query: modelQuery },
+        modelMentionsSchema,
+      ).then(
         (result) => {
           if (!stopped)
             setModelLookup({
@@ -133,8 +157,11 @@ export function FileMentions({
       stopped = true
       clearTimeout(timer)
     }
-  }, [trigger, query, connected, modelsSupported, call, taskId, key])
+  }, [modelQuery, connected, modelsSupported, call, taskId, key])
   if (!mention) return null
+  const suggestedResources = threadOnly
+    ? []
+    : resourceSuggestions(resources, mention.trigger, mention.query)
   const suggestions: Suggestion[] = [
     ...(mention.trigger === '@'
       ? contextMentionSuggestions(
@@ -151,6 +178,12 @@ export function FileMentions({
           name: bot.name,
           detail: bot.detail,
           avatar: bot.avatar,
+        }))
+      : []),
+    ...(mention.trigger === '@' && !threadOnly && runtimeId
+      ? agentMentionSuggestions(runtimeId, repositoryId, agents, mention.query).map((agent) => ({
+          ...agent,
+          value: agent.reference,
         }))
       : []),
     ...(modelsSupported && modelLookup?.key === key
@@ -186,7 +219,7 @@ export function FileMentions({
             detail: command.description,
           }))
       : []),
-    ...resourceSuggestions(resources, mention.trigger, mention.query).map((item) => ({
+    ...suggestedResources.map((item) => ({
       kind: item.kind,
       value: item.name,
       detail:
@@ -195,7 +228,7 @@ export function FileMentions({
           : `${item.enabled ? 'Skill' : 'Skill · this message only'}${item.description ? ` · ${item.description}` : ''}`,
       muted: !item.enabled,
     })),
-    ...(mention.trigger === '@'
+    ...(mention.trigger === '@file:'
       ? files.map((path) => {
           const slash = path.lastIndexOf('/')
           return {
@@ -208,16 +241,21 @@ export function FileMentions({
   ]
   const modelError =
     connected && modelsSupported && modelLookup?.key === key ? modelLookup.error : ''
-  if (!suggestions.length && !modelError) return null
+  const truncatedNotice = mention.trigger === '@file:' && filesTruncated
+  if (!suggestions.length && !modelError && !truncatedNotice) return null
   return (
     <ScrollView
       horizontal
       keyboardShouldPersistTaps="always"
       showsHorizontalScrollIndicator={false}
       accessibilityLabel={
-        mention.trigger === '@'
-          ? uiText('File, model and MCP server suggestions')
-          : uiText('Skill suggestions')
+        mention.trigger === '@file:'
+          ? uiText('File suggestions')
+          : mention.trigger === '@'
+            ? threadOnly
+              ? uiText('Thread suggestions')
+              : uiText('Agent, Bot, model and MCP server suggestions')
+            : uiText('Skill suggestions')
       }
       contentContainerStyle={{ gap: 6, paddingHorizontal: 10, paddingVertical: 6 }}
     >
@@ -229,17 +267,23 @@ export function FileMentions({
           {modelError}
         </Text>
       )}
+      {truncatedNotice && (
+        <Text accessibilityRole="text" style={{ color: colors.muted, fontSize: 12, maxWidth: 240 }}>
+          {uiText(
+            'This project has more files than file search covers. Type more of the path if a file is missing.',
+          )}
+        </Text>
+      )}
       {suggestions.map((item) => {
+        const name = item.name ?? item.value
         const label =
           item.kind === 'file'
             ? item.value.slice(item.value.lastIndexOf('/') + 1)
-            : item.kind === 'model' || item.kind === 'bot' || item.kind === 'thread'
-              ? item.name
-              : item.kind === 'command'
-                ? `/${item.value}`
-                : item.kind === 'prompt'
-                  ? `#${item.name}`
-                  : item.value
+            : item.kind === 'command'
+              ? `/${name}`
+              : item.kind === 'prompt'
+                ? `#${name}`
+                : name
         return (
           <Pressable
             key={`${item.kind}:${item.value}`}
@@ -251,39 +295,40 @@ export function FileMentions({
                   ? uiText('Insert saved prompt {value0}', { value0: item.name })
                   : item.kind === 'bot'
                     ? uiText('Mention Bot {value0}: {value1}', {
-                        value0: item.name,
+                        value0: name,
                         value1: item.detail,
                       })
-                    : uiText('Mention {value0} {value1}', {
-                        value0:
-                          item.kind === 'file'
-                            ? 'file'
-                            : item.kind === 'mcp'
-                              ? 'MCP server'
-                              : item.kind === 'model'
-                                ? 'model'
-                                : 'skill',
-                        value1: item.value,
-                      })
+                    : item.kind === 'agent'
+                      ? uiText('Mention agent {value0}', { value0: name })
+                      : item.kind === 'thread'
+                        ? uiText('Mention thread {value0}: {value1}', {
+                            value0: name,
+                            value1: item.detail,
+                          })
+                        : uiText('Mention {value0} {value1}', {
+                            value0: item.kind === 'mcp' ? 'MCP server' : item.kind,
+                            value1: item.value,
+                          })
             }
             onPress={() => {
               if (item.kind === 'thread') {
                 onChange(
                   insertThreadMention(text, mention.start, caret, {
-                    name: item.name ?? 'Thread',
+                    name,
                     reference: item.value,
                   }).text,
                 )
                 return
               }
-              if (item.kind === 'bot')
+              if (item.kind === 'bot' || item.kind === 'agent') {
+                const insert = item.kind === 'bot' ? insertBotMention : insertAgentMention
                 onChange(
-                  insertBotMention(text, mention.start, caret, {
-                    name: item.name ?? 'Bot',
+                  insert(text, mention.start, caret, {
+                    name,
                     reference: item.value,
                   }).text,
                 )
-              else if (item.kind === 'model')
+              } else if (item.kind === 'model')
                 onChange(insertModelMention(text, mention.start, caret, item.value).text)
               else if (item.kind === 'prompt') {
                 const prompt = prompts.find((entry) => entry.id === item.value)

@@ -190,20 +190,14 @@ export function defineStudioExtension(
     views,
     createRuntime: (api) => ({
       manifest: contributionManifest,
+      // The host palette builds its own Open entries with the sidebar's availability and
+      // navigation rules. These commands serve only the extension host's command registry.
       activate(context) {
         for (const view of views) {
           if (view.navigationGroup === 'hidden') continue
-          const command = {
-            id: `${manifest.id}.open.${view.id}`,
-            title: `Open ${view.title}`,
-            ...(view.navigationGroup === 'settings' && view.keywords
-              ? { aliases: [view.keywords] }
-              : {}),
-            run: () => api.navigate({ viewId: view.id }),
-          }
-          const unregister = api.registerCommand(command)
-          context.subscriptions.push({ dispose: unregister })
-          context.commands.registerCommand(command.id, command.run)
+          context.commands.registerCommand(`${manifest.id}.open.${view.id}`, () =>
+            api.navigate({ viewId: view.id }),
+          )
         }
       },
     }),

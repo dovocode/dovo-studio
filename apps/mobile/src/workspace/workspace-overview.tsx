@@ -246,8 +246,7 @@ export function WorkspaceOverview({ unified = false }: { unified?: boolean }) {
     else if (item.kind === 'terminal') router.push(terminalHref(item.runtimeId, item.terminal.id))
     else {
       browser.change((state) => visitTab(state, item.tab.id))
-      if (unified) router.push('/workspace/browser')
-      else navigate('browser')
+      navigate('browser')
     }
   }
   const renderRow = (item: WorkspaceItem) => {

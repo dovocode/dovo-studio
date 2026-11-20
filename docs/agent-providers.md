@@ -49,6 +49,14 @@ Muse selects its native permission profile at session start and resume. Full acc
 `:unrestricted`. Other interactive modes use `:ask-me`. Utility sessions keep their restricted
 launch settings.
 
+Each Muse approval lists its available choices. Dovo maps `approved` with scope `once` to **Allow
+once**, scope `session` to **Allow for session** and scope `localPersistent` to **Always allow**.
+Other pairs map to no scope. Dovo sends only the scopes it found and returns the choice that matches
+the decision exactly. It never widens **Allow once** to a session or persistent grant. When Full
+access approves a request automatically, it uses the single-use choice, then the session choice. It
+denies a request that offers only a persistent grant, so Dovo never saves a Muse policy for the
+user.
+
 Stop sends a native interrupt to the active Muse turn before Studio closes its host, including on
 follow-up turns that reuse that host.
 

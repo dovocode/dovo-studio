@@ -1281,3 +1281,63 @@ it.each([
     pressure.mockRestore()
   }
 })
+
+it('closes a tool approval that Claude withdraws while the turn stays active', async () => {
+  const { Approvals } = await import('../../execution/approvals.js')
+  const adapter = createClaudeAdapter()
+  const approvals = new Approvals()
+  const request = new AbortController()
+  const observed: { listed: number; afterWithdraw: number; activeTurn: boolean } = {
+    listed: 0,
+    afterWithdraw: -1,
+    activeTurn: false,
+  }
+  let decision: string | undefined
+  let retry: string | undefined
+  const run = nativeRun(vi.fn())
+  // Same wiring as the active turn: the turn signal plus the provider request signal.
+  run.approve = (title, detail, kind, options, signal) =>
+    approvals.request(
+      'native-claude',
+      title,
+      detail,
+      signal ? AbortSignal.any([run.signal, signal]) : run.signal,
+      kind,
+      options,
+    )
+  mocks.query.mockImplementation(({ prompt, options }) => ({
+    async *[Symbol.asyncIterator]() {
+      if (typeof prompt === 'string' || !options.canUseTool)
+        throw new Error('Expected a managed stream')
+      for await (const _message of prompt) {
+        const pending = options.canUseTool(
+          'Bash',
+          { command: 'echo harmless' },
+          { signal: request.signal, toolUseID: 'tool', requestId: 'request' },
+        )
+        await vi.waitFor(() => expect(approvals.list()).toHaveLength(1))
+        observed.listed = approvals.list().length
+        const [{ id }] = approvals.list()
+        request.abort()
+        decision = (await pending)?.behavior
+        observed.afterWithdraw = approvals.list().length
+        observed.activeTurn = !run.signal.aborted
+        try {
+          approvals.decide(id, 'always')
+        } catch (error) {
+          retry = error instanceof Error ? error.message : String(error)
+        }
+        yield { type: 'result', subtype: 'success', is_error: false, session_id: 'session' }
+      }
+    },
+    close: () => {},
+  }))
+  try {
+    await adapter.run(run)
+    expect(observed).toEqual({ listed: 1, afterWithdraw: 0, activeTurn: true })
+    expect(decision).toBe('deny')
+    expect(retry).toBe('This approval request was withdrawn, or its turn ended.')
+  } finally {
+    await adapter.dispose?.()
+  }
+})

@@ -249,15 +249,54 @@ it('waits for previously closed terminals to exit before completing disposal', a
       exited = true
     })
     const closed = terminals.close(session.id)
-    expect(terminals.list()).toEqual([])
+    expect(terminals.close(session.id)).toBe(closed)
     await terminals.dispose()
     await closed
+    expect(terminals.list()).toEqual([])
     expect(exited).toBe(true)
   } finally {
     await terminals.dispose()
     await f.cleanup()
   }
 })
+it.skipIf(process.platform === 'win32')(
+  'retains a parent and both child links after an unconfirmed close and allows a retry',
+  async () => {
+    const terminals = new Terminals()
+    const launch = (parentTerminalId?: string) =>
+      terminals.createCommand(
+        'studio:terminals',
+        process.cwd(),
+        { command: process.execPath, args: ['-e', 'setTimeout(() => {}, 15000)'], env: {} },
+        'Close fixture',
+        undefined,
+        undefined,
+        { parentTerminalId },
+      )
+    try {
+      const parent = launch()
+      const children = [launch(parent.id), launch(parent.id)]
+      const processToClose = terminals.get(parent.id).process
+      if (!processToClose) throw new Error('Missing parent PTY')
+      const identity = vi.spyOn(processToClose, 'pid', 'get').mockReturnValue(-1)
+      try {
+        await expect(terminals.close(parent.id)).rejects.toThrow('Could not identify')
+        expect(terminals.get(parent.id).info.exited).toBe(false)
+        for (const child of children)
+          expect(terminals.get(child.id).info.parentTerminalId).toBe(parent.id)
+      } finally {
+        identity.mockRestore()
+      }
+      await terminals.close(parent.id)
+      for (const child of children) {
+        expect(terminals.get(child.id).info.parentTerminalId).toBeUndefined()
+        expect(terminals.get(child.id).info.exited).toBe(false)
+      }
+    } finally {
+      await terminals.dispose()
+    }
+  },
+)
 it('reuses a live shell across simultaneous terminal openings', async () => {
   const f = await fixture()
   const terminals = new Terminals()

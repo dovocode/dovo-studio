@@ -183,3 +183,9 @@ and relay containers. All original active Connect settings were compared against
 configuration; the relay kept its original start time. Authenticated publishing and reader
 interactions were exercised by the local end-to-end browser suite, not with a production user
 session. Desktop/mobile application binaries were not released as part of this deployment.
+
+The hosted viewer checks access on each refresh. An unchanged version returns an empty HTTP 304
+response after the service verifies access. Connect reuses each active short-lived service grant for
+the same account session and destination. Connect issues a fresh grant when the old one has less
+than 30 seconds left. The account session limits the lifetime of every grant. Feed writers have a
+separate quota.

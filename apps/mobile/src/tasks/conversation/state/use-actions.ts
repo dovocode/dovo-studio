@@ -901,14 +901,20 @@ export function useConversationActions(task: Task) {
           expectedAttachmentIds: restore.attachmentIds,
           expectedTurnSettings: restore.turnSettings,
           expectedDraftTurnSettings: restore.draftTurnSettings,
+          ...(restore.plan !== undefined && restore.draftPlan !== undefined
+            ? { expectedPlan: restore.plan, expectedDraftPlan: restore.draftPlan }
+            : {}),
         },
         responses.queueAction,
       )
       yield* storedDraft.confirmRestoreEffect(restore.requestId)
-      if (currentDraftKey.current === key)
+      if (currentDraftKey.current === key) {
         setTurnSettings((current) =>
           sameTurnSettings(current, restore.draftTurnSettings) ? restore.turnSettings : current,
         )
+        if (restore.plan !== undefined)
+          setDraftPlan((current) => (current === restore.draftPlan ? !!restore.plan : current))
+      }
     })
   useEffect(() => {
     const restore = storedDraft.pendingRestore
@@ -961,6 +967,8 @@ export function useConversationActions(task: Task) {
             attachmentIds: message.attachments?.map((file) => file.id) ?? [],
             turnSettings: message.turnSettings ?? null,
             draftTurnSettings,
+            // Decided once so every retry sends the same request to the same receipt.
+            ...(snapshot.queueRestorePlanSupported ? { plan: !!message.plan, draftPlan } : {}),
             connection: yield* connectionIdentity(),
           }
           if (restore.messageId !== message.id)

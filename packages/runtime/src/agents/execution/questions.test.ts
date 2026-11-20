@@ -296,3 +296,170 @@ it('validates and receipts unanswered outcomes without weakening ordinary questi
   expect(await stopped).toBeNull()
   expect(cancelled).not.toHaveBeenCalled()
 })
+
+it('rejects a reused question key with different wording after the first answer', async () => {
+  const r = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'owner-token-at-least-thirty-two-characters',
+    port: 0,
+  })
+  cleanups.push(r.close)
+  const questions = r.services.questions
+  const simple = { ...prompt, questions: [prompt.questions[0]] }
+  const key = 'tool-question:fixture-key'
+  const first = questions.request(
+    'task',
+    simple,
+    new AbortController().signal,
+    undefined,
+    undefined,
+    key,
+  )
+  questions.respond(key, { choice: ['existing'] })
+  expect(await first).toEqual({ choice: ['existing'] })
+  // The same prompt under the same key is an idempotent retry.
+  await expect(
+    questions.request('task', simple, new AbortController().signal, undefined, undefined, key),
+  ).resolves.toBeNull()
+  expect(questions.list()).toEqual([])
+  const reworded = {
+    ...simple,
+    questions: [{ ...simple.questions[0], question: 'Should this delete the old data?' }],
+  }
+  expect(() =>
+    questions.request('task', reworded, new AbortController().signal, undefined, undefined, key),
+  ).toThrow('already answered for a different question')
+  expect(() =>
+    questions.request('other', simple, new AbortController().signal, undefined, undefined, key),
+  ).toThrow('already answered for a different question')
+  expect(questions.list()).toEqual([])
+  expect(questions.status(key)).toBe('answered')
+})
+
+it('keeps prompt identity in durable answer receipts after eviction and restart', async () => {
+  const { Questions } = await import('./questions')
+  const { WorkspaceStore } = await import('../../storage/workspace')
+  const r = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'owner-token-at-least-thirty-two-characters',
+    port: 0,
+  })
+  cleanups.push(r.close)
+  const s = r.services
+  s.store.update((w) => ({
+    ...w,
+    tasks: [
+      {
+        id: 'form-task',
+        title: 'Form',
+        repositoryId: 'repo',
+        agentId: 'agent',
+        status: 'draft',
+        createdAt: '',
+        messages: [],
+        files: [],
+        draft: '',
+        example: false,
+        queuePaused: true,
+      },
+    ],
+  }))
+  const simple = { ...prompt, questions: [prompt.questions[0]] }
+  const reworded = {
+    ...simple,
+    questions: [{ ...simple.questions[0], question: 'Should this delete the old data?' }],
+  }
+  const ask = (questions: InstanceType<typeof Questions>, key: string, value = simple) =>
+    questions.request('form-task', value, new AbortController().signal, undefined, undefined, key)
+  // The task-tool path: the receipt reaches the database through the queued answer.
+  const queued = 'tool-question:queued'
+  const first = s.questions.request(
+    'form-task',
+    simple,
+    new AbortController().signal,
+    undefined,
+    (_answers, receipt) =>
+      s.tasks.queue.add('form-task', `answer:${receipt.id}`, 'Answer', [], receipt),
+    queued,
+  )
+  s.questions.respond(queued, { choice: ['existing'] })
+  expect(await first).toEqual({ choice: ['existing'] })
+  // The provider path: the receipt is written with its provider action.
+  const direct = 'tool-question:direct'
+  const second = s.questions.request(
+    'form-task',
+    simple,
+    new AbortController().signal,
+    undefined,
+    (_answers, receipt) =>
+      s.store.acceptQuestionResponse('form-task', receipt, {
+        id: `answer:turn:${receipt.id}`,
+        taskId: 'form-task',
+        attemptId: 'turn',
+        kind: 'answer',
+        state: 'dispatched',
+      }),
+    direct,
+  )
+  s.questions.respond(direct, { choice: ['existing'] })
+  expect(await second).toEqual({ choice: ['existing'] })
+  for (const key of [queued, direct]) expect(s.store.questionPrompt(key)).toMatch(/^[0-9a-f]{64}$/)
+
+  // Restart: a fresh instance has only the durable receipts.
+  const restarted = new Questions(s.activity, new WorkspaceStore(s.db))
+  for (const key of [queued, direct]) {
+    await expect(ask(restarted, key)).resolves.toBeNull()
+    expect(() => ask(restarted, key, reworded)).toThrow('already answered for a different question')
+    expect(() =>
+      restarted.request('other', simple, new AbortController().signal, undefined, undefined, key),
+    ).toThrow('already answered for a different question')
+  }
+  expect(restarted.list()).toEqual([])
+
+  // Eviction: 256 later answers push the keyed answer out of memory in the same instance.
+  for (let index = 0; index < 256; index++) {
+    const pending = s.questions.request('form-task', simple, new AbortController().signal)
+    s.questions.respond(s.questions.list()[0].id, { choice: ['existing'] })
+    await pending
+  }
+  await expect(ask(s.questions, queued)).resolves.toBeNull()
+  expect(() => ask(s.questions, queued, reworded)).toThrow('for a different question')
+
+  // A receipt from an older runtime has no identity, so a match cannot be confirmed either way.
+  const legacy = 'tool-question:legacy'
+  s.db
+    .prepare(
+      'INSERT INTO question_responses (id,task_id,fingerprint,attachments) VALUES (?, ?, ?, ?)',
+    )
+    .run(legacy, 'form-task', 'fingerprint', '[]')
+  expect(s.store.questionPrompt(legacy)).toBeNull()
+  expect(s.store.questionPrompt('tool-question:missing')).toBeUndefined()
+  expect(() => ask(restarted, legacy)).toThrow('cannot confirm it was the same question')
+  expect(() => ask(restarted, legacy, reworded)).toThrow('cannot confirm it was the same question')
+  expect(restarted.status(legacy)).toBe('answered')
+})
+
+it('adds the prompt identity column to an older answer receipt table', async () => {
+  const { default: Database } = await import('better-sqlite3')
+  const { openDatabase } = await import('../../storage/database')
+  const { mkdtemp, rm } = await import('node:fs/promises')
+  const { tmpdir } = await import('node:os')
+  const { join } = await import('node:path')
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-question-receipts-'))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'runtime.db')
+  const old = new Database(path)
+  old.exec(
+    'CREATE TABLE question_responses (id TEXT PRIMARY KEY, task_id TEXT NOT NULL, fingerprint TEXT NOT NULL, attachments TEXT)',
+  )
+  old.prepare('INSERT INTO question_responses VALUES (?, ?, ?, ?)').run('old', 'task', 'f', '[]')
+  old.close()
+  const db = openDatabase(path)
+  try {
+    expect(db.prepare('SELECT id, fingerprint, prompt FROM question_responses').all()).toEqual([
+      { id: 'old', fingerprint: 'f', prompt: null },
+    ])
+  } finally {
+    db.close()
+  }
+})

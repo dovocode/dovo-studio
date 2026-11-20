@@ -48,6 +48,7 @@ export function backgroundRuntimeDefinition(options: BackgroundRuntimeOptions) {
     DOVO_HOST: options.host,
     PORT: options.port,
     DOVO_RUNTIME_ENV_FILE: join(options.directory, 'runtime-environment.json'),
+    DOVO_TERMINAL_HOLDER_SUPERVISOR: 'launchd',
   }
   return {
     label,

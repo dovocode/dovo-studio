@@ -990,8 +990,9 @@ async function careFixture() {
   const send = vi.spyOn(f.s.tasks, 'send').mockResolvedValue({ ok: true })
   const act = vi.spyOn(f.s.pulls, 'act').mockResolvedValue({ number: 7, url, status: 'updated' })
   const base = detail()
+  // GitHub reports a null review decision when the target branch requires no review.
   let current = detail({
-    pull: { ...base.pull, behindBy: 2 },
+    pull: { ...base.pull, behindBy: 2, reviewDecision: null },
     capabilities: { actions: ['update-branch'], mergeMethods: [], reviewDecisions: [] },
   })
   f.read.mockImplementation(async () => current)
@@ -1435,10 +1436,30 @@ it('reports readiness once, reports target changes, and stops feedback-only loop
   }
   expect(f.queued()).toHaveLength(11)
   expect(f.queued().at(-1)?.text).toContain('paused after 10')
+  expect(f.queued().at(-1)?.text).toContain('call pull_request_watch with action "watch"')
   expect(
     (await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.carePaused,
   ).toBe(true)
   expect(f.s.store.task(f.taskId).queuePaused).toBe(true)
+  // An explicit restart for the same PR clears the pause.
+  expect((await f.watch()).watches[0]).toMatchObject({ status: 'watching', carePaused: undefined })
+})
+
+it('counts a known failed check once after the first babysitting poll re-reports it', async () => {
+  const f = await careFixture()
+  f.setDetail({
+    ...f.current,
+    pull: { ...f.current.pull, behindBy: 0 },
+    checks: [{ id: 'check-lint', name: 'lint', status: 'failure' }],
+  })
+  await f.watch()
+  expect(f.watcher.counts(f.taskId).failures).toBe(1)
+  await f.watcher.tick()
+  expect(f.queued()[0]?.text).toContain('Failed check: lint')
+  expect(f.watcher.counts(f.taskId).failures).toBe(1)
+  await f.watcher.tick()
+  expect(f.queued()).toHaveLength(1)
+  expect(f.watcher.counts(f.taskId).failures).toBe(1)
 })
 
 it('keeps an unrelated PR as a feedback watch without automatic checkout work', async () => {
@@ -1477,6 +1498,48 @@ it('does not report readiness for unknown checks or unknown branch freshness', a
   })
   await f.watcher.tick()
   expect(f.queued().some((item) => item.text.includes('Reported checks passed'))).toBe(false)
+  expect(f.act).not.toHaveBeenCalled()
+})
+
+it('reports readiness only with known review state, no requested changes and resolved threads', async () => {
+  const f = await careFixture()
+  const thread = (resolved?: boolean) =>
+    comment('inline-1', {
+      kind: 'inline',
+      path: 'app.ts',
+      line: 1,
+      threadId: 'THREAD_1',
+      ...(resolved === undefined ? {} : { resolved }),
+    })
+  const passing = (pull: Partial<PullDetail['pull']>, comments: PullComment[] = []) =>
+    f.setDetail({
+      ...f.current,
+      pull: { ...f.current.pull, behindBy: 0, ...pull },
+      checks: [{ name: 'test', status: 'success' }],
+      comments,
+    })
+  const status = async () =>
+    (await f.watcher.command({ taskId: f.taskId, action: 'status' })).watches[0]?.careStatus
+  const readiness = () => f.queued().filter((item) => item.text.includes('Reported checks passed'))
+  passing({ reviewDecision: 'CHANGES_REQUESTED' })
+  await f.watch()
+  await f.watcher.tick()
+  expect(readiness()).toHaveLength(0)
+  passing({ reviewDecision: 'APPROVED' }, [thread(false)])
+  await f.watcher.tick()
+  expect(readiness()).toHaveLength(0)
+  // Thread state that the forge did not report is not a resolved thread.
+  passing({ reviewDecision: 'APPROVED' }, [thread()])
+  await f.watcher.tick()
+  expect(readiness()).toHaveLength(0)
+  passing({ reviewDecision: undefined })
+  await f.watcher.tick()
+  expect(readiness()).toHaveLength(0)
+  expect(await status()).toBe('Babysitting PR · review state unavailable')
+  passing({ reviewDecision: 'APPROVED' }, [thread(true)])
+  await f.watcher.tick()
+  expect(readiness()).toHaveLength(1)
+  expect(await status()).toBe('Babysitting PR · ready for review or merge approval')
   expect(f.act).not.toHaveBeenCalled()
 })
 

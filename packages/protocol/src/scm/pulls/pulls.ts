@@ -1,6 +1,6 @@
 import { forgeDestinationGuardFields, forgeIdentityTokenSchema } from '../forges/source-identity.js'
 import { pullStackSchema, pullStackSummarySchema } from './pull-stack.js'
-import { mutableArray, mutableStruct } from '../../shared/schema.js'
+import { mutableArray, mutableStruct, uuidSchema } from '../../shared/schema.js'
 import { urlSchema, maxValue, minValue, refine } from '../../shared/schema.js'
 import { Schema, Effect, Struct } from 'effect'
 import { taskHarnessSchema, taskPullSchema } from '../../workspace.js'
@@ -370,3 +370,17 @@ export const pullLineCommentSchema = refine(
 export const pullLineCommentResponse = mutableStruct({
   url: link,
 })
+/** A client-made ID for one press of Post. The runtime keeps its outcome per paired device, so a
+ * client that lost the response can ask whether the comment was posted before posting again. */
+export const pullCommentSubmissionSchema = mutableStruct({ submissionId: uuidSchema })
+export const pullCommentStatusResponse = Schema.Union([
+  mutableStruct({ status: Schema.Literal('posted'), url: link }),
+  /** `unknown`: no record for this paired device. After a renewed pairing or a restored runtime
+   * database this is not proof that it never posted. `rejected`: it failed before posting.
+   * `pending`: it is still posting. `uncertain`: the runtime cannot tell whether it posted. */
+  mutableStruct({
+    status: Schema.Literals(['unknown', 'rejected', 'pending', 'uncertain']),
+    error: Schema.optional(Schema.String),
+  }),
+])
+export type PullCommentStatus = typeof pullCommentStatusResponse.Type

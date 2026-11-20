@@ -473,7 +473,8 @@ export class PullRequests {
             'statusCheckRollup',
           ]).then((v) => decode(checkRollup, v).statusCheckRollup ?? [])
         : Promise.resolve([]),
-      feedbackOnly || !discussion
+      // Feedback watches need thread resolution to decide readiness.
+      !discussion
         ? Promise.resolve(
             new Map<
               string,
@@ -725,6 +726,9 @@ export class PullRequests {
               mergeStateStatus: lifecycle.value.mergeStateStatus,
               autoMergeEnabled: !!lifecycle.value.autoMergeRequest,
               inMergeQueue: lifecycle.value.isInMergeQueue,
+              ...(lifecycle.value.reviewDecision !== undefined
+                ? { reviewDecision: lifecycle.value.reviewDecision }
+                : {}),
             }
           : {}),
         reviewers: [

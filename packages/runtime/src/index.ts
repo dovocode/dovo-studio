@@ -8,6 +8,7 @@ import { openDatabase } from './storage/database.js'
 import { createServices, type Services } from './services.js'
 import { createRuntimeServer } from './http/server.js'
 import { ExternalListener } from './http/external-listener.js'
+import { errorMessage } from './errors.js'
 import { startupProfile } from './diagnostics/startup-profile.js'
 export { startupProfile } from './diagnostics/startup-profile.js'
 export { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './storage/backups.js'
@@ -30,7 +31,7 @@ export class RuntimeStartupError extends Data.TaggedError('RuntimeStartupError')
   readonly cause: unknown
 }> {
   get message() {
-    return `Runtime ${this.operation} failed: ${this.cause instanceof Error ? this.cause.message : String(this.cause)}`
+    return `Runtime ${this.operation} failed: ${errorMessage(this.cause)}`
   }
 }
 export class RuntimeHost extends Context.Service<
@@ -113,6 +114,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         closeTitles,
         () => services.dictation.dispose(),
         closeTasks,
+        () => services.sandboxes.dispose(),
         () => services.agents.dispose(),
         () => services.forges.dispose(),
         () => services.runCredentials.dispose(),
@@ -140,6 +142,13 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       for (const close of [...finalizers].reverse())
         yield* Effect.addFinalizer(() => release(close))
       yield* startOptional('Shared state replication', () => services.stateReplication.start())
+      // Start sandbox cleanup before HTTP requests or resumed turns can admit a sandbox. New
+      // sandboxes wait for it; other work does not, and startup does not wait for slow Docker.
+      yield* startOptional('Sandboxes', () => {
+        void services.sandboxes
+          .reconcile()
+          .catch((error: unknown) => console.error('Sandbox reconcile failed:', error))
+      })
       // In-memory runtimes are ephemeral (tests and packaging smoke checks).
       if (db.name !== ':memory:') services.browsers.prepare()
       const http = yield* Effect.acquireRelease(
@@ -193,6 +202,9 @@ export const runtimeLayer = (options: RuntimeOptions) =>
                         closeTitles,
                         () => services.dictation.dispose(),
                         closeTasks,
+                        // Stops sandbox admission and drains startup cleanup before SQLite
+                        // closes and a replacement runtime can start its own cleanup.
+                        () => services.sandboxes.dispose(),
                       ].map((close) => Effect.exit(release(close))),
                       { concurrency: 'unbounded' },
                     )
@@ -287,15 +299,6 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         ['Pull request watcher', () => services.pullRequestWatch.start()],
         ['Pipeline watcher', () => services.pipelineWatch.start()],
         ['Thread watcher', () => services.threadWatch.start()],
-        [
-          'Sandboxes',
-          () => {
-            // Docker commands can take seconds; startup does not wait for them.
-            void services.sandboxes
-              .reconcile()
-              .catch((error: unknown) => console.error('Sandbox reconcile failed:', error))
-          },
-        ],
       ] as const)
         yield* startOptional(name, start)
       profile?.('workers started')

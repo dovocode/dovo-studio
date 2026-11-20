@@ -28,7 +28,7 @@ import { permissionPolicyUIIssue } from '../../agents/permission-policy'
 import { FileDropTarget } from './file-drop-target'
 import { MachineHandoffNotice } from '../detail/machine-handoff-notice'
 import { changeTaskProject, changeTaskAutoProject } from '@dovo/protocol'
-import { checkpointUndoTurn } from '@dovo/protocol'
+import { taskUndoBackupId } from '@dovo/protocol'
 import { projectPrompts } from '@dovo/protocol'
 import { useModelCatalog } from '../../agents/use-model-catalog'
 import { CheckoutChoice } from '../creation/checkout-choice'
@@ -480,40 +480,8 @@ export function Composer({
           },
         ],
       )
-    const turn = checkpointUndoTurn(task.turns ?? [])
-    const turnId =
-      (turn?.checkpoint?.restorePending ? turn.id : task.historyTotals?.pendingUndoTurnId) ??
-      turn?.id ??
-      (task.turns?.some((turn) => turn.checkpoint?.sharedCheckout)
-        ? undefined
-        : task.historyTotals?.undoableTurnId)
-    if (!turnId)
-      return Alert.alert(
-        uiText('Nothing to undo'),
-        uiText('No turn has file changes left to undo.'),
-      )
-    Alert.alert(
-      uiText('Undo the last turn’s changes?'),
-      uiText(
-        'Those files go back to how they were before it. Your current files are saved first, so you can redo this.',
-      ),
-      [
-        { text: uiText('Cancel'), style: 'cancel' },
-        {
-          text: uiText('Undo changes'),
-          style: 'destructive',
-          onPress: () =>
-            commandAction.act(() =>
-              commandCall(
-                '/api/tasks/turn/restore',
-                { id: task.id, turnId, direction: 'undo' },
-                responses.ok,
-              ),
-            ),
-        },
-      ],
-    )
   }
+  const backupTurnId = taskUndoBackupId(task)
   const car = useCarMode()
   // Car mode starts with speech; the regular composer is one tap away for a passenger.
   const [typing, setTyping] = useApplicationState(false)
@@ -1076,6 +1044,40 @@ export function Composer({
         },
       ]}
     >
+      {snapshot && !snapshot.retryUsesCurrentFiles && backupTurnId && (
+        <Text style={styles.muted}>
+          {uiText('Update the runtime to review the saved Undo backup.')}
+        </Text>
+      )}
+      {snapshot?.retryUsesCurrentFiles && backupTurnId && (
+        <Action
+          secondary
+          label={uiText('Review saved Undo backup')}
+          disabled={!connected || commandAction.busy}
+          onPress={() =>
+            Alert.alert(
+              uiText('Review saved Undo backup'),
+              uiText(
+                'Keep the current files and add backup recovery instructions to this conversation.',
+              ),
+              [
+                { text: uiText('Cancel'), style: 'cancel' },
+                {
+                  text: uiText('Keep current files'),
+                  onPress: () =>
+                    commandAction.act(() =>
+                      commandCall(
+                        '/api/tasks/turn/review-backup',
+                        { id: task.id, turnId: backupTurnId },
+                        responses.ok,
+                      ),
+                    ),
+                },
+              ],
+            )
+          }
+        />
+      )}
       {!task.bot && meter && meter.level !== 'ok' && (
         <Pressable
           accessibilityRole="button"
@@ -1194,10 +1196,12 @@ export function Composer({
           {focused && !composerHistory.active && (
             <FileMentions
               taskId={task.id}
+              repositoryId={repository?.id}
               provider={composerAgent?.provider}
               text={draft.text}
               caret={caret}
               resources={composerResources}
+              agents={chipResources.agents}
               onChange={draft.update}
               onSideChat={canAskAside ? (text) => void askAside(text) : undefined}
               onCommand={

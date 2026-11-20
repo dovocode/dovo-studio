@@ -569,17 +569,15 @@ try {
       .getByRole('button', { name: 'Remove workspace.png', exact: true })
       .waitFor({ state: 'hidden' })
     const mentionField = page.getByRole('textbox', { name: 'Message thread', exact: true })
-    await mentionField.fill('@src')
-    await page
-      .getByRole('listbox', { name: 'Bots, files, models and MCP servers', exact: true })
-      .waitFor()
+    await mentionField.fill('@file:src')
+    await page.getByRole('listbox', { name: 'Files', exact: true }).waitFor()
     await page.getByRole('option').filter({ hasText: 'App.tsx' }).click()
     if (await mentionField.evaluate((element) => element instanceof HTMLTextAreaElement))
       assert.ok((await composerText(mentionField)).includes('src/App.tsx'))
     else {
       const fileChip = mentionField.locator('[data-reference-kind="file"]')
       await fileChip.waitFor()
-      assert.equal(await fileChip.getAttribute('title'), '@src/App.tsx')
+      assert.equal(await fileChip.getAttribute('title'), '@file:src/App.tsx')
       assert.ok((await fileChip.innerText()).includes('App.tsx'))
       const icon = await fileChip.locator('[data-reference-icon="file-code"]').boundingBox()
       assert.ok(

@@ -82,7 +82,8 @@ it('publishes PTY metadata and renames through snapshot sync while preserving ra
   const token = 'terminal-metadata-owner-token-with-at-least-32-characters'
   const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
   let socket: WebSocket | undefined
-  const stream = 'plain\x1b]2;Build\x07\x1b]7501;state=working:app=my-agent\x1b\\'
+  const stream =
+    'plain\x1b]2;Build\x07\x1b]7501;state=working:app=my-agent\x1b\\\x1b]7501;state=blocked:id=aaa/bbb\x07'
   try {
     const terminal = runtime.services.terminals.createCommand(
       'studio:terminals',
@@ -131,6 +132,7 @@ it('publishes PTY metadata and renames through snapshot sync while preserving ra
         title: 'Build',
         terminalTitle: 'Build',
         activity: { state: 'working', app: 'my-agent' },
+        childActivities: [{ id: 'aaa/bbb', activity: { state: 'blocked' } }],
       }),
     )
     expect(live.join('')).toContain(stream)

@@ -1,17 +1,20 @@
+import { maskFileMentions, mentionQuery } from './file-mentions.js'
 import { resolveScopedSettings } from '../../runtime/connection/scoped-settings.js'
 import type { RuntimeDefaults } from '../../runtime/connection/runtime-setup.js'
 import { mergeResources, type ResourceSettings } from '../../shared/resources.js'
 import { resolveTaskAgent, type Agent, type Repository, type Task } from '../../workspace.js'
 import { applyBotResources, inheritedResourceProject } from '../../tasks/bots.js'
 
-/** @ files and MCP servers (like Claude), $ skills (like Codex), / skills at a line start,
+/** @ Bots, agents, models and MCP servers, @file: paths, $ skills (like Codex), / skills at a line start,
  * and # saved prompts. */
-export type MentionTrigger = '@' | '$' | '/' | '#'
+export type MentionTrigger = '@file:' | '@' | '$' | '/' | '#'
 export type ComposerMention = { trigger: MentionTrigger; start: number; query: string }
 
 /** The mention being typed at the caret, or undefined. "@" and "$" must start the text or
  * follow whitespace; "/" only starts a line, so paths and URLs in prose do not trigger it. */
 export function composerMention(text: string, caret: number): ComposerMention | undefined {
+  const file = mentionQuery(text, caret)
+  if (file) return { trigger: '@file:', ...file }
   const before = text.slice(0, caret)
   const at = /(^|\s)@([^\s@]*)$/.exec(before)
   if (at) return { trigger: '@', start: caret - at[2].length - 1, query: at[2] }
@@ -59,7 +62,7 @@ export function resourceSuggestions(
   limit = 8,
 ): ResourceSuggestion[] {
   const needle = query.toLowerCase()
-  if (trigger === '#') return []
+  if (trigger === '#' || trigger === '@file:') return []
   const items: ResourceSuggestion[] =
     trigger === '@'
       ? resources.mcpServers
@@ -98,19 +101,20 @@ const mentioned = (text: string, prefix: string, name: string, lineStart = false
 
 /** Skills (by $name or a leading /name) and enabled MCP servers (by @name) a message names. */
 export function mentionedResources(text: string, resources: ResourceSettings) {
+  const prose = maskFileMentions(text).replace(/(^|\s)@(thread:|file(?=\s|$))/gi, '$1$2')
   return {
     skills: resources.skills.filter(
-      (skill) => mentioned(text, '$', skill.name) || mentioned(text, '/', skill.name, true),
+      (skill) => mentioned(prose, '$', skill.name) || mentioned(prose, '/', skill.name, true),
     ),
     mcpServers: resources.mcpServers.filter(
-      (server) => server.enabled && mentioned(text, '@', server.name),
+      (server) => server.enabled && mentioned(prose, '@', server.name),
     ),
   }
 }
 
 /** Built-in "/" commands, listed before skills at the start of a line. */
 export type ComposerCommand = {
-  id: 'review' | 'compact' | 'new-session' | 'undo' | 'goal'
+  id: 'review' | 'compact' | 'new-session' | 'goal'
   name: string
   description: string
 }
@@ -119,7 +123,6 @@ export const composerCommands: readonly ComposerCommand[] = [
   { id: 'review', name: 'review', description: 'Ask the agent to review its changes' },
   { id: 'compact', name: 'compact', description: 'Summarize older agent context' },
   { id: 'new-session', name: 'new-session', description: 'Start the agent fresh next message' },
-  { id: 'undo', name: 'undo', description: 'Undo the last turn’s file changes' },
 ]
 export function commandSuggestions(query: string, provider?: string, nativeGoals = false) {
   const needle = query.toLowerCase()

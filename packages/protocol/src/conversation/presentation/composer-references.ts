@@ -1,3 +1,4 @@
+import { explicitFileMentions, maskFileMentions } from './file-mentions.js'
 import { parseStudioReference } from '../../runtime/studio-reference.js'
 import { fromMarkdown } from 'mdast-util-from-markdown'
 import { providerSchema, type Agent, type TaskHarness } from '../../workspace.js'
@@ -12,7 +13,7 @@ export type ComposerReferenceResources = {
 export type ComposerReference = {
   start: number
   end: number
-  kind: 'file' | 'model' | 'skill' | 'mcp' | 'bot'
+  kind: 'file' | 'model' | 'skill' | 'mcp' | 'bot' | 'agent'
   label: string
   provider?: TaskHarness['provider']
 }
@@ -27,18 +28,21 @@ export const composerReferenceIcon = (
 ): ComposerReferenceIcon =>
   reference.kind === 'file'
     ? `file-${fileIconKind(reference.label)}`
-    : reference.kind === 'bot'
+    : reference.kind === 'bot' || reference.kind === 'agent'
       ? 'model'
       : reference.kind
 
 /** Recognize the saved mention format without requiring a live Bot catalog. */
-function composerBotReferences(text: string): ComposerReference[] {
+function savedMentionReferences(text: string): ComposerReference[] {
   const found: ComposerReference[] = []
-  for (const match of text.matchAll(/(^|\s)@([^@\n\r`]+?) \(`(studio:[^`\s]+)`\)/g)) {
-    const target = parseStudioReference(match[3])
-    if (target?.kind !== 'thread' || !match[2].trim()) continue
+  for (const match of maskFileMentions(text).matchAll(
+    /(^|\s)@([^@\n\r`]+?) \(`((?:studio|agent):[^`\s]+)`\)/g,
+  )) {
+    const kind = /^agent:[^/]+\/[^/]*\/[^/]+$/.test(match[3]) ? 'agent' : 'bot'
+    if ((kind === 'bot' && parseStudioReference(match[3])?.kind !== 'thread') || !match[2].trim())
+      continue
     const start = match.index! + match[1].length
-    found.push({ start, end: match.index! + match[0].length, kind: 'bot', label: `@${match[2]}` })
+    found.push({ start, end: match.index! + match[0].length, kind, label: `@${match[2]}` })
   }
   return found
 }
@@ -47,13 +51,15 @@ export function composerTextReferences(
   text: string,
   resources: ComposerReferenceResources,
 ): ComposerReference[] {
-  const found: ComposerReference[] = []
-  for (const match of text.matchAll(/(^|\s)([@$])([^\s@]+)/g)) {
+  const filename = (path: string) => path.split(/[\\/]/).filter(Boolean).at(-1) ?? path
+  const found: ComposerReference[] = explicitFileMentions(text)
+    .filter((file) => file.end < text.length)
+    .map(({ start, end, path }) => ({ start, end, kind: 'file', label: filename(path) }))
+  for (const match of maskFileMentions(text).matchAll(/(^|\s)([@$])([^\s@]+)(?=\s)/g)) {
     const name = match[3]
-    const start = match.index! + match[1].length
-    const end = start + name.length + 1
-    // A trailing boundary completes the token. Never capture the path still being typed.
-    if (end === text.length) continue
+    if (match[2] === '@' && name.startsWith('file:')) continue
+    const start = match.index + match[1].length
+    const end = match.index + match[0].length
     const kind =
       match[2] === '$'
         ? resources.skills.some((skill) => skill.name === name) && 'skill'
@@ -65,10 +71,10 @@ export function composerTextReferences(
         start,
         end,
         kind,
-        label: kind === 'file' ? (name.split(/[\\/]/).filter(Boolean).at(-1) ?? name) : name,
+        label: kind === 'file' ? filename(name) : name,
       })
   }
-  return found
+  return found.sort((a, b) => a.start - b.start)
 }
 
 export function composerModelReference(
@@ -113,11 +119,16 @@ export function composerReferences(
 ): ComposerReference[] {
   if (!/[@$`]/.test(text)) return []
   const found: ComposerReference[] = []
+  const references = composerTextReferences(text, resources)
+  const fileRanges = references.filter(
+    (item) => item.kind === 'file' && text.startsWith('@file:', item.start),
+  )
   const excluded: { start: number; end: number; code: boolean }[] = []
   const visit = (node: ReturnType<typeof fromMarkdown>['children'][number]): void => {
     const start = node.position?.start.offset
     const end = node.position?.end.offset
     if (start !== undefined && end !== undefined) {
+      if (fileRanges.some((file) => start > file.start && end < file.end)) return
       if (
         [
           'heading',
@@ -141,7 +152,7 @@ export function composerReferences(
     if ('children' in node) for (const child of node.children) visit(child)
   }
   for (const node of fromMarkdown(text).children) visit(node)
-  for (const reference of composerBotReferences(text))
+  for (const reference of savedMentionReferences(text))
     if (
       !excluded.some(
         (range) =>
@@ -153,7 +164,7 @@ export function composerReferences(
       found.push(reference)
   // File paths can contain Markdown punctuation such as __tests__. Match the complete
   // source token, then exclude code and links rather than splitting the path at style marks.
-  for (const reference of composerTextReferences(text, resources))
+  for (const reference of references)
     if (
       !excluded.some((range) => reference.start < range.end && reference.end > range.start) &&
       !found.some((range) => reference.start < range.end && reference.end > range.start)

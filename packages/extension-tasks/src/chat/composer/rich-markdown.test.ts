@@ -56,6 +56,13 @@ test('edited text uses literal characters unless escaping is needed to keep the 
   expect(edit('')).toBe('')
 })
 
+test('explicit file paths keep spaces and Markdown punctuation in rich text', () => {
+  const text = 'Read @file:"docs/My __Review__.md" and @file:__tests__/README'
+  const { doc } = parse(text)
+  expect(doc.textContent).toEqual(text)
+  expect(doc.firstChild?.childCount).toEqual(1)
+})
+
 test('a line that would start a list after a line break gets one escape', () => {
   const value = parse('placeholder')
   const block = richSchema.node('paragraph', null, [

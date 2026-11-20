@@ -209,7 +209,7 @@ it('passes a native always decision through without inventing a Dovo rule', asyn
     undefined,
     { session: true, always: true },
   )
-  expect(approvals.list()[0].scopes).toEqual({ session: true, always: true })
+  expect(approvals.list()[0].scopes).toEqual({ once: true, session: true, always: true })
   approvals.decide(approvals.list()[0].id, 'always')
   await expect(pending).resolves.toBe('always')
   expect(store.get().repositories[0].approvedCommands).toBeUndefined()
@@ -332,4 +332,138 @@ it('does not offer project command rules for malformed or extended permission pa
     await expect(pending).resolves.toBe('deny')
   }
   expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+})
+
+it('keeps a request without a single-use scope pending when an older client sends Allow once', async () => {
+  const { approvals } = fixture()
+  const pending = approvals.request(
+    'one',
+    'Muse shell command: pwd',
+    'pwd',
+    new AbortController().signal,
+    undefined,
+    { once: false, session: true, always: false },
+  )
+  const [info] = approvals.list()
+  expect(info.scopes).toEqual({ once: false, session: true, always: false })
+  // Older clients always show "Allow once". It must never become a session or persistent grant.
+  expect(() => approvals.decide(info.id, 'approve')).toThrow('does not offer Allow once')
+  expect(() => approvals.respond(info.id, true)).toThrow('does not offer Allow once')
+  expect(approvals.list().map((item) => item.id)).toEqual([info.id])
+  approvals.decide(info.id, 'session')
+  await expect(pending).resolves.toBe('session')
+})
+
+it('confirms a repeated decision after a lost response and rejects a different one', async () => {
+  const { store, approvals, request } = fixture()
+  const pending = request('Run command', '{"command":"pnpm test"}', 'one')
+  const id = approvals.list()[0].id
+  approvals.decide(id, 'approve')
+  await expect(pending).resolves.toBe('approve')
+  expect(() => approvals.decide(id, 'approve')).not.toThrow()
+  expect(() => approvals.decide(id, 'deny')).toThrow('already answered: Allow once')
+  expect(() => approvals.decide(id, 'always')).toThrow('already answered: Allow once')
+  expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+
+  const saved = approvals.request(
+    'one',
+    'Run command',
+    '{"command":"pnpm lint"}',
+    new AbortController().signal,
+    'command',
+  )
+  const savedId = approvals.list()[0].id
+  approvals.respond(savedId, true, true)
+  await expect(saved).resolves.toBe('always')
+  approvals.respond(savedId, true, true)
+  expect(store.get().repositories[0].approvedCommands).toEqual(['pnpm lint'])
+
+  const web = approvals.request('one', 'WebFetch', '{}', new AbortController().signal, 'web')
+  const webId = approvals.list()[0].id
+  approvals.decide(webId, 'always')
+  await expect(web).resolves.toBe('approve')
+  expect(() => approvals.decide(webId, 'always')).not.toThrow()
+})
+
+it('reports a withdrawn request and never saves a rule for it', async () => {
+  const { store, approvals } = fixture()
+  const provider = new AbortController()
+  const pending = approvals.request(
+    'one',
+    'Run command',
+    '{"command":"pnpm test"}',
+    provider.signal,
+    'command',
+  )
+  const id = approvals.list()[0].id
+  provider.abort()
+  await expect(pending).resolves.toBe('deny')
+  expect(approvals.list()).toEqual([])
+  expect(() => approvals.decide(id, 'always')).toThrow('approval request was withdrawn')
+  expect(() => approvals.decide(id, 'approve')).toThrow('approval request was withdrawn')
+  // A denial matches the outcome: nothing ran.
+  expect(() => approvals.decide(id, 'deny')).not.toThrow()
+  expect(store.get().repositories[0].approvedCommands).toBeUndefined()
+
+  const cancelled = approvals.request('one', 'Run command', '{}', new AbortController().signal)
+  const cancelledId = approvals.list()[0].id
+  approvals.cancelTask('one')
+  await expect(cancelled).resolves.toBe('deny')
+  expect(() => approvals.decide(cancelledId, 'approve')).toThrow('was cancelled')
+})
+
+it('keeps a bounded record of finished approvals', async () => {
+  const { approvals, request } = fixture()
+  const ids: string[] = []
+  for (let index = 0; index < 257; index++) {
+    const pending = request('Run command', '{}')
+    const id = approvals.list()[0].id
+    ids.push(id)
+    approvals.decide(id, 'deny')
+    await pending
+  }
+  expect(() => approvals.decide(ids[0], 'deny')).toThrow('Approval expired')
+  expect(() => approvals.decide(ids[1], 'deny')).not.toThrow()
+})
+
+it('records the user decision for a saved web rule, not the provider answer', async () => {
+  const { db, store, preferences } = fixture()
+  const { Activity } = await import('../../storage/activity.js')
+  const approvals = new Approvals(new Activity(db), store, preferences)
+  cleanups.push(() => approvals.dispose())
+  const audit = () =>
+    db
+      .prepare(
+        "SELECT payload FROM activity WHERE kind = 'approval' AND payload LIKE '%\"resolved\"%' ORDER BY rowid",
+      )
+      .pluck()
+      .all()
+      .map((payload) => JSON.parse(String(payload)))
+  const ask = (taskId: string) =>
+    approvals.request(taskId, 'WebFetch', '{}', new AbortController().signal, 'web')
+
+  // An older client sends allow with remember:true instead of a decision.
+  const legacy = ask('one')
+  const waiting = ask('other-thread')
+  const [first, second] = approvals.list()
+  approvals.respond(first.id, true, true)
+  // The provider gets a single approval; the saved project rule covers later requests.
+  await expect(legacy).resolves.toBe('approve')
+  await expect(waiting).resolves.toBe('approve')
+  expect(store.get().repositories[0].approvedWebRequests).toBe(true)
+  expect(audit()).toEqual([
+    expect.objectContaining({ id: first.id, allow: true, decision: 'always' }),
+    // Released by the new rule, without its own decision.
+    expect.objectContaining({ id: second.id, allow: true, decision: 'approve' }),
+  ])
+  // A retry of the legacy request confirms the recorded decision.
+  expect(() => approvals.respond(first.id, true, true)).not.toThrow()
+  expect(() => approvals.respond(first.id, true)).toThrow('already answered: Always allow')
+
+  // The current client sends the decision directly, in a project without the rule.
+  const current = ask('two')
+  const [third] = approvals.list()
+  approvals.decide(third.id, 'always')
+  await expect(current).resolves.toBe('approve')
+  expect(audit().at(-1)).toMatchObject({ id: third.id, allow: true, decision: 'always' })
 })

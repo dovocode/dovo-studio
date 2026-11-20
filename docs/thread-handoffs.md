@@ -56,10 +56,14 @@ fit, the turn fails with a clear error; Dovo does not shorten or replace the sto
 
 ## Ownership and recovery
 
-Dovo blocks new source input before it copies the thread. It verifies file sizes and SHA-256 hashes,
-then saves a hidden destination thread and receipt in one transaction. The source records that it
-moved before Dovo enables the destination. The destination does not run automatically. Send the next
-message when ready.
+Dovo blocks new source input before it copies the thread. The source block and the saved transfer
+request commit in one transaction, so a blocked source always has a move to retry or cancel. At
+startup, Dovo releases a source block that has no saved request. Older runtimes could leave one
+after a failed write. Nothing reached a destination in that case.
+
+Dovo verifies file sizes and SHA-256 hashes, then saves a hidden destination thread and receipt in
+one transaction. The source records that it moved before Dovo enables the destination. The
+destination does not run automatically. Send the next message when ready.
 
 The source stays settled and read-only for recovery. Its files stay on the source computer. Open the
 destination from the transfer panel or source notice.
@@ -78,6 +82,34 @@ If you delete the hidden staged destination before activation, Dovo keeps a dura
 Retry or cancel the move on the source to restore source input. Start a new move to try again.
 Deleting an activated destination does not restore execution on the source. Dovo retains the
 activation record, so a lost activation reply can still finish after destination deletion.
+
+### Backup restore
+
+The source keeps a durable record of each completed move. The record stays after you delete the
+source thread. The task's own move state only shows these records. At startup, Dovo makes each task
+match them before any thread can run:
+
+- A recorded move makes its thread read-only, and replaces an older move from a backup.
+- A thread that shows a move without a record had its ownership returned. Dovo releases it.
+
+When a discarded staged destination returns ownership, Dovo removes the record together with the
+source block. A database from before these records gets them once, from its moved threads.
+
+A restore treats the current database as the latest decision. It replaces the backup's move records
+and transfer jobs with the current ones. On a destination, it keeps a current activation for a
+staged thread in the backup, and a current discard. Examples:
+
+- The source restores a backup from before a move. The thread stays read-only, offline and after it
+  reconnects. Retry the move to check the destination again.
+- The source restores a backup from move 1 after move 1 returned and move 2 completed. The thread
+  shows move 2.
+- The destination restores a backup from before activation. The thread is active again.
+- The destination restores a backup from before a discard. The staged thread never activates. You
+  can delete it.
+
+Restore keeps these decisions only when the current database and the backup have the same runtime
+identity. A destination backup from before the move does not contain the thread; inspect the
+pre-restore copy to recover it.
 
 The source retains its Git recovery snapshot at `refs/dovo/handoffs/<handoff-id>`. The saved handoff
 also records the checkpoint. Dovo does not reset the source checkout during a move or recovery.

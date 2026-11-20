@@ -633,6 +633,8 @@ it('allows run-owned terminal tickets and input, then rejects revoked WebSocket 
     { pinned: true },
     { settled: true },
     { snoozedUntil: null },
+    { view: { turn: 1, expectedRevision: 0, seen: true } },
+    { parentTerminalId: null },
     { unknown: true },
   ])
     expect(

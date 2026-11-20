@@ -835,3 +835,64 @@ it('pages composer user messages in batches of 50 without retaining a full threa
     db.close()
   }
 })
+
+it('applies the project and archive scope before limiting global search hits', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    const thread = (
+      id: string,
+      repositoryId: string,
+      updatedAt: string,
+      archivedAt?: string,
+    ): Task => ({
+      ...task,
+      id,
+      repositoryId,
+      updatedAt,
+      ...(archivedAt ? { archivedAt } : {}),
+      messages: [{ id: `${id}-message`, role: 'user', text: `needle in ${id}` }],
+      turns: [],
+    })
+    store.update(() => ({
+      ...workspace,
+      tasks: [
+        // Another project has more recent matches than the global hit limit.
+        ...Array.from({ length: 55 }, (_, index) =>
+          thread(
+            `other-${index}`,
+            'other',
+            `2026-11-${String(10 + (index % 10)).padStart(2, '0')}T00:00:00Z`,
+          ),
+        ),
+        thread('selected', 'selected', '2026-10-01T00:00:00Z'),
+        thread('archived', 'selected', '2026-10-02T00:00:00Z', '2026-10-03T00:00:00Z'),
+        thread('general', '', '2026-10-01T00:00:00Z'),
+      ],
+    }))
+    const global = store.searchHistory('needle')
+    expect(global.hits).toHaveLength(50)
+    expect(global.hits.some((hit) => hit.taskId === 'selected')).toBe(false)
+    expect(global.taskIds).toHaveLength(58)
+
+    const selected = store.searchHistory('needle', undefined, undefined, {
+      archived: false,
+      repositoryIds: ['selected'],
+    })
+    expect(selected.hits.map((hit) => hit.taskId)).toEqual(['selected'])
+    // Every matching thread is still reported, so the list can show parents and children.
+    expect(selected.taskIds).toEqual(global.taskIds)
+    expect(
+      store
+        .searchHistory('needle', undefined, undefined, { archived: true })
+        .hits.map((hit) => hit.taskId),
+    ).toEqual(['archived'])
+    expect(
+      store
+        .searchHistory('needle', undefined, undefined, { archived: false, repositoryIds: [''] })
+        .hits.map((hit) => hit.taskId),
+    ).toEqual(['general'])
+  } finally {
+    db.close()
+  }
+})

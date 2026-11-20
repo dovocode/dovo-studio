@@ -20,7 +20,12 @@ export function artifactService(origin?: string, key?: string): ArtifactService 
     )
   return { origin: artifactServiceOrigin(origin), key }
 }
-export function artifactApi(store: AccountStore, connectOrigin: string, service?: ArtifactService) {
+export function artifactApi(
+  store: AccountStore,
+  connectOrigin: string,
+  service?: ArtifactService,
+  purpose: 'artifacts' | 'sharing' = 'artifacts',
+) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (!url.pathname.startsWith('/v1/artifacts/')) return false
     if (!service)
@@ -67,7 +72,12 @@ export function artifactApi(store: AccountStore, connectOrigin: string, service?
       return true
     }
     if (req.method === 'POST' && url.pathname === '/v1/artifacts/session') {
-      const grant = store.artifactGrant(token, service.origin)
+      const grant = store.artifactGrant(
+        token,
+        service.origin,
+        undefined,
+        purpose === 'sharing' || url.searchParams.get('reuse') === '1' ? purpose : undefined,
+      )
       if (!grant) throw new RequestError(401, 'Sign in to publish artifacts')
       json(res, 200, grant)
       return true

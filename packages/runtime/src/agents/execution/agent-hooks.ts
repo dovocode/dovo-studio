@@ -238,14 +238,14 @@ export async function runWithHooks(
             run.onSubagentEvent?.(name, payload, id)
             observe(name, payload)
           },
-          approve: async (title, detail, kind, options) => {
+          approve: async (title, detail, kind, options, signal) => {
             await queue
             if (queueError) throw queueError
             const permission = { title, detail }
             const blocked = await dispatch('permission-request', { permission })
             const decision = blocked.length
               ? 'deny'
-              : await run.approve(title, detail, kind, options)
+              : await run.approve(title, detail, kind, options, signal)
             failures.push(
               ...(await dispatch('permission-response', {
                 permission: { ...permission, decision },

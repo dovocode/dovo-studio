@@ -203,14 +203,35 @@ the renderer's recent-page library. **History → Clear history** clears both st
 
 Downloads use Electron's real DownloadItems and per-profile persistent records. Supported methods:
 `download`, `search`, `pause`, `resume`, `cancel`, `erase`, `removeFile`, `show`, `open`,
-`getFileIcon`, and `showDefaultFolder`, plus created/changed/erased events. Downloads support
-headers, relative filenames, conflict handling and native Save As. Filenames cannot escape
-Downloads, including via existing symlinks. Opening a file requires `downloads.open` and a native
-confirmation. IDs are not reused after erasing records. Interrupted downloads from an earlier app
-process cannot resume. POST/body requests, filename-determination callbacks, danger-review APIs and
-Chrome shelf UI controls are not implemented or advertised as methods. Unsupported download options
-reject rather than silently changing the request. Electron does not provide Chrome's Safe Browsing
-download scanner.
+`getFileIcon`, and `showDefaultFolder`, plus created/changed/erased events. `search` compares
+`startedAfter`, `startedBefore`, `endedAfter` and `endedBefore` as instants, so any ISO 8601 time
+zone offset works, and rejects an unparsable date. Downloads support headers, relative filenames,
+conflict handling and native Save As. Filenames cannot escape Downloads, including via existing
+symlinks. Opening a file requires `downloads.open` and a native confirmation. IDs are not reused
+after erasing records. Interrupted downloads from an earlier app process cannot resume. POST/body
+requests, filename-determination callbacks, danger-review APIs and Chrome shelf UI controls are not
+implemented or advertised as methods. Unsupported download options reject rather than silently
+changing the request. Electron does not provide Chrome's Safe Browsing download scanner. Closing the
+last tab of a private profile cancels its running downloads, as Chrome does when the last incognito
+window closes. Nothing could pause or cancel them after that.
+
+The desktop keeps history, download records and site zoom in one JSON file per profile under the app
+data folder, in `browser-history`, `browser-downloads` and `browser-zoom`. If a file is damaged,
+Studio copies it unchanged to `<profile>.json.damaged-<time>` in the same folder. It then keeps the
+visits, records or site zoom levels that are still valid and saves them in place of the damaged
+file. If no part is valid, the store starts empty. A file that cannot be read, for example because
+of its permissions, stays untouched, and the feature reports an error. **Clear history** also
+deletes damaged history copies. Website and device permissions do not recover this way. A damaged
+permissions file denies every request until you repair or remove it.
+
+History writes each visit and title change as one line in `<profile>.json.journal` next to the
+profile's JSON file, so a navigation does not rewrite the whole history. After 1,000 journal lines,
+and when the profile loads, Studio folds the journal into the JSON file and deletes it. A line cut
+off by a crash is skipped, and the next visit starts on a new line, even while compaction keeps
+failing. Removing a page or a time range, and **Clear history**, rewrite the JSON file and delete
+the journal at once, so removed visits do not stay on disk. Private profiles write neither file.
+Older desktop versions read only the JSON file, so after a downgrade they do not show visits that
+were still in the journal.
 
 Identity supports generic redirect OAuth through `launchWebAuthFlow` and synchronous
 `getRedirectURL`. Auth windows use the requesting profile's session, with isolated sandboxed

@@ -142,14 +142,33 @@ Organization OIDC remains separate from personal GitHub identities, with issuer/
 signed membership claims, bounded sessions and explicit relay policy. Changing organization policy
 invalidates those sessions and their dependent relay access.
 
+You can sign out of Studio while Connect is offline. Studio removes the account credential from this
+device, then asks Connect to revoke the session. If Connect cannot confirm revocation, Studio shows
+a warning. A copy of the server credential can remain valid until its original expiry. Local runtime
+pairings are separate.
+
 ## Account deletion
 
 The account panel requires explicit confirmation. `DELETE /v1/account` derives its target from the
 Dovo bearer session and ignores caller-supplied IDs. The service first blocks account access and
 in-flight approvals, then deletes the Better Auth identity, OAuth account and browser sessions, and
-removes Dovo sessions, directory links and dependent grants. Failed deletion remains retryable. A
-non-reversible deleted-identity marker rejects stale approvals. Local runtime pairings and workspace
-files are independent; deleting Dovo does not delete the user's GitHub account.
+removes Dovo sessions, directory links and dependent grants. If Auth is unavailable, the request
+returns 409 with `{"error": "...", "deletion": "durable"}` and Connect keeps a pending deletion in
+its database. `GET /v1/servers` returns the same body while the deletion is pending. Connect retries
+it at startup and every minute until Auth confirms, then removes the account. The deletion finishes
+after a Connect restart or after the session expires. A client can retry sooner while its session is
+valid. After the session expires, the client clears its saved session. Connect keeps the account ID
+only until the deletion finishes. At every start, Connect also adds a pending deletion for each
+remaining user with a deleted-identity marker but no pending row. This recovers deletions that an
+older Connect started, also after a rollback and a new upgrade. It keeps existing retry records and
+does not restart deletions that finished. A non-reversible deleted-identity marker rejects stale
+approvals. Local runtime pairings and workspace files are independent; deleting Dovo does not delete
+the user's GitHub account.
+
+Clients treat a 409 as durable only when its body has `"deletion": "durable"`. An older Connect
+sends 409 without it and finishes a deletion only when the client retries with its session. For that
+409, the client asks the user to retry. If an older Connect then returns 401, the client clears the
+session and reports that Connect did not confirm the deletion.
 
 Organization identity deletion removes the Dovo account and grants, without deleting an account in
 the organization's identity provider. Hosted publication retention is covered separately in
@@ -171,3 +190,6 @@ Organization SSO remains available from the application’s organization provide
 Signing out an Auth browser does not revoke existing Dovo app sessions, runtime grants or pairing.
 Use the account controls in Dovo Studio for computer-access revocation and full account deletion;
 that deletion also removes the linked Auth identity. LAN/VPN pairing remains account-free.
+
+If the identity provider cancels sign-in or the callback fails, start a new sign-in in the client.
+Connect closes the failed attempt as soon as it processes the matching callback.

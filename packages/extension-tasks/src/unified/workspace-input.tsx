@@ -1,6 +1,13 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Schema } from 'effect'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type ReactNode,
+} from 'react'
 import {
   Globe2,
   MessageSquare,
@@ -13,6 +20,8 @@ import {
 } from 'lucide-react'
 import {
   randomUUID,
+  decodeResult,
+  RuntimeRequestError,
   snapshotSchema,
   runtimeComputerName,
   terminalShellsResponseSchema,
@@ -50,6 +59,7 @@ import {
 } from '@dovo/studio-ui'
 import { StartupHeading } from '../task-creation/startup-heading'
 import { TerminalCheckoutControls, useTerminalCheckout } from '../terminal/terminal-checkout'
+import { TerminalParentPicker } from '../terminal/terminal-parent-picker'
 import { TerminalRecoveryControl } from '../terminal/terminal-recovery-control'
 import { browserAddress } from '../browser/shared-browser-tabs'
 import type { WorkspaceTab } from './workspace-tabs'
@@ -62,8 +72,49 @@ type Submission = {
   task?: Task
   created?: boolean
   sent?: boolean
-  terminalId?: string
 }
+
+const draftKey = 'dovo.unified-workspace.home-draft.v1'
+const draftSchema = Schema.Struct({ text: Schema.String, runtimeId: Schema.String })
+type HomeDraft = { text: string; runtimeId: string; error?: string }
+const emptyDraft: HomeDraft = { text: '', runtimeId: '' }
+function readHomeDraft(): HomeDraft {
+  try {
+    const raw = sessionStorage.getItem(draftKey)
+    if (!raw) return emptyDraft
+    const saved = decodeResult(draftSchema, JSON.parse(raw))
+    if (saved.success) return saved.data
+  } catch {
+    // The page stays usable if the browser cannot read the draft.
+  }
+  return { ...emptyDraft, error: 'Could not restore the saved workspace draft.' }
+}
+
+let homeDraft: HomeDraft | undefined
+const homeDraftListeners = new Set<() => void>()
+const getHomeDraft = () => (homeDraft ??= readHomeDraft())
+const subscribeHomeDraft = (listener: () => void) => {
+  homeDraftListeners.add(listener)
+  return () => homeDraftListeners.delete(listener)
+}
+function saveHomeDraft(text: string, runtimeId: string) {
+  const previous = getHomeDraft()
+  if (previous.text === text && previous.runtimeId === runtimeId) return
+  const next: HomeDraft = { text, runtimeId }
+  try {
+    if (text) sessionStorage.setItem(draftKey, JSON.stringify(next))
+    else sessionStorage.removeItem(draftKey)
+  } catch {
+    next.error = 'Could not save the workspace draft. Keep this view open.'
+  }
+  homeDraft = next
+  homeDraftListeners.forEach((listener) => listener())
+}
+
+// Home unmounts on a mode switch. Keep its request and draft identity in this window.
+let terminalAttempt:
+  | { key: string; draft: HomeDraft; requestId: string; result?: Promise<string> }
+  | undefined
 
 export function WorkspaceInput({
   active,
@@ -82,17 +133,22 @@ export function WorkspaceInput({
 
   const store = useWorkspace()
   const { minimalComposer, browserProfiles } = useAppPreferences()
+  const {
+    text,
+    runtimeId: draftRuntimeId,
+    error: storageError,
+  } = useSyncExternalStore(subscribeHomeDraft, getHomeDraft, () => emptyDraft)
   const [editorFocused, setEditorFocused] = useState(false)
-  const [text, setText] = useState('')
   const [mode, setMode] = useState<Destination | 'auto'>('auto')
   const [suggested, setSuggested] = useState(false)
   const [reason, setReason] = useState('')
   const [error, setError] = useState('')
   const [phase, setPhase] = useState<'routing' | 'submitting' | null>(null)
   // The draft owns its destination. Opening another resource must not retarget it.
-  const [runtimeId, setRuntimeId] = useState(
+  const [initialRuntimeId] = useState(
     active?.runtimeId || store.activeRuntimeId || store.runtimes[0]?.profile.id || '',
   )
+  const runtimeId = draftRuntimeId || initialRuntimeId
   const [repositoryId, setRepositoryId] = useState('')
   const [threadId, setThreadId] = useState('')
   const [profileId, setProfileId] = useState('default')
@@ -107,6 +163,7 @@ export function WorkspaceInput({
   const [model, setModel] = useState<{ key: string; harness: TaskHarness } | null>(null)
   const modelKey = JSON.stringify([runtimeId, repositoryId])
   const [shellId, setShellId] = useState('default')
+  const [parentTerminalId, setParentTerminalId] = useState('')
   const [rememberSession, setRememberSession] = useState(true)
   const [shellRetry, setShellRetry] = useState(0)
   const [catalog, setCatalog] = useState<{
@@ -115,17 +172,14 @@ export function WorkspaceInput({
     error?: string
   }>({})
   const activeKey = JSON.stringify([visible, active?.kind, active?.runtimeId, active?.id])
-  const navigation = useRef(activeKey)
-  navigation.current = activeKey
+  const navigation = useRef({ key: activeKey, version: 0 })
   const revision = useRef(0)
   const pending = useRef<object | undefined>(undefined)
   const automaticStart = useRef<
-    { revision: number; navigationKey: string; runtimeKey: string } | undefined
+    { revision: number; navigationVersion: number; runtimeKey: string } | undefined
   >(undefined)
   const routing = useRef(false)
   const mounted = useRef(true)
-  const draft = useRef(text)
-  draft.current = text
   const submission = useRef<Submission | undefined>(undefined)
   const entry = store.runtimes.find((entry) => entry.profile.id === runtimeId)
   const checkout = useTerminalCheckout({ owner: entry, repositoryId, enabled: mode === 'terminal' })
@@ -147,6 +201,16 @@ export function WorkspaceInput({
   currentRuntimeKey.current = runtimeKey
   const visibleModels = models.key === modelKey ? models.items : []
   const readRuntime = store.readRuntime
+  useLayoutEffect(() => {
+    if (navigation.current.key === activeKey) return
+    navigation.current = { key: activeKey, version: navigation.current.version + 1 }
+    automaticStart.current = undefined
+    if (routing.current) {
+      pending.current = undefined
+      routing.current = false
+      setPhase(null)
+    }
+  }, [activeKey])
   useEffect(() => {
     mounted.current = true
     return () => {
@@ -287,7 +351,8 @@ export function WorkspaceInput({
     setReason('')
   }
   const submit = async (startAfterSuggestion = false) => {
-    const original = draft.current
+    const capturedDraft = getHomeDraft()
+    const original = capturedDraft.text
     if (pending.current || automaticStart.current || (!original.trim() && mode !== 'terminal'))
       return
     if ((mode !== 'browser' || runtimeId !== store.localRuntimeId) && (!entry || !connected)) {
@@ -296,9 +361,10 @@ export function WorkspaceInput({
     }
     const token = {}
     const version = revision.current
-    const navigationKey = navigation.current
+    const navigationVersion = navigation.current.version
     const valid = () =>
       mounted.current && revision.current === version && currentRuntimeKey.current === runtimeKey
+    const stillHere = () => navigation.current.version === navigationVersion
     pending.current = token
     routing.current = mode === 'auto'
     setPhase(mode === 'auto' ? 'routing' : 'submitting')
@@ -312,7 +378,7 @@ export function WorkspaceInput({
           runtimeId,
           repositoryId,
           continueThread: !!threadId,
-          current: valid,
+          current: () => valid() && stillHere(),
           computers: store.runtimes
             .filter((owner) =>
               owner.profile.id === store.activeRuntimeId ? store.connected : owner.connected,
@@ -337,13 +403,14 @@ export function WorkspaceInput({
           models: loadModels,
           profiles: loadProfiles,
         })
-        if (valid()) {
+        if (valid() && stillHere()) {
           const changedOwner = decision.runtimeId !== runtimeId
-          setRuntimeId(decision.runtimeId)
+          saveHomeDraft(original, decision.runtimeId)
           setRepositoryId(decision.repositoryId)
           if (changedOwner) {
             setThreadId('')
             setShellId('default')
+            setParentTerminalId('')
             setModel(null)
           }
           if (decision.model)
@@ -362,7 +429,7 @@ export function WorkspaceInput({
             const owner = store.runtimes.find((owner) => owner.profile.id === decision.runtimeId)
             automaticStart.current = {
               revision: version,
-              navigationKey,
+              navigationVersion,
               runtimeKey: JSON.stringify([decision.runtimeId, owner?.profile.connection]),
             }
           }
@@ -379,53 +446,78 @@ export function WorkspaceInput({
         const key = JSON.stringify([
           mode,
           runtimeId,
+          entry.profile.connection.address,
+          entry.profile.connection.token,
           mode === 'thread' ? threadId : '',
           repositoryId,
           mode === 'terminal' ? shellId : '',
+          mode === 'terminal' ? parentTerminalId : '',
           mode === 'terminal' ? checkout.input : null,
           mode === 'thread' && model?.key === modelKey ? model.harness : null,
           mode === 'terminal'
             ? rememberSession && snapshot?.terminalRecoverySupported === true
             : false,
         ])
-        if (submission.current?.key !== key || submission.current.text !== original) {
-          const previous = submission.current
-          submission.current = {
-            key,
-            text: original,
-            messageId: randomUUID(),
-            ...(mode === 'thread' && previous?.key === key
-              ? { task: previous.task, created: previous.created }
-              : {}),
-          }
-        }
-        const receipt = submission.current
-        submitted = receipt
         if (mode === 'terminal') {
+          if (parentTerminalId && !snapshot?.terminalChildrenSupported)
+            throw new Error('Update this computer to launch a child terminal or choose no parent.')
           if (!checkout.ready)
             throw new Error('Choose an available checkout before running the command.')
           if (!shellReady) throw new Error('Choose an available shell before running the command.')
           if (repositoryId && !repository)
             throw new Error('This project is no longer available. Choose a project or Home folder.')
-          if (!receipt.terminalId) {
-            const session = await readRuntime(
-              entry.profile,
-              '/api/terminals/workspace',
-              {
-                repositoryId: repositoryId || undefined,
-                command: original.trim() ? original : undefined,
-                shellId,
-                ...checkout.input,
-                rememberSession: rememberSession && snapshot?.terminalRecoverySupported === true,
-              },
-              responses.terminal,
-              'POST',
-            )
-            receipt.terminalId = session.id
+          if (terminalAttempt?.key !== key || terminalAttempt.draft !== capturedDraft)
+            terminalAttempt = { key, draft: capturedDraft, requestId: randomUUID() }
+          const attempt = terminalAttempt
+          attempt.result ??= readRuntime(
+            entry.profile,
+            '/api/terminals/workspace',
+            {
+              repositoryId: repositoryId || undefined,
+              command: original.trim() ? original : undefined,
+              shellId,
+              ...checkout.input,
+              ...(parentTerminalId ? { parentTerminalId } : {}),
+              rememberSession: rememberSession && snapshot?.terminalRecoverySupported === true,
+              ...(snapshot?.workspaceTerminalRequestIdSupported === true
+                ? { requestId: attempt.requestId }
+                : {}),
+            },
+            responses.terminal,
+            'POST',
+          )
+            .then((session) => session.id)
+            .catch((cause: unknown) => {
+              attempt.result = undefined
+              if (
+                terminalAttempt === attempt &&
+                cause instanceof RuntimeRequestError &&
+                cause.mutationRejected
+              )
+                terminalAttempt = undefined
+              throw cause
+            })
+          const id = await attempt.result
+          if (terminalAttempt === attempt) {
+            terminalAttempt = undefined
+            if (getHomeDraft() === capturedDraft) saveHomeDraft('', runtimeId)
           }
-          if (valid() && navigation.current === navigationKey)
-            onOpen({ kind: 'terminal', runtimeId, id: receipt.terminalId })
+          if (valid() && stillHere()) {
+            setParentTerminalId('')
+            onOpen({ kind: 'terminal', runtimeId, id })
+          }
         } else {
+          if (submission.current?.key !== key || submission.current.text !== original) {
+            const previous = submission.current
+            submission.current = {
+              key,
+              text: original,
+              messageId: randomUUID(),
+              ...(previous?.key === key ? { task: previous.task, created: previous.created } : {}),
+            }
+          }
+          const receipt = submission.current
+          submitted = receipt
           if (threadId && !thread)
             throw new Error('This thread is no longer available. Choose a new thread.')
           if (!threadId && !receipt.task) {
@@ -488,13 +580,11 @@ export function WorkspaceInput({
             )
             receipt.sent = true
           }
-          if (valid() && navigation.current === navigationKey)
-            onOpen({ kind: 'thread', runtimeId, id })
+          if (valid() && stillHere()) onOpen({ kind: 'thread', runtimeId, id })
         }
       }
       if (valid()) {
-        draft.current = ''
-        setText('')
+        if (getHomeDraft() === capturedDraft) saveHomeDraft('', runtimeId)
         setMode('auto')
         setSuggested(false)
         setReason('')
@@ -502,7 +592,7 @@ export function WorkspaceInput({
         revision.current++
       }
     } catch (cause: unknown) {
-      if (valid() || (mode !== 'auto' && mounted.current)) {
+      if (mode === 'auto' ? valid() && stillHere() : mounted.current) {
         const message = cause instanceof Error ? cause.message : String(cause)
         setError(
           mode === 'thread' && submitted?.created && !submitted.sent
@@ -523,7 +613,7 @@ export function WorkspaceInput({
     if (!queued || phase || pending.current) return
     if (
       queued.revision !== revision.current ||
-      queued.navigationKey !== activeKey ||
+      queued.navigationVersion !== navigation.current.version ||
       queued.runtimeKey !== runtimeKey ||
       mode === 'auto' ||
       (mode === 'terminal' && catalog.ownerId === runtimeId && catalog.error)
@@ -648,7 +738,7 @@ export function WorkspaceInput({
             aria-label="Workspace input"
             compact={idle}
             aria-busy={!!phase}
-            error={error}
+            error={error || storageError}
             controls={
               <>
                 <ChoicePicker
@@ -815,8 +905,7 @@ export function WorkspaceInput({
               onFocus={() => setEditorFocused(true)}
               onChange={(event) => {
                 invalidate(true)
-                draft.current = event.target.value
-                setText(event.target.value)
+                saveHomeDraft(event.target.value, runtimeId)
               }}
             />
           </ComposerSurface>
@@ -825,9 +914,20 @@ export function WorkspaceInput({
           </span>
           <ComposerWorkspaceBar>
             {mode === 'terminal' && (
+              <TerminalParentPicker
+                snapshot={snapshot}
+                value={parentTerminalId}
+                onChange={(id) => {
+                  invalidate()
+                  setParentTerminalId(id)
+                }}
+                disabled={busy || !connected}
+              />
+            )}
+            {mode === 'terminal' && (
               <TerminalRecoveryControl
                 enabled={rememberSession}
-                supported={snapshot?.terminalRecoverySupported === true}
+                snapshot={snapshot}
                 disabled={busy}
                 onChange={(enabled) => {
                   invalidate()
@@ -845,15 +945,17 @@ export function WorkspaceInput({
               disabled={busy}
               onValueChange={(id) => {
                 invalidate()
-                setRuntimeId(id)
+                saveHomeDraft(text, id)
                 setRepositoryId('')
                 setShellId('default')
+                setParentTerminalId('')
                 setThreadId('')
                 setProfileId('default')
                 setModel(null)
               }}
             >
               {!store.runtimes.length && <option value="">No paired computers</option>}
+              {runtimeId && !entry && <option value={runtimeId}>Computer unavailable</option>}
               {store.runtimes.map((owner) => (
                 <option key={owner.profile.id} value={owner.profile.id}>
                   {runtimeComputerName(owner)}

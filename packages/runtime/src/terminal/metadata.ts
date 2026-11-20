@@ -1,19 +1,25 @@
 import {
   decodeResult,
   terminalActivitySchema,
+  terminalChildActivityLimit,
+  terminalChildIdSchema,
   terminalTextSchema,
   terminalTitleSchema,
+  terminalTurnIdSchema,
   type TerminalActivity,
+  type TerminalInfo,
 } from '@dovo/protocol'
 
+type ChildEvent = { type: 'children'; id?: string; activity?: TerminalActivity }
 type MetadataEvent =
+  | ChildEvent
   | { type: 'title'; title: string | undefined }
-  | { type: 'activity'; activity: TerminalActivity | undefined }
+  | { type: 'activity'; activity: TerminalActivity | undefined; turnId?: string }
 
 // OSC 7501 specification: https://www.superlogical.com/rex/docs/build/program-status
-// Observe root reports only. Child records and capability queries are not supported;
-// in particular, a child report must never overwrite the root's activity.
-function activityReport(body: string): TerminalActivity | 'clear' | undefined {
+function activityReport(
+  body: string,
+): { id?: string; activity?: TerminalActivity; turnId?: string } | undefined {
   const fields = new Map<string, string>()
   for (const pair of body.split(':')) {
     const equals = pair.indexOf('=')
@@ -21,7 +27,12 @@ function activityReport(body: string): TerminalActivity | 'clear' | undefined {
     const key = pair.slice(0, equals).trim()
     const value = pair.slice(equals + 1).trim()
     if (Buffer.byteLength(key) > 16) return
-    if (key === 'id') return
+    if (key === 'turnId') {
+      if (!decodeResult(terminalTurnIdSchema, value).success) return
+      fields.set(key, value)
+      continue
+    }
+    if (key === 'id' && !decodeResult(terminalChildIdSchema, value).success) return
     if (
       (key === 'app' && Buffer.byteLength(value) > 32) ||
       (key === 'title' && value.length > 256) ||
@@ -50,12 +61,15 @@ function activityReport(body: string): TerminalActivity | 'clear' | undefined {
   const title = text('title', 192)
   const message = text('msg', 2048)
   if (title === undefined || message === undefined) return
-  if (state === 'clear') return 'clear'
+  const id = fields.get('id')
+  const turnId = fields.get('turnId')
+  if (state === 'clear') return { id, ...(turnId ? { turnId } : {}) }
   const app = fields.get('app')
   const kind = state === 'blocked' ? fields.get('kind') : undefined
   const progress = fields.get('progress')
   const result = decodeResult(terminalActivitySchema, {
     state,
+    ...(turnId ? { turnId } : {}),
     ...(app && /^[A-Za-z0-9_.+-]{1,32}$/.test(app) ? { app } : {}),
     ...(title ? { title } : {}),
     ...(message ? { message } : {}),
@@ -67,7 +81,20 @@ function activityReport(body: string): TerminalActivity | 'clear' | undefined {
       ? { progress: Number(progress) }
       : {}),
   })
-  return result.success ? result.data : undefined
+  return result.success ? { id, activity: result.data } : undefined
+}
+
+/** Child clear also removes descendants. Keep the most recently reported records at capacity. */
+export function updateChildActivities(
+  current: TerminalInfo['childActivities'],
+  { id, activity }: ChildEvent,
+): TerminalInfo['childActivities'] {
+  if (!id) return undefined
+  const records = (current ?? []).filter(
+    (child) => child.id !== id && (activity !== undefined || !child.id.startsWith(id + '/')),
+  )
+  if (activity) records.push({ id, activity })
+  return records.length ? records.slice(-terminalChildActivityLimit) : undefined
 }
 
 /** A bounded metadata observer. The PTY bytes themselves always pass through unchanged. */
@@ -76,15 +103,20 @@ export class TerminalMetadata {
   private body = ''
   private oversized = false
   private activity: TerminalActivity | undefined
-  constructor(private changed: (event: MetadataEvent) => void) {}
+  private readonly changed: (event: MetadataEvent) => void
+  constructor(changed: (event: MetadataEvent) => void) {
+    this.changed = changed
+  }
 
   endProcess() {
     if (this.activity && !['done', 'error'].includes(this.activity.state)) this.setActivity()
+    else this.changed({ type: 'children' })
   }
 
-  private setActivity(activity?: TerminalActivity) {
+  private setActivity(activity?: TerminalActivity, turnId?: string) {
+    if (!activity) this.changed({ type: 'children' })
     this.activity = activity
-    this.changed({ type: 'activity', activity })
+    this.changed({ type: 'activity', activity, ...(turnId ? { turnId } : {}) })
   }
 
   private complete() {
@@ -102,8 +134,9 @@ export class TerminalMetadata {
         this.changed({ type: 'title', title: value })
     } else if (command === '7501') {
       const report = activityReport(value)
-      if (report === 'clear') this.setActivity()
-      else if (report) this.setActivity(report)
+      if (!report) return
+      if (report.id) this.changed({ type: 'children', ...report })
+      else this.setActivity(report.activity, report.turnId)
     } else if (command === '133' && (value === 'A' || value.startsWith('A;'))) {
       this.endProcess()
     }

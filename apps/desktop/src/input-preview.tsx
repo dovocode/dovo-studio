@@ -1,10 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { ArrowUpRight, MessageCircleQuestion, ShieldCheck, X, Wifi, WifiOff } from 'lucide-react'
 import { useAppearance } from '@dovo/studio-shell'
-import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
+import { approvalShortcutKeys, useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { Button, QuestionForm } from '@dovo/studio-ui'
 import { ApprovalDetails } from '@dovo/extension-tasks/approval-details'
-import type { InputPreview, InputPreviewBridge, InputPreviewAnswer } from '@dovo/protocol'
+import {
+  approvalActions,
+  type ApprovalDecision,
+  type InputPreview,
+  type InputPreviewBridge,
+  type InputPreviewAnswer,
+} from '@dovo/protocol'
 export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   useAppearance()
   const [state, setState] = useState<InputPreview | null>(null)
@@ -24,13 +30,13 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
     setError('')
     setBusy(false)
   }, [state?.key])
-  const answer = async (value: InputPreviewAnswer['answer']) => {
+  const answer = async (value: InputPreviewAnswer['answer'], decision?: ApprovalDecision) => {
     if (!state || busy) return
     const key = state.key
     setBusy(true)
     setError('')
     try {
-      await bridge.answer({ key: state.key, answer: value })
+      await bridge.answer({ key: state.key, answer: value, ...(decision ? { decision } : {}) })
     } catch (cause) {
       if (currentKey.current === key)
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -40,10 +46,16 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
     }
   }
   const approval = useRef<HTMLElement>(null)
+  const actions = state?.request.kind === 'approval' ? approvalActions(state.request.value) : []
   useApprovalShortcuts({
     root: approval,
     disabled: !state?.connected || busy || state.request.kind !== 'approval',
-    onAnswer: (_id, allow) => answer(allow).catch(() => {}),
+    onAnswer: (_id, allow) => {
+      // Y and Enter mean "Allow once". A request without that scope ignores them.
+      const decision = allow ? 'approve' : 'deny'
+      if (actions.some((action) => action.decision === decision))
+        return answer(allow, decision).catch(() => {})
+    },
   })
   return (
     <main className="flex h-screen flex-col overflow-hidden rounded-xl border bg-background text-foreground">
@@ -96,7 +108,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                 key={state.key}
                 request={state.request.value}
                 connected={state.connected}
-                onAnswer={answer}
+                onAnswer={(answers) => answer(answers)}
               />
             ) : (
               <section
@@ -104,33 +116,30 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                 key={state.key}
                 data-approval-id={state.request.value.id}
                 tabIndex={0}
-                aria-keyshortcuts="Y N Enter"
+                aria-keyshortcuts={approvalShortcutKeys(actions)}
                 className="space-y-4 rounded-xl border bg-card p-4"
               >
                 <h2 className="text-sm font-medium">{state.request.value.title}</h2>
                 <ApprovalDetails detail={state.request.value.detail} />
-                <div className="flex gap-2">
-                  <Button
-                    className="flex-1"
-                    disabled={!state.connected || busy}
-                    onClick={() => void answer(true).catch(() => {})}
-                  >
-                    Allow once
-                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                      Y / Enter
-                    </kbd>
-                  </Button>
-                  <Button
-                    className="flex-1"
-                    variant="outline"
-                    disabled={!state.connected || busy}
-                    onClick={() => void answer(false).catch(() => {})}
-                  >
-                    Deny
-                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                      N
-                    </kbd>
-                  </Button>
+                <div className="flex flex-wrap gap-2">
+                  {actions.map((action) => (
+                    <Button
+                      key={action.decision}
+                      className="flex-1"
+                      variant={action.decision === 'approve' ? 'default' : 'outline'}
+                      disabled={!state.connected || busy}
+                      onClick={() =>
+                        void answer(action.decision !== 'deny', action.decision).catch(() => {})
+                      }
+                    >
+                      {action.label}
+                      {(action.decision === 'approve' || action.decision === 'deny') && (
+                        <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
+                          {action.decision === 'approve' ? 'Y / Enter' : 'N'}
+                        </kbd>
+                      )}
+                    </Button>
+                  ))}
                 </div>
               </section>
             )}

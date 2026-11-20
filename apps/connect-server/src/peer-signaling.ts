@@ -19,7 +19,7 @@ import {
 import type { PeerRelayIssuer } from './relay-credentials.js'
 import type { PeerRelayAdmission } from './relay-admission.js'
 import { approvedRelayInstallations } from './relay-admission.js'
-import { clientAddress } from './client-address.js'
+import { clientAddress } from '@dovo/protocol/client-address'
 import { rateLimit } from './rate-limit.js'
 
 const key = Schema.String.pipe(Schema.check(Schema.isPattern(/^[a-f0-9]{64}$/)))
@@ -136,12 +136,13 @@ export function attachPeerSignaling(
     !room.accountGrant ||
     (!!room.relayIdentity && !!accountAdmission?.(room.accountGrant, room.relayIdentity))
   const alive = new WeakSet<WebSocket>()
+  let closed = false
   const upgrade = (
     request: import('node:http').IncomingMessage,
     socket: import('node:stream').Duplex,
     head: Buffer,
   ) => {
-    if (request.url !== '/v1/peer') {
+    if (closed || request.url !== '/v1/peer') {
       socket.destroy()
       return
     }
@@ -510,12 +511,20 @@ export function attachPeerSignaling(
     for (const room of rooms.values()) if (!authorized(room)) room.host.terminate()
   }, 1000)
   revocations.unref()
-  server.once('close', () => {
+  // Node emits the server close event only after upgraded sockets end, so a healthy host would
+  // keep the server open. The owner calls this before it closes the HTTP server.
+  const close = () => {
+    if (closed) return
+    closed = true
     clearInterval(revocations)
     clearInterval(heartbeat)
-    server.removeListener('upgrade', upgrade)
     for (const client of ws.clients) client.terminate()
     ws.close()
     rooms.clear()
+  }
+  server.once('close', () => {
+    close()
+    server.removeListener('upgrade', upgrade)
   })
+  return close
 }

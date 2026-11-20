@@ -2,13 +2,15 @@ import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { mobileWorkflow, nativeEffect } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
-import { decode } from '@dovo/protocol'
+import { decode, mutableStruct } from '@dovo/protocol'
 import { appendUniqueRows, RequestScope, runClientEffect } from '@dovo/client-runtime'
 import {
+  computerIntegrationDraftKey,
   createDetailDrafts,
-  integrationDraftKey,
   useDetailDraft,
 } from '../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../../ui/content/draft-storage-notice'
 import { useEffect, useRef } from 'react'
 import { Schema, Effect } from 'effect'
 import {
@@ -19,6 +21,7 @@ import {
   forgeIssueCreateSchema,
   forgeIssueActionSchema,
   forgePipelineActionSchema,
+  forgeIssueSchema,
   type ForgeIssueDetail,
   type ForgeWorkOptions,
   type ForgeWorkResult,
@@ -32,19 +35,26 @@ import { Choice } from '../../ui/controls/choice'
 import { Action } from '../../ui/controls/action'
 import { Field } from '../../ui/controls/field'
 import { Sheet, type SheetHandle } from '../../ui/layout/sheet'
-const workDrafts = createDetailDrafts<{
-  expectedDestination: string | undefined
-  issue: ForgeIssueDetail['issue'] | undefined
-  title: string
-  body: string
-  type: string
-  state: string
-  assignees: string
-  labels: string
-  definition: string
-  ref: string
-  inputs: string
-}>()
+// Unsent issue text stays on the device after the app restarts.
+const workDrafts = createDetailDrafts({
+  persist: {
+    name: 'work-form',
+    schema: mutableStruct({
+      expectedDestination: Schema.optional(Schema.String),
+      issue: Schema.optional(forgeIssueSchema),
+      title: Schema.String,
+      body: Schema.String,
+      type: Schema.String,
+      state: Schema.String,
+      assignees: Schema.String,
+      labels: Schema.String,
+      definition: Schema.String,
+      ref: Schema.String,
+      inputs: Schema.String,
+    }),
+    storage: detailDraftStorage,
+  },
+})
 export function WorkForm({
   kind,
   repositoryId,
@@ -72,14 +82,14 @@ export function WorkForm({
 
   const { styles } = useTheme()
 
-  const { read, connected, readEffect: mutationEffect, connection, snapshot } = useRuntime()
+  const { read, connected, readEffect: mutationEffect, profile, snapshot } = useRuntime()
   const { readEffect } = useSourceReader(repositoryId, jiraSourceId)
   const { focused } = useNavigation()
-  const { draft, setField, clear } = useDetailDraft(
+  const { draft, setField, initializeField, clear, persistence } = useDetailDraft(
     workDrafts,
     useRef(
-      integrationDraftKey(
-        connection,
+      computerIntegrationDraftKey(
+        profile,
         snapshot,
         repositoryId,
         jiraSourceId,
@@ -195,7 +205,8 @@ export function WorkForm({
             nativeEffect(() => {
               if (current()) {
                 setDefinitions(value)
-                setDefinition(definition || value.items[0]?.id || '')
+                // The first pipeline is a default, not an edit. It never replaces a choice.
+                if (value.items[0]) initializeField('definition', value.items[0].id)
               }
             }),
           ),
@@ -544,6 +555,7 @@ export function WorkForm({
           </InterfaceText>
         </Text>
       )}
+      <DraftStorageNotice persistence={persistence} />
       {!!error && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error}

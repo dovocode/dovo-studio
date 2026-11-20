@@ -1,3 +1,4 @@
+import { terminalViewChange } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { BotStrip } from '../bots/bot-strip'
 import {
@@ -39,6 +40,7 @@ import {
   STUDIO_TERMINAL_SCOPE,
   taskFamilyInputIds,
   taskIsWorking,
+  previewUrl,
   wakeBrowserTab,
   type Repository,
   type RuntimeSnapshot,
@@ -56,6 +58,7 @@ import {
   WorkspaceScope,
   type StudioHostApi,
   type StudioNavigation,
+  type StudioViewProps,
   type Task,
 } from '@dovo/studio-core'
 import {
@@ -73,6 +76,7 @@ import {
   restoredSharedBrowserTabs,
   sharedBrowserWindowId,
   type BrowserLifecycleRequest,
+  type BrowserOpenLink,
   type BrowserTabTarget,
 } from '../browser/browser-pane'
 import type { BrowserTab } from '../browser/shared-browser-tabs'
@@ -132,6 +136,8 @@ type WorkspaceResource = {
   pin: () => Promise<void> | void
   settle: () => Promise<void> | void
   snooze: (until: string | null) => Promise<void> | void
+  detachParent?: () => Promise<void>
+  readAction?: { label: string; run: () => Promise<void> }
   /** Presentation facts for the kind's own row design. */
   row:
     | { kind: 'thread'; task: Task; owner: TaskOwner; needsInput: boolean; terminals: number }
@@ -148,6 +154,7 @@ type WorkspaceResource = {
         state: string
         stateTone: TerminalStatusTone
         stateDetail?: string
+        childAttention?: string
         computer: string
         runtimeIcon?: RuntimeIcon
       }
@@ -167,7 +174,7 @@ const sectionOf = (resource: WorkspaceResource): SectionId =>
   resource.pinned ? 'pinned' : resource.status
 const isoTime = (time: number) => new Date(time).toISOString()
 
-export default function UnifiedWorkspace() {
+export default function UnifiedWorkspace({ entityId }: StudioViewProps) {
   const enabled = useAppPreferences().unifiedWorkspaceEnabled
   const host = useStudioHost()
   if (!enabled)
@@ -179,10 +186,10 @@ export default function UnifiedWorkspace() {
         </Button>
       </div>
     )
-  return <WorkspaceContent />
+  return <WorkspaceContent browserTabId={entityId} />
 }
 
-function WorkspaceContent() {
+function WorkspaceContent({ browserTabId }: { browserTabId?: string }) {
   const uiText = useInterfaceText()
 
   const preferences = useAppPreferences()
@@ -339,12 +346,8 @@ function WorkspaceContent() {
   const [browserRequest, setBrowserRequest] = useState('')
   const pendingBrowserAction = useRef(false)
   const requestedBrowserTab = useRef<string | undefined>(undefined)
-  const [browserLink, setBrowserLink] = useState<{
-    id: string
-    url: string
-    runtimeId?: string
-    profileId?: string
-  } | null>(null)
+  const [browserLink, setBrowserLink] = useState<BrowserOpenLink | null>(null)
+  const pendingBrowserLink = useRef<{ id: string; reject: (error: Error) => void }>(undefined)
   const threadNavigation = useRef(new Map<string, StudioNavigation>())
   const active = state.tabs.find((tab) => workspaceTabKey(tab) === state.active)
   const current = useRef(state)
@@ -358,6 +361,8 @@ function WorkspaceContent() {
     mounted.current = true
     return () => {
       mounted.current = false
+      pendingBrowserLink.current?.reject(new Error('The workspace closed before the link opened.'))
+      pendingBrowserLink.current = undefined
     }
   }, [])
   // Older saved tabs may point at thread terminals. Drop the tab once its computer's snapshot
@@ -458,6 +463,25 @@ function WorkspaceContent() {
     (id: string) => open({ kind: 'browser', runtimeId: '', id }),
     [open],
   )
+  const selectedExternalTab = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (selectedExternalTab.current === browserTabId) return
+    if (browserTabId && !browserTabs?.some((tab) => tab.id === browserTabId)) return
+    selectedExternalTab.current = browserTabId
+    if (browserTabId) openBrowser(browserTabId)
+  }, [browserTabId, browserTabs, openBrowser])
+  const selectBrowser = useCallback((id: string) => {
+    pendingBrowserAction.current = false
+    requestedBrowserTab.current = id
+    setCreatingTerminal(false)
+    setState((previous) => {
+      const placeholder = previous.tabs.find((tab) => tab.kind === 'browser' && tab.id === 'new')
+      return openWorkspaceTab(
+        placeholder ? closeWorkspaceTab(previous, workspaceTabKey(placeholder)) : previous,
+        { kind: 'browser', runtimeId: '', id },
+      )
+    })
+  }, [])
   const newBrowser = useCallback(() => {
     pendingBrowserAction.current = true
     setBrowserRequest(randomUUID())
@@ -465,11 +489,33 @@ function WorkspaceContent() {
   }, [openBrowser])
   const openBrowserLink = useCallback(
     async (url: string, target?: { runtimeId: string; profileId: string }) => {
-      pendingBrowserAction.current = true
-      setBrowserLink({ id: randomUUID(), url, ...target })
-      openBrowser('new')
+      if (pendingBrowserLink.current) throw new Error('Wait for the current browser link to open.')
+      const address = previewUrl(url)
+      const id = randomUUID()
+      await new Promise<void>((resolve, reject) => {
+        pendingBrowserLink.current = { id, reject }
+        setBrowserLink({
+          id,
+          url: address,
+          ...target,
+          onResult: (result) => {
+            if (pendingBrowserLink.current?.id !== id) return
+            pendingBrowserLink.current = undefined
+            setBrowserLink(null)
+            if ('error' in result) reject(new Error(result.error))
+            else {
+              selectBrowser(result.tabId)
+              resolve()
+            }
+          },
+        })
+      })
     },
-    [openBrowser],
+    [selectBrowser],
+  )
+  const reportBrowserError = useCallback(
+    (cause: unknown) => setLifecycleError(cause instanceof Error ? cause.message : String(cause)),
+    [],
   )
   const routing = useRef({ computers, activeRuntimeId: store.activeRuntimeId })
   useLayoutEffect(() => {
@@ -506,7 +552,7 @@ function WorkspaceContent() {
             return openWorkspaceTab(base, tab)
           })
         } else if (target.viewId === 'browser') {
-          if (target.entityId) void openBrowserLink(target.entityId)
+          if (target.entityId) void openBrowserLink(target.entityId).catch(reportBrowserError)
           else newBrowser()
         } else host.navigate(target, options)
       },
@@ -537,14 +583,20 @@ function WorkspaceContent() {
       },
       openBrowserLink,
       getLinkActions: (url, options) =>
-        (host.getLinkActions?.(url, options) ?? []).map((action) =>
-          action.kind === 'browser' ? { ...action, run: () => openBrowserLink(url) } : action,
-        ),
-      openLink: (url: string) => {
-        if (!host.openPullLink?.(url) && !host.openPipelineLink?.(url)) void openBrowserLink(url)
+        host.getLinkActions?.(url, { ...options, browser: options?.browser ?? openBrowserLink }) ??
+        [],
+      openLink: (url, options) => {
+        if (options?.signal?.aborted) return
+        const browser = options?.browser ?? openBrowserLink
+        if (host.openLink) host.openLink(url, { ...options, browser })
+        else if (
+          !host.openPullLink?.(url, options?.origin) &&
+          !host.openPipelineLink?.(url, options?.origin)
+        )
+          void Promise.resolve(browser(url)).catch(reportBrowserError)
       },
     }),
-    [host, open, openBrowserLink, newBrowser],
+    [host, open, openBrowserLink, newBrowser, reportBrowserError],
   )
   /** Serialize lifecycle changes per item; closing or hiding never ends a session. */
   const runLifecycle = (tab: WorkspaceTab, action: () => Promise<void> | void) => {
@@ -698,7 +750,8 @@ function WorkspaceContent() {
             await store.refreshRuntime(owner.profile).catch(() => undefined)
           }
           const snoozed = !!session.snoozedUntil && Date.parse(session.snoozedUntil) > now
-          const activity = terminalStatus(session, owner.connected)
+          const view = terminalViewChange(session, snapshot.terminalTurnsSupported)
+          const activity = terminalStatus(session, owner.connected, snapshot.terminals)
           const repository = snapshot.workspace.repositories.find(
             (item) => item.id === session.repositoryId,
           )
@@ -714,6 +767,14 @@ function WorkspaceContent() {
             pinned: !!session.pinned,
             status: session.settledAt ? 'settled' : snoozed ? 'snoozed' : activity.section,
             snoozedUntil: session.snoozedUntil,
+            detachParent:
+              session.parentTerminalId && snapshot.terminalChildrenSupported
+                ? () => update({ parentTerminalId: null })
+                : undefined,
+            readAction: view && {
+              label: view.seen ? 'Mark read' : 'Mark unread',
+              run: () => update({ view }),
+            },
             pin: () => update({ pinned: !session.pinned }),
             settle: () => update({ settled: !session.settledAt, snoozedUntil: null }),
             snooze: (until) => update({ snoozedUntil: until }),
@@ -733,6 +794,7 @@ function WorkspaceContent() {
               state: activity.label,
               stateTone: activity.tone,
               stateDetail: activity.detail,
+              childAttention: activity.childAttention,
               computer: source.name,
               runtimeIcon: snapshot.runtimeIcon,
             },
@@ -916,6 +978,12 @@ function WorkspaceContent() {
           pendingActions.has(key) ||
           resource.offline ||
           (resource.row.kind === 'browser' && !!resource.row.page.detached),
+        detachParent:
+          resource.detachParent && (() => runLifecycle(resource.tab, resource.detachParent!)),
+        readAction: resource.readAction && {
+          label: resource.readAction.label,
+          run: () => runLifecycle(resource.tab, resource.readAction!.run),
+        },
         settleDisabled: resource.settleDisabled,
         onPin: () => runLifecycle(resource.tab, resource.pin),
         onSettle: () => runLifecycle(resource.tab, resource.settle),
@@ -1480,6 +1548,7 @@ function WorkspaceContent() {
                         <WorkspaceTerminalSurface
                           embedded
                           target={tab}
+                          onFamilyOpen={(target) => open({ kind: 'terminal', ...target })}
                           command={
                             terminalCommand?.key === key ? terminalCommand.command : undefined
                           }
@@ -1526,7 +1595,6 @@ function WorkspaceContent() {
                 taskId={STUDIO_BROWSER_SCOPE}
                 shared
                 openLink={browserLink}
-                onLinkOpened={() => setBrowserLink(null)}
                 workspaceControl={{
                   tabTargets: browserTabTargets,
                   visible: active?.kind === 'browser' && !creatingTerminal,
@@ -1537,21 +1605,7 @@ function WorkspaceContent() {
                     ),
                   onError: setLifecycleError,
                   focusTabId: active?.kind === 'browser' ? active.id : undefined,
-                  onSelect: (id) => {
-                    pendingBrowserAction.current = false
-                    requestedBrowserTab.current = id
-                    setState((previous) => {
-                      const placeholder = previous.tabs.find(
-                        (tab) => tab.kind === 'browser' && tab.id === 'new',
-                      )
-                      return openWorkspaceTab(
-                        placeholder
-                          ? closeWorkspaceTab(previous, workspaceTabKey(placeholder))
-                          : previous,
-                        { kind: 'browser', runtimeId: '', id },
-                      )
-                    })
-                  },
+                  onSelect: selectBrowser,
                   onTabsChange: browserTabsChanged,
                   newTabRequest: browserRequest,
                   tabs: browserTabs,

@@ -1,6 +1,13 @@
 import { Schema } from 'effect'
 import { mutableArray, mutableStruct } from './shared/schema.js'
-import { connectionSchema, approvalSchema } from './runtime/connection/runtime.js'
+import {
+  connectionSchema,
+  approvalSchema,
+  approvalDecisionSchema,
+  approvalActions,
+  type Approval,
+  type ApprovalDecision,
+} from './runtime/connection/runtime.js'
 import { pendingQuestionSchema, questionAnswersSchema } from './conversation/workflow/questions.js'
 
 export const inputPreviewItemSchema = mutableStruct({
@@ -24,6 +31,8 @@ export const inputPreviewSyncSchema = mutableStruct({
 export const inputPreviewAnswerSchema = mutableStruct({
   key: Schema.String,
   answer: Schema.Union([questionAnswersSchema, Schema.Null, Schema.Boolean]),
+  /** The exact approval action the user chose from `approvalActions`. */
+  decision: Schema.optional(approvalDecisionSchema),
 })
 export type InputPreviewItem = Schema.Schema.Type<typeof inputPreviewItemSchema>
 /** Credentials stay in the host process and are never sent to the preview renderer. */
@@ -40,4 +49,20 @@ export type InputPreviewBridge = {
 }
 export function inputPreviewKey(item: InputPreviewItem) {
   return JSON.stringify([item.runtimeId, item.request.kind, item.request.value.id])
+}
+
+/** The approval decision behind a preview answer. Only an action the request offers is valid, so
+ * a key press or stale window cannot choose a scope the provider did not offer. */
+export function inputPreviewApprovalDecision(
+  approval: Pick<Approval, 'title' | 'rememberRule' | 'scopes'>,
+  answer: Pick<InputPreviewAnswer, 'answer' | 'decision'>,
+): ApprovalDecision {
+  const decision =
+    answer.decision ??
+    (answer.answer === true ? 'approve' : answer.answer === false ? 'deny' : undefined)
+  if (!decision || answer.answer !== (decision !== 'deny'))
+    throw new Error('Invalid response for this request')
+  if (!approvalActions(approval).some((action) => action.decision === decision))
+    throw new Error('This permission choice is not available for this request')
+  return decision
 }

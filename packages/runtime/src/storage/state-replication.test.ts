@@ -440,3 +440,35 @@ it('connects the app controller to two real runtimes over paired HTTP in both di
     await Promise.all([a.close(), b.close()])
   }
 })
+
+it('imports a long settings history in pages after restart and keeps exchanges available', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-settings-history-'))
+  const path = join(directory, 'runtime.sqlite')
+  let a: Awaited<ReturnType<typeof fixture>> | undefined
+  const peer = await DurableState.open<ScopedSettingsValue>({
+    channel: 'shared-settings:v1',
+    replicaId: 'phone',
+    storage: { load: () => undefined, save: () => {} },
+    decode: (value) => decode(scopedSettingsValueSchema, value),
+  })
+  try {
+    a = await fixture(path)
+    // One more version than a single settings list accepts, so startup must page.
+    for (let i = 0; i < 300; i++) await a.save(`revision ${i}`)
+    await a.close()
+    a = await fixture(path)
+    expect(a.runtime.services.stateReplication.available()).toBe(true)
+    expect(global(a)).toBe('revision 299')
+    const response = await a.call('/api/state/exchange', {
+      ...peer.request(a.runtime.services.runtimeId),
+      targetRuntimeId: a.runtime.services.runtimeId,
+    })
+    expect(response.status).toBe(200)
+    await peer.accept(await response.json())
+    expect(await a.runtime.services.stateReplication.history('global')).toHaveLength(300)
+  } finally {
+    await a?.close()
+    await peer.close()
+    await rm(directory, { recursive: true, force: true })
+  }
+})

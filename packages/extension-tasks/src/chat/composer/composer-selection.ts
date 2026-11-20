@@ -13,8 +13,6 @@ export function selectComposerWorkspace(
     | 'connection'
     | 'flush'
     | 'activeRuntimeId'
-    | 'runtimeRegistry'
-    | 'refreshRuntime'
   >,
 ) {
   const snapshot = value.snapshot
@@ -27,11 +25,10 @@ export function selectComposerWorkspace(
     connection: value.connection,
     flush: value.flush,
     activeRuntimeId: value.activeRuntimeId,
-    runtimeRegistry: value.runtimeRegistry,
-    refreshRuntime: value.refreshRuntime,
     snapshot: snapshot
       ? {
           defaults: snapshot.defaults,
+          retryUsesCurrentFiles: snapshot.retryUsesCurrentFiles,
           questions: snapshot.questions,
           planModeSupported: snapshot.planModeSupported,
           fullTurnSettingsSupported: snapshot.fullTurnSettingsSupported,

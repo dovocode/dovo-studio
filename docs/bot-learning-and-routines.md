@@ -59,15 +59,18 @@ limits**, then save. Leave optional fields empty to disable them.
   permits at most three redirects and 512 KiB of response data, with a 15-second timeout. It
   compares exact response bytes. Dynamic page noise can therefore count as a change.
 - The first successful observation runs the agent. Later automatic runs with identical content
-  finish as **No change** without invoking the agent. A failed run forces the next observation
-  through the agent. Only a completed run updates the baseline. Manual runs always invoke the agent
-  after a successful source check.
+  finish as **No change** without invoking the agent if the latest finished attempt succeeded. A
+  successful retry can set that baseline. The runtime saves the completion and baseline together.
+  Manual runs always invoke the agent after a successful source check.
 - **Time**, **token**, and **estimated cost** limits apply to the run and its local child workers.
   The time limit includes approval waits and retries. Usage limits use reported turn totals. The
   runtime samples limits each second and after a provider turn. Late or missing usage can cause
   overruns. Cost is an API estimate, not a subscription bill or a hard spending guarantee.
 - **Quiet hours** use the saved time zone and can cross midnight. They defer successful Bot reports
-  until the interval ends. Failed runs and approval requests remain visible. Successful worker push
+  until the interval ends. Each report uses the result saved for its run, including when someone
+  continues the worker thread before delivery. Reports show the end of long answers and compare the
+  full answers to detect changes. If delivery fails, the runtime retries it while other schedules
+  and retries continue. Failed runs and approval requests remain visible. Successful worker push
   notifications are suppressed during quiet hours. Run history remains available.
 
 With triggers disabled, use **Test run**. It performs real work with the saved tools and access.

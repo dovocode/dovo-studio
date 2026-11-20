@@ -218,6 +218,13 @@ export function MessageQueue({
           ...(action === 'move' && snapshot?.promptQueueStagingSupported === true
             ? { expectedMessageIds: authoritativeQueue.map((message) => message.id) }
             : {}),
+          // The runtime refuses the restore if another client changed either Plan value.
+          ...(action === 'restore' && snapshot?.queueRestorePlanSupported === true
+            ? {
+                expectedPlan: !!queue.find((message) => message.id === messageId)?.plan,
+                expectedDraftPlan: task.draftPlan === true,
+              }
+            : {}),
         },
         responses.queueAction,
       )

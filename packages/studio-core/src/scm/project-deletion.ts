@@ -2,7 +2,7 @@ import { nativeAgentWorking, type RuntimeSnapshot, type Workspace } from '@dovo/
 
 const reasons = {
   delegation: 'Resolve the delegated thread link between projects before deleting this project.',
-  restore: 'Finish the pending undo or redo in a linked thread before deleting this project.',
+  restore: 'Review the saved Undo backup in the linked thread before deleting this project.',
   active: 'Stop active turns and agents before deleting this project.',
   decision: 'Finish pending questions or approvals before deleting this project.',
   terminal: 'Close active terminals before deleting this project.',

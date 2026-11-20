@@ -7,13 +7,14 @@ import { randomUUID } from 'node:crypto'
 import { backupRuntimeDatabase } from './backup.js'
 import { acquireProcessLock } from './process-lock.js'
 import { errorMessage } from '../errors.js'
+import { carryTransferOwnership } from '../scm/repositories/project-transfer-fences.js'
 
 const MAX_BACKUPS = 5
 const MAX_BYTES = 512 * 1024 * 1024
 const AUTOMATIC_RETRY_MS = 60 * 60 * 1000
 const retentionBytes = (newestSize = 0) => Math.max(MAX_BYTES, newestSize * 2)
 const failureSchema = Schema.NullOr(mutableStruct({ at: Schema.String, message: Schema.String }))
-function preservePairings(staged: Database.Database, databasePath: string) {
+function preserveCurrentState(staged: Database.Database, databasePath: string) {
   let current: Database.Database
   try {
     current = new Database(databasePath, { readonly: true, fileMustExist: true })
@@ -32,6 +33,8 @@ function preservePairings(staged: Database.Database, databasePath: string) {
         staged.prepare("SELECT value FROM documents WHERE id='runtime-identity'").pluck().get()
     )
       return
+    // A restore keeps the current thread moves, returns and activations.
+    carryTransferOwnership(staged, current)
     // Device access is current security state, not workspace content to roll back.
     const devices = decode(
       Schema.Array(
@@ -292,7 +295,7 @@ export async function restoreRuntimeBackup(databasePath: string, source: string)
     const staged = new Database(temporary)
     try {
       staged.transaction(() => {
-        preservePairings(staged, databasePath)
+        preserveCurrentState(staged, databasePath)
         staged
           .prepare(
             'INSERT INTO documents VALUES (?,?) ON CONFLICT(id) DO UPDATE SET value=excluded.value',

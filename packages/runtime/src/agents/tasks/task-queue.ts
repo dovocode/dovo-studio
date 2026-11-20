@@ -14,7 +14,7 @@ import {
   type Attachment,
   type MessageSource,
 } from '@dovo/protocol'
-import type { WorkspaceStore } from '../../storage/workspace.js'
+import type { QuestionResponseReceipt, WorkspaceStore } from '../../storage/workspace.js'
 import type { Activity } from '../../storage/activity.js'
 import { HttpError } from '../../errors.js'
 import { createHash, randomUUID } from 'node:crypto'
@@ -111,7 +111,7 @@ export class TaskQueue {
     messageId: string,
     text: string,
     attachments: Attachment[] = [],
-    response?: { id: string; fingerprint: string; attachments?: Attachment[] },
+    response?: QuestionResponseReceipt,
     review = false,
     resumePaused = false,
     subagentResultId?: string,
@@ -557,6 +557,9 @@ export class TaskQueue {
       expectedTurnSettings: TurnSettings | null
       expectedDraftTurnSettings: TurnSettings | null
       expectedAttachmentIds: string[]
+      /** Plan values the client saw. Older clients omit both. */
+      expectedPlan?: boolean
+      expectedDraftPlan?: boolean
     },
   ) {
     const receipt = createHash('sha256').update(JSON.stringify(input)).digest('hex')
@@ -579,7 +582,10 @@ export class TaskQueue {
           JSON.stringify(input.expectedAttachmentIds)
       )
         throw new HttpError(409, 'The queued message changed. Refresh it before restoring')
-      this.change(id, 'restore', input.messageId)
+      this.change(id, 'restore', input.messageId, undefined, {
+        plan: input.expectedPlan,
+        draftPlan: input.expectedDraftPlan,
+      })
     })
   }
   change(
@@ -587,6 +593,8 @@ export class TaskQueue {
     action: 'remove' | 'restore' | 'up' | 'down' | 'pause',
     messageId?: string,
     expectedMessageIds?: string[],
+    /** Plan values the client saw when it chose to restore. Older clients omit them. */
+    expectedRestorePlan?: { plan?: boolean; draftPlan?: boolean },
   ) {
     const task = this.store.taskSummary(id)
     if (action === 'pause') {
@@ -617,6 +625,19 @@ export class TaskQueue {
     if ((action === 'remove' || action === 'restore') && queue[index].steering)
       throw new HttpError(409, 'This message is being delivered to the agent')
     if (action === 'restore') {
+      const plan = !!queue[index].plan
+      const draftPlan = !!task.draftPlan
+      const expected = expectedRestorePlan ?? {}
+      if (expected.draftPlan !== undefined && draftPlan !== expected.draftPlan)
+        throw new HttpError(409, 'Plan mode changed in the composer. Check it before restoring')
+      if (expected.plan !== undefined && plan !== expected.plan)
+        throw new HttpError(409, 'The queued message changed. Refresh it before restoring')
+      // A client that did not report Plan cannot have seen it, so its restore must not change it.
+      if ((expected.plan === undefined || expected.draftPlan === undefined) && plan !== draftPlan)
+        throw new HttpError(
+          409,
+          'Plan mode differs between the composer and this queued message. Update Dovo on this device, or match Plan in the composer, then restore again',
+        )
       if (
         (task.draft.trim() || task.draftAttachments?.length) &&
         !sameTurnSettings(queue[index].turnSettings, task.draftTurnSettings)

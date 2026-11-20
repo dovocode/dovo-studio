@@ -1369,3 +1369,152 @@ it('persists atomic restore receipts across restart and rejects changed contents
     db.close()
   }
 })
+
+it('rejects a prepared restore when either Plan value changed and keeps the message and draft', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'restore',
+          title: 'Restore',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          execution: 'main',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+          queuePaused: true,
+          queue: [
+            { id: 'normal', role: 'user', text: 'Normal', createdAt: '' },
+            { id: 'planned', role: 'user', text: 'Planned', createdAt: '', plan: true },
+          ],
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    const prepared = (messageId: string, text: string, plan: boolean, draftPlan: boolean) => ({
+      requestId: `restore-${messageId}-${plan}-${draftPlan}`,
+      messageId,
+      expectedText: text,
+      expectedTurnSettings: null,
+      expectedDraftTurnSettings: null,
+      expectedAttachmentIds: [],
+      expectedPlan: plan,
+      expectedDraftPlan: draftPlan,
+    })
+    // Another client enables Plan on the empty draft after this restore was prepared.
+    store.updateTask('restore', (t) => ({ ...t, draftPlan: true }))
+    const enabled = store.taskSummary('restore')
+    expect(() => queue.restore('restore', prepared('normal', 'Normal', false, false))).toThrow(
+      'Plan mode changed in the composer',
+    )
+    expect(store.taskSummary('restore')).toMatchObject({
+      draft: '',
+      draftPlan: true,
+      queue: enabled.queue,
+    })
+    // The queued message itself changed Plan after the restore was prepared.
+    store.updateTask('restore', (t) => ({
+      ...t,
+      draftPlan: undefined,
+      queue: t.queue?.map((m) => (m.id === 'normal' ? { ...m, plan: true } : m)),
+    }))
+    const changed = store.taskSummary('restore')
+    expect(() => queue.restore('restore', prepared('normal', 'Normal', false, false))).toThrow(
+      'queued message changed',
+    )
+    expect(store.taskSummary('restore')).toMatchObject({ draft: '', queue: changed.queue })
+    expect(store.taskSummary('restore').draftPlan).toBeUndefined()
+    expect(db.prepare('SELECT * FROM queue_restore_receipts').all()).toEqual([])
+    store.updateTask('restore', (t) => ({ ...t, queue: enabled.queue }))
+
+    // A client that does not report Plan cannot change it.
+    const {
+      expectedPlan: _plan,
+      expectedDraftPlan: _draftPlan,
+      ...legacy
+    } = { ...prepared('planned', 'Planned', true, false), requestId: 'legacy' }
+    expect(() => queue.restore('restore', legacy)).toThrow('Plan mode differs')
+    expect(store.taskSummary('restore').queue).toHaveLength(2)
+
+    // Matching values restore the message and its Plan value together.
+    expect(queue.restore('restore', prepared('planned', 'Planned', true, false))).toBe(true)
+    expect(store.taskSummary('restore')).toMatchObject({
+      draft: 'Planned',
+      draftPlan: true,
+      queue: [{ id: 'normal' }],
+    })
+    // The legacy rule still allows a restore that leaves Plan unchanged.
+    store.updateTask('restore', (t) => ({ ...t, draft: '', draftPlan: undefined }))
+    expect(
+      queue.restore('restore', {
+        ...legacy,
+        requestId: 'legacy-normal',
+        messageId: 'normal',
+        expectedText: 'Normal',
+      }),
+    ).toBe(true)
+    expect(store.taskSummary('restore')).toMatchObject({ draft: 'Normal', queue: [] })
+    expect(store.taskSummary('restore').draftPlan).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})
+
+it('protects Plan on a bare restore from desktop, web and older clients', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const store = new WorkspaceStore(db)
+    store.update((w) => ({
+      ...w,
+      tasks: [
+        {
+          id: 'bare',
+          title: 'Bare restore',
+          repositoryId: '',
+          agentId: '',
+          status: 'draft',
+          execution: 'main',
+          createdAt: '',
+          messages: [],
+          files: [],
+          draft: '',
+          example: false,
+          queuePaused: true,
+          queue: [{ id: 'normal', role: 'user', text: 'Normal', createdAt: '' }],
+        },
+      ],
+    }))
+    const queue = new TaskQueue(store)
+    // Another client turns Plan on in the empty draft.
+    store.updateTask('bare', (t) => ({ ...t, draftPlan: true }))
+    const enabled = store.taskSummary('bare')
+    // A bare request without Plan values must not clear Plan.
+    expect(() => queue.change('bare', 'restore', 'normal')).toThrow('Plan mode differs')
+    // A desktop that saw Plan off is out of date.
+    expect(() =>
+      queue.change('bare', 'restore', 'normal', undefined, { plan: false, draftPlan: false }),
+    ).toThrow('Plan mode changed in the composer')
+    // A desktop that saw the message with Plan on is out of date too.
+    expect(() =>
+      queue.change('bare', 'restore', 'normal', undefined, { plan: true, draftPlan: true }),
+    ).toThrow('queued message changed')
+    expect(store.taskSummary('bare')).toMatchObject({
+      draft: '',
+      draftPlan: true,
+      queue: enabled.queue,
+    })
+    // A desktop that saw both current values chose to leave Plan.
+    queue.change('bare', 'restore', 'normal', undefined, { plan: false, draftPlan: true })
+    expect(store.taskSummary('bare')).toMatchObject({ draft: 'Normal', queue: [] })
+    expect(store.taskSummary('bare').draftPlan).toBeUndefined()
+  } finally {
+    db.close()
+  }
+})

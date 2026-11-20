@@ -46,10 +46,12 @@ const tokenizer = MarkdownIt('commonmark', { html: false }).enable(['strikethrou
 // A file reference is literal source. Do not interpret __tests__ or other path punctuation
 // as Markdown marks before the reference plugin turns the completed token into a chip.
 tokenizer.inline.ruler.before('text', 'composer_file_reference', (state, silent) => {
-  const match = /^([^\\\n`*_[\]<>!~]*\s)?(@[^\s@]+)(?=\s)/.exec(
-    state.src.slice(state.pos, state.posMax),
-  )
-  if (!match || !/[\\/]|\.[\w-]+$/.test(match[2].slice(1))) return false
+  const match =
+    /^([^@\\\n`*_[\]<>!~]*\s)?(@file:(?:"(?:\\.|[^"\\])*"|[^\s"][^\s]*)(?=\s|$)|@[^\s@]+(?=\s))/.exec(
+      state.src.slice(state.pos, state.posMax),
+    )
+  if (!match || (!match[2].startsWith('@file:') && !/[\\/]|\.[\w-]+$/.test(match[2].slice(1))))
+    return false
   if (!match[1] && state.pos > 0 && !/\s/.test(state.src[state.pos - 1])) return false
   if (!silent) state.pending += match[0]
   state.pos += match[0].length

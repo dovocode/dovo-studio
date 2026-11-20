@@ -37,19 +37,25 @@ const access = fragment.get('access') ?? '',
   token = fragment.get('share')
 // Decryption material stays in the fragment; never send it to the server.
 const path = '/v2/shares/' + id
+const unchanged = Symbol()
+class SignInEnded extends Error {}
 class AccessError extends Error {}
-async function request(endpoint: string, method = 'GET', value?: unknown) {
+async function request(endpoint: string, method = 'GET', value?: unknown, knownVersion?: number) {
   const response = await fetch(endpoint, {
     method,
     credentials: 'same-origin',
     redirect: 'error',
     signal: AbortSignal.timeout(30000),
     headers: {
+      ...(knownVersion ? { 'If-None-Match': `"${knownVersion}"` } : {}),
       ...(token ? { Authorization: 'DovoShare ' + token } : {}),
       ...(value === undefined ? {} : { 'Content-Type': 'application/json' }),
     },
     body: value === undefined ? undefined : JSON.stringify(value),
   })
+  if (knownVersion && response.status === 304) return unchanged
+  if (endpoint === '/auth/status' && response.status === 401)
+    throw new SignInEnded('Sign-in did not finish. Start again.')
   if ([401, 404].includes(response.status))
     throw new AccessError(
       'This link has expired, was revoked, or needs an invited account. Sign in to check private access.',
@@ -213,11 +219,18 @@ function App() {
     const refresh = async () => {
       try {
         decode(sharingKeySchema, key)
-        const next = decode(
-          shareReaderSchema,
-          await request(path + '/read?access=' + encodeURIComponent(access)),
+        const packet = await request(
+          path + '/read?access=' + encodeURIComponent(access),
+          'GET',
+          undefined,
+          latest.current,
         )
         if (stopped) return
+        if (packet === unchanged) {
+          setError('')
+          return
+        }
+        const next = decode(shareReaderSchema, packet)
         if (next.version < latest.current)
           throw new Error('An older shared version was received. Refresh to retry.')
         if (next.version !== latest.current) {
@@ -263,7 +276,13 @@ function App() {
     }
   }
   const checkLogin = async () => {
-    const status = decode(mutableStruct({ ready: Schema.Boolean }), await request('/auth/status'))
+    const status = decode(
+      mutableStruct({ ready: Schema.Boolean }),
+      await request('/auth/status').catch((error: unknown) => {
+        if (error instanceof SignInEnded) setLogin(null)
+        throw error
+      }),
+    )
     if (status.ready) {
       setLogin(null)
       setAttempt((value) => value + 1)

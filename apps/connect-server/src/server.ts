@@ -11,9 +11,10 @@ import { pushApi } from './push-api.js'
 import type { PushDelivery } from './push-relay.js'
 import { ValidationError } from '@dovo/protocol'
 import { rateLimit } from './rate-limit.js'
-import { clientAddress } from './client-address.js'
+import { clientAddress } from '@dovo/protocol/client-address'
 import { PushStore } from './push-store.js'
 import { attachPeerSignaling } from './peer-signaling.js'
+import { pendingDeletions } from './account-deletion.js'
 import type { PeerRelayIssuer } from './relay-credentials.js'
 import type { PeerRelayAdmission } from './relay-admission.js'
 import type { PeerRelayProvider } from '@dovo/protocol'
@@ -46,7 +47,12 @@ export function createConnectServer(
   const identityOrigin = new URL(options.authorizationOrigin).origin
   const authenticate = browserAuth({ ...options, origin })
   const artifacts = artifactApi(options.store, origin, options.artifacts)
-  const sharing = artifactApi(options.store, origin, options.sharing ?? options.artifacts)
+  const sharing = artifactApi(
+    options.store,
+    origin,
+    options.sharing ?? options.artifacts,
+    'sharing',
+  )
   const sharingKeys = sharingKeySyncApi(options.store)
   const sharingRecovery = sharingRecoveryApi(options.store, origin, options.sharingRecoverySecret)
   const pushStore = new PushStore(options.store)
@@ -153,7 +159,7 @@ export function createConnectServer(
   server.requestTimeout = 15_000
   server.headersTimeout = 10_000
   server.maxHeadersCount = 40
-  attachPeerSignaling(
+  const closeSignaling = attachPeerSignaling(
     server,
     options.trustedProxies,
     options.peerRelays,
@@ -161,5 +167,18 @@ export function createConnectServer(
     options.origin,
     (grant, identity) => internetStore.host(grant)?.identity === identity,
   )
+  const deletions = options.deleteIdentity
+    ? pendingDeletions(options.store, options.deleteIdentity)
+    : undefined
+  server.on('listening', () => deletions?.start())
+  // Stop long-lived work first. Node waits for every open socket, including upgraded
+  // signaling sockets, before it closes. The callback runs after any deletion attempt ends,
+  // so the caller can close the store.
+  const closeServer = server.close.bind(server)
+  server.close = (callback) => {
+    closeSignaling()
+    const stopped = deletions?.stop()
+    return closeServer((error) => void Promise.resolve(stopped).then(() => callback?.(error)))
+  }
   return server
 }

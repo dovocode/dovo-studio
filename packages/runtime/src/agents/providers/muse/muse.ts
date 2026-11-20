@@ -15,7 +15,7 @@ import {
   type Subagent,
 } from '@dovo/protocol'
 import type { AgentDiscovery } from '@dovo/protocol'
-import type { AgentAdapter, AgentRun } from '../../execution/types.js'
+import type { AgentAdapter, AgentRun, ApprovalScopes } from '../../execution/types.js'
 import { exec, processEnvironment } from '../../../process.js'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
 import { updateSubagents } from '../../execution/subagents.js'
@@ -287,61 +287,45 @@ export function museApprovalTitle(request: MuseApprovalRequest) {
           : subject.kind
   return detail ? `Muse ${kind}: ${detail}` : `Muse ${kind} request`
 }
-export function museApprovalScopes(request: MuseApprovalRequest) {
-  const approved = request.availableChoices.filter(
-    (choice) =>
-      choice.decision === 'approved' ||
-      choice.decision === 'approvedForSession' ||
-      choice.decision === 'approvedPolicyAmendment',
+type MuseApprovalChoice = MuseApprovalRequest['availableChoices'][number]
+/** Dovo decision for one Muse choice. Unknown or contradictory pairs map to none. */
+function museChoiceDecision(choice: MuseApprovalChoice) {
+  if (choice.decision === 'denied' || choice.decision === 'abort') return 'deny' as const
+  if (choice.decision === 'approved' && choice.scope === 'once') return 'approve' as const
+  if (
+    choice.scope === 'session' &&
+    ['approved', 'approvedForSession', 'approvedPolicyAmendment'].includes(choice.decision)
   )
+    return 'session' as const
+  if (
+    choice.scope === 'localPersistent' &&
+    ['approved', 'approvedPolicyAmendment'].includes(choice.decision)
+  )
+    return 'always' as const
+  return undefined
+}
+/** The exact scopes this request offers. "Allow once" is one of them, never implied. */
+export function museApprovalScopes(request: MuseApprovalRequest) {
+  const offered = new Set(request.availableChoices.map(museChoiceDecision))
   return {
-    session: approved.some(
-      (choice) => choice.decision === 'approvedForSession' || choice.scope === 'session',
-    ),
-    always: approved.some(
-      (choice) =>
-        choice.decision === 'approvedPolicyAmendment' || choice.scope === 'localPersistent',
-    ),
+    once: offered.has('approve'),
+    session: offered.has('session'),
+    always: offered.has('always'),
   }
 }
+/** Muse choice for the exact Dovo decision, or undefined when Muse did not offer it. */
 export function museApprovalChoice(
   request: MuseApprovalRequest,
   decision: 'approve' | 'session' | 'always' | 'deny',
 ) {
-  const choices = request.availableChoices
-  const rank = (choice: MuseApprovalRequest['availableChoices'][number]) =>
-    (choice.scope === 'once' ? 0 : choice.scope === 'session' ? 2 : 4) +
-    (choice.decision.endsWith('PolicyAmendment') ? 1 : 0)
-  const pick = (candidates: MuseApprovalRequest['availableChoices']) =>
-    candidates.sort((a, b) => rank(a) - rank(b))[0]
-  if (decision === 'deny')
-    return (
-      choices.find((choice) => choice.decision === 'denied') ??
-      choices.find((choice) => choice.decision === 'abort')
-    )
-  if (decision === 'session')
-    return pick(
-      choices.filter(
-        (choice) =>
-          choice.decision === 'approvedForSession' ||
-          (choice.decision === 'approvedPolicyAmendment' && choice.scope === 'session') ||
-          (choice.decision === 'approved' && choice.scope === 'session'),
-      ),
-    )
-  if (decision === 'always')
-    return pick(
-      choices.filter(
-        (choice) =>
-          choice.decision === 'approvedPolicyAmendment' || choice.scope === 'localPersistent',
-      ),
-    )
-  return pick(
-    choices.filter(
-      (choice) =>
-        choice.decision === 'approved' ||
-        choice.decision === 'approvedForSession' ||
-        choice.decision === 'approvedPolicyAmendment',
-    ),
+  const matches = request.availableChoices.filter(
+    (choice) => museChoiceDecision(choice) === decision,
+  )
+  // Prefer a plain grant or denial to a policy amendment or abort with the same scope.
+  return (
+    matches.find(
+      (choice) => choice.decision !== 'approvedPolicyAmendment' && choice.decision !== 'abort',
+    ) ?? matches[0]
   )
 }
 export function parseMuseVersion(output: string) {
@@ -771,7 +755,7 @@ export function createMuseAdapter(): AgentAdapter {
                 title: string,
                 detail: string,
                 kind?: 'web' | 'command',
-                options?: { session?: boolean; always?: boolean },
+                options?: ApprovalScopes,
               ) => interactions.approve(title, detail, lifetime.signal, kind, options))
             : active
               ? run.approve
@@ -781,7 +765,12 @@ export function createMuseAdapter(): AgentAdapter {
             lifetime.signal.aborted || approve === undefined
               ? ('deny' as const)
               : automatic
-                ? ('approve' as const)
+                ? // Full access never writes a persistent Muse policy on the user's behalf.
+                  scopes.once
+                  ? ('approve' as const)
+                  : scopes.session
+                    ? ('session' as const)
+                    : ('deny' as const)
                 : await nativeWait(
                     approve(museApprovalTitle(request), request.rawArgs, undefined, scopes),
                     signal,

@@ -78,35 +78,71 @@ try {
   })
   await page.getByRole('button', { name: 'a:new A', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /obsolete/ }).count(), 0)
+  // A credential change on computer b reads b again. Computer a keeps its results.
   await page.evaluate(() => window.change({ token: 'second' }))
-  await page.waitForFunction(() => window.calls.length === 8)
-  assert.equal(await page.getByRole('button', { name: 'a:new A', exact: true }).count(), 0)
+  await page.waitForFunction(() => window.calls.length === 7)
+  assert.equal(await page.evaluate(() => window.calls[6].id), 'b')
+  await page.getByRole('button', { name: 'a:new A', exact: true }).waitFor()
   await page.evaluate(() => {
     window.calls[5].reply('old credential')
-    window.calls[6].reply('same ID A')
-    window.calls[7].reply('same ID B')
+    window.calls[6].reply('same ID B')
   })
   await page.getByRole('button', { name: 'b:same ID B', exact: true }).waitFor()
-  await page.getByRole('button', { name: 'a:same ID A', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'a:new A', exact: true }).waitFor()
   assert.equal(await page.getByRole('button', { name: /old credential/ }).count(), 0)
   await page.getByRole('button', { name: 'b:same ID B', exact: true }).click()
   assert.deepEqual(await page.evaluate(() => window.reveal), {
     scope: '["http://b.lan","second","child"]',
     messageId: 'old-message',
   })
+  // Leaving computer a hides its results without reading b again.
   await page.evaluate(() => window.change({ source: 'b' }))
-  await page.waitForFunction(() => window.calls.length === 9)
-  assert.equal(await page.getByRole('button', { name: 'a:same ID A', exact: true }).count(), 0)
+  assert.equal(await page.getByRole('button', { name: 'a:new A', exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'b:same ID B', exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.calls.length), 7)
+  await page.evaluate(() => window.change({ history: 3 }))
+  await page.waitForFunction(() => window.calls.length === 8)
   await page.evaluate(() => window.change({ online: false }))
   await page.getByText('Offline computers', { exact: true }).waitFor()
-  await page.evaluate(() => window.calls[8].reply('disconnected response'))
+  await page.evaluate(() => window.calls[7].reply('disconnected response'))
   assert.equal(await page.getByRole('button', { name: /disconnected response/ }).count(), 0)
   await page.waitForFunction(() => !window.search.loading)
+
+  // Starting the same search again retries only the failed computer.
+  await page.evaluate(() => window.change({ source: 'all', online: true, query: 'retry needle' }))
+  await page.waitForFunction(() => window.calls.length === 10)
+  await page.evaluate(() => {
+    window.calls[8].reply('retained excerpt')
+    window.calls[9].fail()
+  })
+  const retained = page.getByRole('button', { name: 'a:retained excerpt', exact: true })
+  const hostError = page.getByRole('alert').filter({ hasText: 'Computer b: Host unavailable' })
+  for (const [refresh, end, start] of [
+    [10, { query: '' }, { query: 'retry needle' }],
+    [11, { enabled: false }, { enabled: true }],
+  ]) {
+    await hostError.waitFor()
+    await page.evaluate((patch) => window.change(patch), end)
+    await page.evaluate((patch) => window.change(patch), start)
+    await retained.waitFor()
+    assert.equal(await page.getByRole('status').textContent(), 'Searching')
+    assert.equal(await hostError.count(), 0)
+    await page.waitForFunction((count) => window.calls.length === count, refresh + 1)
+    assert.equal(await page.evaluate(() => window.calls.at(-1).id), 'b')
+    await page.evaluate((retryFails) => {
+      const retry = window.calls.at(-1)
+      if (retryFails) retry.fail()
+      else retry.reply('recovered excerpt')
+    }, refresh === 10)
+  }
+  await page.getByRole('button', { name: 'b:recovered excerpt', exact: true }).waitFor()
+  await retained.waitFor()
+  assert.equal(await hostError.count(), 0)
   assert.deepEqual(errors, [])
   await page.close()
 } finally {
   await browser.close()
 }
 console.log(
-  'Mobile search publishes fast hosts, keeps partial results through failures, aborts obsolete reads, scopes credentials/queries/computers, and carries exact child-message targets.',
+  'Mobile search keeps partial results, retries failed computers on a fresh search, aborts obsolete reads, refreshes only changed computers, scopes credentials/queries/computers, and carries exact child-message targets.',
 )

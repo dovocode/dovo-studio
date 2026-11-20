@@ -1,6 +1,6 @@
 import { BrowserWindow, dialog, webContents } from 'electron'
 import type { MediaHost } from './browser-media.js'
-import { browserPermissions } from './browser-permissions.js'
+import { browserPermissions, denyPermissionCheckOnFailure } from './browser-permissions.js'
 import { openBrowserDeviceChooser, type BrowserDeviceChooser } from './browser-device-chooser.js'
 
 export type BrowserDeviceKind = 'usb' | 'hid' | 'serial'
@@ -42,6 +42,16 @@ const labelOf = (device: Device) =>
       : device.productName || `USB ${device.vendorId}:${device.productId}`
 
 /** Access is granted only to explicitly chosen devices, never to all devices at an origin. */
+/** A saved setting that cannot be read counts as blocked, so a device answer still arrives. */
+function notBlocked(profileId: string, origin: string, kind: 'bluetooth') {
+  try {
+    return browserPermissions(profileId).site(origin).permissions[kind] !== 'block'
+  } catch (error) {
+    console.error('Could not check browser permission.', error)
+    return false
+  }
+}
+
 export function createBrowserDevices(host: MediaHost) {
   const sessions = new WeakSet<Electron.Session>()
   const grants = new WeakMap<
@@ -121,12 +131,13 @@ export function createBrowserDevices(host: MediaHost) {
         return
       const key = browserDeviceKey(kind, device)
       if (!key) return
+      // Save first: a failed save denies the request without leaving a page grant behind.
+      const persistentKey = choice.remember && browserDeviceKey(kind, device, true)
+      if (persistentKey) browserPermissions(profileId).setDevice(origin, persistentKey, true)
       const previous = grants.get(contents)
       const keys = previous?.frame === frame ? previous.keys : new Set<string>()
       keys.add(key)
       grants.set(contents, { frame, keys })
-      const persistentKey = choice.remember && browserDeviceKey(kind, device, true)
-      if (persistentKey) browserPermissions(profileId).setDevice(origin, persistentKey, true)
       return choice.id
     } finally {
       stop()
@@ -147,27 +158,29 @@ export function createBrowserDevices(host: MediaHost) {
     attachSession(session: Electron.Session, profileId: string) {
       if (sessions.has(session)) return
       sessions.add(session)
-      session.setDevicePermissionHandler(({ deviceType, origin, device }) => {
-        const site = originOf(origin)
-        if (!site || browserPermissions(profileId).site(site).permissions[deviceType] === 'block')
-          return false
-        const key = browserDeviceKey(deviceType, device)
-        const persistentKey = browserDeviceKey(deviceType, device, true)
-        return (
-          !!(persistentKey && browserPermissions(profileId).device(site, persistentKey)) ||
-          host
-            .tabs()
-            .some(
-              (tab) =>
-                tab.profileId === profileId &&
-                !tab.contents.isDestroyed() &&
-                originOf(tab.contents.mainFrame.url) === site &&
-                grants.get(tab.contents)?.frame === tab.contents.mainFrame &&
-                !!key &&
-                grants.get(tab.contents)?.keys.has(key),
-            )
-        )
-      })
+      session.setDevicePermissionHandler(
+        denyPermissionCheckOnFailure(({ deviceType, origin, device }) => {
+          const site = originOf(origin)
+          if (!site || browserPermissions(profileId).site(site).permissions[deviceType] === 'block')
+            return false
+          const key = browserDeviceKey(deviceType, device)
+          const persistentKey = browserDeviceKey(deviceType, device, true)
+          return (
+            !!(persistentKey && browserPermissions(profileId).device(site, persistentKey)) ||
+            host
+              .tabs()
+              .some(
+                (tab) =>
+                  tab.profileId === profileId &&
+                  !tab.contents.isDestroyed() &&
+                  originOf(tab.contents.mainFrame.url) === site &&
+                  grants.get(tab.contents)?.frame === tab.contents.mainFrame &&
+                  !!key &&
+                  grants.get(tab.contents)?.keys.has(key),
+              )
+          )
+        }),
+      )
       session.on('select-usb-device', (event, details, callback) => {
         event.preventDefault()
         const contents = details.frame && webContents.fromFrame(details.frame)
@@ -255,7 +268,12 @@ export function createBrowserDevices(host: MediaHost) {
         const origin = originOf(rawOrigin)
         if (!origin) return
         const persistentKey = browserDeviceKey(kind, device, true)
-        if (persistentKey) browserPermissions(profileId).setDevice(origin, persistentKey, false)
+        try {
+          if (persistentKey) browserPermissions(profileId).setDevice(origin, persistentKey, false)
+        } catch (error) {
+          // The page grant below still goes. The saved grant stays until storage works.
+          console.error('Could not forget a revoked browser device.', error)
+        }
         const key = browserDeviceKey(kind, device)
         for (const tab of host.tabs())
           if (
@@ -284,7 +302,7 @@ export function createBrowserDevices(host: MediaHost) {
           !origin ||
           frame !== contents.mainFrame ||
           !owned(contents, profileId) ||
-          browserPermissions(profileId).site(origin).permissions.bluetooth === 'block'
+          !notBlocked(profileId, origin, 'bluetooth')
         )
           return callback({ confirmed: false })
         const generation = generations.get(contents) ?? 0
@@ -293,7 +311,7 @@ export function createBrowserDevices(host: MediaHost) {
           owned(contents, profileId) &&
           contents.mainFrame === frame &&
           originOf(frame.url) === origin &&
-          browserPermissions(profileId).site(origin).permissions.bluetooth !== 'block'
+          notBlocked(profileId, origin, 'bluetooth')
         if (details.pairingKind === 'providePin') {
           if (pending.has(contents)) return callback({ confirmed: false })
           const chooser = openBrowserDeviceChooser({
@@ -335,13 +353,14 @@ export function createBrowserDevices(host: MediaHost) {
         event.preventDefault()
         const tab = host.tabFor(contents)
         const origin = originOf(contents.mainFrame.url)
-        if (tab && origin) browserPermissions(tab.profileId).recordRequest(origin, 'bluetooth')
-        if (
-          !tab ||
-          !origin ||
-          browserPermissions(tab.profileId).site(origin).permissions.bluetooth === 'block'
-        )
+        if (!tab || !origin) return callback('')
+        try {
+          browserPermissions(tab.profileId).recordRequest(origin, 'bluetooth')
+        } catch (error) {
+          console.error('Could not record a browser permission request.', error)
           return callback('')
+        }
+        if (!notBlocked(tab.profileId, origin, 'bluetooth')) return callback('')
         const waiting = pending.get(contents)
         if (waiting) {
           if (waiting.update) waiting.update(devices)
@@ -378,7 +397,7 @@ export function createBrowserDevices(host: MediaHost) {
               contents.mainFrame === frame &&
               originOf(frame.url) === origin &&
               latest.some((device) => device.deviceId === answer.id) &&
-              browserPermissions(tab.profileId).site(origin).permissions.bluetooth !== 'block'
+              notBlocked(tab.profileId, origin, 'bluetooth')
               ? answer.id
               : '',
           )

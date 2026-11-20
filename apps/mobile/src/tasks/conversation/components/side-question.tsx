@@ -15,6 +15,8 @@ import { Sheet } from '../../../ui/layout/sheet'
 import { Text } from '../../../ui/content/text'
 import { useTheme } from '../../../ui/theme'
 import { useTaskConversation } from '../state/provider'
+import type { DraftPersistence } from '../../../runtime/state/detail-drafts'
+import { DraftStorageNotice } from '../../../ui/content/draft-storage-notice'
 const savedSchema = mutableStruct({ id: Schema.String })
 const answerSchema = mutableStruct({ answer: Schema.String })
 type SideQuestionProps = {
@@ -23,6 +25,7 @@ type SideQuestionProps = {
   onClose: () => void
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
+  draftPersistence?: DraftPersistence
 }
 export function SideQuestion(props: SideQuestionProps) {
   const [readOnly, setReadOnly] = useState(!!props.selectedChatId)
@@ -46,6 +49,7 @@ function ReadOnlySideQuestion({
   setDrafts,
   selectedChatId,
   onAgents,
+  draftPersistence,
 }: {
   task: Task
   selectedChatId?: string
@@ -53,6 +57,7 @@ function ReadOnlySideQuestion({
   drafts: Record<string, string>
   setDrafts: Dispatch<SetStateAction<Record<string, string>>>
   onAgents: () => void
+  draftPersistence?: DraftPersistence
 }) {
   const uiText = useInterfaceText()
 
@@ -108,6 +113,7 @@ function ReadOnlySideQuestion({
         <>
           {chat && (
             <>
+              <DraftStorageNotice persistence={draftPersistence} />
               <Field
                 label={uiText('Question')}
                 value={question}

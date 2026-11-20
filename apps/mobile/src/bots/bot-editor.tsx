@@ -1,9 +1,16 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useEffect, useRef, type ReactNode } from 'react'
-import type { BotResources } from '@dovo/protocol'
+import { botResourcesSchema, mutableStruct, type BotResources } from '@dovo/protocol'
+import { Schema } from 'effect'
 import { View } from 'react-native'
-import { createDetailDrafts, useDetailDraft } from '../runtime/state/detail-drafts'
+import {
+  createDetailDrafts,
+  useDetailDraft,
+  type SavedDraftKey,
+} from '../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../ui/content/draft-storage-notice'
 import { Sheet } from '../ui/layout/sheet'
 import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
@@ -23,7 +30,26 @@ export type BotText = {
   originalRole?: string
   originalResponsibilities?: string
 }
-const drafts = createDetailDrafts<BotText>()
+// Unsaved settings stay on the device after the app restarts. A draft with a typed MCP
+// credential stays in memory only.
+const drafts = createDetailDrafts<BotText>({
+  persist: {
+    name: 'bot-settings',
+    schema: mutableStruct({
+      name: Schema.String,
+      role: Schema.String,
+      responsibilities: Schema.String,
+      backupAgentId: Schema.optional(Schema.String),
+      originalBackupAgentId: Schema.optional(Schema.String),
+      resources: Schema.optional(botResourcesSchema),
+      expectedRevision: Schema.optional(Schema.String),
+      originalName: Schema.optional(Schema.String),
+      originalRole: Schema.optional(Schema.String),
+      originalResponsibilities: Schema.optional(Schema.String),
+    }),
+    storage: detailDraftStorage,
+  },
+})
 
 export function BotEditor({
   draftKey,
@@ -33,7 +59,7 @@ export function BotEditor({
   onSave,
   onClose,
 }: {
-  draftKey: string
+  draftKey: SavedDraftKey
   initial: BotText
   unavailable?: string
   children?: ReactNode | ((draft: BotText, retain: (value: Partial<BotText>) => void) => ReactNode)
@@ -52,7 +78,7 @@ export function BotEditor({
     }
   }, [])
   const { styles } = useTheme()
-  const { draft, setField, clear } = useDetailDraft(drafts, draftKey, () => initial)
+  const { draft, setField, clear, persistence } = useDetailDraft(drafts, draftKey, () => initial)
   const retain = (update: Partial<BotText>) => {
     for (const key of Object.keys(update) as (keyof BotText)[]) setField(key, update[key])
   }
@@ -99,6 +125,7 @@ export function BotEditor({
             {unavailable}
           </Text>
         )}
+        <DraftStorageNotice persistence={persistence} />
         {!!error && (
           <Text accessibilityRole="alert" style={styles.error}>
             {error}

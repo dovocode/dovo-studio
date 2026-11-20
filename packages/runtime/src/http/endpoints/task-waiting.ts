@@ -109,7 +109,7 @@ export async function taskWaiting(
             : 'Waiting for PR feedback',
           pausedReason:
             watch.carePaused && settings.enablePullRequestBabysitting
-              ? 'PR babysitting paused after repeated feedback. Restart the PR watch to continue.'
+              ? 'PR babysitting paused after repeated feedback. To continue, ask the agent in this thread to watch the PR again.'
               : pausedReason(settings.enablePullRequestWatching),
           checkedAt: watch.checkedAt,
           error: watch.error,

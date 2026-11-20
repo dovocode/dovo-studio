@@ -41,8 +41,10 @@ import {
   taskFamilyIds,
   taskFamilyWorking,
   nativeAgentWorking,
+  taskSearchHitLimit,
   taskSearchNeedle,
   taskSearchOrder,
+  type TaskSearchScope,
   workspaceSchema,
   patchSchema,
   summarizeTask,
@@ -73,6 +75,14 @@ import {
 const rowSchema = mutableStruct({
   value: Schema.String,
 })
+const nullableRowSchema = mutableStruct({ value: Schema.NullOr(Schema.String) })
+/** Durable proof of an accepted answer. `prompt` identifies the exact question it answered. */
+export type QuestionResponseReceipt = {
+  id: string
+  fingerprint: string
+  attachments?: Attachment[]
+  prompt?: string
+}
 const collectionSchemas = {
   agents: agentSchema,
   repositories: repositorySchema,
@@ -536,21 +546,39 @@ export class WorkspaceStore {
   }
   acceptQuestionResponse(
     taskId: string,
-    response: { id: string; fingerprint: string; attachments?: Attachment[] },
+    response: QuestionResponseReceipt,
     action: ProviderAction,
   ) {
     this.db.transaction(() => {
       this.db
         .prepare(
-          'INSERT INTO question_responses (id,task_id,fingerprint,attachments) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
+          'INSERT INTO question_responses (id,task_id,fingerprint,attachments,prompt) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO NOTHING',
         )
-        .run(response.id, taskId, response.fingerprint, JSON.stringify(response.attachments ?? []))
+        .run(
+          response.id,
+          taskId,
+          response.fingerprint,
+          JSON.stringify(response.attachments ?? []),
+          response.prompt ?? null,
+        )
       this.providerActions.record(action)
     })()
   }
   /** Task summaries and the rest of the workspace. No conversation history. */
   get(): WorkspaceSummary {
     return this.workspace
+  }
+  /** Tasks whose durable records this runtime preserved but could not load: version 2 and 3 rows,
+   * and version 1 tasks kept in the migration backup. Cleanup keeps their files and sandboxes
+   * until the task loads again or is deleted. A deletion stays authoritative. */
+  unreadableTaskIds(): readonly string[] {
+    const version1 = this.documents.unreadableVersion1()
+    if (!version1.length) return this.documents.unreadable()
+    const loaded = new Set(this.workspace.tasks.map((task) => task.id))
+    return [
+      ...this.documents.unreadable(),
+      ...version1.filter((id) => !loaded.has(id) && !this.wasTaskDeleted(id)),
+    ]
   }
   wasTaskDeleted(id: string) {
     return !!this.db
@@ -817,7 +845,7 @@ export class WorkspaceStore {
       taskId: string
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
+      response?: QuestionResponseReceipt
     },
     action?: ProviderAction,
     options?: { preserveSettledAt?: boolean; initialModelSelectionTaskId?: string },
@@ -1145,13 +1173,14 @@ export class WorkspaceStore {
       if (submission?.response)
         this.db
           .prepare(
-            'INSERT INTO question_responses (id,task_id,fingerprint,attachments) VALUES (?, ?, ?, ?)',
+            'INSERT INTO question_responses (id,task_id,fingerprint,attachments,prompt) VALUES (?, ?, ?, ?, ?)',
           )
           .run(
             submission.response.id,
             submission.taskId,
             submission.response.fingerprint,
             JSON.stringify(submission.response.attachments ?? []),
+            submission.response.prompt ?? null,
           )
       for (const { id } of removed) {
         this.providerActions.remove(id)
@@ -1300,16 +1329,32 @@ export class WorkspaceStore {
     this.taskSummary(id)
     return this.conversations.deferSearch(id)
   }
-  /** Search committed histories in SQLite, ordered and bounded like `searchTaskMessages`. */
-  searchHistory(query: string, id?: string, before?: string) {
+  /** Search committed histories in SQLite, ordered and bounded like `searchTaskMessages`.
+   * A global search applies `scope` before its hit limit, so a filtered client keeps its hits. */
+  searchHistory(query: string, id?: string, before?: string, scope?: TaskSearchScope) {
+    const tasks = id ? [this.taskSummary(id)] : this.workspace.tasks
+    const repositories = scope?.repositoryIds && new Set(scope.repositoryIds)
+    const hitTaskIds =
+      !id && (repositories || scope?.archived !== undefined)
+        ? new Set(
+            tasks
+              .filter(
+                (task) =>
+                  (!repositories || repositories.has(task.repositoryId)) &&
+                  (scope?.archived === undefined || !!task.archivedAt === scope.archived),
+              )
+              .map((task) => task.id),
+          )
+        : undefined
     const result = this.conversations.search(
-      taskSearchOrder(id ? [this.taskSummary(id)] : this.workspace.tasks).map((task) => task.id),
+      taskSearchOrder(tasks).map((task) => task.id),
       taskSearchNeedle(query),
-      id ? 51 : 50,
+      id ? taskSearchHitLimit + 1 : taskSearchHitLimit,
       before,
+      hitTaskIds,
     )
-    if (!id || result.hits.length <= 50) return result
-    const hits = result.hits.slice(0, 50)
+    if (!id || result.hits.length <= taskSearchHitLimit) return result
+    const hits = result.hits.slice(0, taskSearchHitLimit)
     return { ...result, hits, nextBefore: hits.at(-1)!.messageId }
   }
   // Questions consumes this through its injected receipt-store contract.
@@ -1318,6 +1363,13 @@ export class WorkspaceStore {
       .prepare('SELECT fingerprint AS value FROM question_responses WHERE id = ?')
       .get(id)
     return row ? decode(rowSchema, row).value : undefined
+  }
+  /** Prompt identity of a durable answer: undefined without a receipt, null for older receipts. */
+  questionPrompt(id: string) {
+    const row = this.db
+      .prepare('SELECT prompt AS value FROM question_responses WHERE id = ?')
+      .get(id)
+    return row ? decode(nullableRowSchema, row).value : undefined
   }
   questionAttachmentIds(taskId?: string) {
     return this.db
@@ -1362,7 +1414,7 @@ export class WorkspaceStore {
     submission?: {
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
+      response?: QuestionResponseReceipt
     },
     action?: ProviderAction,
   ) {
@@ -1413,7 +1465,7 @@ export class WorkspaceStore {
     submission?: {
       id: string
       fingerprint: string
-      response?: { id: string; fingerprint: string; attachments?: Attachment[] }
+      response?: QuestionResponseReceipt
     },
     action?: ProviderAction,
   ) {

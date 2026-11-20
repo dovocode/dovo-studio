@@ -54,10 +54,11 @@ import { Effect, Schema } from 'effect'
 import { useCarMode } from '../../runtime/preferences/app-preferences'
 import { useAction } from '../../ui/controls/use-action'
 import {
+  computerDraftKey,
   createDetailDrafts,
-  detailDraftKey,
   useDetailDraft,
 } from '../../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../../runtime/state/detail-draft-storage'
 import { useApplicationState } from '../../runtime/state/application-state'
 import { TaskAgents } from './task-agents'
 import { NativeAgentThread } from './native-agent-thread'
@@ -88,6 +89,7 @@ import {
   Suspense,
   useEffect,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type ComponentProps,
@@ -290,8 +292,7 @@ export function TaskDetail({
 
   const { width } = useWindowDimensions()
 
-  const { profile, overviews, connection, snapshot, connected, refresh, readCache, activeId } =
-    useRuntime()
+  const { profile, overviews, connection, snapshot, connected, refresh, readCache } = useRuntime()
   const panes = useTaskPanes()
   const car = useCarMode()
   const recoveryScope = JSON.stringify([
@@ -322,9 +323,13 @@ export function TaskDetail({
   const [cacheRetry, setCacheRetry] = useState(0)
   const revision = task.historyRevision ?? 0
   const replica = readCache ? cachedRuntimeThread(readCache, task.id) : undefined
-  const retained = replica && (replica.historyRevision ?? 0) === revision ? replica : undefined
+  const retained = useMemo(
+    () => (!loaded && replica ? cachedThread(task, replica) : task),
+    [loaded, replica, task],
+  )
+  const retainedHistory = retained !== task
   useEffect(() => {
-    if (loaded || !readCache || retained) return
+    if (loaded || !readCache || readCache.closed || retainedHistory) return
     let stopped = false
     void readCache
       .read('snapshot', runtimeSnapshotCacheSchema)
@@ -345,13 +350,14 @@ export function TaskDetail({
     return () => {
       stopped = true
     }
-  }, [loaded, readCache, task.id, revision, retained, cacheRetry])
-  const available =
-    !readCache?.closed &&
-    cached?.cache === readCache &&
-    cached?.task.id === task.id &&
-    (cached.task.historyRevision ?? 0) === revision
-  const history = retained ?? (available ? cached?.task : undefined)
+  }, [loaded, readCache, task.id, revision, retainedHistory, cacheRetry])
+  const available = !readCache?.closed && cached?.cache === readCache && cached?.task.id === task.id
+  const saved = available ? cached?.task : undefined
+  const displayTask = useMemo(
+    () => (retainedHistory ? retained : !loaded && saved ? cachedThread(task, saved) : task),
+    [loaded, retained, retainedHistory, saved, task],
+  )
+  const historyLoaded = loaded || displayTask !== task
   const historyError =
     cacheError?.cache === readCache && cacheError.id === task.id ? cacheError.error : ''
   const displayProject = taskDisplayProject(task, snapshot?.workspace.repositories ?? [])
@@ -363,9 +369,7 @@ export function TaskDetail({
   const harness = threadHeaderHarness(task, snapshot)
   const hasProject = !task.bot && !!displayProject && displayProject.kind !== 'scratch'
   const pendingFileEdit =
-    !loaded &&
-    !history &&
-    threadDrafts.read(detailDraftKey(connection, 'thread', activeId, task.id))?.file
+    !historyLoaded && threadDrafts.read(computerDraftKey(profile, 'thread', task.id))?.file
   const hasDiff =
     !!pendingFileEdit ||
     threadHasChanges(
@@ -374,7 +378,7 @@ export function TaskDetail({
         (repo) => repo.id === task.repositoryId && !repo.kind,
       ),
     )
-  if (!loaded && !history)
+  if (!historyLoaded)
     return (
       <View style={{ flex: 1 }}>
         <ScreenHeader
@@ -440,7 +444,7 @@ export function TaskDetail({
     )
   return (
     <TaskDetailContent
-      task={!loaded && history ? cachedThread(task, history) : task}
+      task={displayTask}
       onBack={onBack}
       questionId={questionId}
       nativeAgentKey={nativeAgentKey}
@@ -449,6 +453,13 @@ export function TaskDetail({
     />
   )
 }
+const fileDraftSchema = mutableStruct({
+  path: Schema.String,
+  contents: Schema.String,
+  expected: Schema.String,
+})
+// Side chat questions and file edits stay on the device after the app restarts. A file edit
+// larger than the storage limit stays in memory only, with a notice.
 const threadDrafts = createDetailDrafts<{
   sideChat: Record<string, string>
   file: FileEditDraft | null
@@ -456,6 +467,17 @@ const threadDrafts = createDetailDrafts<{
 }>({
   isClean: (draft) =>
     !draft.file && !draft.browsedFile && Object.values(draft.sideChat).every((text) => !text),
+  persist: {
+    name: 'thread',
+    schema: mutableStruct({
+      sideChat: Schema.Record(Schema.String, Schema.String),
+      file: Schema.NullOr(fileDraftSchema),
+      browsedFile: Schema.NullOr(
+        mutableStruct({ ...fileDraftSchema.fields, checkoutId: Schema.String }),
+      ),
+    }),
+    storage: detailDraftStorage,
+  },
 })
 function TaskDetailContent({
   task,
@@ -518,11 +540,15 @@ function TaskDetailContent({
   const retry = useAction(
     preparation?.failed ? JSON.stringify([activeId, task.id, taskFailureVersion(task)]) : undefined,
   )
-  const { draft: detailDraft, setField: setDraftField } = useDetailDraft(
-    threadDrafts,
-    detailDraftKey(connection, 'thread', activeId, task.id),
-    () => ({ sideChat: {}, file: null, browsedFile: null }),
-  )
+  const {
+    draft: detailDraft,
+    setField: setDraftField,
+    persistence: draftPersistence,
+  } = useDetailDraft(threadDrafts, computerDraftKey(profile, 'thread', task.id), () => ({
+    sideChat: {},
+    file: null,
+    browsedFile: null,
+  }))
   const [asking, setAsking] = useApplicationState(false)
   const [selectedSideChat, setSelectedSideChat] = useState<string>()
   const [editingInstructions, setEditingInstructions] = useApplicationState(false)
@@ -1602,6 +1628,7 @@ function TaskDetailContent({
               task={task}
               draft={detailDraft.browsedFile}
               onDraftChange={(draft) => setDraftField('browsedFile', draft)}
+              draftPersistence={draftPersistence}
             />
           )}
           {pane === 'agents' && (
@@ -1619,6 +1646,7 @@ function TaskDetailContent({
               task={task}
               selectedChatId={selectedSideChat}
               drafts={detailDraft.sideChat}
+              draftPersistence={draftPersistence}
               setDrafts={(update) =>
                 setDraftField(
                   'sideChat',
@@ -1657,6 +1685,7 @@ function TaskDetailContent({
               initialTab={!checkpoint ? reviewTab : 'diff'}
               edit={detailDraft.file}
               onEditChange={(draft) => setDraftField('file', draft)}
+              draftPersistence={draftPersistence}
             />
           )}
           {pane === 'terminal' && (

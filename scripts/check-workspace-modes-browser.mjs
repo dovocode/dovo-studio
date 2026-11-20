@@ -17,11 +17,12 @@ import {Workbench} from './packages/studio-shell/src/workbench.tsx';
 import {updateAppPreferences,createTask,useWorkspace,useStudioHost} from '@dovo/studio-core';
 import {tasksExtension} from './packages/extension-tasks/src/index.ts';
 updateAppPreferences({unifiedWorkspaceEnabled:true,browserWorkspaceEnabled:true,unifiedWorkspaceHideNormalModes:false});
+if(window.hideNormalModes)updateAppPreferences({unifiedWorkspaceHideNormalModes:true});
 const profile=runtimeProfile({address:'http://host.lan:8787',token:'device-token-at-least-32-characters-fixture'},'Local computer');
 localStorage.setItem('dovo.runtime-registry.v1',JSON.stringify({version:1,activeId:profile.id,profiles:[profile]}));
 window.dovo={readRuntimeRegistry:async()=>JSON.stringify({version:1,activeId:profile.id,profiles:[profile]}),runtimeConnection:async()=>profile.connection};
 const task=createTask({title:'Mode switch thread',objective:'',agentId:'',repositoryId:'scratch'});
-task.messages=[{id:'first-message',role:'user',text:'Saved user message',createdAt:'2026-11-03T10:00:00.000Z'}];
+task.messages=[{id:'first-message',role:'user',text:'Saved user message https://example.test/thread-link',createdAt:'2026-11-03T10:00:00.000Z'}];
 const standalone={id:'standalone-shell',taskId:'studio:terminals',title:'Standalone shell',directory:'/tmp',exited:false,dormant:true};
 const projectShell={...standalone,id:'project-shell',title:'Project shell',directory:'/project',repositoryId:'project'};
 window.terminalTargets=[standalone,projectShell].map((session)=>JSON.stringify({runtimeId:profile.id,id:session.id}));
@@ -29,12 +30,13 @@ const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false
 window.setPreferences=updateAppPreferences;window.threadId=task.id;
 const threadTab={kind:'thread',runtimeId:profile.id,id:task.id};
 sessionStorage.setItem('dovo.unified-workspace.v1',JSON.stringify({tabs:[threadTab,{kind:'browser',runtimeId:'',id:'saved-page'}],active:JSON.stringify(['thread',profile.id,task.id])}));
-localStorage.setItem('dovo.shared-browser-tabs.v1',JSON.stringify({active:'saved-page',tabs:[{id:'saved-page',kind:'web',url:'http://example.lan',title:'Saved browser page',profileId:'default',pinned:true}]}));
+localStorage.setItem('dovo.shared-browser-tabs.v1',JSON.stringify({active:'saved-page',tabs:[{id:'saved-page',kind:'web',url:'http://example.lan',title:'Saved browser page',profileId:'default',pinned:true},...Array.from({length:window.fullBrowser?99:0},(_,index)=>({id:'fixture-'+index,kind:'web',url:'http://example.lan/'+index,title:'Page '+index,profileId:'default'}))]}));
 window.calls=[];window.revision=1;window.extensionCreations=0;window.viewLoads={};
+const terminalAttempts=new Map();window.launchedTerminals=[];
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({path,input});
- if(path==='/api/snapshot')return Response.json({...snapshot,terminalWorkspaceToolsSupported:window.legacyTerminalRuntime?undefined:true,revision:++window.revision});
+ if(path==='/api/snapshot')return Response.json({...snapshot,workspaceTerminalRequestIdSupported:true,terminalWorkspaceToolsSupported:window.legacyTerminalRuntime?undefined:true,revision:++window.revision});
  if(path==='/health')return Response.json({service:'dovo-runtime',runtimeId:snapshot.runtimeId});
  if(path==='/api/retrieval/peers')return Response.json({ok:true});
  if(path==='/api/mutations/status')return Response.json({version:1});
@@ -49,14 +51,39 @@ window.fetch=async(url,init={})=>{
  if(path==='/api/models')return Response.json({providers:[],models:[]});
  if(path==='/api/agents/availability')return Response.json([]);
  if(path==='/api/terminals/shells')return Response.json({shells:[{id:'default',label:'Default shell',path:'/bin/bash',args:['-l']}]});
+ if(path==='/api/terminals/workspace'){
+  let terminal=input.requestId&&terminalAttempts.get(input.requestId);
+  if(!terminal){
+   terminal={...standalone,id:'created-shell-'+window.launchedTerminals.length,title:input.command};
+   snapshot.terminals.push(terminal);window.launchedTerminals.push(terminal.id);
+   if(input.requestId)terminalAttempts.set(input.requestId,terminal);
+  }
+  if(window.holdTerminal)await new Promise((resolve)=>window.releaseTerminal=resolve);
+  if(window.loseTerminalResponse){window.loseTerminalResponse=false;throw new Error('Terminal response lost');}
+  return Response.json(terminal);
+ }
  if(path==='/api/previews/browser/profiles/read')return Response.json({profiles:[{id:'default',name:'Default'}]});
  throw new Error('Unexpected request '+url);
 };
 window.browserFocusListeners=new Set();const onBrowserWorkspaceFocus=listener=>{window.browserFocusListeners.add(listener);return()=>window.browserFocusListeners.delete(listener)};window.focusBrowserWorkspace=()=>{for(const listener of window.browserFocusListeners)listener()};
-const browser=async command=>{window.calls.push({browser:command.action});if(command.action==='tabs')return {tabs:[]};if(command.action==='status')return window.nativePage;return undefined};
+let externalLinkListener;
+const onOpenLink=listener=>{externalLinkListener=listener;return()=>{externalLinkListener=undefined}};
+window.deliverExternalLink=url=>externalLinkListener(url);
+const movedTabs=[];
+const browser=async command=>{
+ window.calls.push({browser:command.action});
+ if(command.action==='tabs')return {tabs:[]};
+ if(command.action==='open-tab'){
+  const {key,tab}=command;window.openedExternalTab=tab;movedTabs.push({key,tab});
+ }
+ if(command.action==='status'){
+  if(command.tabCount!==undefined&&movedTabs.length)return {url:'about:blank',canGoBack:false,canGoForward:false,movedTabs:movedTabs.splice(0)};
+  return window.nativePage;
+ }
+};
 function Probe(){window.store=useWorkspace();window.host=useStudioHost();return null;}
 const extension={...tasksExtension,createRuntime:api=>{window.extensionCreations++;return tasksExtension.createRuntime(api)},views:tasksExtension.views.map(view=>({...view,load:async()=>{window.viewLoads[view.id]=(window.viewLoads[view.id]??0)+1;const module=await view.load();return {default:props=><><Probe/><module.default {...props}/></>}}}))};
-createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={[extension]} browser={browser} onBrowserWorkspaceFocus={onBrowserWorkspaceFocus} openBrowserWindow={async()=>{}}/></StrictMode>);
+createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensions={[extension]} browser={browser} onBrowserWorkspaceFocus={onBrowserWorkspaceFocus} openBrowserWindow={async()=>{}} onOpenLink={onOpenLink}/></StrictMode>);
 
 `,
     },
@@ -98,7 +125,7 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
   ],
 )
 const browser = await chromium.launch({ headless: true })
-try {
+async function checkWorkspaceModes() {
   const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
   page.setDefaultTimeout(10000)
   const errors = []
@@ -407,9 +434,253 @@ try {
     (await page.evaluate(() => window.revision)) >= 74,
     'Runtime snapshots arrive throughout switching',
   )
-  console.log(
-    'Actual Workbench: mode switches, floating Settings, right-pane tabs, terminal docking and the Chrome DevTools action passed without React errors or extension reloads',
+  const continuity = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  await continuity.route('http://workspace.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
   )
+  await continuity.goto('http://workspace.lan')
+  await continuity.addScriptTag({ content: built.outputFiles[0].text })
+  const selectMode = (name) => continuity.getByRole('button', { name, exact: true }).click()
+  await selectMode('Workspace')
+  const threadLink = continuity.locator('a[href="https://example.test/thread-link"]')
+  await threadLink.click({ button: 'right' })
+  await continuity.getByRole('menuitem', { name: 'Open in Dovo browser', exact: true }).click()
+  await continuity.getByRole('tab', { name: 'Browser', exact: true }).waitFor()
+  assert.equal(
+    await continuity.evaluate(
+      () => JSON.parse(JSON.parse(sessionStorage.getItem('dovo.unified-workspace.v1')).active)[0],
+    ),
+    'thread',
+    'The thread browser action stays in its thread pane',
+  )
+  await continuity.getByRole('button', { name: 'Workspace home', exact: true }).click()
+  const home = continuity.getByRole('textbox', { name: 'Workspace request', exact: true })
+  await home.fill('Keep the unsent Home draft across modes')
+  await selectMode('Threads')
+  await continuity.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
+  await selectMode('Workspace')
+  await home.waitFor()
+  assert.equal(await home.inputValue(), 'Keep the unsent Home draft across modes')
+  await selectMode('Threads')
+  const firstText = 'Recover first text before the workspace write'
+  await continuity.getByRole('textbox', { name: 'Message thread', exact: true }).fill(firstText)
+  // Restore local storage without IndexedDB, as when the draft journal is the only completed write.
+  const restoredContext = await browser.newContext({
+    storageState: await continuity.context().storageState(),
+  })
+  await restoredContext.route('http://workspace.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const restored = await restoredContext.newPage()
+  await restored.goto('http://workspace.lan')
+  await restored.addScriptTag({ content: built.outputFiles[0].text })
+  await restored.getByRole('textbox', { name: 'Message thread', exact: true }).waitFor()
+  await restored.waitForFunction((expected) => {
+    const input = document.querySelector('[aria-label="Message thread"]')
+    return (input instanceof HTMLTextAreaElement ? input.value : input?.textContent) === expected
+  }, firstText)
+  console.log(
+    'Actual Workbench: mode switches, draft recovery, thread links, floating Settings, right-pane tabs, terminal docking and the Chrome DevTools action passed.',
+  )
+}
+
+async function openHomeFixture(options = {}) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } })
+  page.setDefaultTimeout(8000)
+  const errors = []
+  page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('http://workspace.lan/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  await page.goto('http://workspace.lan')
+  await page.evaluate((options) => Object.assign(window, options), options)
+  await page.addScriptTag({ content: built.outputFiles[0].text })
+  const selectMode = (name) => page.getByRole('button', { name, exact: true }).click()
+  await selectMode('Workspace')
+  await selectMode('Workspace home')
+  return {
+    page,
+    errors,
+    selectMode,
+    draft: page.getByRole('textbox', { name: 'Workspace request', exact: true }),
+  }
+}
+
+async function checkTerminalDraft() {
+  const { page, errors, selectMode, draft } = await openHomeFixture()
+  try {
+    await page.evaluate(() => window.store.refreshRuntime(window.store.runtimeRegistry.profiles[0]))
+    const submit = async (command) => {
+      await draft.fill(command)
+      await page.getByRole('button', { name: 'Workspace destination' }).click()
+      await page.getByRole('option', { name: 'Terminal', exact: true }).click()
+      await page.getByRole('button', { name: 'Run command', exact: true }).click()
+    }
+    const leave = async () => {
+      await selectMode('Threads')
+      await draft.waitFor({ state: 'detached' })
+    }
+    const returnToDraft = async () => {
+      await selectMode('Workspace')
+      await draft.waitFor()
+    }
+    const callsFor = (command) =>
+      page.evaluate(
+        (command) =>
+          window.calls.filter(
+            (call) => call.path === '/api/terminals/workspace' && call.input.command === command,
+          ),
+        command,
+      )
+    const retry = 'printf retry-after-switch'
+    await page.evaluate(() => {
+      window.loseTerminalResponse = true
+    })
+    await submit(retry)
+    await page.getByRole('alert').filter({ hasText: 'Cannot reach host.lan' }).waitFor()
+    await leave()
+    await returnToDraft()
+    assert.equal(await draft.inputValue(), retry)
+    await submit(retry)
+    await draft.waitFor({ state: 'hidden' })
+    const [first, second] = await callsFor(retry)
+    assert.ok(first.input.requestId, 'The runtime supports request IDs')
+    assert.equal(
+      second.input.requestId,
+      first.input.requestId,
+      'The retry uses the same request ID after Home remounts',
+    )
+    assert.equal(await page.evaluate(() => window.launchedTerminals.length), 1)
+
+    for (const edit of [false, true]) {
+      await selectMode('Workspace home')
+      await page.evaluate(() => {
+        window.holdTerminal = true
+        window.releaseTerminal = undefined
+      })
+      const command = 'printf finish-in-background'
+      await submit(command)
+      await page.waitForFunction(() => !!window.releaseTerminal)
+      await leave()
+      await returnToDraft()
+      assert.equal(await draft.inputValue(), command)
+      if (edit) {
+        await draft.fill('newer edit')
+        await draft.fill(command)
+      }
+      await page.evaluate(() => {
+        window.holdTerminal = false
+        window.releaseTerminal()
+      })
+      if (edit) {
+        await page.evaluate(
+          () =>
+            new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+        )
+        assert.equal(
+          await draft.inputValue(),
+          command,
+          'A newer edit with the same text survives the old response',
+        )
+      } else {
+        await page.waitForFunction(
+          () => document.querySelector('[aria-label="Workspace request"]').value === '',
+        )
+      }
+      assert.equal(
+        await draft.isVisible(),
+        true,
+        'A background terminal response leaves Home selected',
+      )
+    }
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+
+async function checkFullBrowser() {
+  const { page, errors, draft } = await openHomeFixture({ fullBrowser: true })
+  try {
+    const address = 'http://example.lan/explicit-retry'
+    const persistedTabs = () =>
+      page.evaluate(() => JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs)
+    await draft.fill(address)
+    await page.getByRole('button', { name: 'Workspace destination' }).click()
+    await page.getByRole('option', { name: 'Browser', exact: true }).click()
+    const submit = page.getByRole('button', { name: 'Open browser', exact: true })
+    await submit.click()
+    assert.equal(
+      await draft.inputValue(),
+      address,
+      'A rejected browser request keeps the address in Home',
+    )
+    const capacity = page
+      .getByRole('alert')
+      .filter({ hasText: 'Close a tab before opening more than 100 tabs.' })
+    await capacity.waitFor()
+    assert.equal(await capacity.count(), 1)
+    assert.equal((await persistedTabs()).length, 100)
+    await page.getByRole('button', { name: 'Close tab Page 0', exact: true }).click()
+    await page.waitForFunction(
+      () =>
+        !JSON.parse(localStorage.getItem('dovo.shared-browser-tabs.v1')).tabs.some(
+          (tab) => tab.id === 'fixture-0',
+        ),
+    )
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    )
+    assert.equal((await persistedTabs()).length, 99)
+    assert.equal(await draft.inputValue(), address)
+    await submit.click()
+    await draft.waitFor({ state: 'hidden' })
+    const tabs = await persistedTabs()
+    assert.equal(tabs.length, 100)
+    assert.equal(tabs.filter((tab) => tab.url === address).length, 1)
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+
+async function checkExternalLink() {
+  const { page, errors } = await openHomeFixture({ hideNormalModes: true })
+  try {
+    await page.evaluate(() => window.deliverExternalLink('http://example.lan/external'))
+    const dialog = page.getByRole('dialog', { name: 'Open external link', exact: true })
+    await dialog
+      .getByRole('button', { name: /This computer/ })
+      .first()
+      .click()
+    await dialog.waitFor({ state: 'hidden' })
+    const tab = await page.evaluate(() => window.openedExternalTab)
+    assert.ok(tab?.id)
+    await page.waitForFunction(
+      (id) =>
+        JSON.parse(sessionStorage.getItem('dovo.unified-workspace.v1')).active ===
+        JSON.stringify(['browser', '', id]),
+      tab.id,
+    )
+    await page.getByRole('region', { name: 'Browser previews', exact: true }).waitFor()
+    assert.deepEqual(errors, [])
+  } finally {
+    await page.close()
+  }
+}
+
+const recoveryChecks = {
+  terminal: checkTerminalDraft,
+  capacity: checkFullBrowser,
+  external: checkExternalLink,
+}
+try {
+  const scenario = process.argv[2]
+  if (scenario) await recoveryChecks[scenario]()
+  else {
+    await checkWorkspaceModes()
+    for (const check of Object.values(recoveryChecks)) await check()
+  }
 } finally {
   await browser.close()
 }

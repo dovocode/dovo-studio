@@ -32,6 +32,9 @@ export class BinaryTerminalStream {
   ) {}
 
   replay(data: string) {
+    // Recovery can replace the display while an earlier frame is in flight.
+    if (this.replayPending) this.queue.push({ type: 'replayEnd' })
+    this.pendingHigh = ''
     this.queue.push({ type: 'replayStart' })
     // The retained UTF-16 suffix can begin halfway through a surrogate pair.
     if (data.length && data.charCodeAt(0) >= 0xdc00 && data.charCodeAt(0) <= 0xdfff)

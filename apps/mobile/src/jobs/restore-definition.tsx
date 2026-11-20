@@ -1,11 +1,19 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { createDetailDrafts, useDetailDraft, detailDraftKey } from '../runtime/state/detail-drafts'
+import {
+  createDetailDrafts,
+  useDetailDraft,
+  computerDraftKey,
+} from '../runtime/state/detail-drafts'
+import { detailDraftStorage } from '../runtime/state/detail-draft-storage'
+import { DraftStorageNotice } from '../ui/content/draft-storage-notice'
+import { Schema } from 'effect'
 import { useEffect, useRef, useState } from 'react'
 import { View } from 'react-native'
 import {
   automationSchema,
   automationRestoreDraftSchema,
   decode,
+  mutableStruct,
   routineChangeSummary,
   restorableAutomation,
   type Automation,
@@ -17,8 +25,14 @@ import { Action } from '../ui/controls/action'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 
+// An edited definition stays on the device after the app restarts. It holds no credentials.
 const drafts = createDetailDrafts<{ text: string; expected?: Automation }>({
   isClean: (value) => !value.text,
+  persist: {
+    name: 'automation-restore',
+    schema: mutableStruct({ text: Schema.String, expected: Schema.optional(automationSchema) }),
+    storage: detailDraftStorage,
+  },
 })
 
 export function RestoreDefinition({
@@ -33,7 +47,7 @@ export function RestoreDefinition({
   const { styles } = useTheme()
   const retained = useDetailDraft(
     drafts,
-    detailDraftKey(profile?.connection ?? null, runId),
+    computerDraftKey(profile, 'automation-restore', runId),
     () => ({ text: '' }),
   )
   const draft = retained.draft.text,
@@ -142,6 +156,7 @@ export function RestoreDefinition({
                 {uiText('Enter a valid automation definition.')}
               </Text>
             )}
+            <DraftStorageNotice persistence={retained.persistence} />
             {!!error && <Text accessibilityRole="alert">{error}</Text>}
             <Action
               label={uiText('Compare with current definition')}

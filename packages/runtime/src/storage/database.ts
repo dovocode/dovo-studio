@@ -20,6 +20,9 @@ export function openDatabase(path: string): Database.Database {
     .map((row) => decode(mutableStruct({ name: Schema.String }), row))
   if (!questionColumns.some((column) => column.name === 'attachments'))
     db.exec('ALTER TABLE question_responses ADD COLUMN attachments TEXT')
+  // Receipts written before this column have no prompt identity; reads report that as null.
+  if (!questionColumns.some((column) => column.name === 'prompt'))
+    db.exec('ALTER TABLE question_responses ADD COLUMN prompt TEXT')
   if (path !== ':memory:') chmodSync(path, 0o600)
   return db
 }

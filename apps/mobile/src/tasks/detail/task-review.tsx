@@ -34,6 +34,8 @@ import { useAction } from '../../ui/controls/use-action'
 import { DiffView } from '../preview/diff-view'
 import { PullStatus } from './pull-status'
 import { CommitSection } from './commit-section'
+import type { DraftPersistence } from '../../runtime/state/detail-drafts'
+import { DraftStorageNotice } from '../../ui/content/draft-storage-notice'
 export type FileEditDraft = { path: string; contents: string; expected: string }
 export function TaskReview({
   initialCheckpoint = '',
@@ -43,6 +45,7 @@ export function TaskReview({
   initialTab = 'diff',
   edit,
   onEditChange: setEdit,
+  draftPersistence,
 }: {
   initialCheckpoint?: string
   initialPath?: string
@@ -51,6 +54,7 @@ export function TaskReview({
   initialTab?: ReviewTab
   edit: FileEditDraft | null
   onEditChange: (draft: FileEditDraft | null) => void
+  draftPersistence?: DraftPersistence
 }) {
   const uiText = useInterfaceText()
 
@@ -695,6 +699,7 @@ export function TaskReview({
           </Text>
         ) : edit ? (
           <ScrollView contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+            <DraftStorageNotice persistence={draftPersistence} />
             <Field
               label={edit.path}
               value={edit.contents}

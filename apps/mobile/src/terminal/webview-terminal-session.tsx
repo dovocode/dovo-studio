@@ -1,3 +1,4 @@
+import { useTerminalViewed } from './use-terminal-viewed'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 // WebView + xterm.js renderer: the Expo web build and the fallback for native binaries built
 // without the expo-libghostty module (for example an older development client).
@@ -15,6 +16,7 @@ import { useMobilePreferences } from '../runtime/preferences/app-preferences'
 import { useTheme } from '../ui/theme'
 export type MobileTerminalSessionProps = {
   id: string
+  covered?: boolean
   visible?: boolean
   readOnly?: boolean
   reconnectToken?: number
@@ -23,6 +25,7 @@ export type MobileTerminalSessionProps = {
 export function WebViewTerminalSession({
   id,
   visible = true,
+  covered = false,
   readOnly = false,
   reconnectToken,
 }: MobileTerminalSessionProps) {
@@ -35,6 +38,7 @@ export function WebViewTerminalSession({
     view = useRef<WebView>(null),
     [error, setError] = useApplicationState(''),
     [status, setStatus] = useApplicationState('Loading terminal…')
+  const [streamReady, setStreamReady] = useApplicationState(false)
   const [generation, setGeneration] = useApplicationState(0)
   const [ready, setReady] = useApplicationState(0)
   const [backgrounded, setBackgrounded] = useApplicationState(
@@ -59,6 +63,7 @@ export function WebViewTerminalSession({
         `window.setTerminalReadOnly(${readOnly || !runtimeConnected});true;`,
       )
   }, [ready, readOnly, runtimeConnected])
+  const viewError = useTerminalViewed(id, visible && !!ready && streamReady && !error, covered)
   const sequence = useRef(0)
   const session = useRef<{
     attempt: number
@@ -69,6 +74,7 @@ export function WebViewTerminalSession({
     if (!ready || !connection || !runtimeConnected || backgrounded || !visible) return
     const reconnect = startReconnecting(
       async (signal, connected) => {
+        setStreamReady(false)
         setStatus('Connecting terminal…')
         const ticket = await call('/api/terminals/ticket', { id }, responses.ticket)
         if (signal.aborted) return
@@ -76,6 +82,7 @@ export function WebViewTerminalSession({
         const attempt = ++sequence.current
         await new Promise<void>((resolve, reject) => {
           const cleanup = () => {
+            setStreamReady(false)
             clearTimeout(timeout)
             signal.removeEventListener('abort', abort)
             if (session.current?.attempt === attempt) session.current = null
@@ -95,6 +102,7 @@ export function WebViewTerminalSession({
             connected: () => {
               clearTimeout(timeout)
               connected()
+              setStreamReady(true)
               setStatus('')
               setError('')
             },
@@ -119,6 +127,7 @@ export function WebViewTerminalSession({
       style={styles.screen}
       behavior={Platform.OS === 'ios' ? 'padding' : undefined}
     >
+      {!!viewError && <Text accessibilityRole="alert">{viewError}</Text>}
       <WebView
         key={generation}
         onContentProcessDidTerminate={() => {

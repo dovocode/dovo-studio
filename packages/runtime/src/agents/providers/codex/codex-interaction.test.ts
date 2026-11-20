@@ -7,6 +7,7 @@ import { Schema } from 'effect'
 import type { AgentRun, AgentSteer } from '../../execution/types'
 import { codexAdapter, createCodexAdapter } from './codex'
 import * as owned from '../../execution/stop-owned-child'
+import { Approvals } from '../../execution/approvals'
 const directories: string[] = []
 afterEach(async () => {
   vi.restoreAllMocks()
@@ -43,7 +44,14 @@ it('reports a late confirmed shutdown to native-agent tracking after close initi
   }
 })
 async function fixture(
-  mode: 'steer' | 'question' | 'clear-question' | 'reject-steer' | 'message-form' | 'child-events',
+  mode:
+    | 'steer'
+    | 'question'
+    | 'clear-question'
+    | 'reject-steer'
+    | 'message-form'
+    | 'child-events'
+    | 'withdraw-approval',
 ) {
   const directory = await mkdtemp(join(tmpdir(), 'dovo-codex-interaction-'))
   directories.push(directory)
@@ -76,6 +84,15 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
      send({method:'item/started',params:{item}});
      send({method:'item/completed',params:{item}});
      complete();
+   }
+   if(${JSON.stringify(mode)}==='withdraw-approval') {
+     send({id:'approval-1',method:'item/commandExecution/requestApproval',params:{threadId:'thread-1',turnId:'turn-1',itemId:'command-item',command:'echo harmless'}});
+     const timer = setInterval(() => {
+       if(!fs.existsSync(${JSON.stringify(log + '.withdraw')})) return;
+       clearInterval(timer);
+       send({method:'serverRequest/resolved',params:{threadId:'thread-1',requestId:'approval-1'}});
+       setTimeout(complete, 100);
+     }, 10);
    }
    if(${JSON.stringify(mode)}.includes('question')) {
      send({id:'question-1',method:'item/tool/requestUserInput',params:{threadId:'thread-1',turnId:'turn-1',itemId:'question-item',isBlocking:false,autoResolutionMs:null,questions:[{id:'direction',header:'Direction',question:'How should we proceed?',isOther:true,isSecret:false,options:[{label:'Small change',description:'Keep the scope focused'},{label:'Larger change',description:'Update related parts'}]}]}});
@@ -124,6 +141,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line', line 
     run,
     messages,
     launch: () => readFile(log + '.launch', 'utf8').then(JSON.parse),
+    withdraw: () => writeFile(log + '.withdraw', ''),
     controller,
   }
 }
@@ -229,6 +247,32 @@ it('clears a resolved question without inventing a default answer', async () => 
   expect((await messages()).find((row) => row.id === 'question-1')?.result).toEqual({
     answers: {},
   })
+})
+it('closes a command approval that Codex withdraws during an active turn', async () => {
+  const { run, withdraw } = await fixture('withdraw-approval')
+  const approvals = new Approvals()
+  // Same wiring as the active turn: the turn signal plus the provider request signal.
+  run.approve = (title, detail, kind, options, signal) =>
+    approvals.request(
+      'thread',
+      title,
+      detail,
+      signal ? AbortSignal.any([run.signal, signal]) : run.signal,
+      kind,
+      options,
+    )
+  let turnDone = false
+  const done = codexAdapter.run(run).finally(() => {
+    turnDone = true
+  })
+  await vi.waitFor(() => expect(approvals.list()).toHaveLength(1))
+  const [{ id }] = approvals.list()
+  await withdraw()
+  await vi.waitFor(() => expect(approvals.list()).toEqual([]))
+  expect(turnDone).toBe(false)
+  expect(() => approvals.decide(id, 'always')).toThrow('approval request was withdrawn')
+  expect(() => approvals.decide(id, 'approve')).toThrow('approval request was withdrawn')
+  await done
 })
 it('recognizes Astra assistant-message forms once, including choices and free text', async () => {
   const { run } = await fixture('message-form')

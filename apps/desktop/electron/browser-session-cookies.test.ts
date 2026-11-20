@@ -1,17 +1,24 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vite-plus/test'
 import { EventEmitter } from 'node:events'
-import { mkdtempSync, readFileSync, rmSync, existsSync, statSync } from 'node:fs'
+import { mkdtempSync, readFileSync, rmSync, existsSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { createBrowserSessionCookies } from './browser-session-cookies.js'
+import { createBrowserSessionCookies, sessionCookieOptOuts } from './browser-session-cookies.js'
 
-const encryption = vi.hoisted(() => ({ available: true, backend: 'gnome_libsecret' }))
+const encryption = vi.hoisted(() => ({
+  available: true,
+  backend: 'gnome_libsecret',
+  locked: false,
+}))
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => encryption.available,
     getSelectedStorageBackend: () => encryption.backend,
     encryptString: (text: string) => Buffer.from(`encrypted:${text}`),
-    decryptString: (data: Buffer) => data.toString().replace(/^encrypted:/, ''),
+    decryptString: (data: Buffer) => {
+      if (encryption.locked) throw new Error('Keychain is locked')
+      return data.toString().replace(/^encrypted:/, '')
+    },
   },
 }))
 let directory: string
@@ -19,6 +26,7 @@ beforeEach(() => {
   directory = mkdtempSync(join(tmpdir(), 'dovo-session-cookies-'))
   encryption.available = true
   encryption.backend = 'gnome_libsecret'
+  encryption.locked = false
 })
 afterEach(() => {
   rmSync(directory, { recursive: true, force: true })
@@ -181,4 +189,61 @@ it('discards an existing saved copy instead of restoring it when disabled', asyn
   await disabled.ready()
   expect(disabled.cookies.set).not.toHaveBeenCalled()
   expect(existsSync(snapshot())).toBe(false)
+})
+it('retries a restore that failed while the keychain was locked', async () => {
+  const first = fixture()
+  await first.ready()
+  first.change(cookie)
+  encryption.locked = true
+  const next = fixture()
+  await expect(next.ready()).rejects.toThrow('Could not read saved browser session cookies.')
+  expect(existsSync(snapshot())).toBe(true)
+  encryption.locked = false
+  await next.ready()
+  expect(next.cookies.set).toHaveBeenCalledExactlyOnceWith(
+    expect.objectContaining({ name: cookie.name, value: cookie.value }),
+  )
+})
+it('keeps unrestored cookies for a retry after a partial restore', async () => {
+  const first = fixture()
+  await first.ready()
+  first.change(cookie)
+  first.change({ ...cookie, name: '__Host-second', value: 'second' })
+  const next = fixture()
+  next.cookies.set.mockRejectedValueOnce(new Error('Cookie store busy'))
+  await expect(next.ready()).rejects.toThrow('Cookie store busy')
+  expect(existsSync(snapshot())).toBe(false)
+  await next.ready()
+  const restored = next.cookies.set.mock.calls.map(([details]) => details.name)
+  expect(restored).toEqual([cookie.name, cookie.name, '__Host-second'])
+  expect(readFileSync(snapshot(), 'utf8')).toContain('__Host-second')
+  // A restored session tracks changes again.
+  next.change(cookie, true)
+  next.change({ ...cookie, name: '__Host-second' }, true)
+  expect(existsSync(snapshot())).toBe(false)
+})
+it('removes a damaged snapshot so the next restore starts clean', async () => {
+  writeFileSync(snapshot(), 'encrypted:not json')
+  const next = fixture()
+  await expect(next.ready()).rejects.toThrow('Could not read saved browser session cookies.')
+  expect(existsSync(snapshot())).toBe(false)
+  await next.ready()
+  expect(next.cookies.set).not.toHaveBeenCalled()
+})
+it('reads opt-outs per profile from the flat saved app settings', () => {
+  const privateId = 'private-00000000-0000-4000-8000-000000000000'
+  expect(
+    sessionCookieOptOuts({
+      browserProfiles: [
+        { id: 'work' },
+        { id: 'kept', keepSessionCookies: true },
+        { id: 'off', keepSessionCookies: false },
+        { id: 'bad id' },
+        { id: privateId },
+        null,
+      ],
+    }),
+  ).toEqual(['work', 'off'])
+  expect(sessionCookieOptOuts({ profiles: [{ id: 'work' }] })).toEqual([])
+  expect(sessionCookieOptOuts(null)).toEqual([])
 })

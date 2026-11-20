@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { clientAddress } from './client-address.js'
+import { clientAddress } from '@dovo/protocol/client-address'
 
 const request = (remoteAddress: string, forwarded?: string) => ({
   socket: { remoteAddress },

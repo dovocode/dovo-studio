@@ -64,6 +64,12 @@ const stubs = [
     contents: `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
   },
   {
+    // TaskFiles renders the real DraftStorageNotice; keep its native Action on the same boundary.
+    path: '../controls/action',
+    importer: mobile + 'ui/content',
+    contents: `export const Action=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;`,
+  },
+  {
     path: '../../ui/controls/choice',
     importer: mobile,
     contents: `export const Choice=({label,value,onChange,items,disabled})=><select aria-label={label} value={value} disabled={disabled} onChange={event=>onChange(event.target.value)}>{items.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}</select>;`,

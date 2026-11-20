@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, rm, stat, lstat, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
@@ -212,7 +212,24 @@ it('starts an active-thread fork at committed HEAD with conversation, settings a
   }
 })
 
-it('undoes and redoes a turn’s file changes without touching the branch or index', async () => {
+it.skipIf(process.platform === 'win32')(
+  'discards a dangling symlink without following it',
+  async () => {
+    const { f, s, call } = await setup()
+    const task = s.tasks.create({
+      title: 'Restore file',
+      agentId: 'agent',
+      repositoryId: 'repo',
+      objective: '',
+      execution: 'main',
+    })
+    await symlink('missing', join(f.directory, 'dangling'))
+    const response = await call('/api/tasks/file/restore', { id: task.id, path: 'dangling' })
+    expect(response.status).toBe(200)
+    await expect(lstat(join(f.directory, 'dangling'))).rejects.toHaveProperty('code', 'ENOENT')
+  },
+)
+it('rejects legacy whole-turn restore requests and preserves later work', async () => {
   const { f, s, call } = await setup()
   await writeFile(join(f.directory, 'gone.txt'), 'will be deleted\n')
   await exec('git', ['add', 'gone.txt'], { cwd: f.directory })
@@ -254,30 +271,21 @@ it('undoes and redoes a turn’s file changes without touching the branch or ind
   const head = (await exec('git', ['rev-parse', 'HEAD'], { cwd: f.directory })).stdout
   const staged = (await exec('git', ['diff', '--cached', '--name-only'], { cwd: f.directory }))
     .stdout
-  // A later manual edit is kept by redo.
   await writeFile(join(f.directory, 'new.txt'), 'created and edited\n')
-
-  expect(
-    (await call('/api/tasks/turn/restore', { id: task.id, turnId, direction: 'undo' })).status,
-  ).toBe(200)
-  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('original\n')
-  expect(await exists(join(f.directory, 'new.txt'))).toBe(false)
-  expect(await readFile(join(f.directory, 'gone.txt'), 'utf8')).toBe('will be deleted\n')
+  await writeFile(join(f.directory, 'later.txt'), 'another thread\n')
+  for (const direction of ['undo', 'redo']) {
+    expect((await call('/api/tasks/turn/restore', { id: task.id, turnId, direction })).status).toBe(
+      410,
+    )
+  }
+  expect(await readFile(join(f.directory, 'later.txt'), 'utf8')).toBe('another thread\n')
+  expect(await readFile(join(f.directory, 'new.txt'), 'utf8')).toBe('created and edited\n')
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('agent edit\n')
+  expect(await exists(join(f.directory, 'gone.txt'))).toBe(false)
   expect((await exec('git', ['rev-parse', 'HEAD'], { cwd: f.directory })).stdout).toBe(head)
   expect(
     (await exec('git', ['diff', '--cached', '--name-only'], { cwd: f.directory })).stdout,
   ).toBe(staged)
-  const undone = s.store.task(task.id)
-  expect(undone.turns?.at(-1)?.checkpoint?.undone).toBeDefined()
-  expect(undone.messages.at(-1)?.text).toContain('I undid the file changes')
-
-  expect(
-    (await call('/api/tasks/turn/restore', { id: task.id, turnId, direction: 'redo' })).status,
-  ).toBe(200)
-  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('agent edit\n')
-  expect(await readFile(join(f.directory, 'new.txt'), 'utf8')).toBe('created and edited\n')
-  expect(await exists(join(f.directory, 'gone.txt'))).toBe(false)
-  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.undone).toBeUndefined()
 })
 
 it('previews text files up to 100 MB while preserving the 1 MB editing limit', async () => {
@@ -603,7 +611,7 @@ it('reverts one file, forks from a turn with its files, retries, and marks revie
     timeout: 10000,
   })
   expect(s.store.task(task.id).agentOverrides?.model).toBe('gpt-other')
-  expect(prompts.at(-1)).toContain('Try this again from scratch')
+  expect(prompts.at(-1)).toContain('Try this again using the current files')
   expect(prompts.at(-1)).toContain('Edit')
 
   // A review request carries the review instructions in the prompt.

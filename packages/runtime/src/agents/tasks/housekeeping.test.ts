@@ -5,6 +5,8 @@ import { summarizeTask, type Task, type TaskSummary } from '@dovo/protocol'
 import { Housekeeping, inactiveTaskIds } from './housekeeping'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, join } from 'node:path'
 
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -91,8 +93,10 @@ it('automatically archives the main thread and all descendants together', async 
   const { s, housekeeping } = await archiveFixture()
   const close = vi.spyOn(s.browsers, 'closeTask').mockResolvedValue()
   const release = vi.spyOn(s.agents, 'releaseTask').mockResolvedValue()
+  const remove = vi.spyOn(s.sandboxes, 'remove')
   expect(await housekeeping.archiveInactive(now)).toEqual(['parent'])
   expect(s.store.get().tasks.every((item) => item.archived && item.archivedAt)).toBe(true)
+  expect(remove.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
   expect(close.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
   expect(release.mock.calls.map(([id]) => id).sort()).toEqual(['child', 'nested', 'parent'])
 })
@@ -132,8 +136,15 @@ it('keeps the whole family unarchived when its activity audit cannot commit', as
     if (args[2].startsWith('Archived after')) throw new Error('Audit write failed')
     return add(...args)
   })
+  // Sandbox removal cannot be undone, so it waits for the archive commit.
+  const privateFile = join(s.sandboxes.stateDirectory('parent'), 'private.txt')
+  await mkdir(dirname(privateFile), { recursive: true })
+  await writeFile(privateFile, 'private')
+  const remove = vi.spyOn(s.sandboxes, 'remove')
   expect(await housekeeping.archiveInactive(now)).toEqual([])
   expect(s.store.get().tasks.every((item) => !item.archivedAt)).toBe(true)
+  expect(remove).not.toHaveBeenCalled()
+  expect(await readFile(privateFile, 'utf8')).toBe('private')
   expect(s.db.prepare('SELECT value FROM documents WHERE id = ?').get('workspace')).toEqual(before)
 })
 
@@ -167,9 +178,11 @@ it.each(['recent activity', 'new descendant', 'disabled preference'] as const)(
           ],
         }))
       else s.preferences.save({ ...s.preferences.get(), autoArchiveDays: 0 })
+      const remove = vi.spyOn(s.sandboxes, 'remove')
       release()
       expect(await archive).toEqual([])
       expect(s.store.get().tasks.every((item) => !item.archivedAt)).toBe(true)
+      expect(remove).not.toHaveBeenCalled()
     } finally {
       release()
       await archive
@@ -480,4 +493,31 @@ it('inherits settled auto-archive settings, honors project and thread overrides,
   expect(await housekeeping.archiveInactive(now + 6 * 86_400_000)).toEqual([])
   s.store.updateTask('parent', (task) => ({ ...task, archiveAfterSettledDays: undefined }))
   expect(await housekeeping.archiveInactive(now + 6 * 86_400_000)).toEqual(['parent'])
+})
+
+it('holds an automatically archived family until its sandbox removal ends, also after a failure', async () => {
+  const { s, housekeeping } = await archiveFixture()
+  const remove = s.sandboxes.remove.bind(s.sandboxes)
+  let entered!: () => void
+  let release!: () => void
+  const removing = new Promise<void>((resolve) => (entered = resolve))
+  const gate = new Promise<void>((resolve) => (release = resolve))
+  vi.spyOn(s.sandboxes, 'remove').mockImplementation(async (id) => {
+    entered()
+    await gate
+    if (id === 'parent') throw new Error('Injected busy container')
+    return remove(id)
+  })
+  const archive = housekeeping.archiveInactive(now)
+  try {
+    await removing
+    expect(s.store.get().tasks.every((item) => item.archived)).toBe(true)
+    for (const id of ['parent', 'child', 'nested'])
+      expect(() => s.tasks.requireIdle(id)).toThrow(/archived or deleted/)
+  } finally {
+    release()
+  }
+  expect(await archive).toEqual(['parent'])
+  for (const id of ['parent', 'child', 'nested'])
+    expect(() => s.tasks.requireIdle(id)).not.toThrow()
 })

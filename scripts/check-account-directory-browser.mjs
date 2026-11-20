@@ -12,7 +12,7 @@ import {AccountPanel as Desktop} from '${root}/packages/extension-runtime/src/ac
 import {PairingClient} from '${root}/packages/extension-runtime/src/pairing-client';
 import {MobileAccountProvider,useMobileAccount} from '${root}/apps/mobile/src/runtime/connection/account-provider';
 import {AccountPanel as Mobile} from '${root}/apps/mobile/src/runtime/connection/account-panel';
-window.internetRequests=[];window.connects=[];window.boxSecret=new Uint8Array(32).fill(7);window.internetStatus={enabled:false,connected:false,error:''};window.syncSession=async session=>{window.session=session};window.runtimeRequest=async(path,body)=>{window.internetRequests.push({path,body});window.internetStatus={enabled:body.enabled,connected:body.enabled,error:''};window.hosted(body.enabled);return window.internetStatus};window.saved=null;window.calls=[];window.ready=false;window.unavailable=false;
+window.internetRequests=[];window.connects=[];window.boxSecret=new Uint8Array(32).fill(7);window.internetStatus={enabled:false,connected:false,error:''};window.syncSession=async session=>{window.session=session};window.runtimeRequest=async(path,body)=>{window.internetRequests.push({path,body});window.internetStatus={enabled:body.enabled,connected:body.enabled,error:''};window.hosted(body.enabled);return window.internetStatus};window.saved??=null;window.calls=[];window.ready=false;window.unavailable??=false;
 window.sources=[{name:'Mac Studio',profile:{id:'local',name:'Mac Studio',connection:{address:'http://127.0.0.1:51464',token:'runtime-token-never-upload',runtimeId:'mac'}},snapshot:{runtimeId:'mac',releaseVersion:'0.0.9',releaseDistribution:'archive',releaseCanUpdate:true,runtimeHost:'mac',desktopApp:{version:'0.0.9',canUpdate:true},workspace:{tasks:[]},runs:[],runtimeAddresses:['http://lan:51464','http://vpn:51464']},connected:true}];
 window.overviews=window.sources;
 window.storage={read:async()=>window.saved,write:async token=>{window.saved=token}};
@@ -20,7 +20,7 @@ window.open=async url=>{window.browserOpened=url};window.host={accountStorage:wi
 let servers=[{id:'server',name:'My Server',address:'http://server.internal:51464'}];window.hosted=enabled=>{servers=servers.filter(s=>s.id!=='internet');if(enabled)servers.push({id:'internet',name:'Internet Computer',address:'',internet:{publicKey:internetPublicKey(window.boxSecret),online:true}})};
 window.fetch=async(url,init={})=>{const path=new URL(url).pathname;window.calls.push({path,method:init.method,body:init.body?JSON.parse(init.body):null});if(new URL(url).hostname==='api.github.com')return Response.json(path.endsWith('/latest')?{tag_name:'v0.0.10',html_url:'https://github.com/dovocode/dovo-studio/releases/tag/v0.0.10'}:[]);if(path.endsWith('/status'))return Response.json({status:'idle'});if(path==='/v1/internet/connections'){if(init.method==='POST'){const input=JSON.parse(init.body);if(window.holdInternet)return new Promise((_,reject)=>{window.internetHeld=true;init.signal.addEventListener('abort',()=>{window.internetAborted=true;reject(new DOMException('Aborted','AbortError'))},{once:true})});window.connectionRequest={runtimeId:input.runtimeId,id:'encrypted-request',publicKey:input.publicKey};return Response.json({id:'encrypted-request'})}const peer={origin:'https://connect.dovo.studio',secret:'f'.repeat(64)};return Response.json({publicKey:internetPublicKey(window.boxSecret),box:sealInternet({requestId:'encrypted-request',runtimeId:window.connectionRequest.runtimeId,connection:{address:peerAddress(peer),token:'internet-private-token-stays-on-device',peer,runtimeId:window.connectionRequest.runtimeId}},window.connectionRequest.publicKey,window.boxSecret,new Uint8Array(24).fill(8))})}if(window.unavailable)return Response.json({error:'unavailable'},{status:503});if(path==='/v1/login'&&init.method==='POST')return Response.json({token:'a'.repeat(43),code:'ABCD1234',url:'https://connect.dovo.studio/auth/start?id=test',expiresAt:Date.now()+300000});if(path==='/v1/login')return Response.json({ready:window.ready});if(path==='/v1/servers'&&init.method==='GET')return Response.json({user:{id:'person',name:'Dominic'},servers});if(init.method==='PUT')servers=servers.filter(server=>server.id!==JSON.parse(init.body).id).concat(JSON.parse(init.body));if(init.method==='DELETE'&&path.startsWith('/v1/servers/'))servers=servers.filter(server=>server.id!==decodeURIComponent(path.split('/').at(-1)));return Response.json({ok:true})};
 function AccountProbe(){window.accountState=useMobileAccount();return null}function App(){const [address,setAddress]=useState('');return <><MobileAccountProvider><AccountProbe/><window.Panel onPair={setAddress}/>{window.Panel===Desktop&&<PairingClient onManage={profile=>window.managed=profile.id}/>}</MobileAccountProvider><input aria-label='Pairing address' value={address} readOnly/><p>Pairing code required</p></>}
-const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.render(<App key={window.kind}/>);window.show=kind=>{window.kind=kind;window.Panel=kind==='desktop'?Desktop:Mobile;window.renderApp()};window.show('desktop');
+const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.render(<App key={window.kind}/>);window.show=kind=>{window.kind=kind;window.Panel=kind==='desktop'?Desktop:Mobile;window.renderApp()};window.show(window.firstPanel??'desktop');
 `,
       loader: 'tsx',
       resolveDir: root,
@@ -77,7 +77,7 @@ const app=createRoot(document.getElementById('app'));window.renderApp=()=>app.re
     },
     {
       path: 'expo-crypto',
-      contents: `export const getRandomBytes=count=>crypto.getRandomValues(new Uint8Array(count));export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(algorithm,value)=>Array.from(new Uint8Array(await crypto.subtle.digest(algorithm,new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');`,
+      contents: `export const getRandomBytes=count=>crypto.getRandomValues(new Uint8Array(count));export const getRandomValues=array=>crypto.getRandomValues(array);export const CryptoDigestAlgorithm={SHA256:'SHA-256'};export const digestStringAsync=async(algorithm,value)=>Array.from(new Uint8Array(await crypto.subtle.digest(algorithm,new TextEncoder().encode(value))),b=>b.toString(16).padStart(2,'0')).join('');`,
     },
     {
       path: './peer-transport',
@@ -425,6 +425,25 @@ try {
       await page.evaluate(() => window.calls.filter((call) => call.path === '/v1/account').length),
       beforeDeletion + 1,
     )
+  }
+  // A cold launch can restore its local credential while Connect is unreachable.
+  for (const kind of ['desktop', 'mobile']) {
+    const offline = await browser.newPage()
+    try {
+      await offline.setContent('<div id="app"></div>')
+      await offline.evaluate((kind) => {
+        window.firstPanel = kind
+        window.unavailable = true
+        window.saved = 'b'.repeat(43)
+      }, kind)
+      await offline.addScriptTag({ content: built.outputFiles[0].text })
+      await offline.getByRole('button', { name: 'Sign out', exact: true }).click()
+      await offline.getByText(/Signed out on this device/).waitFor()
+      assert.equal(await offline.evaluate(() => window.saved), null)
+      assert.equal(await offline.getByRole('button', { name: 'Sign in', exact: true }).count(), 1)
+    } finally {
+      await offline.close()
+    }
   }
   assert.deepEqual(errors, [])
   console.log(

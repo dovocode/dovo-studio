@@ -74,6 +74,17 @@ characters of its log, and test names when the output uses a recognized format. 
 `terminal_read` with its ID, `summary: true` and a wait time. The full retained log remains
 available in the terminal.
 
+To wait for an agent or tool in a terminal opened by this tool session, pass `until` to
+`terminal_read` with one or more of `blocked`, `done`, `idle` and `error`, and a `waitMs` up to
+20,000. The program must report its state with OSC 7501 or a supported tool hook. The response is
+the summary above plus `waitResult` and the current `activity`. `waitResult` is `activity` when a
+requested state holds, `exit` when the program has ended, or `timeout`. If the terminal closes
+during the wait, the call returns an error at once. A state that already holds returns at once.
+After exit, the runtime keeps a final `done` or `error` report, but `waitResult` is `exit`. Without
+`until`, `waitMs` waits only for exit, as before. The wait uses the same task scope and access
+checks as `terminal_read`. A runtime that predates `until` returns an error that asks for a runtime
+update.
+
 ## Limits and recovery
 
 Each execution has a 64 MiB JavaScript heap, a 512 KiB stack, 2 seconds of active JavaScript CPU

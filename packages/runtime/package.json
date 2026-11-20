@@ -57,6 +57,8 @@
     "@muse-code/sdk": "1.4.15",
     "@opencode-ai/sdk": "1.19.5",
     "@opencode/client": "2.3.0",
+    "@xterm/addon-serialize": "0.14.0",
+    "@xterm/headless": "6.0.0",
     "ajv": "^8.20.0",
     "ajv-draft-04": "^1.0.0",
     "ajv-formats": "^3.0.1",
@@ -105,7 +107,6 @@
     "@types/turndown": "^5.0.6",
     "@types/unzipper": "^0.10.11",
     "@types/ws": "^8.18.2",
-    "@xterm/headless": "6.0.0",
     "tsx": "^4.23.15"
   }
 }

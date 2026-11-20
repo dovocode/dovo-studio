@@ -15,6 +15,8 @@ export type NativeAgentSession = {
   readThread?: (id: string) => Promise<import('@dovo/protocol').NativeThreadEntry[]>
 }
 export type ApprovalDecision = 'approve' | 'session' | 'always' | 'deny'
+/** Native scopes a provider offers. Omitted `once` means a single-use grant is available. */
+export type ApprovalScopes = { once?: boolean; session?: boolean; always?: boolean }
 export interface AcpLaunch {
   /** Built-in headless authentication; custom ACP installs keep their own flow. */
   authentication?: 'grok'
@@ -84,21 +86,17 @@ export interface AgentRun {
       detail: string,
       signal: AbortSignal,
       kind?: 'web' | 'command',
-      options?: {
-        session?: boolean
-        always?: boolean
-      },
+      options?: ApprovalScopes,
     ) => Promise<ApprovalDecision>
     ask: AgentRun['ask']
   }
+  /** `signal` is the provider's own request cancellation. A withdrawn request closes its card. */
   approve: (
     title: string,
     detail: string,
     kind?: 'web' | 'command',
-    options?: {
-      session?: boolean
-      always?: boolean
-    },
+    options?: ApprovalScopes,
+    signal?: AbortSignal,
   ) => Promise<ApprovalDecision>
   ask: (
     prompt: QuestionPrompt,

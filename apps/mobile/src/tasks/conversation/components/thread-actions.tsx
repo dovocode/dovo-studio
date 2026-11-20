@@ -21,7 +21,11 @@ import {
   type Repository,
 } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
-import { createDetailDrafts, detailDraftKey } from '../../../runtime/state/detail-drafts'
+import {
+  computerDraftKey,
+  createDetailDrafts,
+  detailDraftKey,
+} from '../../../runtime/state/detail-drafts'
 import { useNavigation } from '../../../shell/navigation'
 import { Action } from '../../../ui/controls/action'
 import { Text } from '../../../ui/content/text'
@@ -31,6 +35,7 @@ import { McpThreadEditor } from '../../../ui/content/mcp-thread-editor'
 import { ResponseActionCard } from './response-action-card'
 import { AutomationActionCard } from './automation-action-card'
 
+// Send receipts for unknown outcomes. They stay in memory only and never enter device storage.
 const attempts = createDetailDrafts<ThreadActionSend>()
 
 /** Anchor only to the last message of the preparing turn. Missing anchors go at the end. */
@@ -124,7 +129,7 @@ export function ThreadActionCard({ task, action }: { task: Task; action: ThreadA
   const [receipt, setReceipt] = useState<ThreadAction>()
   const current = receipt && receipt.updatedAt >= action.updatedAt ? receipt : action
   const repository = snapshot?.workspace.repositories.find((item) => item.id === task.repositoryId)
-  const key = detailDraftKey(profile?.connection ?? null, 'thread-action', task.id, action.id)
+  const key = computerDraftKey(profile, 'thread-action', task.id, action.id)
   if (!snapshot?.threadActionsSupported || current.state === 'dismissed') return null
   return (
     <View

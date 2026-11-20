@@ -4,6 +4,7 @@ import {
   decode,
   inputPreviewSyncSchema,
   inputPreviewAnswerSchema,
+  inputPreviewApprovalDecision,
   inputPreviewKey,
   RuntimeRequestError,
   responses,
@@ -174,11 +175,15 @@ export function registerInputPreview(rendererPath: string, preload: string) {
       const question = item.request.kind === 'question'
       if (question ? typeof input.answer === 'boolean' : typeof input.answer !== 'boolean')
         throw new Error('Invalid response for this request')
+      const decision =
+        item.request.kind === 'approval'
+          ? inputPreviewApprovalDecision(item.request.value, input)
+          : undefined
       await createRuntimeClient(item.connection).request(
         question ? '/api/tasks/answer' : '/api/approvals',
         question
           ? { id: item.request.value.id, answers: input.answer }
-          : { id: item.request.value.id, allow: input.answer },
+          : { id: item.request.value.id, allow: decision !== 'deny', decision },
         responses.ok,
       )
       dismissed.add(input.key)
