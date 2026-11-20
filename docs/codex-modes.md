@@ -5,6 +5,13 @@ selected runtime's authenticated `codex app-server`. Refresh models after upgrad
 changing its login. The **Provider default** model uses the catalog's default model capabilities
 too.
 
+For a custom Responses provider, Studio also checks that provider's `/models` endpoint for newer
+releases in the model families already known to Codex. Studio fills in reasoning levels and the
+default level from exact model ID matches in OpenAI's current public Codex catalog. It sends no
+provider credentials to that public catalog. Native Codex metadata and explicitly configured
+catalogs remain authoritative. If the public catalog is unavailable or has no matching ID, the model
+stays selectable without reasoning choices. Refresh models to retry discovery.
+
 On desktop, open **Reasoning and speed** beside the model to find **Service Tier** and the
 **Daybreak** submenu. Access has its own picker. Mobile, custom agent and task settings expose the
 same options under model settings:
