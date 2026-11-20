@@ -275,13 +275,13 @@ it.each(['complete', 'fail', 'cancel'] as const)(
         outcome === 'complete' ? 'review' : outcome === 'fail' ? 'failed' : 'cancelled',
       )
       expect(settled.queue?.[0]?.id).toBe(outcome === 'complete' ? undefined : 'first')
-      expect(settled.error).toBe(
-        outcome === 'complete'
-          ? undefined
-          : outcome === 'fail'
-            ? 'Checkout preparation failed'
-            : 'Cancelled by user',
-      )
+      expect(settled.error).toBe(outcome === 'fail' ? 'Checkout preparation failed' : undefined)
+      if (outcome === 'cancel') {
+        expect(settled.queuePaused).toBe(true)
+        expect(settled.activeRunId).toBeUndefined()
+        expect(settled.runPhase).toBeUndefined()
+        expect(settled.preparation).toBeUndefined()
+      }
     } finally {
       release()
       await runtime.close()
