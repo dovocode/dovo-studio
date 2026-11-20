@@ -177,8 +177,13 @@ export const GestureDetector=({gesture,children})=>{const state=useRef(null);if(
   {
     path: '../../agents/use-model-catalog',
     importer: mobile,
-    contents:
-      'export const useCachedModelCatalog=()=>({modelName:"Model"});export const useModelCatalog=()=>({modelName:"GPT",catalog:{models:[{id:"large-model",name:"Large model"},{id:"fast-model",name:"Fast model"}],reasoning:[{id:"high",name:"High"},{id:"low",name:"Low"}]}});',
+    contents: `
+      export const useCachedModelCatalog=()=>({modelName:'Model'});
+      export const useModelCatalog=()=>({modelName:'GPT',catalog:{models:[
+        {id:'large-model',name:'Large model',reasoning:[{id:'high',name:'High'}]},
+        {id:'fast-model',name:'Fast model',reasoning:[{id:'low',name:'Low'}]},
+      ],reasoning:[]}});
+    `,
   },
   {
     path: 'react-native-safe-area-context',

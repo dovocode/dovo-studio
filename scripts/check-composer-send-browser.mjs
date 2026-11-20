@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url'
 import { mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { chromium } from './browser/harness.mjs'
 const assets = fileURLToPath(new URL('../apps/desktop/dist/assets/', import.meta.url))
-const catalogMock = `export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[{id:'fast-model',name:'Fast model'},{id:'large-model',name:'Large model',serviceTiers:[{id:'priority',name:'Fast'}]}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}]}});`
+const catalogMock = `
+  export const useHarnessCatalog=()=>({modelName:'',catalog:{models:[
+    {id:'fast-model',name:'Fast model',reasoning:[{id:'low',name:'Low'}]},
+    {id:'large-model',name:'Large model',reasoning:[{id:'high',name:'High'}],serviceTiers:[{id:'priority',name:'Fast'}]},
+  ],reasoning:[]}});
+`
 const mocks = {
   './harness-catalog': catalogMock,
   './use-harness-availability': `export const useHarnessAvailability=()=>({available:new Set(['harness:codex']),loading:false,sandboxNotes:[],refresh:()=>{}});`,
