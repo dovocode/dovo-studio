@@ -230,18 +230,25 @@ export function WorkspaceTerminalSurface({
       </div>
     )
   const repository = owner.snapshot?.workspace.repositories.find(
-    (repo) =>
-      repo.id === session.repositoryId &&
-      !repo.kind &&
-      session.execution !== 'worktree' &&
-      !!session.directory &&
-      session.directory === repo.path,
+    (repo) => repo.id === session.repositoryId && repo.kind !== 'scratch' && !!session.directory,
   )
   return (
     <WorkspaceToolsFrame
       key={targetKey}
       scope={targetKey}
-      checkout={repository ? { repositoryId: repository.id, profile: owner.profile } : undefined}
+      terminal={{
+        id: session.id,
+        profile: owner.profile,
+        supported: owner.snapshot?.terminalWorkspaceToolsSupported === true,
+        project: repository
+          ? {
+              repositoryId: repository.id,
+              git: !repository.kind,
+              main: session.execution !== 'worktree' && session.directory === repository.path,
+              worktree: session.execution === 'worktree' ? session.directory : undefined,
+            }
+          : undefined,
+      }}
     >
       {(tools) => (
         <WorkspaceScope profile={owner.profile}>

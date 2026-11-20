@@ -276,6 +276,7 @@ export const snapshotSchema = mutableStruct({
   planModeSupported: Schema.optional(Schema.Literal(true)),
   queuedTurnSettingsSupported: Schema.optional(Schema.Boolean),
   promptQueueStagingSupported: Schema.optional(Schema.Boolean),
+  terminalWorkspaceToolsSupported: Schema.optional(Schema.Boolean),
   /** Automatic additions can preserve a pause made by another client. */
   queuePausePreservationSupported: Schema.optional(Schema.Literal(true)),
   /** Send one composer message immediately while leaving the queue paused. */

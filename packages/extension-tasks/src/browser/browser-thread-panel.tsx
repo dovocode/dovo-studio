@@ -29,23 +29,26 @@ export function BrowserThreadPanel({
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
   const owner = store.runtimeRegistry.profiles.find((profile) => profile.id === runtimeId)
+  const label = props.terminal ? 'Side thread' : 'Thread for this tab'
   if (owner && store.activeRuntimeId === owner.id)
     return <OwnedBrowserThreadPanel key={owner.id} {...props} runtimeId={owner.id} />
   return (
     <aside
-      aria-label="Browser tab thread"
+      aria-label={props.terminal ? label : 'Browser tab thread'}
       className="flex h-full flex-col gap-3 border-l p-3 text-sm"
     >
       <div className="flex items-center justify-between">
-        <span>Thread for this tab</span>
-        <IconButton label="Close tab thread panel" onClick={props.onClose}>
-          <X size={15} />
-        </IconButton>
+        <span>{label}</span>
+        {props.onClose && (
+          <IconButton label="Close tab thread panel" onClick={props.onClose}>
+            <X size={15} />
+          </IconButton>
+        )}
       </div>
       <p>
         {owner
-          ? `Use ${owner.name} to edit a thread on this tab’s computer.`
-          : 'Connect this tab’s computer to link a thread.'}
+          ? `Use ${owner.name} to edit a thread on this ${props.terminal ? 'terminal’s' : 'tab’s'} computer.`
+          : `Connect this ${props.terminal ? 'terminal’s' : 'tab’s'} computer to link a thread.`}
       </p>
       {owner && (
         <Button
@@ -70,12 +73,13 @@ export function BrowserThreadPanel({
 type BrowserThreadPanelProps = {
   thread?: BrowserTab['thread']
   onThread: (thread: NonNullable<BrowserTab['thread']>) => void
-  onClose: () => void
+  onClose?: () => void
   onBrowser: (url: string) => void
+  terminal?: { repositoryId?: string; worktree?: string }
   insert?: Insert | null
-  onInserted: () => void
+  onInserted?: () => void
   websiteOrigin?: string
-  onProposal: (website: BrowserWebsiteCustomization) => void
+  onProposal?: (website: BrowserWebsiteCustomization) => void
 }
 
 function OwnedBrowserThreadPanel({
@@ -84,6 +88,7 @@ function OwnedBrowserThreadPanel({
   onThread,
   onClose,
   onBrowser,
+  terminal,
   insert,
   onInserted,
   websiteOrigin,
@@ -96,7 +101,10 @@ function OwnedBrowserThreadPanel({
   const [error, setError] = useState('')
   const [pickedProject, setProjectId] = useState<string>()
   const projectId =
-    pickedProject ?? store.workspace.repositories.find((repo) => repo.kind === 'scratch')?.id ?? ''
+    pickedProject ??
+    terminal?.repositoryId ??
+    store.workspace.repositories.find((repo) => repo.kind === 'scratch')?.id ??
+    ''
   const [busy, setBusy] = useState(false)
   const entries = useMemo(
     () => collectTasks(taskSources(store)).filter((entry) => entry.source.runtimeId === runtimeId),
@@ -120,11 +128,17 @@ function OwnedBrowserThreadPanel({
     setError('')
     try {
       const task = createTask({
-        title: 'Website thread',
+        title: terminal ? 'Terminal side thread' : 'Website thread',
         objective: '',
         agentId: '',
         ...resolveTaskDefaults(store.snapshot?.defaults, repository),
         repositoryId: repository.id,
+        ...(terminal && repository.id === terminal.repositoryId
+          ? {
+              execution: terminal.worktree ? ('worktree' as const) : ('main' as const),
+              existingWorktreePath: terminal.worktree,
+            }
+          : {}),
       })
       store.setWorkspace((workspace) => ({ ...workspace, tasks: [task, ...workspace.tasks] }))
       // The browser stays mounted; a failed sync leaves the new draft available locally.
@@ -150,19 +164,23 @@ function OwnedBrowserThreadPanel({
   )
   return (
     <aside
-      aria-label="Browser tab thread"
+      aria-label={terminal ? 'Side thread' : 'Browser tab thread'}
       className="flex h-full min-h-0 flex-col border-l bg-background"
     >
       <header className="flex h-11 shrink-0 items-center gap-2 border-b px-2">
-        <span className="min-w-0 flex-1 truncate text-sm font-medium">Thread for this tab</span>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {terminal ? 'Side thread' : 'Thread for this tab'}
+        </span>
         {matchingThread && (
           <Button size="sm" variant="ghost" onClick={() => setChoosing(!choosing)}>
             {choosing ? 'Back' : 'Change thread'}
           </Button>
         )}
-        <IconButton label="Close tab thread panel" onClick={onClose}>
-          <X size={15} />
-        </IconButton>
+        {onClose && (
+          <IconButton label="Close tab thread panel" onClick={onClose}>
+            <X size={15} />
+          </IconButton>
+        )}
       </header>
       {error && (
         <p role="alert" className="p-2 text-xs text-destructive">
@@ -171,7 +189,8 @@ function OwnedBrowserThreadPanel({
       )}
       {thread && !matchingThread && (
         <p role="status" className="p-3 text-sm">
-          Choose a thread on this tab’s computer. The saved thread belongs to another computer.
+          Choose a thread on this {terminal ? 'terminal’s' : 'tab’s'} computer. The saved thread
+          belongs to another computer.
         </p>
       )}
       {choosing ? (
@@ -184,7 +203,7 @@ function OwnedBrowserThreadPanel({
           <label className="block text-xs">
             Project for new thread
             <select
-              aria-label="Project for tab thread"
+              aria-label={terminal ? 'Project for side thread' : 'Project for tab thread'}
               className="mt-1 w-full rounded border bg-background p-2"
               value={projectId}
               disabled={busy}
@@ -203,10 +222,10 @@ function OwnedBrowserThreadPanel({
             disabled={!projectId || !store.connected || busy}
             onClick={() => void create()}
           >
-            Create thread for tab
+            {terminal ? 'Create side thread' : 'Create thread for tab'}
           </Button>
           <Input
-            aria-label="Find thread for tab"
+            aria-label={terminal ? 'Find side thread' : 'Find thread for tab'}
             placeholder="Search threads…"
             value={query}
             onChange={(event) => setQuery(event.target.value)}
@@ -255,9 +274,9 @@ function ThreadConversation({
   id: string
   onBrowser: (url: string) => void
   insert?: Insert | null
-  onInserted: () => void
+  onInserted?: () => void
   websiteOrigin?: string
-  onProposal: (website: BrowserWebsiteCustomization) => void
+  onProposal?: (website: BrowserWebsiteCustomization) => void
 }) {
   const store = useWorkspace()
   const host = useStudioHost()
@@ -281,7 +300,7 @@ function ThreadConversation({
       <div className="flex shrink-0 items-center gap-2 border-b px-3 py-1">
         <span className="min-w-0 flex-1 truncate text-xs">{task.title || 'Untitled thread'}</span>
         {proposal && (
-          <Button size="sm" variant="outline" onClick={() => onProposal(proposal)}>
+          <Button size="sm" variant="outline" onClick={() => onProposal?.(proposal)}>
             Review website changes
           </Button>
         )}

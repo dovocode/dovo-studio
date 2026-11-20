@@ -7,7 +7,6 @@ import { ChevronRight, Folder, FolderOpen } from 'lucide-react'
 import { fileStats } from '../files/presentation'
 
 type Props = {
-  taskId: string
   checkoutId?: string
   revision: number
   refresh?: number
@@ -16,7 +15,7 @@ type Props = {
   changed: ReadonlyMap<string, ChangedFile>
   onSelect: (path: string) => void
   active: boolean
-}
+} & ({ taskId: string; terminalId?: never } | { terminalId: string; taskId?: never })
 
 type BranchProps = Props & Pick<ReturnType<typeof useWorkspace>, 'requestEffect' | 'connected'>
 
@@ -52,8 +51,13 @@ function Directory({ path, active, ...props }: BranchProps & { path: string; act
     setError('')
     void Effect.runPromise(
       requestEffect(
-        '/api/tasks/files/directory',
-        { id: props.taskId, checkoutId: props.checkoutId, directory: path, cursor },
+        props.terminalId ? '/api/terminals/workspace/files' : '/api/tasks/files/directory',
+        {
+          id: props.terminalId ?? props.taskId,
+          checkoutId: props.checkoutId,
+          directory: path,
+          cursor,
+        },
         responses.projectDirectory,
       ),
       { signal: controller.signal },
@@ -86,7 +90,17 @@ function Directory({ path, active, ...props }: BranchProps & { path: string; act
       current = false
       controller.abort()
     }
-  }, [active, connected, requestEffect, props.taskId, props.checkoutId, path, cursor, key])
+  }, [
+    active,
+    connected,
+    requestEffect,
+    props.taskId,
+    props.terminalId,
+    props.checkoutId,
+    path,
+    cursor,
+    key,
+  ])
   return (
     <div className="space-y-0.5">
       {result?.entries.map((entry) =>

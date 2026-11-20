@@ -311,6 +311,7 @@ export function runtimeSnapshot(
       threadServersSupported: process.platform === 'linux' || process.platform === 'darwin',
       workspaceRoutingSelectionsSupported: true,
       terminalRecoverySupported: s.terminals.supportsRecovery(),
+      terminalWorkspaceToolsSupported: true,
       settingsScopesSupported: true,
       ...(s.stateReplication.available() ? { stateReplicationVersion: 1 as const } : {}),
       taskBehaviorSupported: true,

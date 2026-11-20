@@ -41,20 +41,22 @@ The terminal opens below the conversation by default. Its toolbar lets you move 
 and back. Moving the terminal keeps the shell running. These controls also work inside a thread
 opened in Unified Workspace.
 
-Unified Home and an open terminal also have a **Workspace tools** button at the top right. Use it to
-open Browser beside your work. A terminal in a project's main Git checkout also offers read-only
-**Changes** for that checkout. Files and device previews use the thread's context when you open a
-thread.
+Unified Home, Browser and open terminals have a **Workspace tools** button at the top right. In
+Terminal, use it to open Browser, a side thread, or device previews beside the shell. A terminal in
+a project also offers read-only **Files** and, for Git checkouts, **Changes**. Both read the
+terminal's original checkout, including a linked worktree. Devices use the terminal's computer. New
+side threads start with the terminal's project selected. Files, worktree changes and device previews
+require an updated runtime. Older runtimes can still show changes for the project's main checkout.
 
 In Browser, **Thread for this tab** can create a thread in **No Project**. The new thread belongs to
 the tab's computer. You can choose a different project on that computer before creating it.
 
 Each pane has one header row. The selected tab has bright text. Other tabs have dimmed text. The
-Files tab shows the open file's name, with **Edit**, file tree, refresh and expand controls in the
-same row. With a mouse, the terminal's split, move and location controls and the tab's rename button
-appear when you point at the header or move keyboard focus into it. On touch screens they always
-show. Point at a terminal tab to see its computer and checkout. Exit and offline notices always
-show.
+thread's Files tab shows the open file's name, with **Edit**, file tree, refresh and expand controls
+in the same row. With a mouse, the terminal's split, move and location controls and the tab's rename
+button appear when you point at the header or move keyboard focus into it. On touch screens they
+always show. Point at a terminal tab to see its computer and checkout. Exit and offline notices
+always show.
 
 In the desktop app, choose **DevTools** from the right pane's **+** menu to inspect the current
 local browser page in Chrome DevTools. The inspector opens below the page in the same pane.

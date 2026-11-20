@@ -12,7 +12,9 @@ On desktop and web, use the sidebar to switch Browser tabs. Use the plus button 
 open a tab. Use the chevron for profile and private tab options. Back and Forward sit next to the
 address field in the workspace header. A pinned tab also shows its Home button before Back. Pages
 fill the preview pane. In the desktop app, choose **Browser options → Open DevTools** on a local
-page to open the inspector below it. Close it with the inspector's close button.
+page to open the inspector below it. Close it with the inspector's close button. The **Workspace
+tools** button at the right of the navigation bar also opens the tab's side thread or DevTools for a
+local page.
 
 The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On

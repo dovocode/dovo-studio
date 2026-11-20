@@ -18,7 +18,7 @@ export function DeviceList({
   connected: boolean
   onOpen: (device: PreviewDevice) => void
   onAction: (device: PreviewDevice, action: Action) => void
-  onDeploy: (device: PreviewDevice) => void
+  onDeploy?: (device: PreviewDevice) => void
 }) {
   const groups = [
     { name: 'Physical devices', items: devices.filter((d) => d.kind === 'physical') },
@@ -63,7 +63,9 @@ export function DeviceList({
                     : []),
                   ...(!physical
                     ? [
-                        { action: 'open' as const, label: 'Open URL', disabled: !running },
+                        ...(onDeploy
+                          ? [{ action: 'open' as const, label: 'Open URL', disabled: !running }]
+                          : []),
                         {
                           action: running ? ('shutdown' as const) : ('boot' as const),
                           label: running ? 'Shut down' : 'Start',
@@ -130,13 +132,15 @@ export function DeviceList({
                           sideOffset={4}
                           className="z-[70] min-w-40 rounded-lg border bg-popover p-1 text-popover-foreground shadow-xl"
                         >
-                          <DropdownMenu.Item
-                            disabled={!running}
-                            onSelect={() => onDeploy(device)}
-                            className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
-                          >
-                            Install or launch app
-                          </DropdownMenu.Item>
+                          {onDeploy && (
+                            <DropdownMenu.Item
+                              disabled={!running}
+                              onSelect={() => onDeploy(device)}
+                              className="cursor-default rounded px-3 py-2 text-xs outline-none data-[highlighted]:bg-accent data-[disabled]:opacity-40"
+                            >
+                              Install or launch app
+                            </DropdownMenu.Item>
+                          )}
                           {actions.map((item) => (
                             <DropdownMenu.Item
                               key={item.action}

@@ -55,6 +55,7 @@ type RightPaneLayout = {
   active: TaskSurface
   file?: RightPaneFile
   width?: number
+  sideThread?: string
 }
 
 function layoutKey(key: string) {
@@ -71,6 +72,10 @@ export function readRightPaneLayout(key: string): RightPaneLayout {
       return {
         tabs,
         active: isRightPaneTab(active) && tabs.includes(active) ? active : 'chat',
+        sideThread:
+          'sideThread' in saved && typeof saved.sideThread === 'string'
+            ? saved.sideThread
+            : undefined,
         width:
           'width' in saved && typeof saved.width === 'number' && Number.isFinite(saved.width)
             ? saved.width
@@ -116,6 +121,7 @@ export function RightPaneTabs({
   onClose,
   onReorder,
   onHide,
+  tabLabels,
 }: {
   tabs: readonly RightPaneTab[]
   active: RightPaneTab
@@ -130,6 +136,7 @@ export function RightPaneTabs({
   onClose: (tab: RightPaneTab) => void
   onReorder: (from: RightPaneTab, to: RightPaneTab) => void
   onHide: () => void
+  tabLabels?: Partial<Record<RightPaneTab, string>>
 }) {
   const uiText = useInterfaceText()
   const rail = useRef<HTMLDivElement>(null)
@@ -241,12 +248,14 @@ export function RightPaneTabs({
               )}
               onClick={() => select(tab)}
               onKeyDown={(event) => keyboard(event, tab)}
-              title={uiText(labels[tab])}
+              title={uiText(tabLabels?.[tab] ?? labels[tab])}
             >
-              {uiText(labels[tab])}
+              {uiText(tabLabels?.[tab] ?? labels[tab])}
             </button>
             <IconButton
-              label={uiText('Close {value0} tab', { value0: uiText(labels[tab]) })}
+              label={uiText('Close {value0} tab', {
+                value0: uiText(tabLabels?.[tab] ?? labels[tab]),
+              })}
               className={cn('size-5 shrink-0', tab !== active && 'studio-tab-reveal')}
               tabIndex={-1}
               onClick={() => close(tab)}
@@ -265,7 +274,13 @@ export function RightPaneTabs({
           <span className="min-w-0 truncate text-foreground">{detail}</span>
         </span>
       )}
-      <PaneAddMenu label="Add pane tab" addable={addable} onAdd={onAdd} onDevTools={onDevTools} />
+      <PaneAddMenu
+        label="Add pane tab"
+        addable={addable}
+        onAdd={onAdd}
+        onDevTools={onDevTools}
+        tabLabels={tabLabels}
+      />
       {!detail && <span className="studio-pane-shoulder" aria-hidden="true" />}
       {actionsRef && <div ref={actionsRef} className="flex shrink-0 items-center" />}
       <IconButton label={uiText('Hide right pane')} className="size-7 shrink-0" onClick={onHide}>
@@ -282,13 +297,17 @@ export function PaneAddMenu({
   onAdd,
   onDevTools,
   onNewThread,
+  actions = [],
+  tabLabels,
 }: {
   label: string
   icon?: ReactNode
   addable: readonly RightPaneTab[]
-  onAdd: (tab: RightPaneTab) => void
+  onAdd?: (tab: RightPaneTab) => void
   onDevTools?: () => void
   onNewThread?: () => void
+  actions?: readonly { label: string; onSelect: () => void }[]
+  tabLabels?: Partial<Record<RightPaneTab, string>>
 }) {
   const uiText = useInterfaceText()
   return (
@@ -297,7 +316,7 @@ export function PaneAddMenu({
         <IconButton
           label={uiText(label)}
           className="size-7 shrink-0"
-          disabled={!addable.length && !onDevTools && !onNewThread}
+          disabled={!addable.length && !onDevTools && !onNewThread && !actions.length}
         >
           {icon ?? <Plus size={15} />}
         </IconButton>
@@ -320,9 +339,18 @@ export function PaneAddMenu({
             <DropdownMenu.Item
               key={tab}
               className="cursor-default rounded-md px-2 py-1.5 outline-none focus:bg-accent"
-              onSelect={() => onAdd(tab)}
+              onSelect={() => onAdd?.(tab)}
             >
-              {uiText(labels[tab])}
+              {uiText(tabLabels?.[tab] ?? labels[tab])}
+            </DropdownMenu.Item>
+          ))}
+          {actions.map(({ label, onSelect }) => (
+            <DropdownMenu.Item
+              key={label}
+              className="cursor-default rounded-md px-2 py-1.5 outline-none focus:bg-accent"
+              onSelect={onSelect}
+            >
+              {uiText(label)}
             </DropdownMenu.Item>
           ))}
           {onDevTools && (

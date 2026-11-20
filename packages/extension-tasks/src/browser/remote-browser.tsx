@@ -41,6 +41,7 @@ export function RemoteBrowser({
   deviceId,
   tabId,
   onState,
+  onScreenshot,
   onClosed,
   reloadToken,
   ref,
@@ -57,6 +58,7 @@ export function RemoteBrowser({
   deviceId?: string
   tabId?: string
   onState?: (state: Extract<RemoteBrowserMessage, { type: 'state' }>) => void
+  onScreenshot?: (image: string) => void
   onClosed?: () => void
   reloadToken?: number
   ref?: Ref<RemoteBrowserControls>
@@ -71,7 +73,10 @@ export function RemoteBrowser({
   const hasWorkspaceShortcuts = !!onShortcut
   const appearance = useRef(theme)
   const screenshots = useScreenshotAttachment(taskId)
-  const attachScreenshot = useEffectEvent((image: string) => screenshots.attach(image))
+  const attachScreenshot = useEffectEvent(async (image: string) => {
+    if (onScreenshot) onScreenshot(image)
+    else await screenshots.attach(image)
+  })
   const reportState = useEffectEvent((state: Extract<RemoteBrowserMessage, { type: 'state' }>) =>
     onState?.(state),
   )

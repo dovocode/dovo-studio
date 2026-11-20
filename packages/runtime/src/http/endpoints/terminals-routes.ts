@@ -4,6 +4,8 @@ import { effectivePermissionPolicy } from '@dovo/protocol'
 import { isAbsolute, relative } from 'node:path'
 import { stat } from 'node:fs/promises'
 import { repositoryPath, safeFile } from '../../scm/repositories/paths.js'
+import { openContainedPreview } from '../../scm/repositories/file-preview-open.js'
+import { readBoundedFile } from '../../scm/repositories/bounded-file-read.js'
 import { verifiedGitUpdates } from '../../scm/tasks/external-git-updates.js'
 import { isRunToken } from '../../auth/run-credentials.js'
 import { authenticateRuntimeOperation } from '../../auth/run-authorization.js'
@@ -92,6 +94,57 @@ export function terminalsRoute(request: IncomingMessage, path: string, token: st
         return yield* runtimeOperation(() => {
           authenticateRuntimeOperation(s, token)
           return s.terminals.update(input)
+        })
+      }
+      if (
+        method === 'POST' &&
+        [
+          '/api/terminals/workspace/files',
+          '/api/terminals/workspace/read',
+          '/api/terminals/workspace/changes',
+        ].includes(path)
+      ) {
+        if (isRunToken(token) || request.headers['x-dovo-agent-access'] === '1')
+          throw new HttpError(403, 'Terminal workspace tools require a paired client')
+        const input = decode(
+          mutableStruct({
+            id: idSchema,
+            directory: Schema.optional(maxValue(Schema.String, 4000)),
+            cursor: Schema.optional(maxValue(Schema.String, 100)),
+            path: Schema.optional(maxValue(minValue(Schema.String, 1), 4000)),
+          }),
+          yield* serviceResult(body(request, 16384)),
+        )
+        const session = s.terminals.get(input.id)
+        const repo = s.store
+          .get()
+          .repositories.find((repo) => repo.id === session.info.repositoryId)
+        if (session.info.taskId !== STUDIO_TERMINAL_SCOPE || !repo || repo.kind === 'scratch')
+          throw new HttpError(409, 'This terminal has no project checkout')
+        const root = yield* serviceResult(repositoryPath(session.directory))
+        if (root !== session.directory)
+          throw new HttpError(
+            409,
+            'The terminal checkout moved. Open a terminal in its new location.',
+          )
+        s.devices.authenticate(token)
+        if (path.endsWith('/changes')) {
+          if (repo.kind) throw new HttpError(400, 'This checkout does not use Git')
+          return { files: yield* serviceResult(s.git.changes(root)) }
+        }
+        if (path.endsWith('/files'))
+          return yield* serviceResult(
+            s.projectFiles.directory(root, input.directory, input.cursor, !!repo.kind),
+          )
+        if (!input.path) throw new HttpError(400, 'Choose a file to preview')
+        const file = input.path
+        return yield* runtimeOperation(async () => {
+          const { handle } = await openContainedPreview(root, file)
+          try {
+            return await readBoundedFile(handle, file, {})
+          } finally {
+            await handle.close()
+          }
         })
       }
       if (method === 'POST' && path === '/api/terminals/workspace') {

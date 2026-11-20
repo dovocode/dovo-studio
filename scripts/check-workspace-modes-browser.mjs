@@ -25,7 +25,7 @@ task.messages=[{id:'first-message',role:'user',text:'Saved user message',created
 const standalone={id:'standalone-shell',taskId:'studio:terminals',title:'Standalone shell',directory:'/tmp',exited:false,dormant:true};
 const projectShell={...standalone,id:'project-shell',title:'Project shell',directory:'/project',repositoryId:'project'};
 window.terminalTargets=[standalone,projectShell].map((session)=>JSON.stringify({runtimeId:profile.id,id:session.id}));
-const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''},{id:'project',name:'Project',path:'/project',branch:'main'}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[standalone,projectShell],runs:[],devices:[],pendingDevices:[]});
+const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,terminalWorkspaceToolsSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''},{id:'project',name:'Project',path:'/project',branch:'main'}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[standalone,projectShell],runs:[],devices:[],pendingDevices:[]});
 window.setPreferences=updateAppPreferences;window.threadId=task.id;
 const threadTab={kind:'thread',runtimeId:profile.id,id:task.id};
 sessionStorage.setItem('dovo.unified-workspace.v1',JSON.stringify({tabs:[threadTab,{kind:'browser',runtimeId:'',id:'saved-page'}],active:JSON.stringify(['thread',profile.id,task.id])}));
@@ -34,12 +34,17 @@ window.calls=[];window.revision=1;window.extensionCreations=0;window.viewLoads={
 window.fetch=async(url,init={})=>{
  const parsed=new URL(url),path=parsed.pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({path,input});
- if(path==='/api/snapshot')return Response.json({...snapshot,revision:++window.revision});
+ if(path==='/api/snapshot')return Response.json({...snapshot,terminalWorkspaceToolsSupported:window.legacyTerminalRuntime?undefined:true,revision:++window.revision});
  if(path==='/health')return Response.json({service:'dovo-runtime',runtimeId:snapshot.runtimeId});
  if(path==='/api/retrieval/peers')return Response.json({ok:true});
  if(path==='/api/mutations/status')return Response.json({version:1});
  if(path==='/api/tasks/waiting')return Response.json({dependencies:[]});
  if(path==='/api/scm/changes')return Response.json({files:[]});
+ if(path==='/api/terminals/workspace/changes')return Response.json({files:[]});
+ if(path==='/api/terminals/workspace/files')return Response.json({entries:[{path:'README.md',kind:'file'}],truncated:false});
+ if(path==='/api/terminals/workspace/read')return Response.json({path:input.path,contents:'Files from the terminal checkout'});
+ if(path==='/api/device-hosts')return Response.json({hosts:[],enabled:true});
+ if(path==='/api/previews/devices')return Response.json({host:'Fixture computer',devices:[],diagnostics:[]});
  if(path==='/api/tasks/viewed')return Response.json({ok:true});
  if(path==='/api/models')return Response.json({providers:[],models:[]});
  if(path==='/api/agents/availability')return Response.json([]);
@@ -313,6 +318,14 @@ try {
   await page.getByRole('menuitem', { name: 'Browser', exact: true }).click()
   await rightPane.getByLabel('New browser address', { exact: true }).waitFor()
   await rightPane.getByRole('button', { name: 'Hide right pane', exact: true }).click()
+  await mode('Browser').click()
+  await workspaceTools.click()
+  await page.getByRole('menuitem', { name: 'Thread for this tab', exact: true }).click()
+  await page
+    .getByRole('complementary', { name: 'Browser tab thread', exact: true })
+    .first()
+    .waitFor()
+  await page.getByRole('button', { name: 'Close tab thread panel', exact: true }).click()
   for (const hasCheckout of [false, true]) {
     await page.evaluate(
       (index) =>
@@ -329,14 +342,56 @@ try {
         await page.evaluate(() =>
           window.calls.some(
             (call) =>
-              call.path === '/api/scm/changes' &&
-              call.input.repositoryId === 'project' &&
-              !call.input.taskId,
+              call.path === '/api/terminals/workspace/changes' && call.input.id === 'project-shell',
           ),
         ),
       )
-    } else await page.keyboard.press('Escape')
+      await workspaceTools.click()
+      await page.getByRole('menuitem', { name: 'Files', exact: true }).click()
+      await rightPane.getByRole('button', { name: 'README.md', exact: true }).click()
+      await rightPane.getByText('Files from the terminal checkout', { exact: true }).waitFor()
+    } else {
+      assert.equal(await page.getByRole('menuitem', { name: 'Files', exact: true }).count(), 0)
+      await page.keyboard.press('Escape')
+    }
+    await workspaceTools.click()
+    await page.getByRole('menuitem', { name: 'Side thread', exact: true }).click()
+    const project = rightPane.getByLabel('Project for side thread', { exact: true })
+    assert.equal(await project.inputValue(), hasCheckout ? 'project' : 'scratch')
+    await rightPane.getByRole('button', { name: /^Mode switch thread/ }).click()
+    await rightPane.getByRole('button', { name: 'Open full thread', exact: true }).waitFor()
+    await workspaceTools.click()
+    await page.getByRole('menuitem', { name: 'Devices', exact: true }).click()
+    await rightPane
+      .getByText('No devices found. Connect a phone to the host or create a simulator.', {
+        exact: true,
+      })
+      .waitFor()
+    await page.waitForFunction(() =>
+      window.calls.some(
+        (call) => call.path === '/api/previews/devices' && call.input.taskId === 'studio:terminals',
+      ),
+    )
+    await workspaceTools.click()
+    await page.getByRole('menuitem', { name: 'Side thread', exact: true }).click()
+    await rightPane.getByRole('button', { name: 'Open full thread', exact: true }).waitFor()
   }
+  await page.evaluate(async () => {
+    window.legacyTerminalRuntime = true
+    await window.store.refreshRuntime(window.store.runtimeRegistry.profiles[0])
+  })
+  await workspaceTools.click()
+  await page.getByRole('menuitem', { name: 'Files', exact: true }).click()
+  await rightPane
+    .getByText('Update the terminal’s computer to use this tool.', { exact: true })
+    .waitFor()
+  await workspaceTools.click()
+  await page.getByRole('menuitem', { name: 'Changes', exact: true }).click()
+  await page.waitForFunction(() =>
+    window.calls.some(
+      (call) => call.path === '/api/scm/changes' && call.input?.repositoryId === 'project',
+    ),
+  )
   assert.deepEqual(errors, [])
   assert.equal(
     await page.evaluate(() => window.extensionCreations),

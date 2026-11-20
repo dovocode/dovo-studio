@@ -11,7 +11,11 @@ import { dictationRoute } from './endpoints/dictation-routes.js'
 import { searchRuntimeHistory } from './support/history-search.js'
 import { attachmentArchiveRequestSchema, attachmentArchiveReadRequestSchema } from '@dovo/protocol'
 import { listAttachmentArchive, readAttachmentArchive } from '../storage/attachment-archive.js'
-import { STUDIO_BROWSER_SCOPE, isPrivateBrowserProfile } from '@dovo/protocol'
+import {
+  STUDIO_BROWSER_SCOPE,
+  STUDIO_TERMINAL_SCOPE,
+  isPrivateBrowserProfile,
+} from '@dovo/protocol'
 import { usageHubs } from './endpoints/usage-hubs.js'
 import { peerConfigSchema } from '@dovo/protocol'
 import { sharingWriterConfigSchema } from '@dovo/protocol'
@@ -353,6 +357,11 @@ export function route(
         )
       }
       const agentDeviceAccess = !!run || request.headers['x-dovo-agent-access'] === '1'
+      const requirePreviewTask = (taskId: string) => {
+        if (taskId !== STUDIO_TERMINAL_SCOPE) s.store.taskSummary(taskId)
+        else if (agentDeviceAccess)
+          throw new HttpError(403, 'Terminal device previews require a paired client')
+      }
       if (path === '/api/tasks/pending-harness' && agentDeviceAccess)
         throw new HttpError(403, 'Pending model changes require a paired human client.')
       if (method === 'POST' && path === '/api/agent/conversation')
@@ -1119,7 +1128,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.taskSummary(taskId)
+        requirePreviewTask(taskId)
         return yield* serviceResult(s.deviceHosts.list(taskId, hostId, agentDeviceAccess))
       }
       if (method === 'POST' && path === '/api/previews/simulator/open') {
@@ -1131,7 +1140,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.taskSummary(taskId)
+        requirePreviewTask(taskId)
         if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
         const result = yield* serviceResult(
           s.simulators.open(
@@ -1162,7 +1171,7 @@ export function route(
           }),
           yield* serviceResult(body(request)),
         )
-        s.store.taskSummary(taskId)
+        requirePreviewTask(taskId)
         if (agentDeviceAccess) s.deviceHosts.assertAgentDevice(id, hostId)
         yield* serviceResult(s.simulators.closeDevice(taskId, s.deviceHosts.deviceId(id, hostId)))
         return yield* serviceResult({
@@ -1174,7 +1183,7 @@ export function route(
           mutableStruct({ taskId: idSchema, id: idSchema, input: simulatorInputSchema }),
           yield* serviceResult(body(request)),
         )
-        s.store.taskSummary(taskId)
+        requirePreviewTask(taskId)
         if (agentDeviceAccess)
           yield* serviceResult(
             s.simulators.authorizeDevice(id, (deviceId) =>
@@ -1189,7 +1198,7 @@ export function route(
             input,
             () => {
               authenticateRuntimeOperation(s, token)
-              s.store.taskSummary(taskId)
+              requirePreviewTask(taskId)
               if (s.simulators.taskId(id) !== taskId)
                 throw new HttpError(403, 'Simulator preview belongs to another task')
             },
@@ -1327,12 +1336,12 @@ export function route(
       }
       if (method === 'POST' && path === '/api/previews/action') {
         const input = decode(previewActionSchema, yield* serviceResult(body(request)))
-        s.store.taskSummary(input.taskId)
+        requirePreviewTask(input.taskId)
         return yield* serviceResult(
           s.deviceHosts.action(input, agentDeviceAccess, run?.signal, () => {
             if (run) authorizeRunRoute(s, token, method, path, input)
             else authenticateRuntimeOperation(s, token)
-            s.store.taskSummary(input.taskId)
+            requirePreviewTask(input.taskId)
           }),
         )
       }

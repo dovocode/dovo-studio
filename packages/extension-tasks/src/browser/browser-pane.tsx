@@ -41,6 +41,7 @@ import { BrowserThreadPanel } from './browser-thread-panel'
 import { WebsiteCustomizationEditor } from './website-customization-editor'
 import { websiteCustomizationPrompt } from '@dovo/protocol'
 import { ResizableSidebar } from '../detail/resizable-sidebar'
+import { PaneAddMenu } from '../detail/right-pane-tabs'
 import {
   randomUUID,
   runtimeComputerName,
@@ -54,6 +55,7 @@ import {
   tomorrowBrowserTabWake,
   cleanBrowserTabs,
   STUDIO_BROWSER_SCOPE,
+  STUDIO_TERMINAL_SCOPE,
   studioReference,
   browserTabActivitySchema,
   type BrowserTabCategory,
@@ -98,6 +100,7 @@ import {
   Pin,
   PinOff,
   MessageSquare,
+  Wrench,
   Paintbrush,
   Monitor,
   UserRound,
@@ -419,6 +422,7 @@ function BrowserContent({
     } = useStudioHost()
   const screenshots = useScreenshotAttachment(taskId)
   const threadPreview = !shared && !paneScope
+  const standaloneDevices = taskId === STUDIO_TERMINAL_SCOPE && initialMode === 'devices'
   const runtimesRef = useRef(runtimes)
   runtimesRef.current = runtimes
   const preferences = useAppPreferences()
@@ -1814,7 +1818,7 @@ function BrowserContent({
         throw new Error('The device did not return a screenshot. Please try again.')
       if (mount.current && result.image) {
         setImage(result.image)
-        if (action === 'screenshot') await screenshots.attach(result.image)
+        if (action === 'screenshot' && !standaloneDevices) await screenshots.attach(result.image)
       }
       await loadDevices()
     })
@@ -3096,6 +3100,7 @@ function BrowserContent({
     // the later click, change or submit event can run a page action.
     flushSync(() => selectTab(previewSource))
   }
+  const openTabThread = (id: string) => setThreadPanels((previous) => new Set([...previous, id]))
   const renderNavigation = (pageActions?: ReactNode, opener?: BrowserTab) => {
     const tab = opener ?? selectedTab
     const profileId = tab.profileId ?? 'default'
@@ -3439,6 +3444,19 @@ function BrowserContent({
                 </>
               ),
             )}
+            {shared && !browserPageOnly && (
+              <span className="hidden shrink-0 md:inline-flex">
+                <PaneAddMenu
+                  label="Workspace tools"
+                  icon={<Wrench size={15} />}
+                  addable={[]}
+                  actions={[
+                    { label: 'Thread for this tab', onSelect: () => openTabThread(tab.id) },
+                  ]}
+                  onDevTools={browser && mode === 'web' && url ? openDevTools : undefined}
+                />
+              </span>
+            )}
           </>
         )}
       </BrowserToolbar>
@@ -3492,7 +3510,9 @@ function BrowserContent({
           </IconButton>
           <Smartphone size={14} className="shrink-0 text-muted-foreground" />
           <span className="min-w-0 flex-1 truncate text-xs font-medium">{liveDevice.name}</span>
-          <DeviceDeployment key={liveDevice.id} taskId={taskId} device={liveDevice} />
+          {!standaloneDevices && (
+            <DeviceDeployment key={liveDevice.id} taskId={taskId} device={liveDevice} />
+          )}
           {liveDevice.kind === 'physical' && liveDevice.platform === 'ios' && (
             <PhysicalControls taskId={taskId} device={liveDevice} />
           )}
@@ -3510,7 +3530,22 @@ function BrowserContent({
             </IconButton>
           )}
         </header>
-        <RemoteBrowser key={`${scope}:${liveDevice.id}`} taskId={taskId} deviceId={liveDevice.id} />
+        <RemoteBrowser
+          key={`${scope}:${liveDevice.id}`}
+          taskId={taskId}
+          deviceId={liveDevice.id}
+          onScreenshot={
+            standaloneDevices
+              ? (image) => {
+                  if (!image.startsWith('data:image/png;base64,')) return
+                  const anchor = document.createElement('a')
+                  anchor.href = image
+                  anchor.download = 'device-screenshot.png'
+                  anchor.click()
+                }
+              : undefined
+          }
+        />
       </section>
     )
   return (
@@ -4349,7 +4384,7 @@ function BrowserContent({
             connected={connected}
             onOpen={setLiveDevice}
             onAction={deviceAction}
-            onDeploy={setDeploymentDevice}
+            onDeploy={standaloneDevices ? undefined : setDeploymentDevice}
           />
           {busy && (
             <p role="status" className="py-2 text-xs">
