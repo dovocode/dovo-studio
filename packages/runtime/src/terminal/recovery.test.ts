@@ -509,7 +509,10 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
       )
     await expect(run('crash')).rejects.toMatchObject({ code: 26 })
     const jobs = Array.from({ length: 6 }, (_, i) => 'job-' + i)
-    await Promise.all(jobs.map(run))
+    // Let every writer finish before removing its files, even if one fails.
+    for (const result of await Promise.allSettled(jobs.map(run))) {
+      if (result.status === 'rejected') throw result.reason
+    }
     const event = recovery.activity(id)
     const ids = [
       ...(event?.transitions ?? []).map((entry) => entry.turnId),

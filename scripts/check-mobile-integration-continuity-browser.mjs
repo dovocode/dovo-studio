@@ -63,6 +63,16 @@ const boundaries = new Map([
     mobile + 'runtime/connection/mutation-storage',
     `export {browserMutationStorage as mobileMutationStorage} from '${root}packages/studio-core/src/workspace/read-cache.ts';`,
   ],
+  [
+    mobile + 'runtime/state/detail-draft-storage',
+    `const drafts = new Map();
+    export const detailDraftStorage = {
+      getAllKeys: async () => [...drafts.keys()],
+      getItem: async key => drafts.get(key) ?? null,
+      setItem: async (key, value) => { drafts.set(key, value); },
+      removeItem: async key => { drafts.delete(key); },
+    };`,
+  ],
   [mobile + 'ui/content/task-visualization', 'export const TaskVisualization=()=>null;'],
   [mobile + 'ui/content/code-block', 'export const CodeBlock=()=>null;'],
   [mobile + 'ui/content/server-image', 'export const ServerImage=()=>null;'],

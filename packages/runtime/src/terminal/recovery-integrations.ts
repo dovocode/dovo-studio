@@ -170,43 +170,59 @@ exports.report = function(provider, sessionId, directory, ended = false) {
   fs.writeFileSync(temporary, JSON.stringify({target}), {mode: 0o600});
   fs.renameSync(temporary, file);
 };
-// A token rename grants one writer the whole read/modify/write operation. A killed
-// writer leaves its unique token behind, so another process can recover it safely.
+// Each contender publishes its own nonempty directory. Renaming one shared file
+// can let concurrent Windows renames move the same open file more than once.
 function withStatusLock(root, write) {
-  const lock = path.join(root, 'activity.lock');
-  const available = path.join(lock, 'available');
+  const lock = path.join(root, 'activity.lock', 'writer');
   const owner = process.pid + '.' + require('node:crypto').randomUUID();
-  if (!fs.existsSync(lock)) {
-    const temporary = lock + '.' + owner;
-    fs.mkdirSync(temporary, {mode:0o700});
-    try {
-      fs.writeFileSync(path.join(temporary, 'available'), '', {mode:0o600});
-      try { fs.renameSync(temporary, lock); }
-      catch (error) { if (!fs.existsSync(lock)) throw error; }
-    } finally { fs.rmSync(temporary, {recursive:true, force:true}); }
-  }
-  const mine = path.join(lock, owner);
+  const temporary = lock + '.' + owner;
   const wait = new Int32Array(new SharedArrayBuffer(4));
   const deadline = performance.now() + 2000; // provider hook timeout is three seconds
-  for (;;) {
-    try { fs.renameSync(available, mine); break; }
-    catch (error) { if (error.code !== 'ENOENT') throw error; }
-    for (const name of fs.readdirSync(lock)) {
-      const match = /^(\d+)\.[a-f0-9-]+$/.exec(name);
-      if (!match) continue;
-      try { process.kill(Number(match[1]), 0); }
-      catch (error) {
-        if (error.code === 'EPERM') continue;
-        if (error.code !== 'ESRCH') throw error;
-        try { fs.renameSync(path.join(lock, name), available); }
-        catch (moved) { if (moved.code !== 'ENOENT') throw moved; }
-      }
+  fs.mkdirSync(path.dirname(lock), {recursive:true, mode:0o700});
+  fs.mkdirSync(temporary, {mode:0o700});
+  const removeEmptyLock = () => {
+    try { fs.rmdirSync(lock); }
+    catch (error) {
+      if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
     }
-    if (performance.now() >= deadline) throw new Error('Timed out waiting for the terminal activity writer');
-    Atomics.wait(wait, 0, 0, 5);
+  };
+  try {
+    fs.writeFileSync(path.join(temporary, owner), '', {mode:0o600});
+    for (;;) {
+      try { fs.renameSync(temporary, lock); break; }
+      catch (error) {
+        // Windows reports an existing destination directory as a permissions error.
+        if (!['ENOTEMPTY', 'EEXIST', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+      }
+      let names;
+      try { names = fs.readdirSync(lock); }
+      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      if (names) {
+        for (const name of names) {
+          const match = /^(\d+)\.[a-f0-9-]+$/.exec(name);
+          if (!match) continue;
+          try { process.kill(Number(match[1]), 0); }
+          catch (error) {
+            if (error.code === 'EPERM' || error.code === 'EACCES') continue;
+            if (error.code !== 'ESRCH') throw error;
+            // Only remove the dead writer's unique marker. The directory may
+            // already belong to a different writer by the time cleanup runs.
+            fs.rmSync(path.join(lock, name), {force:true});
+          }
+        }
+        if (names.length === 0) removeEmptyLock();
+      }
+      if (performance.now() >= deadline) throw new Error('Timed out waiting for the terminal activity writer');
+      Atomics.wait(wait, 0, 0, 5);
+    }
+    try { if (!fs.existsSync(path.join(root, 'closing'))) write(); }
+    finally {
+      fs.rmSync(path.join(lock, owner), {force:true});
+      removeEmptyLock();
+    }
+  } finally {
+    fs.rmSync(temporary, {recursive:true, force:true});
   }
-  try { if (!fs.existsSync(path.join(root, 'closing'))) write(); }
-  finally { fs.renameSync(mine, available); }
 }
 // Hook stdout is captured by agent CLIs. Publish to the owning terminal's private
 // status file instead of printing escape sequences into hook output.
