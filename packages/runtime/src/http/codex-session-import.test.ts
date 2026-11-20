@@ -491,7 +491,7 @@ it.skipIf(!['linux', 'darwin'].includes(process.platform))(
 )
 
 it.skipIf(!['linux', 'darwin'].includes(process.platform))(
-  'shares checkout admission for imported subfolders, native runs and explicit edits',
+  'runs imported subfolders alongside other threads and protects checkout mutations',
   async () => {
     const f = await setup()
     const cwd = join(f.directory, 'nested')
@@ -514,50 +514,36 @@ it.skipIf(!['linux', 'darwin'].includes(process.platform))(
       objective: 'Work',
       execution: 'main',
     })
-    let finish: () => void = () => {}
-    const held = new Promise<void>((resolve) => {
-      finish = resolve
-    })
-    const run = vi.fn<AgentAdapter['run']>(async () => {
-      await held
-    })
+    const nativeRun = Promise.withResolvers<void>()
+    const importedRun = Promise.withResolvers<void>()
+    const run = vi.fn<AgentAdapter['run']>((input) =>
+      input.taskId === main.id ? nativeRun.promise : importedRun.promise,
+    )
     vi.spyOn(f.runtime.services.agents, 'get').mockResolvedValue({
       probe: vi.fn<AgentAdapter['probe']>(),
       run,
     })
-    const first = await f.runtime.services.tasks.start(main.id)
+    const { tasks, store } = f.runtime.services
+    const first = await tasks.start(main.id)
+    let imported: Awaited<ReturnType<typeof tasks.start>> | undefined
     try {
       await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(1))
-      await expect(f.runtime.services.tasks.start(id)).rejects.toMatchObject({ status: 409 })
-      expect(run).toHaveBeenCalledTimes(1)
-    } finally {
-      finish()
-      await first.done
-    }
-
-    const secondHeld = new Promise<void>((resolve) => {
-      finish = resolve
-    })
-    run.mockImplementation(async (input) => {
-      expect(input.cwd).toBe(cwd)
-      await secondHeld
-    })
-    const imported = await f.runtime.services.tasks.start(id)
-    try {
+      imported = await tasks.start(id)
       await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(2))
-      await expect(
-        f.runtime.services.tasks.withCheckoutMutation(f.directory, async () => {}),
-      ).rejects.toMatchObject({ status: 409 })
-      f.runtime.services.store.updateTaskHistory(main.id, (task) => ({
-        ...task,
-        messages: [...task.messages, { id: 'continue-main', role: 'user', text: 'Continue main' }],
-      }))
-      await expect(f.runtime.services.tasks.start(main.id)).rejects.toMatchObject({ status: 409 })
-      expect(run).toHaveBeenCalledTimes(2)
+      expect(run).toHaveBeenNthCalledWith(2, expect.objectContaining({ taskId: id, cwd }))
+      nativeRun.resolve()
+      await first.done
+      expect(store.task(id).status).toBe('running')
+      await expect(tasks.withCheckoutMutation(f.directory, async () => {})).rejects.toMatchObject({
+        status: 409,
+      })
     } finally {
-      finish()
-      await imported.done
+      nativeRun.resolve()
+      importedRun.resolve()
+      await Promise.all([first.done, imported?.done])
     }
+    for (const taskId of [main.id, id])
+      expect(store.task(taskId).turns?.at(-1)?.checkpoint?.sharedCheckout).toBe(true)
     await runClientEffect(
       f.runtime.services.tasks.withCheckoutEditEffect(
         cwd,
