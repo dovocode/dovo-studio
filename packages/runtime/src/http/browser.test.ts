@@ -863,12 +863,20 @@ it('exposes shared workspace sessions to Studio Tools but hides private tabs bef
     {
       id: 'workspace:tab-1',
       kind: 'workspace',
+      certificateSupported: true,
       tabId: 'tab-1',
       profileId: 'work',
       url: 'http://lan.local/',
       title: 'LAN page',
     },
-    { id: 'thread', kind: 'thread', taskId: 'task', url: 'http://lan.local/', title: 'LAN page' },
+    {
+      id: 'thread',
+      kind: 'thread',
+      certificateSupported: true,
+      taskId: 'task',
+      url: 'http://lan.local/',
+      title: 'LAN page',
+    },
   ])
   expect(priv.page.title).not.toHaveBeenCalled()
   expect(await browsers.studioLogs('workspace:tab-1')).toEqual({ entries: shared.logs })
