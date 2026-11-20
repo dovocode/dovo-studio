@@ -56,7 +56,7 @@ export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],i
     'export const createExtensionCatalog=extensions=>({views:extensions.flatMap(e=>e.views),host:{dispose:async()=>{}}});',
   // Workspace mode visibility is covered by activity-bar.test.ts; this fixture keeps modes visible.
   './activity-bar':
-    'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export const ActivityBar=({views,onSelect,onDetachBrowser})=><nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>;',
+    'export const workspaceModeVisible=()=>true;export const visibleWorkspaceTarget=target=>target;export function ActivityBar({views,onSelect,onDetachBrowser}){window.requestBrowserDetach=onDetachBrowser;return <nav aria-label="Main navigation">{views.map(v=><button key={v.id} onClick={()=>onSelect(v.id)}>{v.title}</button>)}{onDetachBrowser&&<button onClick={onDetachBrowser}>Detach browser</button>}</nav>}',
   './settings-nav': 'export const SettingsNav=()=>null;',
   './title-bar': 'export const TitleBar=()=>null;',
   './command-palette':
@@ -130,6 +130,8 @@ try {
       .getByRole('navigation', { name: 'Main navigation' })
       .getByRole('button', { name, exact: true })
       .click()
+  const settings = page.getByRole('dialog', { name: 'Settings', exact: true })
+  const closeSettings = () => settings.getByRole('button', { name: 'Close', exact: true }).click()
   await selected('fresh')
   for (const modifier of [
     await page.evaluate(() => (/Mac|iPhone|iPad/.test(navigator.platform) ? 'Meta' : 'Control')),
@@ -213,7 +215,7 @@ try {
   await page.evaluate(() => {
     window.allowSettings = false
   })
-  await section('Threads')
+  await closeSettings()
   await page.getByText('Settings section', { exact: true }).waitFor()
   assert.equal(
     await page.evaluate(() => window.host.goBack()),
@@ -233,11 +235,13 @@ try {
   await page.evaluate(() => {
     window.allowSettings = true
     window.holdSettings = true
+    void window.host.navigate({ viewId: 'pulls' })
   })
-  await section('PRs')
   await page.waitForFunction(() => !!window.finishSettings)
-  await page.evaluate(() => (window.holdSettings = false))
-  await section('Shortcuts')
+  await page.evaluate(() => {
+    window.holdSettings = false
+    return window.host.navigate({ viewId: 'shortcuts' })
+  })
   await page.getByText('Shortcuts section', { exact: true }).waitFor()
   await page.evaluate(() => window.finishSettings(true))
   await page.getByText('Shortcuts section', { exact: true }).waitFor()
@@ -309,7 +313,8 @@ try {
     window.holdSwitch = true
     window.notify({ runtimeId: 'mac', viewId: 'tasks', entityId: 'mac-b' })
   })
-  await section('PRs')
+  await page.waitForFunction(() => !window.holdSwitch)
+  await page.evaluate(() => window.host.navigate({ viewId: 'pulls' }))
   await page.getByText('PR section', { exact: true }).waitFor()
   await page.evaluate(() => window.finishSwitch())
   await page.waitForFunction(() => window.finishedSwitchId === 'mac')
@@ -364,11 +369,13 @@ try {
   await page.evaluate(() => {
     window.allowSettings = false
   })
-  await page.getByRole('button', { name: 'Detach browser', exact: true }).click()
+  await page.evaluate(() => window.requestBrowserDetach())
   await page.getByText('Settings section', { exact: true }).waitFor()
   await page.evaluate(() => {
     window.allowSettings = true
   })
+  await closeSettings()
+  await settings.waitFor({ state: 'hidden' })
   await section('Browser')
   await page.getByText('Embedded browser', { exact: true }).waitFor()
   assert.equal(
@@ -420,7 +427,8 @@ try {
   await selected('mac-bot')
   await page.getByRole('textbox', { name: 'Message' }).fill('Bot draft kept')
   await section('Settings')
-  await section('Bots')
+  await closeSettings()
+  await settings.waitFor({ state: 'hidden' })
   await selected('mac-bot')
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Bot draft kept')
   assert.deepEqual(errors, [])
