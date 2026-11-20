@@ -8,11 +8,23 @@ const goalSchema = Schema.NullOr(
   nativeGoalSchema.mapFields(({ sessionId: _sessionId, ...fields }) => fields),
 )
 
+export async function readOpenCodeGoal(
+  api: OpenCodeClient,
+  sessionID: string,
+  directory: string,
+  signal: AbortSignal,
+) {
+  const result = await api.rpc.call(
+    { rpcID: 'opencode.goal', method: 'get', input: { sessionID }, location: { directory } },
+    { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
+  )
+  return decode(goalSchema, result.output)
+}
+
 export function opencodeGoal(run: AgentRun, api: OpenCodeClient, sessionID: string) {
   let active = false
   let revision = 0
-  const publish = (value: unknown) => {
-    const goal = decode(goalSchema, value)
+  const publish = (goal: Schema.Schema.Type<typeof goalSchema>) => {
     active = goal?.status === 'active'
     revision++
     run.onEvent?.('dovo/opencode/goal', goal ? { ...goal, sessionId: sessionID } : null)
@@ -20,22 +32,14 @@ export function opencodeGoal(run: AgentRun, api: OpenCodeClient, sessionID: stri
   }
   const read = async (signal = run.signal) => {
     const before = revision
-    const result = await api.rpc.call(
-      {
-        rpcID: 'opencode.goal',
-        method: 'get',
-        input: { sessionID },
-        location: { directory: run.cwd },
-      },
-      { signal: AbortSignal.any([signal, AbortSignal.timeout(5000)]) },
-    )
-    if (before === revision) publish(result.output)
+    const goal = await readOpenCodeGoal(api, sessionID, run.cwd, signal)
+    if (before === revision) publish(goal)
   }
   return {
     get active() {
       return active
     },
-    publish,
+    publish: (value: unknown) => publish(decode(goalSchema, value)),
     read,
     async supported() {
       const info = await api.server.info({

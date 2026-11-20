@@ -15,6 +15,8 @@ export const subagentSchema = mutableStruct({
   taskId: Schema.optional(Schema.String),
   /** Native metadata belongs to a live provider session, including between parent turns. */
   sessionLive: Schema.optional(Schema.Boolean),
+  /** A server outside the runtime can outlive a runtime restart. */
+  externalSession: Schema.optional(Schema.Literal(true)),
   background: Schema.optional(Schema.Boolean),
   /** False when the provider can cancel only the whole containing session. */
   canStopIndividual: Schema.optional(Schema.Boolean),

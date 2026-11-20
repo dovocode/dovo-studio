@@ -113,6 +113,64 @@ function setup(mode: Task['modelSelection'] = 'smart') {
   }
 }
 
+it('removes saved ACP model-specific settings when Tune chooses another model', async () => {
+  const s = setup('auto')
+  try {
+    s.setProvider('acp')
+    const original = s.get.getMockImplementation()!
+    s.get.mockImplementation(async (provider) =>
+      provider === 'acp'
+        ? {
+            probe: async () => ({ available: true, provider, detail: '' }),
+            run: async () => {},
+            models: async () => ({
+              models: [
+                { id: 'acp-small', name: 'Small', isDefault: true },
+                { id: 'acp-large', name: 'Large' },
+              ],
+              reasoning: [{ id: 'high', name: 'High' }],
+              acp: {
+                modes: [],
+                commands: [],
+                configOptions: [
+                  {
+                    id: 'think',
+                    name: 'Thought level',
+                    category: 'thought_level',
+                    currentValue: 'high',
+                    options: [{ id: 'high', name: 'High' }],
+                  },
+                ],
+              },
+            }),
+          }
+        : original(provider),
+    )
+    s.store.update((workspace) => ({
+      ...workspace,
+      repositories: workspace.repositories.map((repo) => ({
+        ...repo,
+        taskDefaults: {
+          harness: {
+            ...defaultTaskHarness('acp'),
+            endpoint: 'acp-fixture',
+            model: 'acp-small',
+            acpConfig: { think: 'high', custom: 'kept' },
+          },
+        },
+      })),
+    }))
+    await runClientEffect(s.selection.resolveEffect('task'))
+    expect(s.store.task('task').harness).toMatchObject({
+      model: 'acp-large',
+      acpConfig: { custom: 'kept' },
+    })
+    expect(s.store.task('task').harness?.acpConfig).not.toHaveProperty('think')
+  } finally {
+    await s.close()
+  }
+})
+
 it.each(['project', 'missing'])(
   'Inherit uses exact project/system defaults without inference: %s',
   async (repositoryId) => {

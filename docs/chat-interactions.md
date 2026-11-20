@@ -107,9 +107,12 @@ without persistent turn-model support retain their one-turn behavior.
 
 The reasoning picker uses options for the selected model. **Provider default** leaves the effort
 choice to the harness. OpenCode v2 applies a selected variant to the project's default model when
-you leave the model on **Provider default**. ACP checks the model and reasoning values that the
-agent reports after a change. If the agent keeps the old value, Studio reports the error before it
-sends the prompt.
+you leave the model on **Provider default**. The picker shows variants when OpenCode reports a
+default model. ACP checks the model and reasoning values that the agent reports after a change. If
+the agent keeps the old value, Studio reports the error before it sends the prompt.
+
+**Try again** sends the original request, attachments, and any access settings set for that turn.
+Choosing another model resets reasoning and service tier to their defaults for that model.
 
 Steering a queued follow-up keeps its original message ID. Provider acknowledgement moves it into
 the conversation atomically; a failed or unconfirmed handoff leaves the original in a paused queue.

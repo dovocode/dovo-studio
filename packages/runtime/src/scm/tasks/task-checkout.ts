@@ -80,6 +80,7 @@ export class TaskCheckout {
   async reviewDirectory(
     id: string,
     checkoutId?: string,
+    options: { includeFolders?: boolean } = {},
     visited = new Set<string>(),
   ): Promise<string | undefined> {
     if (visited.has(id)) return undefined
@@ -97,7 +98,12 @@ export class TaskCheckout {
         : undefined
     }
     if (task.delegation && !checkoutId)
-      return this.reviewDirectory(task.delegation.parentTaskId, task.delegation.checkoutId, visited)
+      return this.reviewDirectory(
+        task.delegation.parentTaskId,
+        task.delegation.checkoutId,
+        options,
+        visited,
+      )
     const link = checkoutId
       ? task.linkedCheckouts?.find((link) => link.id === checkoutId)
       : undefined
@@ -105,7 +111,13 @@ export class TaskCheckout {
     const repo = this.store
       .get()
       .repositories.find((repo) => repo.id === (link?.repositoryId ?? task.repositoryId))
-    if (!repo || repo.kind) return undefined
+    if (!repo) return undefined
+    if (repo.kind) {
+      if (!options.includeFolders) return undefined
+      return repo.kind === 'scratch'
+        ? this.scratch?.existingDirectory(id)
+        : repositoryPath(repo.path)
+    }
     if ((link?.execution ?? task.execution) !== 'worktree') return repo.path
     if (link || task.existingWorktreePath) {
       const selected = link

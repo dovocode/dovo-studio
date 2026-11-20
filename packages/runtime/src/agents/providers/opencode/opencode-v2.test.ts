@@ -1,8 +1,9 @@
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
 import { expect, it } from 'vite-plus/test'
-import { opencodeAdapter } from './opencode.js'
-import { decode, mcpServerSchema } from '@dovo/protocol'
+import { createOpenCodeAdapter, opencodeAdapter } from './opencode.js'
+import { decode, mcpServerSchema, modelReasoningLevels } from '@dovo/protocol'
+import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 
 it.each([undefined, 'on-request', 'never'] as const)(
   'runs OpenCode 2 through its event stream with explicit %s approval',
@@ -273,11 +274,11 @@ it('recognizes V1 servers that return the browser app for unknown API routes', a
             {
               id: 'test',
               name: 'Test provider',
-              models: { model: { id: 'model', name: 'Test model' } },
+              models: { model: { id: 'model', name: 'Test model', variants: { high: {} } } },
             },
           ],
           connected: ['test'],
-          default: {},
+          default: { test: 'model' },
         }),
       )
     } else response.writeHead(404).end()
@@ -300,8 +301,14 @@ it('recognizes V1 servers that return the browser app for unknown API routes', a
     const catalog = await opencodeAdapter.models!(agent)
     expect(catalog.harness).toEqual({ name: 'OpenCode v1', generation: 'v1' })
     expect(catalog.models).toEqual([
-      { id: 'test/model', name: 'Test provider / Test model', reasoning: [] },
+      {
+        id: 'test/model',
+        name: 'Test provider / Test model',
+        isDefault: true,
+        reasoning: [{ id: 'high', name: 'high' }],
+      },
     ])
+    expect(modelReasoningLevels(catalog, '')).toEqual([{ id: 'high', name: 'high' }])
   } finally {
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
@@ -314,6 +321,8 @@ it('loads enabled v2 models and variants exclusively from the configured OpenCod
     paths.push(request.url ?? '')
     response.setHeader('Content-Type', 'application/json')
     if (request.url === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+    if (request.url?.startsWith('/api/model/default'))
+      return response.end(JSON.stringify({ data: { providerID: 'host', modelID: 'custom' } }))
     if (request.url === '/api/model')
       return response.end(
         JSON.stringify({
@@ -351,12 +360,93 @@ it('loads enabled v2 models and variants exclusively from the configured OpenCod
     expect(catalog).toEqual({
       harness: { name: 'OpenCode v2', generation: 'v2' },
       models: [
-        { id: 'host/custom', name: 'Host Custom Model', reasoning: [{ id: 'high', name: 'high' }] },
+        {
+          id: 'host/custom',
+          name: 'Host Custom Model',
+          isDefault: true,
+          reasoning: [{ id: 'high', name: 'high' }],
+        },
       ],
-      reasoning: [],
+      reasoning: [{ id: 'high', name: 'high' }],
     })
-    expect(paths).toEqual(['/api/info', '/api/model'])
+    expect(modelReasoningLevels(catalog, '')).toEqual([{ id: 'high', name: 'high' }])
+    expect(paths.map((path) => path.split('?')[0]).sort()).toEqual([
+      '/api/info',
+      '/api/model',
+      '/api/model/default',
+    ])
   } finally {
+    server.closeAllConnections()
+    await new Promise<void>((resolve) => server.close(() => resolve()))
+  }
+})
+
+it('confirms a timed-out OpenCode stop only after the provider reports that session idle', async () => {
+  const controller = new AbortController()
+  const adapter = createOpenCodeAdapter()
+  let stream: ServerResponse | undefined
+  let providerIdle = false
+  let statusReads = 0
+  const server = createServer((request, response) => {
+    const path = new URL(request.url ?? '/', 'http://localhost').pathname
+    if (path === '/api/event') {
+      stream = response
+      response.writeHead(200, { 'Content-Type': 'text/event-stream' })
+      response.write(`data: ${JSON.stringify({ type: 'server.connected' })}\n\n`)
+      return
+    }
+    response.setHeader('Content-Type', 'application/json')
+    if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
+    if (path === '/api/session') return response.end(JSON.stringify({ data: { id: 'session' } }))
+    if (path.endsWith('/prompt')) return response.end(JSON.stringify({ id: 'input' }))
+    if (path.endsWith('/interrupt')) return response.writeHead(504).end('{}')
+    if (path === '/api/session/active') {
+      if (++statusReads === 1) return response.writeHead(503).end('{}')
+      const data = providerIdle ? { other: { type: 'running' } } : { session: { type: 'running' } }
+      return response.end(JSON.stringify({ data }))
+    }
+    response.end('{}')
+  })
+  server.listen(0, '127.0.0.1')
+  await once(server, 'listening')
+  const address = server.address()
+  if (!address || typeof address === 'string') throw new Error('Missing test address')
+  const events: string[] = []
+  try {
+    const error = await adapter
+      .run({
+        agent: {
+          id: 'test',
+          name: 'OpenCode',
+          provider: 'opencode',
+          instructions: '',
+          model: '',
+          endpoint: `http://127.0.0.1:${address.port}`,
+          permission: 'ask',
+        },
+        cwd: '/tmp',
+        prompt: 'Work',
+        signal: controller.signal,
+        onSession: () => {},
+        onText: () => {},
+        onActivity: () => {},
+        onPromptAccepted: () => controller.abort(),
+        onSubagentEvent: (event) => events.push(event),
+        approve: async () => 'deny',
+        ask: async () => null,
+      })
+      .catch((cause: unknown) => cause)
+    expect(error).toBeInstanceOf(OwnedProcessShutdownError)
+    if (!(error instanceof OwnedProcessShutdownError) || !error.confirmed)
+      throw new Error('Expected a deferred shutdown confirmation')
+    await expect.poll(() => statusReads).toBeGreaterThanOrEqual(2)
+    expect(events).not.toContain('dovo/session/closed')
+    providerIdle = true
+    await error.confirmed
+    expect(events).toContain('dovo/session/closed')
+  } finally {
+    await adapter.dispose?.()
+    stream?.end()
     server.closeAllConnections()
     await new Promise<void>((resolve) => server.close(() => resolve()))
   }

@@ -6,6 +6,8 @@ import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import { exec } from '../../process'
 import { randomUUID } from 'node:crypto'
+import { agentTurnSettings, resolveTaskAgent } from '@dovo/protocol'
+import type { AgentAdapter, AgentRun } from '../execution/types'
 
 vi.setConfig(runtimeIntegration)
 
@@ -38,6 +40,69 @@ const exists = (path: string) =>
     () => true,
     () => false,
   )
+
+it('retries an attachment-only turn with its access and clears settings from the previous model', async () => {
+  const { s, call } = await setup()
+  const task = s.tasks.create({
+    title: 'Attachment retry',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  const { attachment } = await s.attachments.upload({
+    id: randomUUID(),
+    taskId: task.id,
+    name: 'request.txt',
+    data: Buffer.from('Read this file.').toString('base64'),
+  })
+  const agent = resolveTaskAgent(task, s.store.get().agents)!
+  const runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      runs.push(run)
+      run.onText('Done')
+    },
+  })
+  const turnSettings = agentTurnSettings(
+    {
+      ...agent,
+      model: 'old-model',
+      reasoning: 'xhigh',
+      serviceTier: 'priority',
+      permission: 'read-only',
+    },
+    true,
+  )
+  expect(
+    (
+      await call('/api/tasks/message', {
+        id: task.id,
+        messageId: 'attachment-only',
+        text: '',
+        attachmentIds: [attachment.id],
+        turnSettings,
+      })
+    ).status,
+  ).toBe(200)
+  await waitForRuntime(() => {
+    expect(s.store.task(task.id).status).toBe('review')
+    expect(s.store.task(task.id).activeRunId).toBeUndefined()
+  })
+  const turnId = s.store.task(task.id).turns![0]!.id
+  expect((await call('/api/tasks/retry', { id: task.id, turnId, model: 'new-model' })).status).toBe(
+    200,
+  )
+  await waitForRuntime(() => expect(runs).toHaveLength(2))
+  expect(runs[1]).toMatchObject({
+    agent: { model: 'new-model', reasoning: '', permission: 'read-only' },
+    attachments: [expect.objectContaining({ id: attachment.id })],
+  })
+  expect(runs[1]?.agent.serviceTier).toBeUndefined()
+  expect(resolveTaskAgent(s.store.task(task.id), s.store.get().agents)?.permission).toBe(
+    agent.permission,
+  )
+})
 
 it('starts an active-thread fork at committed HEAD with conversation, settings and independent attachments', async () => {
   const { s, call } = await setup()

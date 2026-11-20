@@ -12,16 +12,21 @@ import { isImageAttachment } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { questionPromptSchema } from '@dovo/protocol'
 import { createOpencodeClient, type PermissionRuleset } from '@opencode-ai/sdk/v2'
-import type { AgentAdapter } from '../../execution/types.js'
+import { OpenCode } from '@opencode/client'
+import { gte, valid } from 'semver'
+import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import {
   OpenCodeServers,
   opencodeHeaders,
+  opencodeAddress,
   isOpencodeV2,
   type OpenCodeConnection,
 } from './opencode-server.js'
 import { opencodeV2Adapter } from './opencode-v2.js'
 import { OpenCodeClientCache } from './client-cache.js'
 import { readOpencodeThread } from './opencode-thread.js'
+import { openCodeV2ActiveWork, waitForOpenCodeIdle } from './opencode-activity.js'
+import { readOpenCodeGoal } from './opencode-goal.js'
 const clients = new OpenCodeClientCache<ReturnType<typeof createOpencodeClient>>()
 function client(address: string, cwd?: string, env?: Record<string, string>, active = false) {
   const authorization = opencodeHeaders(env).Authorization
@@ -49,31 +54,32 @@ function untilAborted(approval: Promise<boolean>, signal: AbortSignal) {
       .finally(() => signal.removeEventListener('abort', abort))
   })
 }
-const remoteAdapter: AgentAdapter = {
+const remoteAdapter = {
   models: async (agent) => {
     if (await isOpencodeV2(agent.endpoint, agent.env)) return opencodeV2Adapter.models!(agent)
-    const { data } = await client(agent.endpoint, undefined, agent.env).value.provider.list(
-      {},
-      {
-        throwOnError: true,
-        signal: AbortSignal.timeout(15000),
-      },
-    )
+    const api = client(agent.endpoint, undefined, agent.env).value
+    const [{ data }, config] = await Promise.all([
+      api.provider.list({}, { throwOnError: true, signal: AbortSignal.timeout(15000) }),
+      api.config.get({}, { signal: AbortSignal.timeout(5000) }).catch(() => undefined),
+    ])
+    const provider = data.connected.length === 1 ? data.connected[0] : undefined
+    const fallback = provider && data.default?.[provider]
+    const defaultId = config?.data?.model || (fallback ? `${provider}/${fallback}` : undefined)
+    const models = data.all
+      .filter((provider) => data.connected.includes(provider.id))
+      .flatMap((provider) =>
+        Object.values(provider.models).map((model) => ({
+          id: `${provider.id}/${model.id}`,
+          name: `${provider.name} / ${model.name}`,
+          reasoning: Object.keys(model.variants ?? {}).map((id) => ({ id, name: id })),
+        })),
+      )
     return {
       harness: { name: 'OpenCode v1', generation: 'v1' },
-      models: data.all
-        .filter((provider) => data.connected.includes(provider.id))
-        .flatMap((provider) =>
-          Object.values(provider.models).map((model) => ({
-            id: `${provider.id}/${model.id}`,
-            name: `${provider.name} / ${model.name}`,
-            reasoning: Object.keys(model.variants ?? {}).map((id) => ({
-              id,
-              name: id,
-            })),
-          })),
-        ),
-      reasoning: [],
+      models: models.map((model) =>
+        model.id === defaultId ? { ...model, isDefault: true } : model,
+      ),
+      reasoning: models.find((model) => model.id === defaultId)?.reasoning ?? [],
     }
   },
   probe: async (agent) => {
@@ -95,10 +101,11 @@ const remoteAdapter: AgentAdapter = {
       }
     }
   },
-  async run(run) {
+  async run(run, lifetime) {
     run = checkedPolicyRun(run, 'opencode')
     run.signal.throwIfAborted()
-    if (await isOpencodeV2(run.agent.endpoint, run.agent.env)) return opencodeV2Adapter.run(run)
+    if (await isOpencodeV2(run.agent.endpoint, run.agent.env))
+      return opencodeV2Adapter.run(run, lifetime)
     if (run.goal)
       throw new Error(
         'Native goals require OpenCode 2.2.5 or later. Update OpenCode on this computer.',
@@ -293,6 +300,17 @@ const remoteAdapter: AgentAdapter = {
       })
       removeAbortListener = () => run.signal.removeEventListener('abort', abort)
       if (run.signal.aborted) abort()
+      const active = async (signal: AbortSignal) => {
+        const states = await api.session.status(
+          { directory: run.cwd },
+          { throwOnError: true, signal },
+        )
+        return new Set(
+          Object.entries(states.data)
+            .filter(([, state]) => state.type !== 'idle')
+            .map(([id]) => id),
+        )
+      }
       const native = opencodeNative(
         run,
         sessionID,
@@ -302,17 +320,7 @@ const remoteAdapter: AgentAdapter = {
             { throwOnError: true, signal: AbortSignal.timeout(5000) },
           )
         },
-        async () => {
-          const states = await api.session.status(
-            { directory: run.cwd },
-            { throwOnError: true, signal: AbortSignal.timeout(5000) },
-          )
-          return new Set(
-            Object.entries(states.data)
-              .filter(([, state]) => state.type !== 'idle')
-              .map(([id]) => id),
-          )
-        },
+        () => active(AbortSignal.timeout(5000)),
       )
       let succeeded = false
       let prompting = false
@@ -561,7 +569,19 @@ const remoteAdapter: AgentAdapter = {
         throw error
       } finally {
         try {
-          await native.close(!succeeded, () => interruption)
+          await native
+            .close(!succeeded, interruption, () =>
+              waitForOpenCodeIdle(async () => {
+                const working = await active(AbortSignal.any([lifetime, AbortSignal.timeout(5000)]))
+                return (
+                  !working.has(sessionID) && !native.activeSessions().some((id) => working.has(id))
+                )
+              }, lifetime),
+            )
+            .catch((error: unknown) => {
+              if (error instanceof OwnedProcessShutdownError) ephemeralSessionId = undefined
+              throw error
+            })
         } finally {
           eventsController.abort()
         }
@@ -571,54 +591,42 @@ const remoteAdapter: AgentAdapter = {
         })
       }
     } finally {
-      const finalize = async () => {
-        let shutdownError: OwnedProcessShutdownError | undefined
+      try {
         removeAbortListener?.()
-        if (interruption)
-          await interruption.catch((cause: unknown) => {
-            shutdownError = new OwnedProcessShutdownError(
-              'OpenCode shutdown was not confirmed. Review its session before continuing.',
-              { cause },
-            )
-          })
-        try {
-          const results = await Promise.allSettled(
-            registered.map((name) =>
-              api.mcp.disconnect(
-                {
-                  name,
-                  directory: run.cwd,
-                },
-                {
-                  throwOnError: true,
-                  signal: AbortSignal.timeout(5000),
-                },
-              ),
+        const results = await Promise.allSettled(
+          registered.map((name) =>
+            api.mcp.disconnect(
+              {
+                name,
+                directory: run.cwd,
+              },
+              {
+                throwOnError: true,
+                signal: AbortSignal.timeout(5000),
+              },
             ),
+          ),
+        )
+        results.forEach((result, index) => {
+          if (result.status === 'rejected')
+            run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
+        })
+        if (ephemeralSessionId)
+          await api.session.delete(
+            { sessionID: ephemeralSessionId, directory: run.cwd },
+            { signal: AbortSignal.timeout(5000), throwOnError: true },
           )
-          results.forEach((result, index) => {
-            if (result.status === 'rejected')
-              run.onActivity(`Could not disconnect managed MCP server ${registered[index]}`)
-          })
-          if (ephemeralSessionId && !shutdownError)
-            await api.session.delete(
-              { sessionID: ephemeralSessionId, directory: run.cwd },
-              { signal: AbortSignal.timeout(5000), throwOnError: true },
-            )
-        } catch (error) {
-          // Preserve the error that keeps checkout ownership when cleanup also fails.
-          if (!shutdownError) throw error
-        } finally {
-          lease.release()
-        }
-        if (shutdownError) throw shutdownError
+      } finally {
+        lease.release()
       }
-      await finalize()
     }
   },
+} satisfies Omit<AgentAdapter, 'run'> & {
+  run: (run: AgentRun, lifetime: AbortSignal) => Promise<void>
 }
 
 export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAdapter {
+  const lifetime = new AbortController()
   /** Holds the local server for the whole call so idle retirement cannot stop it mid-use. */
   const withServer = async <T extends import('@dovo/protocol').AgentDiscovery, R>(
     agent: T,
@@ -632,6 +640,39 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
     }
   }
   return {
+    recoveredSessionIdle: async (agent, sessionID, workerIds, cwd, lifetime) => {
+      if (!agent.endpoint.trim()) return false
+      const signal = AbortSignal.any([lifetime, AbortSignal.timeout(5000)])
+      const ids = [sessionID, ...workerIds]
+      // A different server can also report an empty active list. Verify the saved session first.
+      if (await isOpencodeV2(agent.endpoint, agent.env, signal)) {
+        const api = OpenCode.make({
+          baseUrl: opencodeAddress(agent.endpoint),
+          headers: opencodeHeaders(agent.env),
+        })
+        const session = await api.session.get({ sessionID }, { signal })
+        if (session.id !== sessionID) return false
+        const { version } = await api.server.info({ signal })
+        const jobs = !!valid(version) && gte(version, '2.2.6')
+        if (!jobs && workerIds.some((id) => id.startsWith('job:'))) return false
+        const active = await openCodeV2ActiveWork(api, sessionID, jobs, signal)
+        if (ids.some((id) => active.has(id))) return false
+        if (!valid(version) || !gte(version, '2.2.5')) return true
+        return (await readOpenCodeGoal(api, sessionID, cwd, signal))?.status !== 'active'
+      }
+      if (workerIds.some((id) => id.startsWith('job:'))) return false
+      const api = client(agent.endpoint, cwd, agent.env).value
+      const { data: session } = await api.session.get(
+        { sessionID, directory: cwd },
+        { throwOnError: true, signal },
+      )
+      if (session.id !== sessionID) return false
+      const { data: statuses } = await api.session.status(
+        { directory: cwd },
+        { throwOnError: true, signal },
+      )
+      return ids.every((id) => !statuses[id] || statuses[id].type === 'idle')
+    },
     readNativeThread: (agent, id, sessionId, cwd) =>
       withServer(agent, (resolved) =>
         id.startsWith('job:') && sessionId
@@ -656,13 +697,16 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
       let completed = false
       let held = false
       try {
-        await remoteAdapter.run({ ...run, agent: lease.agent })
+        await remoteAdapter.run({ ...run, agent: lease.agent }, lifetime.signal)
         completed = true
       } catch (error) {
         // An unconfirmed stop keeps this turn's lease until the stop itself is confirmed.
         if (error instanceof OwnedProcessShutdownError && error.confirmed) {
           held = true
-          void error.confirmed.then(() => lease.release())
+          void error.confirmed.then(
+            () => lease.release(),
+            () => lease.release(false),
+          )
         }
         throw error
       } finally {
@@ -671,7 +715,10 @@ export function createOpenCodeAdapter(servers = new OpenCodeServers()): AgentAda
       }
     },
     releaseTask: (taskId) => servers.releaseTask(taskId),
-    dispose: () => servers.dispose(),
+    dispose: () => {
+      lifetime.abort()
+      return servers.dispose()
+    },
   }
 }
 const sharedServers = new OpenCodeServers()

@@ -10,6 +10,8 @@ import { threadContainerSandbox } from '../../sandbox/thread-terminal.js'
 import { sandboxNativeReads } from '../../sandbox/harnesses.js'
 import { requireImportedCodexSession } from '../providers/codex/session-import.js'
 import { requireImportedPiSession } from '../providers/pi/session-import.js'
+import { waitForOpenCodeIdle } from '../providers/opencode/opencode-activity.js'
+import { realpath } from 'node:fs/promises'
 import {
   type TurnSettings,
   noStudioTools,
@@ -30,6 +32,9 @@ import {
   decode,
   checkpointCanUndo,
   checkpointRestoreNotice,
+  agentTurnSettings,
+  changeModelSettings,
+  modelDiscoveryInput,
   nextQueuedMessage,
   defaultTaskHarness,
   resolveTaskAgent,
@@ -184,6 +189,8 @@ export class Tasks {
   private nativeStopping = new Map<string, Promise<void>>()
   private nativeDirectories = new Map<string, string[]>()
   private nativeConfirmations = new Map<string, Promise<void>>()
+  private recoveringExternalSessions = new Map<string, Promise<boolean>>()
+  private recoveryLifetime = new AbortController()
   readonly queue: TaskQueue
   readonly memoryProtection = new MemoryProtection()
   private runner: TaskTurnRunner
@@ -921,30 +928,72 @@ export class Tasks {
       const end = task.messages.findIndex((message) => message.id === turn.assistantId)
       const earlier = end >= 0 ? task.messages.slice(0, end) : task.messages
       const previousReply = earlier.map((message) => message.role).lastIndexOf('assistant')
-      const requests = earlier
-        .slice(previousReply + 1)
-        .filter((message) => message.role === 'user' && !message.file && message.text.trim())
+      const tagged = earlier.filter(
+        (message) => message.turnId === turnId && message.role === 'user',
+      )
+      const requests = (tagged.length ? tagged : earlier.slice(previousReply + 1)).filter(
+        (message) =>
+          message.role === 'user' &&
+          !message.file &&
+          (message.text.trim() || message.attachments?.length),
+      )
       const request = requests.map((message) => message.text.trim()).join('\n\n')
+      const attachments = [
+        ...new Set(
+          requests.flatMap((message) => message.attachments?.map((file) => file.id) ?? []),
+        ),
+      ]
       // Repeating a plan request is still a plan; it must not run with the thread's access.
       const plan = planModeRequested(requests)
-      if (!request) throw new HttpError(409, 'This turn has no request to repeat.')
+      const review = requests.some((message) => message.review)
+      if (!requests.length) throw new HttpError(409, 'This turn has no request to repeat.')
+      this.attachments.metadata(id, attachments)
+      const base = resolveTaskAgent(task, this.store.get().agents)
+      const selectedModel = model?.trim()
+      const originalSettings = requests.find((message) => message.turnSettings)?.turnSettings
+      this.queue.validateSettings(id, originalSettings)
+      let settings = originalSettings
+      if (selectedModel) {
+        if (!base) throw new HttpError(400, 'Choose a harness or agent first')
+        const original = applyTurnSettings(base, originalSettings)
+        const catalog =
+          original.provider === 'acp' && original.acpConfig && selectedModel !== original.model
+            ? await (await this.registry.get('acp')).models?.(modelDiscoveryInput(original))
+            : undefined
+        const next = changeModelSettings(original, { model: selectedModel }, catalog)
+        settings = agentTurnSettings(next, !!originalSettings?.harness || !!catalog?.acp)
+        this.queue.validateSettings(id, settings)
+      }
       const undo = checkpointCanUndo(turn.checkpoint)
       if (undo) await this.restoreTurn(id, turnId, 'undo', false)
-      if (model?.trim())
-        this.store.updateTaskHistory(id, (current) => ({
-          ...current,
-          agentOverrides: { ...current.agentOverrides, model: model.trim() },
-        }))
-      this.activity?.add('task', id, model ? `Trying again with ${model}` : 'Trying again', {
-        turnId,
-      })
+      this.activity?.add(
+        'task',
+        id,
+        selectedModel ? `Trying again with ${selectedModel}` : 'Trying again',
+        {
+          turnId,
+        },
+      )
       return {
         plan,
-        text: `Try this again${turn.checkpoint?.sharedCheckout ? ' using the current files' : ' from scratch'}${model?.trim() ? ` (you now run as ${model.trim()})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''} The request was:\n\n${request}`,
+        review,
+        attachments,
+        settings,
+        text: `Try this again${turn.checkpoint?.sharedCheckout ? ' using the current files' : ' from scratch'}${selectedModel ? ` (you now run as ${selectedModel})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''}${request ? ` The request was:\n\n${request}` : ''}`,
       }
     }).pipe(
-      Effect.flatMap(({ text, plan }) =>
-        this.sendEffect(id, randomUUID(), text, [], false, false, undefined, undefined, plan),
+      Effect.flatMap(({ text, plan, review, attachments, settings }) =>
+        this.sendEffect(
+          id,
+          randomUUID(),
+          text,
+          attachments,
+          review,
+          false,
+          settings,
+          undefined,
+          plan,
+        ),
       ),
     )
   }
@@ -2760,7 +2809,9 @@ export class Tasks {
                         this.deliverCompletions(true, id)
                       })
                       .catch((error: unknown) =>
-                        console.error('Could not release a confirmed stopped provider:', error),
+                        this.stopping
+                          ? undefined
+                          : console.error('Could not release stopped provider:', error),
                       )
                     return
                   }
@@ -3256,6 +3307,7 @@ export class Tasks {
   }
   private nativeStopRequested(id: string) {
     return (
+      this.recoveringExternalSessions.has(id) ||
       this.nativeStopping.has(id) ||
       this.store
         .get()
@@ -3275,6 +3327,92 @@ export class Tasks {
       this.nativeSessions.get(id)?.directories ?? this.running.get(id)?.directories
     // An unknown native owner excludes every checkout until its session is confirmed closed.
     this.nativeDirectories.set(id, directories ?? this.nativeDirectories.get(id) ?? [])
+  }
+  private recoverExternalSessions() {
+    const signal = this.recoveryLifetime.signal
+    for (const task of this.store.get().tasks) {
+      const workers = task.subagents?.filter(
+        (agent) => agent.externalSession && nativeAgentWorking(agent),
+      )
+      if (!workers?.length || this.recoveringExternalSessions.has(task.id)) continue
+      const id = task.id
+      this.refreshNativeDirectory(id)
+      const recover = async () => {
+        const sessions = new Map<string, string[]>()
+        for (const worker of workers) {
+          const sessionId = worker.sessionId ?? task.sessionId
+          if (!sessionId) return false
+          const ids = sessions.get(sessionId) ?? []
+          ids.push(worker.id)
+          sessions.set(sessionId, ids)
+        }
+        const adapter = await this.registry.get('opencode')
+        const check = adapter.recoveredSessionIdle
+        if (!check) return false
+        let cwd: string | undefined
+        await waitForOpenCodeIdle(async () => {
+          const directory =
+            cwd ?? (await this.checkouts.reviewDirectory(id, undefined, { includeFolders: true }))
+          if (!directory) return false
+          if (!cwd) {
+            const root = this.delegationRoot(id)
+            const links =
+              this.store
+                .taskSummary(root)
+                .linkedCheckouts?.filter((link) => link.access === 'edit') ?? []
+            const linked = await Promise.all(
+              links.map((link) =>
+                this.checkouts.reviewDirectory(root, link.id, { includeFolders: true }),
+              ),
+            )
+            if (linked.every((path) => path !== undefined)) {
+              const directories = await Promise.all(
+                [directory, ...linked].map((path) => realpath(path)),
+              )
+              signal.throwIfAborted()
+              this.nativeDirectories.set(id, directories)
+              cwd = directory
+            }
+          }
+          const agent = resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)
+          if (agent?.provider !== 'opencode' || !agent.endpoint.trim()) return false
+          for (const [sessionId, ids] of sessions)
+            if (!(await check(agent, sessionId, ids, directory, signal))) return false
+          return true
+        }, signal)
+        signal.throwIfAborted()
+        const now = new Date().toISOString()
+        this.store.updateTask(id, (current) => ({
+          ...current,
+          subagents: current.subagents?.map((agent) =>
+            workers.some(
+              (worker) =>
+                worker.id === agent.id &&
+                worker.sessionId === agent.sessionId &&
+                worker.startedAt === agent.startedAt,
+            )
+              ? {
+                  ...agent,
+                  sessionLive: false,
+                  finishedAt: now,
+                  updatedAt: now,
+                  result: 'OpenCode confirmed this worker is idle after the runtime restarted.',
+                }
+              : agent,
+          ),
+        }))
+        this.recoveringExternalSessions.delete(id)
+        this.refreshNativeDirectory(id)
+        return true
+      }
+      this.recoveringExternalSessions.set(
+        id,
+        recover().catch((error: unknown) => {
+          if (!signal.aborted) console.error('Could not check recovered OpenCode work:', error)
+          return false
+        }),
+      )
+    }
   }
   private nativeStopConfirmed(taskId: string, selected: NonNullable<TaskMetadata['subagents']>) {
     const key = JSON.stringify([
@@ -4306,6 +4444,7 @@ export class Tasks {
     enabled: () => boolean,
     automationOwns: (id: string) => boolean = () => false,
   ) {
+    this.recoverExternalSessions()
     // Question callbacks are process-local. Drop their undelivered notifications after
     // a restart, while retaining completion results and remote children's live forms.
     const localChildren = new Map(
@@ -4383,83 +4522,94 @@ export class Tasks {
       .get()
       .tasks.filter((task) => task.restartRecovery && !task.delegation)
       .map((task) => task.id)
+    const resume = (id: string) =>
+      Effect.gen({ self: this }, function* () {
+        if (this.stopping) return
+        const task = this.store.get().tasks.find((item) => item.id === id)
+        if (!task?.restartRecovery) return
+        if (
+          !(
+            task.restartRecovery.resumeRequested ??
+            this.store.projectSettings(task.repositoryId).taskBehavior?.continueAfterRestart ??
+            enabled()
+          ) ||
+          !task.restartRecovery.automatic ||
+          task.restartRecovery.kind === 'queue' ||
+          task.archived ||
+          automationOwns(id)
+        ) {
+          this.store.updateTask(id, (task) => ({
+            ...task,
+            restartRecovery: task.restartRecovery
+              ? { ...task.restartRecovery, automatic: false }
+              : undefined,
+          }))
+          return
+        }
+        const interruptedTurn = task.restartRecovery.kind === 'turn'
+        const pendingInput = nextQueuedMessage(task)?.id
+        this.activity?.add('task', id, 'Continuing after runtime restart')
+        const recordFailure = Effect.catchCause((cause) =>
+          Effect.try(() => {
+            if (Cause.hasInterruptsOnly(cause)) return
+            const error = Cause.squash(cause)
+            const current = this.store.get().tasks.find((task) => task.id === id)
+            // Deleted meanwhile, stopping, or stopped by the user: nothing to record.
+            if (this.stopping || !current || current.status === 'cancelled') return
+            // A failed startup stays actionable; it must not silently retry forever.
+            this.store.updateTaskHistory(id, (task) => ({
+              ...task,
+              status:
+                task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
+                  ? 'review'
+                  : 'failed',
+              queuePaused: true,
+              restartRecovery: {
+                kind:
+                  interruptedTurn || !task.queue?.some((message) => message.id === pendingInput)
+                    ? 'turn'
+                    : 'queue',
+                automatic: false,
+              },
+              error: `Could not continue after restart. ${errorMessage(error)}`,
+            }))
+          }).pipe(
+            // Recording the failure must not stop recovery of the remaining tasks.
+            Effect.catch((error) =>
+              Effect.logError('Could not record a restart recovery failure', error),
+            ),
+          ),
+        )
+        yield* this.startEffect(
+          id,
+          true,
+          () =>
+            (this.store.taskSummary(id).restartRecovery?.resumeRequested ??
+              this.store.projectSettings(this.store.taskSummary(id).repositoryId).taskBehavior
+                ?.continueAfterRestart ??
+              enabled()) &&
+            this.store.taskSummary(id).restartRecovery?.automatic === true &&
+            !this.store.taskSummary(id).archived,
+        ).pipe(
+          Effect.flatMap((run) => {
+            // An approval in one task must not block recovery of other tasks.
+            this.executor.runFork(run.completion.pipe(recordFailure))
+            return Effect.void
+          }),
+          recordFailure,
+        )
+      })
     this.executor.runFork(
       Effect.gen({ self: this }, function* () {
         for (const id of ids) {
-          if (this.stopping) break
-          const task = this.store.get().tasks.find((item) => item.id === id)
-          if (!task?.restartRecovery) continue
-          if (
-            !(
-              task.restartRecovery.resumeRequested ??
-              this.store.projectSettings(task.repositoryId).taskBehavior?.continueAfterRestart ??
-              enabled()
-            ) ||
-            !task.restartRecovery.automatic ||
-            task.restartRecovery.kind === 'queue' ||
-            task.archived ||
-            automationOwns(id)
-          ) {
-            this.store.updateTask(id, (task) => ({
-              ...task,
-              restartRecovery: task.restartRecovery
-                ? { ...task.restartRecovery, automatic: false }
-                : undefined,
-            }))
-            continue
-          }
-          const interruptedTurn = task.restartRecovery.kind === 'turn'
-          const pendingInput = nextQueuedMessage(task)?.id
-          this.activity?.add('task', id, 'Continuing after runtime restart')
-          const recordFailure = Effect.catchCause((cause) =>
-            Effect.try(() => {
-              if (Cause.hasInterruptsOnly(cause)) return
-              const error = Cause.squash(cause)
-              const current = this.store.get().tasks.find((task) => task.id === id)
-              // Deleted meanwhile, stopping, or stopped by the user: nothing to record.
-              if (this.stopping || !current || current.status === 'cancelled') return
-              // A failed startup stays actionable; it must not silently retry forever.
-              this.store.updateTaskHistory(id, (task) => ({
-                ...task,
-                status:
-                  task.runPhase === 'finalizing' && task.turns?.at(-1)?.status === 'completed'
-                    ? 'review'
-                    : 'failed',
-                queuePaused: true,
-                restartRecovery: {
-                  kind:
-                    interruptedTurn || !task.queue?.some((message) => message.id === pendingInput)
-                      ? 'turn'
-                      : 'queue',
-                  automatic: false,
-                },
-                error: `Could not continue after restart. ${errorMessage(error)}`,
-              }))
-            }).pipe(
-              // Recording the failure must not stop recovery of the remaining tasks.
-              Effect.catch((error) =>
-                Effect.logError('Could not record a restart recovery failure', error),
+          const recovery = this.recoveringExternalSessions.get(id)
+          if (recovery)
+            this.executor.runFork(
+              Effect.promise(() => recovery).pipe(
+                Effect.flatMap((idle) => (idle ? resume(id) : Effect.void)),
               ),
-            ),
-          )
-          yield* this.startEffect(
-            id,
-            true,
-            () =>
-              (this.store.taskSummary(id).restartRecovery?.resumeRequested ??
-                this.store.projectSettings(this.store.taskSummary(id).repositoryId).taskBehavior
-                  ?.continueAfterRestart ??
-                enabled()) &&
-              this.store.taskSummary(id).restartRecovery?.automatic === true &&
-              !this.store.taskSummary(id).archived,
-          ).pipe(
-            Effect.flatMap((run) => {
-              // An approval in one task must not block recovery of other tasks.
-              this.executor.runFork(run.completion.pipe(recordFailure))
-              return Effect.void
-            }),
-            recordFailure,
-          )
+            )
+          else yield* resume(id)
         }
       }),
     )
@@ -4476,6 +4626,7 @@ export class Tasks {
       }
       attempt(() => this.unsubscribePolicy())
       this.stopping = true
+      this.recoveryLifetime.abort()
       yield* runtimeOperation(() => this.memoryProtection.dispose())
       if (this.scheduleTimer) clearInterval(this.scheduleTimer)
       this.scheduleTimer = undefined

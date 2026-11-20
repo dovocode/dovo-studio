@@ -134,7 +134,24 @@ export class AgentRegistry {
         return yield* Effect.fail(runtimeFailure(new Error('Provider failed to activate')))
       const models = adapter.models
       const readNativeThread = adapter.readNativeThread
+      const recoveredSessionIdle = adapter.recoveredSessionIdle
       return {
+        ...(recoveredSessionIdle
+          ? {
+              recoveredSessionIdle: (
+                agent: Agent,
+                sessionId: string,
+                workerIds: readonly string[],
+                cwd: string,
+                signal: AbortSignal,
+              ) =>
+                this.secretReferences
+                  .resolve(this.configure(agent), signal)
+                  .then((resolved) =>
+                    recoveredSessionIdle(resolved, sessionId, workerIds, cwd, signal),
+                  ),
+            }
+          : {}),
         ...(readNativeThread
           ? {
               readNativeThread: (

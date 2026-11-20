@@ -324,31 +324,7 @@ export class WorkspaceStore {
       ...w,
       tasks: w.tasks
         .filter((task) => !task.example)
-        .map((task) => ({
-          ...task,
-          subagents: task.subagents?.map((agent) =>
-            agent.source === 'dovo'
-              ? agent
-              : {
-                  ...agent,
-                  sessionLive: false,
-                  status: nativeAgentWorking(agent) ? ('stopped' as const) : agent.status,
-                  finishedAt: nativeAgentWorking(agent)
-                    ? new Date().toISOString()
-                    : agent.finishedAt,
-                  ...(nativeAgentWorking(agent)
-                    ? {
-                        result: 'The runtime restarted before this native child finished.',
-                        completion:
-                          agent.completion === 'disposed'
-                            ? ('disposed' as const)
-                            : ('pending' as const),
-                        completionId: `native-result:${agent.provider}:${agent.sessionId}:${agent.id}:${agent.startedAt}`,
-                      }
-                    : {}),
-                },
-          ),
-        }))
+        .map((task) => this.recoverNativeWorkers(task, w.agents))
         // Older branch switching wrote checkoutBranch to untouched local drafts.
         // That metadata is not a prepared checkout and must not lock the picker.
         .map((task) =>
@@ -360,6 +336,56 @@ export class WorkspaceStore {
         )
         .map((task) => this.recoverInterrupted(task)),
     }))
+  }
+  private recoverNativeWorkers(task: TaskSummary, agents: Workspace['agents']): TaskSummary {
+    const harness = resolveTaskAgent(task, agents)
+    const externalOpenCode = harness?.provider === 'opencode' && !!harness.endpoint.trim()
+    const now = new Date().toISOString()
+    const subagents = task.subagents?.map((agent) => {
+      if (agent.source === 'dovo') return agent
+      if (!nativeAgentWorking(agent)) return { ...agent, sessionLive: false }
+      if (agent.provider === 'opencode' && (agent.externalSession || externalOpenCode))
+        return { ...agent, status: 'unknown' as const, externalSession: true as const }
+      return {
+        ...agent,
+        sessionLive: false,
+        status: 'stopped' as const,
+        finishedAt: now,
+        result: 'The runtime restarted before this native child finished.',
+        completion: agent.completion === 'disposed' ? ('disposed' as const) : ('pending' as const),
+        completionId: `native-result:${agent.provider}:${agent.sessionId}:${agent.id}:${agent.startedAt}`,
+      }
+    })
+    const session = task.sessionId
+    if (
+      !externalOpenCode ||
+      !session ||
+      (!task.activeRunId && task.status !== 'running') ||
+      subagents?.some(
+        (worker) =>
+          worker.externalSession && worker.sessionId === session && nativeAgentWorking(worker),
+      )
+    )
+      return { ...task, subagents }
+    return {
+      ...task,
+      subagents: [
+        ...(subagents ?? []).filter(
+          (worker) => worker.id !== session || worker.sessionId !== session,
+        ),
+        {
+          id: session,
+          sessionId: session,
+          externalSession: true,
+          sessionLive: true,
+          provider: 'opencode',
+          name: 'OpenCode session',
+          status: 'unknown',
+          startedAt: task.history.latestTurn?.startedAt ?? now,
+          updatedAt: now,
+        },
+      ],
+    }
   }
   /** Restart recovery. Only interrupted turns need their task's history. */
   private recoverInterrupted(task: TaskSummary): TaskSummary | Task {

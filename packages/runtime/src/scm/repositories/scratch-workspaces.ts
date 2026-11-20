@@ -44,12 +44,29 @@ export class ScratchWorkspaces {
   }
   async directory(id: string) {
     const repository = await this.ensure()
-    const path = join(repository.path, createHash('sha256').update(id).digest('hex'))
+    const path = this.threadPath(repository.path, id)
     await mkdir(path, { recursive: true })
     if ((await lstat(path)).isSymbolicLink() || dirname(await realpath(path)) !== repository.path)
       throw new HttpError(409, 'The scratch thread folder must stay inside its managed workspace')
     if (await this.git.isRepository(path))
       throw new HttpError(409, 'The scratch thread folder has become a Git repository')
     return path
+  }
+  async existingDirectory(id: string) {
+    const repository = this.store.get().repositories.find((item) => item.id === SCRATCH_PROJECT_ID)
+    if (repository?.kind !== 'scratch') return undefined
+    const path = this.threadPath(repository.path, id)
+    try {
+      if (repository.path !== (await realpath(this.root))) return undefined
+      return (await lstat(path)).isDirectory() && dirname(await realpath(path)) === repository.path
+        ? path
+        : undefined
+    } catch (error) {
+      if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+      throw error
+    }
+  }
+  private threadPath(root: string, id: string) {
+    return join(root, createHash('sha256').update(id).digest('hex'))
   }
 }

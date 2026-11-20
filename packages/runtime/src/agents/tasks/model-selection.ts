@@ -2,6 +2,7 @@ import { nextQueuedMessage } from '@dovo/protocol'
 import {
   acpInstallationHarness,
   changeAgentProvider,
+  changeModelSettings,
   decode,
   decodeResult,
   defaultTaskHarness,
@@ -338,8 +339,9 @@ export class ModelSelection {
                 ? modelReasoningLevels(catalog, model.id)
                 : (model.reasoning ?? catalog.reasoning),
               harness: {
-                ...base,
-                model: model.id,
+                ...(catalog.acp
+                  ? changeModelSettings(base, { model: model.id }, catalog)
+                  : { ...base, model: model.id }),
                 reasoning: model.defaultReasoning,
                 serviceTier: undefined,
                 cyberAccessProgram: undefined,

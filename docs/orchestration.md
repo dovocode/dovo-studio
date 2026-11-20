@@ -38,6 +38,11 @@ Automatic restart recovery still follows the existing opt-in runtime preference.
 launchers are owned process groups on Unix; cleanup awaits exit, escalates after one second and
 reports failure after two seconds instead of treating an unconfirmed shutdown as a safe checkpoint.
 
+If OpenCode does not confirm Stop in time, the runtime checks the affected session again. It
+releases the checkout when OpenCode reports that its work is idle. After a runtime restart, Studio
+shows previously active workers on an external OpenCode server as unknown until that server confirms
+they are idle. It keeps the checkout held if the server cannot confirm.
+
 Once a provider run settles, its callbacks cannot add output, change session identity, update
 activity, create subagents or open new approval/question requests. Outstanding synchronous
 interactions are dismissed. Message forms already presented can still be answered after a turn ends.

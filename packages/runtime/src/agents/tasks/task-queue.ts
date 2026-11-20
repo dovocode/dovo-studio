@@ -53,7 +53,7 @@ export class TaskQueue {
     private store: WorkspaceStore,
     private activity?: Pick<Activity, 'add'>,
   ) {}
-  private validateSettings(id: string, settings?: TurnSettings | null) {
+  validateSettings(id: string, settings?: TurnSettings | null) {
     if (!settings) return
     const agent = resolveTaskAgent(this.store.taskSummary(id), this.store.get().agents)
     if (!agent || !turnSettingsMatchHarness(settings, agent))

@@ -1,13 +1,14 @@
 import { expect, it } from 'vite-plus/test'
 import { createServer, type ServerResponse } from 'node:http'
 import { once } from 'node:events'
-import { opencodeAdapter } from './opencode.js'
+import { createOpenCodeAdapter } from './opencode.js'
 import { OwnedProcessShutdownError } from '../../execution/stop-owned-child.js'
 
 it.each(['delayed', 'rejected', 'status-unavailable'] as const)(
   'retains root ownership until OpenCode v1 cancellation is confirmed (%s)',
   async (outcome) => {
     const controller = new AbortController()
+    const adapter = createOpenCodeAdapter()
     const promptStarted = Promise.withResolvers<void>()
     const abortStarted = Promise.withResolvers<ServerResponse>()
     const statusRequested = Promise.withResolvers<void>()
@@ -32,7 +33,7 @@ it.each(['delayed', 'rejected', 'status-unavailable'] as const)(
         abortStarted.resolve(response)
       } else if (path === '/session/status') {
         statusRequested.resolve()
-        if (outcome === 'status-unavailable') response.writeHead(503).end('{}')
+        if (outcome === 'status-unavailable' && !idle) response.writeHead(503).end('{}')
         else response.end(JSON.stringify(idle ? {} : { root: { type: 'busy' } }))
       } else {
         response.writeHead(404).end('{}')
@@ -42,7 +43,7 @@ it.each(['delayed', 'rejected', 'status-unavailable'] as const)(
     await once(server, 'listening')
     const address = server.address()
     if (!address || typeof address === 'string') throw new Error('Missing test address')
-    const task = opencodeAdapter
+    const task = adapter
       .run({
         agent: {
           id: 'agent',
@@ -87,7 +88,7 @@ it.each(['delayed', 'rejected', 'status-unavailable'] as const)(
         await statusRequested.promise
         finishedBeforeIdle = finished
         closedBeforeIdle = sessionClosed
-        idle = true
+        if (outcome === 'delayed') idle = true
       }
       const error = await task
       expect(abortRequests).toBe(1)
@@ -96,8 +97,15 @@ it.each(['delayed', 'rejected', 'status-unavailable'] as const)(
       expect(error).toBeInstanceOf(Error)
       expect(error instanceof OwnedProcessShutdownError).toBe(outcome !== 'delayed')
       expect(sessionClosed).toBe(outcome === 'delayed')
+      if (error instanceof OwnedProcessShutdownError) {
+        if (!error.confirmed) throw new Error('Expected a deferred shutdown confirmation')
+        idle = true
+        await error.confirmed
+      }
+      expect(sessionClosed).toBe(true)
     } finally {
       controller.abort()
+      await adapter.dispose?.()
       server.closeAllConnections()
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve())),

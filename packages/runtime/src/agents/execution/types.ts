@@ -108,6 +108,14 @@ export interface AgentRun {
   ) => Promise<QuestionAnswers | null>
 }
 export interface AgentAdapter {
+  /** Confirm work from a persisted, externally hosted session without starting an agent turn. */
+  recoveredSessionIdle?: (
+    agent: Agent,
+    sessionId: string,
+    workerIds: readonly string[],
+    cwd: string,
+    signal: AbortSignal,
+  ) => Promise<boolean>
   /** Read a provider-native child transcript without starting a model turn. */
   readNativeThread?: (
     agent: Agent,

@@ -75,19 +75,32 @@ export function opencodeNative(
         ])
       }
     },
-    async close(cancelled: boolean, confirmRoot?: () => Promise<void> | undefined) {
-      if (cancelled) {
-        try {
+    async close(
+      cancelled: boolean,
+      rootShutdown: Promise<void> | undefined,
+      confirmIdle: () => Promise<void>,
+    ) {
+      const closed = () => run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
+      const results = await Promise.allSettled([
+        rootShutdown,
+        (async () => {
+          if (!cancelled) return
           await cancel()
           if (children().length) throw new Error('Child sessions are still active')
-        } catch (cause) {
-          throw new OwnedProcessShutdownError('OpenCode child shutdown was not confirmed', {
-            cause,
-          })
-        }
+        })(),
+      ])
+      const errors = results.flatMap((result) =>
+        result.status === 'rejected' ? [result.reason] : [],
+      )
+      if (errors.length) {
+        const confirmed = confirmIdle().then(closed)
+        void confirmed.catch(() => undefined)
+        throw new OwnedProcessShutdownError(
+          'OpenCode shutdown was not confirmed. Studio will check the session again.',
+          { cause: new AggregateError(errors), confirmed },
+        )
       }
-      await confirmRoot?.()
-      run.onSubagentEvent?.('dovo/session/closed', {}, sessionId)
+      closed()
     },
   }
 }

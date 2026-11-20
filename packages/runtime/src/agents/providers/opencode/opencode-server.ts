@@ -26,10 +26,11 @@ export const opencodeAddress = (address: string) =>
 export async function isOpencodeV2(
   address: string,
   env?: Record<string, string>,
+  signal = AbortSignal.timeout(5000),
 ): Promise<boolean> {
   const response = await fetch(`${opencodeAddress(address)}/api/info`, {
     headers: opencodeHeaders(env),
-    signal: AbortSignal.timeout(5000),
+    signal,
     redirect: 'error',
   }).catch((cause: unknown) => {
     const url = new URL(opencodeAddress(address))

@@ -8,6 +8,7 @@ import { fixture } from '../../testing/fixture'
 import { AgentRegistry } from '../configuration/registry'
 import type { AgentAdapter, AgentRun } from '../execution/types'
 import type { Task } from '@dovo/protocol'
+import { defaultTaskHarness } from '@dovo/protocol'
 vi.setConfig(runtimeIntegration)
 const cleanups: (() => Promise<void>)[] = []
 afterEach(async () => {
@@ -42,7 +43,8 @@ async function seed(
   const task = runtime.services.tasks.create({
     title: 'Interrupted',
     repositoryId: 'repo',
-    agentId: 'agent',
+    agentId: changes.agentId ?? 'agent',
+    harness: changes.harness,
     objective: 'Original request',
   })
   runtime.services.store.updateTaskHistory(task.id, (task) => ({
@@ -68,6 +70,70 @@ function adapter(run: AgentAdapter['run']) {
     run,
   })
 }
+it.each([true, false])(
+  'waits for external OpenCode work after restart (recorded child=%s)',
+  async (child) => {
+    const now = new Date().toISOString()
+    const { options, id } = await seed(true, {
+      agentId: '',
+      harness: { ...defaultTaskHarness('opencode'), endpoint: 'http://open-code.test:4096' },
+      activeRunId: 'old-attempt',
+      runPhase: 'provider',
+      sessionId: 'server-session',
+      ...(child
+        ? {
+            subagents: [
+              {
+                id: 'child',
+                provider: 'opencode',
+                name: 'Remote child',
+                status: 'working',
+                sessionId: 'server-session',
+                sessionLive: true,
+                startedAt: now,
+                updatedAt: now,
+              },
+            ],
+          }
+        : {}),
+    })
+    let idle = false
+    const restore = vi
+      .fn<NonNullable<AgentAdapter['recoveredSessionIdle']>>()
+      .mockRejectedValueOnce(new Error('Server unavailable'))
+      .mockImplementation(async () => idle)
+    const run = vi.fn<AgentAdapter['run']>(async (context) => context.onText('Continued safely'))
+    adapter(run).mockResolvedValue({
+      probe: vi.fn<AgentAdapter['probe']>(),
+      run,
+      recoveredSessionIdle: restore,
+    })
+    const runtime = await startRuntime(options)
+    cleanups.push(runtime.close)
+    const { store, tasks } = runtime.services
+    await waitForRecovery(() => expect(restore).toHaveBeenCalledTimes(2))
+    expect(restore).toHaveBeenCalledWith(
+      expect.objectContaining({ provider: 'opencode' }),
+      'server-session',
+      [child ? 'child' : 'server-session'],
+      expect.any(String),
+      expect.any(AbortSignal),
+    )
+    expect(store.task(id).subagents).toMatchObject([{ sessionLive: true, status: 'unknown' }])
+    expect(run).not.toHaveBeenCalled()
+    const peer = tasks.create({
+      title: 'Peer',
+      repositoryId: 'repo',
+      agentId: 'agent',
+      objective: 'Work',
+    })
+    await expect(tasks.start(peer.id)).rejects.toThrow('shutdown has not been confirmed')
+    idle = true
+    await waitForRecovery(() => expect(store.task(id).status).toBe('review'))
+    expect(store.task(id).subagents).toMatchObject([{ sessionLive: false, status: 'unknown' }])
+    expect(run).toHaveBeenCalledOnce()
+  },
+)
 it.each([false, true])(
   'honors project restart override %s over the opposite global preference',
   async (project) => {

@@ -13,8 +13,9 @@ import { OpenCode } from '@opencode/client'
 import { opencodeHeaders, opencodeAddress } from './opencode-server.js'
 import { decode, isImageAttachment, questionPromptSchema } from '@dovo/protocol'
 import { mcpHeaders, mcpServerEnvironment } from '../../configuration/mcp-settings.js'
-import type { AgentAdapter } from '../../execution/types.js'
+import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { OpenCodeClientCache } from './client-cache.js'
+import { openCodeV2ActiveWork, waitForOpenCodeIdle } from './opencode-activity.js'
 
 const clients = new OpenCodeClientCache<ReturnType<typeof OpenCode.make>>()
 const client = (address: string, env?: Record<string, string>, active = false) => {
@@ -27,21 +28,29 @@ const client = (address: string, env?: Record<string, string>, active = false) =
     : { value: clients.get(key, create), release: () => {} }
 }
 
-export const opencodeV2Adapter: AgentAdapter = {
+export const opencodeV2Adapter = {
   models: async (agent) => {
-    const { data } = await client(agent.endpoint, agent.env).value.model.list(undefined, {
-      signal: AbortSignal.timeout(15000),
-    })
+    const api = client(agent.endpoint, agent.env).value
+    const [{ data }, preferred] = await Promise.all([
+      api.model.list(undefined, { signal: AbortSignal.timeout(15000) }),
+      api.model
+        .default({ location: {} }, { signal: AbortSignal.timeout(5000) })
+        .catch(() => undefined),
+    ])
+    const defaultId = preferred?.data && `${preferred.data.providerID}/${preferred.data.modelID}`
+    const models = data
+      .filter((model) => model.enabled)
+      .map((model) => ({
+        id: `${model.providerID}/${model.modelID}`,
+        name: model.name,
+        reasoning: model.variants.map(({ id }) => ({ id, name: id })),
+      }))
     return {
       harness: { name: 'OpenCode v2', generation: 'v2' },
-      models: data
-        .filter((model) => model.enabled)
-        .map((model) => ({
-          id: `${model.providerID}/${model.modelID}`,
-          name: model.name,
-          reasoning: model.variants.map(({ id }) => ({ id, name: id })),
-        })),
-      reasoning: [],
+      models: models.map((model) =>
+        model.id === defaultId ? { ...model, isDefault: true } : model,
+      ),
+      reasoning: models.find((model) => model.id === defaultId)?.reasoning ?? [],
     }
   },
   probe: async (agent) => {
@@ -58,7 +67,7 @@ export const opencodeV2Adapter: AgentAdapter = {
       }
     }
   },
-  async run(run) {
+  async run(run, lifetime = new AbortController().signal) {
     run = checkedPolicyRun(run, 'opencode')
     run.signal.throwIfAborted()
     const lease = client(run.agent.endpoint, run.agent.env, true)
@@ -202,6 +211,7 @@ export const opencodeV2Adapter: AgentAdapter = {
           { signal: run.signal },
         )
       let supportsGoals = false
+      let supportsJobs = false
       const goal = opencodeGoal(run, api, sessionID)
       const streamController = new AbortController()
       let interruption: Promise<void> | undefined
@@ -662,7 +672,8 @@ export const opencodeV2Adapter: AgentAdapter = {
         })
         supportsGoals = !!valid(info.version) && gte(info.version, '2.2.5')
         run.onEvent?.('dovo/opencode/capabilities', { sessionId: sessionID, goals: supportsGoals })
-        await jobs.initialize(!!valid(info.version) && gte(info.version, '2.2.6'))
+        supportsJobs = !!valid(info.version) && gte(info.version, '2.2.6')
+        await jobs.initialize(supportsJobs)
         if (run.sessionId && !run.compact && supportsGoals) {
           await recoverTodos()
           if (supportsGoals) await goal.read()
@@ -704,24 +715,31 @@ export const opencodeV2Adapter: AgentAdapter = {
       } finally {
         if (!succeeded && !interruption) abort()
         try {
-          await native.close(!succeeded)
+          await native
+            .close(!succeeded, interruption, () =>
+              waitForOpenCodeIdle(async () => {
+                const signal = AbortSignal.any([lifetime, AbortSignal.timeout(5000)])
+                const active = await openCodeV2ActiveWork(api, sessionID, supportsJobs, signal)
+                if (active.has(sessionID) || native.activeSessions().some((id) => active.has(id)))
+                  return false
+                if (supportsGoals) await goal.read(signal)
+                return !goal.active
+              }, lifetime),
+            )
+            .catch((error: unknown) => {
+              // A temporary session may still own work. Keep it until OpenCode confirms idle.
+              if (error instanceof OwnedProcessShutdownError) ephemeralSessionId = undefined
+              throw error
+            })
         } finally {
           cancelInteractions()
           streamController.abort()
-        }
-        run.signal.removeEventListener('abort', abort)
-        run.signal.removeEventListener('abort', cancelDone)
-        const drained = consume.catch((error) => {
-          if (!streamController.signal.aborted) throw error
-        })
-        if (interruption)
-          await Promise.all([drained, interruption]).catch((cause: unknown) => {
-            throw new OwnedProcessShutdownError(
-              'OpenCode shutdown was not confirmed. Review its session before continuing.',
-              { cause },
-            )
+          run.signal.removeEventListener('abort', abort)
+          run.signal.removeEventListener('abort', cancelDone)
+          await consume.catch((error) => {
+            if (!streamController.signal.aborted) throw error
           })
-        await drained
+        }
       }
     } finally {
       try {
@@ -744,4 +762,6 @@ export const opencodeV2Adapter: AgentAdapter = {
       }
     }
   },
+} satisfies Omit<AgentAdapter, 'run'> & {
+  run: (run: AgentRun, lifetime?: AbortSignal) => Promise<void>
 }

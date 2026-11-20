@@ -19,6 +19,7 @@ async function replay(failInterrupt = false) {
   const servers = new Set<string>()
   const prompts: string[] = [],
     operations: string[] = []
+  let providerIdle = true
   const emit = (type: string, data: unknown) =>
     stream?.write(
       `data: ${JSON.stringify({ id: `${type}:${Date.now()}`, created: Date.now(), type, data })}\n\n`,
@@ -48,7 +49,10 @@ async function replay(failInterrupt = false) {
         }),
       )
     if (path === '/api/info') return response.end(JSON.stringify({ version: '2.0.19' }))
-    if (path === '/api/session/active') return response.end(JSON.stringify({ data: {} }))
+    if (path === '/api/session/active')
+      return response.end(
+        JSON.stringify({ data: providerIdle ? {} : { session: { type: 'running' } } }),
+      )
     if (path === '/api/session' && request.method === 'POST')
       return response.end(JSON.stringify({ data: { id: 'session' } }))
     if (path.endsWith('/prompt')) {
@@ -56,6 +60,7 @@ async function replay(failInterrupt = false) {
       for await (const chunk of request) raw += String(chunk)
       const input = decode(mutableStruct({ text: Schema.String }), JSON.parse(raw))
       prompts.push(input.text)
+      if (failInterrupt) providerIdle = false
       response.end(JSON.stringify({ id: `inbox-${prompts.length}`, sessionID: 'session' }))
       // A previous execution's late terminal must never finish this attempt.
       emit('session.execution.succeeded', { sessionID: 'session' })
@@ -129,7 +134,10 @@ async function replay(failInterrupt = false) {
   })
   const text = (delta: string, sessionID = 'session') =>
     emit('session.text.delta', { sessionID, assistantMessageID: 'assistant', ordinal: 0, delta })
-  const finish = () => emit('session.execution.succeeded', { sessionID: 'session' })
+  const finish = () => {
+    providerIdle = true
+    emit('session.execution.succeeded', { sessionID: 'session' })
+  }
   return { runtime, options, task, prompts, operations, emit, text, finish }
 }
 it('replays raw transport into the real queue, SQLite, activity and checkpoint pipeline', async () => {
@@ -218,7 +226,7 @@ it('rejects retired run controls after fallback steering and waits for real inte
   r.finish()
   await waitForRuntime(() => expect(s.store.task(r.task.id).status).toBe('review'))
 })
-it('keeps a failed provider interrupt uncertain and does not snapshot a still-running execution', async () => {
+it('releases the checkout once OpenCode confirms idle after a failed interrupt', async () => {
   const r = await replay(true),
     s = r.runtime.services
   const execution = await s.tasks.start(r.task.id)
@@ -242,6 +250,15 @@ it('keeps a failed provider interrupt uncertain and does not snapshot a still-ru
   })
   await expect(s.tasks.start(competing.id)).rejects.toThrow('Another task is running')
   expect(() => s.tasks.requireIdle(r.task.id)).toThrow('Stop the active turn')
+  r.finish()
+  await waitForRuntime(() =>
+    expect(s.store.providerActions.state(`interrupt:${attemptId}`)).toBe('completed'),
+  )
+  expect(s.store.task(r.task.id).activeRunId).toBeUndefined()
+  const resumed = await s.tasks.start(competing.id)
+  await waitForRuntime(() => expect(r.prompts).toHaveLength(2))
+  r.finish()
+  await resumed.done
 })
 it('persists acceptance across restart without resending a lost acknowledgement', async () => {
   const r = await replay(),

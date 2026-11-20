@@ -75,6 +75,7 @@ import {
   reportedPlanLimits,
   mergePlanLimits,
   nativeAgentWorking,
+  type Attachment,
 } from '@dovo/protocol'
 import { hostname } from 'node:os'
 import type { Attachments } from '../../storage/attachments.js'
@@ -1056,7 +1057,7 @@ export class TaskTurnRunner {
             permission: agent.permission,
           })
           let attachments = yield* Effect.forEach(
-            messages.flatMap((message) => message.attachments ?? []),
+            uniqueAttachments(messages),
             (file) => runtimeOperation(() => this.attachments.materialize(id, file)),
             { concurrency: 'unbounded' },
           )
@@ -1151,9 +1152,7 @@ export class TaskTurnRunner {
             ).filter((message) => !importedMessageIds.has(message.id))
             const files = input
               ? await Promise.all(
-                  history
-                    .flatMap((message) => message.attachments ?? [])
-                    .map((file) => this.attachments.materialize(id, file)),
+                  uniqueAttachments(history).map((file) => this.attachments.materialize(id, file)),
                 )
               : attachments
             const attachmentsFor = (history: readonly (typeof messages)[number][]) => {
@@ -1551,6 +1550,16 @@ export class TaskTurnRunner {
                   )
                   if (subagents === records) return
                   subagents = subagents.map((record) => {
+                    if (
+                      agent.provider === 'opencode' &&
+                      agent.endpoint.trim() &&
+                      record.source !== 'dovo' &&
+                      record.provider === agent.provider &&
+                      record.sessionId === ownerSessionId &&
+                      nativeAgentWorking(record) &&
+                      !record.externalSession
+                    )
+                      return { ...record, externalSession: true }
                     const previous = records.find(
                       (old) =>
                         old.id === record.id &&
@@ -2310,6 +2319,10 @@ export class TaskTurnRunner {
   }
 }
 
+function uniqueAttachments(messages: readonly { attachments?: readonly Attachment[] }[]) {
+  const files = messages.flatMap((message) => message.attachments ?? [])
+  return [...new Map(files.map((file) => [file.id, file])).values()]
+}
 function attachmentPrompt(attachments: NonNullable<import('./types.js').AgentRun['attachments']>) {
   return attachments
     .map((file) => {
