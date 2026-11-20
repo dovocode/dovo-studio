@@ -70,7 +70,7 @@
     "test:turn-grouping:browser": "node scripts/check-turn-grouping-browser.mjs",
     "test:watch-messages:browser": "node scripts/check-watch-messages-browser.mjs",
     "test:message-source:browser": "node scripts/check-message-source-browser.mjs",
-    "test:command-palette:browser": "node scripts/check-command-palette-browser.mjs",
+    "test:command-palette:browser": "node scripts/check-command-palette-browser.mjs && node scripts/check-command-palette-workbench-browser.mjs",
     "test:report-problem:browser": "pnpm --filter @dovo/runtime... -r build && node scripts/check-report-problem-browser.mjs",
     "test:change-summary:browser": "node scripts/check-change-summary-browser.mjs && node scripts/check-mobile-change-summary-browser.mjs",
     "test:thread-servers:browser": "node scripts/check-thread-servers-browser.mjs",
