@@ -698,16 +698,27 @@ export function createMuseAdapter(): AgentAdapter {
         )
         const model = museSelection(run.agent.model)
         const workspaceRoot = run.sessionId ? run.cwd : await museWorkspaceRoot(run.cwd)
+        const approvalMode = run.agent.permission === 'full-access' ? 'allowAll' : 'promptUnmatched'
+        const permissionProfile = readOnly
+          ? undefined
+          : approvalMode === 'allowAll'
+            ? ':unrestricted'
+            : ':ask-me'
         const response = await nativeWait(
           connection.connection.command(
             run.sessionId ? 'session/resume' : 'session/start',
             run.sessionId
-              ? { sessionId: run.sessionId, excludeItems: true, config: { mcpServers } }
+              ? {
+                  sessionId: run.sessionId,
+                  excludeItems: true,
+                  permissionProfile,
+                  config: { mcpServers },
+                }
               : {
                   workspaceRoot,
                   ...(model ? { providerId: model.providerId, modelId: model.modelId } : {}),
-                  approvalMode:
-                    run.agent.permission === 'full-access' ? 'allowAll' : 'promptUnmatched',
+                  approvalMode,
+                  permissionProfile,
                   config: { mcpServers },
                 },
           ),
@@ -716,6 +727,9 @@ export function createMuseAdapter(): AgentAdapter {
         )
         const identity = text(object(response.session).sessionId)
         if (!identity) throw new Error('Muse did not return a session identity')
+        const appliedProfile = text(object(object(response.session).permissionState).profileId)
+        if (permissionProfile && appliedProfile && appliedProfile !== permissionProfile)
+          throw new Error(`Muse did not apply the ${permissionProfile} permission profile`)
         session = new Session({
           sessionId: identity,
           durability: readSessionDurability(connection.initializeResult),
@@ -799,7 +813,7 @@ export function createMuseAdapter(): AgentAdapter {
           await nativeWait(
             connection.connection.command('session/setApprovalMode', {
               sessionId: identity,
-              mode: run.agent.permission === 'full-access' ? 'allowAll' : 'promptUnmatched',
+              mode: approvalMode,
             }),
             signal,
             30000,

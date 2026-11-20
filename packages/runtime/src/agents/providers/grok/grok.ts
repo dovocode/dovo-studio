@@ -1,13 +1,31 @@
 import { checkedPolicyRun } from '../shared/permission-policy.js'
-import type { AgentDiscovery } from '@dovo/protocol'
+import type { Agent, AgentDiscovery } from '@dovo/protocol'
 import type { AcpLaunch, AgentAdapter } from '../../execution/types.js'
 import { createAcpAdapter } from '../acp/acp.js'
 import { acpModels } from '../../catalogs/acp.js'
 import { inspectAcp } from '../acp/acp-connection.js'
-export function grokLaunch(agent: AgentDiscovery): AcpLaunch {
+export function grokLaunch(agent: AgentDiscovery, permission?: Agent['permission']): AcpLaunch {
+  const args = agent.args ?? []
+  const extra = permission
+    ? args.filter(
+        (arg, index) =>
+          args[index - 1] !== '--permission-mode' &&
+          !/^--(?:permission-mode|always-approve)(?:=|$)/.test(arg),
+      )
+    : args
   return {
     command: agent.endpoint || 'grok',
-    args: ['--no-auto-update', 'agent', '--no-leader', 'stdio', ...(agent.args ?? [])],
+    args: [
+      '--no-auto-update',
+      ...(permission && permission !== 'full-access'
+        ? ['--permission-mode', permission === 'auto' ? 'auto' : 'default']
+        : []),
+      'agent',
+      '--no-leader',
+      ...(permission === 'full-access' ? ['--always-approve'] : []),
+      'stdio',
+      ...extra,
+    ],
     env: agent.env ?? {},
     authentication: 'grok',
   }
@@ -41,7 +59,10 @@ export function createGrokAdapter(): AgentAdapter {
             'Grok Build does not advertise restricted tool-free sessions; choose another provider for utilities',
           ),
         )
-      return acp.run({ ...run, acpLaunch: grokLaunch(run.agent) })
+      // Keep older saved Auto-accept edits usable under supervised execution.
+      const permission = run.agent.permission === 'workspace-write' ? 'ask' : run.agent.permission
+      const agent = { ...run.agent, permission }
+      return acp.run({ ...run, agent, acpLaunch: grokLaunch(agent, permission) })
     },
     dispose: acp.dispose,
     releaseTask: acp.releaseTask,

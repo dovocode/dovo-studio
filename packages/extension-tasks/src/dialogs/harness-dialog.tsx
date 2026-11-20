@@ -166,7 +166,11 @@ export function HarnessDialog({
                       Custom
                     </option>
                   )}
-                  {selectableAccessModes(value.permission).map((mode) => (
+                  {selectableAccessModes(
+                    value.permission,
+                    value.provider,
+                    value.acpInstallationId,
+                  ).map((mode) => (
                     <option
                       key={mode.id}
                       value={mode.id}

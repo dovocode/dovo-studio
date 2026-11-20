@@ -34,6 +34,8 @@ const mode=process.env.TEST_MODE;
 const send=m=>process.stdout.write(JSON.stringify({jsonrpc:'2.0',...m})+'\n');
 const reply=(id,result)=>send({id,result});const update=update=>send({method:'session/update',params:{sessionId:'s',update}});
 const configOptions=[{configId:'model',type:'select',name:'Model',...(mode==='categoryless-model'?{}:{category:'model'}),currentValue:'a',options:[{value:'a',name:'A'},{value:'b',name:'B'}]},{configId:'mode',type:'select',name:'Mode',category:'mode',currentValue:'code',options:[{value:'code',name:'Code'},{value:'plan',name:'Plan'}]},{configId:'toggle',type:'boolean',name:'Toggle',currentValue:false}];
+if(mode==='antigravity')Object.assign(configOptions[1],{currentValue:'yolo',options:['yolo','default','auto','plan'].map(value=>({value,name:value}))});
+if(mode==='kiro')configOptions.push({configId:'autopilot',type:'select',name:'Autopilot',currentValue:'on',options:['on','off'].map(value=>({value,name:value}))});
 if(mode==='categoryless-model')configOptions.push({configId:'thought',type:'select',name:'Effort',category:'thought_level',currentValue:'low',options:[{value:'low',name:'Low'},{value:'high',name:'High'}]});
 let pending;
 const background=[{type:'terminal',terminalId:'background'}];
@@ -69,6 +71,7 @@ if(mode==='busy')setTimeout(()=>update({sessionUpdate:'state_update',state:'idle
 else if(m.method==='session/set_config_option'){
  const option=configOptions.find(option=>option.configId===m.params.configId);
  if(option&&mode!=='ignore-config')option.currentValue=m.params.value;
+ if(mode==='antigravity'&&m.params.configId==='model')configOptions[1].currentValue='yolo';
  reply(m.id,{configOptions});
 }
 else if(m.method==='session/prompt'){
@@ -315,6 +318,44 @@ it('uses typed config IDs for model, mode, and boolean configuration', async () 
     { sessionId: 's', configId: 'toggle', type: 'boolean', value: true },
   ])
 })
+it('sets Antigravity ACP v2 permissions after a model switch and ignores a wider saved mode', async () => {
+  const f = await fixture('antigravity')
+  f.run.agent.acpInstallationId = 'antigravity-acp'
+  f.run.agent.model = 'b'
+  f.run.agent.acpMode = 'yolo'
+  f.run.agent.acpConfig = { mode: 'auto' }
+  f.run.agent.permission = 'ask'
+  await f.adapter.run(f.run)
+  expect(
+    (await f.messages())
+      .filter(({ method }) => method === 'session/set_config_option')
+      .map(({ params }) => params),
+  ).toEqual([
+    { sessionId: 's', configId: 'model', type: 'id', value: 'b' },
+    { sessionId: 's', configId: 'mode', type: 'id', value: 'default' },
+  ])
+})
+
+it.each([
+  { permission: 'ask', value: 'off' },
+  { permission: 'auto', value: 'off' },
+  { permission: 'full-access', value: 'on' },
+] as const)(
+  'applies Kiro Autopilot=$value for $permission independently of saved ACP options',
+  async ({ permission, value }) => {
+    const f = await fixture('kiro')
+    f.run.agent.acpInstallationId = 'kiro'
+    f.run.agent.args = [...(f.run.agent.args ?? []), '--agent-engine=v3']
+    f.run.agent.permission = permission
+    f.run.agent.acpConfig = { autopilot: value === 'on' ? 'off' : 'on' }
+    await f.adapter.run(f.run)
+    expect(
+      (await f.messages())
+        .filter(({ method }) => method === 'session/set_config_option')
+        .map(({ params }) => params),
+    ).toEqual([{ sessionId: 's', configId: 'autopilot', type: 'id', value }])
+  },
+)
 
 it('discovers and uses a categoryless ACP v2 model with model-specific reasoning', async () => {
   const f = await fixture('categoryless-model')

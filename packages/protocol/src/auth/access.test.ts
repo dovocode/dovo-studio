@@ -24,6 +24,18 @@ it('does not present Hermes approval policies as a read-only sandbox', () => {
   for (const mode of accessModes) expect(supportsAccess('hermes', mode.id)).toBe(true)
 })
 
+it('offers the native Grok Build and installed Kiro permission modes', () => {
+  expect(selectableAccessModes('workspace-write', 'grok').map(({ id }) => id)).toEqual([
+    'ask',
+    'auto',
+    'full-access',
+  ])
+  expect(selectableAccessModes('auto', 'acp', 'kiro').map(({ id }) => id)).toEqual([
+    'ask',
+    'full-access',
+  ])
+})
+
 it('restricts utilities to providers with a tool-disable boundary', () => {
   for (const provider of ['hermes', 'grok', 'muse'] as const) {
     expect(supportsUtilities(provider)).toBe(false)

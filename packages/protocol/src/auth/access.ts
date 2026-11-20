@@ -26,7 +26,13 @@ const legacyReadOnly = {
   name: 'Read only',
   description: 'Explore files without granting write access.',
 } as const
-export function selectableAccessModes(current?: Agent['permission'], provider?: Agent['provider']) {
+export function selectableAccessModes(
+  current?: Agent['permission'],
+  provider?: Agent['provider'],
+  acpInstallationId?: string,
+) {
+  if (provider === 'grok') return accessModes.filter((mode) => mode.id !== 'workspace-write')
+  if (provider === 'acp' && acpInstallationId === 'kiro') return [accessModes[0], accessModes[3]]
   if (provider === 'pi')
     return [
       { id: 'read-only', name: 'Text only', description: 'Pi tools and extensions are disabled.' },

@@ -261,6 +261,30 @@ async function composerChoice(page, label, name) {
   await page.getByRole('menuitemradio', { name, exact: true }).click()
 }
 try {
+  const grok = await pageFor({ kind: 'fields', policy: { provider: 'grok', permission: 'ask' } })
+  await grok.getByRole('button', { name: 'Harness access', exact: true }).click()
+  assert.deepEqual(await grok.getByRole('option').allTextContents(), [
+    'Supervised',
+    'Auto',
+    'Full access',
+  ])
+  await grok.getByRole('option', { name: 'Auto', exact: true }).click()
+  assert.equal(await grok.evaluate(() => window.value.permission), 'auto')
+  await grok.close()
+
+  const kiro = await pageFor({
+    kind: 'native-agent',
+    policy: { provider: 'acp', acpInstallationId: 'kiro', permission: 'ask' },
+  })
+  await kiro.getByRole('button', { name: 'Access mode', exact: true }).click()
+  await kiro.getByRole('button', { name: 'Full access', exact: true }).waitFor()
+  assert.equal(await kiro.getByRole('button', { name: 'Auto', exact: true }).count(), 0)
+  assert.equal(
+    await kiro.getByRole('button', { name: 'Auto-accept edits', exact: true }).count(),
+    0,
+  )
+  await kiro.close()
+
   // Actual composer advanced menus, custom task overrides, access changes and clear semantics.
   const composer = await pageFor({ kind: 'composer', custom: true })
   await openComposerPicker(composer)

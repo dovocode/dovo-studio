@@ -46,6 +46,7 @@ const configOptions = [
 const modes = { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] };
 const configMode = !!process.env.TEST_ACP_CONFIG_MODE;
 if (configMode) configOptions.push({ id: 'agent_mode', name: 'Mode', type: 'select', category: 'mode', currentValue: 'code', options: modes.availableModes.map(({id, name}) => ({value:id, name})) });
+if (process.env.TEST_ACP_KIRO) configOptions.push({ id: 'autopilot', name: 'Autopilot', type: 'select', currentValue: 'on', options: ['on', 'off'].map(value => ({ value, name: value })) });
 const session = { configOptions, ...(!configMode && { modes }) };
 let pendingPrompt
 const permissionKinds = ${JSON.stringify(permissionKinds)}
@@ -262,6 +263,23 @@ it('detects rejected ACP v1 boolean settings in discovery and execution', async 
   await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Toggle: true')
   const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{ method: string }>
   expect(messages.map(({ method }) => method)).not.toContain('session/prompt')
+})
+
+it('turns Kiro Autopilot off before an ACP v1 supervised prompt', async () => {
+  const { cwd, launch, record } = await fixture()
+  const input = run(cwd, {
+    ...launch,
+    args: [...launch.args, '--agent-engine=v3'],
+    env: { ...launch.env, TEST_ACP_KIRO: '1' },
+  })
+  input.run.agent.acpInstallationId = 'kiro'
+  input.run.agent.acpConfig = { autopilot: 'on' }
+  await acpAdapter.run(input.run)
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{
+    method: string
+    params?: { configId?: string; value?: string }
+  }>
+  expect(messages.find(({ params }) => params?.configId === 'autopilot')?.params?.value).toBe('off')
 })
 
 it('does not append replayed messages while loading a session', async () => {

@@ -4,6 +4,12 @@ import {
   type SessionConfigOption,
 } from '@agentclientprotocol/sdk/unstable'
 import { acpControl, type openAcpConnection } from './acp-connection.js'
+import type { PermissionPolicy } from '@dovo/protocol'
+import {
+  acpPermissionModeOption,
+  acpReadOnlyMode,
+  antigravityPermissionMode,
+} from './acp-permissions.js'
 
 type Connection = ReturnType<typeof openAcpConnection>
 
@@ -52,22 +58,33 @@ export async function setAcpV1Mode(
   session: Pick<NewSessionResponse, 'modes' | 'configOptions'>,
   mode: string | undefined,
   restrictive = false,
+  antigravity?: PermissionPolicy,
 ) {
-  const option = acpV1ModeOption(session.configOptions)
+  const option =
+    acpV1ModeOption(session.configOptions) ??
+    (antigravity
+      ? session.configOptions?.find(
+          (item) => item.type === 'select' && acpPermissionModeOption(item, item.id),
+        )
+      : undefined)
   const choices =
     option?.type === 'select'
       ? option.options
           .flatMap((item) => ('options' in item ? item.options : [item]))
           .map(({ value }) => value)
       : session.modes?.availableModes.map(({ id }) => id)
-  const selected = restrictive
-    ? choices?.find((id) => /^(plan|read[-_ ]?only)$/i.test(id))
-    : choices?.find((id) => id === mode)
+  const selected = antigravity
+    ? antigravityPermissionMode(choices ?? [], mode, antigravity, restrictive)
+    : restrictive
+      ? acpReadOnlyMode(choices ?? [])
+      : choices?.find((id) => id === mode)
   if (!selected)
     throw new Error(
       restrictive
         ? 'This ACP agent does not advertise a read-only mode'
-        : 'This ACP agent does not advertise the selected mode',
+        : antigravity
+          ? 'Antigravity does not advertise a mode that can apply this thread’s permissions'
+          : 'This ACP agent does not advertise the selected mode',
     )
   if (option && session.configOptions)
     return applyAcpV1Option(

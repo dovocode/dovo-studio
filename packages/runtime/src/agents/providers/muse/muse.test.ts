@@ -106,6 +106,7 @@ it('requires granted session MCP and passes scoped tools without touching global
   expect(
     (await f.messages()).find((frame) => frame.method === 'session/start')?.params,
   ).toMatchObject({
+    permissionProfile: ':ask-me',
     config: { mcpServers: { dovo_task: { transport: 'stdio', env: { TOKEN: 'scoped' } } } },
   })
   await expect(
@@ -118,11 +119,22 @@ it('resumes without replaying history, applies native approval mode, and compact
   const wire = await f.messages()
   expect(wire.find((frame) => frame.method === 'session/resume')?.params).toMatchObject({
     excludeItems: true,
+    permissionProfile: ':ask-me',
   })
   expect(wire.find((frame) => frame.method === 'session/setApprovalMode')?.params).toMatchObject({
     mode: 'promptUnmatched',
   })
   expect(f.events.map((event) => event.name)).toContain('dovo/compaction/completed')
+})
+it('stops before prompting when Muse reports an incompatible permission profile', async () => {
+  const f = await fixture()
+  await expect(
+    f.adapter.run({
+      ...f.run,
+      agent: { ...f.run.agent, env: { ...f.run.agent.env, WRONG_PROFILE: ':unrestricted' } },
+    }),
+  ).rejects.toThrow('Muse did not apply the :ask-me permission profile')
+  expect((await f.messages()).some(({ method }) => method === 'turn/start')).toBe(false)
 })
 it('uses bounded tool schemas only for the managed Dovo MCP server', async () => {
   const f = await fixture()

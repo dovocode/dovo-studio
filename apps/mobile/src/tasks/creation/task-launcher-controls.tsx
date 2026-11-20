@@ -203,13 +203,19 @@ export function TaskLauncherControls({
                 selectedLabel={uiText(permissionPolicyLabel(agent))}
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 disabled={disabled}
-                items={selectableAccessModes(agent.permission, agent.provider)
+                items={selectableAccessModes(
+                  agent.permission,
+                  agent.provider,
+                  agent.acpInstallationId,
+                )
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
                   .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
                 onChange={(permission) => {
-                  const mode = selectableAccessModes(agent.permission, agent.provider).find(
-                    (mode) => mode.id === permission,
-                  )
+                  const mode = selectableAccessModes(
+                    agent.permission,
+                    agent.provider,
+                    agent.acpInstallationId,
+                  ).find((mode) => mode.id === permission)
                   if (mode && !disabled && supportsAccess(agent.provider, mode.id))
                     onChange({ ...selection, harness: selectPermissionPreset(harness, mode.id) })
                 }}
@@ -287,13 +293,15 @@ export function TaskLauncherControls({
             selectedLabel={uiText(permissionPolicyLabel(agent))}
             value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
             disabled={disabled}
-            items={selectableAccessModes(agent.permission, agent.provider)
+            items={selectableAccessModes(agent.permission, agent.provider, agent.acpInstallationId)
               .filter((mode) => supportsAccess(agent.provider, mode.id))
               .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
             onChange={(permission) => {
-              const mode = selectableAccessModes(agent.permission, agent.provider).find(
-                (mode) => mode.id === permission,
-              )
+              const mode = selectableAccessModes(
+                agent.permission,
+                agent.provider,
+                agent.acpInstallationId,
+              ).find((mode) => mode.id === permission)
               if (mode && !disabled && supportsAccess(agent.provider, mode.id))
                 onChange({ ...selection, harness: selectPermissionPreset(harness, mode.id) })
             }}

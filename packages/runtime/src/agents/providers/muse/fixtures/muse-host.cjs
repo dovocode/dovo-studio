@@ -82,7 +82,15 @@ createInterface({ input: process.stdin }).on('line', (line) => {
       source: 'fakeCatalog',
     })
   if (v.method === 'session/start' || v.method === 'session/resume')
-    return reply(v.id, { session: { sessionId: 's' }, viewCursor: '0' })
+    return reply(v.id, {
+      session: {
+        sessionId: 's',
+        ...(p.permissionProfile
+          ? { permissionState: { profileId: process.env.WRONG_PROFILE || p.permissionProfile } }
+          : {}),
+      },
+      viewCursor: '0',
+    })
   if (v.method === 'turn/start') {
     turn = p.commandId
     reply(v.id, {

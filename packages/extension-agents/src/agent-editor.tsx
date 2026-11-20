@@ -100,7 +100,11 @@ export function AgentEditor({
   const availableProviders = Object.keys(providers).map((id) =>
     decode(agentSchema.fields.provider, id),
   )
-  const accessModes = selectableAccessModes(agent.permission, agent.provider)
+  const accessModes = selectableAccessModes(
+    agent.permission,
+    agent.provider,
+    agent.acpInstallationId,
+  )
   const discard = () => {
     setAgent(initial)
     setEnvironment(formatAgentEnvironment(initial.env))

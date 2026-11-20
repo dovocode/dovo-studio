@@ -464,7 +464,11 @@ export function HarnessSettings({
                     value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                     selectedLabel={uiText(permissionPolicyLabel(agent))}
                     disabled={controlsDisabled || !selectionAllowed}
-                    items={selectableAccessModes(agent.permission, agent.provider)
+                    items={selectableAccessModes(
+                      agent.permission,
+                      agent.provider,
+                      agent.acpInstallationId,
+                    )
                       .filter((mode) => supportsAccess(agent.provider, mode.id))
                       .map((mode) => ({ id: mode.id, name: uiText(mode.name) }))}
                     onChange={(value) =>
@@ -545,7 +549,11 @@ export function HarnessSettings({
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={controlsDisabled || !selectionAllowed}
-                items={selectableAccessModes(agent.permission, agent.provider)
+                items={selectableAccessModes(
+                  agent.permission,
+                  agent.provider,
+                  agent.acpInstallationId,
+                )
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
                   .map((mode) => ({
                     id: mode.id,
@@ -557,9 +565,11 @@ export function HarnessSettings({
               />
               <Text style={styles.muted}>
                 {
-                  selectableAccessModes(agent.permission, agent.provider).find(
-                    (mode) => mode.id === agent.permission,
-                  )?.description
+                  selectableAccessModes(
+                    agent.permission,
+                    agent.provider,
+                    agent.acpInstallationId,
+                  ).find((mode) => mode.id === agent.permission)?.description
                 }
               </Text>
               <PermissionPolicyControls

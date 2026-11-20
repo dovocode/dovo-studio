@@ -173,20 +173,22 @@ export function HarnessFields({
               Custom
             </option>
           )}
-          {selectableAccessModes(value.permission, value.provider).map((mode) => (
-            <option
-              key={mode.id}
-              value={mode.id}
-              disabled={!supportsAccess(value.provider, mode.id)}
-            >
-              {mode.name}
-            </option>
-          ))}
+          {selectableAccessModes(value.permission, value.provider, value.acpInstallationId).map(
+            (mode) => (
+              <option
+                key={mode.id}
+                value={mode.id}
+                disabled={!supportsAccess(value.provider, mode.id)}
+              >
+                {mode.name}
+              </option>
+            ),
+          )}
         </ChoicePicker>
       </FormField>
       <p className="text-xs text-muted-foreground">
         {
-          selectableAccessModes(value.permission, value.provider).find(
+          selectableAccessModes(value.permission, value.provider, value.acpInstallationId).find(
             (mode) => mode.id === value.permission,
           )?.description
         }

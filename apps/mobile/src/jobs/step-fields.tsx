@@ -206,7 +206,11 @@ export function StepFields({
                 value={permissionPolicyLabel(agent) === 'Custom' ? 'custom' : agent.permission}
                 selectedLabel={uiText(permissionPolicyLabel(agent))}
                 disabled={disabled}
-                items={selectableAccessModes(agent.permission, agent.provider)
+                items={selectableAccessModes(
+                  agent.permission,
+                  agent.provider,
+                  agent.acpInstallationId,
+                )
                   .filter((mode) => supportsAccess(agent.provider, mode.id))
                   .map((mode) => ({ id: mode.id, name: mode.name }))}
                 onChange={(permission) =>

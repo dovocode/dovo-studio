@@ -2,9 +2,15 @@ import { createAcpV2Adapter } from './acp-v2.js'
 import { grokSteering } from './grok-steering.js'
 import { acpV2Enabled } from './acp-v2-connection.js'
 import type { AcpClient } from './acp-client.js'
-import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
+import { checkedPolicyRun } from '../shared/permission-policy.js'
 import { acpModelOption, legacyAcpModels } from './acp-models.js'
 import { acpV1ModeOption, applyAcpV1Option, setAcpV1Mode } from './acp-v1-config.js'
+import {
+  acpPermissionDisposition,
+  acpPermissionModeOption,
+  acpPermissionProvider,
+  kiroAutopilot,
+} from './acp-permissions.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpHttp } from './acp-mcp.js'
@@ -96,6 +102,12 @@ export function createAcpAdapter(): AgentAdapter {
         }),
         ...(run.sandbox ? { sandbox: run.sandbox } : {}),
       }
+      const permissionProvider = acpPermissionProvider(launch, run.agent)
+      if (
+        permissionProvider === 'kiro' &&
+        (run.agent.permission === 'auto' || run.agent.permission === 'workspace-write')
+      )
+        run = { ...run, agent: { ...run.agent, permission: 'ask' } }
       const launchKey = JSON.stringify([launch, run.agent, run.tools])
       const held = run.taskId ? idle.get(run.taskId) : undefined
       const knownV1 =
@@ -226,13 +238,14 @@ export function createAcpAdapter(): AgentAdapter {
             return { outcome: { outcome: 'cancelled' } }
           if (prompting) run.onPromptAccepted?.()
           run.onEvent?.('permission', params)
-          const disposition = toolPolicyDisposition(
+          const disposition = acpPermissionDisposition(
             owner,
             ['read', 'search', 'think'].includes(params.toolCall.kind ?? '')
               ? 'read'
               : params.toolCall.kind === 'edit'
                 ? 'edit'
                 : 'other',
+            permissionProvider,
           )
           const allow =
             disposition === 'allow' ||
@@ -474,8 +487,9 @@ export function createAcpAdapter(): AgentAdapter {
         )
         if (!reusable) {
           const restrictive = run.agent.permission === 'read-only' || run.tools === 'none'
+          const antigravity = permissionProvider === 'antigravity' ? run.agent : undefined
           let configOptions = updatedConfig ?? session.configOptions
-          if (restrictive || run.agent.acpMode) {
+          if (!antigravity && (restrictive || run.agent.acpMode)) {
             configOptions =
               (await setAcpV1Mode(
                 connection,
@@ -546,6 +560,8 @@ export function createAcpAdapter(): AgentAdapter {
             if (!configOptions || !option)
               throw new Error(`ACP configuration ${configId} is unavailable`)
             if (
+              (antigravity && acpPermissionModeOption(option, configId)) ||
+              (permissionProvider === 'kiro' && configId === 'autopilot') ||
               (run.agent.model && acpModelOption(configOptions)?.id === configId) ||
               (run.agent.reasoning && option.category === 'thought_level')
             )
@@ -554,6 +570,34 @@ export function createAcpAdapter(): AgentAdapter {
               throw new Error('ACP mode configuration cannot override read-only execution')
             if (run.agent.acpMode && acpV1ModeOption(configOptions)?.id === configId) continue
             configOptions = await applyAcpV1Option(connection, id, configOptions, option, value)
+          }
+          if (antigravity) {
+            const storedMode =
+              acpV1ModeOption(configOptions) ??
+              configOptions?.find(
+                (option) => option.type === 'select' && acpPermissionModeOption(option, option.id),
+              )
+            await setAcpV1Mode(
+              connection,
+              id,
+              { ...session, configOptions },
+              run.agent.acpMode ?? (storedMode ? run.agent.acpConfig?.[storedMode.id] : undefined),
+              restrictive,
+              antigravity,
+            )
+          }
+          if (permissionProvider === 'kiro') {
+            const autopilot = configOptions?.find((option) => option.id === 'autopilot')
+            if (!configOptions || !autopilot)
+              throw new Error('Kiro does not advertise its Autopilot setting')
+            const value = kiroAutopilot(run.agent)
+            await applyAcpV1Option(
+              connection,
+              id,
+              configOptions,
+              autopilot,
+              autopilot.type === 'boolean' ? String(value === 'on') : value,
+            )
           }
         }
         if (run.signal.aborted) throw new Error('Task cancelled')

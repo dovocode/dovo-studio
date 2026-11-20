@@ -26,12 +26,16 @@ MCP and custom tools and deny permission requests. Its optional configuration di
 `COPILOT_HOME`. Dovo resolves executable names on PATH before supplying them to the SDK. Copilot's
 bundled CLI is excluded from Dovo packages; the SDK uses the explicit host installation.
 
-Grok launches `grok --no-auto-update agent --no-leader stdio`. Disabling a shared leader keeps
-thread MCP credentials scoped to Dovo's owned process. Authentication chooses an advertised API-key
-method when a key exists, otherwise `cached_token`, with headless authentication metadata. Models
-and reasoning come from ACP configuration options, with support for older stable model
+Grok launches its ACP host with `--no-auto-update` and `--no-leader`. Disabling a shared leader
+keeps thread MCP credentials scoped to Dovo's owned process. Authentication chooses an advertised
+API-key method when a key exists, otherwise `cached_token`, with headless authentication metadata.
+Models and reasoning come from ACP configuration options, with support for older stable model
 advertisements. Grok currently has no advertised read-only mode, so Dovo excludes it from restricted
 utility-provider choices.
+
+Grok offers Supervised, Auto, and Full access. The thread's mode controls the launch flags. In Auto,
+permission requests Grok still sends go to the user. An existing Auto-accept edits setting runs as
+Supervised.
 
 Muse uses the SDK's public connection and `Session` APIs because the convenience session-start
 facade does not yet expose per-session MCP overrides. Dovo requests the stable `sessionMcp` grant
@@ -40,6 +44,10 @@ approvals and turn terminals, including transport loss. Model selections retain 
 provider identity. Resume omits old history and refuses a different workspace. Reasoning and
 approval changes use native session commands. Optional arguments replace the default `serve`
 arguments.
+
+Muse selects its native permission profile at session start and resume. Full access uses
+`:unrestricted`. Other interactive modes use `:ask-me`. Utility sessions keep their restricted
+launch settings.
 
 Stop sends a native interrupt to the active Muse turn before Studio closes its host, including on
 follow-up turns that reuse that host.
@@ -215,6 +223,11 @@ ACP v1 shows modes from the agent's configuration options or its legacy mode lis
 also reads choices saved by older clients. Read-only turns use a mode that the agent advertises for
 planning or read-only work. Dovo reads the configuration again after an agent announces a change. If
 the agent does not confirm a requested configuration setting, Dovo stops before sending the prompt.
+
+Antigravity uses native Auto when available. Otherwise it uses the protocol's default mode and Dovo
+applies the thread policy to permission requests. Saved ACP mode choices cannot widen Antigravity
+permissions. Kiro v3 enables Autopilot only for unrestricted Full access. Older saved Auto and
+Auto-accept edits settings run as Supervised.
 
 ACP v1 stays enabled by default. Dovo also supports the draft ACP v2 baseline through the existing
 SDK 2.4.0. To try it, add `DOVO_ACP_V2=1` to an ACP agent's environment in Agent settings. The flag

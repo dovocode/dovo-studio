@@ -10,7 +10,8 @@ import {
 import { isImageAttachment } from '@dovo/protocol'
 import type { AgentRun, AcpLaunch } from '../../execution/types.js'
 import { acpMcpServers } from '../../configuration/mcp-settings.js'
-import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
+import { checkedPolicyRun } from '../shared/permission-policy.js'
+import { acpPermissionDisposition, acpPermissionProvider } from './acp-permissions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
 import { openAcpV2Connection, AcpV1Fallback } from './acp-v2-connection.js'
@@ -77,6 +78,7 @@ export function createAcpV2Adapter() {
     /** False means explicit v1 negotiation. No session or prompt has been sent. */
     async run(input: AgentRun, launch: AcpLaunch): Promise<boolean> {
       const run = checkedPolicyRun(input, 'acp')
+      const permissionProvider = acpPermissionProvider(launch, run.agent)
       run.signal.throwIfAborted()
       const key = JSON.stringify([launch, run.agent, run.tools, run.cwd])
       const previous = run.taskId ? idle.get(run.taskId) : undefined
@@ -137,7 +139,7 @@ export function createAcpV2Adapter() {
                     : 'other'
               } else if (subject && RequestPermissionSubject.isCommand(subject))
                 operation = 'execute'
-              const disposition = toolPolicyDisposition(owner, operation)
+              const disposition = acpPermissionDisposition(owner, operation, permissionProvider)
               const allow =
                 disposition === 'allow' ||
                 (disposition === 'ask' &&
@@ -341,6 +343,7 @@ export function createAcpV2Adapter() {
             session.configOptions,
             run.agent,
             run.tools === 'none',
+            permissionProvider,
           )
         }
         run.signal.throwIfAborted()

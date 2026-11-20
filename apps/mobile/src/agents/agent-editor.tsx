@@ -156,7 +156,7 @@ export function AgentEditor({
         disabled={busy}
         value={permissionPolicyLabel(draft) === 'Custom' ? 'custom' : draft.permission}
         selectedLabel={uiText(permissionPolicyLabel(draft))}
-        items={selectableAccessModes(draft.permission, draft.provider)
+        items={selectableAccessModes(draft.permission, draft.provider, draft.acpInstallationId)
           .filter((mode) => supportsAccess(draft.provider, mode.id))
           .map((mode) => ({
             id: mode.id,

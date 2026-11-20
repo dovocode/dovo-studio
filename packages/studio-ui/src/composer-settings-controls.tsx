@@ -119,7 +119,7 @@ export function ComposerSettingsControls({
                 )
               }
             >
-              {selectableAccessModes(value.permission, value.provider)
+              {selectableAccessModes(value.permission, value.provider, value.acpInstallationId)
                 .filter(
                   (mode) => supportsAccess(value.provider, mode.id) || mode.id === value.permission,
                 )
