@@ -93,9 +93,12 @@ try {
   const page = await browser.newPage()
   const errors = []
   page.on('pageerror', (error) => errors.push(error.message))
+  await page.route('http://workspace.lan/', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
   const mount = async (scenario) => {
-    await page.goto('about:blank')
-    await page.setContent('<div id="app"></div>')
+    await page.goto('http://workspace.lan/')
+    await page.evaluate(() => sessionStorage.clear())
     await page.addScriptTag({ content: built.outputFiles[0].text })
     await page.evaluate((mode) => {
       window.scenario = mode
