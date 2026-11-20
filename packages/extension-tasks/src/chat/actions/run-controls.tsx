@@ -15,7 +15,7 @@ import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
 import { ApprovalDetails } from './approval-details'
-export function RunControls({ task }: { task: Task }) {
+export function RunControls({ task, showFailure = true }: { task: Task; showFailure?: boolean }) {
   const uiText = useInterfaceText()
 
   const host = useStudioHost()
@@ -25,7 +25,7 @@ export function RunControls({ task }: { task: Task }) {
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
   const [retryError, setRetryError] = useScopedError(
-    task.status === 'failed'
+    showFailure && task.status === 'failed'
       ? JSON.stringify([activeRuntimeId, task.id, taskFailureVersion(task)])
       : undefined,
   )
@@ -78,15 +78,18 @@ export function RunControls({ task }: { task: Task }) {
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
   })
+  const failed = showFailure && task.status === 'failed'
   const alert =
-    error || retryError || (task.status !== 'cancelled' || task.activeRunId ? task.error : '')
+    error ||
+    retryError ||
+    (showFailure && (task.status !== 'cancelled' || task.activeRunId) ? task.error : '')
   if (
     connected &&
     !approvals.length &&
     !remoteInputs.length &&
     !alert &&
     !task.restartRecovery &&
-    task.status !== 'failed' &&
+    !failed &&
     task.status !== 'cancelled'
   )
     return null
@@ -219,36 +222,33 @@ export function RunControls({ task }: { task: Task }) {
           </div>
         </div>
       ))}
-      {(alert || task.status === 'failed') && (
+      {(alert || failed) && (
         <div className="mx-auto max-w-[var(--chat-max)] space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
           {alert && (
             <p role="alert" className="break-words text-xs text-destructive">
               {alert}
             </p>
           )}
-          {task.status === 'failed' &&
-            !task.archived &&
-            !task.archivedAt &&
-            !task.restartRecovery && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    !connected ||
-                    busy ||
-                    !!task.activeRunId ||
-                    !!snapshot?.runs.some((run) => run.taskIds.includes(task.id))
-                  }
-                  onClick={() => act('/api/tasks/retry-failed', { id: task.id }, setRetryError)}
-                >
-                  {busy ? 'Retrying…' : 'Retry'}
-                </Button>
-                <span className="text-[0.6875rem] text-muted-foreground">
-                  Current files are kept. Queued messages stay paused.
-                </span>
-              </div>
-            )}
+          {failed && !task.archived && !task.archivedAt && !task.restartRecovery && (
+            <div className="flex flex-wrap items-center gap-2">
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={
+                  !connected ||
+                  busy ||
+                  !!task.activeRunId ||
+                  !!snapshot?.runs.some((run) => run.taskIds.includes(task.id))
+                }
+                onClick={() => act('/api/tasks/retry-failed', { id: task.id }, setRetryError)}
+              >
+                {busy ? 'Retrying…' : 'Retry'}
+              </Button>
+              <span className="text-[0.6875rem] text-muted-foreground">
+                Current files are kept. Queued messages stay paused.
+              </span>
+            </div>
+          )}
         </div>
       )}
     </div>

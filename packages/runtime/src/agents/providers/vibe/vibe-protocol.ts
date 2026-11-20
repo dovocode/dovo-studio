@@ -11,7 +11,7 @@ export const vibeServerInfo = mutableStruct({
 })
 export const vibeConfig = mutableStruct({
   config: mutableStruct({
-    activeModel: mutableStruct({ alias: Schema.String }),
+    activeModel: mutableStruct({ alias: Schema.String, thinking: Schema.optional(Schema.String) }),
     models: mutableArray(
       mutableStruct({
         alias: Schema.String,

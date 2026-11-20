@@ -6,8 +6,10 @@ import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
 import { exec } from '../../process'
 import { randomUUID } from 'node:crypto'
-import { agentTurnSettings, resolveTaskAgent } from '@dovo/protocol'
+import { Effect } from 'effect'
+import { agentTurnSettings, defaultTaskHarness, resolveTaskAgent } from '@dovo/protocol'
 import type { AgentAdapter, AgentRun } from '../execution/types'
+import { HttpError } from '../../errors'
 
 vi.setConfig(runtimeIntegration)
 
@@ -797,6 +799,94 @@ it('browses working and linked folders, previews images without Git, and enforce
     (await call('/api/tasks/files/read', { id: worktreeTask.id, path: 'worktree-only.txt' })).body
       .contents,
   ).toBe('worktree contents')
+})
+
+it('retries Tune after an accepted first message and locks the provider it selects', async () => {
+  const { s, call } = await setup()
+  const codex = defaultTaskHarness('codex')
+  const acp = defaultTaskHarness('acp')
+  s.defaults.save({ ...s.defaults.get(), configured: true, harness: codex })
+  s.preferences.save({ ...s.preferences.get(), enableSmartModelSelection: true })
+  const runs: AgentRun[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: async () => ({ provider: 'codex', available: true, detail: '' }),
+    models: async () => ({
+      models: [{ id: 'tuned-model', name: 'Tuned Model' }],
+      reasoning: [],
+    }),
+    run: async (run) => {
+      runs.push(run)
+      run.onText('Done')
+    },
+  })
+  const selection = vi
+    .spyOn(s.titles, 'selectModelEffect')
+    .mockImplementationOnce(() => Effect.fail(new HttpError(502, 'Selector unavailable')))
+    .mockImplementation((input) => {
+      const { request, candidates } = JSON.parse(input) as {
+        request: string
+        candidates: { id: string; model: string }[]
+      }
+      expect(request).toBe('Original Tune request')
+      const chosen = candidates.find(({ model }) => model === 'tuned-model')
+      expect(chosen).toBeDefined()
+      return Effect.succeed(JSON.stringify({ id: chosen?.id, reason: 'Fits the request' }))
+    })
+  const task = s.tasks.create({
+    title: 'Tune first message',
+    agentId: '',
+    repositoryId: 'repo',
+    execution: 'main',
+    objective: '',
+    harness: acp,
+    modelSelection: 'auto',
+  })
+  const first = { id: task.id, messageId: 'first', text: 'Original Tune request' }
+  const later = { id: task.id, messageId: 'later', text: 'Keep this follow-up queued' }
+  expect((await call('/api/tasks/message', first)).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(s.store.taskSummary(task.id)).toMatchObject({
+      status: 'failed',
+      activeRunId: undefined,
+      providerLock: 'acp',
+      preparation: { current: 'tune', failed: true },
+      error: 'Selector unavailable',
+    }),
+  )
+  expect((await call('/api/tasks/message', { ...later, queueOnly: true })).status).toBe(200)
+  expect(selection).toHaveBeenCalledTimes(1)
+  expect(s.store.taskSummary(task.id).queue?.map(({ id }) => id)).toEqual(['first', 'later'])
+  expect(() => s.store.updateTask(task.id, (current) => ({ ...current, harness: codex }))).toThrow(
+    'This task uses acp',
+  )
+  expect(runs).toHaveLength(0)
+
+  expect((await call('/api/tasks/run', { id: task.id })).status).toBe(200)
+  await waitForRuntime(() =>
+    expect(s.store.taskSummary(task.id)).toMatchObject({
+      status: 'review',
+      activeRunId: undefined,
+    }),
+  )
+  expect(selection).toHaveBeenCalledTimes(2)
+  expect(runs).toHaveLength(1)
+  expect(runs[0]?.prompt).toContain(first.text)
+  expect(runs[0]?.prompt).not.toContain(later.text)
+  const recovered = s.store.task(task.id)
+  expect(recovered).toMatchObject({
+    providerLock: 'codex',
+    harness: { provider: 'codex', model: 'tuned-model' },
+    queuePaused: true,
+    queue: [expect.objectContaining({ id: later.messageId, text: later.text })],
+  })
+  expect(recovered.error).toBeUndefined()
+  expect(recovered.preparation).toBeUndefined()
+  expect(recovered.messages.filter(({ role }) => role === 'user').map(({ id }) => id)).toEqual([
+    first.messageId,
+  ])
+  expect(() => s.store.updateTask(task.id, (current) => ({ ...current, harness: acp }))).toThrow(
+    'This task uses codex',
+  )
 })
 
 it.each([false, true])(

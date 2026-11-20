@@ -58,6 +58,7 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  if(m.method===undefined){if(${webRequests})nextApproval();return;}
  let result={};
  if(m.method==='initialize')result={userAgent:'codex/${version}'};
+ if(m.method==='configRequirements/read' && process.env.TEST_CODEX_BLOCK_FAST)result={requirements:{featureRequirements:{fast_mode:false}}};
  if(m.method==='account/rateLimits/read' && ${rateLimits})result={rateLimits:{primary:{usedPercent:20,windowDurationMins:300}}};
  if(m.method==='thread/start'||m.method==='thread/resume') {
    result={thread:{id:'thread',daybreakEnabled:${savedDaybreak}},approvalsReviewer:'user'};
@@ -465,6 +466,20 @@ it('enables advertised Fast per run, then explicitly resets a resumed thread and
   expect(
     rows.filter((row) => row.method === 'turn/start').map((row) => row.params?.serviceTier),
   ).toEqual(['priority', 'default'])
+})
+it('rejects a saved Fast tier that Codex policy blocks and allows Standard', async () => {
+  const { run, requests } = await fixture()
+  run.agent.env = { ...run.agent.env, TEST_CODEX_BLOCK_FAST: '1' }
+  run.agent.serviceTier = 'priority'
+  await expect(codexAdapter.run(run)).rejects.toThrow(
+    'Codex policy blocks the selected service tier',
+  )
+  expect((await requests()).map(({ method }) => method)).not.toContain('thread/start')
+  run.agent.serviceTier = 'default'
+  await codexAdapter.run(run)
+  expect((await requests()).find(({ method }) => method === 'turn/start')?.params).toMatchObject({
+    serviceTier: 'default',
+  })
 })
 it.each(['daybreakBlue', 'daybreakRed', 'standard'] as const)(
   'persists %s and sends the exact turn treatment without altering access',

@@ -1768,11 +1768,12 @@ export class Tasks {
         throw new HttpError(409, 'This thread is being deleted.')
       return this.attachments.metadata(id, attachmentIds)
     }).pipe(
-      Effect.tap(() =>
-        turnSettings || (preparation === 'accepted' && !queueOnly)
-          ? Effect.void
-          : this.resolveModel(id, text),
-      ),
+      Effect.tap(() => {
+        if (turnSettings || (preparation === 'accepted' && !queueOnly)) return Effect.void
+        // A staged follow-up must not choose the model for an earlier queued prompt.
+        if (queueOnly && this.store.taskSummary(id).queue?.length) return Effect.void
+        return this.resolveModel(id, text)
+      }),
       Effect.flatMap((attachments) =>
         Effect.tryPromise({
           try: async () => {
@@ -2245,6 +2246,11 @@ export class Tasks {
         )
       if (retryFailed && next.status !== 'failed')
         return Effect.fail(new HttpError(409, 'Only a failed task can be retried.'))
+      const retryingPreparation = retryFailed && next.preparation?.failed && !next.runAttempt
+      const preparationMessageId = retryingPreparation ? firstMessage?.id : undefined
+      if (retryingPreparation && next.queue?.length && !preparationMessageId)
+        return Effect.fail(new HttpError(409, 'Resume the first queued message to continue'))
+      const prepareInWorker = preparation === 'accepted' || retryingPreparation
       if (
         !retryFailed &&
         !directMessageId &&
@@ -2258,11 +2264,11 @@ export class Tasks {
       if (!continuingRunId && this.holdForSpendLimit(id, firstMessage?.id))
         return Effect.succeed({ completion: Effect.void })
       const selectModel = (signal?: AbortSignal) =>
-        (!retryFailed && firstMessage?.turnSettings) ||
+        ((!retryFailed || preparationMessageId) && firstMessage?.turnSettings) ||
         (continuingRunId && next.runAttempt?.turnSettings)
           ? Effect.void
           : this.resolveModel(id, undefined, signal)
-      return (preparation === 'accepted' ? Effect.void : selectModel()).pipe(
+      return (prepareInWorker ? Effect.void : selectModel()).pipe(
         Effect.flatMap(() =>
           this.nativeSessions.has(id)
             ? Effect.void
@@ -2493,9 +2499,9 @@ export class Tasks {
                 },
               }))
             }
-            // Selection belongs to the admitted run, so Send can finish and Stop can
+            // Selection belongs to the admitted run, so Send and Retry can return and Stop can
             // cancel its utility model before checkout or coding work starts.
-            if (preparation === 'accepted') yield* selectModel(run.controller.signal)
+            if (prepareInWorker) yield* selectModel(run.controller.signal)
             const modelPreparation = this.store.taskSummary(id).preparation
             if (modelPreparation?.steps.some((step) => step === 'tune' || step === 'maestro'))
               this.store.updateTask(id, (current) => ({
@@ -2642,11 +2648,13 @@ export class Tasks {
                 this.markSharedCheckouts(id, run)
               }
               run.retiring = false
-              const retryingFailedAttempt = firstAttempt && retryFailed
-              const immediateMessageId = firstAttempt ? directMessageId : undefined
+              const retryingFailedAttempt = firstAttempt && retryFailed && !preparationMessageId
+              const immediateMessageId = firstAttempt
+                ? (directMessageId ?? preparationMessageId)
+                : undefined
               firstAttempt = false
-              // Retrying a provider failure continues existing context and files, without
-              // consuming queued user messages or undoing the previous attempt's work.
+              // A preparation failure has not consumed its input. A provider failure uses
+              // existing conversation context and leaves queued follow-ups paused.
               if (!resumeInterruptedTurn && !retryingFailedAttempt)
                 this.queue.take(id, run.runId, run.id, immediateMessageId)
               this.deliverCompletions()
@@ -2890,7 +2898,7 @@ export class Tasks {
           // Interactive sends acknowledge the saved input and admitted worker. Checkout work
           // continues in that owned worker, with progress/failures published to the thread.
           // Holding its HTTP response here also holds the client's sender for other threads.
-          if (preparation === 'accepted') return Effect.succeed({ completion: Fiber.join(fiber) })
+          if (prepareInWorker) return Effect.succeed({ completion: Fiber.join(fiber) })
           return Deferred.await(ready).pipe(
             // Startup failures are actionable only after the worker releases its ownership.
             Effect.catchCause((cause) =>

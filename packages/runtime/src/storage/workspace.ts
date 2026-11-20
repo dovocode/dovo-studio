@@ -53,6 +53,7 @@ import {
   taskMetadata,
   conversationPage,
   type Attachment,
+  type TaskHarness,
   type Workspace,
   type WorkspacePatch,
   type Task,
@@ -819,7 +820,7 @@ export class WorkspaceStore {
       response?: { id: string; fingerprint: string; attachments?: Attachment[] }
     },
     action?: ProviderAction,
-    options?: { preserveSettledAt?: boolean },
+    options?: { preserveSettledAt?: boolean; initialModelSelectionTaskId?: string },
   ): WorkspaceSummary {
     const draft = fn(this.workspace)
     for (const [repositoryId] of this.deletingRepositories) {
@@ -1003,11 +1004,13 @@ export class WorkspaceStore {
               )
           }
           const segmentChanged = previous?.harnessHandoff?.id !== task.harnessHandoff?.id
-          const locked = segmentChanged
-            ? lockedTaskProvider(task, parsed.agents)
-            : previous
-              ? lockedTaskProvider(previous, this.workspace.agents)
-              : undefined
+          const selectingInitialModel = options?.initialModelSelectionTaskId === task.id
+          const locked =
+            segmentChanged || selectingInitialModel
+              ? lockedTaskProvider(task, parsed.agents)
+              : previous
+                ? lockedTaskProvider(previous, this.workspace.agents)
+                : undefined
           const provider = resolveTaskAgent(task, parsed.agents)?.provider
           const previousInstallation = previous
             ? (resolveTaskAgent(previous, this.workspace.agents)?.acpInstallationId ?? '')
@@ -1023,7 +1026,12 @@ export class WorkspaceStore {
               409,
               `This task uses ${locked}. After the first message, choose models and settings within the same provider. Create a new task to use another provider.`,
             )
-          if (!segmentChanged && locked === 'acp' && previousInstallation !== nextInstallation)
+          if (
+            !segmentChanged &&
+            !selectingInitialModel &&
+            locked === 'acp' &&
+            previousInstallation !== nextInstallation
+          )
             throw new HttpError(
               409,
               'This thread uses a different ACP installation. Start a new task to use another agent.',
@@ -1365,6 +1373,37 @@ export class WorkspaceStore {
       },
       submission ? { ...submission, taskId: id } : undefined,
       action,
+    )
+  }
+  /** Only runtime model selection may replace the provisional lock on the first queued input. */
+  commitInitialModelSelection(id: string, harness: TaskHarness) {
+    this.update(
+      (workspace) => {
+        const task = this.taskSummary(id)
+        if (
+          !task.modelSelection ||
+          task.history.turns ||
+          task.sessionId ||
+          task.runAttempt ||
+          task.consumedMessageIds?.length ||
+          task.delegation ||
+          task.harnessHandoff
+        )
+          throw new HttpError(409, 'Choose Inherit, Tune or Maestro before the first turn.')
+        return this.replaceTask(workspace, task, {
+          ...task,
+          harness,
+          agentId: '',
+          agentOverrides: undefined,
+          harnessCustomized: true,
+          modelSelection: undefined,
+          modelSelectionDifficulty: undefined,
+          providerLock: undefined,
+        })
+      },
+      undefined,
+      undefined,
+      { initialModelSelectionTaskId: id },
     )
   }
   /** Updates one complete task, writing the difference in its messages and turns. */

@@ -927,8 +927,21 @@ export function createMuseAdapter(): AgentAdapter {
             }
           } finally {
             active = false
-            run.onNativeTurnEnd?.()
             run.onSteer?.(undefined)
+            if (run.signal.aborted && turnId)
+              await nativeWait(
+                turnConnection.connection.command('turn/interrupt', {
+                  sessionId: identity,
+                  turnId,
+                }),
+                lifetime.signal,
+                2000,
+              ).catch((error) =>
+                run.onActivity(
+                  `Muse interrupt: ${error instanceof Error ? error.message : String(error)}`,
+                ),
+              )
+            run.onNativeTurnEnd?.()
           }
         }
         await execute(run)
@@ -964,19 +977,6 @@ export function createMuseAdapter(): AgentAdapter {
         run.onSteer?.(undefined)
         if (!succeeded || !run.taskId)
           for (const question of waitingInputs.values()) question.abort()
-        if (run.signal.aborted && connection && session && turnId)
-          await nativeWait(
-            connection.connection.command('turn/interrupt', {
-              sessionId: session.sessionId,
-              turnId,
-            }),
-            new AbortController().signal,
-            2000,
-          ).catch((error) =>
-            run.onActivity(
-              `Muse interrupt: ${error instanceof Error ? error.message : String(error)}`,
-            ),
-          )
         if (!succeeded || !run.taskId) {
           await host.close()
           if (session) run.onSubagentEvent?.('dovo/session/closed', {}, session.sessionId)

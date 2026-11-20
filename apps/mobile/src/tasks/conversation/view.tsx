@@ -590,10 +590,12 @@ function HarnessHandoffDivider({ provider, previousProvider }: HarnessHandoffMar
 export function Conversation({
   setup,
   startModes,
+  showFailure = true,
   children,
 }: {
   setup?: ReactNode
   startModes?: ReactNode
+  showFailure?: boolean
   children?: ReactNode
 }) {
   const uiText = useInterfaceText()
@@ -1194,7 +1196,9 @@ export function Conversation({
                 <ConversationThreadActions />
                 {!car && <TaskActivity task={task} events={legacyEvents} error={activityError} />}
                 <TaskApprovals taskId={task.id} />
-                {(task.error || task.status === 'failed') && <FailedTaskRetry task={task} />}
+                {showFailure && (task.error || task.status === 'failed') && (
+                  <FailedTaskRetry task={task} />
+                )}
                 {/* The inverted list's header follows the latest message. Expanded task panels
                 share its scroll space, leaving the composer outside the scroll view. */}
                 {children && <View style={{ marginHorizontal: -20, gap: 6 }}>{children}</View>}

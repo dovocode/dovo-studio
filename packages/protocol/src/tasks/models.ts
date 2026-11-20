@@ -91,6 +91,38 @@ export function acpModelSetting(option: { id: string; category?: string | null }
   return undefined
 }
 
+/** Older clients stored an ACP mode in the generic session options. */
+export function acpModeControl<T extends TaskHarness>(
+  harness: T,
+  catalog: ModelCatalog | null | undefined,
+) {
+  const acp = catalog?.acp
+  const configId = acp?.modes.length
+    ? acp.configOptions.find(
+        (option) =>
+          option.category === 'mode' &&
+          option.options.length === acp.modes.length &&
+          acp.modes.every(({ id }) => option.options.some((choice) => choice.id === id)),
+      )?.id
+    : undefined
+  const settings = harness.acpConfig ?? {}
+  return {
+    configId,
+    value: harness.acpMode ?? (configId ? settings[configId] : undefined) ?? '',
+    change: (mode: string): T => ({
+      ...harness,
+      acpMode: mode || undefined,
+      ...(configId && configId in settings
+        ? {
+            acpConfig: Object.fromEntries(
+              Object.entries(settings).filter(([id]) => id !== configId),
+            ),
+          }
+        : {}),
+    }),
+  }
+}
+
 /** Clear older ACP overrides when the user chooses a model or reasoning level. */
 export function changeModelSettings<T extends TaskHarness>(
   harness: T,

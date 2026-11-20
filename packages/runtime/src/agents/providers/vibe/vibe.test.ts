@@ -27,7 +27,7 @@ const event=(method,params)=>send({method,params:{sessionId:sid,eventId:1,...par
 const entry=(id,type,rest={})=>({id,type,sessionId:sid,turnId:tid,generationStatus:'in_progress',...rest});
 const added=e=>event('history/entryAdded',{turnId:tid,entry:e});
 const done=(status='completed',extra={})=>{event('session/statsUpdated',{stats:{lastTurnPromptTokens:120,lastTurnCompletionTokens:20,lastTurnCachedTokens:30,contextTokens:90},contextWindow:200000});event('turn/completed',{turn:{id:tid,status,...extra}})};
-const config={activeModel:{alias:'devstral'},models:[{alias:'devstral',displayName:'Devstral',thinking:'high',thinkingLevels:['off','high']}]};
+let alias='devstral',thinking='high';
 require('node:readline').createInterface({input:process.stdin}).on('line',line=>{
  const v=JSON.parse(line);messages.push(v);record();const p=v.params||{};
  if(!v.method)return;
@@ -35,13 +35,19 @@ require('node:readline').createInterface({input:process.stdin}).on('line',line=>
  if(v.method==='initialized'){initialized=true;return}
  if(!initialized)return send({id:v.id,error:{code:-32002,message:'initialize must be the first request'}});
  if(v.method==='setup/status')return reply(v.id,{hasApiKey:process.env.TEST_AUTH!=='missing'});
- if(v.method==='config/read')return reply(v.id,{config});
+ if(v.method==='config/read')return reply(v.id,{config:{activeModel:{alias,thinking},models:[{alias,displayName:'Devstral',thinking,thinkingLevels:['off','high']}]}});
  if(v.method==='session/start'||v.method==='session/resume'){
   options=p.agentConfig;sid=p.sessionId||sid;
   event('history/entryAdded',{entry:entry('old','message',{turnId:'old-turn',role:'assistant',content:[{type:'text',text:'HIDDEN OLD'}]})});
   return reply(v.id,{state:{session:{id:sid}}});
  }
- if(v.method==='config/write')return reply(v.id,{status:'applied',failures:[]});
+ if(v.method==='config/write'){
+  for(const op of p.ops){
+   if(op.path==='/active_model'&&process.env.TEST_IGNORE_SETTING!=='model')alias=op.value;
+   if(op.path.endsWith('/thinking')&&process.env.TEST_IGNORE_SETTING!=='reasoning')thinking=op.value;
+  }
+  return reply(v.id,{status:'applied',failures:[]});
+ }
  if(v.method==='config/effective/read')return reply(v.id,{config:{bypass_tool_permissions:process.env.TEST_POLICY==='bad'?true:options.autoApprove,disabled_tools:options.disabledTools,enabled_tools:options.enabledTools}});
  if(v.method==='stats/read')return reply(v.id,{stats:{lastTurnPromptTokens:120,lastTurnCompletionTokens:20,lastTurnCachedTokens:30,contextTokens:90},contextWindow:200000});
  if(v.method==='session/compact')return reply(v.id,{summary:'Compacted',state:{session:{id:sid}}});
@@ -143,6 +149,28 @@ it('resumes the saved session and applies model/reasoning only to the session ov
   expect(messages.find((m) => m.method === 'session/context/inject')?.params).toMatchObject({
     input: [{ type: 'text', text: 'Be precise' }],
   })
+})
+it.each([
+  { setting: 'model', model: 'custom/model', message: 'Vibe did not apply model custom/model' },
+  {
+    setting: 'reasoning',
+    model: '',
+    message: 'Vibe did not apply reasoning level off for devstral',
+  },
+])('stops before prompting if Vibe did not apply $setting', async ({ setting, model, message }) => {
+  const f = await fixture()
+  await expect(
+    f.adapter.run({
+      ...f.run,
+      agent: {
+        ...f.run.agent,
+        env: { ...f.run.agent.env, TEST_IGNORE_SETTING: setting },
+        model,
+        reasoning: 'off',
+      },
+    }),
+  ).rejects.toThrow(message)
+  expect((await f.messages()).some(({ method }) => method === 'turn/start')).toBe(false)
 })
 it.each(['approve', 'deny'] as const)(
   'returns %s through the separate approval callback result',

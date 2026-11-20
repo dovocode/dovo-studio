@@ -43,6 +43,10 @@ const configOptions = [
   { id: 'model', name: 'Model', type: 'select', category: 'model', currentValue: 'a', options: [{ value: 'a', name: 'A' }, { value: 'b', name: 'B' }] },
   { id: 'toggle', name: 'Toggle', type: 'boolean', currentValue: false }
 ]
+const modes = { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] };
+const configMode = !!process.env.TEST_ACP_CONFIG_MODE;
+if (configMode) configOptions.push({ id: 'agent_mode', name: 'Mode', type: 'select', category: 'mode', currentValue: 'code', options: modes.availableModes.map(({id, name}) => ({value:id, name})) });
+const session = { configOptions, ...(!configMode && { modes }) };
 let pendingPrompt
 const permissionKinds = ${JSON.stringify(permissionKinds)}
 let permissionIndex = 0
@@ -55,15 +59,21 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   messages.push(input)
   writeFileSync(process.env.TEST_ACP_RECORD, JSON.stringify(messages))
   if (input.method === 'initialize') respond(input.id, { protocolVersion: 1, agentCapabilities: { mcpCapabilities: ${JSON.stringify(mcpCapabilities)}, loadSession: true, sessionCapabilities: ${lifecycle ? '{ resume: {}, close: {}, delete: {} }' : '{}'} } })
-  if (input.method === 'session/new') respond(input.id, { sessionId: 'session', modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions })
-  if (input.method === 'session/load') { if (${nativeChildren === 'replay'}) native('running'); update('old'); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
-  if (input.method === 'session/resume') { if (${nativeChildren === 'replay'}) native('running'); if (${compactCommand}) commands(); respond(input.id, { modes: { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] }, configOptions }) }
+  if (input.method === 'session/new') respond(input.id, { sessionId: 'session', ...session })
+  if (input.method === 'session/load') { if (${nativeChildren === 'replay'}) native('running'); update('old'); respond(input.id, session) }
+  if (input.method === 'session/resume') { if (${nativeChildren === 'replay'}) native('running'); if (${compactCommand}) commands(); respond(input.id, session) }
   if (input.method === 'session/close') respond(input.id, {})
   if (input.method === 'session/delete') respond(input.id, {})
-  if (input.method === 'session/set_mode') respond(input.id, {})
+  if (input.method === 'session/set_mode') {
+    if (process.env.TEST_ACP_MODE_EFFORT) {
+      configOptions.push({ id: 'effort', name: 'Effort', type: 'select', category: 'thought_level', currentValue: 'low', options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }] })
+      process.stdout.write(JSON.stringify({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'session', update: { sessionUpdate: 'config_option_update', configOptions } } }) + '\\n')
+    }
+    respond(input.id, {})
+  }
   if (input.method === 'session/set_config_option') {
     const option = configOptions.find(option => option.id === input.params.configId)
-    if (option && !(option.id === 'model' && process.env.TEST_IGNORE_ACP_MODEL)) option.currentValue = input.params.value
+    if (option && !(option.id === 'model' && process.env.TEST_IGNORE_ACP_MODEL) && !(option.id === 'agent_mode' && process.env.TEST_IGNORE_ACP_MODE) && !(option.id === 'toggle' && process.env.TEST_IGNORE_ACP_TOGGLE)) option.currentValue = input.params.value
     respond(input.id, { configOptions })
   }
   if (input.method === 'session/prompt') { if (${nativeChildren === true}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
@@ -180,6 +190,78 @@ it('fails before prompting when the ACP agent leaves the requested model unchang
   await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Model: b')
   const calls = JSON.parse(await readFile(record, 'utf8'))
   expect(calls.map((call: { method: string }) => call.method)).not.toContain('session/prompt')
+})
+
+it('discovers and applies ACP v1 mode config options without legacy session modes', async () => {
+  const { cwd, launch, record } = await fixture()
+  const configured = { ...launch, env: { ...launch.env, TEST_ACP_CONFIG_MODE: '1' } }
+  const input = run(cwd, configured)
+  const catalog = await acpAdapter.models!(input.run.agent, configured)
+  expect(catalog.acp?.modes).toEqual([
+    { id: 'code', name: 'Code' },
+    { id: 'plan', name: 'Plan' },
+  ])
+  input.run.agent.permission = 'read-only'
+  input.run.agent.acpMode = 'code'
+  await acpAdapter.run(input.run)
+  expect(input.output).toEqual(['new'])
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{
+    method: string
+    params?: unknown
+  }>
+  expect(
+    messages.find((message) => message.method === 'session/set_config_option')?.params,
+  ).toEqual({
+    sessionId: 'session',
+    configId: 'agent_mode',
+    value: 'plan',
+  })
+  expect(messages.map(({ method }) => method)).not.toContain('session/set_mode')
+})
+
+it('does not prompt when an ACP v1 agent fails to apply the required read-only mode', async () => {
+  const { cwd, launch, record } = await fixture()
+  const input = run(cwd, {
+    ...launch,
+    env: { ...launch.env, TEST_ACP_CONFIG_MODE: '1', TEST_IGNORE_ACP_MODE: '1' },
+  })
+  input.run.agent.permission = 'read-only'
+  await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Mode: plan')
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{ method: string }>
+  expect(messages.map(({ method }) => method)).not.toContain('session/prompt')
+})
+
+it('applies reasoning announced after an ACP v1 legacy mode change', async () => {
+  const { cwd, launch, record } = await fixture()
+  const configured = { ...launch, env: { ...launch.env, TEST_ACP_MODE_EFFORT: '1' } }
+  const input = run(cwd, configured)
+  input.run.agent.model = ''
+  const catalog = await acpAdapter.models!(input.run.agent, configured)
+  expect(catalog.reasoning.map(({ id }) => id)).toEqual(['low', 'high'])
+  input.run.agent.reasoning = 'high'
+  await acpAdapter.run(input.run)
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{
+    method: string
+    params?: unknown
+  }>
+  expect(messages).toContainEqual(
+    expect.objectContaining({
+      method: 'session/set_config_option',
+      params: { sessionId: 'session', configId: 'effort', value: 'high' },
+    }),
+  )
+})
+
+it('detects rejected ACP v1 boolean settings in discovery and execution', async () => {
+  const { cwd, launch, record } = await fixture()
+  const configured = { ...launch, env: { ...launch.env, TEST_IGNORE_ACP_TOGGLE: '1' } }
+  const input = run(cwd, configured)
+  await expect(acpAdapter.models!(input.run.agent, configured)).rejects.toThrow(
+    'ACP did not apply Toggle: true',
+  )
+  await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Toggle: true')
+  const messages = JSON.parse(await readFile(record, 'utf8')) as Array<{ method: string }>
+  expect(messages.map(({ method }) => method)).not.toContain('session/prompt')
 })
 
 it('does not append replayed messages while loading a session', async () => {

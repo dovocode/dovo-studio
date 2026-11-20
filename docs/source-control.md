@@ -247,11 +247,12 @@ project selection, projects resolve first. Hidden or disabled models are exclude
 Tune and Maestro have a separate **Difficulty** picker, starting at **Auto**. An explicit difficulty
 guides model choice while the selector independently chooses a supported reasoning level for that
 model. The model and reasoning are fixed together before the first turn. Inherit and specific models
-keep their usual reasoning settings. An invalid selection preserves the pending mode and does not
-send the message. Only Maestro can be saved as an automatic project or system task default. **Scope
-model mode** is a separate computer preference with Inherit, Tune and Maestro; it starts at Inherit
-and does not follow the ordinary task default mode. Choosing Scope mode uses that preference, while
-preserving an explicitly selected Tune or Maestro model mode.
+keep their usual reasoning settings. If selection fails, the message stays queued and the startup
+card shows the error. **Retry** runs the failed step and keeps later prompts paused. Only Maestro
+can be saved as an automatic project or system task default. **Scope model mode** is a separate
+computer preference with Inherit, Tune and Maestro; it starts at Inherit and does not follow the
+ordinary task default mode. Choosing Scope mode uses that preference, while preserving an explicitly
+selected Tune or Maestro model mode.
 
 Titles and dictation require an explicit utility harness and model in Agents settings. The **Scope,
 Tune & Maestro selector** inherits that title model by default. Set a separate utility harness/model

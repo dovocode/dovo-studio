@@ -18,6 +18,7 @@ import { Text } from '../ui/content/text'
 import {
   agentSchema,
   acpModelSetting,
+  acpModeControl,
   changeModelSettings,
   modelPreferenceKey,
   runtimeDefaultsSchema,
@@ -86,6 +87,7 @@ export function ModelSettings({
     selected = selectedCatalogModel(catalog, agent.model),
     efforts = modelReasoningLevels(catalog, agent.model)
   const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
+  const acpMode = acpModeControl(agent, catalog)
   return (
     <View
       style={{
@@ -277,19 +279,19 @@ export function ModelSettings({
               row
               label={uiText('ACP mode')}
               disabled={disabled}
-              value={agent.acpMode ?? ''}
+              value={acpMode.value}
               items={[
                 { id: '', name: uiText('Provider default') },
-                ...(agent.acpMode && !catalog.acp.modes.some((mode) => mode.id === agent.acpMode)
-                  ? [{ id: agent.acpMode, name: `${agent.acpMode} (saved)` }]
+                ...(acpMode.value && !catalog.acp.modes.some((mode) => mode.id === acpMode.value)
+                  ? [{ id: acpMode.value, name: `${acpMode.value} (saved)` }]
                   : []),
                 ...catalog.acp.modes,
               ]}
-              onChange={(acpMode) => onChange({ ...agent, acpMode: acpMode || undefined })}
+              onChange={(mode) => onChange(acpMode.change(mode))}
             />
           )}
           {catalog.acp.configOptions
-            .filter((option) => !acpModelSetting(option))
+            .filter((option) => option.id !== acpMode.configId && !acpModelSetting(option))
             .map((option) => {
               const value = agent.acpConfig?.[option.id] ?? option.currentValue
               const label = option.category ? `${option.category} · ${option.name}` : option.name

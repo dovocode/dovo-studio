@@ -4,6 +4,7 @@ import { acpV2Enabled } from './acp-v2-connection.js'
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun, toolPolicyDisposition } from '../shared/permission-policy.js'
 import { acpModelOption, legacyAcpModels } from './acp-models.js'
+import { acpV1ModeOption, applyAcpV1Option, setAcpV1Mode } from './acp-v1-config.js'
 import { mutableStruct, nativeAgentWorking, type Subagent } from '@dovo/protocol'
 import { decodeResult, decode } from '@dovo/protocol'
 import { acpMcpHttp } from './acp-mcp.js'
@@ -20,6 +21,7 @@ import {
   type PromptRequest,
   type SubagentUpdate,
   type McpServer,
+  type SessionConfigOption,
 } from '@agentclientprotocol/sdk/unstable'
 import type { AgentAdapter, AgentRun } from '../../execution/types.js'
 import { executableAvailable } from '../../../process.js'
@@ -129,6 +131,7 @@ export function createAcpAdapter(): AgentAdapter {
       let loading = false
       let sessionId: string | undefined = reusable?.sessionId
       let compactAvailable = reusable?.compactAvailable ?? false
+      let updatedConfig: SessionConfigOption[] | undefined
       const children = reusable?.native.children ?? new Map<string, SubagentUpdate>()
       const lifetime = reusable?.native.lifetime ?? new AbortController()
       const native = reusable?.native
@@ -284,6 +287,11 @@ export function createAcpAdapter(): AgentAdapter {
             compactAvailable = params.update.availableCommands.some(
               (command) => command.name === 'compact',
             )
+          if (
+            params.sessionId === (sessionId ?? run.sessionId) &&
+            params.update.sessionUpdate === 'config_option_update'
+          )
+            updatedConfig = params.update.configOptions
           if (loading || !prompting) return
           if (params.sessionId !== sessionId) return
           if (
@@ -466,30 +474,21 @@ export function createAcpAdapter(): AgentAdapter {
         )
         if (!reusable) {
           const restrictive = run.agent.permission === 'read-only' || run.tools === 'none'
+          let configOptions = updatedConfig ?? session.configOptions
           if (restrictive || run.agent.acpMode) {
-            const mode = restrictive
-              ? session.modes?.availableModes.find((item) =>
-                  /^(plan|read[-_ ]?only)$/i.test(item.id),
-                )
-              : session.modes?.availableModes.find((item) => item.id === run.agent.acpMode)
-            if (!mode)
-              throw new Error(
-                restrictive
-                  ? 'This ACP agent does not advertise a read-only mode'
-                  : 'This ACP agent does not advertise the selected mode',
-              )
-            await acpControl(
-              connection,
-              rpc.request(methods.agent.session.setMode, {
-                sessionId: id,
-                modeId: mode.id,
-              }),
-              'mode selection',
-            )
+            configOptions =
+              (await setAcpV1Mode(
+                connection,
+                id,
+                { ...session, configOptions },
+                run.agent.acpMode,
+                restrictive,
+              )) ??
+              updatedConfig ??
+              configOptions
           }
-          let configOptions = session.configOptions
           if (run.agent.model) {
-            const model = acpModelOption(session.configOptions)
+            const model = acpModelOption(configOptions)
             if (!model) {
               if (
                 !legacyAcpModels(session)?.availableModels.some(
@@ -497,11 +496,13 @@ export function createAcpAdapter(): AgentAdapter {
                 )
               )
                 throw new Error('ACP agent does not advertise the selected model')
+              updatedConfig = undefined
               await acpControl(
                 connection,
                 rpc.request('session/set_model', { sessionId: id, modelId: run.agent.model }),
                 'model selection',
               )
+              configOptions = updatedConfig ?? configOptions
             } else {
               const updated = await acpControl(
                 connection,
@@ -542,7 +543,8 @@ export function createAcpAdapter(): AgentAdapter {
           }
           for (const [configId, value] of Object.entries(run.agent.acpConfig ?? {})) {
             const option = configOptions?.find((item) => item.id === configId)
-            if (!option) throw new Error(`ACP configuration ${configId} is unavailable`)
+            if (!configOptions || !option)
+              throw new Error(`ACP configuration ${configId} is unavailable`)
             if (
               (run.agent.model && acpModelOption(configOptions)?.id === configId) ||
               (run.agent.reasoning && option.category === 'thought_level')
@@ -550,39 +552,8 @@ export function createAcpAdapter(): AgentAdapter {
               continue
             if (restrictive && option.category === 'mode')
               throw new Error('ACP mode configuration cannot override read-only execution')
-            if (option.type === 'boolean') {
-              if (value !== 'true' && value !== 'false')
-                throw new Error(`ACP configuration ${configId} must be true or false`)
-              configOptions = (
-                await acpControl(
-                  connection,
-                  rpc.request(methods.agent.session.setConfigOption, {
-                    sessionId: id,
-                    configId,
-                    type: 'boolean',
-                    value: value === 'true',
-                  }),
-                  'configuration',
-                )
-              ).configOptions
-            } else {
-              const choices = option.options.flatMap((item) =>
-                'options' in item ? item.options : [item],
-              )
-              if (!choices.some((item) => item.value === value))
-                throw new Error(`ACP configuration ${configId} does not offer ${value}`)
-              configOptions = (
-                await acpControl(
-                  connection,
-                  rpc.request(methods.agent.session.setConfigOption, {
-                    sessionId: id,
-                    configId,
-                    value,
-                  }),
-                  'configuration',
-                )
-              ).configOptions
-            }
+            if (run.agent.acpMode && acpV1ModeOption(configOptions)?.id === configId) continue
+            configOptions = await applyAcpV1Option(connection, id, configOptions, option, value)
           }
         }
         if (run.signal.aborted) throw new Error('Task cancelled')

@@ -99,6 +99,7 @@ export async function configureAcpV2(
       continue
     if (restrictive && option?.category === 'mode')
       throw new Error('ACP mode configuration cannot override read-only execution')
+    if (agent.acpMode && mode?.configId === configId) continue
     await configure(configId, value)
   }
   return options

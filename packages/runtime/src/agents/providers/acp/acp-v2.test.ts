@@ -303,7 +303,7 @@ it('uses typed config IDs for model, mode, and boolean configuration', async () 
   const f = await fixture()
   f.run.agent.model = 'b'
   f.run.agent.acpMode = 'plan'
-  f.run.agent.acpConfig = { toggle: 'true' }
+  f.run.agent.acpConfig = { mode: 'code', toggle: 'true' }
   await f.adapter.run(f.run)
   expect(
     (await f.messages())

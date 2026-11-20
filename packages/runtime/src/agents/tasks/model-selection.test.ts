@@ -378,6 +378,33 @@ it.each(['missing', 'unsupported'])(
 )
 
 it.each(['auto', 'smart'] as const)(
+  'replaces a provisional ACP lock after the first prompt is accepted in %s mode',
+  async (mode) => {
+    const s = setup(mode)
+    const provider = mode === 'auto' ? 'codex' : 'claude'
+    s.setProvider(provider)
+    try {
+      s.store.updateTask('task', (task) => ({
+        ...task,
+        status: 'running',
+        runPhase: 'preparing',
+        harness: defaultTaskHarness('acp'),
+        queue: [{ id: 'first', role: 'user', text: 'Implement a feature', createdAt: '' }],
+      }))
+      expect(s.store.taskSummary('task').providerLock).toBe('acp')
+      await runClientEffect(s.selection.resolveEffect('task'))
+      expect(s.store.taskSummary('task')).toMatchObject({
+        providerLock: provider,
+        harness: { provider, model: `${provider}-large` },
+        modelSelection: undefined,
+      })
+    } finally {
+      await s.close()
+    }
+  },
+)
+
+it.each(['auto', 'smart'] as const)(
   'publishes discovery and %s selection while the accepted run prepares',
   async (mode) => {
     const s = setup(mode)

@@ -41,6 +41,9 @@ provider identity. Resume omits old history and refuses a different workspace. R
 approval changes use native session commands. Optional arguments replace the default `serve`
 arguments.
 
+Stop sends a native interrupt to the active Muse turn before Studio closes its host, including on
+follow-up turns that reuse that host.
+
 For Muse, Dovo advertises bounded MCP schemas to fit the model API's ten-level nesting limit. Deeper
 parameter shapes stay available as JSON Schema in field descriptions; callers still pass normal JSON
 values. The task-tool server validates every call against the complete original schema and keeps its
@@ -200,7 +203,18 @@ credentials and Electron's runtime switch cannot be used as reference sources or
 Automated tests use synthetic values and injected commands. Live provider authentication and real
 secret reads have not been verified as part of this implementation.
 
+## Codex service tiers
+
+Studio offers fast service tiers when Codex advertises them and its configuration policy permits
+fast mode. If policy changes after you save a fast tier, Studio stops before starting the turn.
+Select **Standard** to run under the current policy.
+
 ## ACP v2 rollout
+
+ACP v1 shows modes from the agent's configuration options or its legacy mode list. The mode picker
+also reads choices saved by older clients. Read-only turns use a mode that the agent advertises for
+planning or read-only work. Dovo reads the configuration again after an agent announces a change. If
+the agent does not confirm a requested configuration setting, Dovo stops before sending the prompt.
 
 ACP v1 stays enabled by default. Dovo also supports the draft ACP v2 baseline through the existing
 SDK 2.4.0. To try it, add `DOVO_ACP_V2=1` to an ACP agent's environment in Agent settings. The flag

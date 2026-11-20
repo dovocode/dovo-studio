@@ -40,6 +40,27 @@ const pageSchema = mutableStruct({
 
 type CodexRequest = (method: string, params: object) => Promise<unknown>
 
+export async function codexFastModeBlocked(request: CodexRequest) {
+  const requirements = decode(
+    mutableStruct({
+      requirements: Schema.optional(
+        Schema.NullOr(
+          mutableStruct({
+            featureRequirements: Schema.optional(
+              Schema.NullOr(Schema.Record(Schema.String, Schema.mutableKey(Schema.Boolean))),
+            ),
+          }),
+        ),
+      ),
+    }),
+    await request('configRequirements/read', {}).catch((error: unknown) => {
+      if (error instanceof ResponseError && error.code === -32601) return {}
+      throw error
+    }),
+  )
+  return requirements.requirements?.featureRequirements?.fast_mode === false
+}
+
 async function* codexModelRows(request: CodexRequest) {
   let cursor: string | null | undefined
   const seen = new Set<string>()
@@ -148,24 +169,9 @@ export async function codexModels(agent: AgentDiscovery): Promise<ModelCatalog> 
         },
       })
       await rpc.sendNotification('initialized', {})
-      const requirements = decode(
-        mutableStruct({
-          requirements: Schema.optional(
-            Schema.NullOr(
-              mutableStruct({
-                featureRequirements: Schema.optional(
-                  Schema.NullOr(Schema.Record(Schema.String, Schema.mutableKey(Schema.Boolean))),
-                ),
-              }),
-            ),
-          ),
-        }),
-        await rpc.sendRequest('configRequirements/read', {}).catch((error: unknown) => {
-          if (error instanceof ResponseError && error.code === -32601) return {}
-          throw error
-        }),
+      const fastModeBlocked = await codexFastModeBlocked((method, params) =>
+        rpc.sendRequest(method, params),
       )
-      const fastModeBlocked = requirements.requirements?.featureRequirements?.fast_mode === false
       const account = decode(
         mutableStruct({
           account: Schema.optional(

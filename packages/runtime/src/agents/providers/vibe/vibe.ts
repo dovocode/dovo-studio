@@ -319,8 +319,10 @@ export function createVibeAdapter(): AgentAdapter {
         run.onSession(sessionId)
         await request('session/ready/wait', { sessionId })
         // Session-only overrides: never change the host's saved model or reasoning preferences.
-        const { config } = decode(vibeConfig, await request('config/read', { sessionId }))
-        const alias = run.agent.model || config.activeModel.alias
+        const readConfig = async () =>
+          decode(vibeConfig, await request('config/read', { sessionId })).config
+        const { model, reasoning } = run.agent
+        const alias = model || (reasoning ? (await readConfig()).activeModel.alias : '')
         const pointer = alias.replaceAll('~', '~0').replaceAll('/', '~1')
         const ops = [
           {
@@ -329,15 +331,15 @@ export function createVibeAdapter(): AgentAdapter {
             value: options.autoApprove,
             targetLayer: 'overrides',
           },
-          ...(run.agent.model
+          ...(model
             ? [{ op: 'set', path: '/active_model', value: alias, targetLayer: 'overrides' }]
             : []),
-          ...(run.agent.reasoning
+          ...(reasoning
             ? [
                 {
                   op: 'set',
                   path: `/models/${pointer}/thinking`,
-                  value: run.agent.reasoning,
+                  value: reasoning,
                   targetLayer: 'overrides',
                 },
               ]
@@ -366,6 +368,16 @@ export function createVibeAdapter(): AgentAdapter {
           JSON.stringify(effective.enabled_tools) !== JSON.stringify(options.enabledTools)
         )
           throw new Error('Vibe did not apply the read-only tool allowlist')
+        if (model || reasoning) {
+          const { activeModel, models } = await readConfig()
+          if (model && activeModel.alias !== model)
+            throw new Error(`Vibe did not apply model ${model}`)
+          const thinking =
+            activeModel.thinking ??
+            models.find((entry) => entry.alias === activeModel.alias)?.thinking
+          if (reasoning && (activeModel.alias !== alias || thinking !== reasoning))
+            throw new Error(`Vibe did not apply reasoning level ${reasoning} for ${alias}`)
+        }
         if (run.agent.instructions)
           await request('session/context/inject', {
             sessionId,

@@ -1,6 +1,7 @@
 import {
   automaticDifficultyChoices,
   acpModelSetting,
+  acpModeControl,
   changeModelSettings,
   modelReasoningLevels,
   modelServiceTiers,
@@ -45,6 +46,7 @@ export function ComposerEffortColumn({
 }) {
   const selected = selectedCatalogModel(catalog, value.model)
   const efforts = modelReasoningLevels(catalog, value.model)
+  const acpMode = acpModeControl(value, catalog)
   const current = automatic ? difficulty || 'auto' : (value.reasoning ?? '')
   const choices = automatic
     ? automaticDifficultyChoices
@@ -145,16 +147,14 @@ export function ComposerEffortColumn({
                 Agent mode
                 <ChoicePicker
                   aria-label="ACP mode"
-                  value={value.acpMode ?? ''}
+                  value={acpMode.value}
                   disabled={disabled}
-                  onValueChange={(acpMode) =>
-                    void onChange({ ...value, acpMode: acpMode || undefined })
-                  }
+                  onValueChange={(mode) => void onChange(acpMode.change(mode))}
                 >
                   <option value="">Provider default</option>
-                  {value.acpMode &&
-                    !catalog.acp.modes.some((mode) => mode.id === value.acpMode) && (
-                      <option value={value.acpMode}>{value.acpMode}</option>
+                  {acpMode.value &&
+                    !catalog.acp.modes.some((mode) => mode.id === acpMode.value) && (
+                      <option value={acpMode.value}>{acpMode.value}</option>
                     )}
                   {catalog.acp.modes.map((mode) => (
                     <option key={mode.id} value={mode.id}>
@@ -165,7 +165,7 @@ export function ComposerEffortColumn({
               </label>
             )}
             {catalog.acp.configOptions
-              .filter((option) => !acpModelSetting(option))
+              .filter((option) => option.id !== acpMode.configId && !acpModelSetting(option))
               .map((option) => {
                 const current = value.acpConfig?.[option.id] ?? option.currentValue
                 const update = (next: string) =>

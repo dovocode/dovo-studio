@@ -35,6 +35,7 @@ import {
   canChangeTaskCheckout,
   REVIEW_PROMPT,
   responses,
+  taskFailureVersion,
   taskPreparation,
   taskTranscript,
   taskBudgetUsage,
@@ -514,7 +515,9 @@ function TaskDetailContent({
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
   const quota = useAction(task.quotaContinuation?.at)
-  const retry = useAction(preparation?.failed ? preparation.startedAt : undefined)
+  const retry = useAction(
+    preparation?.failed ? JSON.stringify([activeId, task.id, taskFailureVersion(task)]) : undefined,
+  )
   const { draft: detailDraft, setField: setDraftField } = useDetailDraft(
     threadDrafts,
     detailDraftKey(connection, 'thread', activeId, task.id),
@@ -1402,7 +1405,11 @@ function TaskDetailContent({
               onHistoryBrowsingChange={setHistoryBrowsing}
               onStartInBackground={startup?.onStartInBackground}
               renderAbove={(setup, startModes) => (
-                <Conversation setup={setup} startModes={startModes}>
+                <Conversation
+                  setup={setup}
+                  startModes={startModes}
+                  showFailure={!preparation?.failed}
+                >
                   {!!task.watchCounts?.pipelines && (
                     <View style={{ paddingHorizontal: 20 }}>
                       <TaskPipelineProgress
@@ -1423,7 +1430,7 @@ function TaskDetailContent({
                               )
                           : undefined
                       }
-                      retrying={retry.busy}
+                      retrying={retry.busy || !!task.activeRunId}
                       retryError={retry.error}
                     />
                   ) : task.status === 'running' && task.runPhase === 'preparing' ? (

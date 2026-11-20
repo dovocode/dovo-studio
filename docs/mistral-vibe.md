@@ -30,6 +30,7 @@ host; Dovo does not add an account or login service.
   compaction and cancellation.
 - Supplies agent instructions as session context and enabled Dovo MCP servers as session options.
   Model and reasoning changes use Vibe's session override layer, preserving saved host preferences.
+  Dovo checks the active session settings before sending the prompt.
 - Maps supervised access to Vibe's `ask` profile, auto-accept edits to `accept-edits`, and full
   access to `auto-approve`. Auto falls back to supervised approval. Approval requests and structured
   questions appear in Dovo.

@@ -208,6 +208,30 @@ it('runs tool-free and read-only turns on a restricted host', async () => {
   })
   expect(again.output.join('')).toBe('Working.Done.')
 })
+it('interrupts a stopped turn before closing a reused Muse host', async () => {
+  const f = await fixture()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  try {
+    await f.adapter.run({ ...f.run, taskId: 'warm-muse' })
+    const controller = new AbortController()
+    await expect(
+      f.adapter.run({
+        ...f.run,
+        taskId: 'warm-muse',
+        sessionId: 's',
+        prompt: 'hold',
+        signal: controller.signal,
+        onPromptAccepted: () => controller.abort(new Error('Stop')),
+      }),
+    ).rejects.toThrow('Stop')
+    const messages = await f.messages()
+    expect(messages.filter(({ method }) => method === 'initialize')).toHaveLength(1)
+    expect(messages.filter(({ method }) => method === 'turn/interrupt')).toHaveLength(1)
+  } finally {
+    await f.adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
 it('settles the SDK turn on host EOF', async () => {
   const f = await fixture()
   await expect(f.adapter.run({ ...f.run, prompt: 'disconnect' })).rejects.toThrow(

@@ -77,8 +77,8 @@ import {defaultTaskHarness} from '@dovo/protocol';
 import {taskHarnessChoices,selectedTaskHarness,harnessHandoffSelectionTask} from '${mobile}tasks/creation/harness-choices.ts';
 import {${isMobile ? 'HarnessModelPicker' : 'ComposerModelPicker'} as Picker} from '${isMobile ? mobile + 'agents/harness-model-picker.tsx' : desktop + 'composer-model-picker.tsx'}';
 ${isMobile ? '' : `import {ComposerEffortColumn} from '${desktop}composer-model-options.tsx';`}
-window.catalog=agent=>({models:[{id:'model',name:(agent.endpoint==='agy'?'Antigravity':'Registry agent')+' model',isDefault:agent.model==='model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}],acp:{modes:[],commands:[],configOptions:[{id:'model',name:'Model',category:'model',currentValue:agent.model||'old',options:[{id:'model',name:'Model'}]},{id:'thought',name:'Thought',category:'thought_level',currentValue:'low',options:[{id:'low',name:'Low'},{id:'high',name:'High'}]},{id:'toggle',name:'Toggle',currentValue:'true',options:[{id:'true',name:'On'},{id:'false',name:'Off'}]}]}});
-const antigravity={...defaultTaskHarness('acp'),id:'dovo:antigravity',name:'Antigravity',endpoint:'agy',args:['acp'],env:{DOVO_PUBLIC_TEST:'kept'},acpConfig:{model:'old',thought:'low',toggle:'true'}};
+window.catalog=agent=>({models:[{id:'model',name:(agent.endpoint==='agy'?'Antigravity':'Registry agent')+' model',isDefault:agent.model==='model'}],reasoning:[{id:'low',name:'Low'},{id:'high',name:'High'}],acp:{modes:[{id:'code',name:'Code'},{id:'plan',name:'Plan'}],commands:[],configOptions:[{id:'agent_mode',name:'Agent mode',category:'mode',currentValue:'code',options:[{id:'code',name:'Code'},{id:'plan',name:'Plan'}]},{id:'model',name:'Model',category:'model',currentValue:agent.model||'old',options:[{id:'model',name:'Model'}]},{id:'thought',name:'Thought',category:'thought_level',currentValue:'low',options:[{id:'low',name:'Low'},{id:'high',name:'High'}]},{id:'toggle',name:'Toggle',currentValue:'true',options:[{id:'true',name:'On'},{id:'false',name:'Off'}]}]}});
+const antigravity={...defaultTaskHarness('acp'),id:'dovo:antigravity',name:'Antigravity',endpoint:'agy',args:['acp'],env:{DOVO_PUBLIC_TEST:'kept'},acpConfig:{model:'old',thought:'low',toggle:'true',${isMobile ? '' : "agent_mode:'plan'"}}};
 const agents=[antigravity,{...antigravity,id:'missing',name:'Unavailable ACP',endpoint:'missing'}];
 const installation={id:'registry-agent',name:'Registry agent',command:'registry',args:['acp'],status:'installed'};
 window.available=new Set(['harness:codex','harness:pi','harness:opencode','agent:dovo:antigravity','acp:registry-agent']);
@@ -145,6 +145,15 @@ return ${isMobile ? `<Picker key={mode} task={task} agents={agents} choices={tas
         assert.equal(await page.getByLabel('ACP Model', { exact: true }).count(), 0)
         assert.equal(await page.getByLabel('ACP Thought', { exact: true }).count(), 0)
         assert.equal(await page.getByLabel('ACP Toggle', { exact: true }).count(), 1)
+        assert.equal(await page.getByLabel('ACP Agent mode', { exact: true }).count(), 0)
+        const mode = page.getByRole('button', { name: 'ACP mode', exact: true })
+        assert.equal(await mode.getAttribute('data-value'), 'plan')
+        await mode.click()
+        await page.getByRole('option', { name: 'Code', exact: true }).click()
+        assert.equal(await page.evaluate(() => window.selections.at(-1).agent.acpMode), 'code')
+        await mode.click()
+        await page.getByRole('option', { name: 'Provider default', exact: true }).click()
+        assert.equal(await page.evaluate(() => window.selections.at(-1).agent.acpMode), undefined)
       }
       await page.waitForFunction(
         (mode) =>

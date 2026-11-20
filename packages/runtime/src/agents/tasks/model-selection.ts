@@ -251,15 +251,7 @@ export class ModelSelection {
           !isDeepStrictEqual(this.store.taskDefaults(before.repositoryId).harness, projectDefaults)
         )
           throw new HttpError(409, 'The thread changed during model selection. Try again.')
-        this.store.updateTask(id, (task) => ({
-          ...task,
-          harness,
-          agentId: '',
-          agentOverrides: undefined,
-          harnessCustomized: true,
-          modelSelection: undefined,
-          modelSelectionDifficulty: undefined,
-        }))
+        this.store.commitInitialModelSelection(id, harness)
       }),
     )
   }

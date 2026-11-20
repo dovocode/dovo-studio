@@ -230,7 +230,9 @@ export function PreparationProgress({
                 onPress={onRetry}
               />
               <Text style={local.hint}>
-                {retryError || uiText('Your message stays queued until the run starts.')}
+                {retryError && retryError !== preparation.error
+                  ? retryError
+                  : uiText('Your message stays queued until the run starts.')}
               </Text>
             </>
           )}

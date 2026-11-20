@@ -180,7 +180,9 @@ export function PreparationProgress({
                   {uiText('Retry')}
                 </Button>
                 <span className="text-[0.6875rem] text-muted-foreground">
-                  {retryError || 'Your message stays queued until the run starts.'}
+                  {retryError && retryError !== preparation.error
+                    ? retryError
+                    : 'Your message stays queued until the run starts.'}
                 </span>
               </div>
             )}

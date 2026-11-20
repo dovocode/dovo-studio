@@ -9,6 +9,7 @@ import { useEffect, type ReactNode } from 'react'
 import {
   agentSchema,
   acpModelSetting,
+  acpModeControl,
   changeModelSettings,
   modelPreferenceKey,
   modelCatalogChoices,
@@ -110,6 +111,7 @@ export function ModelSettings({
       ),
     selected = selectedCatalogModel(catalog, agent.model)
   const efforts = modelReasoningLevels(catalog, agent.model)
+  const acpMode = acpModeControl(agent, catalog)
   const changeModel = (model: string) => onChange(changeModelSettings(agent, { model }, catalog))
   const discoveryStatus = loading
     ? 'Loading provider models…'
@@ -199,12 +201,12 @@ export function ModelSettings({
               <ChoicePicker
                 aria-label="ACP mode"
                 className="h-9 rounded-md border bg-background px-2 text-xs"
-                value={agent.acpMode ?? ''}
-                onValueChange={(acpMode) => onChange({ ...agent, acpMode: acpMode || undefined })}
+                value={acpMode.value}
+                onValueChange={(mode) => onChange(acpMode.change(mode))}
               >
                 <option value="">Provider default</option>
-                {agent.acpMode && !catalog.acp.modes.some((mode) => mode.id === agent.acpMode) && (
-                  <option value={agent.acpMode}>{agent.acpMode} (saved)</option>
+                {acpMode.value && !catalog.acp.modes.some((mode) => mode.id === acpMode.value) && (
+                  <option value={acpMode.value}>{acpMode.value} (saved)</option>
                 )}
                 {catalog.acp.modes.map((mode) => (
                   <option key={mode.id} value={mode.id}>
@@ -215,7 +217,7 @@ export function ModelSettings({
             </FormField>
           )}
           {catalog.acp.configOptions
-            .filter((option) => !acpModelSetting(option))
+            .filter((option) => option.id !== acpMode.configId && !acpModelSetting(option))
             .map((option) => {
               const value = agent.acpConfig?.[option.id] ?? option.currentValue
               return (

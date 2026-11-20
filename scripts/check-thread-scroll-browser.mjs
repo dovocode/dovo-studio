@@ -14,11 +14,12 @@ const mocks = {
   // Sharing is verified separately from scroll anchoring and composer collapse.
   '../chat/thread-sharing':
     'export const ThreadSharing=()=>null;export const InlineThreadSuggestions=()=>null;',
-  '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({minimalComposer:true,collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:window.historyConnected!==false,workspace:{repositories:[]}});export const formatDateTime=value=>value;`,
+  '@dovo/studio-core': `export const useStudioHost=()=>({navigate:()=>{}});export const reducedMotion=()=>window.matchMedia("(prefers-reduced-motion: reduce)").matches;export * from '@dovo/protocol';export const useAppPreferences=()=>({minimalComposer:true,collapseComposerOnScroll:true});export const useWorkspace=()=>({snapshot:null,connected:window.historyConnected!==false,workspace:{repositories:[]},runtimes:[],request:window.request});export const formatDateTime=value=>value;`,
   '@dovo/studio-core/state': `export {useState as useApplicationState} from 'react';`,
   '../chat/composer/chat-image-edit': `export const ChatImageEditProvider=({children})=>children;`,
   '@dovo/studio-ui': `export * from '${root}packages/studio-ui/src/components/ai-elements/conversation.tsx';export const Button=({children,...props})=><button {...props}>{children}</button>;`,
   '@dovo/web-ui/conversation': `export * from '${root}packages/web-ui/src/conversation.tsx';`,
+  './approval-details': 'export const ApprovalDetails=()=>null;',
   '../chat/thread/use-task-viewed': `export const useTaskViewed=()=>({});`,
   '../chat/thread/chat-thread': `import {Conversation,ConversationContent,ConversationHistory,ConversationRail,ConversationScrollButton} from '@dovo/studio-ui';import {DeferredTurn} from '${root}packages/extension-tasks/src/chat/thread/deferred-turn.tsx';import {useStickToBottomContext} from 'use-stick-to-bottom';function FollowProbe(){window.followProbe=useStickToBottomContext();return null}export function ChatThread({task,onReadingHistory,active,footer}){const indices=Array.from({length:window.turnCount??20},(_,index)=>index);return <Conversation><FollowProbe/><ConversationHistory active={active} settled={task.archived} onReadingHistory={onReadingHistory}><ConversationContent data-conversation-content className="studio-conversation-content mx-auto w-full" style={{paddingBlock:16}}><div className="flex flex-col"><div style={{height:window.olderHeight??0}}>Earlier preloaded history</div>{indices.map(index=><section id={task.id+'-'+index} key={index} style={{contentVisibility:window.staticTurns?"visible":"auto",containIntrinsicSize:"auto 240px"}}><DeferredTurn id={task.id+'-deferred-'+index} pinned={window.staticTurns||index>=indices.length-2}>{()=> <div style={{height:350}}>Turn {task.id} {index+1}</div>}</DeferredTurn></section>)}<div style={{height:window.newHeight??0}}>Latest response</div></div>{footer}</ConversationContent></ConversationHistory><ConversationRail items={indices.map(index=>({id:task.id+'-'+index,label:'Turn '+(index+1),preview:'Request and response for this turn'}))}/><ConversationScrollButton/></Conversation>}`,
   '../chat/composer/composer': `export function Composer({collapsed}){return <div className="task-composer"><form data-collapsed={collapsed} style={{height:collapsed?48:150,maxWidth:'var(--chat-max)',marginInline:'auto'}}><textarea aria-label="Message" style={{width:'100%',height:collapsed?30:100}} onChange={e=>{e.currentTarget.form.style.height=e.target.value.length>20?'300px':'150px'}}/></form></div>}`,
@@ -26,8 +27,6 @@ const mocks = {
 for (const [path, name] of [
   ['../chat/composer/composer-activity', 'ComposerActivity'],
   ['../chat/thread/task-questions', 'TaskQuestions'],
-  ['../chat/actions/run-controls', 'RunControls'],
-  ['../chat/thread/preparation-progress', 'PreparationProgress'],
   ['../chat/thread/review-comments-tray', 'ReviewCommentsTray'],
   ['../chat/thread/plan-approval', 'PlanApproval'],
   ['../chat/thread/native-todos', 'NativeTodos'],
@@ -38,7 +37,7 @@ for (const [path, name] of [
   mocks[path] = `export const ${name}=()=>null;`
 const built = await build({
   stdin: {
-    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[history,setHistory]=useState({loaded:true,error:''});window.setHistory=next=>{window.historyConnected=next.connected;setHistory(next)};const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[],watchCounts:{pipelines:1}}} historyLoaded={history.loaded} historyError={history.error} historyRetrying={history.retrying} historyUnauthorized={history.unauthorized} onRetryHistory={()=>{window.historyRetries=(window.historyRetries??0)+1;window.historyConnected=true;setHistory({loaded:false,error:''})}} visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
+    contents: `import {createRoot} from 'react-dom/client';import {flushSync} from 'react-dom';import {useState} from 'react';window.flushSync=flushSync;import {TaskConversation} from '${root}packages/extension-tasks/src/detail/task-conversation.tsx';function App(){const[history,setHistory]=useState({loaded:true,error:''});const[taskState,setTaskState]=useState({});window.setTaskState=setTaskState;window.setHistory=next=>{window.historyConnected=next.connected;setHistory(next)};const[id,setId]=useState('first');const[settled,setSettled]=useState(true);const[visible,setVisible]=useState(true);const[revision,render]=useState(0);window.openThread=setId;window.setSettled=setSettled;window.setVisible=setVisible;window.setTurnCount=count=>{window.turnCount=count;render(n=>n+1)};window.resizeHistory=(older,newest)=>{window.olderHeight=older;window.newHeight=newest;render(n=>n+1)};return <div style={{height:600,display:'flex',flexDirection:'column'}}><TaskConversation key={id} task={{id,title:id,status:'completed',archived:settled,revision,draft:'',messages:[],queue:[],turns:[],files:[],watchCounts:{pipelines:1},...taskState}} historyLoaded={history.loaded} historyError={history.error} historyRetrying={history.retrying} historyUnauthorized={history.unauthorized} onRetryHistory={()=>{window.historyRetries=(window.historyRetries??0)+1;window.historyConnected=true;setHistory({loaded:false,error:''})}} visible={visible} onReview={()=>{}}/></div>}createRoot(document.getElementById('app')).render(<App/>);`,
     resolveDir: root,
     loader: 'tsx',
   },
@@ -517,9 +516,40 @@ try {
     })
     .waitFor()
   assert.equal(await page.getByRole('button', { name: 'Reconnect', exact: true }).count(), 0)
+  const startupError = 'This task uses acp. Choose models within the same provider.'
+  await page.evaluate((message) => {
+    window.request = async (path, input) => {
+      window.retryRequest = { path, input }
+      throw new Error(message)
+    }
+    window.setHistory({ loaded: true, connected: true, error: '' })
+    window.setTaskState({
+      status: 'failed',
+      archived: false,
+      error: message,
+      preparation: {
+        steps: ['models', 'tune', 'agent'],
+        current: 'tune',
+        startedAt: new Date().toISOString(),
+        failed: true,
+      },
+    })
+  }, startupError)
+  await page.getByText('Tune stopped', { exact: true }).waitFor()
+  const startupRetry = page.getByRole('button', { name: 'Retry', exact: true })
+  assert.equal(await startupRetry.count(), 1)
+  await startupRetry.click()
+  assert.deepEqual(await page.evaluate(() => window.retryRequest), {
+    path: '/api/tasks/run',
+    input: { id: 'third' },
+  })
+  assert.equal(await page.getByText(startupError, { exact: true }).count(), 1)
+  await page.evaluate(() => window.setTaskState({ status: 'review', archived: false }))
+  await startupRetry.waitFor({ state: 'hidden' })
+  assert.equal(await page.getByRole('alert').count(), 0)
   assert.deepEqual(errors, [])
   console.log(
-    'Thread following, composer resizing, long turn navigation, keyboard previews, reduced motion, and reading-column action placement passed.',
+    'Thread following, composer resizing, long turn navigation, keyboard previews, reduced motion, reading-column action placement and Tune recovery passed.',
   )
 } catch (error) {
   if (page && !page.isClosed())

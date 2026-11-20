@@ -10,7 +10,12 @@ import {
   supportsCodexInstantInterrupt,
   supportsCodexNativeAgents,
 } from '../../configuration/codex-modes.js'
-import { codexAuthenticated, codexModels, codexTurnDefaults } from '../../catalogs/codex.js'
+import {
+  codexAuthenticated,
+  codexFastModeBlocked,
+  codexModels,
+  codexTurnDefaults,
+} from '../../catalogs/codex.js'
 import { codexQuestions, codexAsyncQuestions } from './codex-questions.js'
 import { formQuestions } from '../shared/form-questions.js'
 import { OwnedProcessShutdownError, stopOwnedChild } from '../../execution/stop-owned-child.js'
@@ -666,6 +671,10 @@ export function createCodexAdapter(): AgentAdapter {
             'Daybreak mode requires Codex 0.155.1 or newer. Update the harness or choose Automatic.',
           )
         const tier = serviceTierValue(run.agent.serviceTier)
+        if (isFastServiceTier(tier) && (await codexFastModeBlocked(request)))
+          throw new Error(
+            'Codex policy blocks the selected service tier. Select Standard and retry.',
+          )
         const config = {
           ...providerConfig,
           ...(startsGoal && run.agent.reasoning

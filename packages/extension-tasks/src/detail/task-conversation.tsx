@@ -12,6 +12,7 @@ import {
   randomUUID,
   runtimeRecoveryScope,
   taskBudgetUsage,
+  taskFailureVersion,
   taskPreparation,
   mergePendingMessages,
   pendingMessageQueue,
@@ -225,20 +226,21 @@ export function TaskConversation({
     !task.historyBefore &&
     !compactions?.length &&
     !historyError
-  const { snapshot } = useWorkspace()
+  const { snapshot, request, connected, activeRuntimeId } = useWorkspace()
   const loaded =
     historyLoaded ?? (!snapshot?.detailTaskIds || snapshot.detailTaskIds.includes(task.id))
   const viewed = useTaskViewed(task, visible && loaded && !temporary)
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
-  const { request, connected } = useWorkspace()
   const [retrying, setRetrying] = useApplicationState(false)
   const [retryError, setRetryError] = useScopedError(
-    preparation?.failed ? preparation.startedAt : undefined,
+    preparation?.failed
+      ? JSON.stringify([activeRuntimeId, task.id, taskFailureVersion(task)])
+      : undefined,
   )
   const [quotaError, setQuotaError] = useScopedError(task.quotaContinuation?.at)
   const retry = () => {
-    if (retrying) return
+    if (retrying || task.activeRunId) return
     setRetrying(true)
     setRetryError('')
     void request('/api/tasks/run', { id: task.id }, responses.ok)
@@ -381,7 +383,7 @@ export function TaskConversation({
             <PreparationProgress
               preparation={preparation}
               onRetry={connected ? retry : undefined}
-              retrying={retrying}
+              retrying={retrying || !!task.activeRunId}
               retryError={retryError}
             />
           ) : task.status === 'running' && task.runPhase === 'preparing' ? (
@@ -441,7 +443,7 @@ export function TaskConversation({
             }}
           />
           {visible && <TaskSecureInputs taskId={task.id} />}
-          <RunControls task={task} />
+          <RunControls task={task} showFailure={!preparation?.failed} />
           <PlanApproval task={task} />
           {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
           <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />
