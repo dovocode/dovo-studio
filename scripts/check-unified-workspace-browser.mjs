@@ -106,6 +106,7 @@ export {Checkbox} from '${root}/packages/studio-ui/src/components/ui/checkbox';
 export {FormField} from '${root}/packages/studio-ui/src/components/form-field';
 export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
+export {FileChangeCounts,FileTypeIcon} from '${root}/packages/studio-ui/src/file-tree';
 export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
 export {BotAvatar} from '${root}/packages/studio-ui/src/bot-avatar';
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon';
@@ -155,6 +156,11 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
       contents: `import {useEffect} from 'react';import {useWorkspace} from '@dovo/studio-core';export function TerminalPane({focusId,onClose}){const store=useWorkspace();useEffect(()=>{window.effects.push('show-terminal:'+focusId);return()=>window.effects.push('hide-terminal:'+focusId)},[focusId]);return <div data-terminal={focusId} data-owner={store.activeRuntimeId}><button onClick={onClose}>Hide terminal pane</button></div>}`,
     },
     {
+      path: '../browser/browser-thread-panel',
+      importer: root + '/packages/extension-tasks/src/detail/workspace-tools-frame.tsx',
+      contents: 'export const BrowserThreadPanel=()=>null;',
+    },
+    {
       path: '../browser/browser-pane',
       importer: root + '/packages/extension-tasks/src/',
       contents: `import {useEffect,useRef,useState} from 'react';import {createPortal} from 'react-dom';
@@ -162,6 +168,7 @@ import {BrowserTabRow} from '${root}/packages/extension-tasks/src/browser/browse
 import {SnoozeDialog} from '${root}/packages/extension-tasks/src/dialogs/snooze-dialog';
 import {readSharedBrowserTabs,saveSharedBrowserTabs} from '${root}/packages/extension-tasks/src/browser/shared-browser-tabs';
 import {isPrivateBrowserProfile,wakeBrowserTab,settleBrowserTab,snoozeBrowserTab} from '@dovo/protocol';
+export const DevicesPane=()=>null;
 export const sharedBrowserWindowId=host=>host.browserWindowId;
 export const restoredSharedBrowserTabs=windowId=>readSharedBrowserTabs(windowId).state?.tabs;
 export function saveSharedBrowserWorkspaceTabs(tabs,windowId){const saved=readSharedBrowserTabs(windowId).state;const restorable=tabs.filter(tab=>!tab.previewOf&&!isPrivateBrowserProfile(tab.profileId));if(restorable.length)saveSharedBrowserTabs({tabs:restorable,active:restorable.some(tab=>tab.id===saved?.active)?saved.active:restorable[0].id,closed:saved?.closed??[]},windowId)}
