@@ -938,7 +938,12 @@ function BrowserContent({
   const starterAddressField = useRef<HTMLInputElement>(null)
   const newTabMenuSource = useRef('')
   useEffect(() => {
-    if (paneVisible && !url && initialMode !== 'devices') starterAddressField.current?.focus()
+    if (!paneVisible || url || initialMode === 'devices') return
+    // Wait for the previous native page and menu to release focus.
+    const frame = requestAnimationFrame(() =>
+      starterAddressField.current?.focus({ preventScroll: true }),
+    )
+    return () => cancelAnimationFrame(frame)
   }, [activeTab, paneVisible, url, initialMode, remoteConnected])
   const mode =
     initialMode === 'devices'
@@ -2055,10 +2060,7 @@ function BrowserContent({
   const tabShortcut = (key: 't' | 'w' | 'd', shift: boolean) => {
     if (key === 't') {
       if (shift) reopenTab()
-      else {
-        newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
-        requestAnimationFrame(() => (starterAddressField.current ?? addressField.current)?.focus())
-      }
+      else newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)
     }
     if (key === 'w') closeTab(selectedTab)
     if (key === 'd') toggleBookmark()
@@ -2817,15 +2819,17 @@ function BrowserContent({
                   >
                     <RotateCw size={17} /> <span>Hard reload</span>
                   </Button>
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="ghost"
-                    className="studio-browser-menu-action"
-                    onClick={openDevTools}
-                  >
-                    <CodeXml size={17} /> <span>Open DevTools</span>
-                  </Button>
+                  <Popover.Close asChild>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="ghost"
+                      className="studio-browser-menu-action"
+                      onClick={openDevTools}
+                    >
+                      <CodeXml size={17} /> <span>Open DevTools</span>
+                    </Button>
+                  </Popover.Close>
                   <Button
                     type="button"
                     size="sm"
@@ -3381,7 +3385,7 @@ function BrowserContent({
               )}
               {!compact && (mode === 'remote' || browser) && (
                 <div
-                  className="relative mr-1 flex size-8 shrink-0 items-center justify-center rounded-full border border-primary/15 bg-primary/10 text-xs text-foreground focus-within:ring-2 focus-within:ring-ring has-[:disabled]:opacity-60 [@media(pointer:coarse)]:size-9"
+                  className="studio-browser-address-profile relative flex shrink-0 items-center justify-center rounded-full text-xs leading-none text-foreground has-[:disabled]:opacity-60"
                   title={`Browser profile: ${isPrivateBrowserProfile(profileId) ? 'Private · temporary' : (websiteProfile?.name ?? 'Unavailable profile')}`}
                 >
                   <span aria-hidden="true">
@@ -3513,6 +3517,7 @@ function BrowserContent({
     <BrowserLayout
       standalone={shared && !workspaceControl && !browserPageOnly}
       devices={initialMode === 'devices'}
+      hasPage={mode !== 'devices' && !!url && !selectedTab.detached}
       header={
         <>
           {!shared && !workspaceControl && initialMode !== 'devices' && regularTabs.length > 1 && (
@@ -4440,6 +4445,7 @@ function BrowserLayout({
   header,
   sidebar,
   devices,
+  hasPage,
   children,
   preview,
   threadPanel,
@@ -4451,6 +4457,7 @@ function BrowserLayout({
   threadPanel?: React.ReactNode
   editor?: React.ReactNode
   devices: boolean
+  hasPage: boolean
   children: React.ReactNode
   preview?: {
     key: string
@@ -4497,6 +4504,7 @@ function BrowserLayout({
         <div
           className="studio-browser-work-pane @container/browser relative isolate flex min-h-0 min-w-0 flex-1 overflow-hidden"
           data-browser-viewport
+          data-browser-page={hasPage || undefined}
         >
           {preview && (
             <button

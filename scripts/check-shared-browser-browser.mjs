@@ -5355,6 +5355,24 @@ try {
             (call) => call.action === 'show' && call.url === 'http://header.lan/test',
           ),
         )
+        const viewport = headerPage.locator('[data-browser-viewport]')
+        assert.equal(await viewport.evaluate((node) => getComputedStyle(node).margin), '0px')
+        const profile = toolbar.getByRole('combobox', { name: 'Switch browser profile' })
+        if (await profile.isVisible()) {
+          const insets = await profile.evaluate((select) => {
+            const badge = select.parentElement.getBoundingClientRect()
+            const address = select.closest('.studio-browser-address').getBoundingClientRect()
+            return [
+              badge.top - address.top,
+              address.right - badge.right,
+              address.bottom - badge.bottom,
+            ]
+          })
+          assert.ok(
+            insets.every((inset) => Math.abs(inset - 3) < 1),
+            'Profile fits the pill corner',
+          )
+        }
       }
     }
     await headerPage.setViewportSize({ width: 1280, height: 800 })

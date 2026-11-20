@@ -82,6 +82,7 @@ const mocks = vi.hoisted(() => {
     isDestroyed: vi.fn<() => boolean>(() => false),
     isFocused: vi.fn<() => boolean>(() => false),
     focus: vi.fn<() => void>(),
+    openDevTools: vi.fn<(options: Electron.OpenDevToolsOptions) => void>(),
     loadURL: vi.fn<(url?: string, options?: unknown) => Promise<void>>(async () => {}),
     enableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
     disableDeviceEmulation: vi.fn<(...args: unknown[]) => void>(),
@@ -313,6 +314,17 @@ function handler() {
   if (!callback) throw new Error('Missing IPC handler')
   return callback
 }
+it('docks DevTools in the native preview', async () => {
+  const call = handler()
+  await call(event, {
+    action: 'show',
+    key: 'preview',
+    url: 'http://localhost:3000',
+    bounds: { x: 0, y: 40, width: 600, height: 500 },
+  })
+  await call(event, { action: 'devtools', key: 'preview' })
+  expect(mocks.contents.openDevTools).toHaveBeenCalledExactlyOnceWith({ mode: 'bottom' })
+})
 it('clears local profile histories without opening a tab', async () => {
   const call = handler()
   await call(event, { action: 'clear-history', key: 'library' })

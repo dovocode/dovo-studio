@@ -7,7 +7,7 @@ const viewer = `<html><body><script>
 let tab='',url='',back=true;
 function state(){window.parent.postMessage({channel:'dovo-browser',type:'state',url,title:'Page '+tab,back,forward:false,loading:false,editable:false},'*')}
 window.addEventListener('message',event=>{const m=event.data;
-if(m.type==='connect'){tab=new URL(m.url).searchParams.get('ticket');url='http://localhost:3000/'+tab;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
+if(m.type==='connect'){const ticket=new URL(m.url).searchParams.get('ticket');tab=ticket.replace(/^blank:/,'');url=ticket.startsWith('blank:')?'about:blank':'http://localhost:3000/'+tab;window.parent.postMessage({channel:'dovo-browser',type:'connection',online:true},'*');state()}
 if(m.type==='input'){window.parent.postMessage({channel:'fixture',input:m.input},'*');if(m.input.type==='navigate')url=m.input.url;state()}
 if(m.type==='fixture-navigation'){url=m.url;state()}
 if(m.type==='viewport')window.parent.postMessage({channel:'fixture',viewport:m},'*');
@@ -80,7 +80,7 @@ export {useSettingsDraft,useConfirmSettingsNavigation,useOptionalSettingsTarget}
 export const providers=[];export const useResolvedTheme=()=> 'dark';export const reducedMotion=()=>false;
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
-window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.tabId,tabId:body.tabId,profileId:body.profileId}};
+window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.url?body.tabId:'blank:'+body.tabId,tabId:body.tabId,profileId:body.profileId}};
 const browser=async(command)=>{window.calls.push(command)};
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
 const snapshot={workspace:{tasks:[],repositories:[]}};
@@ -396,6 +396,8 @@ try {
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'Hard reload', exact: true }).click()
   await page.getByRole('button', { name: 'Open DevTools', exact: true }).click()
+  await page.getByLabel('Browser settings', { exact: true }).waitFor({ state: 'hidden' })
+  await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'Open in default browser', exact: true }).click()
   const browserActions = await page.evaluate(() => window.calls.map((call) => call.action))
   if (!['hard-reload', 'devtools', 'external'].every((action) => browserActions.includes(action)))
@@ -410,6 +412,11 @@ try {
     await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'New browser tab options', exact: true }).click()
   await page.getByRole('menuitem', { name: 'New remote tab · Remote Work', exact: true }).click()
+  await page.waitForFunction(() =>
+    document.activeElement?.matches('[aria-label="New browser address"]'),
+  )
+  await page.keyboard.type('http://localhost:3000/remote')
+  await page.keyboard.press('Enter')
   await page.getByRole('tab', { name: /Page/ }).waitFor()
   await page.getByText(/Thread preview · Local address on LAN runtime/).waitFor()
   if ((await toolbar.count()) !== 1)

@@ -57,7 +57,7 @@ show. Point at a terminal tab to see its computer and checkout. Exit and offline
 show.
 
 In the desktop app, choose **DevTools** from the right pane's **+** menu to inspect the current
-local browser page in Chrome DevTools. The inspector opens in its own window.
+local browser page in Chrome DevTools. The inspector opens below the page in the same pane.
 
 ## Standalone shell recovery
 

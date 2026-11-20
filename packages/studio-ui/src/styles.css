@@ -1706,6 +1706,14 @@ textarea {
   margin-right: 3px;
   border-radius: 50%;
 }
+.studio-browser-address-profile {
+  aspect-ratio: 1;
+  height: calc(100% - 4px);
+  background: color-mix(in srgb, var(--foreground) 6%, transparent);
+}
+.studio-browser-address-profile:has(select:not(:disabled)):hover {
+  background: var(--accent);
+}
 .studio-browser-settings {
   gap: 16px;
   padding: 20px;
@@ -4526,8 +4534,12 @@ a.studio-project-row:hover {
   }
 }
 
-/* Workspace sidebars use the same canvas as Threads. */
 @media (min-width: 768px) {
+  .studio .studio-browser-work-pane[data-browser-page] {
+    margin: 0;
+  }
+
+  /* Workspace sidebars use the same canvas as Threads. */
   .studio [data-browser-workspace] .studio-browser-sidebar {
     background: transparent;
     box-shadow: none;

@@ -455,7 +455,7 @@ export function registerBrowser(
   const focusStudio = (entry: Entry) => {
     if (
       !entry.contents.isDestroyed() &&
-      entry.contents.isFocused() &&
+      (entry.contents.isFocused() || entry.contents.devToolsWebContents?.isFocused()) &&
       !studioContents(entry.window).isDestroyed()
     )
       studioContents(entry.window).focus()
@@ -2828,7 +2828,7 @@ export function registerBrowser(
     if (command.action === 'forward' && navigation.canGoForward()) navigation.goForward()
     if (command.action === 'reload') entry.view.webContents.reload()
     if (command.action === 'hard-reload') entry.view.webContents.reloadIgnoringCache()
-    if (command.action === 'devtools') entry.view.webContents.openDevTools({ mode: 'detach' })
+    if (command.action === 'devtools') entry.contents.openDevTools({ mode: 'bottom' })
   })
   return {
     /** Detached workspaces return all tabs; pinned-tab windows return only their original tab. */

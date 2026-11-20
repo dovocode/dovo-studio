@@ -183,6 +183,29 @@ registerBrowser(${JSON.stringify(index)});const ui=studioContents(host);globalTh
   assert.equal(await source.locator('#draft').inputValue(), 'Keep this draft')
   assert.equal(await source.evaluate(() => document.visibilityState), 'visible')
   assert.equal(await ui.locator('img').count(), 0, 'No image replaces either live browser')
+  const pageHeight = await child.evaluate(() => innerHeight)
+  await call({ action: 'devtools', key: created.key })
+  await child.waitForFunction((height) => innerHeight < height, pageHeight)
+  assert.deepEqual(
+    await app.evaluate(({ BrowserWindow }) => {
+      const { host, views } = globalThis.fixture
+      const page = views().find((view) => view.webContents.getURL().endsWith('/child')).webContents
+      return {
+        inPreviewWindow: BrowserWindow.getAllWindows().every((window) => window === host),
+        opened: page.isDevToolsOpened(),
+      }
+    }),
+    { inPreviewWindow: true, opened: true },
+    'DevTools uses the preview window',
+  )
+  await app.evaluate(() =>
+    globalThis.fixture
+      .views()
+      .find((view) => view.webContents.getURL().endsWith('/child'))
+      .webContents.closeDevTools(),
+  )
+  await child.waitForFunction((height) => innerHeight === height, pageHeight)
+  assert.equal(await child.evaluate(() => !!window.opener), true)
   const resized = { ...childCommand, bounds: { ...childCommand.bounds, width: 420, height: 280 } }
   await call(resized)
   assert.deepEqual(
