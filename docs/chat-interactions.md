@@ -21,9 +21,9 @@ The provider saves the goal with its session. Studio does not copy goals between
 a separate goal loop. **Start fresh**, a provider change, or a session replacement creates a new
 session; it does not move the old goal. Use `/goal` to inspect the current session. The provider
 controls its goal checks, usage limits, and continuation. Studio keeps Codex goal continuations in
-the same run. Output, questions and steering follow the current Codex turn. Stop interrupts the
-run. `/goal pause` pauses the saved goal. Claude has no native pause/resume command. Send a message
-to continue its session or use `/goal clear` to remove the goal.
+the same run. Output, questions and steering follow the current Codex turn. Stop interrupts the run.
+`/goal pause` pauses the saved goal. Claude has no native pause/resume command. Send a message to
+continue its session or use `/goal clear` to remove the goal.
 
 Update Codex or Claude Code on the thread computer if native goals are unavailable. Studio checks
 Claude's built-in command catalog before it sends the command. Codex uses the native app-server goal
@@ -31,8 +31,8 @@ API. Codex starts work when you set or resume a goal. If Codex reports an active
 ends, Studio waits up to two seconds for the next native turn. That wait does not limit a running
 turn. Goal commands do not replace an exhausted session during context recovery.
 
-OpenCode restores all saved continuation events after a connection loss before it checks whether
-the goal run has ended. Reconnecting does not send the prompt again.
+OpenCode restores all saved continuation events after a connection loss before it checks whether the
+goal run has ended. Reconnecting does not send the prompt again.
 
 For an ordinary message, Studio can retry once with saved conversation history if the provider
 reports that its context is full or the requested session is missing. Connection timeouts and
