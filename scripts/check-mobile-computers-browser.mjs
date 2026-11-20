@@ -126,7 +126,7 @@ window.calls=[];
 const source=(id,name,connected)=>({profile:{id,name,connection:{address:'http://'+id+'.vpn:51464',token:'private-device-token',runtimeId:id}},connected,error:connected?'':'Offline',lastSeen:1,snapshot:decode(snapshotSchema,{revision:1,owner:false,runtimeId:id,releaseDistribution:'archive',releaseCanUpdate:true,releaseVersion:'1.0.0',workspace:{version:1,runtimeAddress:'',tasks:[],repositories:[],agents:[],automations:[]},approvals:[],questions:[],terminals:[],runs:[],devices:[],pendingDevices:[]})});
 const overviews=[source('mac','Mac Studio',true),source('server','Linux server',false)];
 window.runtime={profiles:overviews.map(e=>e.profile),overviews,activeId:'mac',registryLoaded:true,refreshRuntime:async()=>{}};
-window.account={loaded:true,busy:false,error:'',directory:{user:{id:'owner',name:'Dominic'},servers:[{id:'mac',name:'Mac Studio',address:'http://mac.vpn:51464'},{id:'cloud',name:'Cloud computer',address:'http://cloud.vpn:51464'}]},client:{}};
+window.account={loaded:true,busy:false,error:'',directory:{user:{id:'owner',name:'Dominic'},servers:[{id:'mac',name:'Mac Studio',address:'http://mac.vpn:51464'},{id:'cloud',name:'Cloud computer',address:'http://cloud.vpn:51464'}]},client:{sessionId:()=>'fixture-session'}};
 window.fetch=async(input,init)=>{const url=new URL(input);window.calls.push({path:url.pathname,method:init?.method??'GET'});return Response.json(url.hostname==='api.github.com'?(url.pathname.endsWith('/latest')?{tag_name:'v1.0.1',html_url:'https://github.com/dovocode/dovo-studio/releases/tag/v1.0.1'}:[]):{status:'idle'})};
 const app=createRoot(document.getElementById('app'));window.render=()=>app.render(<Screen/>);window.render();`,
     },

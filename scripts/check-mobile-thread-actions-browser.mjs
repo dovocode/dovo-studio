@@ -98,6 +98,11 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents:
         'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
     },
+    {
+      path: './text',
+      importer: mobile + 'ui/content/draft-storage-notice.tsx',
+      contents: native,
+    },
     { path: './icon-button', importer: mobile + 'ui/controls/', contents: controls },
     { path: './icon', importer: mobile + 'ui/controls/', contents: controls },
     {

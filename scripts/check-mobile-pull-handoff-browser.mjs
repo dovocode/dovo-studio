@@ -147,6 +147,10 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       path: 'react-native',
       contents: `import {useImperativeHandle} from 'react';export const Alert={alert:()=>{throw Error('Unexpected draft limit alert')}};export const Image=({source,style,onError,accessibilityLabel})=><img src={source.uri} style={style} onError={onError} alt={accessibilityLabel}/>;export const View=({children,ref})=>{useImperativeHandle(ref,()=>({measureLayout:(_parent,done)=>done(0,240)}));return <div>{children}</div>};export const ScrollView=({children,refreshControl,ref})=>{useImperativeHandle(ref,()=>({scrollTo:position=>(window.scrolls??=[]).push(position)}));return <div>{refreshControl}{children}</div>};export const Pressable=({children,onPress,disabled,accessibilityLabel})=><button aria-label={accessibilityLabel} disabled={disabled} onClick={onPress}>{children}</button>;export const RefreshControl=({onRefresh})=><button onClick={onRefresh}>Pull to refresh</button>;export const Keyboard={dismiss(){}};export const AppState={currentState:'active',addEventListener:(name,callback)=>{(window.appStateListeners??=new Set()).add(callback);return{remove(){window.appStateListeners.delete(callback)}}}};`,
     },
+    {
+      path: 'expo-crypto',
+      contents: 'export const randomUUID=()=>"00000000-0000-4000-8000-000000000001";',
+    },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
   ],
 )
