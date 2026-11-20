@@ -131,11 +131,6 @@ const node=createRoot(document.getElementById('app'));window.renderTerminal=(vis
       contents:
         'export const ResourceActions=()=>null;export const useTerminalActions=()=>({disabled:!window.runtime.connected});',
     },
-    {
-      path: '../workspace/workspace-items',
-      importer,
-      contents: 'export const workspaceItems=()=>[];',
-    },
   ],
 )
 

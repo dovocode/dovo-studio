@@ -92,6 +92,12 @@ createRoot(document.getElementById('app')).render(<RegistryProvider><App/></Regi
       contents: 'export const automationHref=()=>null;',
     },
     { path: 'expo-router', contents: 'export const router={push(){}};' },
+    {
+      path: '../controls/action',
+      importer: mobile + 'ui/content/draft-storage-notice.tsx',
+      contents:
+        'export const Action=({label,onPress})=><button onClick={onPress}>{label}</button>;',
+    },
     { path: './icon-button', importer: mobile + 'ui/controls/', contents: controls },
     { path: './icon', importer: mobile + 'ui/controls/', contents: controls },
     {

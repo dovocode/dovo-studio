@@ -41,10 +41,21 @@ const built = await build({
           'react-native': controls,
           '../../ui/content/text': controls,
           '../../ui/controls/action': controls,
+          '../controls/action': controls,
+          '../theme': controls,
+          './text': controls,
           '../../ui/controls/field': controls,
           '../../ui/theme': controls,
           '../../runtime/state/application-state': `export {useState as useApplicationState} from 'react';`,
           '../../runtime/state/app-active': `export const useAppActive=()=>window.foreground;`,
+          '../../runtime/state/detail-draft-storage': `
+            const drafts = new Map();
+            export const detailDraftStorage = {
+              getAllKeys: async () => [...drafts.keys()],
+              getItem: async key => drafts.get(key) ?? null,
+              setItem: async (key, value) => { drafts.set(key, value); },
+              removeItem: async key => { drafts.delete(key); },
+            };`,
           '../../runtime/connection/provider': `export const useRuntime=()=>window.runtime;`,
           '../../ui/content/open-link': `export const openAppLink=async url=>{window.links.push(url)};export const useOpenAppLink=()=>openAppLink;`,
         }
