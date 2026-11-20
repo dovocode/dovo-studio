@@ -429,24 +429,23 @@ export default function PullRequestsView({ entityId, pullTarget, navigationKey }
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
               </Button>
               <Button
-                size="sm"
+                size="icon"
                 variant="ghost"
                 aria-label={uiText('Connections')}
-                title="Source control connections"
+                title={uiText('Source control connections')}
                 disabled={!sources.some((source) => source.connected)}
                 onClick={() => setPicking('connections')}
               >
-                <Plug className="size-3.5" />
-                <span className="hidden xl:inline">{uiText('Connections')}</span>
+                <Plug aria-hidden="true" className="size-3.5" />
               </Button>
               <Button
-                size="sm"
-                aria-label="Create pull request"
+                size="icon"
+                aria-label={uiText('Create pull request')}
+                title={uiText('Create pull request')}
                 disabled={!sources.some((source) => source.connected)}
                 onClick={() => setPicking('create')}
               >
-                <Plus className="size-3.5" />
-                <span className="hidden sm:inline">Create PR</span>
+                <Plus aria-hidden="true" className="size-3.5" />
               </Button>
             </PageHeader>
             <div className="shrink-0 border-b border-border/70 px-3 py-2">

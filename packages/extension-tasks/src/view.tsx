@@ -1323,15 +1323,16 @@ export default function TasksView({
         artifactsEnabled={!!snapshot?.artifactsEnabled}
       />
     )
-    const paneHeader = !compact && !temporary && !(fileViewer && viewerExpanded)
+    const paneHeader = !compact && !(fileViewer && viewerExpanded)
     const header = native ? null : temporary ? (
       <HeaderContent>
         <header
-          className="studio-task-thread-header"
+          className={cn('studio-task-thread-header', paneHeader && 'studio-pane-header')}
           data-window-edge
           data-window-right-edge={!splitTask || undefined}
         >
           {uiText('New thread')}
+          {paneHeader && <span className="studio-pane-shoulder" aria-hidden="true" />}
         </header>
       </HeaderContent>
     ) : (
@@ -1341,6 +1342,15 @@ export default function TasksView({
         onPullLink={(url) => openPullPreview(task, url)}
         task={task}
         toolsControl={toolsControl}
+        botWorkControl={
+          task.bot && (
+            <BotWorkSummary
+              task={task}
+              onRoutines={() => selectSurface('bot-routines', true)}
+              onWorkers={() => selectSurface('agents', true)}
+            />
+          )
+        }
         addControl={
           <PaneAddMenu
             label="Open thread workspace launcher"
@@ -1506,13 +1516,6 @@ export default function TasksView({
                     <X className="size-3.5" />
                   </IconButton>
                 </div>
-              )}
-              {task.bot && !temporary && (
-                <BotWorkSummary
-                  task={task}
-                  onRoutines={() => selectSurface('bot-routines', true)}
-                  onWorkers={() => selectSurface('agents', true)}
-                />
               )}
               <ResizablePanelGroup
                 orientation="vertical"

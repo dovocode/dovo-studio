@@ -82,6 +82,17 @@ try {
   await page.addScriptTag({ content: built.outputFiles[0].text })
   for (const platform of ['desktop', 'mobile']) {
     await page.evaluate((mode) => window.show(mode), platform + '-work')
+    if (platform === 'desktop') {
+      for (const [name, text] of [
+        ['Routines · 0', '0'],
+        ['Workers · 0 active', '0'],
+        ['Archive and start new', ''],
+      ]) {
+        const control = page.getByRole('button', { name, exact: true })
+        assert.equal(await control.textContent(), text)
+        assert.equal(await control.getAttribute('title'), name)
+      }
+    }
     await page.getByRole('button', { name: 'Routines · 0', exact: true }).click()
     assert.equal(await page.evaluate(() => window.target), 'routines')
     await page.getByRole('button', { name: 'Workers · 0 active', exact: true }).click()

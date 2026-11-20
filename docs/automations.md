@@ -3,6 +3,8 @@
 Jobs run on the selected computer. The runtime must stay running for schedules, webhooks and task
 execution; closing the phone or desktop client does not stop a run.
 
+On desktop and web, select the plus icon in the Automations header to create an automation.
+
 ## Cost limits and automatic pauses
 
 A cost-only limit needs a known model price before an unattended worker starts. Set the price in

@@ -25,7 +25,7 @@ const mocks = {
   './use-automation': `export const useAutomation=id=>({workspace:window.store.workspace,flow:window.flow,drafts:new Map(),messages:[],setMessages:()=>{},update:()=>{}});`,
   './run-details': `export const StepStatus=()=>null;export const RunDetails=()=>null;`,
   './chat/artifact-snapshot': `export const ArtifactSnapshot=()=>null;`,
-  './chat/artifact-library-actions': `export const ArtifactLibraryActions=()=>null;`,
+  './chat/artifact-library-actions': `export const ArtifactLibraryActions=({renderMenu})=>renderMenu(null);`,
   './chat/artifacts': `export const ArtifactBrowser=()=>null;`,
   './chat/artifact-presentation': `export const ArtifactIcon=()=>null;`,
 }

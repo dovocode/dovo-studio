@@ -1,6 +1,4 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ReactNode } from 'react'
-import { IconButton } from '@dovo/studio-ui'
-import { X } from 'lucide-react'
 import { ThreadInfoCustomization } from './thread-info-customization'
 import { ThreadInfoContext, useThreadInfoContext } from './thread-info-context'
 
@@ -21,11 +19,6 @@ export function TaskProjectPanelRoot({
     setContainer(target)
     return () => target.remove()
   }, [])
-  const changeOpen = (next: boolean) => {
-    if (!next && document.getElementById(panelId)?.contains(document.activeElement))
-      document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(panelId)}"]`)?.focus()
-    onOpenChange(next)
-  }
   useEffect(() => {
     if (!open) return
     const close = (event: KeyboardEvent) => {
@@ -38,13 +31,15 @@ export function TaskProjectPanelRoot({
       )
         return
       event.preventDefault()
-      changeOpen(false)
+      if (document.getElementById(panelId)?.contains(document.activeElement))
+        document.querySelector<HTMLElement>(`[aria-controls="${CSS.escape(panelId)}"]`)?.focus()
+      onOpenChange(false)
     }
     document.addEventListener('keydown', close)
     return () => document.removeEventListener('keydown', close)
   })
   return (
-    <ThreadInfoContext.Provider value={{ container, open, panelId, onOpenChange: changeOpen }}>
+    <ThreadInfoContext.Provider value={{ container, open, panelId }}>
       <div className="flex h-full min-h-0 min-w-0 flex-1 flex-col">{children}</div>
     </ThreadInfoContext.Provider>
   )
@@ -88,22 +83,13 @@ export function ThreadInfoPanel({ children, title }: { children: ReactNode; titl
         maxHeight,
         maxWidth: 'calc(100% - 32px)',
       }}
-      className="studio-thread-info-panel absolute z-30 flex w-88 min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl border bg-popover text-popover-foreground shadow-lg outline-none"
+      className="studio-thread-info-panel absolute z-30 flex w-88 min-h-0 min-w-0 flex-col overflow-hidden rounded-2xl bg-sidebar text-sidebar-foreground shadow-lg outline-none"
     >
-      <header className="studio-thread-tools-header flex h-10 shrink-0 items-center justify-between gap-2 border-b px-3">
+      <header className="studio-thread-tools-header flex h-10 shrink-0 items-center justify-between gap-2 px-3">
         <h2 className="min-w-0 truncate text-sm font-semibold" title={title}>
           Thread info
         </h2>
-        <div className="flex shrink-0 items-center gap-1">
-          <ThreadInfoCustomization />
-          <IconButton
-            label="Close thread info"
-            className="size-7"
-            onClick={() => context?.onOpenChange(false)}
-          >
-            <X size={14} />
-          </IconButton>
-        </div>
+        <ThreadInfoCustomization />
       </header>
       <div className="studio-thread-info-scroll min-h-0 flex-1 overflow-y-auto overscroll-contain">
         {children}

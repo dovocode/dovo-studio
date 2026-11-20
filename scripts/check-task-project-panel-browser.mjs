@@ -430,14 +430,24 @@ try {
     if (stylesheet) {
       const material = await info.evaluate((panel) => {
         const probe = document.createElement('span')
-        probe.style.backgroundColor = 'var(--popover)'
+        probe.style.background = matchMedia('(min-width: 768px)').matches
+          ? 'var(--studio-page-background)'
+          : 'var(--sidebar)'
         panel.append(probe)
-        const expected = getComputedStyle(probe).backgroundColor
+        const expected = getComputedStyle(probe).background
         probe.remove()
         const style = getComputedStyle(panel)
-        return { fill: style.backgroundColor, filter: style.backdropFilter, expected }
+        return {
+          fill: style.background,
+          filter: style.backdropFilter,
+          border: style.borderTopWidth,
+          headerBorder: getComputedStyle(panel.querySelector('header')).borderBottomWidth,
+          expected,
+        }
       })
-      assert.equal(material.fill, material.expected, 'Thread Info uses the solid popover color')
+      assert.equal(material.fill, material.expected, 'Thread info uses the sidebar background')
+      assert.equal(material.border, '0px', 'Thread info has no outer border')
+      assert.equal(material.headerBorder, '0px', 'The header has no divider')
       assert.equal(material.filter, 'none', 'Thread Info does not refract the thread behind it')
     }
     assert.equal(
@@ -693,7 +703,11 @@ try {
       .waitFor({ state: 'hidden' })
     await page.getByRole('button', { name: 'Show thread info', exact: true }).click()
     await page.getByRole('button', { name: 'More details', exact: true }).click()
-    await page.getByRole('button', { name: 'Close thread info', exact: true }).click()
+    assert.equal(
+      await info.getByRole('button', { name: 'Close thread info', exact: true }).count(),
+      0,
+    )
+    await page.getByRole('button', { name: 'Hide thread info', exact: true }).click()
     await page
       .getByRole('region', { name: 'Thread info', exact: true })
       .waitFor({ state: 'hidden' })

@@ -5,7 +5,6 @@ export const ThreadInfoContext = createContext<{
   container: HTMLDivElement | null
   open: boolean
   panelId: string
-  onOpenChange(open: boolean): void
 } | null>(null)
 
 export const useThreadInfoContext = () => useContext(ThreadInfoContext)

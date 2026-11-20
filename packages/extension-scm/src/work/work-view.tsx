@@ -22,6 +22,7 @@ import {
   CircleDot,
   CircleCheck,
   GitBranch,
+  ListTodo,
   Monitor,
   Plug,
   RefreshCw,
@@ -491,33 +492,42 @@ function WorkView({
                 <RefreshCw className={`size-3.5 ${busy ? 'animate-spin' : ''}`} />
               </Button>
               {mode === 'issues' && linearSources.length > 0 && (
-                <Button size="sm" variant="ghost" onClick={() => setShowLinear(true)}>
-                  {uiText('Linear')}
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  aria-label={uiText('Linear')}
+                  title={uiText('Linear issues')}
+                  onClick={() => setShowLinear(true)}
+                >
+                  <ListTodo aria-hidden="true" className="size-3.5" />
                 </Button>
               )}
               {mode === 'issues' && (
                 <Button
-                  size="sm"
+                  size="icon"
                   variant="ghost"
                   aria-label={uiText('Connections')}
+                  title={uiText('Connections')}
                   disabled={opening}
                   onClick={() => void chooseSource('settings')}
                 >
-                  <Plug className="size-3.5" />
-                  <span className="sr-only sm:not-sr-only">{uiText('Connections')}</span>
+                  <Plug aria-hidden="true" className="size-3.5" />
                 </Button>
               )}
               <Button
-                size="sm"
+                size={mode === 'issues' ? 'icon' : 'sm'}
                 disabled={opening || !canCreateSelected}
-                title={pipelineRunNotice ?? undefined}
+                aria-label={mode === 'issues' ? uiText('New issue') : undefined}
+                title={mode === 'issues' ? uiText('New issue') : (pipelineRunNotice ?? undefined)}
                 aria-describedby={pipelineRunNotice ? 'pipeline-run-notice' : undefined}
                 onClick={() => void chooseSource('create')}
               >
-                <Plus className="size-3.5" />
-                <span className={selected ? 'sr-only' : 'sr-only sm:not-sr-only'}>
-                  {mode === 'issues' ? 'New issue' : 'Run pipeline'}
-                </span>
+                <Plus aria-hidden="true" className="size-3.5" />
+                {mode === 'pipelines' && (
+                  <span className={selected ? 'sr-only' : 'sr-only sm:not-sr-only'}>
+                    Run pipeline
+                  </span>
+                )}
               </Button>
             </PageHeader>
             <div className="shrink-0 border-b border-border/70 px-3 py-2">

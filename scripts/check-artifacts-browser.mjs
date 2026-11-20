@@ -1680,8 +1680,7 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
         .getByRole('button', { name: 'Open source thread', exact: true })
         .waitFor({ state: 'visible' })
       await library.waitForFunction(
-        () =>
-          !document.querySelector('button:disabled')?.textContent?.includes('Open source thread'),
+        () => !document.querySelector('button[aria-label="Open source thread"]:disabled'),
       )
       assert.equal(
         await library.evaluate(() => window.artifactNavigation),
@@ -1712,6 +1711,15 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
       await library.getByRole('button', { name: 'Copy source', exact: true }).click()
       await library.getByRole('button', { name: 'Copied source', exact: true }).waitFor()
       assert.equal(await library.evaluate(() => window.copiedSource), 'Content from Host 1')
+      assert.equal(await library.getByLabel('Artifact', { exact: true }).count(), 0)
+      const refreshPreview = library.getByRole('button', { name: 'Refresh artifacts', exact: true })
+      await library.evaluate(() => window.deletedArtifacts.push('1:1-markdown'))
+      await refreshPreview.click()
+      await library.getByRole('heading', { name: 'Artifact unavailable', exact: true }).waitFor()
+      assert.equal(await library.getByRole('heading', { level: 1 }).textContent(), 'Launch brief')
+      await library.evaluate(() => window.deletedArtifacts.pop())
+      await refreshPreview.click()
+      await library.getByText('Content from Host 1', { exact: true }).waitFor()
       if (screenshotDirectory)
         await library.screenshot({ path: `${screenshotDirectory}/library-preview.png` })
       await library.getByRole('button', { name: 'Expand artifact', exact: true }).click()
@@ -1778,23 +1786,17 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await firstCard.getByText('Snapshot from Host 0 refreshed', { exact: true }).waitFor()
     assert.equal((await firstCard.boundingBox()).height, beforeRefresh.height)
     const chooseAction = async (label) => {
+      await cardContainer
+        .getByRole('button', { name: 'Artifact actions API client', exact: true })
+        .click()
       if (native) {
-        await cardContainer
-          .getByRole('button', { name: 'Artifact actions API client', exact: true })
-          .click()
         await library.getByRole('dialog').getByRole('button', { name: label, exact: true }).click()
         assert.equal(
           await library.getByRole('dialog').count(),
           1,
           'Action sheet closes before confirmation opens',
         )
-      } else
-        await cardContainer
-          .getByRole('button', {
-            name: label === 'Delete artifact' ? 'Delete artifact API client' : label,
-            exact: true,
-          })
-          .click()
+      } else await library.getByRole('menuitem', { name: label, exact: true }).click()
     }
     await chooseAction('Add to thread')
     await library.getByLabel('Destination thread', { exact: true }).selectOption('destination')
@@ -2109,8 +2111,9 @@ fetch('https://artifact-test.invalid/leak').catch(()=>document.body.dataset.netw
     await owners.getByRole('status').filter({ hasText: 'Loading artifacts from Host B…' }).waitFor()
     await row('Alpha notes')
       .locator('..')
-      .getByRole('button', { name: 'Open source thread', exact: true })
+      .getByRole('button', { name: 'Artifact actions Alpha notes', exact: true })
       .click()
+    await owners.getByRole('menuitem', { name: 'Open source thread', exact: true }).click()
     assert.deepEqual(await owners.evaluate(() => window.directArtifactSource), {
       runtimeId: 'a',
       runtimeIdentity: 'a-identity',

@@ -119,6 +119,7 @@ export function TaskHeader({
   onCreate,
   addControl,
   toolsControl,
+  botWorkControl,
   onDeselect,
   onProjectDeleted,
   onOpenForkSource,
@@ -128,6 +129,7 @@ export function TaskHeader({
   onCreate: () => void
   addControl?: ReactNode
   toolsControl?: ReactNode
+  botWorkControl?: ReactNode
   onDeselect: () => void
   onProjectDeleted?: () => void
   /** Opens the source thread at the message a fork was made from. */
@@ -476,6 +478,7 @@ export function TaskHeader({
             </nav>
             {addControl}
             <span className="studio-pane-shoulder" aria-hidden="true" />
+            {botWorkControl}
             {!task.bot && (
               <div className="studio-thread-header-context items-center gap-2 text-[0.6875rem] text-muted-foreground">
                 {pullContext}
@@ -631,6 +634,9 @@ export function TaskHeader({
           )}
           {compact && actions}
         </div>
+        {compact && botWorkControl && (
+          <div className="flex w-full justify-end">{botWorkControl}</div>
+        )}
       </header>
       {menuError && (
         <p role="alert" className="px-3 py-1 text-xs text-destructive">

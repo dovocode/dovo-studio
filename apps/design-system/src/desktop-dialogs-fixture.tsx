@@ -114,6 +114,7 @@ export function DesktopFollowUp({ name }: { name: string | null }) {
             updatedAt: '2026-10-21T10:00:00Z',
           }}
           onDeleted={noop}
+          renderMenu={(menu) => menu}
         />
       ) : null
 

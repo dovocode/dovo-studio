@@ -176,6 +176,12 @@ try {
       }
 
       if (!isMobile) {
+        for (const name of ['Connections', 'Create pull request']) {
+          const action = page.getByRole('button', { name, exact: true })
+          await action.waitFor()
+          assert.equal(await action.getAttribute('data-size'), 'icon', name)
+          assert.equal(await action.textContent(), '', name)
+        }
         const metadata = page.locator('.studio-collection-meta').first()
         await metadata.waitFor()
         for (const [size, expected] of [

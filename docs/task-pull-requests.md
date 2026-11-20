@@ -102,6 +102,9 @@ to learn the reset time, with a conservative fallback if unavailable. Other appl
 servers using the same GitHub account share GitHub's quota; the local limiter does not coordinate
 different machines.
 
+In the desktop and web PR header, select the plus icon to create a PR or the plug icon to manage
+connections.
+
 GitHub overviews use one basic PR list request per project and page. Author avatars come from that
 response. Checks and review details load when a PR is opened. Desktop and mobile refresh only page
 one automatically; additional pages load on demand through **Load more**. Account/source

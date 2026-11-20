@@ -126,6 +126,14 @@ turns, runs that need review, latest failed runs, active workers and offline rem
 clients label the snapshot as **Last saved state**. These counts use the current host snapshot; they
 do not promise that an offline worker is still running.
 
+On desktop and web, the icons for **Routines**, **Workers**, and **Archive and start new** sit on
+the right of the thread header. Routines and Workers show their counts. Check the layout in light
+and dark themes:
+
+```sh
+node scripts/check-bot-header-layout-browser.mjs
+```
+
 Routine details show the trigger and time zone, task and human review steps, and up to three recent
 runs. Select a run to open that exact run on the Bot's computer. Use the automation view for the
 full workflow and history. A completed routine turn can leave a worker running. Dovo shows these

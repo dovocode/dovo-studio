@@ -404,7 +404,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
     'import-codex': 'Import Codex terminal session',
     'import-pi': 'Import Pi terminal session',
     downloads: 'Downloads',
-    'artifact-actions': 'Delete artifact Workspace notes',
+    'artifact-actions': 'Artifact actions Workspace notes',
     'image-editor': 'Edit sample image',
     'image-preview': 'Preview workspace.png',
     'thread-context': 'Attach thread context',
@@ -418,6 +418,7 @@ export async function captureFollowUpDialogs(page, origin, output) {
       `dialog:${name}`,
       async () => {
         if (directTriggers[name]) await button(directTriggers[name]).last().click()
+        if (name === 'artifact-actions') await menu('Delete artifact').click()
         await page.getByRole('dialog').last().waitFor()
         if (name === 'image-editor')
           await page

@@ -103,11 +103,13 @@ export function ThreadArtifacts({
 
 export function ArtifactBrowser({
   taskId,
+  artifactId,
   initialId = '',
   embedded = false,
   onClose,
 }: {
   taskId: string
+  artifactId?: string
   initialId?: string
 } & ({ embedded: true; onClose?: () => void } | { embedded?: false; onClose: () => void })) {
   const uiText = useInterfaceText()
@@ -116,7 +118,8 @@ export function ArtifactBrowser({
   const previewTheme = useArtifactPreviewTheme()
   const [items, setItems] = useState<ArtifactMetadata[]>()
   const [links, setLinks] = useState<ArtifactLink[]>([])
-  const [id, setId] = useState(initialId)
+  const [pickedId, setId] = useState(initialId)
+  const id = artifactId ?? pickedId
   const link = links.find((item) => item.url === id)
   const metadata = items?.find((item) => item.id === id)
   const [revision, setRevision] = useState<number>()
@@ -139,6 +142,7 @@ export function ArtifactBrowser({
   const [actionError, setActionError] = useState('')
   const [refreshing, setRefreshing] = useState(false)
   const error = listError || previewError || actionError
+  const unavailable = !!(artifactId && items && !metadata && !listError)
   const [source, setSource] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -171,12 +175,13 @@ export function ArtifactBrowser({
         if (disposed) return
         setItems(artifacts)
         setLinks(links)
-        setId((previous) =>
-          artifacts.some((item) => item.id === previous) ||
-          links.some((item) => item.url === previous)
-            ? previous
-            : artifacts[0]?.id || links[0]?.url || '',
-        )
+        if (!artifactId)
+          setId((previous) =>
+            artifacts.some((item) => item.id === previous) ||
+            links.some((item) => item.url === previous)
+              ? previous
+              : artifacts[0]?.id || links[0]?.url || '',
+          )
       })
       .catch((cause: unknown) => {
         if (!disposed) setListError(String(cause))
@@ -187,7 +192,7 @@ export function ArtifactBrowser({
     return () => {
       disposed = true
     }
-  }, [request, taskId, connected, reload])
+  }, [request, taskId, artifactId, connected, reload])
   useEffect(() => {
     let disposed = false
     setVersions([])
@@ -320,6 +325,27 @@ export function ArtifactBrowser({
     }
   }
   const title = link?.title ?? artifact?.title ?? metadata?.title ?? 'Artifacts'
+  const previewControls = (
+    <>
+      <IconButton
+        label="Refresh artifacts"
+        className="size-7 shrink-0"
+        disabled={!connected || refreshing}
+        onClick={() => setReload((value) => value + 1)}
+      >
+        <RotateCw className={cn('size-3.5', refreshing && 'animate-spin')} />
+      </IconButton>
+      {embedded && !expanded && (
+        <IconButton
+          label="Expand artifact"
+          className="size-7 shrink-0"
+          onClick={() => setExpanded(true)}
+        >
+          <Maximize2 className="size-3.5" />
+        </IconButton>
+      )}
+    </>
+  )
   const content = (
     <>
       {(!embedded || expanded) && (
@@ -330,81 +356,72 @@ export function ArtifactBrowser({
           </DialogDescription>
         </>
       )}
-      <header
-        className={cn(
-          'flex shrink-0 items-center gap-2 border-b bg-sidebar px-3 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
-          embedded && !expanded && 'studio-thread-tools-header',
-          (!embedded || expanded) && 'pr-14',
-        )}
-      >
-        <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card/50">
-          {metadata ? (
-            <ArtifactIcon format={metadata.format} />
-          ) : (
-            <Layers aria-hidden="true" className="size-4 text-muted-foreground" />
+      {!artifactId && (
+        <header
+          className={cn(
+            'flex shrink-0 items-center gap-2 border-b bg-sidebar px-3 py-2 dark:bg-[color-mix(in_srgb,var(--sidebar)_55%,#050709)]',
+            embedded && !expanded && 'studio-thread-tools-header',
+            (!embedded || expanded) && 'pr-14',
           )}
-        </span>
-        <div className="min-w-0 flex-1">
-          <select
-            aria-label="Artifact"
-            className="w-full min-w-0 truncate rounded bg-transparent py-0.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
-            value={id}
-            disabled={!items?.length && !links.length}
-            onChange={(event) => {
-              setId(event.target.value)
-              setRevision(undefined)
-              setSource(false)
-            }}
-          >
-            <option value="" disabled>
-              Thread artifacts
-            </option>
-            {items?.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.title}
-              </option>
-            ))}
-            {links.map((item) => (
-              <option key={item.url} value={item.url}>
-                {item.title} · {artifactLinkLabel(item.provider)}
-              </option>
-            ))}
-          </select>
-          <p className="mt-0.5 text-xs text-muted-foreground">
-            {link
-              ? artifactLinkLabel(link.provider)
-              : metadata
-                ? artifactLabel(metadata)
-                : 'Saved in this thread'}
-            {items &&
-              ` · ${items.length + links.length} ${items.length + links.length === 1 ? 'artifact' : 'artifacts'}`}
-          </p>
-        </div>
-        <IconButton
-          label="Refresh artifacts"
-          className="size-7 shrink-0"
-          disabled={!connected || refreshing}
-          onClick={() => setReload((value) => value + 1)}
         >
-          <RotateCw className={cn('size-3.5', refreshing && 'animate-spin')} />
-        </IconButton>
-        {embedded && !expanded && (
-          <IconButton
-            label="Expand artifact"
-            className="size-7 shrink-0"
-            onClick={() => setExpanded(true)}
-          >
-            <Maximize2 className="size-3.5" />
-          </IconButton>
-        )}
-        {embedded && !expanded && onClose && (
-          <IconButton label="Close artifacts" className="size-7 shrink-0" onClick={onClose}>
-            <X className="size-3.5" />
-          </IconButton>
-        )}
-      </header>
+          <span className="flex size-8 shrink-0 items-center justify-center rounded-md border border-border/60 bg-card/50">
+            {metadata ? (
+              <ArtifactIcon format={metadata.format} />
+            ) : (
+              <Layers aria-hidden="true" className="size-4 text-muted-foreground" />
+            )}
+          </span>
+          <div className="min-w-0 flex-1">
+            <select
+              aria-label="Artifact"
+              className="w-full min-w-0 truncate rounded bg-transparent py-0.5 text-sm font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+              value={id}
+              disabled={!items?.length && !links.length}
+              onChange={(event) => {
+                setId(event.target.value)
+                setRevision(undefined)
+                setSource(false)
+              }}
+            >
+              <option value="" disabled>
+                Thread artifacts
+              </option>
+              {items?.map((item) => (
+                <option key={item.id} value={item.id}>
+                  {item.title}
+                </option>
+              ))}
+              {links.map((item) => (
+                <option key={item.url} value={item.url}>
+                  {item.title} · {artifactLinkLabel(item.provider)}
+                </option>
+              ))}
+            </select>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              {link
+                ? artifactLinkLabel(link.provider)
+                : metadata
+                  ? artifactLabel(metadata)
+                  : 'Saved in this thread'}
+              {items &&
+                ` · ${items.length + links.length} ${items.length + links.length === 1 ? 'artifact' : 'artifacts'}`}
+            </p>
+          </div>
+          {previewControls}
+          {embedded && !expanded && onClose && (
+            <IconButton label="Close artifacts" className="size-7 shrink-0" onClick={onClose}>
+              <X className="size-3.5" />
+            </IconButton>
+          )}
+        </header>
+      )}
       {!link && id && (
-        <div className="flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-sidebar/60 px-3 py-1.5 dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]">
+        <div
+          className={cn(
+            'flex shrink-0 flex-wrap items-center justify-between gap-2 border-b bg-sidebar/60 px-3 py-1.5 dark:bg-[color-mix(in_srgb,var(--sidebar)_70%,#050709)]',
+            artifactId && expanded && 'pr-14',
+          )}
+        >
           <div
             className="flex items-center gap-0.5 rounded-md border border-border/50 bg-background/40 p-0.5"
             aria-label="Artifact view"
@@ -432,7 +449,7 @@ export function ArtifactBrowser({
               </Button>
             ))}
           </div>
-          <div className="flex items-center gap-0.5">
+          <div className="flex min-w-0 flex-wrap items-center gap-0.5">
             <select
               aria-label="Artifact version"
               className="min-w-0 max-w-36 rounded bg-transparent py-1 text-xs text-muted-foreground"
@@ -481,6 +498,7 @@ export function ArtifactBrowser({
             >
               <Download className="size-3.5" />
             </IconButton>
+            {artifactId && previewControls}
           </div>
         </div>
       )}
@@ -630,14 +648,21 @@ export function ArtifactBrowser({
             Loading artifacts…
           </div>
         )}
-        {items?.length === 0 && links.length === 0 && !listError && (
+        {unavailable && (
+          <EmptyState
+            icon={<Layers />}
+            title="Artifact unavailable"
+            description="It may have been deleted from its source thread."
+          />
+        )}
+        {!artifactId && items?.length === 0 && links.length === 0 && !listError && (
           <EmptyState
             icon={<Layers />}
             title="No artifacts yet"
             description="Ask your agent to create a document, an interactive preview or a graphic. Artifacts and shared links will appear here."
           />
         )}
-        {id && !link && !artifact && !error && items && (
+        {id && !link && !artifact && !error && items && !unavailable && (
           <div
             role="status"
             className="flex h-full items-center justify-center gap-2 text-sm text-muted-foreground"

@@ -1,5 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useRef, useState } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import {
   artifactDeleteResponseSchema,
   artifactWriteResponseSchema,
@@ -15,7 +15,6 @@ import {
   DialogTitle,
   DialogDescription,
   Input,
-  cn,
   DropdownMenu,
 } from '@dovo/studio-ui'
 import { ArrowUpRight, Ellipsis, MessageSquarePlus, Trash2 } from 'lucide-react'
@@ -25,13 +24,13 @@ export function ArtifactLibraryActions({
   artifact,
   onDeleted,
   onOpenSource,
-  compact = false,
+  renderMenu,
 }: {
   profile: RuntimeProfile
   artifact: ArtifactMetadata
   onDeleted: () => void
   onOpenSource?: () => void
-  compact?: boolean
+  renderMenu: (menu: ReactNode) => ReactNode
 }) {
   const uiText = useInterfaceText()
 
@@ -100,87 +99,55 @@ export function ArtifactLibraryActions({
   }
   return (
     <>
-      <div className={cn('flex items-center gap-2', compact ? 'shrink-0 pr-2' : 'border-t p-3')}>
-        {compact ? (
-          <DropdownMenu.Root>
-            <DropdownMenu.Trigger asChild>
-              <Button
-                ref={menuButton}
-                variant="ghost"
-                size="icon"
-                aria-label={`Artifact actions ${artifact.title}`}
-              >
-                <Ellipsis className="size-4" />
-              </Button>
-            </DropdownMenu.Trigger>
-            <DropdownMenu.Portal>
-              <DropdownMenu.Content
-                align="end"
-                sideOffset={4}
-                onCloseAutoFocus={(event) => {
-                  if (action) event.preventDefault()
-                }}
-                className="z-50 min-w-44 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
-              >
-                {onOpenSource && (
-                  <DropdownMenu.Item
-                    onSelect={onOpenSource}
-                    className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent"
-                  >
-                    <ArrowUpRight className="size-4" aria-hidden /> {uiText('Open source thread')}
-                  </DropdownMenu.Item>
-                )}
-                <DropdownMenu.Item
-                  disabled={!runtime?.connected}
-                  onSelect={add}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-40"
-                >
-                  <MessageSquarePlus className="size-4" /> Add to thread
-                </DropdownMenu.Item>
-                <DropdownMenu.Item
-                  disabled={!runtime?.connected}
-                  onSelect={remove}
-                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive outline-none focus:bg-accent data-[disabled]:opacity-40"
-                >
-                  <Trash2 className="size-4" /> Delete artifact
-                </DropdownMenu.Item>
-              </DropdownMenu.Content>
-            </DropdownMenu.Portal>
-          </DropdownMenu.Root>
-        ) : (
-          <>
-            {onOpenSource && (
-              <Button size="sm" variant="ghost" onClick={onOpenSource}>
-                <ArrowUpRight className="size-4" aria-hidden /> {uiText('Open source thread')}
-              </Button>
-            )}
+      {renderMenu(
+        <DropdownMenu.Root>
+          <DropdownMenu.Trigger asChild>
             <Button
-              size="sm"
+              ref={menuButton}
               variant="ghost"
-              aria-label="Add to thread"
-              disabled={!runtime?.connected}
-              onClick={add}
-            >
-              <MessageSquarePlus className="size-3.5" />
-              Add to thread
-            </Button>
-            <Button
               size="icon"
-              variant="ghost"
-              aria-label={`Delete artifact ${artifact.title}`}
-              disabled={!runtime?.connected}
-              onClick={remove}
+              aria-label={`Artifact actions ${artifact.title}`}
             >
-              <Trash2 className="size-3.5" />
+              <Ellipsis className="size-4" />
             </Button>
-          </>
-        )}
-      </div>
+          </DropdownMenu.Trigger>
+          <DropdownMenu.Portal>
+            <DropdownMenu.Content
+              align="end"
+              sideOffset={4}
+              onCloseAutoFocus={(event) => {
+                if (action) event.preventDefault()
+              }}
+              className="z-50 min-w-44 rounded-xl border bg-popover p-1 text-popover-foreground shadow-md"
+            >
+              {onOpenSource && (
+                <DropdownMenu.Item
+                  onSelect={onOpenSource}
+                  className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent"
+                >
+                  <ArrowUpRight className="size-4" aria-hidden /> {uiText('Open source thread')}
+                </DropdownMenu.Item>
+              )}
+              <DropdownMenu.Item
+                disabled={!runtime?.connected}
+                onSelect={add}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm outline-none focus:bg-accent data-[disabled]:opacity-40"
+              >
+                <MessageSquarePlus className="size-4" /> Add to thread
+              </DropdownMenu.Item>
+              <DropdownMenu.Item
+                disabled={!runtime?.connected}
+                onSelect={remove}
+                className="flex cursor-pointer items-center gap-2 rounded-lg px-3 py-2 text-sm text-destructive outline-none focus:bg-accent data-[disabled]:opacity-40"
+              >
+                <Trash2 className="size-4" /> Delete artifact
+              </DropdownMenu.Item>
+            </DropdownMenu.Content>
+          </DropdownMenu.Portal>
+        </DropdownMenu.Root>,
+      )}
       {added && (
-        <p
-          role="status"
-          className={cn('px-4 pb-3 text-xs text-muted-foreground', compact && 'basis-full')}
-        >
+        <p role="status" className="w-full shrink-0 px-4 py-2 text-xs text-muted-foreground">
           Added to thread.{' '}
           <button
             className="underline"
@@ -195,10 +162,7 @@ export function ArtifactLibraryActions({
         </p>
       )}
       {!action && error && (
-        <p
-          role="alert"
-          className={cn('px-4 pb-3 text-xs text-destructive', compact && 'basis-full')}
-        >
+        <p role="alert" className="w-full shrink-0 px-4 py-2 text-xs text-destructive">
           {error}
         </p>
       )}
@@ -210,7 +174,7 @@ export function ArtifactLibraryActions({
       >
         <DialogContent
           onCloseAutoFocus={(event) => {
-            if (compact && menuButton.current) {
+            if (menuButton.current) {
               event.preventDefault()
               menuButton.current.focus()
             }

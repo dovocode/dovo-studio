@@ -4178,7 +4178,7 @@ a.studio-project-row:hover {
 
   .studio .studio-pane-header,
   .studio .studio-browser-header .studio-pane-header {
-    --studio-pane-shoulder-radius: 12px;
+    --studio-pane-shoulder-radius: var(--studio-work-pane-radius);
     --studio-pane-shoulder-fill: var(--card);
     background:
       linear-gradient(
@@ -4374,6 +4374,10 @@ a.studio-project-row:hover {
     background: transparent;
   }
 
+  .studio .studio-thread-info-panel {
+    background: var(--studio-page-background);
+  }
+
   .studio .studio-thread-pane-frame > .studio-task-thread-header [data-thread-project] {
     display: none;
   }
@@ -4386,20 +4390,30 @@ a.studio-project-row:hover {
     max-width: 46%;
   }
 
+  .studio-task-thread-header .studio-bot-work-summary {
+    flex-wrap: nowrap;
+    justify-content: safe end;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 3px;
+  }
+
   .studio .studio-thread-pane-frame > .studio-task-thread-header,
   .studio .studio-thread-stack [aria-label='Terminal tabs and controls'],
   .studio .studio-thread-tools-panel > .studio-pane-header {
-    --studio-pane-shoulder-radius: var(--studio-work-pane-radius);
     background: var(--studio-page-background, var(--background));
   }
 
   .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder,
+  .studio .studio-thread-tools-panel > .studio-pane-header > .studio-pane-shoulder,
   .studio .studio-thread-stack [aria-label='Terminal tabs and controls'] > .studio-pane-shoulder {
     min-width: var(--studio-pane-shoulder-radius);
   }
 
   .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder::before,
   .studio .studio-thread-pane-frame > .studio-task-thread-header > .studio-pane-shoulder::after,
+  .studio .studio-thread-tools-panel > .studio-pane-header > .studio-pane-shoulder::before,
+  .studio .studio-thread-tools-panel > .studio-pane-header > .studio-pane-shoulder::after,
   .studio
     .studio-thread-stack
     [aria-label='Terminal tabs and controls']
@@ -4484,6 +4498,7 @@ a.studio-project-row:hover {
     :is(.studio-terminal-pane, .studio-terminal-pane-header),
   .studio .studio-thread-pane-frame > .studio-task-thread-header,
   .studio .studio-browser-header,
+  .studio:has([data-browser-workspace]) .studio-browser-header .studio-pane-header,
   .studio .studio-pull-header,
   .studio .studio-page-header:has(+ .studio-page-pane),
   .studio:has(.studio-page-pane) .studio-window-header-content > .studio-page-header,
@@ -4504,6 +4519,10 @@ a.studio-project-row:hover {
     :is(.studio-header-corner, .studio-sidebar-brand-row > .studio-titlebar),
   .studio:has(.studio-page-pane) > .studio-titlebar {
     border-block-end-width: 0;
+  }
+
+  .studio .studio-thread-tools-panel > .studio-pane-header {
+    min-height: calc(var(--studio-header-height, 52px) - var(--studio-work-pane-gap));
   }
 }
 
@@ -4638,14 +4657,5 @@ a.studio-project-row:hover {
 
   .studio :is(.studio-pull-header, .studio-page-header) + .studio-page-pane {
     margin-block-start: 0;
-  }
-
-  /* A Bot's work strip continues the conversation pane below the thread header. */
-  .studio .studio-thread-pane-frame:has(> .studio-task-thread-header) .studio-bot-work-summary {
-    margin-inline: var(--studio-work-pane-gap);
-    border-bottom-color: color-mix(in srgb, var(--foreground) 6%, transparent);
-    border-start-start-radius: var(--studio-work-pane-radius);
-    border-start-end-radius: var(--studio-work-pane-radius);
-    background: var(--card);
   }
 }

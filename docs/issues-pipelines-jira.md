@@ -123,6 +123,9 @@ permissions must include the operations you use: repositories/PRs, work items an
 
 ## Issues
 
+In the desktop and web Issues and Jira headers, select the plus icon to create an issue or the plug
+icon to manage connections.
+
 GitHub, Gitea and Forgejo support listing, reading, creating, editing and commenting. GitHub also
 supports editing label names. Gitea/Forgejo label-ID management stays on the server. PR records are
 excluded from issue lists. Azure uses project work items, including discovered work item types,
@@ -135,9 +138,9 @@ Other providers can still change between the preflight read and mutation.
 
 ## Independent Jira sources
 
-Choose **Sources** in Jira to connect or manage Jira, or **Connect Jira** on an unconnected
-overview. Dovo discovers the signed-in `acli` account’s Jira Cloud site and projects. Pick a Jira
-project and choose **Connect Jira**. No Dovo project, code host or local checkout is required.
+Choose the **Connections** plug icon in Jira, or **Connect Jira** on an unconnected overview. Dovo
+discovers the signed-in `acli` account’s Jira Cloud site and projects. Pick a Jira project and
+choose **Connect Jira**. No Dovo project, code host or local checkout is required.
 
 For a WSL computer, install the
 [Linux Atlassian CLI](https://developer.atlassian.com/cloud/acli/guides/install-linux/) and run
@@ -402,9 +405,9 @@ Create a read-only Linear personal API key for the workspace or teams you want t
 key**. The computer tests the key with Linear before it saves it. Dovo never displays the saved
 value. Use the same settings to replace or remove it.
 
-Open **Issues → Linear** on desktop, web, or mobile. Choose a computer if several supply Linear
-access. You can search by title or issue ID, expand an issue, copy its description, or open it in
-Linear. Make issue changes on the Linear site.
+Select the **Linear** list icon in the Issues header on desktop or web. On mobile, open **Issues →
+Linear**. Choose a computer if several supply Linear access. You can search by title or issue ID,
+expand an issue, copy its description, or open it in Linear. Make issue changes on the Linear site.
 
 A saved key takes precedence over `DOVO_LINEAR_API_KEY`. Removing a saved key restores the
 environment key if the runtime has one. To remove all access, also remove that variable and restart

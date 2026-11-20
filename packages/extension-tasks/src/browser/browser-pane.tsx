@@ -3293,36 +3293,31 @@ function BrowserContent({
         )}
       </>
     )
-    const navigationControls = (compact: boolean) => (
-      <>
-        {historyButton('back')}
-        {!compact && historyButton('forward')}
-        <IconButton
-          label={
-            mode !== 'remote' || remoteOnline
-              ? uiText('Reload')
-              : endedTab === tab.id
-                ? uiText('Open URL in a new session')
-                : uiText('Reconnect')
-          }
-          type="button"
-          className="size-8 shrink-0"
-          aria-busy={mode === 'remote' && remoteLoading}
-          disabled={busy || (mode !== 'remote' && !url)}
-          onClick={() =>
-            mode === 'remote'
-              ? remoteOnline
-                ? remote.current?.input({ type: 'reload' })
-                : remote.current?.reconnect()
-              : browser
-                ? void act(() => browser({ action: 'reload', key: browserKey }))
-                : setReload((value) => value + 1)
-          }
-        >
-          <RotateCw size={15} />
-        </IconButton>
-        {!compact && homeControl}
-      </>
+    const reloadControl = (
+      <IconButton
+        label={
+          mode !== 'remote' || remoteOnline
+            ? uiText('Reload')
+            : endedTab === tab.id
+              ? uiText('Open URL in a new session')
+              : uiText('Reconnect')
+        }
+        type="button"
+        className="size-8 shrink-0"
+        aria-busy={mode === 'remote' && remoteLoading}
+        disabled={busy || (mode !== 'remote' && !url)}
+        onClick={() =>
+          mode === 'remote'
+            ? remoteOnline
+              ? remote.current?.input({ type: 'reload' })
+              : remote.current?.reconnect()
+            : browser
+              ? void act(() => browser({ action: 'reload', key: browserKey }))
+              : setReload((value) => value + 1)
+        }
+      >
+        <RotateCw size={15} />
+      </IconButton>
     )
     return (
       <BrowserToolbar
@@ -3340,7 +3335,11 @@ function BrowserContent({
       >
         {(compact) => (
           <>
-            {!addressInPaneHeader && navigationControls(compact)}
+            {addressInPaneHeader && !compact && homeControl}
+            {historyButton('back')}
+            {!compact && historyButton('forward')}
+            {!addressInPaneHeader && reloadControl}
+            {!addressInPaneHeader && !compact && homeControl}
             <div className="studio-browser-address relative z-20 flex min-w-0 flex-1 items-center">
               <BrowserAddressInput
                 value={input}
@@ -3421,7 +3420,7 @@ function BrowserContent({
             {addressInPaneHeader && (
               <>
                 <span className="studio-pane-shoulder" aria-hidden="true" />
-                {navigationControls(compact)}
+                {reloadControl}
               </>
             )}
             {!compact && secondaryControls}

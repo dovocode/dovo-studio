@@ -40,55 +40,51 @@ function BotWorkControls({
     value2: work.review ? ` · ${work.review} ${uiText('need review')}` : '',
     value3: work.failed ? ` · ${work.failed} ${uiText('failed')}` : '',
   })
+  const workers = uiText('Workers · {value0} active{value1}', {
+    value0: work.workers,
+    value1: work.offlineWorkers ? ` · ${work.offlineWorkers} ${uiText('offline')}` : '',
+  })
+  const archive = uiText('Archive and start new')
   return (
     <section
       aria-label={uiText('Bot work overview')}
-      className="studio-bot-work-summary flex shrink-0 flex-wrap items-center gap-2 border-b px-4 py-2 text-xs"
+      className="studio-bot-work-summary flex min-w-0 flex-wrap items-center justify-end gap-1 text-xs"
     >
+      {!connected && (
+        <span className="shrink-0 text-muted-foreground">{uiText('Last saved state')}</span>
+      )}
       <Button
         variant="outline"
         size="sm"
         className="rounded-full"
         aria-label={routines}
+        title={routines}
         onClick={onRoutines}
       >
-        <CalendarClock className="size-3.5 text-muted-foreground" />
-        {uiText('Routines')}{' '}
-        <span className="rounded-full bg-muted px-1.5 tabular-nums">{work.routines}</span>
-        {!!(work.review || work.failed || work.running) && (
-          <span className={work.failed ? 'text-destructive' : 'text-muted-foreground'}>
-            {work.failed
-              ? `${work.failed} ${uiText('failed')}`
-              : work.review
-                ? `${work.review} ${uiText('need review')}`
-                : `${work.running} ${uiText('working')}`}
-          </span>
-        )}
+        <CalendarClock aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        <span
+          data-failed={!!work.failed || undefined}
+          className="rounded-full bg-muted px-1.5 tabular-nums data-[failed]:text-destructive"
+        >
+          {work.routines}
+        </span>
       </Button>
       <Button
         variant="outline"
         size="sm"
         className="rounded-full"
-        aria-label={uiText('Workers · {value0} active{value1}', {
-          value0: work.workers,
-          value1: work.offlineWorkers ? ` · ${work.offlineWorkers} ${uiText('offline')}` : '',
-        })}
+        aria-label={workers}
+        title={workers}
         onClick={onWorkers}
       >
-        <Users className="size-3.5 text-muted-foreground" />
-        {uiText('Workers')}
+        <Users aria-hidden="true" className="size-3.5 text-muted-foreground" />
         <span className="rounded-full bg-muted px-1.5 tabular-nums">{work.workers}</span>
-        {!!work.offlineWorkers && (
-          <span className="text-muted-foreground">
-            {work.offlineWorkers} {uiText('offline')}
-          </span>
-        )}
       </Button>
-      {!connected && <span className="text-muted-foreground">{uiText('Last saved state')}</span>}
       <Button
-        size="sm"
+        size="icon"
         variant="ghost"
-        className="ml-auto"
+        aria-label={archive}
+        title={archive}
         disabled={
           !connected ||
           !snapshot?.botConversationArchiveSupported ||
@@ -101,8 +97,7 @@ function BotWorkControls({
           if (task.bot && lastMessageId) setRevision({ revision: task.bot.revision, lastMessageId })
         }}
       >
-        <Archive className="size-3.5" />
-        {uiText('Archive and start new')}
+        <Archive aria-hidden="true" className="size-3.5" />
       </Button>
       <Dialog
         open={!!revision}

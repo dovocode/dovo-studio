@@ -282,11 +282,13 @@ export default function JobsView({ entityId, automationTarget, navigationKey }: 
             <RefreshCw className={cn('size-3.5', refreshing && 'animate-spin')} />
           </Button>
           <Button
-            size="sm"
+            size="icon"
+            aria-label={uiText('New automation')}
+            title={uiText('New automation')}
             disabled={busy || !entries.some((entry) => entry.connected)}
             onClick={create}
           >
-            <Plus className="size-3.5" /> New automation
+            <Plus aria-hidden="true" className="size-3.5" />
           </Button>
         </PageHeader>
       )}

@@ -7,8 +7,10 @@ pull-request and file sections stay hidden in the summary.
 The default order puts the project and checkout before agent settings. The summary names the
 checkout type, labels an offline computer, and links directly to changed files for review.
 
-The desktop panel is 352 pixels wide and opens by default. A saved closed state still applies. Agent
-lineage also appears in the desktop summary when related threads or agents exist.
+The desktop panel is 352 pixels wide and opens by default. It uses the left sidebar background and
+has no outer border. A saved closed state still applies. Agent lineage also appears in the desktop
+summary when related threads or agents exist. Use the Thread info toggle in the thread header or
+press Escape to close the panel.
 
 Select **More details** to show sharing, access and workspace settings, the checkout path, Git
 actions, scripts, editor actions, servers, linked projects, watches and related threads. Select the

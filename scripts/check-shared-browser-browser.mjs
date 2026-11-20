@@ -5257,6 +5257,26 @@ try {
     await headerPage.evaluate((detached) => {
       window.fixtureHeader = true
       window.fixtureDetached = detached
+      if (detached) {
+        const url = 'http://header.lan/home'
+        localStorage.setItem(
+          'dovo.shared-browser-tabs.v1',
+          JSON.stringify({
+            active: 'pinned',
+            tabs: [
+              {
+                id: 'pinned',
+                kind: 'web',
+                profileId: 'default',
+                url,
+                title: 'Pinned',
+                pinned: true,
+                homeUrl: url,
+              },
+            ],
+          }),
+        )
+      }
     }, detached)
     await headerPage.addScriptTag({ content: built.outputFiles[0].text })
     for (const collapsed of [false, true, false]) {
@@ -5284,12 +5304,19 @@ try {
           1,
           'One live toolbar across header and sidebar handoffs',
         )
-        assert.equal(
-          await toolbar
-            .locator(':scope > :first-child')
-            .evaluate((node) => node.classList.contains('studio-browser-address')),
-          true,
-          'The address field occupies the leading desktop title position',
+        assert.deepEqual(
+          await toolbar.locator(':scope > .studio-browser-address').evaluate((address) => {
+            const controls = []
+            for (
+              let item = address.previousElementSibling;
+              item;
+              item = item.previousElementSibling
+            )
+              controls.unshift(item.getAttribute('aria-label'))
+            return controls
+          }),
+          detached ? ['Return to tab home', 'Back', 'Forward'] : ['Back', 'Forward'],
+          'Page navigation controls sit next to the address field',
         )
         const address = headerPage.getByRole('combobox', { name: 'Preview URL', exact: true })
         const box = await address.boundingBox()
@@ -5302,8 +5329,13 @@ try {
           height: form.getBoundingClientRect().height,
           right: form.getBoundingClientRect().right,
           overflow: document.documentElement.scrollWidth > innerWidth,
+          headerRadius: getComputedStyle(form.querySelector('.studio-pane-shoulder'))
+            .borderTopLeftRadius,
+          paneRadius: getComputedStyle(document.querySelector('[data-browser-viewport]'))
+            .borderTopLeftRadius,
         }))
         assert.equal(geometry.height, 52, 'Toolbar shares the application header height')
+        assert.equal(geometry.headerRadius, geometry.paneRadius, 'Browser corners match the pane')
         assert.ok(
           geometry.right <= width + 1 && !geometry.overflow,
           'Header stays within the window',

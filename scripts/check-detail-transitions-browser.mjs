@@ -210,6 +210,53 @@ try {
       }
     }
   }
+  await page.setContent(`
+    <div class="studio">
+      <div class="studio-thread-pane-body flex">
+        <div class="studio-thread-pane-frame flex flex-1 flex-col">
+          <header class="studio-task-thread-header studio-pane-header">
+            New thread<span class="studio-pane-shoulder"></span>
+          </header>
+          <div class="studio-thread-stack">
+            <div class="studio-work-pane" data-conversation-boundary>Conversation</div>
+          </div>
+        </div>
+        <aside class="studio-thread-tools-panel flex flex-col" style="width: 420px">
+          <div class="studio-pane-header flex items-center">
+            Files<span class="studio-pane-shoulder"></span>
+          </div>
+          <div role="tabpanel">Files and Code</div>
+        </aside>
+      </div>
+      <header class="studio-terminal-pane-header studio-pane-header flex h-8 items-center">
+        Terminal 1<span class="studio-pane-shoulder"></span>
+      </header>
+    </div>
+  `)
+  await page.addStyleTag({ content: css })
+  const paneTop = (selector) =>
+    page.locator(selector).evaluate((pane) => pane.getBoundingClientRect().top)
+  const conversationTop = await paneTop('[data-conversation-boundary]')
+  assert.equal(await paneTop('[role="tabpanel"]'), conversationTop, 'The pane tops line up')
+  const draft = page.locator('.studio-task-thread-header')
+  assert.equal(
+    await draft.evaluate((header) => header.getBoundingClientRect().bottom),
+    conversationTop,
+  )
+  const toolsShoulder = page.locator('.studio-thread-tools-panel .studio-pane-shoulder')
+  assert.equal(
+    await toolsShoulder.evaluate(
+      (shoulder) => getComputedStyle(shoulder, '::before').insetBlockEnd,
+    ),
+    '0px',
+    'The Files header curve meets the pane below it',
+  )
+  const terminalShoulder = page.locator('.studio-terminal-pane-header .studio-pane-shoulder')
+  assert.equal(
+    await terminalShoulder.evaluate((shoulder) => getComputedStyle(shoulder).borderTopLeftRadius),
+    await toolsShoulder.evaluate((shoulder) => getComputedStyle(shoulder).borderTopLeftRadius),
+    'Terminal and Files use the same corner radius',
+  )
   console.log(
     'Detail transitions: opening, switching, closing, rapid selection, retained drafts, immediate unmount, reduced motion, unsupported-browser fallback, light/dark header corners, theme rail clearances and fixed header brands passed.',
   )

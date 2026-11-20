@@ -100,11 +100,12 @@ and saved versions, preview/source switching and explicit refresh. Desktop can c
 sources; mobile can share the selected version through the system share sheet. **Export PDF or PNG**
 on desktop and **Export** on mobile open compact export options for every artifact format.
 
-The Artifacts library shows the title, source thread, computer, format, revision and update date.
-Use **Open source thread** to open the thread on its own computer. On desktop and web, the action is
-in the row menu in List view and below each card in Preview view. On mobile, it is below the
-artifact. Available and saved artifacts stay visible while other computers load or reconnect.
-Refresh the library after a read fails.
+The Artifacts library shows the title, source thread, computer, format, revision and update date. On
+desktop and web, switch between Preview and List in the library header. Each item has an actions
+menu with **Open source thread**, **Add to thread**, and **Delete artifact**. Open an artifact to
+view it. Use the library sidebar or go back to select a different artifact. On mobile, **Open source
+thread** is below the artifact. Available and saved artifacts stay visible while other computers
+load or reconnect. Refresh the library after a read fails.
 
 Floating and expanded previews inside desktop messages keep their toolbar above clipped thread
 content. Use **Close preview** or **Return to thread** to return to the message. Escape also works

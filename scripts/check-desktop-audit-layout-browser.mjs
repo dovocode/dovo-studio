@@ -42,7 +42,7 @@ const bundle = await build({
 import {createRoot} from 'react-dom/client';import {useState} from 'react';import {TooltipProvider} from '@radix-ui/react-tooltip';import * as Popover from '@radix-ui/react-popover';import {ReactFlowProvider} from '@xyflow/react';
 import {SettingSource} from './packages/studio-ui/src/setting-source';import {SettingRow} from './packages/studio-ui/src/settings-layout';import {TaskHeader} from './packages/extension-tasks/src/detail/task-header';import {TaskTools} from './packages/extension-tasks/src/detail/task-tools';import {TaskRow} from './packages/extension-tasks/src/list/task-row';import {HostSettingsPage} from './packages/studio-ui/src/host-settings-page';import {SettingsScopePage} from './packages/studio-ui/src/settings-scope-page';import {AutomationNodeView} from './packages/extension-jobs/src/automation-node';import JobsView from './packages/extension-jobs/src/view';import IssuesView,{JiraView,PipelinesView} from './packages/extension-scm/src/work/work-view';
 const repo={id:'repo',name:'Audit project',path:'/repo',branch:'feature/long-branch-name-for-layout'};
-const workspace={repositories:[repo],agents:[],tasks:[],automations:[]};const snapshot={workspace,runs:[],questions:[],approvals:[],terminals:[],artifactsEnabled:true};
+const workspace={repositories:[repo],agents:[],tasks:[],automations:[]};const snapshot={workspace,runs:[],questions:[],approvals:[],terminals:[],artifactsEnabled:true,linearIssuesSupported:true};
 window.sources=['MacBook Pro','Linux workstation with an unusually long saved computer name'].map((name,index)=>({name,scope:String(index),connected:true,profile:{id:String(index),name,connection:{address:'http://computer'+index,token:'paired'}},snapshot}));
 window.store={workspace,snapshot,connected:true,activeRuntimeId:'0',runtimes:window.sources,connection:window.sources[0].profile.connection,refreshRuntime:async()=>{},refreshRuntimes:async()=>{},setWorkspace:()=>{}};
 window.owner={name:'MacBook Pro',online:true,repositories:[repo],agents:[{id:'agent',name:'Agent',provider:'codex',model:'',endpoint:''}],acpInstallations:[]};window.workSource={key:'repo',scope:'0',connected:true,repository:repo,name:repo.name,runtimeName:'MacBook Pro',request:async()=>({issues:true,pipelineActions:['run']})};
@@ -340,6 +340,17 @@ try {
       view === 'jobs' ? 'New automation' : view === 'pipelines' ? 'Run pipeline' : 'New issue'
     const create = page.getByRole('button', { name, exact: true }).first()
     await contained(create, page.locator('.studio-page-actions'))
+    if (view !== 'pipelines') {
+      assert.equal(await create.getAttribute('data-size'), 'icon', view)
+      assert.equal(await create.textContent(), '', view)
+    }
+    if (view === 'issues' || view === 'jira')
+      for (const label of ['Linear', 'Connections']) {
+        const action = page.getByRole('button', { name: label, exact: true }).first()
+        await contained(action, page.locator('.studio-page-actions'))
+        assert.equal(await action.getAttribute('data-size'), 'icon', label)
+        assert.equal(await action.textContent(), '', label)
+      }
     assert.equal(
       await page
         .locator('.studio-page-actions')
