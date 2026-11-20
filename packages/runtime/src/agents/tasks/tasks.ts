@@ -132,6 +132,8 @@ const delegatedAnswer = (task: Task) => {
     .join('\n\n')
 }
 
+const userCancellationMessage = 'Cancelled by user'
+
 type Running = {
   waitingForCapacity?: boolean
   id: string
@@ -2704,6 +2706,7 @@ export class Tasks {
                     run.controller.signal.aborted &&
                     !(run.controller.signal.reason instanceof TurnStoreFailure) &&
                     !(run.controller.signal.reason instanceof ToolLoopStop)
+                  const failure = errorMessage(run.controller.signal.reason ?? error)
                   const continuation =
                     cancelled && task.quotaContinuation?.turnId === run.id
                       ? task.quotaContinuation
@@ -2747,7 +2750,10 @@ export class Tasks {
                         ? { kind: 'turn', automatic: false }
                         : task.restartRecovery,
                     activity: undefined,
-                    error: errorMessage(run.controller.signal.reason ?? error),
+                    error:
+                      cancelled && failure === userCancellationMessage
+                        ? run.shutdownUnconfirmed?.message
+                        : failure,
                   }
                 })
                 yield* Deferred.fail(ready, error)
@@ -2804,8 +2810,9 @@ export class Tasks {
                     void run.shutdownUnconfirmed.confirmed
                       ?.then(() => {
                         if (this.stopping || this.running.get(id) !== run) return
+                        const shutdownError = run.shutdownUnconfirmed?.message
                         run.shutdownUnconfirmed = undefined
-                        this.releaseRun(id, run)
+                        this.releaseRun(id, run, shutdownError)
                         this.deliverCompletions(true, id)
                       })
                       .catch((error: unknown) =>
@@ -2994,13 +3001,18 @@ export class Tasks {
       }))
     })
   }
-  private releaseRun(id: string, run: Running) {
+  private releaseRun(id: string, run: Running, shutdownError?: string) {
     const interrupt = this.store.providerActions.state(`interrupt:${run.id}`)
     this.store.transaction(() => {
       if (interrupt) this.store.providerActions.transition(`interrupt:${run.id}`, 'completed')
-      this.store.updateTask(id, (task) =>
-        task.activeRunId === run.id ? { ...task, activeRunId: undefined } : task,
-      )
+      this.store.updateTask(id, (task) => {
+        if (task.activeRunId !== run.id) return task
+        const resolvedStop =
+          task.error &&
+          (task.error === shutdownError ||
+            (task.status === 'cancelled' && task.error === userCancellationMessage))
+        return { ...task, activeRunId: undefined, ...(resolvedStop && { error: undefined }) }
+      })
     })
     this.running.delete(id)
     this.workerCapacity.drain()
@@ -3033,7 +3045,7 @@ export class Tasks {
       error,
     }))
   }
-  cancel(id: string, expectedRunId?: string, reason = new Error('Cancelled by user')) {
+  cancel(id: string, expectedRunId?: string, reason = new Error(userCancellationMessage)) {
     const run = this.running.get(id)
     if (!run) throw new HttpError(409, 'Task is not running')
     if (expectedRunId !== undefined && run.id !== expectedRunId)

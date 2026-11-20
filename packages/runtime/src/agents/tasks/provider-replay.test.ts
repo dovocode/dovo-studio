@@ -237,6 +237,7 @@ it('releases the checkout once OpenCode confirms idle after a failed interrupt',
   s.tasks.cancel(r.task.id, attemptId)
   await done
   expect(s.store.providerActions.state(`interrupt:${attemptId}`)).toBe('uncertain')
+  expect(s.store.task(r.task.id).error).toContain('shutdown was not confirmed')
   expect(s.store.task(r.task.id).turns?.[0]?.checkpoint?.after).toBeUndefined()
   expect(s.store.task(r.task.id).turns?.[0]?.checkpoint?.error).toContain(
     'shutdown was not confirmed',
@@ -255,6 +256,10 @@ it('releases the checkout once OpenCode confirms idle after a failed interrupt',
     expect(s.store.providerActions.state(`interrupt:${attemptId}`)).toBe('completed'),
   )
   expect(s.store.task(r.task.id).activeRunId).toBeUndefined()
+  expect(s.store.task(r.task.id).error).toBeUndefined()
+  expect(s.store.task(r.task.id).turns?.[0]?.checkpoint?.error).toContain(
+    'shutdown was not confirmed',
+  )
   const resumed = await s.tasks.start(competing.id)
   await waitForRuntime(() => expect(r.prompts).toHaveLength(2))
   r.finish()

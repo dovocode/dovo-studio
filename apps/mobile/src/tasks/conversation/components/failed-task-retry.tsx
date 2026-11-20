@@ -1,6 +1,6 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { Task } from '@dovo/protocol'
-import { responses } from '@dovo/protocol'
+import { responses, taskFailureVersion } from '@dovo/protocol'
 import { useRuntime } from '../../../runtime/connection/provider'
 import { useAction } from '../../../ui/controls/use-action'
 import { Action } from '../../../ui/controls/action'
@@ -11,8 +11,12 @@ import { View } from 'react-native'
 export function FailedTaskRetry({ task }: { task: Task }) {
   const uiText = useInterfaceText()
 
-  const { connected, callEffect, snapshot } = useRuntime()
-  const { busy, error, act } = useAction()
+  const { activeId, connected, callEffect, snapshot } = useRuntime()
+  const { busy, error, act } = useAction(
+    task.status === 'failed'
+      ? JSON.stringify([activeId, task.id, taskFailureVersion(task)])
+      : undefined,
+  )
   const { styles } = useTheme()
   return (
     <View style={{ gap: 8 }}>

@@ -113,6 +113,26 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
       window.update({ connected: true, task: { status: 'running', error: undefined } }),
     )
     await retry.waitFor({ state: 'hidden' })
+    await page
+      .getByRole('alert')
+      .filter({ hasText: 'Retry connection failed' })
+      .waitFor({ state: 'hidden' })
+    await page.evaluate(() =>
+      window.update({ task: { status: 'failed', error: 'A new turn failed' } }),
+    )
+    await page.getByRole('alert').filter({ hasText: 'A new turn failed' }).waitFor()
+    await retry.click()
+    await page.evaluate(() => window.update({ task: { status: 'running', error: undefined } }))
+    await retry.waitFor({ state: 'hidden' })
+    await page.evaluate(() => window.rejectRequest())
+    await page.evaluate(() =>
+      window.update({ task: { status: 'failed', error: 'Another turn failed' } }),
+    )
+    await page.getByRole('alert').filter({ hasText: 'Another turn failed' }).waitFor()
+    assert.equal(
+      await page.getByRole('alert').filter({ hasText: 'Retry connection failed' }).count(),
+      0,
+    )
     assert.deepEqual(errors, [])
     console.log(
       `${mobile ? 'Mobile' : 'Desktop'} failed retry: 429/general failures, explicit requests, pending/offline states, errors and draft/queue preservation passed.`,

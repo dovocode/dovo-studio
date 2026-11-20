@@ -22,6 +22,7 @@ import type { ArtifactReference, Subagent, Task } from '@dovo/protocol'
 import { PullDetail } from '@dovo/extension-scm/pull-detail'
 import { threadPullPreview } from './detail/thread-pull-preview'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { TaskTools } from './detail/task-tools'
 import {
   RightPaneTabs,
@@ -942,7 +943,11 @@ export default function TasksView({
     closeSplit: () => {},
   })
   const { request } = store
-  const [stopError, setStopError] = useApplicationState('')
+  const [stopError, setStopError] = useScopedError(
+    task && (task.activeRunId || task.status === 'running')
+      ? JSON.stringify([threadKey, task.activeRunId])
+      : undefined,
+  )
   const [transcriptNotice, setTranscriptNotice] = useApplicationState('')
   const openThread = useCommittedCallback((id: string, beside: string = '') => {
     setSelectedId(id)

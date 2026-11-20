@@ -79,8 +79,14 @@ export function useConversationActions(task: Task) {
       task.draft,
       [...task.messages, ...(task.queue ?? [])].map((message) => message.id),
     ),
-    action = useAction(),
-    cancellation = useAction()
+    action = useAction()
+  const stopScope =
+    task.activeRunId || task.status === 'running'
+      ? JSON.stringify([activeId, task.id, task.activeRunId])
+      : undefined
+  const cancellation = useAction(stopScope)
+  const currentStopScope = useRef(stopScope)
+  currentStopScope.current = stopScope
   const [draftTurnSettings, setTurnSettings] = useApplicationState<TurnSettings | null>(
     task.draftTurnSettings ?? null,
   )
@@ -1046,8 +1052,9 @@ export function useConversationActions(task: Task) {
     stopping: cancellation.busy,
     stop: () => {
       const runId = task.activeRunId
-      const run = () =>
-        cancellation.run(() =>
+      const run = () => {
+        if (currentStopScope.current !== stopScope) return
+        return cancellation.run(() =>
           callEffect(
             '/api/tasks/cancel',
             {
@@ -1057,6 +1064,7 @@ export function useConversationActions(task: Task) {
             responses.ok,
           ),
         )
+      }
       // Settings → General → Confirm before stopping a running task.
       if (!readMobilePreferences().confirmStop) return run()
       Alert.alert(

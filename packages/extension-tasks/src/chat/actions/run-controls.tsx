@@ -5,9 +5,11 @@ import {
   approvalActions,
   taskInputVisible,
   taskRemoteHumanInputs,
+  taskFailureVersion,
 } from '@dovo/protocol'
 import { randomUUID } from '@dovo/protocol'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { useRef } from 'react'
 import { useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
@@ -22,12 +24,20 @@ export function RunControls({ task }: { task: Task }) {
       useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
-  const act = (path: string, input: unknown) => {
+  const [retryError, setRetryError] = useScopedError(
+    task.status === 'failed'
+      ? JSON.stringify([activeRuntimeId, task.id, taskFailureVersion(task)])
+      : undefined,
+  )
+  const act = (path: string, input: unknown, reportError: (message: string) => void = setError) => {
     if (!connected || busy) return
     setError('')
+    if (reportError !== setError) reportError('')
     setBusy(true)
     return request(path, input, responses.ok)
-      .catch((error) => setError(String(error)))
+      .catch((error: unknown) =>
+        reportError(error instanceof Error ? error.message : String(error)),
+      )
       .finally(() => setBusy(false))
   }
   const continueStopped = () => {
@@ -68,12 +78,13 @@ export function RunControls({ task }: { task: Task }) {
     profile: runtimes.find((entry) => entry.profile.id === activeRuntimeId)?.profile,
     snapshot: { runtimeHost: task.turns?.at(-1)?.runtimeHost ?? snapshot?.runtimeHost },
   })
+  const alert =
+    error || retryError || (task.status !== 'cancelled' || task.activeRunId ? task.error : '')
   if (
     connected &&
     !approvals.length &&
     !remoteInputs.length &&
-    !error &&
-    !task.error &&
+    !alert &&
     !task.restartRecovery &&
     task.status !== 'failed' &&
     task.status !== 'cancelled'
@@ -208,11 +219,11 @@ export function RunControls({ task }: { task: Task }) {
           </div>
         </div>
       ))}
-      {(error || (task.status !== 'cancelled' && task.error) || task.status === 'failed') && (
+      {(alert || task.status === 'failed') && (
         <div className="mx-auto max-w-[var(--chat-max)] space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
-          {(error || (task.status !== 'cancelled' && task.error)) && (
+          {alert && (
             <p role="alert" className="break-words text-xs text-destructive">
-              {error || task.error}
+              {alert}
             </p>
           )}
           {task.status === 'failed' &&
@@ -229,7 +240,7 @@ export function RunControls({ task }: { task: Task }) {
                     !!task.activeRunId ||
                     !!snapshot?.runs.some((run) => run.taskIds.includes(task.id))
                   }
-                  onClick={() => act('/api/tasks/retry-failed', { id: task.id })}
+                  onClick={() => act('/api/tasks/retry-failed', { id: task.id }, setRetryError)}
                 >
                   {busy ? 'Retrying…' : 'Retry'}
                 </Button>

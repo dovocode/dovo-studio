@@ -6,22 +6,24 @@ import {
 } from '@dovo/protocol'
 import { Effect, Semaphore } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
+import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { useApplicationState } from '../../runtime/state/application-state'
 
-export function useAction() {
+export function useAction(errorScope?: string) {
   const [permit] = useApplicationState(() => Effect.runSync(Semaphore.make(1)))
+  const [error, setError] = useScopedError(errorScope)
   const [state, setState] = useApplicationState<{
     busy: boolean
-    error: string
     issues: readonly { path: string; message: string }[]
     validationAttempt: number
-  }>({ busy: false, error: '', issues: [], validationAttempt: 0 })
+  }>({ busy: false, issues: [], validationAttempt: 0 })
   const run = (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) =>
     runClientEffect(
       permit
         .withPermitsIfAvailable(1)(
           Effect.gen(function* () {
-            setState((current) => ({ ...current, busy: true, error: '', issues: [] }))
+            setState((current) => ({ ...current, busy: true, issues: [] }))
+            setError('')
             const operation = yield* Effect.try({ try: work, catch: (error) => error })
             yield* Effect.isEffect(operation)
               ? operation
@@ -39,13 +41,14 @@ export function useAction() {
                   ...current,
                   issues,
                   validationAttempt: current.validationAttempt + (issues.length ? 1 : 0),
-                  error:
-                    error instanceof ValidationError
-                      ? safeValidationMessage(error)
-                      : error instanceof Error
-                        ? error.message
-                        : String(error),
                 }))
+                setError(
+                  error instanceof ValidationError
+                    ? safeValidationMessage(error)
+                    : error instanceof Error
+                      ? error.message
+                      : String(error),
+                )
               }),
             ),
             Effect.ensuring(
@@ -57,6 +60,7 @@ export function useAction() {
     )
   return {
     ...state,
+    error,
     fieldError: (path: string) => state.issues.find((issue) => issue.path === path)?.message,
     run,
     act: (work: () => Promise<unknown> | Effect.Effect<unknown, unknown>) => {

@@ -7,6 +7,7 @@ import type { CodeFinding } from '@dovo/protocol'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { LoaderCircle, GitFork, Folder } from 'lucide-react'
 import { useApplicationState } from '@dovo/studio-core/state'
+import { useScopedError } from '@dovo/studio-core/scoped-error'
 import {
   randomUUID,
   runtimeRecoveryScope,
@@ -232,7 +233,10 @@ export function TaskConversation({
   const budget = taskBudgetUsage(task)
   const { request, connected } = useWorkspace()
   const [retrying, setRetrying] = useApplicationState(false)
-  const [retryError, setRetryError] = useApplicationState('')
+  const [retryError, setRetryError] = useScopedError(
+    preparation?.failed ? preparation.startedAt : undefined,
+  )
+  const [quotaError, setQuotaError] = useScopedError(task.quotaContinuation?.at)
   const retry = () => {
     if (retrying) return
     setRetrying(true)
@@ -408,14 +412,16 @@ export function TaskConversation({
                 variant="ghost"
                 disabled={!connected}
                 onClick={() => {
+                  setQuotaError('')
                   void request('/api/tasks/quota/cancel', { id: task.id }, responses.ok).catch(
-                    (cause) => setRetryError(String(cause)),
+                    (cause) =>
+                      setQuotaError(cause instanceof Error ? cause.message : String(cause)),
                   )
                 }}
               >
                 Cancel continuation
               </Button>
-              {retryError && <span role="alert">{retryError}</span>}
+              {quotaError && <span role="alert">{quotaError}</span>}
             </div>
           )}
           <SpendPauseNotice task={task} />

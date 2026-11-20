@@ -1,5 +1,6 @@
 import { browserSnapshotPaste } from '../../browser/browser-snapshot-clipboard'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
 import {
   prepareSideThread,
@@ -750,13 +751,16 @@ export function Composer({
   const backgroundPreview = hasBackgroundAction && altPressed
   const submitShortcut = alternative ? 'Alt+Enter' : 'Enter'
   const stopLock = useRef(false)
-  const stopScope = JSON.stringify([
+  const stopOperation = JSON.stringify([
     activeRuntimeId,
     clientScopeKey(connection),
     task.id,
     task.activeRunId,
-    connected,
   ])
+  const [stopError, setStopError] = useScopedError(
+    task.activeRunId || task.status === 'running' ? stopOperation : undefined,
+  )
+  const stopScope = JSON.stringify([stopOperation, connected, task.status === 'running'])
   const confirm = useConfirmation(stopScope)
   const currentStopScope = useRef(stopScope)
   currentStopScope.current = stopScope
@@ -779,10 +783,10 @@ export function Composer({
       )
         return
       if (!isCurrent()) return
-      setError('')
+      setStopError('')
       await request('/api/tasks/cancel', { id: taskId, runId }, responses.ok)
     } catch (e) {
-      if (isCurrent()) setError(String(e))
+      if (mounted.current) setStopError(e instanceof Error ? e.message : String(e))
     } finally {
       stopLock.current = false
       if (mounted.current) setStopping(false)
@@ -1692,7 +1696,9 @@ export function Composer({
             )}
           </>
         }
-        error={error || policyIssue || planIssue || composerDraft.error || attachments.error}
+        error={
+          stopError || error || policyIssue || planIssue || composerDraft.error || attachments.error
+        }
         onDragOver={(event) => {
           if (!event.dataTransfer.types.includes('Files')) return
           event.preventDefault()

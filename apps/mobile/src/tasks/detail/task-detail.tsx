@@ -513,8 +513,8 @@ function TaskDetailContent({
   const resume = useAction()
   const preparation = taskPreparation(task)
   const budget = taskBudgetUsage(task)
-  const quota = useAction()
-  const retry = useAction()
+  const quota = useAction(task.quotaContinuation?.at)
+  const retry = useAction(preparation?.failed ? preparation.startedAt : undefined)
   const { draft: detailDraft, setField: setDraftField } = useDetailDraft(
     threadDrafts,
     detailDraftKey(connection, 'thread', activeId, task.id),

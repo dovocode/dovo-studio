@@ -79,6 +79,8 @@ target the computer that owns the thread, including in the unified list.
 Select the trash icon on a queued chat message to remove that message before delivery.
 
 While an agent runs, write a message to reveal **Queue** and **Steer**. **Stop** stays available.
+Stop errors stay with the current run until it ends. Retry errors clear when the failure they refer
+to is resolved. Earlier turn details remain available in the conversation.
 
 - **Queue** saves the message for a separate turn after current work finishes. Reorder or remove
   pending messages in the queue. Pausing prevents automatic follow-ups; Stop also pauses the queue.
