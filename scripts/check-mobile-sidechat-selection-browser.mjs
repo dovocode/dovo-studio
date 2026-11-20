@@ -18,6 +18,10 @@ const mocks = {
   '../../../ui/theme': `export const useTheme=()=>({styles:{}});`,
   '../state/provider': `export const useTaskConversation=()=>({actions:{draft:{text:'',update(){}}}});`,
 }
+// The draft notice shares the same native controls as the side chat.
+mocks['../controls/action'] = mocks['../../../ui/controls/action']
+mocks['../theme'] = mocks['../../../ui/theme']
+mocks['./text'] = mocks['../../../ui/content/text']
 const built = await build({
   stdin: {
     contents: `import {useState} from 'react';import {flushSync} from 'react-dom';import {createRoot} from 'react-dom/client';import {SideQuestion} from '${root}apps/mobile/src/tasks/conversation/components/side-question.tsx';window.calls=[];window.chatIds=0;window.chat=id=>({id,title:id,draft:id+' draft',messages:[]});function App(){const [chats,setChats]=useState([]);const [requested,setRequested]=useState(undefined);const [drafts,setDrafts]=useState({});window.update=(ids,request)=>flushSync(()=>{setChats(ids.map(window.chat));setRequested(request)});return <SideQuestion task={{id:'task',sideChats:chats}} selectedChatId={requested} drafts={drafts} setDrafts={setDrafts} onClose={()=>{}}/>};createRoot(document.getElementById('app')).render(<App/>);`,
