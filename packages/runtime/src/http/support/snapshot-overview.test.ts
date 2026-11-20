@@ -128,7 +128,7 @@ it('loads complete history only for subscribed tasks and keeps legacy reads comp
   expect(legacy.tasks[0]?.messages).toHaveLength(80)
 })
 
-it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error'] as const)(
+it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error', 'shared'] as const)(
   'builds a database page with identical %s checkpoint and budget totals without full hydration',
   (mode) => {
     const db = openDatabase(':memory:')
@@ -137,40 +137,42 @@ it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error'] as co
       const source: Task = {
         ...task,
         turns: task.turns!.map((turn, index) =>
-          index !== 0
-            ? turn
-            : {
-                ...turn,
-                checkpoint:
-                  mode === 'linked'
-                    ? {
-                        ...checkpoint,
-                        files: [],
-                        linked: [
-                          {
-                            ...checkpoint,
-                            checkoutId: 'other',
-                            repositoryId: 'other',
-                            directory: '/tmp/other',
-                          },
-                        ],
-                      }
-                    : mode === 'pending' || mode === 'pending-error'
+          mode === 'shared' && index === 1
+            ? { ...turn, checkpoint: { ...checkpoint, sharedCheckout: true } }
+            : index !== 0
+              ? turn
+              : {
+                  ...turn,
+                  checkpoint:
+                    mode === 'linked'
                       ? {
                           ...checkpoint,
-                          restorePending: true,
-                          undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
-                          ...(mode === 'pending-error' ? { error: 'Capture failed' } : {}),
-                        }
-                      : mode === 'error'
-                        ? { ...checkpoint, error: 'Capture failed' }
-                        : mode === 'undone'
-                          ? {
+                          files: [],
+                          linked: [
+                            {
                               ...checkpoint,
-                              undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
-                            }
-                          : checkpoint,
-              },
+                              checkoutId: 'other',
+                              repositoryId: 'other',
+                              directory: '/tmp/other',
+                            },
+                          ],
+                        }
+                      : mode === 'pending' || mode === 'pending-error'
+                        ? {
+                            ...checkpoint,
+                            restorePending: true,
+                            undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
+                            ...(mode === 'pending-error' ? { error: 'Capture failed' } : {}),
+                          }
+                        : mode === 'error'
+                          ? { ...checkpoint, error: 'Capture failed' }
+                          : mode === 'undone'
+                            ? {
+                                ...checkpoint,
+                                undone: { at: '2026-10-01T01:00:00Z', backup: 'backup' },
+                              }
+                            : checkpoint,
+                },
         ),
       }
       const writer = new WorkspaceStore(db)
@@ -185,6 +187,9 @@ it.each(['plain', 'linked', 'error', 'undone', 'pending', 'pending-error'] as co
       expect(paged.turns).toEqual(expected.turns)
       expect(paged.historyBefore).toBe(expected.historyBefore)
       expect(paged.historyTotals).toEqual(expected.historyTotals)
+      expect(paged.historyTotals?.undoableTurnId).toBe(
+        mode === 'error' || mode === 'undone' || mode === 'shared' ? undefined : 'turn0',
+      )
       expect(taskBudgetUsage(paged)).toEqual(taskBudgetUsage(source))
       expect(store.retainedHistories().tasks).toEqual([])
       expect(pagedSummaryTask(db, summary, readPage)).toBe(paged)

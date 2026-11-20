@@ -2398,7 +2398,7 @@ function BrowserContent({
         type="button"
         label="New browser tab"
         variant="ghost"
-        className="studio-browser-library-button size-8"
+        className="size-8 rounded-lg"
         onClick={() => newTab('', selectedTab.kind, selectedTab.profileId, selectedTab.runtimeId)}
       >
         <Plus size={14} />
@@ -2413,7 +2413,7 @@ function BrowserContent({
             type="button"
             label="New browser tab options"
             variant="ghost"
-            className="studio-browser-library-button ml-auto size-8 shrink-0 rounded-lg text-foreground/80 hover:bg-accent hover:text-foreground"
+            className="size-8 rounded-lg data-[state=open]:bg-accent/60"
           >
             <ChevronDown size={12} />
           </IconButton>

@@ -166,6 +166,7 @@ const olderTurnSchema = mutableStruct({
   changed: Schema.Number,
   undoable: Schema.Number,
   pending: Schema.Number,
+  sharedCheckout: Schema.Number,
 })
 const storedPages = new WeakMap<TaskSummary, Task>()
 const olderBudgets = new WeakMap<object, Map<string, Task['historyTotals']>>()
@@ -191,6 +192,7 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
           + COALESCE(json_array_length(link.value, '$.omitted'), 0))
         FROM json_each(item.value, '$.checkpoint.linked') AS link), 0) > 0) AS changed,
     COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) AS pending,
+    COALESCE(json_extract(item.value, '$.checkpoint.sharedCheckout'), 0) AS sharedCheckout,
     (json_extract(item.value, '$.status') != 'running'
       AND (COALESCE(json_extract(item.value, '$.checkpoint.restorePending'), 0) = 1
       OR (COALESCE(length(json_extract(item.value, '$.checkpoint.error')), 0) = 0
@@ -219,10 +221,9 @@ function olderHistoryTotals(db: Database.Database, summary: TaskSummary, page: C
     const end = turn.finished ? Date.parse(turn.finished) : now
     if (Number.isFinite(start) && Number.isFinite(end)) milliseconds += Math.max(0, end - start)
     hasChanges ||= !!turn.changed
-    if (turn.undoable) {
-      undoableTurnId = turn.id
-      if (turn.pending) pendingUndoTurnId ??= turn.id
-    }
+    if (turn.undoable && turn.pending) pendingUndoTurnId ??= turn.id
+    if (turn.sharedCheckout) undoableTurnId = undefined
+    else if (turn.undoable) undoableTurnId = turn.id
   }
   const totals = {
     tokens,

@@ -22,7 +22,12 @@ guarantee.
 
 ## Provider work and change capture
 
-Tasks progress through preparing, provider work and finalizing while retaining the checkout lock.
+Threads can run at the same time in one checkout. They share its files and uncommitted changes. Turn
+diffs can include changes from other threads. Studio keeps these diffs available for review and
+disables automatic restore for the affected checkpoints. Use separate worktrees to isolate changes.
+Branch switches and restores still wait for active threads to finish. If Studio cannot confirm that
+a provider stopped, it holds the checkout until shutdown is confirmed.
+
 The provider's outcome and finish time are persisted before capturing changes. Desktop and iPhone
 show **Saving changes** during that capture, and follow-up messages wait for it to finish. A slow
 Git snapshot does not extend the reported agent duration. A restart during finalization retains the
@@ -49,7 +54,7 @@ Reviewed T3 Code's [orchestrator v2 branch](https://github.com/pingdotgg/t3code/
 `RunFinalizationService`, `ProviderRuntimeRecoveryService`, and the architecture guide. These
 changes apply its durable-intent and runtime-ownership principles to Dovo's existing Effect 4
 runtime. They do not replace Dovo's workspace storage with T3's event log/outbox or change its
-provider lock, HTTP/VPN connectivity, device pairing, or restart-continuation preference.
+HTTP/VPN connectivity, device pairing, or restart-continuation preference.
 
 ## Child questions and approvals
 

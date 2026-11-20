@@ -67,10 +67,12 @@ describe('mobile thread status', () => {
       ),
     ).toBe('Was working · 8m')
   })
-  it('shows seconds while an online thread is Working', () => {
-    expect(taskRowStatus({ ...task, status: 'running' }, false, true, now + 17000)).toBe(
-      'Working · 8m 17s',
-    )
+  it('shows seconds only during the first minute of work', () => {
+    const running = { ...task, status: 'running' as const }
+    const start = Date.parse(running.turns![0]!.startedAt)
+    expect(taskRowStatus(running, false, true, start + 59000)).toBe('Working · 59s')
+    expect(taskRowStatus(running, false, true, start + 60000)).toBe('Working · 1m')
+    expect(taskRowStatus(running, false, true, now + 17000)).toBe('Working · 8m')
   })
   it('keeps draft and snoozed tasks explicit', () => {
     expect(

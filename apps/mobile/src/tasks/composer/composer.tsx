@@ -484,7 +484,9 @@ export function Composer({
     const turnId =
       (turn?.checkpoint?.restorePending ? turn.id : task.historyTotals?.pendingUndoTurnId) ??
       turn?.id ??
-      task.historyTotals?.undoableTurnId
+      (task.turns?.some((turn) => turn.checkpoint?.sharedCheckout)
+        ? undefined
+        : task.historyTotals?.undoableTurnId)
     if (!turnId)
       return Alert.alert(
         uiText('Nothing to undo'),
@@ -1888,7 +1890,7 @@ export function Composer({
               <Text style={styles.muted}>
                 <InterfaceText>
                   {
-                    'Choose a worktree on this computer. The task uses its current files; only one task can run there at a time.'
+                    'Choose a worktree on this computer. Threads using it share the same files, including uncommitted changes.'
                   }
                 </InterfaceText>
               </Text>

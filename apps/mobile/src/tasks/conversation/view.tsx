@@ -10,6 +10,7 @@ import { MessageSource } from './components/message-source'
 import {
   watchMessage,
   checkpointFiles,
+  sharedCheckoutCheckpointNotice,
   formatTurnDuration,
   providerRetryLabel,
   conversationHarnessHandoffs,
@@ -244,6 +245,11 @@ function CheckpointRow({
         ) : null,
       )}
       {!!checkpoint.error && <Text style={styles.error}>{checkpoint.error}</Text>}
+      {turn?.checkpoint?.sharedCheckout && (
+        <Text style={styles.muted}>
+          <InterfaceText>{sharedCheckoutCheckpointNotice}</InterfaceText>
+        </Text>
+      )}
     </View>
   )
 }
@@ -275,8 +281,7 @@ function WorkingIndicator({ turn }: { turn: TaskTurn }) {
 
   const [now, setNow] = useApplicationState(Date.now())
   useForegroundInterval(() => setNow(Date.now()), 1000)
-  const seconds = Math.max(0, Math.floor((now - Date.parse(turn.startedAt)) / 1000))
-  const duration = formatTurnDuration(seconds * 1000, true)
+  const duration = formatTurnDuration(now - Date.parse(turn.startedAt))
   return (
     <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8, paddingVertical: 4 }}>
       <ActivityIndicator size="small" color={colors.muted} />

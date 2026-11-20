@@ -284,8 +284,16 @@ async function captureBrowserSidebar(browser) {
   const addressBar = preview
     .locator('form')
     .filter({ has: preview.getByLabel('Preview URL', { exact: true }) })
-  for (const name of ['New browser tab', 'New browser tab options'])
+  for (const name of ['New browser tab', 'New browser tab options']) {
     assert.equal(await addressBar.getByRole('button', { name, exact: true }).count(), 0)
+    assert.equal(
+      await sidebar
+        .getByRole('button', { name, exact: true })
+        .evaluate((button) => getComputedStyle(button).borderTopWidth),
+      '0px',
+      `${name} is borderless`,
+    )
+  }
 
   const previousTab = await sidebar
     .locator('[data-browser-tab-id][data-active]')

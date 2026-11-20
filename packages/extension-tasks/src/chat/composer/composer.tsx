@@ -464,7 +464,9 @@ export function Composer({
   const undoableId =
     (undoable?.checkpoint?.restorePending ? undoable.id : task.historyTotals?.pendingUndoTurnId) ??
     undoable?.id ??
-    task.historyTotals?.undoableTurnId
+    (task.turns?.some((turn) => turn.checkpoint?.sharedCheckout)
+      ? undefined
+      : task.historyTotals?.undoableTurnId)
   const runCommand = (id: ComposerCommandId) => {
     if (commandWorking.current) return
     setCommandError('')

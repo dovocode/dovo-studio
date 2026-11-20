@@ -40,15 +40,15 @@ export function taskPresentation(task: Task, needsInput: boolean, now: number, o
                       failed: 'Failed',
                       cancelled: 'Stopped',
                     }[task.status]
-  const showElapsedSeconds = elapsed && online && state === 'Working'
+  const showWorkingTime = elapsed && online && state === 'Working'
   const time = !Number.isFinite(date)
     ? ''
     : elapsed
-      ? formatTurnDuration(now - date, showElapsedSeconds)
+      ? formatTurnDuration(now - date)
       : relativeAge === 'now'
         ? 'just now'
         : `${relativeAge} ago`
-  const age = showElapsedSeconds ? time : relativeAge
+  const age = showWorkingTime ? time : relativeAge
   const tone: 'active' | 'attention' | 'success' | 'danger' | 'neutral' = [
     'Working',
     'Saving changes',

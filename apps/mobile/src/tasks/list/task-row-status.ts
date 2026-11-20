@@ -11,7 +11,7 @@ import {
 export function workingThreadAge(task: Task, state: string, now: number) {
   if (state !== 'Working' || task.status !== 'running') return ''
   const date = threadStatusTimestamp(task, task.turns?.at(-1))
-  return formatTurnDuration(now - Date.parse(date ?? ''), true)
+  return formatTurnDuration(now - Date.parse(date ?? ''))
 }
 
 /** Input, snooze and failures take priority over an unread successful completion. */

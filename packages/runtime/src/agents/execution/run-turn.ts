@@ -255,7 +255,13 @@ export class TaskTurnRunner {
             current.id === turn.id
               ? {
                   ...current,
-                  checkpoint: { before, after, ...changes, ...(linked.length ? { linked } : {}) },
+                  checkpoint: {
+                    before,
+                    after,
+                    ...changes,
+                    ...(linked.length ? { linked } : {}),
+                    sharedCheckout: current.checkpoint?.sharedCheckout,
+                  },
                 }
               : current,
           ),
@@ -277,6 +283,7 @@ export class TaskTurnRunner {
       completed: boolean,
       preserveNativeSession?: boolean,
     ) => Effect.Effect<void, RuntimeFailure>,
+    sharedCheckout?: () => boolean,
   ) {
     return Effect.scoped(
       Effect.gen({ self: this }, function* () {
@@ -727,6 +734,7 @@ export class TaskTurnRunner {
                         files: [],
                         omitted: [],
                         ...(linkedSnapshots.length ? { linked: linkedSnapshots } : {}),
+                        sharedCheckout: sharedCheckout?.() ? true : undefined,
                       }
                     : undefined,
                 agentId: agent.id,
@@ -2137,7 +2145,15 @@ export class TaskTurnRunner {
                 ? {
                     ...turn,
                     ...tokenField(),
-                    checkpoint: captureGit || linkedSnapshots.length ? captured : undefined,
+                    checkpoint:
+                      captureGit || linkedSnapshots.length
+                        ? {
+                            ...captured,
+                            sharedCheckout: sharedCheckout?.()
+                              ? true
+                              : turn.checkpoint?.sharedCheckout,
+                          }
+                        : undefined,
                     status: 'completed',
                     finishedAt,
                   }
@@ -2248,7 +2264,15 @@ export class TaskTurnRunner {
                     ? {
                         ...turn,
                         ...tokenField(),
-                        checkpoint: captureGit || linkedSnapshots.length ? captured : undefined,
+                        checkpoint:
+                          captureGit || linkedSnapshots.length
+                            ? {
+                                ...captured,
+                                sharedCheckout: sharedCheckout?.()
+                                  ? true
+                                  : turn.checkpoint?.sharedCheckout,
+                              }
+                            : undefined,
                         status: finalStatus,
                         finishedAt,
                         error: errorMessage(controller.signal.reason ?? error),

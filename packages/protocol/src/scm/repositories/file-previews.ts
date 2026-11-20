@@ -102,19 +102,31 @@ export function checkpointFileCount(checkpoint: TaskTurn['checkpoint']) {
 
 export function checkpointCanUndo(checkpoint: TaskTurn['checkpoint']) {
   if (checkpoint?.restorePending) return true
-  if (!checkpoint || checkpoint.error) return false
+  if (!checkpoint || checkpoint.error || checkpoint.sharedCheckout) return false
   return [checkpoint, ...(checkpoint.linked ?? [])].some(
     (item) =>
       !!item.after && !item.error && !item.undone && item.files.length + item.omitted.length > 0,
   )
 }
 
+export const sharedCheckoutCheckpointNotice =
+  'This diff can include changes from other threads. Automatic restore is unavailable.'
+
+export function checkpointRestoreNotice(turns: readonly TaskTurn[], turnId: string) {
+  const index = turns.findIndex((turn) => turn.id === turnId)
+  if (index < 0) return undefined
+  if (turns[index]?.checkpoint?.sharedCheckout) return sharedCheckoutCheckpointNotice
+  if (turns.slice(index + 1).some((turn) => turn.checkpoint?.sharedCheckout))
+    return 'Restoring this turn could overwrite changes from other threads.'
+}
+
 /** Finish an interrupted undo before undoing another turn. */
 export function checkpointUndoTurn(turns: readonly TaskTurn[]) {
-  return (
-    turns.find((turn) => turn.status !== 'running' && turn.checkpoint?.restorePending) ??
-    [...turns]
-      .reverse()
-      .find((turn) => turn.status !== 'running' && checkpointCanUndo(turn.checkpoint))
-  )
+  const pending = turns.find((turn) => turn.status !== 'running' && turn.checkpoint?.restorePending)
+  if (pending) return pending
+  for (let index = turns.length - 1; index >= 0; index--) {
+    const turn = turns[index]
+    if (turn.checkpoint?.sharedCheckout) break
+    if (turn.status !== 'running' && checkpointCanUndo(turn.checkpoint)) return turn
+  }
 }

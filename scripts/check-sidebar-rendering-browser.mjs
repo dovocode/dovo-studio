@@ -921,14 +921,10 @@ try {
         true,
         'Time precedes the status icon',
       )
-    if (status === 'running') {
-      const time = await indicator.innerText()
-      assert.match(time, /^14h 20m \d+s$/)
-      await indicator
-        .locator('span')
-        .filter({ hasNotText: new RegExp(`^${time}$`) })
-        .waitFor()
-    } else assert.equal(await indicator.innerText(), status === 'draft' ? '' : '5m')
+    assert.equal(
+      await indicator.innerText(),
+      status === 'running' ? '14h 20m' : status === 'draft' ? '' : '5m',
+    )
     assert.equal(await row.locator('[data-thread-execution] [data-row-icon]').count(), 1)
     assert.equal(
       await row

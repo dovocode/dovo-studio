@@ -2,6 +2,7 @@ import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-lan
 import { responseReply } from '@dovo/protocol'
 import {
   botResultSchema,
+  checkpointCanUndo,
   forkFileDescription,
   forkMessagePreview,
   messageForkBlocker,
@@ -118,15 +119,14 @@ export function MessageActions({
     const agent = resolveTaskAgent(task, snapshot?.workspace.agents ?? [])
     if (!agent || !turn || !profile) return
     const same = `Try again${agent.model ? ` with ${modelDisplayName(agent.model)}` : ''}`
+    const message = checkpointCanUndo(turn.checkpoint)
+      ? uiText('This turn’s file changes are undone first.')
+      : uiText('The next turn uses the current files.')
     if (Platform.OS !== 'ios')
-      return Alert.alert(
-        uiText('Try again?'),
-        uiText('This turn’s file changes are undone first.'),
-        [
-          { text: uiText('Cancel'), style: 'cancel' },
-          { text: uiText('Try again'), onPress: () => retry() },
-        ],
-      )
+      return Alert.alert(uiText('Try again?'), message, [
+        { text: uiText('Cancel'), style: 'cancel' },
+        { text: uiText('Try again'), onPress: () => retry() },
+      ])
     setRetrying(true)
     void loadMobileModelCatalog(
       profile,
@@ -150,7 +150,7 @@ export function MessageActions({
         ActionSheetIOS.showActionSheetWithOptions(
           {
             title: uiText('Try again'),
-            message: 'This turn’s file changes are undone first.',
+            message,
             options,
             cancelButtonIndex: options.length - 1,
           },

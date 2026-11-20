@@ -163,8 +163,8 @@ times. Expand run details on mobile or open **Runs** beside the desktop canvas. 
 queued work from work that is running, awaiting review, completed, failed or cancelled.
 
 Only one run of an automation may be active or waiting for review at a time. Different automations
-may run concurrently, subject to the existing task checkout lock. A task using a new worktree has
-its own checkout; tasks sharing a local checkout must wait for the other task to finish.
+can run at the same time. Tasks that use the same checkout share its files and uncommitted changes.
+Use separate worktrees to isolate changes.
 
 Recurring schedules do not overlap or queue missed occurrences. If a previous run is still active or
 waiting for review, the due occurrence is skipped. The schedule then moves to its next future time.
@@ -209,7 +209,7 @@ automations.
 Task steps can include **Linked projects** on the same computer. Each link selects a main checkout,
 an existing worktree, or a new worktree, with reference-only or edit access. New worktrees have
 unique branch suffixes per task, so separate automation runs do not reuse each other's checkout.
-Existing worktrees and main checkouts are intentionally reused; concurrent editing is blocked.
+Tasks can edit the same existing worktree or main checkout at the same time.
 
 The primary project supplies agent defaults and tools. Each linked project's own worktree setup
 command runs before execution. Editable Git checkouts have separate checkpoint files and can be

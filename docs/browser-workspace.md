@@ -8,8 +8,9 @@ Tabs retain their computer and profile when you switch the active runtime. New b
 starter address input in Browser and Unified. This also applies when a profile or private tab opens
 from the new-tab menu.
 
-On desktop and web, use the sidebar to switch Browser tabs. Back and Forward sit next to the address
-field in the workspace header. A pinned tab also shows its Home button before Back.
+On desktop and web, use the sidebar to switch Browser tabs. Use the plus button next to Bookmarks to
+open a tab. Use the chevron for profile and private tab options. Back and Forward sit next to the
+address field in the workspace header. A pinned tab also shows its Home button before Back.
 
 The **Snoozed** and **Settled** tab sections use the thread section headers, counts and disclosure
 controls. Empty sections stay hidden. Collapsed sections stay below open sections in the sidebar. On

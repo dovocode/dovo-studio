@@ -6,6 +6,7 @@ import { selectConversationConnection } from './workspace-selection'
 import {
   providerRetryLabel,
   createRuntimeClient,
+  checkpointRestoreNotice,
   threadPullLink,
   unassignedConversationTools,
   conversationMessageTurns,
@@ -672,6 +673,9 @@ export function ChatThread({
                         const finalAssistant = group.messages
                           .filter((message) => message.role === 'assistant')
                           .at(-1)
+                        const restoreNotice = group.turn
+                          ? checkpointRestoreNotice(task.turns ?? [], group.turn.id)
+                          : undefined
                         const render = (open: boolean, header?: ReactNode) => (
                           <div className="flex flex-col gap-3">
                             {group.turn && providerRetryLabel(group.turn) && (
@@ -712,6 +716,7 @@ export function ChatThread({
                                     }
                                     taskRunning={task.status === 'running'}
                                     latestTurnId={lastTurn?.id}
+                                    restoreNotice={restoreNotice}
                                     connected={connected}
                                     request={request}
                                     onTerminal={onTerminal}

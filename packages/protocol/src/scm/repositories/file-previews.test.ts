@@ -46,6 +46,14 @@ it('prioritizes durable pending undo recovery over newer completed turns', () =>
     checkpoint: { ...turn.checkpoint!, restorePending: undefined, undone: undefined },
   }
   expect(checkpointUndoTurn([turn, newer])?.id).toBe('pending')
+  const shared: TaskTurn = {
+    ...newer,
+    id: 'shared',
+    checkpoint: { ...newer.checkpoint!, sharedCheckout: true },
+  }
+  expect(checkpointUndoTurn([newer, shared])).toBeUndefined()
+  expect(checkpointUndoTurn([turn, newer, shared])?.id).toBe('pending')
+  expect(checkpointUndoTurn([shared, newer])?.id).toBe('newer')
   expect(
     checkpointUndoTurn([
       { ...turn, checkpoint: { ...turn.checkpoint!, restorePending: undefined } },

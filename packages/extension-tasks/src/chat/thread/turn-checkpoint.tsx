@@ -2,7 +2,13 @@ import { CheckpointDiff } from '../../files/saved-file-diff'
 export { CheckpointDiff } from '../../files/saved-file-diff'
 import { whitespaceOnlyFile } from '@dovo/studio-core'
 import { SavedFilePreview } from '../../files/saved-file-preview'
-import { checkpointFiles, pullFileKind, type FileKind, filePreviewLabel } from '@dovo/protocol'
+import {
+  checkpointFiles,
+  pullFileKind,
+  type FileKind,
+  filePreviewLabel,
+  sharedCheckoutCheckpointNotice,
+} from '@dovo/protocol'
 import { fileStats } from '../../files/presentation'
 import { responses, useWorkspace, useAppPreferences } from '@dovo/studio-core'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -28,12 +34,14 @@ export function TurnCheckpoint({
   taskRunning = false,
   checkoutId,
   projectName,
+  restoreNotice,
 }: {
   turn: TaskTurn
   taskId?: string
   taskRunning?: boolean
   checkoutId?: string
   projectName?: string
+  restoreNotice?: string
 }) {
   const { collapseChangedFiles, hideWhitespaceChanges } = useAppPreferences()
   const [expanded, setExpanded] = useTurnDisclosure(`checkpoint:${checkoutId ?? ''}:${turn.id}`)
@@ -74,6 +82,8 @@ export function TurnCheckpoint({
   }, [filtered, stats])
   const checkpoint = turn.checkpoint
   if (!checkpoint) return null
+  const restoreBlock =
+    restoreNotice ?? (checkpoint.sharedCheckout ? sharedCheckoutCheckpointNotice : undefined)
   const undone = !!checkpoint.undone && !checkpoint.restorePending
   const file = filtered.find((entry) => entry.path === selected) ?? filtered[0]
   const count = files.length
@@ -129,6 +139,9 @@ export function TurnCheckpoint({
             {checkpoint.error}
           </p>
         )}
+        {checkpoint.sharedCheckout && (
+          <p className="px-3 pb-2 text-xs">{sharedCheckoutCheckpointNotice}</p>
+        )}
       </ChangeSummary>
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="flex h-[85dvh] max-w-7xl flex-col gap-0 overflow-hidden p-0">
@@ -137,8 +150,8 @@ export function TurnCheckpoint({
               Turn checkpoint · {count} {count === 1 ? 'file' : 'files'}
             </DialogTitle>
             <DialogDescription className="text-xs">
-              File changes captured during this turn, including edits made outside the agent.
-              Reverting a file does not change the conversation.
+              {restoreBlock ??
+                'File changes captured during this turn, including edits made outside the agent. Reverting a file does not change the conversation.'}
             </DialogDescription>
           </div>
           <ChangeTypeFilters
@@ -152,7 +165,7 @@ export function TurnCheckpoint({
               {checkpoint.error}
             </p>
           )}
-          {file && taskId && (
+          {file && taskId && !restoreBlock && (
             <div className="flex shrink-0 flex-wrap items-center gap-2 border-b px-3 py-2 text-xs">
               <Button
                 size="sm"

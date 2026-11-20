@@ -472,8 +472,7 @@ export function ComposerWorkspace({
         <DialogContent className="max-w-lg">
           <DialogTitle>Use an existing worktree</DialogTitle>
           <p className="text-xs text-muted-foreground">
-            The new thread works in this checkout, including its uncommitted files. Only one thread
-            can run there at a time.
+            Threads using this checkout share the same files, including uncommitted changes.
           </p>
           {worktreeError && (
             <p role="alert" className="text-xs text-destructive">

@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { RotateCcw } from 'lucide-react'
-import { resolveTaskAgent } from '@dovo/protocol'
+import { checkpointCanUndo, resolveTaskAgent, type TaskTurn } from '@dovo/protocol'
 import { responses, useWorkspace, type TaskHarness } from '@dovo/studio-core'
 import { Button, DropdownMenu } from '@dovo/studio-ui'
 import { useHarnessCatalog } from '../composer/harness-catalog'
@@ -8,9 +8,8 @@ import { useHarnessCatalog } from '../composer/harness-catalog'
 const item =
   'flex items-center gap-2 rounded-sm px-2 py-1.5 text-xs outline-none transition-colors duration-150 data-[disabled]:opacity-50 data-[highlighted]:bg-accent/55 motion-reduce:transition-none'
 
-/** Runs the latest request again, with the same or another model of the task's provider.
- * The previous attempt's file changes are undone first. */
-export function RetryTurn({ taskId, turnId }: { taskId: string; turnId: string }) {
+/** Runs the latest request again with the same or another model of the task's provider. */
+export function RetryTurn({ taskId, turn }: { taskId: string; turn: TaskTurn }) {
   const { workspace, request, connected } = useWorkspace()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -32,7 +31,7 @@ export function RetryTurn({ taskId, turnId }: { taskId: string; turnId: string }
     setError('')
     void request(
       '/api/tasks/retry',
-      { id: taskId, turnId, ...(model ? { model } : {}) },
+      { id: taskId, turnId: turn.id, ...(model ? { model } : {}) },
       responses.ok,
     )
       .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
@@ -47,7 +46,11 @@ export function RetryTurn({ taskId, turnId }: { taskId: string; turnId: string }
             variant="ghost"
             size="icon"
             aria-label="Try again"
-            title="Try again, with this or another model. This turn’s file changes are undone first."
+            title={
+              checkpointCanUndo(turn.checkpoint)
+                ? 'Try again, with this or another model. This turn’s file changes are undone first.'
+                : 'Try again with this or another model using the current files.'
+            }
             className="size-6 text-muted-foreground"
             disabled={!connected || busy}
           >

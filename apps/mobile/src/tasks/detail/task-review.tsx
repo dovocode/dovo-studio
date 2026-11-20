@@ -16,7 +16,7 @@ import { MobileOrganizeReview } from '../../scm/review/organize-review'
 import { MobileFileReview } from '../../scm/review/file-review'
 import { useConversationSelector } from '../conversation/state/provider'
 import { SavedFilePreview } from '../files/saved-file-preview'
-import { checkpointFiles, filePreviewLabel } from '@dovo/protocol'
+import { checkpointFiles, checkpointRestoreNotice, filePreviewLabel } from '@dovo/protocol'
 import { fileStats } from '../files/stats'
 import { nativeEffect, mobileWorkflow } from '../../runtime/state/native-effect'
 import { useApplicationState } from '../../runtime/state/application-state'
@@ -150,6 +150,7 @@ export function TaskReview({
     body: string
   } | null>(null)
   const selectedTurn = task.turns?.find((turn) => turn.id === checkpoint)?.checkpoint
+  const restoreNotice = checkpoint && checkpointRestoreNotice(task.turns ?? [], checkpoint)
   const linkedHistory = selectedTurn?.linked?.find((item) => item.checkoutId === checkoutId)
   const history = checkoutId ? linkedHistory : selectedTurn
   const [linkedFiles, setLinkedFiles] = useState<{
@@ -546,7 +547,8 @@ export function TaskReview({
               {!!checkpoint && (
                 <Text style={styles.muted}>
                   <InterfaceText>
-                    {'Snapshot diff for this turn. Select Current changes to edit files.'}
+                    {restoreNotice ||
+                      'Snapshot diff for this turn. Select Current changes to edit files.'}
                   </InterfaceText>
                 </Text>
               )}
@@ -589,7 +591,7 @@ export function TaskReview({
                   !since &&
                   !commit &&
                   scope === 'working' &&
-                  (!checkpoint || !history?.undone) && (
+                  (!checkpoint || (!history?.undone && !restoreNotice)) && (
                     <Action
                       destructive={checkpoint ? false : true}
                       secondary

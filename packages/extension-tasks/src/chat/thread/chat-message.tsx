@@ -53,6 +53,7 @@ export const ChatMessage = memo(function ChatMessage({
   pending,
   taskRunning,
   latestTurnId,
+  restoreNotice,
   connected,
   request,
   onTerminal,
@@ -74,6 +75,7 @@ export const ChatMessage = memo(function ChatMessage({
   pending: PendingMessage | null
   taskRunning: boolean
   latestTurnId?: string
+  restoreNotice?: string
   connected: boolean
   request: ReturnType<typeof useWorkspace>['request']
   onTerminal?: (terminalId: string) => void
@@ -339,7 +341,7 @@ export const ChatMessage = memo(function ChatMessage({
               turn &&
               turn.status !== 'running' &&
               !taskRunning &&
-              latestTurnId === turn.id && <RetryTurn taskId={taskId} turnId={turn.id} />}
+              latestTurnId === turn.id && <RetryTurn taskId={taskId} turn={turn} />}
           </div>
         )}
       </div>
@@ -349,7 +351,12 @@ export const ChatMessage = memo(function ChatMessage({
         </p>
       )}
       {ownsFooter && turn && (
-        <TurnCheckpoint turn={turn} taskId={taskId} taskRunning={taskRunning} />
+        <TurnCheckpoint
+          turn={turn}
+          taskId={taskId}
+          taskRunning={taskRunning}
+          restoreNotice={restoreNotice}
+        />
       )}
       {ownsFooter &&
         turn?.checkpoint?.linked?.map((linked) => (
@@ -359,6 +366,7 @@ export const ChatMessage = memo(function ChatMessage({
             taskId={taskId}
             taskRunning={taskRunning}
             checkoutId={linked.checkoutId}
+            restoreNotice={restoreNotice}
             projectName={`${linked.repositoryName ?? linked.repositoryId} · ${linked.branch ?? 'Linked checkout'}`}
           />
         ))}

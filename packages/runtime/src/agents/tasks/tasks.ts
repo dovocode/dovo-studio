@@ -29,6 +29,7 @@ import { runClientEffect } from '@dovo/client-runtime'
 import {
   decode,
   checkpointCanUndo,
+  checkpointRestoreNotice,
   nextQueuedMessage,
   defaultTaskHarness,
   resolveTaskAgent,
@@ -137,6 +138,7 @@ type Running = {
   fiber?: Fiber.Fiber<void, RuntimeFailure>
   cwd?: string
   directories?: string[]
+  sharedCheckout?: boolean
   steer?: (messageId: string) => Promise<void>
 }
 /** Nested terminal working directories still share their ancestor checkout's admission. */
@@ -611,6 +613,8 @@ export class Tasks {
     if (!turn || !checkpoint || (!checkpoint.before && !checkpoint.linked?.length))
       throw new HttpError(404, 'This turn has no saved snapshot to go back to.')
     if (turn.status === 'running') throw new HttpError(409, 'This turn is still running.')
+    const restoreNotice = checkpointRestoreNotice(task.turns ?? [], turnId)
+    if (restoreNotice && !checkpoint.restorePending) throw new HttpError(409, restoreNotice)
     if (
       direction === 'undo' &&
       !checkpoint.restorePending &&
@@ -813,6 +817,8 @@ export class Tasks {
     if (task.status === 'running' || this.running.has(id))
       throw new HttpError(409, 'Stop the agent before reverting a file.')
     const saved = task.turns?.find((turn) => turn.id === turnId)?.checkpoint
+    const restoreNotice = turnId && checkpointRestoreNotice(task.turns ?? [], turnId)
+    if (restoreNotice) throw new HttpError(409, restoreNotice)
     const linked = checkoutId
       ? saved?.linked?.find((item) => item.checkoutId === checkoutId)
       : undefined
@@ -898,7 +904,7 @@ export class Tasks {
     return this.git.checkpointFilePreview(cwd, trees.before, trees.after, path, full, includePatch)
   }
   /** Runs the latest turn's request again, optionally with another model of the same
-   * provider. That turn's file changes are undone first (saved to a ref, never lost). */
+   * provider. Undoes the turn's file changes first when the checkpoint supports it. */
   retryTurnEffect(id: string, turnId: string, model?: string) {
     return runtimeOperation(async () => {
       this.requireExecutionOwner(id)
@@ -934,7 +940,7 @@ export class Tasks {
       })
       return {
         plan,
-        text: `Try this again from scratch${model?.trim() ? ` (you now run as ${model.trim()})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''} The request was:\n\n${request}`,
+        text: `Try this again${turn.checkpoint?.sharedCheckout ? ' using the current files' : ' from scratch'}${model?.trim() ? ` (you now run as ${model.trim()})` : ''}.${undo ? ' The file changes from your previous attempt were undone.' : ''} The request was:\n\n${request}`,
       }
     }).pipe(
       Effect.flatMap(({ text, plan }) =>
@@ -2510,36 +2516,10 @@ export class Tasks {
             yield* runtimeOperation(async () => {
               for (const directory of directories) await this.git.assertCheckoutAvailable(directory)
             })
+            run.controller.signal.throwIfAborted()
             // No asynchronous work between overlap checks and publishing ownership: another
             // run may finish preparation while the availability checks are reading Git locks.
-            if (
-              [...this.running.entries()].some(
-                ([otherId, other]) =>
-                  other !== run &&
-                  directories.some((path) =>
-                    (other.directories ?? (other.cwd ? [other.cwd] : [])).some((owned) =>
-                      checkoutPathsOverlap(owned, path),
-                    ),
-                  ) &&
-                  (other.shutdownUnconfirmed !== undefined ||
-                    this.delegationRoot(otherId) !== this.delegationRoot(id)),
-              ) ||
-              [...this.nativeDirectories.entries()].some(
-                ([otherId, owned]) =>
-                  (!owned.length ||
-                    owned.some((path) =>
-                      directories.some((directory) => checkoutPathsOverlap(path, directory)),
-                    )) &&
-                  (this.nativeStopRequested(otherId) ||
-                    this.delegationRoot(otherId) !== this.delegationRoot(id)),
-              )
-            )
-              return yield* Effect.fail(
-                new HttpError(
-                  409,
-                  'Another task is running in this repository. Wait or cancel it first.',
-                ),
-              )
+            this.requireCheckoutShutdownConfirmed(id, run, directories)
             if (
               directories.some((path) =>
                 [...this.checkoutMutations].some((owned) => checkoutPathsOverlap(path, owned)),
@@ -2553,6 +2533,7 @@ export class Tasks {
               )
             run.cwd = cwd
             run.directories = directories
+            this.markSharedCheckouts(id, run)
             yield* Deferred.succeed(ready, undefined)
             if (task.runPhase === 'finalizing') {
               run.retiring = true
@@ -2603,8 +2584,11 @@ export class Tasks {
               recoveringQueue = false
               const continuing = resumeInterruptedTurn
               if (!firstAttempt) {
+                this.requireCheckoutShutdownConfirmed(id, run, directories)
                 run.id = randomUUID()
                 run.runId = randomUUID()
+                run.sharedCheckout = false
+                this.markSharedCheckouts(id, run)
               }
               run.retiring = false
               const retryingFailedAttempt = firstAttempt && retryFailed
@@ -2636,6 +2620,7 @@ export class Tasks {
                       completed || run.preserveNativeSession ? run.id : undefined,
                     )
                   }),
+                () => run.sharedCheckout === true,
               )
               run.retiring = true
               yield* this.drainChildren(id, run.id)
@@ -3180,6 +3165,72 @@ export class Tasks {
       task = this.store.taskSummary(task.delegation.parentTaskId)
     }
     return task.id
+  }
+  private requireCheckoutShutdownConfirmed(id: string, run: Running, directories: string[]) {
+    const overlaps = (owned: readonly string[]) =>
+      owned.some((path) => directories.some((directory) => checkoutPathsOverlap(path, directory)))
+    if (
+      [...this.running.values()].some(
+        (other) =>
+          other !== run &&
+          other.shutdownUnconfirmed !== undefined &&
+          overlaps(other.directories ?? (other.cwd ? [other.cwd] : [])),
+      ) ||
+      [...this.nativeDirectories].some(([otherId, owned]) => {
+        const stopping = this.nativeStopRequested(otherId)
+        return owned.length
+          ? stopping && overlaps(owned)
+          : stopping || this.delegationRoot(otherId) !== this.delegationRoot(id)
+      })
+    )
+      throw new HttpError(
+        409,
+        'Another task is running or stopping in this checkout. Its shutdown has not been confirmed.',
+      )
+  }
+  private markSharedCheckouts(id: string, run: Running) {
+    const overlaps = (paths: readonly string[]) =>
+      paths.some((owned) => run.directories?.some((path) => checkoutPathsOverlap(path, owned)))
+    const root = this.delegationRoot(id)
+    const peers = [...this.running].filter(
+      ([otherId, other]) =>
+        other !== run &&
+        overlaps(other.directories ?? []) &&
+        this.delegationRoot(otherId) !== root &&
+        this.store.taskSummary(otherId).runPhase !== undefined,
+    )
+    if (
+      !peers.length &&
+      ![...this.nativeDirectories].some(
+        ([otherId, paths]) => overlaps(paths) && this.delegationRoot(otherId) !== root,
+      )
+    )
+      return
+    const candidates: [string, Running][] = [[id, run], ...peers]
+    const affected = candidates.filter(([, owner]) => !owner.sharedCheckout)
+    // Record overlap before the new provider starts. A runtime restart must not turn a
+    // checkpoint that spans multiple providers into a restorable snapshot.
+    this.store.transaction(() => {
+      for (const [taskId, owner] of affected) {
+        const task = this.store.taskSummary(taskId)
+        const latest = task.history.latestTurn
+        if (
+          !latest ||
+          (task.runPhase !== 'finalizing' &&
+            (latest.id !== owner.id || latest.status !== 'running'))
+        )
+          continue
+        this.store.updateTaskHistory(taskId, (current) => ({
+          ...current,
+          turns: current.turns?.map((turn) =>
+            turn.id === latest.id && turn.checkpoint
+              ? { ...turn, checkpoint: { ...turn.checkpoint, sharedCheckout: true } }
+              : turn,
+          ),
+        }))
+      }
+    })
+    for (const [, owner] of affected) owner.sharedCheckout = true
   }
   private drainChildren(parentTaskId: string, parentRunId?: string) {
     return Effect.suspend(() => {
@@ -4403,8 +4454,7 @@ export class Tasks {
               !this.store.taskSummary(id).archived,
           ).pipe(
             Effect.flatMap((run) => {
-              // Admission reserves the checkout; an approval must not block recovery
-              // of unrelated tasks. Both lifetimes remain owned by this executor.
+              // An approval in one task must not block recovery of other tasks.
               this.executor.runFork(run.completion.pipe(recordFailure))
               return Effect.void
             }),

@@ -572,6 +572,7 @@ export const linkedCheckpointSchema = mutableStruct({
 })
 export type LinkedCheckpoint = Schema.Schema.Type<typeof linkedCheckpointSchema>
 export const turnCheckpointSchema = mutableStruct({
+  sharedCheckout: Schema.optional(Schema.Literal(true)),
   // Durable undo intent. Repeat undo to finish or redo to recover after an interrupted restore.
   restorePending: Schema.optional(Schema.Literal(true)),
   linked: Schema.optional(mutableArray(linkedCheckpointSchema)),

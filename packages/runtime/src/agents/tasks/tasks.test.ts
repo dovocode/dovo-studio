@@ -12,6 +12,9 @@ import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import type { AgentRun, AgentSteer } from '../execution/types'
 import { defaultTaskHarness, type Agent, type Task } from '@dovo/protocol'
+import { readFile, writeFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { OwnedProcessShutdownError } from '../execution/stop-owned-child'
 vi.setConfig(runtimeIntegration)
 const cleanups: Array<() => Promise<void>> = []
 afterEach(async () => {
@@ -68,7 +71,7 @@ it('keeps Grok tools running when active steering is not ready', async () => {
     await running.done
   }
 })
-it('rechecks overlapping runs after asynchronous checkout availability checks', async () => {
+it('admits both runs when checkout availability checks finish together', async () => {
   const s = await setup()
   const cwd = s.store.get().repositories[0]!.path
   vi.spyOn(s.checkouts, 'directory').mockResolvedValue(cwd)
@@ -95,14 +98,12 @@ it('rechecks overlapping runs after asynchronous checkout availability checks', 
     s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: 'Work' }),
   )
   try {
-    const results = await Promise.allSettled(tasks.map((task) => s.tasks.start(task.id)))
-    expect(results.filter((result) => result.status === 'fulfilled')).toHaveLength(1)
-    expect(results.filter((result) => result.status === 'rejected')).toEqual([
-      { status: 'rejected', reason: expect.objectContaining({ status: 409 }) },
-    ])
+    const results = await Promise.all(tasks.map((task) => s.tasks.start(task.id)))
     finishProvider()
-    for (const result of results) if (result.status === 'fulfilled') await result.value.done
-    expect(run).toHaveBeenCalledTimes(1)
+    await Promise.all(results.map(({ done }) => done))
+    expect(run).toHaveBeenCalledTimes(2)
+    for (const task of tasks)
+      expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.sharedCheckout).toBe(true)
   } finally {
     releaseChecks()
     finishProvider()
@@ -497,42 +498,130 @@ it('records a provider-confirmed manual compaction on the resumed session', asyn
   ])
   expect(s.store.task(task.id).contextUsage).toBeUndefined()
 })
-it('serializes repository runs and cancellation denies pending approvals and releases the lock', async () => {
+it('runs two threads in the same checkout and stops only the selected thread', async () => {
   const s = await setup()
+  const cwd = s.store.get().repositories[0]!.path
+  const decisions = new Map<string, string>()
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async (run) => {
-      expect(await run.approve('Command', 'test')).toBe('deny')
-      run.signal.throwIfAborted()
-    },
+    run: vi
+      .fn<AgentAdapter['run']>()
+      .mockImplementationOnce(async () => writeFile(join(cwd, 'hello.txt'), 'first solo change\n'))
+      .mockImplementation(async (run) => {
+        decisions.set(run.taskId!, await run.approve('Command', 'test'))
+        run.signal.throwIfAborted()
+        run.onText('Done')
+      }),
   })
   const task = s.tasks.create({
     title: 'First',
     repositoryId: 'repo',
     agentId: 'agent',
     objective: 'Test',
+    execution: 'main',
   })
   const second = s.tasks.create({
     title: 'Second',
     repositoryId: 'repo',
     agentId: 'agent',
     objective: 'Test',
+    execution: 'main',
   })
+  await (
+    await s.tasks.start(task.id)
+  ).done
+  const earlierTurn = s.store.task(task.id).turns![0]!
+  expect(earlierTurn.checkpoint?.sharedCheckout).toBeUndefined()
+  s.store.updateTaskHistory(task.id, (current) => ({
+    ...current,
+    messages: [...current.messages, { id: 'shared-request', role: 'user', text: 'Work again' }],
+  }))
   const execution = await s.tasks.start(task.id)
   await waitForTask(() => expect(s.approvals.list()).toHaveLength(1))
-  await expect(s.tasks.start(second.id)).rejects.toThrow('Another task')
+  const otherExecution = await s.tasks.start(second.id)
+  await waitForTask(() => expect(s.approvals.list()).toHaveLength(2))
+  await writeFile(join(cwd, 'hello.txt'), 'shared change\n')
   s.tasks.cancel(task.id)
   await expect(execution.done).rejects.toThrow('Cancelled')
-  expect(s.approvals.list()).toHaveLength(0)
   expect(s.store.task(task.id).status).toBe('cancelled')
-  expect(s.store.task(task.id).turns?.at(-1)?.checkpoint?.after).toBeTruthy()
+  expect(s.store.task(second.id).status).toBe('running')
+  const remaining = s.approvals.list()
+  expect(remaining).toMatchObject([{ taskId: second.id }])
+  s.approvals.respond(remaining[0]!.id, true)
+  await otherExecution.done
+  expect(s.approvals.list()).toHaveLength(0)
+  expect(decisions.get(task.id)).toBe('deny')
+  expect(decisions.get(second.id)).toBe('approve')
+  expect(s.store.task(second.id).status).toBe('review')
+  for (const id of [task.id, second.id]) {
+    const turn = s.store.task(id).turns!.at(-1)!
+    expect(turn.checkpoint).toMatchObject({
+      sharedCheckout: true,
+      after: expect.any(String),
+      files: [expect.objectContaining({ path: 'hello.txt', after: 'shared change\n' })],
+    })
+    await expect(s.tasks.restoreTurn(id, turn.id, 'undo')).rejects.toMatchObject({ status: 409 })
+    await expect(s.tasks.restoreFile(id, 'hello.txt', turn.id)).rejects.toMatchObject({
+      status: 409,
+    })
+  }
+  await expect(s.tasks.restoreTurn(task.id, earlierTurn.id, 'undo')).rejects.toThrow(
+    'could overwrite changes from other threads',
+  )
+  await expect(s.tasks.restoreFile(task.id, 'hello.txt', earlierTurn.id)).rejects.toThrow(
+    'could overwrite changes from other threads',
+  )
   vi.spyOn(s.agents, 'get').mockResolvedValue({
     probe: vi.fn<AgentAdapter['probe']>(),
-    run: async () => {},
+    run: async () => writeFile(join(cwd, 'hello.txt'), 'solo change\n'),
   })
+  s.store.updateTaskHistory(second.id, (current) => ({
+    ...current,
+    messages: [
+      ...current.messages,
+      { id: 'solo-follow-up', role: 'user', text: 'Make a solo change' },
+    ],
+  }))
   await (
     await s.tasks.start(second.id)
   ).done
+  expect(s.store.task(second.id).turns).toHaveLength(2)
+  const turn = s.store.task(second.id).turns!.at(-1)!
+  expect(turn.checkpoint?.sharedCheckout).toBeUndefined()
+  await expect(s.tasks.restoreTurn(second.id, turn.id, 'undo')).resolves.toEqual({ ok: true })
+  expect(await readFile(join(cwd, 'hello.txt'), 'utf8')).toBe('shared change\n')
+})
+it('holds a queued follow-up when another thread in the checkout has not stopped', async () => {
+  const s = await setup()
+  const [first, second] = ['First', 'Second'].map((title) =>
+    s.tasks.create({ title, repositoryId: 'repo', agentId: 'agent', objective: 'Work' }),
+  )
+  const { promise: confirmed, resolve: confirmShutdown } = Promise.withResolvers<void>()
+  const run = vi.fn<AgentAdapter['run']>(async (active) => {
+    await active.approve('Wait', 'Hold this turn')
+    if (active.taskId === first.id)
+      throw new OwnedProcessShutdownError('Provider still running', { confirmed })
+    active.onText('Done')
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  try {
+    const firstRun = await s.tasks.start(first.id)
+    const secondRun = await s.tasks.start(second.id)
+    await waitForTask(() => expect(s.approvals.list()).toHaveLength(2))
+    await s.tasks.send(second.id, 'pending-follow-up', 'Continue')
+    s.approvals.respond(s.approvals.list().find((item) => item.taskId === first.id)!.id, true)
+    await expect(firstRun.done).rejects.toThrow('Provider still running')
+    s.approvals.respond(s.approvals.list().find((item) => item.taskId === second.id)!.id, true)
+    await expect(secondRun.done).rejects.toThrow('shutdown has not been confirmed')
+    expect(run).toHaveBeenCalledTimes(2)
+    expect(s.store.task(second.id)).toMatchObject({
+      queuePaused: true,
+      queue: [{ id: 'pending-follow-up' }],
+      turns: [{ status: 'completed' }],
+    })
+  } finally {
+    confirmShutdown()
+  }
 })
 it('preserves line steering and includes it in the next agent turn', async () => {
   const s = await setup(),
@@ -3250,7 +3339,7 @@ it('aborts and drains every worker before reporting a shutdown persistence failu
   expect(s.approvals.list()).toHaveLength(0)
 })
 
-it('recovers unrelated checkouts while an approval retains the first checkout reservation', async () => {
+it('recovers other threads even when a thread in the same checkout awaits approval', async () => {
   const s = await setup()
   const other = await fixture()
   cleanups.push(other.cleanup)
@@ -3288,15 +3377,9 @@ it('recovers unrelated checkouts while an approval retains the first checkout re
   await waitForTask(() => {
     expect(s.approvals.list().some((item) => item.taskId === tasks[0].id)).toBe(true)
     expect(s.store.task(tasks[1].id).status).toBe('review')
-    expect(s.store.task(tasks[2].id)).toMatchObject({
-      status: 'failed',
-      queuePaused: true,
-      restartRecovery: { kind: 'turn', automatic: false },
-      error: expect.stringContaining('Another task is running'),
-    })
+    expect(s.store.task(tasks[2].id).status).toBe('review')
   })
-  expect(invoked).toEqual(expect.arrayContaining([tasks[0].id, tasks[1].id]))
-  expect(invoked).not.toContain(tasks[2].id)
+  expect(invoked).toEqual(expect.arrayContaining(tasks.map((task) => task.id)))
   s.tasks.cancel(tasks[0].id)
 })
 

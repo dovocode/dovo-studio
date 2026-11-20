@@ -9,12 +9,10 @@ export function TurnLabel({ turn }: { turn: TaskTurn }) {
     const timer = setInterval(() => setNow(Date.now()), 1000)
     return () => clearInterval(timer)
   }, [turn.finishedAt, turn.status])
-  const seconds = Math.max(
-    0,
-    Math.round(
-      ((turn.finishedAt ? Date.parse(turn.finishedAt) : now) - Date.parse(turn.startedAt)) / 1000,
-    ),
-  )
+  const startedAt = Date.parse(turn.startedAt)
+  const elapsed = turn.finishedAt
+    ? Math.round((Date.parse(turn.finishedAt) - startedAt) / 1000) * 1000
+    : now - startedAt
   return (
     <span className="text-xs text-muted-foreground">
       {turn.status === 'running'
@@ -24,7 +22,7 @@ export function TurnLabel({ turn }: { turn: TaskTurn }) {
           : turn.status === 'cancelled'
             ? 'Stopped after'
             : 'Worked for'}{' '}
-      {formatTurnDuration(seconds * 1000, turn.status === 'running')}
+      {formatTurnDuration(elapsed)}
     </span>
   )
 }
