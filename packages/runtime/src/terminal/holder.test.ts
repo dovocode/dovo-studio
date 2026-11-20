@@ -328,6 +328,66 @@ it.skipIf(process.platform === 'win32')(
 )
 
 it.skipIf(process.platform === 'win32')(
+  'connects when the holder listens before publishing its key',
+  async () => {
+    const f = await fixture()
+    ensurePrivateDirectory(f.holderDirectory)
+    const key = 'ab'.repeat(32)
+    let attempts = 0
+    let published: Promise<void> | undefined
+    const server = createServer((socket) => {
+      if (++attempts === 1) {
+        socket.once('close', () => {
+          published = writeFile(join(f.holderDirectory, 'holder.key'), key, { mode: 0o600 })
+        })
+        socket.resume()
+        return
+      }
+      socket.setEncoding('utf8')
+      socket.on(
+        'data',
+        lineReader(
+          (line) => {
+            const request = JSON.parse(line) as HolderRequest
+            if (request.t === 'hello' && request.key === key) {
+              socket.write(
+                JSON.stringify({ t: 'hello', v: HOLDER_PROTOCOL, pid: 123, terminals: [] }) + '\n',
+              )
+            } else if (request.t === 'attach') {
+              socket.write(
+                JSON.stringify({
+                  t: 'reply',
+                  r: request.r,
+                  ok: false,
+                  missing: true,
+                  message: 'Not held',
+                }) + '\n',
+              )
+            }
+          },
+          () => socket.destroy(),
+        ),
+      )
+    })
+    await new Promise<void>((resolve) =>
+      server.listen(holderSocketPath(f.holderDirectory), resolve),
+    )
+    const holder = new TerminalHolder(f.holderDirectory)
+    try {
+      const events = record(holder.open(randomUUID()))
+      await waitForRuntime(() =>
+        expect(events.failures.map((error) => error.kind)).toEqual(['missing']),
+      )
+      expect(attempts).toBe(2)
+    } finally {
+      holder.disconnect()
+      await new Promise<void>((resolve) => server.close(() => resolve()))
+      await published
+    }
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
   'distinguishes an incompatible or unresponsive holder from a lost one',
   async () => {
     const f = await fixture()

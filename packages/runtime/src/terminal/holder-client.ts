@@ -44,7 +44,7 @@ export class HolderError extends Error {
     super(message)
   }
 }
-class KeyMismatch extends HolderError {}
+class HolderKeyUnavailable extends HolderError {}
 /** Input that was not sent. The caller reports it; nothing is retried later. */
 export class HolderInputError extends Error {}
 /** Input kept before the holder confirms a launch. More is refused, not buffered without limit. */
@@ -670,7 +670,7 @@ export class TerminalHolder {
       try {
         return await this.authenticate(socket)
       } catch (error) {
-        if (!(error instanceof KeyMismatch) || attempt >= 4) throw error
+        if (!(error instanceof HolderKeyUnavailable) || attempt >= 4) throw error
       }
       await delay(100)
       socket = await openSocket(this.socketPath, 3000)
@@ -765,14 +765,20 @@ export class TerminalHolder {
       try {
         key = readFileSync(join(this.directory, HOLDER_KEY_FILE), 'utf8').trim()
       } catch (error) {
-        fail(holderError(error, 'unreachable'))
+        const failure = holderError(error, 'unreachable')
+        fail(
+          (error as NodeJS.ErrnoException).code === 'ENOENT'
+            ? new HolderKeyUnavailable('unreachable', failure.message)
+            : failure,
+        )
         return
       }
       const connection = new Connection(
         socket,
         (message) => {
           if (!settled) {
-            if (message.t === 'denied') return fail(new KeyMismatch('unreachable', message.message))
+            if (message.t === 'denied')
+              return fail(new HolderKeyUnavailable('unreachable', message.message))
             if (message.t !== 'hello')
               return fail(new HolderError('incompatible', 'Unexpected terminal holder reply'))
             if (message.v !== HOLDER_PROTOCOL)
