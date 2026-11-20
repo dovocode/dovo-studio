@@ -2,6 +2,7 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { copyTextToClipboard } from '@dovo/studio-ui/clipboard'
 import { BrowserStarter } from './browser-starter'
 import { BrowserAddressInput } from './browser-address-input'
+import { BrowserErrorNotice } from './browser-error-notice'
 import { BrowserElementFeedback } from './browser-element-feedback'
 import { browserElementCaptureSchema, browserElementResultSchema } from '@dovo/protocol'
 import { BrowserDownloadsPanel } from './browser-downloads-panel'
@@ -1030,6 +1031,24 @@ function BrowserContent({
     [landscape, setLandscape] = useApplicationState(false)
   const [error, setError] = useApplicationState(restored.error ?? library.error ?? ''),
     [reload, setReload] = useApplicationState(0)
+  const loadTarget = JSON.stringify([browserKey, profileId, url])
+  const [loadError, setLoadError] = useState<{
+    target: string
+    message: string
+    dismissed?: boolean
+  }>()
+  const failedLoad = loadError?.target === loadTarget ? loadError : undefined
+  const retryLoad = useCommittedCallback(() => {
+    setLoadError(undefined)
+    setReload((value) => value + 1)
+  })
+  const adoptRecoveredPage = useCommittedCallback((pageUrl: string, revision?: number) => {
+    if (!failedLoad || pageUrl === url || revision === undefined || revision === pageRevision)
+      return
+    // Back, Forward, and history can recover the native page without a new address submission.
+    setLoadError(undefined)
+    setUrl(pageUrl === 'about:blank' ? '' : pageUrl)
+  })
   const reportedError = useRef('')
   /** Hidden panes hand failures to their owner; the banner still shows them once visible. */
   const reportHidden = (message: string) => {
@@ -1129,7 +1148,8 @@ function BrowserContent({
       return
     if (mode === 'remote') setTurnReload((value) => value + 1)
     if (mode === 'web' && url) {
-      if (browser)
+      if (failedLoad) retryLoad()
+      else if (browser)
         void browser({ action: 'reload', key: browserKey }).catch((cause) =>
           setError(String(cause)),
         )
@@ -1144,6 +1164,8 @@ function BrowserContent({
     browser,
     scope,
     browserKey,
+    failedLoad,
+    retryLoad,
   ])
   const [devices, setDevices] = useApplicationState<PreviewDevice[]>([]),
     [diagnostics, setDiagnostics] = useApplicationState<string[]>([])
@@ -1346,7 +1368,8 @@ function BrowserContent({
       starterAddressField.current?.blur()
       if (mode === 'remote') remote.current?.input({ type: 'navigate', url: target })
       else if (target === url) {
-        if (browser)
+        if (failedLoad) retryLoad()
+        else if (browser)
           void act(() =>
             browser({
               action: 'reload',
@@ -1593,6 +1616,7 @@ function BrowserContent({
               return
             }
           }
+          adoptRecoveredPage(state.url, state.documentRevision)
           setHistory({ ...state, title: state.title ?? '', cdp: state.cdp })
           // window.open('', name) can navigate after the preview is adopted.
           if (!url && /^https?:\/\//i.test(state.url)) setUrl(state.url)
@@ -1656,6 +1680,7 @@ function BrowserContent({
     profileId,
     shared,
     browserPageOnly,
+    adoptRecoveredPage,
     onBrowserWorkspaceFocus,
   ])
   const size = previewPresets.find((p) => p.id === preset) ?? previewPresets[0]
@@ -1677,12 +1702,14 @@ function BrowserContent({
     let alive = true
     let frame: number | undefined
     let previousCommand = ''
+    let failed = false
     const hole = nativeBrowserHole(slot.current)
     const backgroundHole = nativeBrowserHole(previewSlot.current)
     const update = () => {
       frame = undefined
       if (!alive) return
-      const rect = paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
+      const rect =
+        !failed && paneVisible && slot.current ? nativeBrowserBounds(slot.current) : undefined
       const occlusion = slot.current && rect && hole.occlusion(rect)
       const obscured = !!occlusion
       hole.update(obscured ? rect : undefined)
@@ -1754,10 +1781,26 @@ function BrowserContent({
       const signature = JSON.stringify(command)
       if (signature === previousCommand) return
       previousCommand = signature
-      void browser(command).catch((e) => {
-        if (previousCommand === signature) previousCommand = ''
-        if (alive) setError(String(e))
-      })
+      void browser(command).then(
+        () => {
+          if (alive && command.action === 'show' && signature === previousCommand)
+            setLoadError((previous) => (previous?.target === loadTarget ? undefined : previous))
+        },
+        (cause: unknown) => {
+          if (!alive || signature !== previousCommand) return
+          const message = cause instanceof Error ? cause.message : String(cause)
+          if (command.action === 'show') {
+            // Layout changes must not keep retrying a failed load. Hide the native view
+            // and let the user retry the same address without disturbing this tab's history.
+            failed = true
+            setLoadError({ target: loadTarget, message })
+            schedule()
+          } else {
+            previousCommand = ''
+            setError(message)
+          }
+        },
+      )
     }
     const schedule = () => {
       frame ??= requestAnimationFrame(update)
@@ -1798,6 +1841,8 @@ function BrowserContent({
     selectedTab.keepAwake,
     paneVisible,
     previewSourceKey,
+    loadTarget,
+    reload,
   ])
   const deviceAction = (
     device: PreviewDevice,
@@ -2104,6 +2149,7 @@ function BrowserContent({
       if (key === 'n' && openBrowserWindow) void act(openBrowserWindow)
       if (key === 'r') {
         if (mode === 'remote') remote.current?.input({ type: 'reload' })
+        else if (failedLoad) retryLoad()
         else if (browser && url)
           void act(() =>
             browser({ action: event.shiftKey ? 'hard-reload' : 'reload', key: browserKey }),
@@ -2817,9 +2863,10 @@ function BrowserContent({
                     size="sm"
                     variant="ghost"
                     className="studio-browser-menu-action"
-                    onClick={() =>
-                      void act(() => browser({ action: 'hard-reload', key: browserKey }))
-                    }
+                    onClick={() => {
+                      if (failedLoad) retryLoad()
+                      else void act(() => browser({ action: 'hard-reload', key: browserKey }))
+                    }}
                   >
                     <RotateCw size={17} /> <span>Hard reload</span>
                   </Button>
@@ -3315,15 +3362,14 @@ function BrowserContent({
         className="size-8 shrink-0"
         aria-busy={mode === 'remote' && remoteLoading}
         disabled={busy || (mode !== 'remote' && !url)}
-        onClick={() =>
-          mode === 'remote'
-            ? remoteOnline
-              ? remote.current?.input({ type: 'reload' })
-              : remote.current?.reconnect()
-            : browser
-              ? void act(() => browser({ action: 'reload', key: browserKey }))
-              : setReload((value) => value + 1)
-        }
+        onClick={() => {
+          if (mode === 'remote') {
+            if (remoteOnline) remote.current?.input({ type: 'reload' })
+            else remote.current?.reconnect()
+          } else if (!opener && failedLoad) retryLoad()
+          else if (browser) void act(() => browser({ action: 'reload', key: browserKey }))
+          else setReload((value) => value + 1)
+        }}
       >
         <RotateCw size={15} />
       </IconButton>
@@ -4048,10 +4094,13 @@ function BrowserContent({
           </Button>
         </div>
       )}
-      {error && (
-        <p role="alert" className="p-3 text-xs text-destructive">
-          {error}
-        </p>
+      {error && <BrowserErrorNotice message={error} onDismiss={() => setError('')} />}
+      {mode === 'web' && failedLoad && !failedLoad.dismissed && (
+        <BrowserErrorNotice
+          message={failedLoad.message}
+          onRetry={retryLoad}
+          onDismiss={() => setLoadError({ ...failedLoad, dismissed: true })}
+        />
       )}
       {tabs
         .filter(

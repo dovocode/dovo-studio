@@ -68,6 +68,7 @@ const built = await build({
                   ? 'export const PhysicalControls=()=>null;'
                   : `
 import {createContext,createElement,useContext,useState} from 'react';
+import {Effect} from 'effect';
 import {resolveSettingsTarget} from '@dovo/protocol';
 export * from '@dovo/protocol';
 export {useSecretReferenceCheck} from '${root}packages/studio-core/src/use-secret-reference-check';
@@ -81,7 +82,12 @@ export const providers=[];export const useResolvedTheme=()=> 'dark';export const
 export const remoteBrowserHtml=${JSON.stringify(viewer)};
 window.browserInputs=[];window.browserViewports=[];window.addEventListener('message',event=>{if(event.data?.channel==='fixture'){if(event.data.input)window.browserInputs.push(event.data.input);if(event.data.viewport)window.browserViewports.push(event.data.viewport)}});
 window.calls=[]; const request=async(path,body)=>{window.calls.push({path,body});return {ok:true,ticket:body.url?body.tabId:'blank:'+body.tabId,tabId:body.tabId,profileId:body.profileId}};
-const browser=async(command)=>{window.calls.push(command)};
+const browser=async(command)=>{
+  window.calls.push(command);
+  if(command.action==='status')return window.nativeBrowserStatus;
+  if(command.action==='show' && command.url===window.failedBrowserUrl)
+    throw new Error("Error invoking remote method 'preview:browser': Error: (-105) loading '"+command.url+"'");
+};
 const profile={id:'runtime',name:'LAN runtime',connection:{address:'http://runtime.local',token:'paired-device'}};
 const snapshot={workspace:{tasks:[],repositories:[]}};
 const sources=[{profile,name:profile.name,scope:'runtime',connected:true,snapshot}];
@@ -102,7 +108,10 @@ export const useStudioHost=()=>({browser});
 export const useAppPreferences=()=>({browserProfiles:[{id:'default',name:'Local Default'},{id:'local-work',name:'Local Work'}],browserProfileByThread:{},browserAgentAccess:{}});
 export const useRemoteBrowserProfiles=()=>({profiles:[{id:'default',name:'Remote Default'},{id:'remote-work',name:'Remote Work'},{id:'remote-personal',name:'Remote Personal'}],error:'',loading:false});
 export const readAppPreferences=()=>({browserViewport:'fill'});
-window.preferences=[];export const updateAppPreferences=change=>window.preferences.push(change);export const startPolling=()=>({stop:async()=>{}});
+window.preferences=[];export const updateAppPreferences=change=>window.preferences.push(change);export const startPolling=effect=>{
+  window.pollBrowser=()=>Effect.runPromise(effect);
+  return {stop:async()=>{}};
+};
 `,
         }))
       },
@@ -393,6 +402,56 @@ try {
     throw new Error('Unrelated streaming mutations resent native browser bounds')
   await page.getByRole('button', { name: 'Reload', exact: true }).click()
   await page.waitForFunction(() => window.calls.some((call) => call.action === 'reload'))
+  const failedUrl = 'http://missing.invalid/'
+  await page.evaluate((url) => (window.failedBrowserUrl = url), failedUrl)
+  await input.fill(failedUrl)
+  await input.press('Enter')
+  const failure = page.getByRole('alert').filter({ hasText: 'Could not load this page' })
+  await failure.waitFor()
+  const technical = page.getByText(`(-105) loading '${failedUrl}'`, { exact: true })
+  if (await technical.isVisible()) throw new Error('Technical error details should start collapsed')
+  await page.getByText('Technical details', { exact: true }).click()
+  await technical.waitFor()
+  await page.getByText('Technical details', { exact: true }).click()
+  await page.screenshot({ path: root + 'work/browser-tabs/navigation-error.png' })
+  await page.getByRole('button', { name: 'Dismiss error', exact: true }).click()
+  await failure.waitFor({ state: 'hidden' })
+  const attempts = () =>
+    page.evaluate(
+      (url) => window.calls.filter((call) => call.action === 'show' && call.url === url).length,
+      failedUrl,
+    )
+  if ((await attempts()) !== 1) throw new Error('Layout changes retried the failed address')
+  await page.getByRole('button', { name: 'Reload', exact: true }).click()
+  await failure.waitFor()
+  await page.evaluate(() => (window.failedBrowserUrl = undefined))
+  await page.getByRole('button', { name: 'Retry', exact: true }).click()
+  await failure.waitFor({ state: 'hidden' })
+  if ((await attempts()) !== 3) throw new Error('Retry should load the same address once')
+  const nextFailedUrl = 'http://missing.invalid/next'
+  await page.evaluate(
+    async ({ failedUrl, nextFailedUrl }) => {
+      window.failedBrowserUrl = nextFailedUrl
+      window.nativeBrowserStatus = {
+        url: failedUrl,
+        back: true,
+        forward: false,
+        documentRevision: 1,
+      }
+      await window.pollBrowser()
+    },
+    { failedUrl, nextFailedUrl },
+  )
+  await input.fill(nextFailedUrl)
+  await input.press('Enter')
+  await failure.waitFor()
+  await page.getByRole('button', { name: 'Back', exact: true }).click()
+  await page.evaluate(async () => {
+    window.nativeBrowserStatus.documentRevision++
+    await window.pollBrowser()
+  })
+  await failure.waitFor({ state: 'hidden' })
+  if ((await input.inputValue()) !== failedUrl) throw new Error('Back did not restore the address')
   await page.getByLabel('Browser options', { exact: true }).click()
   await page.getByRole('button', { name: 'Hard reload', exact: true }).click()
   await page.getByRole('button', { name: 'Open DevTools', exact: true }).click()

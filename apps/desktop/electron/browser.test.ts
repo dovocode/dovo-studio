@@ -454,11 +454,13 @@ it.each(['hide', 'close'])(
   },
 )
 
-it('keeps a redirected or reloaded page visible when its original navigation is aborted', async () => {
+it.each([
+  Object.assign(new Error('Navigation replaced'), { code: 'ERR_ABORTED' }),
+  Object.assign(new Error('Navigation replaced'), { errno: -3 }),
+  new Error("(-3) loading 'https://example.com/'"),
+])('keeps a redirected or reloaded page visible after %s', async (error) => {
   const call = handler()
-  mocks.contents.loadURL.mockRejectedValueOnce(
-    Object.assign(new Error('Navigation replaced'), { code: 'ERR_ABORTED' }),
-  )
+  mocks.contents.loadURL.mockRejectedValueOnce(error)
   const command = {
     action: 'show',
     key: 'redirected',
@@ -469,6 +471,17 @@ it('keeps a redirected or reloaded page visible when its original navigation is 
   expect(mocks.view.setVisible).toHaveBeenLastCalledWith(true)
   await call(event, command)
   expect(mocks.contents.loadURL).toHaveBeenCalledOnce()
+})
+
+it('reports a real load failure and retries even if Chromium already shows that address', async () => {
+  const call = handler()
+  const url = 'https://missing.invalid/ERR_ABORTED'
+  const command = { ...workspaceShow, url }
+  mocks.contents.loadURL.mockRejectedValueOnce(new Error(`(-105) loading '${url}'`))
+  await expect(call(event, command)).rejects.toThrow('(-105) loading')
+  vi.spyOn(mocks.contents, 'getURL').mockReturnValue(url)
+  await expect(call(event, command)).resolves.toBeUndefined()
+  expect(mocks.contents.loadURL.mock.calls).toEqual([[url], [url]])
 })
 
 it.each(['pointer', 'escape', 'click', 'typing', 'dialog'] as const)(

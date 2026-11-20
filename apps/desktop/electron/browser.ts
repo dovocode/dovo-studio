@@ -121,6 +121,7 @@ type Entry = {
   prepareNavigation: (url: string) => void
   cookiesReady?: Promise<void>
   url: string
+  failedLoadUrl?: string
   /** Created by Chromium itself, retaining target names, opener and deferred navigation. */
   pageCreated?: boolean
   /** Navigation readiness, without waiting for page subresources. */
@@ -155,7 +156,10 @@ function openableUrl(input: string) {
 }
 /** A newer navigation replaced this one; that is not a failure to report. */
 const isAborted = (error: unknown) =>
-  error instanceof Error && 'code' in error && error.code === 'ERR_ABORTED'
+  error instanceof Error &&
+  (('code' in error && error.code === 'ERR_ABORTED') ||
+    ('errno' in error && error.errno === -3) ||
+    /^\(-3\) loading ['"]/.test(error.message))
 /** A live renderer can be shown while images or other subresources are still loading. */
 async function loadUntilReady(entry: Entry, url: string) {
   if (entry.cookiesReady) await entry.cookiesReady
@@ -2422,10 +2426,14 @@ export function registerBrowser(
         )
           entry.view.setBounds(bounds)
       }
-      if (entry.url !== url) {
+      const retrying = entry.failedLoadUrl === url
+      if (entry.url !== url || retrying) {
+        entry.failedLoadUrl = undefined
         entry.url = url
         entry.loading =
-          entry.view.webContents.getURL() === url ? undefined : loadUntilReady(entry, url)
+          retrying || entry.view.webContents.getURL() !== url
+            ? loadUntilReady(entry, url)
+            : undefined
       }
       syncBackgroundThrottling(entry)
       const loading = entry.loading
@@ -2435,7 +2443,7 @@ export function registerBrowser(
         } catch (error) {
           if (entry.loading === loading) {
             entry.loading = undefined
-            if (!isAborted(error)) entry.url = ''
+            if (!isAborted(error)) entry.failedLoadUrl = url
           }
           // Redirects and a user reload abort loadURL without making the live page unusable.
           if (!isAborted(error)) throw error

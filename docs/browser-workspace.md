@@ -533,6 +533,10 @@ Press Enter to submit the address. Browser options holds Forward, bookmarks, dow
 permissions, extensions and the tab profile when they are available. The recent-tab list still shows
 tabs and their owner.
 
+When a desktop Browser tab or thread preview cannot load a page, select **Retry** to try the same
+address. Open **Technical details** to see the browser error. You can dismiss the notice and use
+**Reload** later. Redirects and superseded loads do not show an error.
+
 Selecting a tab preserves its position; navigating moves it to the top of the recent list. Desktop
 tabs, bookmarks and history show favicons when available, with a globe fallback. Remote localhost
 icons are never fetched from the local computer.
