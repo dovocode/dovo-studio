@@ -180,10 +180,13 @@ function withStatusLock(root, write) {
   const deadline = performance.now() + 2000; // provider hook timeout is three seconds
   fs.mkdirSync(path.dirname(lock), {recursive:true, mode:0o700});
   fs.mkdirSync(temporary, {mode:0o700});
+  const directoryChanging = error => ['ENOENT', 'EACCES', 'EPERM'].includes(error.code);
   const removeEmptyLock = () => {
     try { fs.rmdirSync(lock); }
     catch (error) {
-      if (!['ENOENT', 'ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
+      // Another writer can be removing or replacing this directory. Only a
+      // successful rename below grants ownership, even if removal is deferred.
+      if (!directoryChanging(error) && !['ENOTEMPTY', 'EEXIST'].includes(error.code)) throw error;
     }
   };
   try {
@@ -199,7 +202,7 @@ function withStatusLock(root, write) {
       catch (error) {
         // Windows can deny a directory read while another writer removes it.
         // Go through the bounded acquisition loop again without assuming we own it.
-        if (!['ENOENT', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+        if (!directoryChanging(error)) throw error;
       }
       if (names) {
         for (const name of names) {

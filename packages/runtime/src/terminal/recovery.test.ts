@@ -501,6 +501,17 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
         }
         return readDirectory.call(this, file, ...args);
       };
+      const removeDirectory = fs.rmdirSync;
+      let removeDenied = false;
+      fs.rmdirSync = function(file, ...args) {
+        if (!removeDenied && String(file).endsWith('writer')) {
+          removeDenied = true;
+          const error = new Error('Simulated Windows lock directory contention during removal');
+          error.code = 'EPERM';
+          throw error;
+        }
+        return removeDirectory.call(this, file, ...args);
+      };
       fs.readFileSync = function(file, ...args) {
         const contents = read.call(this, file, ...args);
         if (String(file).endsWith('activity.json')) {
