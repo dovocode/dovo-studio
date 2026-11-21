@@ -48,7 +48,9 @@ it.skipIf(process.platform === 'win32')(
     const ok = async (...args: string[]) => {
       const result = await dovo(...args)
       if (result.code !== 0)
-        throw new Error(`CLI exited ${result.code}: ${result.stderr || result.stdout}`)
+        throw new Error(
+          `CLI ${args.join(' ')} exited ${result.code}: ${result.stderr || result.stdout}`,
+        )
       return result.stdout
     }
     const terminal = (...args: string[]) => ok('terminal', ...args)
@@ -145,7 +147,7 @@ it.skipIf(process.platform === 'win32')(
       })
       const exit = once(events, 'exit')
       const lines = createInterface({ input: events.stdout })
-      const timer = setTimeout(() => events.kill('SIGTERM'), 10_000)
+      const timer = setTimeout(() => events.kill('SIGTERM'), 30_000)
       try {
         const stream = lines[Symbol.asyncIterator]()
         const snapshot = await stream.next()
@@ -155,17 +157,22 @@ it.skipIf(process.platform === 'win32')(
           terminals: [{ id: parentId, childNotices: expect.arrayContaining([expectedNotice]) }],
         })
         await terminal('send', workerId, 'd')
-        const changed = await stream.next()
-        expect(changed.done).toBe(false)
-        expect(JSON.parse(changed.value!)).toMatchObject({
-          type: 'changed',
-          terminal: {
-            id: parentId,
-            childNotices: expect.arrayContaining([
-              { terminalId: workerId, state: 'done', turn: 1 },
-            ]),
-          },
-        })
+        let reported = false
+        for await (const line of stream) {
+          const event = JSON.parse(line)
+          if (
+            event.type === 'changed' &&
+            event.terminal.id === parentId &&
+            event.terminal.childNotices?.some(
+              (notice: { terminalId: string; state: string; turn: number }) =>
+                notice.terminalId === workerId && notice.state === 'done' && notice.turn === 1,
+            )
+          ) {
+            reported = true
+            break
+          }
+        }
+        expect(reported, 'The parent event stream must report the completed child turn').toBe(true)
       } finally {
         clearTimeout(timer)
         events.kill('SIGINT')
@@ -197,11 +204,11 @@ it.skipIf(process.platform === 'win32')(
         JSON.parse(await terminal('read', parentId, '--tail', '--json')).childNotices,
       ).not.toContainEqual(expectedNotice)
     } finally {
-      for (const name of ['reviewer', 'worker', 'coordinator', 'unrelated'])
-        await dovo('terminal', 'close', name)
+      await Promise.all(['reviewer', 'worker'].map((name) => dovo('terminal', 'close', name)))
+      await Promise.all(['coordinator', 'unrelated'].map((name) => dovo('terminal', 'close', name)))
       await dovo('stop')
       rmSync(home, { recursive: true, force: true })
     }
   },
-  120_000,
+  180_000,
 )

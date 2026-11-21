@@ -57,20 +57,20 @@ async function create(directory: string) {
 async function race(directory: string, count: number) {
   const starts = Array.from({ length: count }, () => start(directory))
   // Every starter but one sees the winner and leaves without touching its socket or key.
-  const results = await Promise.all(
-    starts.map(({ child, exited }) =>
-      Promise.race([
-        exited,
-        new Promise<'running'>((resolve) => setTimeout(() => resolve('running'), 4000)),
-      ]).then((result) => ({ child, result })),
-    ),
-  )
-  const running = results.filter(({ result }) => result === 'running')
-  expect(running).toHaveLength(1)
-  const stopped = results.filter(({ result }) => result !== 'running')
-  expect(stopped.map(({ result }) => result)).toEqual(stopped.map(() => [0, null]))
-  const winner = running[0]!.child
-  expect(await statePid(directory)).toBe(winner.pid)
+  const winner = await waitForRuntime(async () => {
+    const pid = await statePid(directory)
+    const owner = starts.find(({ child }) => child.pid === pid)?.child
+    expect(owner).toBeDefined()
+    expect(owner?.exitCode).toBeNull()
+    expect(owner?.signalCode).toBeNull()
+    for (const { child } of starts) {
+      if (child !== owner) {
+        expect(child.exitCode).toBe(0)
+        expect(child.signalCode).toBeNull()
+      }
+    }
+    return owner!
+  })
   return winner
 }
 

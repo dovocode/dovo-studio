@@ -91,7 +91,10 @@ it('pushes terminal lifecycle events and tells a lost connection from a closed t
   })
 
   await s.terminals.close(second.id)
-  expect(await next()).toMatchObject({ type: 'closed', terminal: { id: second.id } })
+  let closed = await next()
+  // The stream can observe the process exit before the terminal is removed.
+  while (closed.type === 'changed' && closed.terminal.id === second.id) closed = await next()
+  expect(closed).toMatchObject({ type: 'closed', terminal: { id: second.id } })
 
   // A stopped runtime is a lost connection, not a closed terminal.
   const port = runtime.port
