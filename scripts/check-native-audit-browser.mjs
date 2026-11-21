@@ -370,9 +370,23 @@ try {
   )
   await page.evaluate(() => {
     window.show('empty')
+    const connection = { ...window.runtime.profile.connection, token: 'renewed-pairing' }
     window.update({
-      connection: { address: 'http://owner-b.local:8787', token: 'renewed-pairing' },
+      connection,
+      profile: { ...window.runtime.profile, connection },
     })
+  })
+  await page.getByText('Closed', { exact: true }).waitFor()
+  await page.evaluate(() => window.show('draft'))
+  assert.equal(
+    await page.getByRole('textbox', { name: 'Message' }).inputValue(),
+    'Full unsent native draft\nsecond line',
+    'Renewing the same pairing preserves the draft',
+  )
+  await page.evaluate(() => {
+    window.show('empty')
+    const connection = { ...window.runtime.profile.connection, runtimeId: 'replacement-runtime' }
+    window.update({ connection, profile: { ...window.runtime.profile, connection } })
   })
   await page.getByText('Closed', { exact: true }).waitFor()
   await page.evaluate(() => window.show('draft'))

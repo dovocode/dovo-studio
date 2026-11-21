@@ -12,7 +12,7 @@ async function bundle(mobile) {
         contents: `
 import React from 'react';
 import {createRoot} from 'react-dom/client';
-import {runtimeProfile,defaultTaskHarness,decode,snapshotSchema,agentPresetSchema,taskSchema,aggregateRuntimeTasks} from '@dovo/protocol';
+import {runtimeProfile,defaultTaskHarness,decode,snapshotSchema,agentPresetSchema,taskSchema,aggregateRuntimeTasks,mergeSharedSettings} from '@dovo/protocol';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {readAppPreferences,updateAppPreferences} from './packages/studio-core/src/preferences.ts';
 import {${mobile ? 'RuntimeProvider as Provider,useRuntime as useProvider' : 'WorkspaceProvider as Provider,useWorkspace as useProvider'}} from './${mobile ? 'apps/mobile/src/runtime/connection' : 'packages/studio-core/src/workspace'}/provider.tsx';
@@ -38,11 +38,17 @@ window.fetch=async(url,init={})=>{
   if(path==='/api/mutations/status')return Response.json({error:'Unsupported'},{status:404});
   const kind=path==='/api/agents/presets/apply'?'presets':path==='/api/agents/settings/sync'?'settings':null;
   if(kind){
-    if(window.failures[kind][host])return Response.json({error:window.failures[kind][host]},{status:400});
-    if(kind==='presets')server.workspace.agents=input.presets.map(preset=>({...preset,globalPreset:preset}));
-    else server.defaults.scopedSettings.shared=input.shared;
-    server.revision++;
-    return Response.json(kind==='presets'?{ok:true}:{shared:input.shared});
+    if(window.failures[kind][host]&&(kind==='presets'||input.shared.length))return Response.json({error:window.failures[kind][host]},{status:400});
+    if(kind==='presets'){
+      server.workspace.agents=input.presets.map(preset=>({...preset,globalPreset:preset}));
+      server.revision++;
+      return Response.json({ok:true});
+    }
+    const settings=server.defaults.scopedSettings;
+    const shared=mergeSharedSettings(settings.shared,input.shared);
+    if(JSON.stringify(shared)!==JSON.stringify(settings.shared))server.revision++;
+    settings.shared=shared;
+    return Response.json({shared});
   }
   if(path==='/api/devices/revoke-self')return Response.json({ok:true});
   throw new Error('Unexpected request '+url);
@@ -269,7 +275,12 @@ try {
 
     const count = (kind) =>
       page.evaluate(
-        (kind) => window.calls.filter((call) => call.path === '/api/agents/' + kind).length,
+        (kind) =>
+          window.calls.filter(
+            (call) =>
+              call.path === '/api/agents/' + kind &&
+              (kind === 'presets/apply' || call.input.shared.length > 0),
+          ).length,
         kind === 'presets' ? 'presets/apply' : 'settings/sync',
       )
     const waitError = (message) =>
