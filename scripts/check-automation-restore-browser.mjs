@@ -55,6 +55,11 @@ function App(){const[mode,setMode]=useState('desktop'),[version,setVersion]=useS
       '../ui/content/text',
       '../ui/theme',
     ].map((path) => ({ path, importer: mobile, contents: controls })),
+    ...['../controls/action', '../theme', './text'].map((path) => ({
+      path,
+      importer: root + 'apps/mobile/src/ui/content/draft-storage-notice.tsx',
+      contents: controls,
+    })),
   ],
 )
 const browser = await chromium.launch()
