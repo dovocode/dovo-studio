@@ -11,6 +11,7 @@ const built = await bundleBrowser(
       loader: 'tsx',
       contents: `
 import {createRoot} from 'react-dom/client';
+import {flushSync} from 'react-dom';
 import {WorkspaceInput} from './packages/extension-tasks/src/unified/workspace-input';
 import {decode,snapshotSchema,defaultTaskHarness} from '@dovo/protocol';
 window.calls=[];window.opened=[];window.pages=[];window.scenario='thread';
@@ -39,7 +40,7 @@ else throw Error('Unexpected endpoint '+path);
 return decode(schema,result);
 }};
 const root=createRoot(document.getElementById('app'));
-window.refresh=()=>root.render(<WorkspaceInput active={window.active} onOpen={tab=>window.opened.push(tab)} onBrowser={async(url,target)=>window.pages.push({url,target})}/>);
+window.refresh=()=>flushSync(()=>root.render(<WorkspaceInput active={window.active} onOpen={tab=>window.opened.push(tab)} onBrowser={async(url,target)=>window.pages.push({url,target})}/>));
 window.refresh();
 `,
     },
@@ -295,7 +296,15 @@ try {
     window.active = { kind: 'thread', runtimeId: 'local', id: 'another-thread' }
     window.refresh()
   })
-  await page.evaluate(() => window.releasePending())
+  const chooseDestination = page.getByRole('button', { name: 'Choose destination', exact: true })
+  await chooseDestination.waitFor()
+  await page.evaluate(() => {
+    window.active = undefined
+    window.refresh()
+    window.releasePending()
+  })
+  assert.equal(await request.inputValue(), 'ls -la')
+  await chooseDestination.click()
   await page.getByRole('button', { name: 'Run command', exact: true }).waitFor()
   await page.waitForFunction(
     () => !document.querySelector('select[aria-label="Workspace terminal shell"]')?.disabled,
