@@ -101,6 +101,11 @@ createRoot(document.getElementById('app')).render(<App/>);
               importer: mobile + 'ui/',
               contents: 'export {useState as useApplicationState} from "react";',
             },
+            ...['../controls/action', '../theme'].map((path) => ({
+              path,
+              importer: mobile + 'ui/content/draft-storage-notice.tsx',
+              contents: controls,
+            })),
             ...[
               '../../../ui/controls/action',
               '../../../ui/controls/field',
