@@ -196,7 +196,11 @@ function withStatusLock(root, write) {
       }
       let names;
       try { names = fs.readdirSync(lock); }
-      catch (error) { if (error.code !== 'ENOENT') throw error; }
+      catch (error) {
+        // Windows can deny a directory read while another writer removes it.
+        // Go through the bounded acquisition loop again without assuming we own it.
+        if (!['ENOENT', 'EACCES', 'EPERM'].includes(error.code)) throw error;
+      }
       if (names) {
         for (const name of names) {
           const match = /^(\d+)\.[a-f0-9-]+$/.exec(name);

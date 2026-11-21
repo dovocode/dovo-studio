@@ -490,6 +490,17 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
       const [reporter, turnId] = process.argv.slice(1);
       const status = require(reporter).status;
       const read = fs.readFileSync;
+      const readDirectory = fs.readdirSync;
+      let denied = false;
+      fs.readdirSync = function(file, ...args) {
+        if (!denied && String(file).endsWith('writer')) {
+          denied = true;
+          const error = new Error('Simulated Windows directory removal during lock acquisition');
+          error.code = 'EPERM';
+          throw error;
+        }
+        return readDirectory.call(this, file, ...args);
+      };
       fs.readFileSync = function(file, ...args) {
         const contents = read.call(this, file, ...args);
         if (String(file).endsWith('activity.json')) {
