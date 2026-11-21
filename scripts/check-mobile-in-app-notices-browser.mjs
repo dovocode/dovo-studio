@@ -16,10 +16,12 @@ import {useState} from 'react';import {createRoot} from 'react-dom/client';
 import {RegistryProvider} from '@effect/atom-react';
 import {InAppInputNotifications} from './src/notifications/in-app-input';
 import {deliverInAppNotification} from './src/notifications/in-app-delivery';
+import {registerAccessibleNotificationInput} from './src/notifications/visibility';
 import {useDraft} from './src/tasks/draft/use-draft';
 import {RuntimeContext} from '@fixture/runtime';
 import {RouteContext} from 'expo-router';
 window.routes=[];window.deliver=deliverInAppNotification;
+window.showApproval=registerAccessibleNotificationInput;
 const nativeSetTimeout=window.setTimeout;const nativeClearTimeout=window.clearTimeout;
 const timers=new Map();let timerId=1000000;
 window.setTimeout=(fn,ms,...args)=>ms===8000?(timers.set(++timerId,fn),timerId):nativeSetTimeout(fn,ms,...args);
@@ -204,7 +206,15 @@ try {
   })
   assert.equal(await open.count(), 0, 'push duplicate must not remain queued')
   await page.evaluate(() => window.enableNotices(true))
-  // Only the viewing computer suppresses a matching task ID.
+  // A visible approval card suppresses only that approval on its own computer.
+  await page.evaluate(() => {
+    window.hideApproval = window.showApproval({
+      runtimeId: 'one',
+      taskId: 'source',
+      inputId: 'active',
+      inputType: 'approval',
+    })
+  })
   entries[0].snapshot.approvals = [approval('active', 'source')]
   entries[1].snapshot.approvals.push(approval('other-computer', 'source'))
   await page.evaluate((value) => window.updateEntries(value), entries)
@@ -214,6 +224,7 @@ try {
   )
   await page.evaluate((value) => window.updateEntries(value), entries)
   await page.waitForFunction(() => !document.querySelector('[aria-label="Open Source thread"]'))
+  await page.evaluate(() => window.hideApproval())
   // Keep later requests when the first expires. Dismiss only the selected request.
   entries[1].snapshot.approvals.push(approval('expire'), approval('queued', 'third'))
   await page.evaluate((value) => window.updateEntries(value), entries)

@@ -156,16 +156,17 @@ it.each([
     const input = run('ask')
     await claudeAdapter.run(input)
     const options = captured.options[0]
+    const requestSignal = new AbortController().signal
     await options.canUseTool?.(
       name,
       {},
       {
-        signal: input.signal,
+        signal: requestSignal,
         toolUseID: 'tool',
         requestId: 'request',
       },
     )
-    expect(input.approve).toHaveBeenCalledWith(name, '{}', kind)
+    expect(input.approve).toHaveBeenCalledWith(name, '{}', kind, undefined, requestSignal)
   },
 )
 it('disables Claude built-ins and inherited MCP servers for text-only utility turns', async () => {

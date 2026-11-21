@@ -1049,7 +1049,7 @@ const tools: Array<
         },
         {
           name: 'terminal_run',
-          description: 'Run a command. check:true returns exit code, test failures and tail.',
+          description: 'Run a command. check:true reports exit, failures and tail.',
           inputSchema: {
             type: 'object' as const,
             properties: {
@@ -1086,7 +1086,7 @@ const tools: Array<
         },
         {
           name: 'terminal_close',
-          description: "Close this session's terminal. Stops its process and discards output.",
+          description: 'Close a terminal, stop its process and discard output.',
           inputSchema: {
             type: 'object' as const,
             properties: { id: { type: 'string' as const } },
@@ -1096,7 +1096,7 @@ const tools: Array<
         {
           name: 'terminal_read',
           description:
-            'Read output or summary:true for status and tail. Wait for exit, an until state, or a turn later than afterTurn.',
+            'Read output. summary:true shows status and tail. Wait for exit, until, or afterTurn.',
           inputSchema: {
             type: 'object' as const,
             properties: {

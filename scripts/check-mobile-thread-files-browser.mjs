@@ -296,6 +296,7 @@ try {
   await page.getByRole('button', { name: 'Edit file', exact: true }).click()
   await page.getByRole('textbox', { name: 'File contents' }).fill('saved from mobile\n')
   await page.getByRole('button', { name: 'Save file', exact: true }).click()
+  await page.getByRole('textbox', { name: 'File contents' }).waitFor({ state: 'detached' })
   await page.getByText('saved from mobile', { exact: true }).waitFor()
   assert.equal(await readFile(join(directory, 'src', 'hello.ts'), 'utf8'), 'saved from mobile\n')
   await page.getByRole('button', { name: 'Browse files' }).click()
