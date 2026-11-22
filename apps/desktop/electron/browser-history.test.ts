@@ -214,11 +214,34 @@ it('compacts a long journal, keeps private profiles in memory and clears every j
   ).toEqual([])
 })
 
-// A separate process records visits and removals until SIGKILL stops it mid-write. Every
-// operation it reported as finished must survive. Only the operation in progress may go either way.
+// Use a regular file for progress and kill at a specific filesystem operation.
 const writer = `
-import { writeSync } from 'node:fs'
-import { registerHooks } from 'node:module'
+import fs from 'node:fs'
+import { join } from 'node:path'
+import { registerHooks, syncBuiltinESMExports } from 'node:module'
+const root = process.env.HISTORY_ROOT
+const stopAfter = Number(process.env.HISTORY_STOP_AFTER)
+const crashAt = process.env.HISTORY_CRASH_AT
+const append = fs.appendFileSync
+const rename = fs.renameSync
+let finished = 0
+const crash = () => process.kill(process.pid, 'SIGKILL')
+fs.appendFileSync = (path, text, options) => {
+  if (crashAt === 'append' && finished === stopAfter && String(path).endsWith('.journal')) {
+    append(path, String(text).slice(0, 12), options)
+    crash()
+  }
+  return append(path, text, options)
+}
+fs.renameSync = (from, to) => {
+  rename(from, to)
+  if (crashAt === 'compact' && finished === stopAfter && String(to).endsWith('work.json')) crash()
+}
+syncBuiltinESMExports()
+const report = (operation, url) => {
+  append(join(root, 'progress.log'), operation + ' ' + url + '\\n')
+  if (++finished > stopAfter) throw new Error('Missed the expected crash point')
+}
 registerHooks({
   resolve(specifier, context, next) {
     if (specifier === 'electron')
@@ -231,15 +254,14 @@ registerHooks({
 })
 const { createBrowserHistory } = await import(process.argv[2])
 const history = createBrowserHistory('work', () => {})
-// Report each completed write before starting another. SIGKILL can drop buffered stdout.
 for (let index = 0; ; index++) {
   const url = 'https://example.com/' + (index % 1500)
   history.add(url)
-  writeSync(1, 'add ' + url + '\\n')
-  if (index % 250 === 249) {
+  report('add', url)
+  if (crashAt === 'append' && index % 250 === 249) {
     const removed = 'https://example.com/' + ((index - 100) % 1500)
     history.remove(removed)
-    writeSync(1, 'remove ' + removed + '\\n')
+    report('remove', removed)
   }
 }
 `
@@ -249,9 +271,16 @@ it.skipIf(process.platform === 'win32')(
   async () => {
     const script = join(f.root, 'writer.mts')
     await writeFile(script, writer)
-    // Kill points around the 1,000-line compaction and well past it.
-    for (const [round, stopAfter] of [150, 990, 1010, 2400].entries()) {
-      const root = join(f.root, `round-${round}`)
+    const fixtureRoot = f.root
+    // Cover a torn append, writes after removals, and a new snapshot with its old journal.
+    const crashPoints = [
+      ['append', 250],
+      ['append', 990],
+      ['compact', 999],
+      ['append', 2400],
+    ] as const
+    for (const [round, [crashAt, stopAfter]] of crashPoints.entries()) {
+      const root = join(fixtureRoot, `round-${round}`)
       await mkdir(root)
       const child = spawn(
         process.execPath,
@@ -262,19 +291,25 @@ it.skipIf(process.platform === 'win32')(
           script,
           new URL('./browser-history.ts', import.meta.url).href,
         ],
-        { env: { ...process.env, HISTORY_ROOT: root }, stdio: ['ignore', 'pipe', 'pipe'] },
+        {
+          env: {
+            ...process.env,
+            HISTORY_ROOT: root,
+            HISTORY_STOP_AFTER: String(stopAfter),
+            HISTORY_CRASH_AT: String(crashAt),
+          },
+          stdio: ['ignore', 'ignore', 'pipe'],
+        },
       )
-      let output = '',
-        stderr = ''
-      const closed = new Promise<void>((resolve) => child.once('close', () => resolve()))
+      let stderr = ''
       child.stderr.on('data', (chunk: Buffer) => (stderr += chunk))
-      child.stdout.on('data', (chunk: Buffer) => {
-        output += chunk
-        if (output.split('\n').length > stopAfter) child.kill('SIGKILL')
+      const signal = await new Promise<string | null>((resolve, reject) => {
+        child.once('error', reject)
+        child.once('close', (_code, signal) => resolve(signal))
       })
-      await closed
-      const done = output.split('\n').slice(0, -1)
-      expect({ finished: done.length >= stopAfter, stderr }).toMatchObject({ finished: true })
+      expect(signal, stderr).toBe('SIGKILL')
+      const done = (await readFile(join(root, 'progress.log'), 'utf8')).trimEnd().split('\n')
+      expect(done).toHaveLength(stopAfter)
 
       // Replay the finished operations to find the expected visit count for each page.
       const expected = new Map<string, number>()
@@ -283,36 +318,27 @@ it.skipIf(process.platform === 'win32')(
         if (operation === 'add') expected.set(url, (expected.get(url) ?? 0) + 1)
         else expected.delete(url)
       }
-      // The operation after the last finished one may also have been saved.
-      const index = done.filter((line) => line.startsWith('add ')).length
-      const next = `https://example.com/${index % 1500}`
-      const nextRemoval =
-        index % 250 === 0 && index > 0 ? `https://example.com/${(index - 101) % 1500}` : ''
+      // The compaction case dies after the new snapshot is installed, so the last visit
+      // must survive too. The other cases leave only an incomplete journal record.
+      if (crashAt === 'compact') expected.set(`https://example.com/${stopAfter}`, 1)
       f.root = root
-      for (const load of ['after the kill', 'after startup compaction']) {
-        const history = createBrowserHistory('work', vi.fn<(...args: unknown[]) => void>())
-        const saved = new Map(
-          history
-            .search({ text: '', startTime: 0, maxResults: 10_000 })
-            .map((item) => [item.url, item.visitCount]),
-        )
-        for (const [url, count] of expected) {
-          if (url === nextRemoval && !saved.has(url)) continue
-          expect([load, url, saved.get(url)]).toEqual([
-            load,
-            url,
-            url === next && saved.get(url) === count + 1 ? count + 1 : count,
-          ])
-        }
-        expect([
-          load,
-          [...saved.keys()].filter((url) => !expected.has(url) && url !== next),
-        ]).toEqual([load, []])
-        for (const url of saved.keys())
-          expect(new Set(history.visits(url).map((visit) => visit.visitId)).size).toBe(
-            saved.get(url),
+      try {
+        for (const load of ['after the kill', 'after startup compaction']) {
+          const history = createBrowserHistory('work', vi.fn<(...args: unknown[]) => void>())
+          const saved = new Map(
+            history
+              .search({ text: '', startTime: 0, maxResults: 10_000 })
+              .map((item) => [item.url, item.visitCount]),
           )
-        history.dispose()
+          expect(saved, load).toEqual(expected)
+          for (const url of saved.keys())
+            expect(new Set(history.visits(url).map((visit) => visit.visitId)).size).toBe(
+              saved.get(url),
+            )
+          history.dispose()
+        }
+      } finally {
+        f.root = fixtureRoot
       }
     }
   },
