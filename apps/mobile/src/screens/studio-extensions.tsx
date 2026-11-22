@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ExtensionMarketplace } from './extension-marketplace'
 import { ExtensionComponents, ExtensionSettingsConflicts } from './studio-extension-components'
 import { useState } from 'react'
@@ -39,13 +40,14 @@ const destination = {
 } satisfies Record<Extract<ExtensionContribution, { kind: 'studio' }>['destination'], Href>
 
 export default function StudioExtensionsScreen() {
+  const uiText = useInterfaceText()
   const { activeId, overviews } = useRuntime()
   const [owner, setOwner] = useState(activeId ?? '')
   const sources = overviews.filter((entry) => entry.snapshot?.studioExtensionsSupported)
   const source = sources.find((entry) => entry.profile.id === owner) ?? sources[0]
   return (
     <View style={{ flex: 1 }}>
-      <ScreenHeader title="Studio extensions" />
+      <ScreenHeader title={uiText('Studio extensions')} />
       <ScrollView
         contentContainerStyle={{ padding: 16, gap: 12 }}
         keyboardShouldPersistTaps="handled"
@@ -53,7 +55,7 @@ export default function StudioExtensionsScreen() {
         {source ? (
           <>
             <Choice
-              label="Computer"
+              label={uiText('Computer')}
               value={source.profile.id}
               items={sources.map((entry) => ({
                 id: entry.profile.id,
@@ -66,7 +68,7 @@ export default function StudioExtensionsScreen() {
             </RuntimeScope>
           </>
         ) : (
-          <Text>Update a paired computer to manage Studio extensions.</Text>
+          <Text>{uiText('Update a paired computer to manage Studio extensions.')}</Text>
         )}
       </ScrollView>
     </View>
@@ -74,6 +76,7 @@ export default function StudioExtensionsScreen() {
 }
 
 function ExtensionsList() {
+  const uiText = useInterfaceText()
   const { read, connected, snapshot } = useRuntime()
   const state = useStudioExtensions(
     read,
@@ -105,16 +108,16 @@ function ExtensionsList() {
   }
   return (
     <>
-      {!connected && <Text>Computer offline.</Text>}
+      {!connected && <Text>{uiText('Computer offline.')}</Text>}
       {(error || state.error) && (
         <Text accessibilityRole="alert" style={{ color: colors.error }}>
           {error || state.error}
         </Text>
       )}
       <View style={row}>
-        <Text>Allow agents to install their own extensions on this computer</Text>
+        <Text>{uiText('Allow agents to install their own extensions on this computer')}</Text>
         <Switch
-          accessibilityLabel="Allow agent installation"
+          accessibilityLabel={uiText('Allow agent installation')}
           value={state.allowAgentInstall}
           disabled={!connected || !state.loaded || state.busy}
           onValueChange={(enabled) =>
@@ -124,12 +127,12 @@ function ExtensionsList() {
       </View>
       <View style={row}>
         <Action
-          label={adding ? 'Close manifest editor' : 'Add extension manifest'}
+          label={adding ? uiText('Close manifest editor') : uiText('Add extension manifest')}
           secondary
           onPress={() => setAdding(!adding)}
         />
         <Action
-          label="Reload extensions"
+          label={uiText('Reload extensions')}
           secondary
           disabled={!connected || state.busy}
           onPress={() => void state.load()}
@@ -138,7 +141,9 @@ function ExtensionsList() {
       {snapshot?.studioExtensionMarketplaceSupported && (
         <>
           <Action
-            label={marketplace ? 'Close marketplace' : 'Browse extension marketplace'}
+            label={
+              marketplace ? uiText('Close marketplace') : uiText('Browse extension marketplace')
+            }
             secondary
             onPress={() => setMarketplace(!marketplace)}
           />
@@ -155,7 +160,7 @@ function ExtensionsList() {
       {adding && (
         <>
           <Field
-            label="Extension manifest JSON"
+            label={uiText('Extension manifest JSON')}
             value={source}
             onChangeText={setSource}
             multiline
@@ -163,7 +168,7 @@ function ExtensionsList() {
             autoCorrect={false}
           />
           <Action
-            label="Stage manifest"
+            label={uiText('Stage manifest')}
             disabled={!connected || state.busy || !source.trim()}
             onPress={() => void stage()}
           />
@@ -180,7 +185,12 @@ function ExtensionsList() {
               {entry.installed?.name ?? entry.draft?.name ?? entry.id}
             </Text>
             <Text>
-              {entry.id} · {entry.enabled ? 'Enabled' : entry.installed ? 'Disabled' : 'Draft'}
+              {entry.id} ·{' '}
+              {entry.enabled
+                ? uiText('Enabled')
+                : entry.installed
+                  ? uiText('Disabled')
+                  : uiText('Draft')}
             </Text>
             {entry.error && <Text accessibilityRole="alert">{entry.error}</Text>}
             <View style={row}>
@@ -188,13 +198,13 @@ function ExtensionsList() {
                 <>
                   <Action
                     secondary
-                    label="Review draft"
+                    label={uiText('Review draft')}
                     disabled={!connected || state.busy}
                     onPress={() => setReview(entry)}
                   />
                   <Action
                     secondary
-                    label="Discard draft"
+                    label={uiText('Discard draft')}
                     disabled={!connected || state.busy}
                     onPress={() =>
                       void state.change({
@@ -208,7 +218,7 @@ function ExtensionsList() {
               )}
               {entry.installed && (
                 <Action
-                  label={entry.enabled ? 'Disable extension' : 'Enable extension'}
+                  label={entry.enabled ? uiText('Disable extension') : uiText('Enable extension')}
                   secondary
                   disabled={!connected || state.busy}
                   onPress={() =>
@@ -222,7 +232,7 @@ function ExtensionsList() {
               )}
               {entry.canRollback && (
                 <Action
-                  label="Restore previous version"
+                  label={uiText('Restore previous version')}
                   secondary
                   disabled={!connected || state.busy}
                   onPress={() =>
@@ -235,14 +245,14 @@ function ExtensionsList() {
                 />
               )}
               <Action
-                label="Remove extension"
+                label={uiText('Remove extension')}
                 secondary
                 disabled={!connected || state.busy}
                 onPress={() =>
-                  Alert.alert('Remove extension?', entry.id, [
-                    { text: 'Cancel', style: 'cancel' },
+                  Alert.alert(uiText('Remove extension?'), entry.id, [
+                    { text: uiText('Cancel'), style: 'cancel' },
                     {
-                      text: 'Remove',
+                      text: uiText('Remove'),
                       style: 'destructive',
                       onPress: () =>
                         void state.change({
@@ -274,12 +284,12 @@ function ExtensionsList() {
       })}
       {review && (
         <Sheet
-          title="Review proposed manifest"
+          title={uiText('Review proposed manifest')}
           busy={state.busy}
           onClose={() => setReview(undefined)}
           footer={
             <Action
-              label="Install draft"
+              label={uiText('Install draft')}
               disabled={!connected || state.busy || reviewChanged}
               onPress={async () => {
                 if (
@@ -296,7 +306,7 @@ function ExtensionsList() {
         >
           {reviewChanged && (
             <Text accessibilityRole="alert">
-              This draft changed. Close this review and open the new draft.
+              {uiText('This draft changed. Close this review and open the new draft.')}
             </Text>
           )}
           {state.error && <Text accessibilityRole="alert">{state.error}</Text>}
@@ -348,6 +358,7 @@ function ExtensionSettings({
   disabled: boolean
   save: SaveExtensionSettings
 }) {
+  const uiText = useInterfaceText()
   const {
     values: settings,
     dirty,
@@ -362,7 +373,9 @@ function ExtensionSettings({
   if (!fields?.length) return null
   return (
     <View style={{ gap: 8 }}>
-      <Text accessibilityRole="header">{entry.installed?.name} settings</Text>
+      <Text accessibilityRole="header">
+        {uiText('{name} settings', { name: entry.installed?.name })}
+      </Text>
       {fields.map((field) =>
         typeof field.default === 'boolean' ? (
           <View key={field.id} style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
@@ -391,7 +404,7 @@ function ExtensionSettings({
         busy={saving}
       />
       <Action
-        label="Save extension settings"
+        label={uiText('Save extension settings')}
         secondary
         disabled={disabled || saving || !dirty || conflicts.length > 0}
         onPress={() => void commit()}
@@ -410,6 +423,7 @@ export function MobileExtensionTile({
   contributionId: string
   visible: boolean
 }) {
+  const uiText = useInterfaceText()
   const { read, connected, snapshot } = useRuntime()
   const state = useStudioExtensions(
     read,
@@ -426,7 +440,7 @@ export function MobileExtensionTile({
   if (entry && contribution?.kind === 'view')
     return (
       <View style={{ gap: 8 }}>
-        {!connected && <Text>Computer offline.</Text>}
+        {!connected && <Text>{uiText('Computer offline.')}</Text>}
         <ExtensionComponents
           key={`${entry.id}/${contribution.id}`}
           entry={entry}
@@ -443,9 +457,9 @@ export function MobileExtensionTile({
     />
   ) : (
     <>
-      <Text>{state.error || 'This extension contribution is unavailable.'}</Text>
+      <Text>{state.error || uiText('This extension contribution is unavailable.')}</Text>
       <Action
-        label="Reload extension"
+        label={uiText('Reload extension')}
         secondary
         disabled={!connected}
         onPress={() => void state.load()}
@@ -461,6 +475,7 @@ function ExtensionAction({
   entry: StudioExtensionEntry
   contribution: Exclude<ExtensionContribution, { kind: 'view' }>
 }) {
+  const uiText = useInterfaceText()
   const { read, connected } = useRuntime()
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState('')
@@ -495,7 +510,7 @@ function ExtensionAction({
   return (
     <>
       <Action
-        label={open ? 'Close app' : busy ? 'Running…' : contribution.title}
+        label={open ? uiText('Close app') : busy ? uiText('Running…') : contribution.title}
         secondary
         disabled={!connected || busy}
         onPress={() => void activate()}

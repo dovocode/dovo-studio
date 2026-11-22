@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, View } from 'react-native'
 import Svg, { Circle, Rect, Text as SvgText } from 'react-native-svg'
@@ -30,25 +31,29 @@ export function ExtensionSettingsConflicts({
   resolveConflicts,
   busy,
 }: Pick<ExtensionViewState, 'conflicts' | 'resolveConflicts' | 'busy'>) {
+  const uiText = useInterfaceText()
   if (!conflicts.length) return null
   return (
     <Surface style={{ ...stack, padding: 12, borderRadius: 10 }}>
-      <Text accessibilityRole="alert">Some settings changed on another client.</Text>
+      <Text accessibilityRole="alert">{uiText('Some settings changed on another client.')}</Text>
       {conflicts.map(({ id, title, saved }) => (
         <Text key={id}>
-          {title}. Saved value: {extensionViewText(saved) || 'Empty'}
+          {uiText('{title}. Saved value: {value}', {
+            title,
+            value: extensionViewText(saved) || uiText('Empty'),
+          })}
         </Text>
       ))}
       <View style={row}>
         <Action
           secondary
-          label="Use saved values"
+          label={uiText('Use saved values')}
           disabled={busy}
           onPress={() => resolveConflicts('saved')}
         />
         <Action
           secondary
-          label="Keep my edits"
+          label={uiText('Keep my edits')}
           disabled={busy}
           onPress={() => resolveConflicts('local')}
         />
@@ -66,11 +71,14 @@ export function ExtensionComponents({
   contribution: Extract<ExtensionContribution, { kind: 'view' }>
   save: SaveExtensionSettings
 }) {
+  const uiText = useInterfaceText()
   const { read, connected } = useRuntime()
   const state = useExtensionView(contribution.view, entry, read, connected, save)
   return (
     <ExtensionComponentBoundary
-      fallback={<Text accessibilityRole="alert">This extension view could not load.</Text>}
+      fallback={
+        <Text accessibilityRole="alert">{uiText('This extension view could not load.')}</Text>
+      }
     >
       <View style={stack}>
         <Node id={contribution.view.root} state={state} />
@@ -78,14 +86,19 @@ export function ExtensionComponents({
         {state.dirty && (
           <View style={row}>
             <Action
-              label="Save extension settings"
+              label={uiText('Save extension settings')}
               disabled={state.disabled || state.conflicts.length > 0}
               onPress={() => void state.save()}
             />
-            <Action secondary label="Discard edits" disabled={state.busy} onPress={state.discard} />
+            <Action
+              secondary
+              label={uiText('Discard edits')}
+              disabled={state.busy}
+              onPress={state.discard}
+            />
           </View>
         )}
-        {state.busy && <Text accessibilityLiveRegion="polite">Working…</Text>}
+        {state.busy && <Text accessibilityLiveRegion="polite">{uiText('Working…')}</Text>}
         {state.error && <Text accessibilityRole="alert">{state.error}</Text>}
       </View>
     </ExtensionComponentBoundary>
@@ -93,6 +106,7 @@ export function ExtensionComponents({
 }
 
 function Node({ id, state }: { id: string; state: ExtensionViewState }) {
+  const uiText = useInterfaceText()
   const [selected, select] = useState('')
   const [open, setOpen] = useState(false)
   const [standard, setStandard] = useState(false)
@@ -326,7 +340,7 @@ function Node({ id, state }: { id: string; state: ExtensionViewState }) {
           )}
           <Action
             secondary
-            label={standard ? 'Show custom component' : 'Show Studio components'}
+            label={standard ? uiText('Show custom component') : uiText('Show Studio components')}
             onPress={() => setStandard(!standard)}
           />
         </View>

@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { DataView } from './dashboard-data-view'
 import { MobileExtensionTile } from './studio-extensions'
 import { useState } from 'react'
@@ -50,6 +51,7 @@ const tileKinds = Object.keys(dashboardTileLabels).filter((kind): kind is Dashbo
 const row = { flexDirection: 'row', flexWrap: 'wrap', gap: 8 } as const
 
 export default function DashboardsScreen() {
+  const uiText = useInterfaceText()
   const { overviews, activeId } = useRuntime()
   const { navigate } = useNavigation()
   const [owner, setOwner] = useState(activeId ?? '')
@@ -60,7 +62,7 @@ export default function DashboardsScreen() {
     computers[0]
   return (
     <View style={{ flex: 1 }}>
-      <ScreenHeader title="Dashboards" onBack={() => navigate('tasks')} />
+      <ScreenHeader title={uiText('Dashboards')} onBack={() => navigate('tasks')} />
       {selected ? (
         <RuntimeScope key={selected.profile.id} runtimeId={selected.profile.id}>
           <Board
@@ -73,7 +75,7 @@ export default function DashboardsScreen() {
           />
         </RuntimeScope>
       ) : (
-        <Text>Connect a computer with dashboard support.</Text>
+        <Text>{uiText('Connect a computer with dashboard support.')}</Text>
       )}
     </View>
   )
@@ -88,6 +90,7 @@ function Board({
   computers: { id: string; name: string }[]
   setOwner: (id: string) => void
 }) {
+  const uiText = useInterfaceText()
   const { read, connected, readCache, snapshot } = useRuntime()
   const { focused } = useNavigation()
   const { colors } = useTheme()
@@ -135,7 +138,7 @@ function Board({
       const asset = selection.assets[0]
       const file = asset.file ?? new File(asset.uri)
       if (Math.max(asset.size ?? 0, file.size) > maxDashboardTemplateBytes)
-        throw new Error('Choose a dashboard file of 1 MB or less.')
+        throw new Error(uiText('Choose a dashboard file of 1 MB or less.'))
       openTemplate(await file.text())
     })
   }
@@ -172,7 +175,7 @@ function Board({
       contentContainerStyle={{ padding: 16, gap: 12 }}
     >
       <Choice
-        label="Computer"
+        label={uiText('Computer')}
         value={owner}
         items={computers}
         onChange={setOwner}
@@ -180,7 +183,7 @@ function Board({
       />
       {state.dashboards.length > 0 && (
         <Choice
-          label="Dashboard"
+          label={uiText('Dashboard')}
           value={dashboard?.id ?? ''}
           items={state.dashboards.map((item) => ({ id: item.id, name: item.title }))}
           onChange={state.select}
@@ -188,7 +191,9 @@ function Board({
         />
       )}
       {!connected && (
-        <Text accessibilityRole="alert">Computer offline. Save your edits when it reconnects.</Text>
+        <Text accessibilityRole="alert">
+          {uiText('Computer offline. Save your edits when it reconnects.')}
+        </Text>
       )}
       {state.cacheError && <Text>{state.cacheError}</Text>}
       {state.error && (
@@ -200,20 +205,20 @@ function Board({
         {draft ? (
           <>
             <Action
-              label="Save dashboard"
+              label={uiText('Save dashboard')}
               disabled={!connected || state.pending}
               onPress={() => void state.save()}
             />
             {draft.revision > 0 && state.error && (
               <Action
-                label="Keep as new dashboard"
+                label={uiText('Keep as new dashboard')}
                 secondary
                 disabled={state.pending}
                 onPress={state.copyDraft}
               />
             )}
             <Action
-              label="Cancel edits"
+              label={uiText('Cancel edits')}
               secondary
               disabled={state.pending}
               onPress={() => state.edit(undefined)}
@@ -222,18 +227,18 @@ function Board({
         ) : (
           <>
             <Action
-              label="New dashboard"
+              label={uiText('New dashboard')}
               disabled={state.pending || fileBusy}
               onPress={state.create}
             />
             <Action
-              label="Import dashboard"
+              label={uiText('Import dashboard')}
               secondary
               disabled={state.pending || fileBusy}
               onPress={() => void importFile()}
             />
             <Action
-              label="Paste template"
+              label={uiText('Paste template')}
               secondary
               disabled={state.pending || fileBusy}
               onPress={() => {
@@ -244,19 +249,19 @@ function Board({
             {dashboard && (
               <>
                 <Action
-                  label="Edit dashboard"
+                  label={uiText('Edit dashboard')}
                   secondary
                   disabled={state.pending || fileBusy}
                   onPress={() => state.edit(dashboard)}
                 />
                 <Action
-                  label="Export dashboard"
+                  label={uiText('Export dashboard')}
                   secondary
                   disabled={fileBusy}
                   onPress={() => void exportFile(dashboard)}
                 />
                 <Action
-                  label="View template"
+                  label={uiText('View template')}
                   secondary
                   disabled={fileBusy}
                   onPress={() => {
@@ -265,20 +270,24 @@ function Board({
                   }}
                 />
                 <Action
-                  label="Delete dashboard"
+                  label={uiText('Delete dashboard')}
                   secondary
                   disabled={!connected || state.pending || fileBusy}
                   onPress={() => {
-                    Alert.alert('Delete dashboard?', dashboard.title, [
-                      { text: 'Cancel', style: 'cancel' },
-                      { text: 'Delete', style: 'destructive', onPress: () => void state.remove() },
+                    Alert.alert(uiText('Delete dashboard?'), dashboard.title, [
+                      { text: uiText('Cancel'), style: 'cancel' },
+                      {
+                        text: uiText('Delete'),
+                        style: 'destructive',
+                        onPress: () => void state.remove(),
+                      },
                     ])
                   }}
                 />
               </>
             )}
             <Action
-              label="Reload"
+              label={uiText('Reload')}
               secondary
               disabled={!connected || state.pending}
               onPress={() => void state.load()}
@@ -289,7 +298,7 @@ function Board({
       {!draft && template !== undefined && (
         <>
           <Field
-            label="Dashboard template (JSON)"
+            label={uiText('Dashboard template (JSON)')}
             value={template}
             multiline
             autoCapitalize="none"
@@ -298,12 +307,16 @@ function Board({
           />
           <View style={row}>
             <Action
-              label="Open as draft"
+              label={uiText('Open as draft')}
               secondary
               disabled={!template.trim() || fileBusy}
               onPress={importTemplate}
             />
-            <Action label="Close template" secondary onPress={() => setTemplate(undefined)} />
+            <Action
+              label={uiText('Close template')}
+              secondary
+              onPress={() => setTemplate(undefined)}
+            />
           </View>
         </>
       )}
@@ -313,21 +326,23 @@ function Board({
         </Text>
       )}
       {draft && draft.id === importedId && (
-        <Text>Review the imported tiles and bind sources on this computer before you save.</Text>
+        <Text>
+          {uiText('Review the imported tiles and bind sources on this computer before you save.')}
+        </Text>
       )}
       {draft ? (
         <>
           <Field
-            label="Dashboard title"
+            label={uiText('Dashboard title')}
             maxLength={100}
             value={draft.title}
             editable={!state.pending}
             onChangeText={(title) => state.edit({ ...draft, title })}
           />
           <Choice
-            label="Tile type"
+            label={uiText('Tile type')}
             value={kind}
-            items={availableKinds.map((id) => ({ id, name: dashboardTileLabels[id] }))}
+            items={availableKinds.map((id) => ({ id, name: uiText(dashboardTileLabels[id]) }))}
             disabled={state.pending}
             onChange={(id) => {
               const match = tileKinds.find((entry) => entry === id)
@@ -335,7 +350,7 @@ function Board({
             }}
           />
           <Action
-            label="Add tile"
+            label={uiText('Add tile')}
             secondary
             disabled={state.pending || draft.tiles.length >= 32}
             onPress={() =>
@@ -408,6 +423,7 @@ function TileEditor({
   remove: () => void
   disabled: boolean
 }) {
+  const uiText = useInterfaceText()
   const { snapshot } = useRuntime()
   const workspace = snapshot?.workspace
   const { colors } = useTheme()
@@ -415,9 +431,9 @@ function TileEditor({
     <View
       style={{ borderColor: colors.border, borderWidth: 1, borderRadius: 10, padding: 12, gap: 8 }}
     >
-      <Text accessibilityRole="header">{dashboardTileLabels[tile.kind]}</Text>
+      <Text accessibilityRole="header">{uiText(dashboardTileLabels[tile.kind])}</Text>
       <Field
-        label="Tile title"
+        label={uiText('Tile title')}
         value={tile.title}
         maxLength={100}
         editable={!disabled}
@@ -425,7 +441,7 @@ function TileEditor({
       />
       {tile.kind === 'extension' && (
         <Choice
-          label="Extension contribution"
+          label={uiText('Extension contribution')}
           value={`${tile.extensionId}/${tile.contributionId}`}
           selectedLabel={
             tile.extensionId
@@ -464,7 +480,7 @@ function TileEditor({
           return items ? (
             <Choice
               key={key}
-              label={label}
+              label={uiText(label)}
               items={items}
               value={value}
               disabled={disabled}
@@ -473,7 +489,7 @@ function TileEditor({
           ) : (
             <Field
               key={key}
-              label={label}
+              label={uiText(label)}
               value={value}
               editable={!disabled}
               autoCapitalize="none"
@@ -485,13 +501,13 @@ function TileEditor({
         })}
       {(tile.kind === 'api' || tile.kind === 'mcp') && (
         <Choice
-          label="Display"
+          label={uiText('Display')}
           value={tile.chart}
           disabled={disabled}
           items={[
-            { id: 'table', name: 'Table' },
-            { id: 'line', name: 'Line graph' },
-            { id: 'number', name: 'Metric' },
+            { id: 'table', name: uiText('Table') },
+            { id: 'line', name: uiText('Line graph') },
+            { id: 'number', name: uiText('Metric') },
           ]}
           onChange={(chart) => {
             if (chart === 'table' || chart === 'line' || chart === 'number')
@@ -502,7 +518,7 @@ function TileEditor({
       {(['span', 'height'] as const).map((key) => (
         <Choice
           key={key}
-          label={key === 'span' ? 'Desktop width' : 'Desktop height'}
+          label={key === 'span' ? uiText('Desktop width') : uiText('Desktop height')}
           value={String(tile[key])}
           disabled={disabled}
           items={['1', '2', '3', '4'].map((id) => ({ id, name: id }))}
@@ -511,19 +527,25 @@ function TileEditor({
       ))}
       <View style={row}>
         <Action
-          label="Move earlier"
+          label={uiText('Move earlier')}
           secondary
           disabled={disabled || first}
           onPress={() => move(-1)}
         />
-        <Action label="Move later" secondary disabled={disabled || last} onPress={() => move(1)} />
-        <Action label="Remove tile" secondary disabled={disabled} onPress={remove} />
+        <Action
+          label={uiText('Move later')}
+          secondary
+          disabled={disabled || last}
+          onPress={() => move(1)}
+        />
+        <Action label={uiText('Remove tile')} secondary disabled={disabled} onPress={remove} />
       </View>
     </View>
   )
 }
 
 function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: DashboardTile }) {
+  const uiText = useInterfaceText()
   const { call, connected, snapshot, activeId } = useRuntime()
   const { navigate, focused } = useNavigation()
   const workspace = snapshot?.workspace
@@ -554,14 +576,16 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
         <>
           <Text selectable>{tile.kind === 'api' ? tile.url : `${tile.server} · ${tile.tool}`}</Text>
           <Action
-            label={busy ? 'Reading…' : 'Refresh data'}
+            label={busy ? uiText('Reading…') : uiText('Refresh data')}
             secondary
             disabled={!connected || busy}
             onPress={() => void state.refresh()}
           />
           {data && (
             <>
-              <Text>Updated {new Date(data.updatedAt).toLocaleTimeString()}</Text>
+              <Text>
+                {uiText('Updated {time}', { time: new Date(data.updatedAt).toLocaleTimeString() })}
+              </Text>
               <DataView value={data.data} chart={tile.chart} />
             </>
           )}
@@ -573,7 +597,13 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
           <Text selectable>{tile.command}</Text>
           <View style={row}>
             <Action
-              label={busy ? 'Working…' : state.recovering ? 'Recover run' : 'Run command'}
+              label={
+                busy
+                  ? uiText('Working…')
+                  : state.recovering
+                    ? uiText('Recover run')
+                    : uiText('Run command')
+              }
               secondary
               disabled={
                 !connected ||
@@ -585,15 +615,15 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
                 const run = () => void state.run(() => setOpen(true))
                 if (state.recovering) run()
                 else
-                  Alert.alert(`Run this command in ${project}?`, tile.command, [
-                    { text: 'Cancel', style: 'cancel' },
-                    { text: 'Run', onPress: run },
+                  Alert.alert(uiText('Run this command in {project}?', { project }), tile.command, [
+                    { text: uiText('Cancel'), style: 'cancel' },
+                    { text: uiText('Run'), onPress: run },
                   ])
               }}
             />
             {terminalId && (
               <Action
-                label="Close session"
+                label={uiText('Close session')}
                 secondary
                 disabled={!connected || busy}
                 onPress={() => void state.close()}
@@ -602,12 +632,16 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
           </View>
           {terminal?.exited && (
             <Text>
-              Exited{terminal.exitCode === undefined ? '' : ` with code ${terminal.exitCode}`}
+              {terminal.exitCode === undefined
+                ? uiText('Exited')
+                : uiText('Exited with code {code}', { code: terminal.exitCode })}
             </Text>
           )}
         </>
       )}
-      {sessionId && <Action label="Open terminal" secondary onPress={() => setOpen(true)} />}
+      {sessionId && (
+        <Action label={uiText('Open terminal')} secondary onPress={() => setOpen(true)} />
+      )}
       {sessionId && open && focused && (
         <SafeModal visible onRequestClose={close}>
           <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -621,7 +655,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
       {tile.kind === 'iframe' && (
         <>
           <Text selectable>{tile.url}</Text>
-          <Action label="Open embed" secondary onPress={() => setOpen(true)} />
+          <Action label={uiText('Open embed')} secondary onPress={() => setOpen(true)} />
           {open && focused && (
             <SafeModal visible onRequestClose={close}>
               <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -653,7 +687,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
         <>
           <Text selectable>{tile.url}</Text>
           <Action
-            label="Open browser tile"
+            label={uiText('Open browser tile')}
             secondary
             disabled={!connected}
             onPress={() => setOpen(true)}
@@ -676,7 +710,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
       {tile.kind === 'app' && (
         <>
           <Action
-            label="Open MCP App"
+            label={uiText('Open MCP App')}
             secondary
             disabled={!connected}
             onPress={() => setOpen(true)}
@@ -692,7 +726,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
       {tile.kind === 'gui' && (
         <>
           <Action
-            label="Open remote desktop"
+            label={uiText('Open remote desktop')}
             secondary
             disabled={!snapshot?.remoteDesktopEnabled}
             onPress={() => setOpen(true)}
@@ -703,7 +737,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
       {tile.kind === 'pipelines' && (
         <>
           <Action
-            label="Refresh pipelines"
+            label={uiText('Refresh pipelines')}
             secondary
             disabled={!connected || busy}
             onPress={() => void state.refreshPipelines()}
@@ -722,12 +756,12 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
               }}
             />
           ))}
-          {pipelines?.items.length === 0 && <Text>No pipelines found.</Text>}
+          {pipelines?.items.length === 0 && <Text>{uiText('No pipelines found.')}</Text>}
         </>
       )}
       {tile.kind === 'jobs' && (
         <>
-          <Action label="Open automations" secondary onPress={() => navigate('jobs')} />
+          <Action label={uiText('Open automations')} secondary onPress={() => navigate('jobs')} />
           {workspace?.automations.slice(0, 8).map((entry) => (
             <Action
               key={entry.id}

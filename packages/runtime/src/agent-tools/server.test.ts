@@ -704,6 +704,8 @@ it('keeps read-only providers from sending task terminal or device input', async
       'automation_list',
       'automation_prepare',
       'todos',
+      'studio_extensions',
+      'dashboards',
       'linked_projects',
       'browser',
       'workflow',

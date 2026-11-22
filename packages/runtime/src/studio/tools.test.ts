@@ -555,10 +555,13 @@ it('exposes only selected tools over the actual MCP transport', async () => {
     await transport.close()
   })
   await client.connect(transport)
-  const names = (await client.listTools()).tools
-    .map((tool) => tool.name)
-    .filter((name) => name.startsWith('studio_'))
-  expect(names.sort()).toEqual(['studio_diagnostics', 'studio_discover', 'studio_threads'])
+  const names = (await client.listTools()).tools.map((tool) => tool.name)
+  expect(names).toContain('studio_extensions')
+  // Studio extensions are a core task tool. The flags control the other studio_ tools.
+  const optionalTools = names.filter(
+    (name) => name.startsWith('studio_') && name !== 'studio_extensions',
+  )
+  expect(optionalTools.sort()).toEqual(['studio_diagnostics', 'studio_discover', 'studio_threads'])
   expect(
     (await client.callTool({ name: 'studio_threads', arguments: { command: { action: 'list' } } }))
       .isError,

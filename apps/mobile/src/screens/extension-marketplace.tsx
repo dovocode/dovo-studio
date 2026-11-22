@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
@@ -9,7 +10,6 @@ import type {
 } from '@dovo/protocol'
 import {
   addMarketplaceDashboard,
-  marketplaceContributionSource,
   useExtensionMarketplace,
   useMarketplaceSources,
 } from '@dovo/studio-core'
@@ -37,6 +37,7 @@ export function ExtensionMarketplace({
   stage: (input: StudioExtensionCommand) => Promise<boolean>
   review: (entry: StudioExtensionEntry) => void
 }) {
+  const uiText = useInterfaceText()
   const { read, connected, snapshot } = useRuntime()
   const state = useExtensionMarketplace(
     read,
@@ -51,20 +52,27 @@ export function ExtensionMarketplace({
   const current = entries.find((entry) => entry.id === selected?.id)
   const command = state.stage(current)
   return (
-    <View style={{ gap: 8 }} accessibilityLabel="Extension marketplace">
+    <View style={{ gap: 8 }} accessibilityLabel={uiText('Extension marketplace')}>
       <Field
-        label="Search extensions"
+        label={uiText('Search extensions')}
         value={state.search.query}
         onChangeText={state.search.setQuery}
       />
-      <Action label="Reload marketplace" secondary disabled={!connected} onPress={state.reload} />
+      <Action
+        label={uiText('Reload marketplace')}
+        secondary
+        disabled={!connected}
+        onPress={state.reload}
+      />
       {state.error && <Text accessibilityRole="alert">{state.error}</Text>}
       {!state.packages && !state.error && (
         <Text>
-          {connected ? 'Loading marketplace…' : 'Connect this computer to browse the marketplace.'}
+          {connected
+            ? uiText('Loading marketplace…')
+            : uiText('Connect this computer to browse the marketplace.')}
         </Text>
       )}
-      {state.packages?.length === 0 && <Text>No extensions match.</Text>}
+      {state.packages?.length === 0 && <Text>{uiText('No extensions match.')}</Text>}
       {state.packages?.map((entry) => (
         <Surface key={entry.digest} style={card}>
           <Text accessibilityRole="header">{entry.name}</Text>
@@ -72,12 +80,12 @@ export function ExtensionMarketplace({
             {entry.publisher} · {entry.version}
             {entry.installed?.digest === entry.digest &&
               (entries.find((item) => item.id === entry.id)?.enabled
-                ? ' · Installed'
-                : ' · Disabled')}
+                ? ` · ${uiText('Installed')}`
+                : ` · ${uiText('Disabled')}`)}
           </Text>
           <Text>{entry.description}</Text>
           <Action
-            label={`Preview ${entry.name} ${entry.version}`}
+            label={uiText('Preview {name} {version}', { name: entry.name, version: entry.version })}
             secondary
             disabled={!connected}
             onPress={() => state.open(entry)}
@@ -89,8 +97,8 @@ export function ExtensionMarketplace({
           <Text accessibilityRole="header">
             {selected.name} {selected.version}
           </Text>
-          <Action label="Close preview" secondary onPress={() => state.open(undefined)} />
-          {!release && !state.error && <Text>Loading package…</Text>}
+          <Action label={uiText('Close preview')} secondary onPress={() => state.open(undefined)} />
+          {!release && !state.error && <Text>{uiText('Loading package…')}</Text>}
           {release && (
             <>
               {release.manifest.contributions.map((item) => (
@@ -108,19 +116,21 @@ export function ExtensionMarketplace({
               {current?.draft ? (
                 selected.draft?.digest === selected.digest ? (
                   <Action
-                    label="Review staged draft"
+                    label={uiText('Review staged draft')}
                     disabled={!connected || busy}
                     onPress={() => review(current)}
                   />
                 ) : (
-                  <Text>Review or discard the existing draft before staging this package.</Text>
+                  <Text>
+                    {uiText('Review or discard the existing draft before staging this package.')}
+                  </Text>
                 )
               ) : (
                 <Action
                   label={
                     selected.installed && selected.installed.digest !== selected.digest
-                      ? 'Stage update'
-                      : 'Stage package'
+                      ? uiText('Stage update')
+                      : uiText('Stage package')
                   }
                   disabled={!command || !connected || busy}
                   onPress={async () => {
@@ -130,17 +140,19 @@ export function ExtensionMarketplace({
               )}
               {release.dashboard && snapshot?.dashboardsSupported && (
                 <>
-                  <Text>Dashboard template: {release.dashboard.title}</Text>
+                  <Text>
+                    {uiText('Dashboard template: {title}', { title: release.dashboard.title })}
+                  </Text>
                   {current?.enabled && selected.installed?.digest === selected.digest ? (
                     dashboard?.digest === selected.digest && dashboard.added ? (
                       <Action
-                        label="Open dashboards"
+                        label={uiText('Open dashboards')}
                         secondary
                         onPress={() => router.navigate('/dashboards')}
                       />
                     ) : (
                       <Action
-                        label="Add dashboard"
+                        label={uiText('Add dashboard')}
                         secondary
                         disabled={!connected || adding}
                         onPress={async () => {
@@ -160,7 +172,7 @@ export function ExtensionMarketplace({
                       />
                     )
                   ) : (
-                    <Text>Install and enable this release to add its dashboard.</Text>
+                    <Text>{uiText('Install and enable this release to add its dashboard.')}</Text>
                   )}
                   {dashboard?.digest === selected.digest && dashboard.issue && (
                     <Text accessibilityRole="alert">{dashboard.issue}</Text>
@@ -184,6 +196,7 @@ function SourceFields({
   binding?: MarketplaceBinding
   bind: (binding: MarketplaceBinding) => void
 }) {
+  const uiText = useInterfaceText()
   const { read, connected, snapshot } = useRuntime()
   const taskId = binding?.taskId ?? ''
   const sources = useMarketplaceSources(read, taskId, connected)
@@ -194,7 +207,7 @@ function SourceFields({
   return (
     <>
       <Choice
-        label={`Source thread for ${contribution.title}`}
+        label={uiText('Source thread for {title}', { title: contribution.title })}
         disabled={!connected}
         value={taskId}
         items={(snapshot?.workspace.tasks ?? [])
@@ -203,13 +216,17 @@ function SourceFields({
         onChange={(value) => bind({ contributionId: contribution.id, taskId: value, source: '' })}
       />
       <Choice
-        label={marketplaceContributionSource(contribution)}
+        label={
+          contribution.kind === 'tool'
+            ? uiText('MCP server with read-only tool {tool}', { tool: contribution.tool })
+            : uiText('Saved MCP App')
+        }
         disabled={!connected || !items?.length}
         value={binding?.source ?? ''}
         items={items ?? []}
         onChange={(source) => bind({ contributionId: contribution.id, taskId, source })}
       />
-      {items?.length === 0 && <Text>No sources available in this thread.</Text>}
+      {items?.length === 0 && <Text>{uiText('No sources available in this thread.')}</Text>}
       {sources?.error && <Text accessibilityRole="alert">{sources.error}</Text>}
     </>
   )

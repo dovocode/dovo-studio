@@ -1,3 +1,4 @@
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ScrollView, View } from 'react-native'
 import Svg, { Polyline } from 'react-native-svg'
 import { Text } from '../ui/content/text'
@@ -5,17 +6,22 @@ import { useTheme } from '../ui/theme'
 import { dashboardDataRows, dashboardLinePlot } from '@dovo/studio-core'
 
 export function DataView({ value, chart }: { value: unknown; chart: 'line' | 'table' | 'number' }) {
+  const uiText = useInterfaceText()
   const { colors } = useTheme()
   if (chart === 'number')
     return (
       <Text style={{ fontSize: 24 }}>
-        {typeof value === 'number' ? value : 'Select a numeric field'}
+        {typeof value === 'number' ? value : uiText('Select a numeric field')}
       </Text>
     )
   if (chart === 'line') {
     const plot = dashboardLinePlot(value)
     if (!plot)
-      return <Text>Select an array with at least two numbers or objects with a numeric value.</Text>
+      return (
+        <Text>
+          {uiText('Select an array with at least two numbers or objects with a numeric value.')}
+        </Text>
+      )
     const { min, max, latest, points } = plot
     return (
       <>
@@ -23,13 +29,11 @@ export function DataView({ value, chart }: { value: unknown; chart: 'line' | 'ta
           width="100%"
           height={120}
           viewBox="0 0 320 120"
-          accessibilityLabel={`Line graph, range ${min} to ${max}`}
+          accessibilityLabel={uiText('Line graph, range {min} to {max}', { min, max })}
         >
           <Polyline points={points} fill="none" stroke={colors.accent} strokeWidth={2} />
         </Svg>
-        <Text>
-          Latest {latest} · Range {min} to {max}
-        </Text>
+        <Text>{uiText('Latest {latest} · Range {min} to {max}', { latest, min, max })}</Text>
       </>
     )
   }
