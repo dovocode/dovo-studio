@@ -13,7 +13,7 @@ import {
 import type { SettingsChange } from '@dovo/protocol'
 import { View, ScrollView, Pressable } from 'react-native'
 import { SettingsAction } from './settings-controls'
-import { SettingsFooterContext } from './settings-theme'
+import { SettingsFooterContext } from './settings-footer-context'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { Surface } from '../ui/layout/surface'

@@ -2,6 +2,7 @@ import { designTokens } from '@dovo/design'
 import { PreferenceStorageNotice } from '../runtime/preferences/storage-notice'
 import { contentColumn } from '../ui/layout/content-column'
 import { ValidationFields } from '../ui/controls/validation-fields'
+import { SettingsFooterContext } from './settings-footer-context'
 import {
   createContext,
   useContext,
@@ -17,7 +18,6 @@ import { studioThemes } from '@dovo/studio-core/themes'
 
 const SettingsContext = createContext(false)
 export const useInsideSettings = () => useContext(SettingsContext)
-export const SettingsFooterContext = createContext<((footer: ReactNode) => void) | null>(null)
 
 /** Keep the grouped settings presentation local to settings pages and editors. */
 export function useSettingsTheme() {
