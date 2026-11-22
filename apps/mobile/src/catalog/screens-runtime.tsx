@@ -32,6 +32,7 @@ const snapshot = decode(snapshotSchema, {
   revision: 1,
   owner: false,
   artifactsEnabled: true,
+  dashboardsSupported: true,
   workspace: {
     version: 1,
     runtimeAddress: '',

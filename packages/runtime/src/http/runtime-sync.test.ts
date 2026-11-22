@@ -7,6 +7,7 @@ import {
   artifactReferences,
   decode,
   syncFrameSchema,
+  studioExtensionResultSchema,
   workspaceRecoveriesSchema,
   threadWatchSnapshotSchema,
   type SyncFrame,
@@ -70,6 +71,43 @@ async function setup() {
   }
   return { runtime, open, address }
 }
+it('syncs extension revisions and rejects installation from before a draft was replaced', async () => {
+  const { address, open } = await setup()
+  const client = await open(token, 5, ['task'], true)
+  client.socket.send(JSON.stringify({ type: 'resume' }))
+  const baseline = await client.wait('snapshot')
+  client.frames.length = 0
+  const command = (input: object) =>
+    fetch(`${address}/api/studio-extensions`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const stage = {
+    action: 'stage',
+    expectedRevision: 0,
+    manifest: { id: 'example', version: 1, name: 'Example', contributions: [] },
+  }
+  const result = await command(stage)
+  expect(result.status).toBe(200)
+  const first = decode(studioExtensionResultSchema, await result.json()).extension
+  await expect
+    .poll(() =>
+      client.frames.some(
+        (frame) =>
+          frame.type === 'delta' &&
+          applySnapshotDelta(baseline.snapshot, frame.delta).studioExtensionsRevision === 1,
+      ),
+    )
+    .toBe(true)
+  const edit = { id: first.id, expectedRevision: first.revision }
+  expect((await command({ action: 'discard', ...edit })).status).toBe(200)
+  expect(
+    (await command({ ...stage, manifest: { ...stage.manifest, name: 'Replacement' } })).status,
+  ).toBe(200)
+  expect((await command({ action: 'install', ...edit })).status).toBe(409)
+})
+
 it('pushes secure input metadata and removal to open clients without storing private input', async () => {
   const { runtime, open } = await setup()
   const client = await open(token, 5, ['task'], true)

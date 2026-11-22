@@ -125,6 +125,7 @@ function ScreenWorkspace({
               ? [...root.snapshot.questions, busyDesktopQuestion]
               : root.snapshot.questions,
           artifactsEnabled: true,
+          dashboardsSupported: true as const,
           remoteDesktopEnabled: state === 'legacy' ? undefined : false,
           scopedAgentsSupported: state !== 'legacy',
           taskBehaviorSupported: state !== 'legacy',
@@ -198,6 +199,31 @@ function ScreenWorkspace({
         '/api/memory/list': { entries: [], total: 0 },
         '/api/activity': { events: [] },
         '/api/snapshot': snapshot,
+        '/api/dashboards/list': {
+          dashboards: [
+            {
+              id: '29cfac6e-4bb2-4eaa-9d26-738a3799a8c9',
+              title: 'Project operations',
+              revision: 1,
+              tiles: [
+                {
+                  id: '4af8fd55-a610-4f52-a44f-de82071dd21c',
+                  kind: 'threads',
+                  title: 'Threads',
+                  span: 2,
+                  height: 2,
+                },
+                {
+                  id: '244534e4-794e-49b2-ae14-807959eb2b38',
+                  kind: 'jobs',
+                  title: 'Automations',
+                  span: 2,
+                  height: 2,
+                },
+              ],
+            },
+          ],
+        },
         '/api/artifacts/list': { artifacts: [], links: [] },
         '/api/tasks/files/list': { files: ['src/navigation.tsx', 'README.md'] },
         '/api/scm/changes': {

@@ -346,6 +346,10 @@ export function Workbench() {
     ready: workspacePreferencesReady,
   } = useMobilePreferences()
   const artifactsEnabled = runtime.overviews.some((entry) => entry.snapshot?.artifactsEnabled)
+  const dashboardsEnabled = runtime.overviews.some((entry) => entry.snapshot?.dashboardsSupported)
+  useEffect(() => {
+    if (runtime.ready && active === 'dashboards' && (!dashboardsEnabled || car)) router.replace('/')
+  }, [runtime.ready, active, dashboardsEnabled, car])
   useEffect(() => {
     if (runtime.ready && active === 'artifacts' && (!artifactsEnabled || car)) router.replace('/')
   }, [runtime.ready, active, artifactsEnabled, car])
@@ -541,8 +545,8 @@ export function Workbench() {
             ? 'pulls'
             : view === 'browser' || view === 'terminal'
               ? view
-              : view === 'artifacts'
-                ? 'artifacts'
+              : view === 'artifacts' || view === 'dashboards'
+                ? view
                 : view === 'settings'
                   ? 'settings'
                   : 'tasks'
@@ -585,6 +589,7 @@ export function Workbench() {
       issues: value('issues'),
       pulls: value('pulls'),
       artifacts: value('artifacts'),
+      dashboards: value('dashboards'),
       browser: value('browser'),
       terminal: value('terminal'),
       workspace: value('workspace'),
@@ -601,6 +606,7 @@ export function Workbench() {
       'issues',
       'pulls',
       'artifacts',
+      'dashboards',
       'browser',
       'terminal',
       'workspace',

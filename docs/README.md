@@ -5,6 +5,11 @@ provider setup, and feature manual. The guides below focus on particular workflo
 
 ## Setup and operating guides
 
+- [Studio extensions](studio-extensions.md) for the extension marketplace, authoring SDK, tools,
+  settings, and dashboard tiles.
+- [Dashboards](dashboards.md) for configurable tiles, data sources, terminal sessions, and the
+  dashboard API.
+
 - [Terminals and unified workspace](unified-workspace.md): paired terminal sessions, mixed tabs and
   experimental AI input routing on desktop/web.
 

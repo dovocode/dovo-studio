@@ -1,3 +1,5 @@
+import { StudioExtensions } from './studio-extensions/extensions.js'
+import { Dashboards } from './dashboards/dashboards.js'
 import { piSessionStorage, recoverPiSessionCopies } from './agents/providers/pi/session-copies.js'
 import { reconcileTransferOwnership } from './scm/repositories/project-transfer-fences.js'
 import { LinearSettings } from './scm/work/linear-issues.js'
@@ -632,6 +634,12 @@ export function createServices(
     runtimeAddresses: () => [],
     peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
+    dashboards: new Dashboards(db, mcpApps, store),
+    studioExtensions: new StudioExtensions(db, mcpApps, (taskId) => {
+      const task = store.taskSummary(taskId)
+      if (task.archived || task.archivedAt)
+        throw new HttpError(409, 'Restore the extension source thread.')
+    }),
     artifacts,
     artifactFeeds: new ArtifactFeeds(
       db,
@@ -734,6 +742,8 @@ export interface Services {
   sharedThreads: SharedThreads
   mutations: MutationReceipts
   mcpApps: McpApps
+  dashboards: Dashboards
+  studioExtensions: StudioExtensions
   instanceId: string
   runtimeId: string
   runtimeAddresses: () => string[]

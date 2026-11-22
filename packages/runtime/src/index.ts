@@ -121,6 +121,8 @@ export const runtimeLayer = (options: RuntimeOptions) =>
         () => services.runCredentials.dispose(),
         () => services.store.usageHubs.dispose(),
         () => services.artifactFeeds.dispose(),
+        () => services.dashboards.dispose(),
+        () => services.studioExtensions.dispose(),
         () => services.sharedThreads.dispose(),
         () => services.mcpApps.dispose(),
         () => services.remoteDesktop.dispose(),

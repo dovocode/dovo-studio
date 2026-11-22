@@ -12,6 +12,7 @@ start Workbench's real networking, notification, or account providers.
 | ---------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
 | `tasks`                            | `dovo-screens-desktop--tasks`                            | `packages/extension-tasks/src/index.ts`      |
 | `artifacts`                        | `dovo-screens-desktop--artifacts`                        | `packages/extension-tasks/src/index.ts`      |
+| `dashboards`                       | `dovo-screens-desktop--dashboards`                       | `packages/extension-tasks/src/index.ts`      |
 | `archived-tasks`                   | `dovo-screens-desktop--archived-tasks`                   | `packages/extension-tasks/src/index.ts`      |
 | `issues`                           | `dovo-screens-desktop--issues`                           | `packages/extension-scm/src/index.ts`        |
 | `jira`                             | `dovo-screens-desktop--jira`                             | `packages/extension-scm/src/index.ts`        |

@@ -16,6 +16,7 @@ import IssuesScreen from '../screens/issues'
 import JobsScreen from '../screens/jobs'
 import RepositoriesScreen from '../screens/repositories'
 import ArtifactsScreen from '../screens/artifacts'
+import DashboardsScreen from '../screens/dashboards'
 import DevicesScreen from '../screens/devices'
 import AppearanceScreen from '../screens/appearance'
 import GeneralScreen, {
@@ -67,6 +68,7 @@ export const mobileCatalogScreens = {
   issues: IssuesScreen,
   automations: JobsScreen,
   artifacts: ArtifactsScreen,
+  dashboards: DashboardsScreen,
   computers: DevicesScreen,
   settings: SettingsScreen,
   'app-preferences': () => <SettingsScreen categorySlug="app-preferences" />,

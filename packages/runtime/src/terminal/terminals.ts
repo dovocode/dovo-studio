@@ -12,7 +12,7 @@ import {
   type terminalChildNoticeSchema,
 } from '@dovo/protocol'
 import type { Activity } from '../storage/activity.js'
-import { defaultShell, shellArguments } from './shell.js'
+import { commandCheckLaunch, defaultShell, shellArguments } from './shell.js'
 import { commandsSchema, type CommandSettings } from '@dovo/protocol'
 import { randomUUID } from 'node:crypto'
 import { createRequire } from 'node:module'
@@ -323,21 +323,10 @@ export class Terminals {
     )
   }
   createCheck(taskId: string, cwd: string, command: string, title?: string, checkoutId?: string) {
-    // Use a noninteractive shell so the PTY exit belongs to this command, not a shell prompt.
-    const args =
-      process.platform === 'win32'
-        ? [
-            '-NoLogo',
-            '-NoProfile',
-            '-NonInteractive',
-            '-Command',
-            `$global:LASTEXITCODE = 0; & {\n${command}\n}; if (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit $LASTEXITCODE`,
-          ]
-        : ['-c', command]
     return this.createCommand(
       taskId,
       cwd,
-      { command: defaultShell(), args, env: {} },
+      commandCheckLaunch(command),
       title ?? 'Command check',
       checkoutId,
     )

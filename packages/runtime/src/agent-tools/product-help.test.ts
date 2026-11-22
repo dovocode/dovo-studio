@@ -19,6 +19,17 @@ it('returns bounded installed sections with version and source references', () =
   }
 })
 
+it('finds the typed extension SDK example in installed help', () => {
+  const found = productHelp({ taskId: 'test', action: 'search', query: 'typed UI SDK' })
+  if (!('results' in found)) throw new Error('Expected search results')
+  const sdk = found.results.find((hit) => hit.title === 'Use the typed UI SDK')
+  expect(sdk?.source).toBe('docs/studio-extensions.md')
+  if (!sdk) throw new Error('Expected SDK help')
+  expect(productHelp({ taskId: 'test', action: 'read', id: sdk.id })).toMatchObject({
+    text: expect.stringContaining('@dovo/protocol/studio-extension-sdk'),
+  })
+})
+
 it('rejects arbitrary files and invalid offsets without reading user content', () => {
   expect(() => productHelp({ taskId: 'test', action: 'read', id: '../../secret' })).toThrow(
     'not found',

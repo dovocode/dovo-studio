@@ -119,3 +119,16 @@ it('uses one visibility rule for sidebar sections', () => {
     navigationViewVisible(view('browser'), { ...availability, browserWorkspaceEnabled: false }),
   ).toBe(false)
 })
+
+it('takes the Dashboards sidebar and palette entry from runtime capability', async () => {
+  const { catalog, registered } = await shippedCatalog()
+  const get = (enabled: boolean) =>
+    palette(catalog, registered.values(), { dashboardsEnabled: enabled })
+  expect(get(false).commands.some((command) => command.title === 'Open Dashboards')).toBe(false)
+  const { commands, openSection } = get(true)
+  const dashboard = commands.find((command) => command.title === 'Open Dashboards')
+  expect(dashboard).toBeDefined()
+  dashboard?.run()
+  expect(openSection).toHaveBeenCalledWith('dashboards')
+  await catalog.host.dispose()
+})

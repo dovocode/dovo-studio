@@ -1,4 +1,8 @@
 export * from './frontend'
+export * from './dashboards'
+export * from './studio-extensions'
+export * from './extension-marketplace'
+export * from './studio-extension-views'
 export { useCodexSessionImport } from './use-codex-session-import'
 export { pullCreateOptionsSchema } from '@dovo/protocol'
 export {

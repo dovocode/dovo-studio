@@ -1,0 +1,340 @@
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
+import {
+  dashboardListResultSchema,
+  dashboardRunResultSchema,
+  dashboardSaveResultSchema,
+  dashboardSessionResultSchema,
+  decode,
+  snapshotSchema,
+  type Dashboard,
+} from '@dovo/protocol'
+import { startRuntime } from '../../index'
+import { fixture } from '../../testing/fixture'
+import { waitForRuntime } from '../../testing/integration'
+
+vi.setConfig({ testTimeout: 60_000 })
+const cleanups: Array<() => Promise<void>> = []
+afterEach(async () => {
+  for (const cleanup of cleanups.splice(0).reverse()) await cleanup()
+})
+const ownerToken = 'dashboard-route-owner-token-at-least-32-chars'
+const token = 'dashboard-paired-computer-token-at-least-32'
+const id = '10000000-0000-4000-8000-000000000001'
+const commandTile = '10000000-0000-4000-8000-000000000002'
+const tuiTile = '10000000-0000-4000-8000-000000000003'
+const threadsTile = '10000000-0000-4000-8000-000000000004'
+
+async function setup() {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  for (const key of ['CODEX_HOME', 'CLAUDE_CONFIG_DIR', 'PI_CODING_AGENT_DIR', 'XDG_CONFIG_HOME'])
+    vi.stubEnv(key, join(f.directory, key))
+  vi.stubEnv('DOVO_TERMINAL_HOLDER_SUPERVISOR', '')
+  cleanups.push(async () => {
+    vi.unstubAllEnvs()
+  })
+  const runtime = await startRuntime({
+    databasePath: join(f.directory, 'runtime.sqlite'),
+    ownerToken,
+    port: 0,
+  })
+  cleanups.push(runtime.close)
+  runtime.services.store.update(() => ({ ...f.workspace, tasks: [] }))
+  runtime.services.devices.add('Paired computer', token)
+  const post = (path: string, input: unknown, headers: Record<string, string> = {}) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/${path}`, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        ...headers,
+      },
+      body: JSON.stringify(input),
+    })
+  const marker = join(f.directory, 'marker')
+  const definition = (command: string): Dashboard => ({
+    id,
+    title: 'Ops',
+    revision: 0,
+    tiles: [
+      {
+        id: commandTile,
+        title: 'Tests',
+        span: 2,
+        height: 1,
+        kind: 'command',
+        repositoryId: 'repo',
+        command,
+      },
+      {
+        id: tuiTile,
+        title: 'Top',
+        span: 2,
+        height: 2,
+        kind: 'tui',
+        repositoryId: 'repo',
+        command: 'true',
+      },
+      { id: threadsTile, title: 'Threads', span: 1, height: 1, kind: 'threads' },
+    ],
+  })
+  return { ...f, runtime, post, marker, definition }
+}
+
+it('saves, lists and deletes dashboards for paired human clients only', async () => {
+  const { runtime, post, definition } = await setup()
+  const snapshot = decode(
+    snapshotSchema,
+    await (
+      await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    ).json(),
+  )
+  expect(snapshot.dashboardsSupported).toBe(true)
+
+  const saved = await post('dashboards/save', {
+    dashboard: definition('true'),
+    expectedRevision: 0,
+  })
+  expect(saved.status).toBe(200)
+  const { dashboard } = decode(dashboardSaveResultSchema, await saved.json())
+  expect(dashboard.revision).toBe(1)
+  const stale = await post('dashboards/save', { dashboard, expectedRevision: 0 })
+  expect(stale.status).toBe(409)
+  const listed = decode(dashboardListResultSchema, await (await post('dashboards/list', {})).json())
+  expect(listed.dashboards).toEqual([dashboard])
+
+  const agent = await post('dashboards/list', {}, { 'x-dovo-agent-access': '1' })
+  expect(agent.status).toBe(403)
+  const unpaired = await fetch(`http://127.0.0.1:${runtime.port}/api/dashboards/list`, {
+    method: 'POST',
+    headers: {
+      Authorization: 'Bearer not-a-paired-device-token-value-0000',
+      'Content-Type': 'application/json',
+    },
+    body: '{}',
+  })
+  expect(unpaired.status).toBe(401)
+  const unknownField = await post('dashboards/delete', { id, expectedRevision: 1, extra: true })
+  expect(unknownField.status).toBe(400)
+
+  expect((await post('dashboards/delete', { id, expectedRevision: 0 })).status).toBe(409)
+  expect(await (await post('dashboards/delete', { id, expectedRevision: 1 })).json()).toEqual({
+    ok: true,
+  })
+  expect(
+    decode(dashboardListResultSchema, await (await post('dashboards/list', {})).json()).dashboards,
+  ).toEqual([])
+})
+
+it.skipIf(process.platform === 'win32')(
+  'runs a saved command once per request, in the project checkout, and reports its exit code',
+  async () => {
+    const { runtime, post, marker, definition, directory } = await setup()
+    await post('dashboards/save', {
+      dashboard: definition(`pwd >> '${marker}'; exit 3`),
+      expectedRevision: 0,
+    })
+    const input = {
+      id,
+      tileId: commandTile,
+      expectedRevision: 1,
+      requestId: '10000000-0000-4000-8000-0000000000a1',
+    }
+    // Saving the command leaves the terminal idle until a paired client runs it.
+    expect(runtime.services.terminals.list()).toEqual([])
+    const first = await post('dashboards/run', input)
+    expect(first.status).toBe(200)
+    const { terminalId } = decode(dashboardRunResultSchema, await first.json())
+    const again = decode(
+      dashboardRunResultSchema,
+      await (await post('dashboards/run', input)).json(),
+    )
+    expect(again.terminalId).toBe(terminalId)
+    await waitForRuntime(async () =>
+      expect(
+        await post('terminals/summary', { id: terminalId }).then((response) => response.json()),
+      ).toMatchObject({ running: false, exitCode: 3 }),
+    )
+    const lines = (await readFile(marker, 'utf8')).split('\n').filter(Boolean)
+    expect(lines).toHaveLength(1)
+    expect(await realpath(lines[0])).toBe(await realpath(directory))
+    expect(runtime.services.terminals.list()).toHaveLength(1)
+
+    // A stale revision runs nothing.
+    const stale = await post('dashboards/run', {
+      ...input,
+      expectedRevision: 0,
+      requestId: '10000000-0000-4000-8000-0000000000a2',
+    })
+    expect(stale.status).toBe(409)
+    const wrongKind = await post('dashboards/run', {
+      ...input,
+      tileId: threadsTile,
+      requestId: '10000000-0000-4000-8000-0000000000a3',
+    })
+    expect(wrongKind.status).toBe(400)
+    // A request ID belongs to one request.
+    expect((await post('dashboards/run', { ...input, tileId: tuiTile })).status).toBe(409)
+    expect(runtime.services.terminals.list()).toHaveLength(1)
+
+    await post('dashboards/save', { dashboard: definition('echo changed'), expectedRevision: 1 })
+    const changed = await post('dashboards/run', {
+      ...input,
+      requestId: '10000000-0000-4000-8000-0000000000a5',
+    })
+    expect(changed.status).toBe(409)
+    expect(runtime.services.terminals.list()).toHaveLength(1)
+    expect((await readFile(marker, 'utf8')).split('\n').filter(Boolean)).toHaveLength(1)
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
+  'opens a TUI tile in an interactive shell that stays open',
+  async () => {
+    const { runtime, post, definition } = await setup()
+    await post('dashboards/save', { dashboard: definition('true'), expectedRevision: 0 })
+    const response = await post('dashboards/run', {
+      id,
+      tileId: tuiTile,
+      expectedRevision: 1,
+      requestId: '10000000-0000-4000-8000-0000000000b1',
+    })
+    expect(response.status).toBe(200)
+    const { terminalId } = decode(dashboardRunResultSchema, await response.json())
+    const terminal = runtime.services.terminals.get(terminalId).info
+    expect(terminal).toMatchObject({ title: 'Top', repositoryId: 'repo', shellId: 'default' })
+    expect(terminal.exited).toBeFalsy()
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
+  'reattaches the latest session for the same command and refuses stale reads and sessions',
+  async () => {
+    const { runtime, post, definition } = await setup()
+    await post('dashboards/save', { dashboard: definition('true'), expectedRevision: 0 })
+    const session = async (tileId: string, expectedRevision: number) => {
+      const response = await post('dashboards/session', { id, tileId, expectedRevision })
+      return response.ok
+        ? decode(dashboardSessionResultSchema, await response.json())
+        : response.status
+    }
+    expect(await session(tuiTile, 1)).toEqual({ terminalId: null })
+    const run = await post('dashboards/run', {
+      id,
+      tileId: tuiTile,
+      expectedRevision: 1,
+      requestId: '10000000-0000-4000-8000-0000000000c1',
+    })
+    const { terminalId } = decode(dashboardRunResultSchema, await run.json())
+    expect(await session(tuiTile, 1)).toEqual({ terminalId })
+    expect(await session(commandTile, 1)).toEqual({ terminalId: null })
+    expect(await session(threadsTile, 1)).toBe(400)
+    // Sessions start nothing.
+    expect(runtime.services.terminals.list()).toHaveLength(1)
+
+    // An edit elsewhere keeps the session. The old revision cannot read or reattach.
+    const renamed = { ...definition('true'), title: 'Renamed' }
+    await post('dashboards/save', { dashboard: renamed, expectedRevision: 1 })
+    expect(await session(tuiTile, 1)).toBe(409)
+    expect(await session(tuiTile, 2)).toEqual({ terminalId })
+    const staleRead = await post('dashboards/read', {
+      id,
+      tileId: threadsTile,
+      expectedRevision: 1,
+    })
+    expect(staleRead.status).toBe(409)
+
+    // A new command for the tile does not reattach the old program.
+    const edited = {
+      ...renamed,
+      tiles: renamed.tiles.map((tile) =>
+        tile.id === tuiTile && tile.kind === 'tui' ? { ...tile, command: 'htop' } : tile,
+      ),
+    }
+    await post('dashboards/save', { dashboard: edited, expectedRevision: 2 })
+    expect(await session(tuiTile, 3)).toEqual({ terminalId: null })
+
+    // A closed terminal is not offered again.
+    await post('dashboards/save', { dashboard: renamed, expectedRevision: 3 })
+    expect(await session(tuiTile, 4)).toEqual({ terminalId })
+    await runtime.services.terminals.close(terminalId)
+    expect(await session(tuiTile, 4)).toEqual({ terminalId: null })
+    expect(
+      (
+        await post(
+          'dashboards/session',
+          { id, tileId: tuiTile, expectedRevision: 4 },
+          {
+            'x-dovo-agent-access': '1',
+          },
+        )
+      ).status,
+    ).toBe(403)
+  },
+)
+
+async function realpath(path: string) {
+  const { realpath: resolve } = await import('node:fs/promises')
+  return resolve(path)
+}
+
+it('rejects a command without a project at save and at launch, and never starts it in the home folder', async () => {
+  const { runtime, post, definition } = await setup()
+  const unbound = definition('touch ran')
+  unbound.tiles = unbound.tiles.map((tile) =>
+    tile.kind === 'command' ? { ...tile, repositoryId: '' } : tile,
+  )
+  const saved = await post('dashboards/save', { dashboard: unbound, expectedRevision: 0 })
+  expect(saved.status).toBe(400)
+  expect(await saved.text()).toContain('choose a project, or No Project')
+
+  // A row saved before this check still cannot launch.
+  runtime.services.db
+    .prepare('INSERT INTO dashboards(id,revision,definition) VALUES(?,?,?)')
+    .run(id, 1, JSON.stringify({ ...unbound, revision: 1 }))
+  const run = await post('dashboards/run', {
+    id,
+    tileId: commandTile,
+    expectedRevision: 1,
+    requestId: '10000000-0000-4000-8000-0000000000d1',
+  })
+  expect(run.status).toBe(400)
+  expect(await run.text()).toContain('Nothing ran')
+  expect(runtime.services.terminals.list()).toEqual([])
+})
+
+it.skipIf(process.platform === 'win32')(
+  'checks the device and revision again right before the terminal process starts',
+  async () => {
+    const { runtime, post, definition } = await setup()
+    const s = runtime.services
+    await post('dashboards/save', { dashboard: definition('true'), expectedRevision: 0 })
+    const create = s.terminals.createWorkspaceCommand.bind(s.terminals)
+    const during = (change: () => void) =>
+      vi.spyOn(s.terminals, 'createWorkspaceCommand').mockImplementationOnce(async (...args) => {
+        // Every earlier check passed. Change state while the terminal is prepared.
+        change()
+        return create(...args)
+      })
+    const run = (requestId: string) =>
+      post('dashboards/run', { id, tileId: tuiTile, expectedRevision: 1, requestId })
+
+    during(() => s.dashboards.delete(id, 1))
+    const deleted = await run('10000000-0000-4000-8000-0000000000e2')
+    expect(deleted.status).toBe(409)
+    expect(s.terminals.list()).toEqual([])
+    expect(s.dashboards.get(id)).toBeUndefined()
+
+    await post('dashboards/save', { dashboard: definition('true'), expectedRevision: 0 })
+    const device = s.devices.list().find((entry) => entry.name === 'Paired computer')
+    if (!device) throw new Error('Missing paired device')
+    during(() => s.devices.revoke(device.id))
+    const revoked = await run('10000000-0000-4000-8000-0000000000e3')
+    expect(revoked.status).toBe(401)
+    expect(s.terminals.list()).toEqual([])
+  },
+)

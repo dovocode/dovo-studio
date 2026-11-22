@@ -68,6 +68,8 @@ const postReadPaths = new Set([
   '/api/tasks/files/directory',
   '/api/tasks/files/search-content',
   '/api/tasks/files/search-paths',
+  '/api/dashboards/list',
+  '/api/dashboards/session',
   '/api/terminals/workspace/files',
   '/api/terminals/workspace/read',
   '/api/terminals/workspace/changes',

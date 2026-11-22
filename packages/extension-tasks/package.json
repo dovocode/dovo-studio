@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@dovo/client-runtime": "workspace:*",
+    "@dovo/extension-runtime": "workspace:*",
     "@dovo/extension-scm": "workspace:*",
     "@dovo/protocol": "workspace:*",
     "@dovo/studio-core": "workspace:*",

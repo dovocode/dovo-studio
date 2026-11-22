@@ -723,18 +723,38 @@ export class McpApps {
       throw error
     }
   }
-  async feedCatalog(taskId: string, signal: AbortSignal, authorize: () => void) {
+  private configuredFeedServers(taskId: string, requireEditable = false) {
     const task = this.store.taskSummary(taskId),
       agent = resolveTaskAgent(task, this.store.get().agents)
-    if (!agent || permissionPolicyReadOnly(agent))
-      throw new HttpError(403, 'Live feeds require an editable thread')
-    const servers = applyBotResources(
+    if (!agent || permissionPolicyReadOnly(agent)) {
+      if (requireEditable) throw new HttpError(403, 'Live feeds require an editable thread')
+      return []
+    }
+    return applyBotResources(
       mergeResources(
         this.store.projectSettings(inheritedResourceProject(task)).resources,
         agent.resources,
       ),
       task.bot,
     ).mcpServers.filter((server) => server.enabled && server.name !== 'dovo_task')
+  }
+
+  marketplaceSources(taskId: string) {
+    const servers = this.configuredFeedServers(taskId).map((server) => server.name)
+    const apps = this.db
+      .prepare(
+        "SELECT id, json_extract(value, '$.title') AS title FROM mcp_apps WHERE task_id=? AND json_extract(value, '$.format')='apps' ORDER BY rowid DESC LIMIT 100",
+      )
+      .all(taskId)
+      .flatMap((entry) => {
+        const { id, title } = object(entry)
+        return typeof id === 'string' && typeof title === 'string' ? [{ id, title }] : []
+      })
+    return { servers, apps }
+  }
+
+  async feedCatalog(taskId: string, signal: AbortSignal, authorize: () => void) {
+    const servers = this.configuredFeedServers(taskId, true)
     if (servers.length > 32) throw new HttpError(413, 'Too many configured MCP servers')
     const tools: Array<{
       server: string

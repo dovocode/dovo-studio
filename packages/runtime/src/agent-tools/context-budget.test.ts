@@ -72,6 +72,7 @@ it.each([false, true])(
           action: { kind: 'prompt', prompt: 'Continue' },
         },
         automation_list: { limit: 50 },
+        dashboards: { action: 'list' },
         automation_prepare: {
           key: 'routine',
           title: 'Review run',
@@ -173,12 +174,45 @@ it.each([false, true])(
       const a2uiCharacters = JSON.stringify(a2ui).length + 1
       expect(a2uiCharacters).toBeLessThanOrEqual(2000)
       expect(a2ui?.description?.length ?? 0).toBeLessThanOrEqual(500)
+      // Dashboard authoring has its own budget, so it cannot hide growth in other tools.
+      const dashboards = tools.find((tool) => tool.name === 'dashboards')
+      if (!dashboards) throw new Error('Missing dashboards')
+      const dashboardCharacters = JSON.stringify(dashboards).length + 1
+      const dashboardDescriptionCharacters = dashboards.description?.length ?? 0
+      expect(dashboardCharacters).toBeLessThanOrEqual(1900)
+      expect(dashboardDescriptionCharacters).toBeLessThanOrEqual(300)
+      expect(dashboards.inputSchema.properties?.action).toEqual({
+        type: 'string',
+        enum: ['list', 'read', 'create', 'update', 'delete'],
+      })
+      const dashboardInput = schemas.getValidator(dashboards.inputSchema)
+      const tile = { title: 'Tests', kind: 'command', span: 2, height: 1, command: 'pnpm test' }
+      for (const input of [
+        { action: 'read', id: 'dashboard' },
+        { action: 'create', dashboard: { title: 'Ops', tiles: [tile] } },
+        { action: 'update', id: 'd', expectedRevision: 1, dashboard: { title: 'Ops', tiles: [] } },
+        { action: 'delete', id: 'd', expectedRevision: 1 },
+      ])
+        expect(dashboardInput(input).valid).toBe(true)
+      for (const input of [
+        { action: 'run', id: 'd' },
+        { action: 'create', dashboard: { title: 'Ops', tiles: [{ ...tile, kind: 'shell' }] } },
+        { action: 'create', dashboard: { title: 'Ops', tiles: [{ ...tile, headers: {} }] } },
+        { action: 'update', id: 'd', expectedRevision: 0, dashboard: { title: 'Ops', tiles: [] } },
+      ])
+        expect(dashboardInput(input).valid).toBe(false)
       const characters = JSON.stringify(tools).length
       const descriptionCharacters = tools.reduce(
         (total, tool) => total + (tool.description?.length ?? 0),
         0,
       )
-      expect(tools).toHaveLength(full ? 55 : 27)
+      const extensions = tools.find((tool) => tool.name === 'studio_extensions')
+      expect(extensions).toBeDefined()
+      const extensionCharacters = JSON.stringify(extensions).length + 1
+      const extensionDescription = extensions?.description?.length ?? 0
+      expect(extensionCharacters).toBeLessThanOrEqual(950)
+      expect(extensionDescription).toBeLessThanOrEqual(300)
+      expect(tools).toHaveLength(full ? 57 : 29)
       const pipelineCi = tools.find((tool) => tool.name === 'pipeline_ci')
       expect(!!pipelineCi).toBe(full)
       const pipelineCiCharacters = pipelineCi ? JSON.stringify(pipelineCi).length + 1 : 0
@@ -195,7 +229,9 @@ it.each([false, true])(
           (code?.description?.length ?? 0) -
           (vision?.description?.length ?? 0) -
           (full ? dryRunText.length : 0) -
-          pipelineCiDescriptionCharacters,
+          pipelineCiDescriptionCharacters -
+          dashboardDescriptionCharacters -
+          extensionDescription,
       ).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
       expect(terminalRename).toBeDefined()
@@ -373,7 +409,9 @@ it.each([false, true])(
           helpCharacters -
           conversationCharacters -
           themeCharacters -
-          pipelineCiCharacters,
+          pipelineCiCharacters -
+          dashboardCharacters -
+          extensionCharacters,
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
         descriptionCharacters -
@@ -387,6 +425,8 @@ it.each([false, true])(
           (help?.description?.length ?? 0) -
           (conversation?.description?.length ?? 0) -
           pipelineCiDescriptionCharacters -
+          dashboardDescriptionCharacters -
+          extensionDescription -
           automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)
       expect(tools.map((tool) => tool.name)).toEqual(
@@ -399,6 +439,8 @@ it.each([false, true])(
           'subagent_answer',
           'terminal_run',
           'terminal_rename',
+          'dashboards',
+          'studio_extensions',
         ]),
       )
       expect(tools.map((tool) => tool.name)).toEqual(

@@ -31,7 +31,12 @@ function pruneExports(root: Directory) {
   }
 }
 
-export async function shareAttachment(name: string, mime: string, data: string) {
+export async function shareAttachment(
+  name: string,
+  mime: string,
+  data: string,
+  encoding: 'base64' | 'utf8' = 'base64',
+) {
   if (!(await Sharing.isAvailableAsync()))
     throw new Error('File sharing is unavailable on this device')
   const root = new Directory(Paths.cache, 'attachment-share-exports')
@@ -44,7 +49,7 @@ export async function shareAttachment(name: string, mime: string, data: string) 
     let safeName = name.replace(/[/\\]|\p{Cc}/gu, '_').replace(/^\.+$/, '_') || 'attachment'
     if (safeName.toLowerCase() === '.shared') safeName = `_${safeName.slice(1)}`
     const file = new File(directory, safeName)
-    await file.write(data, { encoding: 'base64' })
+    await file.write(data, { encoding })
     await Sharing.shareAsync(file.uri, { mimeType: mime })
     shared = true
     completed.set(directory.uri, Date.now())

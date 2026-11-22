@@ -384,6 +384,102 @@ const tools: Array<
     })(),
   },
   {
+    name: 'studio_extensions',
+    description:
+      'Studio extensions. catalog shows UI SDK schemas. marketplace accepts marketplace.action list/read/sources/stage. read finds own manifests. validate or stage; new IDs use revision 0. install requires opt-in. call needs id, contributionId and expectedRevision.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        action: {
+          type: 'string' as const,
+          enum: readOnly
+            ? ['catalog', 'marketplace', 'list', 'read', 'validate', 'call']
+            : ['catalog', 'marketplace', 'list', 'read', 'validate', 'stage', 'install', 'call'],
+        },
+        id: { type: 'string' as const },
+        contributionId: { type: 'string' as const },
+        component: { type: 'string' as const },
+        expectedRevision: { type: 'integer' as const },
+        manifest: { type: 'object' as const },
+        marketplace: { type: 'object' as const },
+      },
+      required: ['action'],
+    },
+  },
+  {
+    name: 'dashboards',
+    description:
+      'Build Studio dashboards. list/read before edits. create uses dashboard. update/delete need id and expectedRevision. People run tiles in Studio.',
+    inputSchema: {
+      type: 'object' as const,
+      properties: {
+        action: {
+          type: 'string' as const,
+          enum: readOnly ? ['list', 'read'] : ['list', 'read', 'create', 'update', 'delete'],
+        },
+        id: { type: 'string' as const },
+        expectedRevision: { type: 'integer' as const, minimum: 1 },
+        dashboard: {
+          type: 'object' as const,
+          properties: {
+            title: { type: 'string' as const, minLength: 1, maxLength: 100 },
+            tiles: {
+              type: 'array' as const,
+              maxItems: 32,
+              items: {
+                type: 'object' as const,
+                properties: {
+                  id: { type: 'string' as const, description: 'Keep from read; omit for new.' },
+                  title: { type: 'string' as const, minLength: 1, maxLength: 100 },
+                  kind: {
+                    type: 'string' as const,
+                    enum: [
+                      'api',
+                      'mcp',
+                      'command',
+                      'tui',
+                      'terminal',
+                      'iframe',
+                      'browser',
+                      'gui',
+                      'app',
+                      'pipelines',
+                      'extension',
+                      'threads',
+                      'jobs',
+                    ],
+                    description:
+                      'api: url. mcp: taskId, server, read-only tool, arguments. Both: chart, pointer. command/tui: repositoryId, command. pipelines: repositoryId. app: taskId, appId. terminal: terminalId. iframe/browser: url. extension: extensionId, contributionId.',
+                  },
+                  span: { type: 'integer' as const, minimum: 1, maximum: 4 },
+                  height: { type: 'integer' as const, minimum: 1, maximum: 4 },
+                  chart: { type: 'string' as const, enum: ['table', 'number', 'line'] },
+                  pointer: { type: 'string' as const, description: 'JSON pointer; empty for all.' },
+                  url: { type: 'string' as const },
+                  taskId: { type: 'string' as const },
+                  server: { type: 'string' as const },
+                  tool: { type: 'string' as const },
+                  arguments: { type: 'string' as const, description: 'JSON object text.' },
+                  repositoryId: { type: 'string' as const },
+                  command: { type: 'string' as const },
+                  terminalId: { type: 'string' as const },
+                  appId: { type: 'string' as const },
+                  extensionId: { type: 'string' as const },
+                  contributionId: { type: 'string' as const },
+                },
+                required: ['title', 'kind', 'span', 'height'],
+                additionalProperties: false,
+              },
+            },
+          },
+          required: ['title', 'tiles'],
+          additionalProperties: false,
+        },
+      },
+      required: ['action'],
+    },
+  },
+  {
     name: 'secure_input',
     description:
       'Request private credentials. Stable key; encrypted delivery to reviewed stdin command or active ACP auth_callback installationId. No values in model/chat/logs/argv/env; output discarded. No shell. Never read secrets via chat/browser/terminal. Pending grants no approval. Wait for completion; status only if asked or outcome unknown. Expires in 10 min; command 60s. Needs write access and unrestricted commands.',
@@ -1285,6 +1381,16 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
             taskId: task,
           }),
         )
+      case 'studio_extensions':
+        if (input.action === 'stage' || input.action === 'install') writable()
+        return text(
+          await post('/api/agent/studio-extensions', { taskId: task, parentRunId, command: input }),
+        )
+      case 'dashboards':
+        if (input.action !== 'list' && input.action !== 'read') writable()
+        return text(
+          await post('/api/agent/dashboards', { taskId: task, parentRunId, command: input }),
+        )
       case 'linked_projects':
         if (!linkedProjectsEnabled)
           throw new Error('The linked projects tool is disabled on this computer')
@@ -1682,6 +1788,8 @@ async function callTool(name: string, arguments_: unknown): Promise<CallToolResu
   }
 }
 const strictInputs = new Set([
+  'studio_extensions',
+  'dashboards',
   'subagent_spawn',
   'pipeline_watch',
   'pull_request_watch',

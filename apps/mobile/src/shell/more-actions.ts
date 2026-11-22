@@ -27,6 +27,15 @@ export function useMoreActions(navigate: StudioNavigation['navigate']): HeaderAc
           },
         ]
       : []),
+    ...(!car && overviews.some((entry) => entry.snapshot?.dashboardsSupported)
+      ? [
+          {
+            label: uiText('Dashboards'),
+            icon: 'artifact' as const,
+            onPress: () => navigate('dashboards'),
+          },
+        ]
+      : []),
     { label: uiText('Settings'), icon: 'settings', onPress: () => navigate('settings') },
   ]
   return destinations.map((action) => ({ ...action, overflow: true, group: 'Navigation' }))

@@ -1067,6 +1067,9 @@ importers:
       '@dovo/client-runtime':
         specifier: workspace:*
         version: link:../client-runtime
+      '@dovo/extension-runtime':
+        specifier: workspace:*
+        version: link:../extension-runtime
       '@dovo/extension-scm':
         specifier: workspace:*
         version: link:../extension-scm

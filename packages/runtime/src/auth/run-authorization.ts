@@ -5,6 +5,7 @@ import { Schema } from 'effect'
 import type { Services } from '../services.js'
 import { HttpError } from '../errors.js'
 import { isRunToken } from './run-credentials.js'
+import { agentDashboardAction, agentDashboardReadActions } from '../dashboards/agent-command.js'
 
 const allowed = new Set([
   '/api/studio/tools',
@@ -18,6 +19,8 @@ const allowed = new Set([
   '/api/agent/pipeline',
   '/api/agent/todos',
   '/api/agent/workflow',
+  '/api/agent/dashboards',
+  '/api/agent/studio-extensions',
   '/api/agent/secure-input',
   '/api/agent/skill',
   '/api/agent/skill-proposal',
@@ -122,6 +125,12 @@ export function authorizeRunRoute(
   if (
     path === '/api/agent/secure-input' &&
     (grant.readOnly || (grant.sandboxMode && grant.sandboxMode !== 'danger-full-access'))
+  )
+    denied()
+  if (
+    path === '/api/agent/dashboards' &&
+    grant.readOnly &&
+    !agentDashboardReadActions.includes(agentDashboardAction(input.command))
   )
     denied()
   if (path.startsWith('/api/agent/')) return grant

@@ -1,3 +1,4 @@
+import StudioExtensionsScreen from '../../../screens/studio-extensions'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useSettingsDraftState } from '../../../runtime/preferences/settings-target'
 import { usePreventRemove } from 'expo-router'
@@ -41,6 +42,7 @@ import { ScreenBackContext, ScreenHeader } from '../../../ui/layout/screen-heade
 import { useTheme } from '../../../ui/theme'
 
 const screens: Readonly<Partial<Record<string, ComponentType>>> = {
+  'studio-extensions': StudioExtensionsScreen,
   'app-preferences': () => <SettingsScreen categorySlug="app-preferences" />,
   'new-task-defaults': () => <SettingsScreen categorySlug="new-task-defaults" />,
   'running-task-settings': () => <SettingsScreen categorySlug="running-task-settings" />,

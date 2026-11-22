@@ -1,3 +1,4 @@
+import { studioExtensionCommandSchema } from '@dovo/protocol'
 import { checkCodeAccess } from '../agent-tools/code-access.js'
 import { visionTool } from '../vision/tool.js'
 import { attachmentOcr } from '../vision/attachment-ocr.js'
@@ -143,6 +144,12 @@ import { defaultShell } from '../terminal/shell.js'
 import { agentsRoute } from './endpoints/agents-routes.js'
 import { terminalsRoute } from './endpoints/terminals-routes.js'
 import { jobsRoute } from './endpoints/jobs-routes.js'
+import { dashboardsRoute } from './endpoints/dashboards-routes.js'
+import {
+  agentDashboardAction,
+  agentDashboardCommand,
+  agentDashboardReadActions,
+} from '../dashboards/agent-command.js'
 import { scmRoute } from './endpoints/scm-routes.js'
 import { projectTransferRoute } from './endpoints/project-transfer-routes.js'
 import type { IncomingMessage } from 'node:http'
@@ -480,6 +487,41 @@ export function route(
           yield* serviceResult(body(request, 32 * 1024)),
         )
         return workflowTool(s, input.taskId, run.runId, input.command)
+      }
+      if (method === 'POST' && path === '/api/agent/studio-extensions') {
+        if (!run) throw new HttpError(403, 'Extension tools require an active agent run.')
+        const input = decode(
+          Schema.Struct({
+            taskId: Schema.String,
+            parentRunId: Schema.String,
+            command: studioExtensionCommandSchema,
+          }),
+          yield* serviceResult(body(request)),
+        )
+        return yield* runtimeOperation(() =>
+          Promise.resolve(
+            s.studioExtensions.command(
+              input.command,
+              () => {
+                authorizeRunRoute(s, token, method, path, input)
+              },
+              { taskId: run.taskId, readOnly: run.readOnly },
+            ),
+          ),
+        )
+      }
+      if (method === 'POST' && path === '/api/agent/dashboards') {
+        if (!run) throw new HttpError(403, 'Dashboard tools require an active agent run')
+        const input = decode(
+          Schema.Struct({ taskId: Schema.String, command: Schema.Unknown }),
+          yield* serviceResult(body(request, 1024 * 1024)),
+        )
+        if (
+          run.readOnly &&
+          !agentDashboardReadActions.includes(agentDashboardAction(input.command))
+        )
+          throw new HttpError(403, 'This agent has read-only access to dashboards')
+        return agentDashboardCommand(s.dashboards, input.command)
       }
       if (method === 'POST' && path === '/api/agent/a2ui') {
         if (!run) throw new HttpError(403, 'A2UI tools require an active agent run')
@@ -2114,6 +2156,19 @@ export function route(
       if (path === '/api/terminals' || path.startsWith('/api/terminals/'))
         return yield* terminalsRoute(request, path, token)
       if (path.startsWith('/api/dictation/')) return yield* dictationRoute(request, path, token)
+      if (method === 'POST' && path === '/api/studio-extensions') {
+        if (agentDeviceAccess) throw new HttpError(403, 'Extensions require a paired human client.')
+        const command = decode(studioExtensionCommandSchema, yield* serviceResult(body(request)))
+        return yield* runtimeOperation(() =>
+          Promise.resolve(
+            s.studioExtensions.command(command, () => {
+              s.devices.authenticate(token)
+            }),
+          ),
+        )
+      }
+      if (path.startsWith('/api/dashboards/'))
+        return yield* dashboardsRoute(request, path, token, agentDeviceAccess)
       if (path.startsWith('/api/jobs/'))
         return yield* jobsRoute(
           request,

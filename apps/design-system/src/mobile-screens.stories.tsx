@@ -36,6 +36,7 @@ export const Projects: Story = { args: { screen: 'projects', state: 'offline' } 
 export const PullRequests: Story = { args: { screen: 'pulls' } }
 export const Issues: Story = { args: { screen: 'issues' } }
 export const Automations: Story = { args: { screen: 'automations', state: 'offline' } }
+export const Dashboards: Story = { args: { screen: 'dashboards', state: 'populated' } }
 export const Artifacts: Story = { args: { screen: 'artifacts' } }
 export const Computers: Story = { args: { screen: 'computers' } }
 export const AppPreferences: Story = { args: { screen: 'app-preferences' } }

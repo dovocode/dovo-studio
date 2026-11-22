@@ -522,7 +522,8 @@ The initial loading boundary follows VS Code's manifest/contribution model: loca
 contribute views and commands before activation. Opening a view activates its extension and lazily
 imports its frontend. Desktop and web supply the same bundled extension list; the shell discovers
 views from contributions. Mobile supplies native view contributions through the same extension host.
-There is no remote module federation or marketplace installer.
+The Extension Marketplace installs validated manifests from a curated catalog on the paired runtime.
+See [Studio extensions](studio-extensions.md) for browsing, source setup, and publishing.
 
 To add a feature, create an extension package exporting `defineStudioExtension(manifest, views)`.
 Keep its manifest entry light and its view behind `load: () => import('./view')`. Register the

@@ -10,7 +10,7 @@ website renders that content through React Native Web. The native catalog mounts
 Router stack, so production `ScreenHeader` uses actual UIKit navigation controls.
 
 - Collections: tasks, archived tasks, projects, PRs, issues, automations, artifact library,
-  computers.
+  dashboards, computers.
 - Detail and creation: conversation/task detail, full composer, new thread, launcher, PR detail,
   issue detail, pipeline detail, pipeline runs, automation detail, Jira issue detail.
 - Settings indexes: top level, app preferences, agents/tools, tasks/projects, computers, history.

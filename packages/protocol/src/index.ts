@@ -332,6 +332,10 @@ export * from './tasks/thread-navigation.js'
 export * from './desktop-dictation.js'
 
 export * from './runtime/remote-desktop.js'
+export * from './runtime/dashboards.js'
+export * from './runtime/studio-extensions.js'
+export * from './runtime/studio-extension-marketplace.js'
+export * from './runtime/studio-extension-views.js'
 
 export * from './runtime/relay-message.js'
 export * from './scm/repositories/project-transfer.js'

@@ -4,6 +4,20 @@ import { basename, delimiter, isAbsolute, join } from 'node:path'
 import type { CommandSettings, TerminalShell } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
 import { processEnvironment } from '../process.js'
+/** A noninteractive shell, so the PTY exit code belongs to this command, not a shell prompt. */
+export function commandCheckLaunch(command: string) {
+  const args =
+    process.platform === 'win32'
+      ? [
+          '-NoLogo',
+          '-NoProfile',
+          '-NonInteractive',
+          '-Command',
+          `$global:LASTEXITCODE = 0; & {\n${command}\n}; if (-not $?) { if ($LASTEXITCODE) { exit $LASTEXITCODE }; exit 1 }; exit $LASTEXITCODE`,
+        ]
+      : ['-c', command]
+  return { command: defaultShell(), args, env: {} }
+}
 export function defaultShell() {
   if (process.platform === 'win32')
     return join(

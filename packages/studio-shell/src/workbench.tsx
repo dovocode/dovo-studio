@@ -1,5 +1,11 @@
 import { DictationNotice } from './dictation-notice'
-import { matchesApplicationShortcut, readAppPreferences, threadCommands } from '@dovo/studio-core'
+import {
+  matchesApplicationShortcut,
+  readAppPreferences,
+  threadCommands,
+  useStudioExtensions,
+  extensionComponentVersion,
+} from '@dovo/studio-core'
 import { parseStudioLink, recordClientAction } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { AppInterfaceLanguage } from './interface-language'
@@ -283,6 +289,7 @@ function WorkbenchContent({
     runtimes,
     pendingSync,
     retrySync,
+    request,
     switchRuntime,
   } = useWorkspace()
   const artifactsEnabled =
@@ -804,6 +811,13 @@ function WorkbenchContent({
   if (browserIndicator && sectionIndicators.workspace !== 'attention')
     sectionIndicators.workspace = browserIndicator
   const [palette, setPalette] = useApplicationState(false)
+  const extensionPalette = useStudioExtensions(
+    request,
+    palette && connected && snapshot?.studioExtensionsSupported === true,
+    runtimeRegistry.activeId,
+    snapshot?.studioExtensionsRevision,
+    extensionComponentVersion(snapshot),
+  )
   const commands = useRef(new Map<string, StudioCommand>())
   const [commandVersion, refreshCommands] = useApplicationState(0)
   /** A command to run once its view mounts and registers it. */
@@ -988,7 +1002,14 @@ function WorkbenchContent({
     window.addEventListener('keydown', key)
     return () => window.removeEventListener('keydown', key)
   }, [palette, navigate, goBack, setPalette])
-  const settingsViews = catalog.views.filter((view) => view.navigationGroup === 'settings')
+  const studioExtensionsEnabled =
+    snapshot?.studioExtensionsSupported === true ||
+    runtimes.some((runtime) => runtime.snapshot?.studioExtensionsSupported === true)
+  const settingsViews = catalog.views.filter(
+    (view) =>
+      view.navigationGroup === 'settings' &&
+      (view.id !== 'studio-extensions' || studioExtensionsEnabled),
+  )
   const currentTask =
     target.viewId === 'tasks'
       ? workspace.tasks.find((task) => task.id === target.entityId)
@@ -1015,6 +1036,10 @@ function WorkbenchContent({
     botsOverviewEnabled,
     browserWorkspaceEnabled,
     artifactsEnabled,
+    studioExtensionsEnabled,
+    dashboardsEnabled:
+      snapshot?.dashboardsSupported === true ||
+      runtimes.some((runtime) => runtime.snapshot?.dashboardsSupported === true),
     showIssues,
     showJira,
   }
@@ -1037,6 +1062,7 @@ function WorkbenchContent({
           'jira',
           'pipelines',
           'artifacts',
+          'dashboards',
         ].includes(target.viewId)}
         collapsed={sidebarCollapsed}
         onCollapsedChange={setSidebarCollapsed}
@@ -1386,11 +1412,38 @@ function WorkbenchContent({
                   },
                   id,
                 ),
-              extra: readAppPreferences().savedFilterViews.map((view) => ({
-                id: `saved-view.${view.id}`,
-                title: `Open saved ${view.kind} view: ${view.name}`,
-                run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
-              })),
+              extra: [
+                ...readAppPreferences().savedFilterViews.map((view) => ({
+                  id: `saved-view.${view.id}`,
+                  title: `Open saved ${view.kind} view: ${view.name}`,
+                  run: () => navigate({ viewId: view.kind, entityId: `saved-view:${view.id}` }),
+                })),
+                ...(snapshot?.studioExtensionMarketplaceSupported
+                  ? [
+                      {
+                        id: 'studio-extension-marketplace',
+                        title: 'Browse extension marketplace',
+                        run: () =>
+                          navigate({ viewId: 'studio-extensions', entityId: 'marketplace' }),
+                      },
+                    ]
+                  : []),
+                ...(palette && connected && snapshot?.studioExtensionsSupported === true
+                  ? extensionPalette.entries.flatMap((entry) =>
+                      entry.enabled
+                        ? (entry.installed?.contributions ?? []).map((contribution) => ({
+                            id: `studio-extension.${entry.id}/${contribution.id}`,
+                            title: `${entry.installed?.name}: ${contribution.title}`,
+                            run: () =>
+                              navigate({
+                                viewId: 'studio-extensions',
+                                entityId: `${entry.id}/${contribution.id}`,
+                              }),
+                          }))
+                        : [],
+                    )
+                  : []),
+              ],
               registered: commands.current.values(),
             })}
           />

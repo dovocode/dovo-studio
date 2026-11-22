@@ -6,6 +6,7 @@ export type StudioIcon =
   | 'browser'
   | 'terminal'
   | 'workspace'
+  | 'dashboards'
   | 'artifacts'
   | 'issues'
   | 'jira'

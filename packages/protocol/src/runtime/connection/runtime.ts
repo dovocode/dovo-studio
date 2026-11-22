@@ -377,6 +377,12 @@ export const snapshotSchema = mutableStruct({
   taskSearchScopeSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
+  dashboardsSupported: Schema.optional(Schema.Literal(true)),
+  studioExtensionCustomPropsSupported: Schema.optional(Schema.Literal(true)),
+  studioExtensionComponentVersion: Schema.optional(Schema.Literal(1)),
+  studioExtensionMarketplaceSupported: Schema.optional(Schema.Literal(true)),
+  studioExtensionsSupported: Schema.optional(Schema.Literal(true)),
+  studioExtensionsRevision: Schema.optional(Schema.Number),
   botBackupSupported: Schema.optional(Schema.Literal(true)),
   /** `unattendedSpendLimitUsd` preference, `Task.spendPause` and `/api/tasks/spend-limit/continue`. */
   unattendedSpendLimitSupported: Schema.optional(Schema.Literal(true)),

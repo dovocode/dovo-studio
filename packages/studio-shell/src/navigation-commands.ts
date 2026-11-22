@@ -8,6 +8,8 @@ export type NavigationAvailability = {
   unifiedWorkspaceEnabled: boolean
   unifiedWorkspaceHideNormalModes: boolean
   artifactsEnabled: boolean
+  dashboardsEnabled?: boolean
+  studioExtensionsEnabled?: boolean
   showIssues: boolean
   showJira: boolean
 }
@@ -23,6 +25,8 @@ export function navigationViewVisible(
   if (view.id === 'workspace') return availability.unifiedWorkspaceEnabled
   if (view.id === 'browser') return availability.browserWorkspaceEnabled
   if (view.id === 'artifacts') return availability.artifactsEnabled
+  if (view.id === 'studio-extensions') return availability.studioExtensionsEnabled === true
+  if (view.id === 'dashboards') return availability.dashboardsEnabled === true
   if (view.id === 'issues') return availability.showIssues
   if (view.id === 'jira') return availability.showJira
   return true

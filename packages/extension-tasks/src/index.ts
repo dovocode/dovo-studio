@@ -2,7 +2,24 @@ import { defineStudioExtension } from '@dovo/studio-core'
 export const tasksExtension = defineStudioExtension(
   { id: 'dovo.tasks', name: 'Threads', version: '0.1.0' },
   [
+    {
+      id: 'studio-extensions',
+      title: 'Studio extensions',
+      icon: 'agents',
+      order: 8,
+      navigationGroup: 'settings',
+      settingsSection: 'agents',
+      settingsScope: 'computer',
+      load: () => import('./studio-extensions/view'),
+    },
     { id: 'tasks', title: 'Threads', icon: 'tasks', order: 0, load: () => import('./view') },
+    {
+      id: 'dashboards',
+      title: 'Dashboards',
+      icon: 'dashboards',
+      order: 0.35,
+      load: () => import('./dashboards/view'),
+    },
     {
       id: 'bots',
       title: 'Bots',

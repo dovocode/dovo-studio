@@ -222,6 +222,18 @@ export default function SettingsScreen({ categorySlug }: { categorySlug?: string
           group: 'Agent setup',
           keywords: 'models providers permissions access accounts login reasoning',
         },
+        ...(overviews.some((entry) => entry.snapshot?.studioExtensionsSupported)
+          ? [
+              {
+                title: uiText('Studio extensions'),
+                subtitle: uiText('Install and configure extension contributions'),
+                icon: 'jobs' as const,
+                path: '/settings/studio-extensions',
+                group: 'Agent setup',
+                keywords: 'extensions manifest tiles tools',
+              },
+            ]
+          : []),
         {
           title: uiText('MCP, skills & hooks'),
           subtitle: uiText('Shared tools and project or agent overrides'),

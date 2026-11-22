@@ -581,6 +581,7 @@ class RuntimeSync {
       s.secureInputs.list(),
       s.terminals.list(),
       s.jobs.revision,
+      s.studioExtensions.revision,
       s.projectTransfers.revision,
       s.devices.version(),
       s.pairing.pending(),

@@ -12,6 +12,7 @@ import {
   Download,
   RefreshCw,
   PanelsTopLeft,
+  LayoutDashboard,
   Shapes,
   Globe2,
   ExternalLink,
@@ -40,6 +41,7 @@ const icons: Record<StudioIcon, typeof Bot> = {
   browser: Globe2,
   terminal: Terminal,
   workspace: PanelsTopLeft,
+  dashboards: LayoutDashboard,
   issues: CircleDot,
   jira: PanelsTopLeft,
   scm: GitBranch,
@@ -111,12 +113,14 @@ export function ActivityBar({
   const workspaceViews = views.filter(
     (view) =>
       !view.navigationGroup &&
-      ['tasks', 'bots', 'browser', 'terminals', 'artifacts'].includes(view.id),
+      ['tasks', 'bots', 'browser', 'terminals', 'dashboards', 'artifacts'].includes(view.id),
   )
   const toolViews = views.filter(
     (view) =>
       !view.navigationGroup &&
-      !['workspace', 'tasks', 'bots', 'browser', 'terminals', 'artifacts'].includes(view.id),
+      !['workspace', 'tasks', 'bots', 'browser', 'terminals', 'dashboards', 'artifacts'].includes(
+        view.id,
+      ),
   )
   const settings = views.filter((view) => view.navigationGroup === 'settings')
   const settingsActive = settings.some((view) => view.id === activeId)

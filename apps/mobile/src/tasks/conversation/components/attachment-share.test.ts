@@ -2,7 +2,7 @@ import { beforeEach, expect, it, vi } from 'vite-plus/test'
 
 const state = vi.hoisted(() => ({
   directories: new Map<string, number>(),
-  files: new Map<string, { data: string; time: number }>(),
+  files: new Map<string, { data: string; time: number; encoding?: string }>(),
   nextId: 0,
   available: true,
   failWrite: false,
@@ -53,10 +53,10 @@ vi.mock('expo-file-system', () => {
     get exists() {
       return state.files.has(this.uri)
     }
-    async write(data: string) {
+    async write(data: string, options?: { encoding: string }) {
       await Promise.resolve()
       if (state.failWrite) throw new Error('write failed')
-      state.files.set(this.uri, { data, time: Date.now() })
+      state.files.set(this.uri, { data, time: Date.now(), encoding: options?.encoding })
     }
     info() {
       return { modificationTime: state.files.get(this.uri)?.time }
@@ -146,4 +146,13 @@ it('uses the persisted retention marker after a restart', async () => {
   vi.advanceTimersByTime(60 * 60 * 1000)
   await restarted.shareAttachment('last.txt', 'text/plain', 'last')
   expect(state.directories.has(`${root}/export-1`)).toBe(false)
+})
+
+it('shares UTF-8 dashboard JSON with its download name and MIME type', async () => {
+  const filename = 'delivery.dovo-dashboard.json'
+  const json = '{"title":"Livraison été"}'
+  await shareAttachment(filename, 'application/json', json, 'utf8')
+  const uri = `${root}/export-1/${filename}`
+  expect(state.files.get(uri)).toMatchObject({ data: json, encoding: 'utf8' })
+  expect(state.share).toHaveBeenCalledWith(uri, { mimeType: 'application/json' })
 })

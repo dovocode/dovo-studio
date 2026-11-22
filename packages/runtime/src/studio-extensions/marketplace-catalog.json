@@ -1,0 +1,78 @@
+[
+  {
+    "publisher": "Dovo",
+    "description": "Open Threads, Terminals and Pull requests from a dashboard on the paired computer.",
+    "version": "1.0.0",
+    "manifest": {
+      "id": "dovo.workspace-shortcuts",
+      "version": 1,
+      "name": "Workspace shortcuts",
+      "contributions": [
+        { "id": "threads", "kind": "studio", "title": "Open Threads", "destination": "tasks" },
+        {
+          "id": "terminal",
+          "kind": "studio",
+          "title": "Open Terminals",
+          "destination": "terminal"
+        },
+        { "id": "pulls", "kind": "studio", "title": "Open Pull requests", "destination": "pulls" }
+      ]
+    },
+    "dashboard": {
+      "id": "c08edaad-893a-4639-9a4a-4e9ab4fc039a",
+      "title": "Workspace shortcuts",
+      "tiles": [
+        { "title": "Threads", "contributionId": "threads" },
+        { "title": "Terminals", "contributionId": "terminal" },
+        { "title": "Pull requests", "contributionId": "pulls" }
+      ]
+    }
+  },
+  {
+    "publisher": "Dovo",
+    "description": "Check one service from Studio. Requires a configured MCP server with a read-only service_status tool that accepts a service string.",
+    "version": "1.0.0",
+    "manifest": {
+      "id": "dovo.service-status",
+      "version": 1,
+      "name": "Service status",
+      "settings": [{ "id": "service", "title": "Service name", "default": "web" }],
+      "contributions": [
+        {
+          "id": "status",
+          "kind": "tool",
+          "title": "Read service status",
+          "taskId": "marketplace-source",
+          "server": "marketplace-source",
+          "tool": "service_status",
+          "inputs": { "service": "service" }
+        },
+        {
+          "id": "overview",
+          "kind": "view",
+          "placement": "settings",
+          "title": "Service overview",
+          "view": {
+            "version": 1,
+            "root": "card",
+            "nodes": [
+              { "id": "card", "kind": "card", "children": ["service", "refresh", "health"] },
+              { "id": "service", "kind": "input", "label": "Service", "setting": "service" },
+              { "id": "refresh", "kind": "button", "label": "Read status", "action": "status" },
+              {
+                "id": "health",
+                "kind": "badge",
+                "value": { "result": "status", "path": ["health"] }
+              }
+            ]
+          }
+        }
+      ]
+    },
+    "dashboard": {
+      "id": "dcfc904a-19f6-4b85-a493-be17125d04a8",
+      "title": "Service overview",
+      "tiles": [{ "title": "Service status", "contributionId": "overview" }]
+    }
+  }
+]

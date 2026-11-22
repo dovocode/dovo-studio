@@ -19,6 +19,7 @@ export function runtimeRequestTimeout(path: string, input?: unknown) {
   if (path === '/api/bots/avatar/generate') return 330000
 
   if (path === '/api/remote-desktop') return 45000
+  if (path === '/api/dashboards/read') return 35000
   if (path === '/api/studio/session') return 30000
   if (path === '/api/studio/tools') {
     if (input && typeof input === 'object' && 'part' in input) {

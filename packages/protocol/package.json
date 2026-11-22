@@ -7,6 +7,12 @@
   ],
   "type": "module",
   "exports": {
+    "./studio-extension-sdk": {
+      "types": "./src/studio-extension-sdk.ts",
+      "development": "./src/studio-extension-sdk.ts",
+      "import": "./dist/studio-extension-sdk.js",
+      "default": "./dist/studio-extension-sdk.js"
+    },
     "./browser-certificate": {
       "types": "./src/node/browser-certificate.ts",
       "development": "./src/node/browser-certificate.ts",

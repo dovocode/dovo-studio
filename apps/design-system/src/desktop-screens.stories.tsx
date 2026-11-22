@@ -166,6 +166,7 @@ export const TasksEmpty: Story = { args: { state: 'empty' } }
 export const WorkspaceLoading: Story = { args: { state: 'loading' } }
 export const WorkspaceError: Story = { args: { route: 'activity', state: 'error' } }
 export const WorkspaceOffline: Story = { args: { state: 'offline' } }
+export const Dashboards: Story = { args: { route: 'dashboards' } }
 export const Artifacts: Story = { args: { route: 'artifacts' } }
 export const ArchivedTasks: Story = { args: { route: 'archived-tasks' } }
 export const Issues: Story = { args: { route: 'issues' } }

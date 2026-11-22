@@ -4,7 +4,8 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./remote-desktop-viewer": "./src/remote-desktop-view.tsx"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"
