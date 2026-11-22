@@ -686,6 +686,9 @@ it('returns background grandchildren and acknowledges a remote failure without l
     attention: ['approval:input'],
   })
   expect(watch.snapshot?.phase).toBe('needs-input')
+  const reply = await source.post('wait', { id: child.id, timeoutMs: 3000 })
+  expect(reply.status).toBe(200)
+  expect(await reply.json()).toMatchObject({ running: true, pendingApprovals: 1 })
   const snapshot = threadSnapshot(source.s, source.parent.id)
   expect(snapshot.threads?.find((entry) => entry.threadId === grandchild.id)?.parent).toMatchObject(
     { threadId: child.threadId, runtimeId: target.s.runtimeId },

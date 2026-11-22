@@ -72,7 +72,7 @@ type CodexConnection = {
   rejectTransport?: (error: Error) => void
   consumeNotification?: (method: string, params: unknown) => void
 }
-export function createCodexAdapter(): AgentAdapter {
+export function createCodexAdapter(turnAcceptanceMs = 120_000): AgentAdapter {
   const idle = new IdleProviders<CodexConnection>(
     (connection) => close(connection),
     (connection) => connection.nativeAgents.some(nativeAgentWorking),
@@ -284,6 +284,7 @@ export function createCodexAdapter(): AgentAdapter {
       let activeTurnId: string | undefined
       let goalStatus: typeof codexGoalStatus.Type | undefined
       let goalHandoff: ReturnType<typeof setTimeout> | undefined
+      let turnAcceptance: ReturnType<typeof setTimeout> | undefined
       const followsGoal = !run.ephemeral && run.tools !== 'none' && !run.compact
       const pendingNotifications: { method: string; params: unknown }[] = []
       let pendingBytes = 0
@@ -960,6 +961,11 @@ export function createCodexAdapter(): AgentAdapter {
         }
         submitted = true
         awaitingTurn = true
+        turnAcceptance = setTimeout(() => {
+          rejectTurn(
+            new Error('Codex did not confirm the turn start. Check the thread before retrying.'),
+          )
+        }, turnAcceptanceMs)
         const started = await request('turn/start', {
           threadId: thread.id,
           ...(run.outputSchema ? { outputSchema: run.outputSchema } : {}),
@@ -996,6 +1002,7 @@ export function createCodexAdapter(): AgentAdapter {
             : {}),
           input: turnInput(run),
         })
+        clearTimeout(turnAcceptance)
         acceptPrompt()
         const turn = decodeResult(
           mutableStruct({
@@ -1041,6 +1048,7 @@ export function createCodexAdapter(): AgentAdapter {
       } finally {
         run.onSteer?.(undefined)
         clearTimeout(timeout)
+        clearTimeout(turnAcceptance)
         clearTimeout(goalHandoff)
         run.signal.removeEventListener('abort', abort)
         transport.consumeNotification = undefined

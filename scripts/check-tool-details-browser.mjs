@@ -19,7 +19,7 @@ const museTools=[
 ];
 updateAppPreferences({toolActivity:'expanded',showToolDetails:false});
 window.setDetails=enabled=>updateAppPreferences({showToolDetails:enabled});
-window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[working,setWorking]=useState(false);window.workingCase=mode=>{updateAppPreferences({toolActivity:mode==='hidden'?'hidden':'collapsed',showToolDetails:false});setFailed(false);setSource(mode==='tool'||mode==='hidden'?tools.map(tool=>({...tool,status:'running'})):[]);setWorking(mode!=='done')};const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.discoveryCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:true});setFailed(false);setSource(recentTools([{id:'search-start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'search-result',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content:{type:'tool_search_tool_search_result',tool_references:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]}}]}}})}]))};window.interruptTool=()=>{updateAppPreferences({toolActivity:'hidden'});setFailed(false);setSource(tools.map(tool=>({...tool,status:'interrupted'})))};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity working={working} tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
+window.hideWork=()=>updateAppPreferences({toolActivity:'hidden'});function App(){const[working,setWorking]=useState(false);window.workingCase=mode=>{updateAppPreferences({toolActivity:mode==='hidden'?'hidden':'collapsed',showToolDetails:false});setFailed(false);setSource(mode==='tool'||mode==='hidden'?tools.map(tool=>({...tool,status:'running'})):[]);setWorking(mode!=='done')};const[failed,setFailed]=useState(false);const[source,setSource]=useState(tools);window.renderPatch=item=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setSource([{id:'patch',summary:'Codex patch',status:'completed',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({event:{item}})}])};window.museCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);setSource(museTools)};window.discoveryCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:true});setFailed(false);setSource(recentTools([{id:'search-start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'search-result',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content:{type:'tool_search_tool_search_result',tool_references:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]}}]}}})}]))};window.interruptTool=()=>{updateAppPreferences({toolActivity:'hidden'});setFailed(false);setSource(tools.map(tool=>({...tool,status:'interrupted'})))};window.failTool=()=>setFailed(true);window.terminalCase=()=>{updateAppPreferences({toolActivity:'expanded',showToolDetails:false});setFailed(false);const command='pnpm dev -- --host 0.0.0.0';const base={kind:'tool',scope:'task',time:'2026-10-02T12:00:00Z',summary:'Terminal command'};setSource(recentTools(compactActivityEvents([{...base,id:'terminal',payload:JSON.stringify({turnId:'turn',toolId:'terminal:1',status:'completed',terminalCommand:true,presentation:{kind:'command',title:command,input:command,output:'Started in terminal.'}})},{...base,id:'native',summary:'terminal_run',payload:JSON.stringify({turnId:'turn',toolId:'native',status:'completed',event:{item:{tool:'terminal_run',arguments:{command}}}})}])))};return <TaskActivity working={working} tools={failed?source.map(tool=>({...tool,status:'failed'})):source}/>};createRoot(document.getElementById('app')).render(<ApplicationStateProvider><App/></ApplicationStateProvider>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),
     loader: 'tsx',
@@ -54,7 +54,7 @@ window.renderDiscovery=(failed=false)=>{
  const content=failed?{type:'tool_search_tool_result_error',error_code:'unavailable'}:{type:'tool_search_tool_search_result',tool_references:[{type:'tool_reference',tool_name:'mcp__dovo_task__studio_browsers'}]};
  const events=[{id:'start',time:'2026-10-02T12:00:00Z',kind:'tool',scope:'task',summary:'ToolSearch',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'running',event:{message:{content:[{type:'server_tool_use',id:'search',name:'ToolSearch',input:{query:'browser profiles'}}]}}})},{id:'end',time:'2026-10-02T12:00:01Z',kind:'tool',scope:'task',summary:'Tool result',payload:JSON.stringify({turnId:'turn',toolId:'search',status:'completed',event:{message:{content:[{type:'tool_search_tool_result',tool_use_id:'search',content}]}}})}];
  root.render(<ToolActivityRow event={recentTools(events)[0]}/>);
-};window.renderDiscovery();`,
+};window.renderPatch=item=>root.render(<ToolActivityRow key='patch' event={{id:'patch',summary:'Codex patch',status:'completed',time:'2026-10-02T12:00:00Z',payload:JSON.stringify({event:{item}})}}/>);window.renderDiscovery();`,
     },
     conditions: ['development'],
     bundle: true,
@@ -121,6 +121,14 @@ window.renderDiscovery=(failed=false)=>{
     },
   ],
 )
+const codexPatch = {
+  type: 'fileChange',
+  changes: [
+    { path: 'new.ts', kind: { type: 'add' }, diff: '@@ -0,0 +1 @@\n+added file' },
+    { path: 'update.ts', kind: { type: 'update' }, diff: '@@ -1 +1 @@\n-old line\n+new line' },
+    { path: 'remove.ts', kind: { type: 'delete' }, diff: '@@ -1 +0,0 @@\n-removed file' },
+  ],
+}
 const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage()
@@ -182,6 +190,12 @@ try {
     throw new Error('Diff additions must carry the added marker rendered green in the app.')
   if ((await editRows.locator('[data-diff="removed"]').count()) !== 1)
     throw new Error('Diff removals must carry the removed marker rendered red in the app.')
+  await page.evaluate((patch) => window.renderPatch(patch), codexPatch)
+  await page.getByText('Codex patch', { exact: true }).click()
+  const toolDiff = page.getByRole('region', { name: 'Tool diff' })
+  await toolDiff.focus()
+  for (const line of ['+added file', '+new line', '-removed file'])
+    await toolDiff.getByText(line, { exact: true }).waitFor()
   await page.evaluate(() => window.discoveryCase())
   const discovery = page.locator('details.group\\/action')
   await discovery.getByText('Find tools browser profiles', { exact: true }).waitFor()
@@ -212,6 +226,10 @@ try {
     .getByRole('button', { name: 'Find tools browser profiles · Failed', exact: true })
     .waitFor()
   await mobilePage.getByText('Tool search failed: unavailable', { exact: true }).waitFor()
+  await mobilePage.evaluate((patch) => window.renderPatch(patch), codexPatch)
+  await mobilePage.getByRole('button', { name: 'Codex patch', exact: true }).click()
+  for (const line of ['+added file', '+new line', '-removed file'])
+    await mobilePage.getByText(line, { exact: true }).waitFor()
   if (mobileErrors.length) throw new Error(mobileErrors.join('\n'))
   console.log(
     'Tool details and discovery pass on desktop and mobile adapter, including typed errors and original queries.',

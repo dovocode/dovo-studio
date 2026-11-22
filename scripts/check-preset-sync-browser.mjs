@@ -50,7 +50,7 @@ window.fetch=async(url,init={})=>{
     settings.shared=shared;
     return Response.json({shared});
   }
-  if(path==='/api/devices/revoke-self')return Response.json({ok:true});
+  if(path==='/api/devices/revoke-self')return window.failRevocation?Response.json({error:'Computer unavailable'},{status:503}):Response.json({ok:true});
   throw new Error('Unexpected request '+url);
 };
 window.changePreset=instructions=>{
@@ -372,9 +372,10 @@ try {
       })
       await page.evaluate(() => window.refreshHost('two.lan'))
       await waitError(kind + ' failed two')
-      await page.evaluate(async () => {
-        await window.store.forgetRuntime(window.profiles[1].id)
-      })
+      assert.equal(
+        await page.evaluate(() => window.store.forgetRuntime(window.profiles[1].id)),
+        true,
+      )
       await waitSynced()
       assert.equal(await page.evaluate(() => window.entries.length), 1)
       // Restore the second pairing for the next synchronization path.
@@ -423,6 +424,14 @@ try {
     )
     await page.evaluate(() => window.changeSettings(10001))
     await waitSynced()
+    assert.equal(
+      await page.evaluate(() => {
+        window.failRevocation = true
+        return window.store.forgetRuntime(window.profiles[1].id)
+      }),
+      false,
+    )
+    await page.waitForFunction(() => window.entries.length === 1)
     assert.deepEqual(errors, [])
     console.log(
       (mobile ? 'Mobile' : 'Desktop') +

@@ -60,7 +60,7 @@ export type WorkspaceContextValue = {
   localRuntimeId: string | null
   runtimes: RuntimeOverview[]
   switchRuntime: (id: string) => Promise<void>
-  forgetRuntime: (id: string) => Promise<void>
+  forgetRuntime: (id: string) => Promise<boolean>
   refreshRuntimes: () => Promise<void>
   refreshRuntime: (profile: RuntimeProfile) => Promise<void>
   retrySync: () => Promise<void>

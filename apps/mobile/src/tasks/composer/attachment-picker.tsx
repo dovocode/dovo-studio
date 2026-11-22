@@ -163,6 +163,7 @@ export function useAttachmentPicker(
     let operation: NonNullable<typeof activeUpload.current> | undefined
     let complete: (failure?: string) => void = () => {}
     let failure: string | undefined
+    const temporaryFiles: File[] = []
     return mobileWorkflow(function* () {
       if (!profile) throw new Error('Connect a computer first.')
       const generation = initialGeneration ?? ownership.current.generation
@@ -194,7 +195,7 @@ export function useAttachmentPicker(
       }
       const captured = destination ?? (unconfirmed.length ? yield* captureDestination() : undefined)
       let guard = captured?.guard
-      const batch: { asset: AttachmentAsset; data: string; attachment: Attachment }[] = []
+      const batch: { file: File; attachment: Attachment }[] = []
       const rejected: string[] = []
       for (const asset of unconfirmed) {
         if (count - (replaceId ? 1 : 0) + batch.length >= MAX_ATTACHMENTS) {
@@ -207,20 +208,12 @@ export function useAttachmentPicker(
             : yield* nativeEffect(() => prepare(asset, !!replaceId, editChatImage))
           if (!prepared) return
           const file = new File(prepared.uri)
+          if (prepared.uri !== asset.uri) temporaryFiles.push(file)
           const size = file.size
-          const data = yield* nativeEffect(async () => {
-            try {
-              if (size > MAX_ATTACHMENT_BYTES)
-                throw new Error(`${prepared.name} is larger than 5 MB`)
-              return await file.base64()
-            } finally {
-              if (prepared.uri !== asset.uri && file.exists) file.delete()
-            }
-          })
+          if (size > MAX_ATTACHMENT_BYTES) throw new Error(`${prepared.name} is larger than 5 MB`)
           const id = asset.id ?? randomUUID()
           batch.push({
-            asset: { ...prepared, id },
-            data,
+            file,
             attachment: {
               id,
               name: prepared.name,
@@ -258,6 +251,10 @@ export function useAttachmentPicker(
             throw new Error('not uploaded because the previous attachment did not complete.')
           if (!owns()) throw new Error('Attachment cancelled because the conversation changed.')
           stopped = true
+          if (item.file.size > MAX_ATTACHMENT_BYTES)
+            throw new Error('The attachment is now larger than 5 MB.')
+          const data = yield* nativeEffect(() => item.file.base64())
+          if (!owns()) throw new Error('Attachment cancelled because the conversation changed.')
           const result = yield* requestAttachmentEffect(
             profile,
             {
@@ -266,7 +263,7 @@ export function useAttachmentPicker(
               detached: !editing,
               id: item.attachment.id,
               name: item.attachment.name,
-              data: item.data,
+              data,
               ...(replaceId ? { replaceId } : {}),
             },
             !!replaceId,
@@ -315,7 +312,10 @@ export function useAttachmentPicker(
                 const file = previous
                   ? new File(previous.uri)
                   : new File(Paths.cache, `pending-attachment-${item.attachment.id}`)
-                await file.write(item.data, { encoding: 'base64' })
+                if (!previous && file.uri !== item.file.uri) {
+                  if (file.exists) file.delete()
+                  await item.file.copy(file)
+                }
                 failedUploads.current.set(item.attachment.id, {
                   uri: file.uri,
                   name: item.attachment.name,
@@ -349,6 +349,13 @@ export function useAttachmentPicker(
       ),
       Effect.ensuring(
         Effect.sync(() => {
+          for (const file of temporaryFiles) {
+            try {
+              if (file.exists) file.delete()
+            } catch {
+              // The OS may already have evicted a temporary cache file.
+            }
+          }
           if (operation) {
             operation.pending = false
             complete(failure)

@@ -8,7 +8,7 @@ const result = await bundleBrowser(
     stdin: {
       resolveDir: mobile,
       loader: 'tsx',
-      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.released=[];window.optimized=[];window.deleted=[];window.imageRefsReleased=0;window.contextsReleased=0;window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');window.picker=picker;const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
+      contents: `import {createRoot} from 'react-dom/client';import {FileDropTarget} from './src/tasks/composer/file-drop-target';import {useAttachmentPicker} from './src/tasks/composer/attachment-picker';import {useState} from 'react';window.uploads=[];window.fileOrder=[];window.released=[];window.optimized=[];window.deleted=[];window.imageRefsReleased=0;window.contextsReleased=0;window.alerts=[];window.count=0;function App(){const picker=useAttachmentPicker('task');window.picker=picker;const [enabled,setEnabled]=useState(true);window.enableDrop=setEnabled;window.uploadAssets=picker.upload;return <FileDropTarget enabled={enabled&&!picker.busy} upload={picker.upload}><textarea aria-label="Message" defaultValue="Keep my draft"/><div role="alert">{picker.error}</div></FileDropTarget>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -42,7 +42,7 @@ const result = await bundleBrowser(
     {
       path: '../../runtime/connection/provider',
       importer: mobile,
-      contents: `import {Effect} from 'effect';const review=()=>{window.reviews=(window.reviews||0)+1};export const useRuntime=()=>({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:[{id:'task',draftAttachments:Array.from({length:window.count},()=>({id:'old'}))}]}},reviewAttachments:review,readRuntimeEffect:(_profile,path,input)=>Effect.try({try:()=>{window.serverGuard??='guard-0';if(path.endsWith('draft-guard')){window.guardReads=(window.guardReads||0)+1;return {guard:window.serverGuard}}window.commits=(window.commits||[]).concat(input);if(window.failCommit)throw Error('commit response lost');if(input.guard!==window.serverGuard)throw Error('draft changed');const nextGuard='guard-'+window.commits.length;window.serverGuard=nextGuard;if(window.changeAfterCommit){window.changeAfterCommit=false;window.serverGuard='new-draft'}return {attachment:{id:input.id,name:'file',mime:'text/plain',size:10},revision:1,nextGuard}},catch:error=>error}),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.sync(()=>{window.finished=(window.finished||0)+1}),requestAttachmentEffect:(_profile,input)=>Effect.sync(()=>{window.uploads.push({path:'/api/attachments/recoverable-upload',input});return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:10},revision:1}})});`,
+      contents: `import {Effect} from 'effect';const review=()=>{window.reviews=(window.reviews||0)+1};export const useRuntime=()=>({connected:true,profile:{id:'host',connection:{address:'host',token:'token'}},snapshot:{workspace:{tasks:[{id:'task',draftAttachments:Array.from({length:window.count},()=>({id:'old'}))}]}},reviewAttachments:review,readRuntimeEffect:(_profile,path,input)=>Effect.try({try:()=>{window.serverGuard??='guard-0';if(path.endsWith('draft-guard')){window.guardReads=(window.guardReads||0)+1;return {guard:window.serverGuard}}window.commits=(window.commits||[]).concat(input);if(window.failCommit)throw Error('commit response lost');if(input.guard!==window.serverGuard)throw Error('draft changed');const nextGuard='guard-'+window.commits.length;window.serverGuard=nextGuard;if(window.changeAfterCommit){window.changeAfterCommit=false;window.serverGuard='new-draft'}return {attachment:{id:input.id,name:'file',mime:'text/plain',size:10},revision:1,nextGuard}},catch:error=>error}),refreshRuntimeEffect:()=>Effect.void,finishAttachmentEffect:()=>Effect.sync(()=>{window.finished=(window.finished||0)+1}),requestAttachmentEffect:(_profile,input)=>Effect.sync(()=>{window.fileOrder.push('upload:'+input.name);window.uploads.push({path:'/api/attachments/recoverable-upload',input});return {attachment:{id:input.id,name:input.name,mime:'text/plain',size:10},revision:1}})});`,
     },
     {
       path: '../../ui/controls/use-action',
@@ -51,7 +51,7 @@ const result = await bundleBrowser(
     },
     {
       path: 'expo-file-system',
-      contents: `export const Paths={cache:'file:///cache'};export class File{constructor(...parts){this.uri=parts.join('/');const uri=this.uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}get exists(){return true}write(){}async bytes(){return new Uint8Array(20)}async base64(){return btoa(this.uri)}delete(){window.deleted.push(this.uri)}}`,
+      contents: `export const Paths={cache:'file:///cache'};export class File{constructor(...parts){this.uri=parts.join('/');const uri=this.uri;this.size=uri.includes('large-image')?8*1024*1024:uri.includes('large')?5*1024*1024+1:uri.includes('boundary')?5*1024*1024:10}get exists(){return true}write(){}async bytes(){return new Uint8Array(20)}async base64(){window.fileOrder.push('encode:'+this.uri);return btoa(this.uri)}async copy(destination){window.fileOrder.push('copy:'+destination.uri)}delete(){window.deleted.push(this.uri)}}`,
     },
     {
       path: 'expo-clipboard',
@@ -96,6 +96,12 @@ try {
   assert.deepEqual(await page.evaluate(() => window.uploads.map((call) => call.input.name)), [
     'notes.txt',
     'shot.png',
+  ])
+  assert.deepEqual(await page.evaluate(() => window.fileOrder), [
+    'encode:file:///cache/dovo-file-drops/a',
+    'upload:notes.txt',
+    'encode:file:///cache/dovo-file-drops/b',
+    'upload:shot.png',
   ])
   assert.equal(await page.getByRole('textbox', { name: 'Message' }).inputValue(), 'Keep my draft')
   assert.equal(

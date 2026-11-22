@@ -235,6 +235,8 @@ function computePresentation(
     mutableArray(
       mutableStruct({
         path: Schema.String,
+        diff: Schema.optional(Schema.String),
+        kind: Schema.optional(Schema.Unknown),
       }),
     ),
     item.changes,
@@ -261,7 +263,22 @@ function computePresentation(
   // A read reports the lines it returned; an edit reports its diff. Neither is an argument.
   const visible = text(item.visibleOutput)
   let detail: string | undefined
-  let diff: string | undefined
+  let diff: string | undefined =
+    item.type === 'fileChange'
+      ? changes
+          ?.filter((change) => change.diff?.trim())
+          .map((change) => {
+            const patch = (change.diff ?? '').replace(/\r?\n$/, '')
+            if (patch.startsWith('diff --git ') || patch.startsWith('--- ')) return patch
+            const fields = object(change.kind)
+            const kind = typeof change.kind === 'string' ? change.kind : fields.type
+            const destination = text(fields.move_path) || text(fields.movePath) || change.path
+            const from = kind === 'add' ? '/dev/null' : JSON.stringify(`a/${change.path}`)
+            const to = kind === 'delete' ? '/dev/null' : JSON.stringify(`b/${destination}`)
+            return `--- ${from}\n+++ ${to}\n${patch}`
+          })
+          .join('\n') || undefined
+      : undefined
   let suppressOutput = false
   if (kind === 'command') detail = text(args.description) || undefined
   else if (search || toolSearch) detail = query || undefined

@@ -432,7 +432,15 @@ export function PairingClient({
                         aria-label={`Forget ${entry.profile.name}`}
                         title="Remove this saved connection from this device"
                         disabled={busy}
-                        onSelect={() => void act(() => forgetRuntime(entry.profile.id))}
+                        onSelect={() =>
+                          void act(async () => {
+                            const revoked = await forgetRuntime(entry.profile.id)
+                            if (!revoked && !entry.snapshot?.owner)
+                              setError(
+                                'Computer forgotten on this device. Remote access removal could not be confirmed. Check Trusted devices on that computer.',
+                              )
+                          })
+                        }
                       >
                         Forget
                       </DropdownMenu.Item>

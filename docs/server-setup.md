@@ -710,8 +710,9 @@ activity and trusted devices. Agent, account and resource edits remain bound to 
 switching the open workspace.
 
 Mobile credentials are stored in Keychain/Keystore. **Forget computer** removes its saved connection
-from that client. Revoke the device on the host to remove its authorization. A normal server restart
-does not require pairing again.
+from that client and asks the host to revoke its credential. If Studio cannot confirm revocation,
+check **Trusted devices** on the host and remove the old pairing there. A normal server restart
+preserves pairings.
 
 ## Updating Dovo safely
 

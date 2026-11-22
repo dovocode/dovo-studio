@@ -763,7 +763,7 @@ const tools: Array<
     name: `subagent_${action}`,
     description:
       action === 'wait'
-        ? 'Wait up to 20s for a child result/status. Timeout leaves it running. Excludes raw events/tool output.'
+        ? 'Wait up to 20s for a result, question or human approval. Timeout leaves the child running. No raw tool output.'
         : action === 'read'
           ? 'Read a child result/status by id. Consumes its unread inbox notice; adds no chat message.'
           : 'Stop an owned child and its descendants. Offline cancellation remains pending until confirmed.',

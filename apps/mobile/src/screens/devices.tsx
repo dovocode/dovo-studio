@@ -627,7 +627,7 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
               Alert.alert(
                 uiText('Forget {value0}?', { value0: runtimeComputerName({ profile, snapshot }) }),
                 uiText(
-                  'This phone’s access is removed from the computer too. Connecting again needs a new pairing code. Work on the computer continues.',
+                  'Studio will also try to remove this phone’s access on the computer. Connecting again needs a new pairing code. Work on the computer continues.',
                 ),
                 [
                   { text: uiText('Cancel'), style: 'cancel' },
@@ -637,8 +637,15 @@ function ComputerSettings({ onClose }: { onClose: () => void }) {
                     onPress: () =>
                       act(() =>
                         mobileWorkflow(function* () {
-                          yield* forgetRuntimeEffect(profile.id)
+                          const revoked = yield* forgetRuntimeEffect(profile.id)
                           onClose()
+                          if (!revoked && !snapshot?.owner)
+                            Alert.alert(
+                              uiText('Computer forgotten on this phone'),
+                              uiText(
+                                'Remote access removal could not be confirmed. Check Trusted devices on that computer.',
+                              ),
+                            )
                         }),
                       ),
                   },

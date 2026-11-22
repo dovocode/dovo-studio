@@ -82,7 +82,7 @@ export const Path=props=><path {...props}/>;export const Rect=props=><rect {...p
     },
     {
       path: 'expo-file-system',
-      contents: `export const Paths={cache:'cache'};export class File{constructor(...parts){this.uri=parts.join('/')}get exists(){return this.uri in window.data}get size(){return atob(window.data[this.uri]??'').length}async bytes(){return Uint8Array.from(atob(window.data[this.uri]),c=>c.charCodeAt(0))}async base64(){return window.data[this.uri]}async write(data){await Promise.resolve();window.data[this.uri]=data}delete(){delete window.data[this.uri];window.deleted.push(this.uri)}}`,
+      contents: `export const Paths={cache:'cache'};export class File{constructor(...parts){this.uri=parts.join('/')}get exists(){return this.uri in window.data}get size(){return atob(window.data[this.uri]??'').length}async bytes(){return Uint8Array.from(atob(window.data[this.uri]),c=>c.charCodeAt(0))}async base64(){return window.data[this.uri]}async copy(destination){window.data[destination.uri]=window.data[this.uri]}async write(data){await Promise.resolve();window.data[this.uri]=data}delete(){delete window.data[this.uri];window.deleted.push(this.uri)}}`,
     },
     {
       path: 'expo-clipboard',

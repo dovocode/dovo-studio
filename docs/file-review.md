@@ -1,5 +1,8 @@
 # Reviewing changed files
 
+Expand a Codex file-change row in the thread timeline to read the patch for that tool call. When
+Codex supplies several files in one patch, the row shows them in the order the tool reported them.
+
 Task diffs and PR changes on desktop, web and mobile share viewed progress through the connected
 computer. Mark a file viewed from the diff toolbar. If that file changes, the viewer clears its
 check and shows **Changed since viewed** in the file list and beside the viewed control. Mark the

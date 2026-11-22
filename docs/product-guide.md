@@ -439,7 +439,8 @@ pnpm --filter @dovo/mobile android
    runs and handles review gates. Branching graphs keep their desktop/web canvas editor. See
    [Automations](automations.md).
 7. **Settings → Devices & runtime** manages saved computers. **Disconnect** deselects the active
-   runtime; **Forget computer** removes its saved connection. Revoke device access on the host.
+   runtime. **Forget computer** removes its saved connection and attempts to revoke access on the
+   host. If Studio cannot confirm revocation, use **Trusted devices** on the host.
 
 Desktop and mobile use one authenticated change stream for the selected runtime's workspace and
 visible thread activity. Updates are batched briefly and assistant text is sent as appends rather

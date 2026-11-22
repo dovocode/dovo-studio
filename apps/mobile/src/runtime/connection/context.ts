@@ -86,7 +86,7 @@ export type Runtime = {
     claimAddress?: string,
   ) => Effect.Effect<void, Error>
   selectRuntimeEffect: (id: string) => Effect.Effect<void, Error>
-  forgetRuntimeEffect: (id: string) => Effect.Effect<void, Error>
+  forgetRuntimeEffect: (id: string) => Effect.Effect<boolean, Error>
   renameRuntimeEffect: (id: string, name: string) => Effect.Effect<void, Error>
   upgradeInternetEffect: (
     id: string,
@@ -107,7 +107,7 @@ export type Runtime = {
     claimAddress?: string,
   ) => Promise<void>
   selectRuntime: (id: string) => Promise<void>
-  forgetRuntime: (id: string) => Promise<void>
+  forgetRuntime: (id: string) => Promise<boolean>
   renameRuntime: (id: string, name: string) => Promise<void>
   cancelPairing: (address: string, proof: PairingProof) => Promise<void>
   disconnect: () => Promise<void>

@@ -1108,18 +1108,20 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
         cacheDirty.current.delete(id)
         cacheMarks.current.delete(id)
         // After the local removal is durable, retire this phone's credential on the computer so
-        // forgotten phones don't linger as trusted devices. Offline or owner hosts just skip it.
-        if (profile)
-          yield* createRuntimeClient(profile.connection)
-            .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
-              method: 'POST',
-              timeoutMs: 4000,
-            })
-            .pipe(Effect.ignore)
+        // forgotten phones don't linger as trusted devices.
+        const revoked = profile
+          ? yield* createRuntimeClient(profile.connection)
+              .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
+                method: 'POST',
+                timeoutMs: 4000,
+              })
+              .pipe(Effect.match({ onFailure: () => false, onSuccess: () => true }))
+          : true
         if (profile) {
           forgetPeerConnection(profile.connection.address)
           if (profile.connection.internet) forgetPeerConnection(profile.connection.internet.address)
         }
+        return revoked
       })
     },
     [changeRegistryEffect, cacheFor, mutations],

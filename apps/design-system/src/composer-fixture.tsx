@@ -429,7 +429,7 @@ export function ComposerFixtureProvider({ children }: { children: ReactNode }) {
       localRuntimeId: profile.id,
       runtimes: [],
       switchRuntime: async () => undefined,
-      forgetRuntime: async () => undefined,
+      forgetRuntime: async () => true,
       refreshRuntimes: async () => undefined,
       refreshRuntime: async () => undefined,
       retrySync: async () => undefined,

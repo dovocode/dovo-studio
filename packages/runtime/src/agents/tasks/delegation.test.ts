@@ -1647,6 +1647,9 @@ it('revokes pending approvals and stops both an active parent and child when the
   )
   await ready.promise
   expect(s.approvals.list()).toHaveLength(2)
+  const waiting = await s.tasks.subagentWait(parentId, childId, 3000)
+  expect(waiting).toMatchObject({ running: true, pendingApprovals: 1 })
+  expect(s.approvals.list()).toHaveLength(2)
   s.store.updateTask(parentId, (task) => ({
     ...task,
     harness: { ...task.harness!, permission: 'ask' },

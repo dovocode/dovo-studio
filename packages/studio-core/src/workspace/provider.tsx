@@ -1040,16 +1040,16 @@ export function WorkspaceProvider({
         caches.current.delete(id)
         cacheWrites.current.delete(id)
         // Retire this client's credential on that computer once the removal is saved.
-        // Owner credentials (the local desktop runtime) are refused by design and ignored.
-        if (profile)
-          await runClientEffect(
-            createRuntimeClient(profile.connection)
-              .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
-                method: 'POST',
-                timeoutMs: 4000,
-              })
-              .pipe(Effect.ignore),
-          )
+        return profile
+          ? await runClientEffect(
+              createRuntimeClient(profile.connection)
+                .requestEffect('/api/devices/revoke-self', {}, responses.ok, {
+                  method: 'POST',
+                  timeoutMs: 4000,
+                })
+                .pipe(Effect.match({ onFailure: () => false, onSuccess: () => true })),
+            )
+          : true
       } finally {
         changingConnection.current = false
       }

@@ -154,7 +154,12 @@ function activeTitle(presentation: Presentation) {
 }
 function DiffText({ text }: { text: string }) {
   return (
-    <pre className="max-h-72 overflow-auto whitespace-pre font-mono text-[0.6875rem] leading-relaxed">
+    <pre
+      role="region"
+      aria-label="Tool diff"
+      tabIndex={0}
+      className="max-h-72 overflow-auto whitespace-pre font-mono text-[0.6875rem] leading-relaxed"
+    >
       {text.split('\n').map((line, index) => (
         <span
           key={index}

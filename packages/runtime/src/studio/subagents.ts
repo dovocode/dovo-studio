@@ -74,6 +74,10 @@ function targetResult(
     stopRequested: watch.stopRequested,
     error: snapshot?.error,
     questions: snapshot?.questions,
+    pendingApprovals:
+      offline || watch.paused
+        ? undefined
+        : snapshot?.humanInputs?.filter((input) => input.kind === 'approval').length,
     result:
       includeResult && !watch.paused && snapshot?.phase === 'completed'
         ? snapshot.result
@@ -399,6 +403,7 @@ export async function waitChild(
   while (
     result.running &&
     !('questions' in result && result.questions?.length) &&
+    !('pendingApprovals' in result && result.pendingApprovals) &&
     !('offline' in result && result.offline) &&
     Date.now() < deadline
   ) {

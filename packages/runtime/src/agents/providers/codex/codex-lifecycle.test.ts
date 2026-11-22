@@ -21,6 +21,7 @@ afterEach(async () => {
 function fixture(
   errors: Record<string, { code: number; message: string }> = {},
   responses: Record<string, object> = {},
+  silentTurn = false,
 ) {
   const child = new ChildProcess()
   const input = new PassThrough()
@@ -37,11 +38,12 @@ function fixture(
     notify('turn/completed', { turn: { id, status } })
   const goal = (status: string) => notify('thread/goal/updated', { goal: { status } })
   const started = vi.fn<() => void>()
-  const requests: Array<{ method: string; params: unknown }> = []
+  const requests: Array<{ id: number; method: string; params: unknown }> = []
   input.on('data', (data: Buffer) => {
     const message = JSON.parse(data.toString()) as { id?: number; method: string; params: unknown }
     if (message.id === undefined || !message.method) return
-    requests.push(message)
+    requests.push({ id: message.id, method: message.method, params: message.params })
+    if (message.method === 'turn/start' && silentTurn) return
     if (errors[message.method]) {
       send({ id: message.id, error: errors[message.method] })
       return
@@ -85,7 +87,7 @@ function fixture(
     approve: async () => 'deny',
     ask: async () => null,
   }
-  const adapter = createCodexAdapter()
+  const adapter = createCodexAdapter(silentTurn ? 30 : undefined)
   adapters.push(adapter)
   return {
     child,
@@ -104,6 +106,21 @@ function fixture(
     requests,
   }
 }
+
+it('retires a live Codex process that does not acknowledge turn start', async () => {
+  const f = fixture({}, {}, true)
+  const accepted = vi.fn<NonNullable<AgentRun['onPromptAccepted']>>()
+  await expect(f.adapter.run({ ...f.run, onPromptAccepted: accepted })).rejects.toThrow(
+    'Codex did not confirm the turn start',
+  )
+  expect(accepted).not.toHaveBeenCalled()
+  expect(f.stop).toHaveBeenCalledTimes(1)
+  const starts = f.requests.filter(({ method }) => method === 'turn/start')
+  expect(starts).toHaveLength(1)
+  f.send({ id: starts[0]?.id, result: { turn: { id: 'late', status: 'inProgress' } } })
+  await Promise.resolve()
+  expect(accepted).not.toHaveBeenCalled()
+})
 
 it.each([-32600, -32601])(
   'starts without an exit grace wait for optional account error %s',

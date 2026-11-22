@@ -199,7 +199,7 @@ export class Tasks {
     private store: WorkspaceStore,
     private git: GitService,
     private registry: AgentRegistry,
-    approvals: Approvals,
+    private approvals: Approvals,
     private checkouts: TaskCheckout,
     commands: Commands,
     private questions: Questions,
@@ -3823,9 +3823,10 @@ export class Tasks {
     const child = this.store.taskSummary(id)
     if (child.delegation?.parentTaskId !== taskId)
       throw new HttpError(403, 'This child belongs to another thread')
+    const running = this.hasWorkingFamily(child.id)
     if (
       includeResult &&
-      !this.hasWorkingFamily(id) &&
+      !running &&
       child.delegation.completion &&
       child.delegation.completion !== 'disposed' &&
       child.delegation.completion !== 'read'
@@ -3843,6 +3844,8 @@ export class Tasks {
       })
     }
     const record = parent.subagents?.find((agent) => agent.taskId === id)
+    const approvals = this.approvals.list()
+    const family = approvals.length ? taskFamilyIds(this.store.get().tasks, child.id) : null
     return {
       id,
       name: child.title,
@@ -3850,20 +3853,18 @@ export class Tasks {
       requestedModel: child.history.latestTurn?.requestedModel,
       executedModel: child.history.latestTurn?.executedModel,
       status: child.status,
-      running: this.hasWorkingFamily(child.id),
+      running,
       activity: child.activity,
       unread:
         !includeResult &&
         !!parent.subagentInbox?.some((message) => message.subagentResultId === id),
       error: child.error,
+      pendingApprovals: approvals.filter((approval) => family?.has(approval.taskId)).length,
       questions: this.questions
         .list()
         .filter((question) => question.taskId === child.id && question.routing === 'parent'),
       subagent: record,
-      result:
-        !includeResult || this.hasWorkingFamily(child.id)
-          ? undefined
-          : delegatedAnswer(this.store.task(id)),
+      result: !includeResult || running ? undefined : delegatedAnswer(this.store.task(id)),
     }
   }
   async subagentSend(
@@ -4047,6 +4048,7 @@ export class Tasks {
     while (
       result.running &&
       !('questions' in result && result.questions?.length) &&
+      !('pendingApprovals' in result && result.pendingApprovals) &&
       Date.now() < deadline
     ) {
       await new Promise<void>((resolve) =>

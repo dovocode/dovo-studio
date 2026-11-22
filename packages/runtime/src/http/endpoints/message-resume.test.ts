@@ -4,7 +4,7 @@ import { Effect } from 'effect'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 import { runtimeIntegration, waitForRuntime } from '../../testing/integration'
-import type { AgentAdapter } from '../../agents/execution/types'
+import type { AgentAdapter, AgentSteer } from '../../agents/execution/types'
 import type { Task } from '@dovo/protocol'
 import { ModelSelection } from '../../agents/tasks/model-selection'
 
@@ -180,6 +180,46 @@ it.each([{ queueOnly: true }, { preserveQueuePause: true }])(
     expect(s.store.task(s.task.id).queue ?? []).toEqual([])
   },
 )
+
+it('replays a successful steer without injecting it again and refuses a stale steer on the next run', async () => {
+  const s = await setup()
+  const steer = vi.fn<AgentSteer>().mockResolvedValue(undefined)
+  let finish = () => {}
+  const run = vi.fn<AgentAdapter['run']>(async (input) => {
+    input.onSession('steering-session')
+    input.onSteer?.(steer)
+    await new Promise<void>((resolve) => {
+      finish = resolve
+    })
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run })
+  const first = await s.tasks.start(s.task.id)
+  try {
+    await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(1))
+    const runId = s.store.task(s.task.id).activeRunId
+    const input = { id: s.task.id, messageId: 'steer-retry', text: 'Focus the test', runId }
+    const discarded = await s.post('steer', input)
+    expect(discarded.status).toBe(200)
+    await discarded.body?.cancel()
+    expect((await s.post('steer', input)).status).toBe(200)
+    expect(steer).toHaveBeenCalledTimes(1)
+    expect((await s.stage(s.task.id, 'queued-steer', 'Keep this in the same run')).status).toBe(200)
+    const queued = { id: s.task.id, messageId: 'queued-steer', action: 'steer', runId }
+    const discardedQueue = await s.post('queue', queued)
+    expect(discardedQueue.status).toBe(200)
+    await discardedQueue.body?.cancel()
+    expect((await s.post('queue', queued)).status).toBe(200)
+    expect(steer).toHaveBeenCalledTimes(2)
+    finish()
+    await first.done
+    expect((await s.send('next-run', 'Start a new turn')).status).toBe(200)
+    await waitForRuntime(() => expect(run).toHaveBeenCalledTimes(2))
+    expect((await s.post('steer', { ...input, messageId: 'stale-steer' })).status).toBe(409)
+    expect(steer).toHaveBeenCalledTimes(2)
+  } finally {
+    finish()
+  }
+})
 
 it('sending while a turn is active does not resume a deliberately paused queue', async () => {
   const s = await setup()

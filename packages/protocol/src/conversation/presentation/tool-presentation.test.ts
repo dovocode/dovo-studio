@@ -4,6 +4,25 @@ import { recentTools, compactActivityEvents, activitySchema } from '../../automa
 import { activitySummary, toolPresentation } from './tool-presentation'
 type Event = Schema.Schema.Type<typeof activitySchema>['events'][number]
 
+it('shows the complete patch from a single multi-file Codex change in order', () => {
+  const item = {
+    type: 'fileChange',
+    changes: [
+      { path: 'added.ts', kind: { type: 'add' }, diff: '@@ -0,0 +1 @@\n+added' },
+      { path: 'edited.ts', kind: 'update', diff: '@@ -1 +1 @@\n-before\n+after' },
+      { path: 'deleted.ts', kind: 'delete', diff: '@@ -1 +0,0 @@\n-deleted' },
+    ],
+  }
+  const result = toolPresentation(JSON.stringify({ event: { item } }), 'File changes')
+  expect(result.diff).toBe(
+    [
+      '--- /dev/null\n+++ "b/added.ts"\n@@ -0,0 +1 @@\n+added',
+      '--- "a/edited.ts"\n+++ "b/edited.ts"\n@@ -1 +1 @@\n-before\n+after',
+      '--- "a/deleted.ts"\n+++ /dev/null\n@@ -1 +0,0 @@\n-deleted',
+    ].join('\n'),
+  )
+})
+
 it('presents native Codex images with useful labels, paths and failure messages rather than base64 output', () => {
   const present = (item: unknown) => toolPresentation(JSON.stringify({ event: { item } }), 'Image')
   expect(present({ type: 'imageView', path: '/tmp/preview.png' })).toMatchObject({

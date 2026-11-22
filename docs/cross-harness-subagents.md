@@ -60,7 +60,10 @@ the pending question IDs and fields. Use `subagent_answer` with the child ID, `q
 conversation without creating a duplicate. Answer validation and idempotent receipts remain owned by
 the child. Secret fields and permission requests always require a human. Local approval cards show
 the child's name in ancestor conversations; remote requests link to the owning thread for review.
-Full access is inherited like other parent permissions unless explicitly narrowed.
+Full access is inherited like other parent permissions unless explicitly narrowed. Use the
+`pendingApprovals` count in `subagent_read` or `subagent_list` to identify a child tree waiting for
+approval. `subagent_wait` returns when it sees a pending approval. Ask the human to review the
+original request. The count does not change the child's access.
 
 Use `subagent_send` with the child ID, a stable key and a prompt to follow up in the same Dovo
 conversation. A running child receives it after its current turn; a finished child resumes.
