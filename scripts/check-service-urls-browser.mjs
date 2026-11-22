@@ -33,7 +33,7 @@ const built = await bundleBrowser(
     const app=createRoot(document.getElementById('app'));let kind,round=0;
     function App(){const account=useAccount(storage,open,window.services);return <><output aria-label="Account server">{account.directory?.user.id??'Signed out'}</output>{kind==='desktop'?<Desktop/>:<Mobile/>}</>}
     window.render=()=>flushSync(()=>app.render(<App key={round}/>));
-    window.save=patch=>{window.services={...window.services,...patch};window.saves.push(patch);window.render()};
+    window.save=update=>{const patch=typeof update==='function'?update(window.services):update;window.services={...window.services,...patch};window.saves.push(patch);window.render();return true};
     window.reset=value=>{kind=value;round++;window.services={connectOrigin:'',artifactsOrigin:'',ready:true};window.calls=[];window.saves=[];window.render()};
     window.reset('desktop');
   `,

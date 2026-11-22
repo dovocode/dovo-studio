@@ -113,6 +113,12 @@ createRoot(document.getElementById('app')).render(<StrictMode><Workbench extensi
       contents: `export * from '${root}packages/protocol/src/index.ts';export const startRuntimeSync=()=>({online:()=>false,refresh:()=>{},stop:()=>{}});`,
     },
     {
+      // The dashboard's VNC transport uses an ES module and is outside this fixture.
+      path: '@dovo/extension-runtime/remote-desktop-viewer',
+      importer: root + 'packages/extension-tasks/src/dashboards/',
+      contents: 'export const RemoteDesktopViewer = () => null;',
+    },
+    {
       path: './appearance',
       importer: root + 'packages/studio-shell/src/',
       contents: 'export const useAppearance=()=>{};',

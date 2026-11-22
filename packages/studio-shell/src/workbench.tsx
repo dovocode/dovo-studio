@@ -298,11 +298,13 @@ function WorkbenchContent({
   const [switchError, setSwitchError] = useApplicationState('')
   const [switching, setSwitching] = useApplicationState(false)
   // Start with a fresh composer; explicit navigation still opens existing threads.
-  const [target, updateTarget] = useApplicationState<StudioNavigation>(() =>
-    browserWindowId || threadWindow
-      ? { viewId: browserWindowId ? 'browser' : 'tasks', entityId: threadWindow?.taskId }
-      : visibleWorkspaceTarget({ viewId: extensions[0]?.views[0]?.id ?? '' }, workspaceModes),
-  )
+  const [target, updateTarget] = useApplicationState<StudioNavigation>(() => {
+    if (browserWindowId || threadWindow)
+      return { viewId: browserWindowId ? 'browser' : 'tasks', entityId: threadWindow?.taskId }
+    const views = extensions.flatMap((extension) => extension.views)
+    const initialView = views.find((view) => view.navigationGroup !== 'settings') ?? views[0]
+    return visibleWorkspaceTarget({ viewId: initialView?.id ?? '' }, workspaceModes)
+  })
   const [settingsTarget, setSettingsTarget] = useApplicationState<StudioNavigation | null>(null)
   const settingsTrigger = useRef<HTMLElement | null>(null)
   const main = useRef<HTMLElement | null>(null)
