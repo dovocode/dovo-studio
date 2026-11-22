@@ -1,5 +1,5 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, mkdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { mkdtemp, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
@@ -487,6 +487,7 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
     f.hook(id, 'codex', 'session')
     const writer = String.raw`
       const fs = require('node:fs');
+      const path = require('node:path');
       const [reporter, turnId] = process.argv.slice(1);
       const status = require(reporter).status;
       const read = fs.readFileSync;
@@ -512,6 +513,19 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
         }
         return removeDirectory.call(this, file, ...args);
       };
+      const deniedMarkers = new Set();
+      for (const method of ['rmSync', 'unlinkSync']) {
+        const remove = fs[method];
+        fs[method] = function(file, ...args) {
+          if (path.basename(path.dirname(file)) === 'writer' && !deniedMarkers.has(file)) {
+            deniedMarkers.add(file);
+            const error = new Error('Simulated Windows contention while unlinking a writer marker');
+            error.code = 'EPERM';
+            throw error;
+          }
+          return remove.call(this, file, ...args);
+        };
+      }
       fs.readFileSync = function(file, ...args) {
         const contents = read.call(this, file, ...args);
         if (String(file).endsWith('activity.json')) {
@@ -542,6 +556,8 @@ it('retains concurrent hook updates and recovers when a writer exits before publ
     ]
     expect(new Set(ids.filter(Boolean))).toEqual(new Set(jobs))
     expect(event?.sequence).toBe(jobs.length + 1)
+    const lock = join(f.recoveryDirectory, id, 'activity.lock', 'writer')
+    expect(existsSync(lock) ? await readdir(lock) : []).toEqual([])
   } finally {
     await f.cleanup()
   }

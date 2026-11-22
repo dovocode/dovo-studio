@@ -180,7 +180,15 @@ function withStatusLock(root, write) {
   const deadline = performance.now() + 2000; // provider hook timeout is three seconds
   fs.mkdirSync(path.dirname(lock), {recursive:true, mode:0o700});
   fs.mkdirSync(temporary, {mode:0o700});
-  const directoryChanging = error => ['ENOENT', 'EACCES', 'EPERM'].includes(error.code);
+  const lockContended = error => ['EBUSY', 'EACCES', 'EPERM'].includes(error.code);
+  const directoryChanging = error => error.code === 'ENOENT' || lockContended(error);
+  const removeMarker = name => {
+    try { fs.unlinkSync(path.join(lock, name)); }
+    catch (error) {
+      if (lockContended(error)) return error;
+      if (error.code !== 'ENOENT') throw error;
+    }
+  };
   const removeEmptyLock = () => {
     try { fs.rmdirSync(lock); }
     catch (error) {
@@ -214,7 +222,8 @@ function withStatusLock(root, write) {
             if (error.code !== 'ESRCH') throw error;
             // Only remove the dead writer's unique marker. The directory may
             // already belong to a different writer by the time cleanup runs.
-            fs.rmSync(path.join(lock, name), {force:true});
+            // If removal is busy, the bounded acquisition loop checks it again.
+            removeMarker(name);
           }
         }
         if (names.length === 0) removeEmptyLock();
@@ -224,7 +233,15 @@ function withStatusLock(root, write) {
     }
     try { if (!fs.existsSync(path.join(root, 'closing'))) write(); }
     finally {
-      fs.rmSync(path.join(lock, owner), {force:true});
+      // Windows can temporarily deny unlink while a contender reads the lock.
+      // Give release a short budget even when acquisition used its full budget.
+      const releaseDeadline = performance.now() + 250;
+      for (;;) {
+        const error = removeMarker(owner);
+        if (!error) break;
+        if (performance.now() >= releaseDeadline) throw error;
+        Atomics.wait(wait, 0, 0, 5);
+      }
       removeEmptyLock();
     }
   } finally {

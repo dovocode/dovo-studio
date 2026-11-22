@@ -271,6 +271,9 @@ private per-terminal status file; hook stdout stays untouched. These integration
 **Remember session** off as well. Restart an already running agent to load the updated integration;
 Codex may ask you to review its hook with `/hooks`.
 
+On Windows, a hook retries lock marker removal when another process briefly holds the file. It keeps
+the saved activity update and releases the lock so the next hook can write.
+
 On macOS and Linux, native PTY foreground inspection provides **Running** for ordinary commands and
 **Idle** for an interactive shell prompt. It cannot determine command exit codes, background-job
 activity or shell builtins running inside the shell process. Explicit program activity takes
