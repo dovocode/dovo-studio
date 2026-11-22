@@ -217,6 +217,7 @@ it('compacts a long journal, keeps private profiles in memory and clears every j
 // A separate process records visits and removals until SIGKILL stops it mid-write. Every
 // operation it reported as finished must survive. Only the operation in progress may go either way.
 const writer = `
+import { writeSync } from 'node:fs'
 import { registerHooks } from 'node:module'
 registerHooks({
   resolve(specifier, context, next) {
@@ -230,14 +231,15 @@ registerHooks({
 })
 const { createBrowserHistory } = await import(process.argv[2])
 const history = createBrowserHistory('work', () => {})
+// Report each completed write before starting another. SIGKILL can drop buffered stdout.
 for (let index = 0; ; index++) {
   const url = 'https://example.com/' + (index % 1500)
   history.add(url)
-  process.stdout.write('add ' + url + '\\n')
+  writeSync(1, 'add ' + url + '\\n')
   if (index % 250 === 249) {
     const removed = 'https://example.com/' + ((index - 100) % 1500)
     history.remove(removed)
-    process.stdout.write('remove ' + removed + '\\n')
+    writeSync(1, 'remove ' + removed + '\\n')
   }
 }
 `
