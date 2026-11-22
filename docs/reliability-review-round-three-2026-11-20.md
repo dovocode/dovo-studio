@@ -175,3 +175,28 @@ native PR line-comment recovery still need device tests. Device Hub had no Andro
   complete and passed the unrelated reply to the downstream step. Bind a step result to its original
   turn or execution ID. The test used a real local HTTP runtime, SQLite and a temporary Git
   repository with a fake agent. [Run recovery](../packages/runtime/src/jobs/run-state.ts)
+
+## Verification
+
+The focused regression run passed 324 tests. It used local runtimes, SQLite fault injection, and
+provider fixtures. Chromium covered workspace recovery in two tabs, settings, and mobile picker and
+notification controls. The runtime, desktop and web builds passed.
+
+Expo exported Hermes bundles for iOS and Android from this checkout. The build hosts' DNS names
+originally failed strict SSH verification. The names now use host keys obtained over their already
+trusted NetBird connections.
+
+Xcode 27.2 built the checkout in Release mode for an iOS 27.0 iPhone 17 Pro simulator. The installed
+JavaScript bundle matched the build's SHA-256 hash. Dovo launched from Device Hub and displayed the
+Threads screen with the first-run computer connection prompt. The test used a new simulator.
+
+The Android `arm64-v8a` Release APK built on the MacBook. The copied APK matched the build's SHA-256
+hash. Device Hub installed and launched it on a new Android 16 Pixel 7 emulator. Dovo displayed the
+Threads screen and the same first-run connection prompt.
+
+To repeat the bundle check, run these commands from the repository root.
+
+```sh
+pnpm --filter @dovo/mobile run prestart
+pnpm --filter @dovo/mobile exec expo export --platform ios --platform android --max-workers 2 --output-dir /tmp/dovo-mobile-export
+```

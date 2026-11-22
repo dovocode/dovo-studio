@@ -83,6 +83,27 @@ export function runAudit(
       outputTruncated: event.outputTruncated === undefined ? undefined : !!event.outputTruncated,
     })),
     nextOffset: events.length > 100 ? offset + 100 : undefined,
+    ...(output && offset === 0
+      ? {
+          results: (run.steps ?? []).flatMap((step) => {
+            const saved = run.outputs?.[step.nodeId]
+            return step.status === 'completed' &&
+              step.taskId === saved?.taskId &&
+              step.turnId &&
+              saved?.result !== undefined
+              ? [
+                  {
+                    nodeId: step.nodeId,
+                    taskId: saved.taskId,
+                    attempt: step.attempt,
+                    turnId: step.turnId,
+                    value: redact(saved.result),
+                  },
+                ]
+              : []
+          }),
+        }
+      : {}),
     estimatedCostUsd: turns.reduce((sum, turn) => sum + (turn.estimatedCostUsd ?? 0), 0),
     tokens: turns.reduce((sum, turn) => sum + (turn.tokens ?? 0), 0),
     usageIncomplete: turns.some(

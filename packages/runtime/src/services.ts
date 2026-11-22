@@ -85,7 +85,7 @@ import { SocketTickets } from './http/support/socket-tickets.js'
 import { SimulatorPreviews } from './previews/simulators.js'
 import { RemoteBrowsers } from './previews/browser.js'
 import { BrowserTransferStorage } from './previews/browser-transfer-storage.js'
-import { errorMessage } from './errors.js'
+import { errorMessage, HttpError } from './errors.js'
 import { ThreadServers } from './previews/thread-servers.js'
 import { ProjectFiles } from './scm/repositories/project-files.js'
 import { Sandboxes, sandboxThreadRetention } from './sandbox/sandboxes.js'
@@ -93,10 +93,12 @@ import { threadContainerSandbox } from './sandbox/thread-terminal.js'
 import { containerSandboxEnabled } from '@dovo/protocol'
 import { ThreadReplicationJournal } from './storage/thread-replication-journal.js'
 import { LegacyThreadArchive } from './storage/legacy-thread-archive.js'
+import { TaskListUndo } from './storage/task-list-undo.js'
 export function createServices(
   db: Database.Database,
   ownerToken: string,
   policy = ManagedPolicy.load(),
+  refreshProviderPath?: () => Promise<void>,
 ): Services {
   db.prepare("INSERT OR IGNORE INTO documents (id, value) VALUES ('runtime-identity', ?)").run(
     JSON.stringify(randomUUID()),
@@ -146,9 +148,14 @@ export function createServices(
       : join(dirname(resolve(db.name)), 'acp'),
   )
   let artifacts: Artifacts | undefined
+  let pushNotifications: PushNotifications
+  const taskListUndo = new TaskListUndo(db)
   const store = new WorkspaceStore(db, (change) => {
+    if (change.before.tasks !== change.after.tasks)
+      taskListUndo.invalidateChangedFamilies(change.after.tasks)
     activity.workspace(change)
     artifacts?.workspace(change)
+    pushNotifications?.workspace(change)
   })
   artifacts = new Artifacts(db, store, activity, () => preferences.get())
   const forgeCli = new ForgeCliAccounts(() => commands.get())
@@ -218,10 +225,19 @@ export function createServices(
       () => commands.get(),
       (id) => acpInstallations.launch(id),
       policy,
+      refreshProviderPath,
     ),
     approvals = new Approvals(activity, store, preferences),
     questions = new Questions(activity, store),
     tickets = new SocketTickets()
+  store.setTaskSettlingGuard((ids) => {
+    const pending = questions.list().find((question) => ids.has(question.taskId))
+    if (pending)
+      throw new HttpError(
+        409,
+        `Answer or dismiss “${pending.prompt.title}” before settling this thread.`,
+      )
+  })
   // Task and message activity is recorded as the store changes. Replaying the stored
   // workspace here would resurrect pruned rows and duplicate task events on every start.
   const attachments = new Attachments(db, store, activity)
@@ -359,7 +375,7 @@ export function createServices(
       secureInputs.list().some((item) => item.taskId === id) ||
       questions.list().some((item) => item.taskId === id),
   )
-  const pushNotifications = new PushNotifications(db, store, devices, (id) => {
+  pushNotifications = new PushNotifications(db, store, devices, (id) => {
     return [
       ...secureInputs
         .list()
@@ -665,6 +681,7 @@ export function createServices(
     pulls,
     pullCache,
     store,
+    taskListUndo,
     devices,
     pairing,
     git,
@@ -698,6 +715,7 @@ export function createServices(
   return services
 }
 export interface Services {
+  taskListUndo: TaskListUndo
   dictation: RuntimeDictation
   stateReplication: SharedStateReplication
   threadArchive: LegacyThreadArchive

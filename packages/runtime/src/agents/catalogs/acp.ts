@@ -1,6 +1,11 @@
 import { acpV2Models } from '../providers/acp/acp-v2-services.js'
-import { acpModelOption, legacyAcpModels } from '../providers/acp/acp-models.js'
-import { acpV1ModeOption, applyAcpV1Option, setAcpV1Mode } from '../providers/acp/acp-v1-config.js'
+import { acpModelOption, acpReasoningOption, legacyAcpModels } from '../providers/acp/acp-models.js'
+import {
+  acpV1ModeOption,
+  acpV1OptionOffers,
+  applyAcpV1Option,
+  setAcpV1Mode,
+} from '../providers/acp/acp-v1-config.js'
 import { homedir } from 'node:os'
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import { methods, type SessionConfigOption } from '@agentclientprotocol/sdk/unstable'
@@ -16,7 +21,9 @@ function options(config: SessionConfigOption[] | null | undefined, category: str
   const entry =
     category === 'model'
       ? acpModelOption(config)
-      : config?.find((item) => item.category === category && item.type === 'select')
+      : category === 'thought_level'
+        ? acpReasoningOption(config)
+        : acpV1ModeOption(config)
   return entry?.type === 'select'
     ? entry.options
         .flatMap((item) => ('options' in item ? item.options : [item]))
@@ -62,7 +69,13 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     )
     closeSessionId = session.sessionId
     let config = updatedConfig ?? session.configOptions
-    if (agent.acpMode) {
+    const modeOption = acpV1ModeOption(config)
+    if (
+      agent.acpMode &&
+      (modeOption
+        ? acpV1OptionOffers(modeOption, agent.acpMode)
+        : session.modes?.availableModes.some(({ id }) => id === agent.acpMode))
+    ) {
       config =
         (await setAcpV1Mode(
           connection,
@@ -75,34 +88,21 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     }
     const legacy = legacyAcpModels(session)
     let legacyModel = legacy?.currentModelId
-    const configured = options(config, 'model')
-    const models = configured.length
-      ? configured
-      : (legacy?.availableModels ?? []).map((model) => ({
-          id: model.modelId,
-          name: model.name,
-          description: model.description ?? undefined,
-          isDefault: model.modelId === legacy?.currentModelId,
-        }))
     const modelOption = acpModelOption(config)
-    if (agent.model && modelOption && modelOption.currentValue !== agent.model) {
-      config = (
-        await acpControl(
-          connection,
-          connection.rpc.request(methods.agent.session.setConfigOption, {
-            sessionId: session.sessionId,
-            configId: modelOption.id,
-            value: agent.model,
-          }),
-          'model discovery',
-        )
-      ).configOptions
-      if (acpModelOption(config)?.currentValue !== agent.model)
-        throw new Error(`ACP did not apply ${modelOption.name}: ${agent.model}`)
-    }
-    if (agent.model && !modelOption) {
-      if (!legacy?.availableModels.some((model) => model.modelId === agent.model))
-        throw new Error('ACP agent does not offer the selected model')
+    if (agent.model && modelOption && config && acpV1OptionOffers(modelOption, agent.model))
+      config = await applyAcpV1Option(
+        connection,
+        session.sessionId,
+        config,
+        modelOption,
+        agent.model,
+        'model discovery',
+      )
+    if (
+      agent.model &&
+      !modelOption &&
+      legacy?.availableModels.some(({ modelId }) => modelId === agent.model)
+    ) {
       if (legacyModel !== agent.model) {
         updatedConfig = undefined
         await acpControl(
@@ -120,14 +120,21 @@ export async function acpModels(agent: AgentDiscovery, launch?: AcpLaunch): Prom
     for (const [configId, value] of Object.entries(agent.acpConfig ?? {})) {
       if (agent.model && acpModelOption(config)?.id === configId) continue
       const option = config?.find((item) => item.id === configId)
-      if (!config || !option) throw new Error(`ACP configuration ${configId} is unavailable`)
+      if (!config || !option || !acpV1OptionOffers(option, value)) continue
       if (agent.acpMode && acpV1ModeOption(config)?.id === configId) continue
       config = await applyAcpV1Option(connection, session.sessionId, config, option, value)
     }
+    const configured = options(config, 'model')
+    const models = configured.length
+      ? configured
+      : (legacy?.availableModels ?? []).map((model) => ({
+          id: model.modelId,
+          name: model.name,
+          description: model.description ?? undefined,
+          isDefault: model.modelId === legacy?.currentModelId,
+        }))
     const currentModel = acpModelOption(config)?.currentValue ?? legacyModel
-    const currentReasoning = config?.find(
-      (option) => option.category === 'thought_level' && option.type === 'select',
-    )?.currentValue
+    const currentReasoning = acpReasoningOption(config)?.currentValue
     const modes = options(config, 'mode')
     const catalog: ModelCatalog = {
       models: models.map((model) => ({

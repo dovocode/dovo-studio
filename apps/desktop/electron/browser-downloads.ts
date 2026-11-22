@@ -1,5 +1,13 @@
 import { app, BrowserWindow, shell } from 'electron'
-import { existsSync, mkdirSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  realpathSync,
+  renameSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { basename, dirname, extname, isAbsolute, join, resolve, sep } from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { Schema } from 'effect'
@@ -28,7 +36,18 @@ const itemSchema = Schema.Struct({
   incognito: Schema.Boolean,
 })
 export type BrowserDownload = Schema.Schema.Type<typeof itemSchema>
-const storeSchema = Schema.Struct({ nextId: Schema.Number, items: Schema.Array(itemSchema) })
+const storeSchema = Schema.Struct({
+  nextId: Schema.Number,
+  items: Schema.Array(itemSchema),
+  fileIdentities: Schema.optional(Schema.Record(Schema.String, Schema.String)),
+})
+
+const downloadIdentity = (filename: string) => {
+  const info = lstatSync(filename, { bigint: true, throwIfNoEntry: false })
+  return info?.isFile()
+    ? [info.dev, info.ino, info.birthtimeNs, info.mtimeNs, info.size].join(':')
+    : undefined
+}
 type DownloadStore = Schema.Schema.Type<typeof storeSchema>
 /** Keep each valid download record. The next ID is derived again from the kept records. */
 const salvageStore = (value: unknown): DownloadStore => {
@@ -143,6 +162,9 @@ export function createBrowserDownloads(
         : item,
     ]),
   )
+  const fileIdentities = new Map(
+    Object.entries(stored.fileIdentities ?? {}).map(([id, identity]) => [Number(id), identity]),
+  )
   let nextId = Math.max(stored.nextId, Math.max(0, ...records.keys()) + 1)
   const live = new Map<number, Electron.DownloadItem>()
   const requests = new Map<
@@ -157,7 +179,14 @@ export function createBrowserDownloads(
   >()
   const persist = () => {
     if (privateProfile) return
-    write({ nextId, items: [...records.values()].slice(-10_000) })
+    const items = [...records.values()].slice(-10_000)
+    const identities = Object.fromEntries(
+      items.flatMap(({ id }) => {
+        const identity = fileIdentities.get(id)
+        return identity === undefined ? [] : [[id, identity]]
+      }),
+    )
+    write({ nextId, items, fileIdentities: identities })
   }
   const save = () => {
     try {
@@ -262,6 +291,14 @@ export function createBrowserDownloads(
       })
       item.once('done', (_event, state) => {
         const current = records.get(id)
+        if (current && state === 'completed') {
+          try {
+            const identity = downloadIdentity(item.getSavePath())
+            if (identity) fileIdentities.set(id, identity)
+          } catch (error) {
+            console.error('Could not verify the completed download file.', error)
+          }
+        }
         if (current)
           change(id, {
             ...current,
@@ -320,7 +357,9 @@ export function createBrowserDownloads(
     const urlRegex = query.urlRegex === undefined ? undefined : new RegExp(query.urlRegex)
     const filenameRegex =
       query.filenameRegex === undefined ? undefined : new RegExp(query.filenameRegex)
-    let result = [...records.values()]
+    const match = query.id === undefined ? undefined : records.get(query.id)
+    const candidates = query.id === undefined ? [...records.values()] : match ? [match] : []
+    let result = candidates
       .map((item) => ({ ...item, exists: existsSync(item.filename) }))
       .filter((item) => {
         for (const field of [
@@ -440,6 +479,7 @@ export function createBrowserDownloads(
         .map((item) => item.id)
       for (const id of ids) {
         records.delete(id)
+        fileIdentities.delete(id)
         emit('downloads.onErased', id)
       }
       persist()
@@ -448,7 +488,13 @@ export function createBrowserDownloads(
     removeFile(id: number) {
       const item = get(id)
       if (item.state !== 'complete') throw new Error('Download is not complete.')
+      const identity = fileIdentities.get(id)
+      if (!identity || downloadIdentity(item.filename) !== identity)
+        throw new Error(
+          'The original downloaded file could not be verified. Remove its history entry instead.',
+        )
       unlinkSync(item.filename)
+      fileIdentities.delete(id)
       change(id, { ...item, exists: false })
       persist()
     },

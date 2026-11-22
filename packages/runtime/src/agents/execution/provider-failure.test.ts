@@ -5,6 +5,7 @@ import { explainProviderFailure, providerFailureKind, ProviderFailure } from './
 it.each([
   ['401 authentication required', 'authentication'],
   ['invalid_api_key', 'authentication'],
+  ['503 auth_not_found', 'authentication'],
   ['unsupported reasoning effort', 'configuration'],
   ['reasoning start before end', 'configuration'],
   ['MODEL_CAPACITY_EXHAUSTED 429', 'capacity'],

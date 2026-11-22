@@ -30,6 +30,7 @@ export class AgentRegistry {
     private settings: () => CommandSettings = () => decode(commandsSchema, {}),
     private acpLaunch?: (id: string) => AcpLaunch,
     private policy?: ManagedPolicy,
+    readonly refreshPath?: () => Promise<void>,
   ) {
     const providers = [
       ['vibe', () => import('../providers/vibe/vibe.js').then((m) => m.createVibeAdapter())],

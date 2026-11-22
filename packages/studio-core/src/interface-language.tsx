@@ -1,12 +1,24 @@
-import { createContext, Fragment, useCallback, useContext, useMemo, type ReactNode } from 'react'
+import {
+  createContext,
+  Fragment,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useState,
+  type ReactNode,
+} from 'react'
 import {
   resolveInterfaceLanguage,
   type InterfaceLanguage,
   type threadInputSummary,
 } from '@dovo/protocol'
-import catalogData from './interface-catalog.json'
-const catalogs: Readonly<Record<string, Readonly<Record<string, string>>>> = catalogData
-const LanguageContext = createContext<InterfaceLanguage>('en-US')
+import { interfaceCatalog, loadInterfaceCatalog } from './interface-catalogs'
+export { loadInterfaceCatalog } from './interface-catalogs'
+const LanguageContext = createContext<{
+  language: InterfaceLanguage
+  catalog?: ReturnType<typeof interfaceCatalog>
+}>({ language: 'en-US' })
 export function InterfaceLanguageProvider({
   language,
   deviceLanguages = [],
@@ -20,14 +32,35 @@ export function InterfaceLanguageProvider({
     () => resolveInterfaceLanguage(language, deviceLanguages),
     [language, deviceLanguages],
   )
-  return <LanguageContext.Provider value={resolved}>{children}</LanguageContext.Provider>
+  const [, setLoaded] = useState<string>()
+  const catalog = interfaceCatalog(resolved)
+  useEffect(() => {
+    if (catalog) return
+    let active = true
+    void loadInterfaceCatalog(resolved).then(
+      (value) => {
+        if (active && value) setLoaded(resolved)
+      },
+      (error: unknown) => console.warn('Could not load the interface language', error),
+    )
+    return () => {
+      active = false
+    }
+  }, [resolved, catalog])
+  const context = useMemo(() => ({ language: resolved, catalog }), [resolved, catalog])
+  return <LanguageContext.Provider value={context}>{children}</LanguageContext.Provider>
 }
-export const useInterfaceLanguage = () => useContext(LanguageContext)
+export const useInterfaceLanguage = () => useContext(LanguageContext).language
 export type InterfaceValues = Readonly<Record<string, string | number | null | undefined>>
 export function interfaceText(text: string, language: InterfaceLanguage, values?: InterfaceValues) {
-  const base = language.split('-')[0]
-  // Only explicitly marked UI copy enters this function. Unknown copy stays in English.
-  const translated = catalogs[base]?.[text] ?? text
+  return translate(text, interfaceCatalog(language), values)
+}
+function translate(
+  text: string,
+  catalog: ReturnType<typeof interfaceCatalog>,
+  values?: InterfaceValues,
+) {
+  const translated = catalog && Object.hasOwn(catalog, text) ? (catalog[text] ?? text) : text
   return values
     ? translated.replace(/\{(\w+)\}/g, (match, key: string) =>
         Object.hasOwn(values, key) ? String(values[key] ?? '') : match,
@@ -35,10 +68,10 @@ export function interfaceText(text: string, language: InterfaceLanguage, values?
     : translated
 }
 export function useInterfaceText() {
-  const language = useInterfaceLanguage()
+  const { catalog } = useContext(LanguageContext)
   return useCallback(
-    (text: string, values?: InterfaceValues) => interfaceText(text, language, values),
-    [language],
+    (text: string, values?: InterfaceValues) => translate(text, catalog, values),
+    [catalog],
   )
 }
 export function threadInputLabel(

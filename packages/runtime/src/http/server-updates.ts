@@ -10,6 +10,7 @@ import {
   type ServerUpdateStatus,
 } from '@dovo/protocol'
 import { HttpError } from '../errors.js'
+import { rotateRuntimeLog } from '../storage/log-rotation.js'
 
 const directory = () =>
   dirname(process.env.DOVO_DATABASE_PATH ?? join(homedir(), '.dovo', 'runtime.sqlite'))
@@ -90,12 +91,14 @@ export function startServerUpdate(version: string) {
   if (!cli || !existsSync(cli))
     throw new HttpError(409, 'This server cannot launch its update helper')
   writeStatus({ status: 'queued', version })
-  const log = openSync(join(directory(), 'server-update.log'), 'a', 0o600)
+  const logPath = join(directory(), 'server-update.log')
+  let log: number | undefined
   let child
   try {
+    rotateRuntimeLog(logPath)
+    log = openSync(logPath, 'a', 0o600)
     // A detached process still belongs to the runtime's systemd cgroup and is killed on stop.
     // Give the updater its own user service so it can restart Dovo and verify the new runtime.
-    const logPath = join(directory(), 'server-update.log')
     child = spawn(
       'systemd-run',
       [
@@ -132,7 +135,7 @@ export function startServerUpdate(version: string) {
     })
     throw error
   } finally {
-    closeSync(log)
+    if (log !== undefined) closeSync(log)
   }
   child.once('error', (error) => writeStatus({ status: 'error', version, error: error.message }))
   child.once('exit', (code) => {

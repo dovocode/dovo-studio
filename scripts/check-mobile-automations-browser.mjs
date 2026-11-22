@@ -173,6 +173,7 @@ try {
 
 // Exercise the production editors' schedule fields and the mobile compare-and-set save payload.
 const editorImporter = root + 'apps/mobile/src/jobs/automation-editor.tsx'
+const stepFieldsImporter = root + 'apps/mobile/src/jobs/step-fields.tsx'
 const inspectorImporter = root + 'packages/extension-jobs/src/node-inspector.tsx'
 const editorControls = `
 export const View=({children})=><div>{children}</div>;
@@ -183,8 +184,8 @@ export const SettingsSheet=({children})=><section>{children}</section>;
 export const SettingsField=({label,value,onChangeText,editable,placeholder})=><label>{label}<input aria-label={label} value={value} disabled={editable===false} placeholder={placeholder} onChange={e=>onChangeText(e.target.value)}/></label>;
 export const SettingsChoice=({label,value,items,onChange,disabled})=><label>{label}<select aria-label={label} value={value} disabled={disabled} onChange={e=>onChange(e.target.value)}>{items.map(i=><option key={i.id} value={i.id}>{i.name}</option>)}</select></label>;
 export const SettingsAction=({label,onPress,disabled})=><button disabled={disabled} onClick={onPress}>{label}</button>;
-export const Icon=()=>null;export const IconButton=()=>null;export const StepFields=()=>null;
-export const useSettingsTheme=()=>({styles:{},colors:{}});
+export const Icon=()=>null;export const IconButton=()=>null;
+export const useSettingsTheme=()=>({styles:{},colors:{}});export const useTheme=useSettingsTheme;
 `
 const editorBundle = await bundleBrowser(
   {
@@ -201,8 +202,7 @@ const trigger={id:'trigger',type:'automation',position:{x:0,y:0},data};
 const task={...trigger,id:'task',data:{...data,kind:'task',harness:defaultTaskHarness('codex')}};
 const flow={id:'reminder',name:'Deployment reminder',enabled:false,nodes:[trigger,task],edges:[{id:'edge',source:'trigger',target:'task'}]};
 const workspace={agents:[],tasks:[],repositories:[{id:'repo',name:'App',path:'/app',branch:'main'}]};
-window.runtime={connected:true,snapshot:{workspace},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};
-function App(){const[node,setNode]=useState(trigger);return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
+function App(){const[node,setNode]=useState(trigger);const[supported,setSupported]=useState(false);window.supportResults=setSupported;window.selectTask=()=>setNode(task);window.runtime={connected:true,snapshot:{workspace,automationStepResultsSupported:supported||undefined},callEffect:(path,body)=>Effect.sync(()=>{window.saved={path,body};return {revision:1}})};return <><div data-testid="desktop-editor"><NodeInspector node={node} flow={{...flow,nodes:flow.nodes.map(item=>item.id===node.id?node:item)}} workspace={workspace} onChange={data=>{window.desktopData=data;setNode({...node,data})}} onDelete={()=>{}}/></div><div data-testid="mobile-editor"><AutomationEditor flow={flow} onClose={()=>{window.editorClosed=true}}/></div></>}
 createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
@@ -242,7 +242,7 @@ export const HarnessFields=()=>null;export const LinkedCheckoutEditor=()=>null;`
     },
     {
       path: '../runtime/connection/provider',
-      importer: editorImporter,
+      importer: root + 'apps/mobile/src/jobs/',
       contents: 'export const useRuntime=()=>window.runtime;',
     },
     {
@@ -274,12 +274,26 @@ export const HarnessFields=()=>null;export const LinkedCheckoutEditor=()=>null;`
       '../screens/settings-controls',
       '../ui/controls/icon',
       '../ui/controls/icon-button',
-      './step-fields',
     ].map((path) => ({
       path,
       ...(path === 'react-native' ? {} : { importer: editorImporter }),
       contents: editorControls,
     })),
+    ...['../ui/content/text', '../screens/settings-controls', '../ui/theme'].map((path) => ({
+      path,
+      importer: stepFieldsImporter,
+      contents: editorControls,
+    })),
+    {
+      path: '../tasks/detail/linked-projects',
+      importer: stepFieldsImporter,
+      contents: 'export const LinkedCheckoutEditor=()=>null;',
+    },
+    {
+      path: '../agents/model-settings',
+      importer: stepFieldsImporter,
+      contents: 'export const ModelSettings=()=>null;',
+    },
   ],
 )
 const editorBrowser = await chromium.launch()
@@ -303,6 +317,20 @@ try {
       })),
       { trigger: 'once', runAt: '2026-10-28T09:30', timezone: 'Europe/Amsterdam' },
     )
+    await page.evaluate(() => window.selectTask())
+    const desktopSchema = desktop.getByLabel('Result schema (optional)', { exact: true })
+    const mobileSchema = mobile.getByLabel('Result schema (optional)', { exact: true })
+    await desktopSchema.waitFor()
+    await mobileSchema.waitFor()
+    assert.equal(await desktopSchema.isDisabled(), true)
+    assert.equal(await mobileSchema.isDisabled(), true)
+    await page.evaluate(() => window.supportResults(true))
+    const schema = '{"type":"integer"}'
+    await desktopSchema.fill(schema)
+    assert.equal(await page.evaluate(() => window.desktopData.resultSchema), schema)
+    await desktopSchema.clear()
+    assert.equal(await page.evaluate(() => window.desktopData.resultSchema), undefined)
+    await mobileSchema.fill(schema)
     await mobile.getByLabel('Trigger', { exact: true }).selectOption('once')
     await mobile.getByLabel('Run at', { exact: true }).fill('2026-02-30 09:30')
     await mobile.getByRole('button', { name: 'Save automation', exact: true }).click()
@@ -321,11 +349,12 @@ try {
     assert.equal(saved.body.changes.nodes.after[0].data.trigger, 'once')
     assert.equal(saved.body.changes.nodes.after[0].data.runAt, '2026-10-28T09:30')
     assert.equal(saved.body.changes.nodes.after[0].data.timezone, 'Europe/Amsterdam')
+    assert.equal(saved.body.changes.nodes.after[1].data.resultSchema, schema)
     assert.deepEqual(errors, [])
   }
   await Promise.race([checkEditors(), pageError])
   console.log(
-    'Desktop and mobile one-time editors preserve date/time zones, validate calendar dates and save the scheduled trigger.',
+    'Desktop and mobile editors preserve schedule settings, validate dates and gate editable result schemas by runtime capability.',
   )
 } finally {
   await editorBrowser.close()

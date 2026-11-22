@@ -142,7 +142,11 @@ const fileFingerprints = new WeakMap<
   { path: string; before: string; after: string; preview: string; fingerprint: string }
 >()
 export function changedFileFingerprint(file: ChangedFile) {
-  const preview = filePreviewIdentity(file.preview)
+  const identity = filePreviewIdentity(file.preview)
+  const preview =
+    file.preview && file.workingRevision
+      ? JSON.stringify([identity, file.workingRevision])
+      : identity
   const cached = fileFingerprints.get(file)
   // Guard the actual hash inputs too: callers can still edit a file or nested preview in place.
   if (

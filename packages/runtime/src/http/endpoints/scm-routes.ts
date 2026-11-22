@@ -34,7 +34,7 @@ import {
 import { gitActionState } from '../../scm/git/action-state.js'
 import { checkGithubConnection } from '../../scm/forges/integration/github-connection-check.js'
 import { githubConnectionCheckQuerySchema } from '@dovo/protocol'
-import { retainChangedFiles } from '../../scm/git/retain-changes.js'
+import { refreshTaskChanges } from '../../scm/git/task-changes.js'
 import {
   repositoryFolderSchema,
   createGithubRepositorySchema,
@@ -859,14 +859,14 @@ export function scmRoute(request: IncomingMessage, path: string) {
         }
         if (path === '/api/scm/changes') {
           const includeFiles = decode(Schema.UndefinedOr(Schema.Boolean), input.includeFiles)
+          const metadataOnly = decode(Schema.UndefinedOr(Schema.Boolean), input.metadataOnly)
           if (includeFiles === false && typeof input.taskId !== 'string')
             throw new HttpError(400, 'A thread is required for a Changes refresh')
-          let files = yield* serviceResult(s.git.changes(cwd))
-          if (typeof input.taskId === 'string') {
-            const previous = s.store.taskSummary(input.taskId).files
-            files = retainChangedFiles(previous, files)
-            if (files !== previous) s.store.updateTask(input.taskId, (t) => ({ ...t, files }))
-          }
+          const files = yield* serviceResult(
+            typeof input.taskId === 'string'
+              ? refreshTaskChanges(s.store, s.git, input.taskId, cwd, !metadataOnly)
+              : s.git.changes(cwd),
+          )
           // Live sync already delivers the authoritative files to thread clients.
           if (includeFiles === false) return yield* serviceResult({ ok: true })
           return yield* serviceResult({

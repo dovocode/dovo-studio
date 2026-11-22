@@ -39,6 +39,7 @@ export function configuredModelCatalogKey(
     .update(
       JSON.stringify([
         agent,
+        launch?.env.PATH ?? agent.env?.PATH ?? process.env.PATH,
         agent.envSecrets ? (registry.secretGeneration ?? 0) : 0,
         launch ? { command: launch.command, args: launch.args, env: sorted(launch.env) } : null,
         installation

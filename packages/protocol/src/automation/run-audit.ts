@@ -37,6 +37,17 @@ export const runAuditSchema = mutableStruct({
     }),
   ),
   nextOffset: Schema.optional(Schema.Number),
+  results: Schema.optional(
+    mutableArray(
+      mutableStruct({
+        nodeId: Schema.String,
+        taskId: Schema.String,
+        attempt: Schema.Number,
+        turnId: Schema.String,
+        value: Schema.Json,
+      }),
+    ),
+  ),
   estimatedCostUsd: Schema.Number,
   tokens: Schema.Number,
   usageIncomplete: Schema.Boolean,

@@ -119,6 +119,12 @@ The upstream core and React renderer are pinned to `0.15.0`. Their protocol vers
 renderer package uses Zod 3. The MCP Apps SDK uses the host's Zod 4 context through
 `@dovo/studio-ui/mcp-app-sdk`. Keep these separate when upgrading either dependency.
 
+Dovo checks the byte limit before parsing publications, saved cards and input values. The Zod
+3.25.76 patch checks array and set size limits before validating elements. It applies to both module
+formats and leaves valid inputs unchanged. The version-based production audit still reports the
+upstream advisory. Replace the patch when A2UI supports a fixed upstream version.
+[Zod advisory](https://github.com/advisories/GHSA-mrhx-c7xc-m3w5)
+
 ## Verification
 
 Run from the repository root:

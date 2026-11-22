@@ -317,10 +317,28 @@ export async function restoreRuntimeBackup(databasePath: string, source: string)
       if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
       throw error
     })
-    if (existing) await backups.create()
-    await rm(databasePath + '-wal', { force: true })
-    await rm(databasePath + '-shm', { force: true })
-    await rename(temporary, databasePath)
+    if (existing) {
+      await backups.create()
+      // SQLite publishes the replacement in a transaction. Leave the live WAL intact until it commits.
+      const snapshot = new Database(temporary, { readonly: true, fileMustExist: true })
+      try {
+        await snapshot.backup(databasePath)
+      } finally {
+        snapshot.close()
+      }
+    } else {
+      for (const suffix of ['-wal', '-shm', '-journal']) {
+        const sidecar = await stat(databasePath + suffix).catch((error: unknown) => {
+          if (error instanceof Error && 'code' in error && error.code === 'ENOENT') return undefined
+          throw error
+        })
+        if (sidecar)
+          throw new Error(
+            `Cannot restore while ${databasePath + suffix} exists without its database.`,
+          )
+      }
+      await rename(temporary, databasePath)
+    }
     return { restored: databasePath, backup: source }
   } catch (error) {
     failure = error

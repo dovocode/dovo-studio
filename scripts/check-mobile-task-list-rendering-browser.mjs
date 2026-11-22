@@ -1,5 +1,4 @@
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
 import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import { bundleBrowser, chromium } from './browser/harness.mjs'
@@ -9,9 +8,9 @@ import { checkMobileTaskSearch } from './browser/mobile-task-search.mjs'
 // Native controls/storage/network are browser adapters; row-menu leaves count renders.
 const root = fileURLToPath(new URL('../', import.meta.url))
 const mobile = root + 'apps/mobile/src/'
-const catalog = JSON.parse(
-  readFileSync(root + 'packages/studio-core/src/interface-catalog.json', 'utf8'),
-)
+const catalog = {
+  nl: (await import('../packages/studio-core/src/interface-catalogs/nl.ts')).default,
+}
 const controls = `
 import {createContext,useContext,forwardRef,useImperativeHandle,useLayoutEffect,useRef} from 'react';
 const flat=style=>Array.isArray(style)?Object.assign({},...style.map(flat)):style||{};

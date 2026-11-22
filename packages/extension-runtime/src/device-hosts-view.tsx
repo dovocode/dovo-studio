@@ -45,16 +45,18 @@ function DeviceHostSettings() {
     null,
   )
   const [busy, setBusy] = useApplicationState(false)
+  const [ready, setReady] = useApplicationState(false)
   const [error, setError] = useApplicationState('')
   const [retry, setRetry] = useApplicationState(0)
   const confirm = useConfirmation(JSON.stringify([settings, draft, busy]))
   const generation = useRef(0)
+  const draftBase = useRef<DeviceHost | undefined>(undefined)
   const lock = useRef(false)
+  const canWrite = connected && ready && !busy
   useSettingsDraft(draft !== null, busy)
   useEffect(() => {
     const current = ++generation.current
-    setSettings(null)
-    setDraft(null)
+    setReady(false)
     setResult(null)
     setError('')
     setBusy(false)
@@ -62,7 +64,9 @@ function DeviceHostSettings() {
     if (connected)
       void request('/api/device-hosts', undefined, deviceHostSettingsResultSchema, 'GET')
         .then((value) => {
-          if (current === generation.current) setSettings(value)
+          if (current !== generation.current) return
+          setSettings(value)
+          setReady(true)
         })
         .catch((failure) => {
           if (current === generation.current) setError(String(failure))
@@ -70,9 +74,9 @@ function DeviceHostSettings() {
     return () => {
       generation.current++
     }
-  }, [request, connected, retry, setSettings, setDraft, setResult, setError, setBusy])
+  }, [request, connected, retry, setSettings, setReady, setResult, setError, setBusy])
   const act = async (operation: () => Promise<void>) => {
-    if (lock.current) return
+    if (!canWrite || lock.current) return
     lock.current = true
     const current = generation.current
     setBusy(true)
@@ -133,7 +137,7 @@ function DeviceHostSettings() {
   }
   return (
     <div className="space-y-5">
-      {connected && settings && !error && (
+      {canWrite && settings && !error && (
         <p className="text-[0.8125rem] leading-normal text-foreground/80">
           Device Hub and default host choices save immediately on this computer. Host edits use Save
           host.
@@ -150,7 +154,7 @@ function DeviceHostSettings() {
           <Toggle
             label="Enable Device Hub"
             checked={settings?.enabled ?? false}
-            disabled={!settings || busy || !!draft}
+            disabled={!canWrite || !settings || !!draft}
             onChange={(enabled) => {
               if (settings) void act(() => updateSettings({ ...settings, enabled }))
             }}
@@ -179,8 +183,9 @@ function DeviceHostSettings() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy || !!draft}
+                    disabled={!canWrite || !!draft}
                     onClick={() => {
+                      draftBase.current = host
                       setDraft({ ...host })
                       setPairedId(
                         destinations.find(
@@ -195,7 +200,7 @@ function DeviceHostSettings() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy || !!draft}
+                    disabled={!canWrite || !!draft}
                     onClick={() =>
                       void act(async () => {
                         const current = generation.current
@@ -213,7 +218,7 @@ function DeviceHostSettings() {
                   <Button
                     size="sm"
                     variant="outline"
-                    disabled={busy || !!draft}
+                    disabled={!canWrite || !!draft}
                     onClick={async () => {
                       if (
                         await confirm({
@@ -244,8 +249,9 @@ function DeviceHostSettings() {
             >
               <Button
                 size="sm"
-                disabled={busy || !!draft || !settings || settings.hosts.length >= 20}
+                disabled={!canWrite || !!draft || !settings || settings.hosts.length >= 20}
                 onClick={() => {
+                  draftBase.current = undefined
                   setDraft({
                     id: randomUUID(),
                     name: '',
@@ -271,7 +277,7 @@ function DeviceHostSettings() {
               <SettingRow label="Preferred computer">
                 <ChoicePicker
                   aria-label="Default device host"
-                  disabled={busy || !!draft}
+                  disabled={!canWrite || !!draft}
                   value={settings.defaultHostId ?? ''}
                   onValueChange={(id) =>
                     void act(() =>
@@ -292,180 +298,192 @@ function DeviceHostSettings() {
               </SettingRow>
             </SettingsGroup>
           )}
-          {draft && (
-            <form
-              className="space-y-4 rounded-lg border bg-card p-4"
-              onSubmit={(event) => {
-                event.preventDefault()
+        </>
+      )}
+      {draft && (
+        <form
+          className="space-y-4 rounded-lg border bg-card p-4"
+          onSubmit={(event) => {
+            event.preventDefault()
+            void act(async () => {
+              if (!settings?.enabled) return
+              const host = candidate()
+              const savedHost = settings?.hosts.find((item) => item.id === host.id)
+              if (JSON.stringify(savedHost) !== JSON.stringify(draftBase.current))
+                throw new Error(
+                  'This host changed on the computer. Cancel the edit and reopen the saved host.',
+                )
+              const current = generation.current
+              await updateSettings({
+                ...settings,
+                hosts: [...settings.hosts.filter((entry) => entry.id !== host.id), host],
+              })
+              if (current === generation.current) {
+                setDraft(null)
+                setResult(null)
+              }
+            })
+          }}
+        >
+          <h2 className="text-sm font-semibold">
+            {settings?.hosts.some((host) => host.id === draft.id)
+              ? 'Edit device host'
+              : 'Add device host'}
+          </h2>
+          <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
+            <FormField label={uiText('Name')}>
+              <Input
+                required
+                value={draft.name}
+                maxLength={100}
+                onChange={(event) => change({ name: event.target.value })}
+                placeholder="Mac mini"
+              />
+            </FormField>
+            <FormField label="Paired destination">
+              <ChoicePicker
+                aria-label="Paired destination"
+                value={pairedId}
+                onValueChange={(id) => {
+                  const profile = destinations.find((entry) => entry.profile.id === id)?.profile
+                  setPairedId(id)
+                  if (profile)
+                    change({
+                      runtimeAddress: profile.connection.address,
+                      name: draft.name || profile.name,
+                      sshHost:
+                        draft.sshHost ||
+                        new URL(profile.connection.address).hostname.replace(/^\[|\]$/g, ''),
+                    })
+                }}
+              >
+                <option value="">Choose a paired computer</option>
+                {destinations.map((entry) => (
+                  <option key={entry.profile.id} value={entry.profile.id}>
+                    {entry.profile.name}
+                  </option>
+                ))}
+              </ChoicePicker>
+            </FormField>
+            <FormField label="SSH host or alias">
+              <Input
+                required
+                value={draft.sshHost}
+                onChange={(event) => change({ sshHost: event.target.value })}
+                placeholder="mac-mini"
+              />
+            </FormField>
+            <FormField label="SSH user">
+              <Input
+                required
+                value={draft.sshUser}
+                onChange={(event) => change({ sshUser: event.target.value })}
+                placeholder="dominic"
+              />
+            </FormField>
+            <FormField label="SSH port">
+              <Input
+                required
+                type="number"
+                min={1}
+                max={65535}
+                value={draft.sshPort}
+                onChange={(event) => change({ sshPort: Number(event.target.value) })}
+              />
+            </FormField>
+            <FormField label="SSH key path (optional)">
+              <Input
+                value={draft.identityFile ?? ''}
+                onChange={(event) => change({ identityFile: event.target.value || undefined })}
+                placeholder="Use SSH agent or ~/.ssh/config"
+              />
+            </FormField>
+            <FormField label="Destination runtime address">
+              <Input
+                required
+                value={draft.runtimeAddress}
+                onChange={(event) => change({ runtimeAddress: event.target.value })}
+                placeholder="http://127.0.0.1:3001"
+              />
+            </FormField>
+          </fieldset>
+          <p className="text-xs text-muted-foreground">
+            The address is reached from the SSH host. Select a paired destination to authorize
+            access; its token is stored privately on this computer. SSH uses keys and verified host
+            keys. No passwords or private key uploads.
+          </p>
+          <SettingRow
+            label="Allow agents to use this host"
+            description="Make this host available through agent device tools in threads on this computer."
+          >
+            <Toggle
+              label="Allow agents to use this host"
+              checked={draft.agentAccess}
+              disabled={busy}
+              onChange={(value) => change({ agentAccess: value })}
+            />
+          </SettingRow>
+          <div className="flex flex-wrap gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              disabled={
+                !canWrite ||
+                !settings?.enabled ||
+                !draft.sshHost ||
+                !draft.sshUser ||
+                !draft.runtimeAddress
+              }
+              onClick={() =>
                 void act(async () => {
-                  if (!settings) return
-                  const host = candidate()
                   const current = generation.current
-                  await updateSettings({
-                    ...settings,
-                    hosts: [...settings.hosts.filter((entry) => entry.id !== host.id), host],
-                  })
-                  if (current === generation.current) {
-                    setDraft(null)
-                    setResult(null)
-                  }
+                  const check = await request(
+                    '/api/device-hosts/test',
+                    candidate(),
+                    deviceHostTestResultSchema,
+                  )
+                  if (current === generation.current) setResult(check)
                 })
+              }
+            >
+              {busy ? 'Working…' : 'Test connection'}
+            </Button>
+            <Button
+              type="submit"
+              disabled={!canWrite || !settings?.enabled || (!pairedId && !keepsPairing(draft))}
+            >
+              Save host
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={busy}
+              onClick={() => {
+                setDraft(null)
+                setResult(null)
               }}
             >
-              <h2 className="text-sm font-semibold">
-                {settings?.hosts.some((host) => host.id === draft.id)
-                  ? 'Edit device host'
-                  : 'Add device host'}
-              </h2>
-              <fieldset disabled={busy} className="grid gap-4 sm:grid-cols-2">
-                <FormField label={uiText('Name')}>
-                  <Input
-                    required
-                    value={draft.name}
-                    maxLength={100}
-                    onChange={(event) => change({ name: event.target.value })}
-                    placeholder="Mac mini"
-                  />
-                </FormField>
-                <FormField label="Paired destination">
-                  <ChoicePicker
-                    aria-label="Paired destination"
-                    value={pairedId}
-                    onValueChange={(id) => {
-                      const profile = destinations.find((entry) => entry.profile.id === id)?.profile
-                      setPairedId(id)
-                      if (profile)
-                        change({
-                          runtimeAddress: profile.connection.address,
-                          name: draft.name || profile.name,
-                          sshHost:
-                            draft.sshHost ||
-                            new URL(profile.connection.address).hostname.replace(/^\[|\]$/g, ''),
-                        })
-                    }}
-                  >
-                    <option value="">Choose a paired computer</option>
-                    {destinations.map((entry) => (
-                      <option key={entry.profile.id} value={entry.profile.id}>
-                        {entry.profile.name}
-                      </option>
-                    ))}
-                  </ChoicePicker>
-                </FormField>
-                <FormField label="SSH host or alias">
-                  <Input
-                    required
-                    value={draft.sshHost}
-                    onChange={(event) => change({ sshHost: event.target.value })}
-                    placeholder="mac-mini"
-                  />
-                </FormField>
-                <FormField label="SSH user">
-                  <Input
-                    required
-                    value={draft.sshUser}
-                    onChange={(event) => change({ sshUser: event.target.value })}
-                    placeholder="dominic"
-                  />
-                </FormField>
-                <FormField label="SSH port">
-                  <Input
-                    required
-                    type="number"
-                    min={1}
-                    max={65535}
-                    value={draft.sshPort}
-                    onChange={(event) => change({ sshPort: Number(event.target.value) })}
-                  />
-                </FormField>
-                <FormField label="SSH key path (optional)">
-                  <Input
-                    value={draft.identityFile ?? ''}
-                    onChange={(event) => change({ identityFile: event.target.value || undefined })}
-                    placeholder="Use SSH agent or ~/.ssh/config"
-                  />
-                </FormField>
-                <FormField label="Destination runtime address">
-                  <Input
-                    required
-                    value={draft.runtimeAddress}
-                    onChange={(event) => change({ runtimeAddress: event.target.value })}
-                    placeholder="http://127.0.0.1:3001"
-                  />
-                </FormField>
-              </fieldset>
-              <p className="text-xs text-muted-foreground">
-                The address is reached from the SSH host. Select a paired destination to authorize
-                access; its token is stored privately on this computer. SSH uses keys and verified
-                host keys. No passwords or private key uploads.
-              </p>
-              <SettingRow
-                label="Allow agents to use this host"
-                description="Make this host available through agent device tools in threads on this computer."
+              {uiText('Cancel')}
+            </Button>
+          </div>
+        </form>
+      )}
+      {result && (
+        <SettingsGroup title={result.ok ? 'Connection ready' : 'Setup needs attention'}>
+          {result.checks.map((check, index) => (
+            <SettingRow
+              key={`${check.name}:${index}`}
+              label={check.name}
+              description={check.message}
+            >
+              <span
+                className={check.ok ? 'text-xs text-muted-foreground' : 'text-xs text-destructive'}
               >
-                <Toggle
-                  label="Allow agents to use this host"
-                  checked={draft.agentAccess}
-                  disabled={busy}
-                  onChange={(value) => change({ agentAccess: value })}
-                />
-              </SettingRow>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={busy || !draft.sshHost || !draft.sshUser || !draft.runtimeAddress}
-                  onClick={() =>
-                    void act(async () => {
-                      const current = generation.current
-                      const check = await request(
-                        '/api/device-hosts/test',
-                        candidate(),
-                        deviceHostTestResultSchema,
-                      )
-                      if (current === generation.current) setResult(check)
-                    })
-                  }
-                >
-                  {busy ? 'Working…' : 'Test connection'}
-                </Button>
-                <Button type="submit" disabled={busy || (!pairedId && !keepsPairing(draft))}>
-                  Save host
-                </Button>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  disabled={busy}
-                  onClick={() => {
-                    setDraft(null)
-                    setResult(null)
-                  }}
-                >
-                  {uiText('Cancel')}
-                </Button>
-              </div>
-            </form>
-          )}
-          {result && (
-            <SettingsGroup title={result.ok ? 'Connection ready' : 'Setup needs attention'}>
-              {result.checks.map((check, index) => (
-                <SettingRow
-                  key={`${check.name}:${index}`}
-                  label={check.name}
-                  description={check.message}
-                >
-                  <span
-                    className={
-                      check.ok ? 'text-xs text-muted-foreground' : 'text-xs text-destructive'
-                    }
-                  >
-                    {check.ok ? 'Ready' : 'Check setup'}
-                  </span>
-                </SettingRow>
-              ))}
-            </SettingsGroup>
-          )}
-        </>
+                {check.ok ? 'Ready' : 'Check setup'}
+              </span>
+            </SettingRow>
+          ))}
+        </SettingsGroup>
       )}
       {error && (
         <div role="alert" className="space-y-2">
@@ -475,18 +493,7 @@ function DeviceHostSettings() {
               variant="outline"
               size="sm"
               disabled={busy}
-              onClick={async () => {
-                if (
-                  !draft ||
-                  (await confirm({
-                    title: 'Reload device settings?',
-                    description: 'Your unsaved device host draft will be discarded.',
-                    confirmLabel: 'Discard and reload',
-                    destructive: true,
-                  }))
-                )
-                  setRetry((value) => value + 1)
-              }}
+              onClick={() => setRetry((value) => value + 1)}
             >
               Reload settings
             </Button>

@@ -5,6 +5,12 @@ OpenCode and custom ACP agents. The provider runs on the selected runtime comput
 mobile all use the same runtime adapter. Installing a Dovo SDK dependency does not install or
 authenticate the agent CLI.
 
+After installing a CLI on the runtime computer, use **Check provider** in Settings or refresh
+provider or model discovery in the picker. On macOS and Linux, the runtime rereads the login shell's
+PATH and checks the usual tool directories. If the shell fails, discovery keeps the last usable
+PATH. New provider processes inherit the refreshed path. `DOVO_LOGIN_PATH=off` disables login-shell
+PATH discovery.
+
 | Provider       | Integration                                             | Runtime setup                                                                                                         |
 | -------------- | ------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
 | Hermes         | Native TUI gateway JSON-RPC                             | Install Hermes, configure `hermes model`, select its Python environment; see [Hermes setup](hermes.md).               |
@@ -30,8 +36,9 @@ Grok launches its ACP host with `--no-auto-update` and `--no-leader`. Disabling 
 keeps thread MCP credentials scoped to Dovo's owned process. Authentication chooses an advertised
 API-key method when a key exists, otherwise `cached_token`, with headless authentication metadata.
 Models and reasoning come from ACP configuration options, with support for older stable model
-advertisements. Grok currently has no advertised read-only mode, so Dovo excludes it from restricted
-utility-provider choices.
+advertisements. Discovery still lists available choices if a saved choice disappears. A turn
+requires the agent to accept its selected model and reasoning. Grok currently has no advertised
+read-only mode, so Dovo excludes it from restricted utility-provider choices.
 
 Grok offers Supervised, Auto, and Full access. The thread's mode controls the launch flags. In Auto,
 permission requests Grok still sends go to the user. An existing Auto-accept edits setting runs as
@@ -297,5 +304,42 @@ A live check on Mac Studio with `agy acp` 1.5.6 confirmed that it selects v1 whe
 Dovo opened a fresh v1 connection, created a session and sent the prompt. The model request returned
 `503 auth_not_found`, so this check did not verify a model reply or live v2 execution. The test left
 credentials unchanged. This agy version does not advertise session deletion.
+
+On Linux, Antigravity 1.5.14 selected ACP v1 when asked for v2. Discovery offered eight models with
+either the default settings or an obsolete saved model and mode. Selecting Gemini 4 Neon returned
+four reasoning levels. A fresh process resumed the same session and applied a different model
+through the v1 configuration code. The live tool-free prompt checks reached their deadlines without
+a reply and confirmed cancellation. A cancellation receipt alone does not establish prompt
+acceptance. The direct `agy --print` command also reported a timeout for `gemini-3.1-pro` with a
+50-second limit. `gemini-4-neon` also timed out in the direct CLI with a 35-second limit.
+
+On Mac Studio, the 1.5.9 direct CLI timed out. On the MacBook, 1.5.12 opened an ACP v1 session and
+accepted the `gemini-4-neon` selection. It streamed `503 auth_not_found` during the prompt. It also
+sent a usage update. The prompt reached its deadline without a completion receipt or the requested
+reply. Retesting through Dovo's built ACP adapter returned the same provider error and reached the
+45-second deadline.
+
+For ACP v1 prompts, Dovo checks Antigravity's local session log for a terminal error recorded during
+that prompt. This catches an error even if Antigravity returns `end_turn`. If Antigravity streams an
+authentication error and usage without ending the prompt, a matching terminal authentication error
+in the log lets Dovo report the failure promptly. If the log is unavailable, Dovo uses the ACP
+response and the normal deadline. Subprocess tests cover both response paths and verify that an
+older error row and quoted error text do not end a new turn.
+
+An idle Antigravity ACP v1 session can apply an advertised model and its reasoning level in the same
+process. Reuse requires the same thread, session, checkout, launch settings and permissions. The
+agent must have no working native children when the selection changes. It applies the model before
+reasoning because a model change can reset the reasoning options. A subprocess fixture checks the
+request order, verifies that the session stays open and confirms that a profile change starts a new
+process.
+
+On Linux with `agy` 1.5.14, process launch, ACP initialize, resume and model selection took a median
+425 ms across three samples. Selecting a model in an open session took a median 11 ms. The samples
+verified ACP configuration receipts. Model reply latency remains unverified.
+
+On Linux, OpenCode 2.3.2 offered 25 models through ACP with an obsolete saved model and mode. Dovo
+received the expected reply with `opencode/tidepool-alpha-free`, then resumed the same session,
+selected `opencode/beam-free`, and received a second reply. Both requests used a temporary project
+directory and sent no MCP tools.
 
 Protocol reference: [ACP v2 migration guide](https://agentclientprotocol.com/protocol/v2/migration).

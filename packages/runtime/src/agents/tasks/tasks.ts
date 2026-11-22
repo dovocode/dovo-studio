@@ -1969,9 +1969,11 @@ export class Tasks {
   steer(id: string, messageId: string, text: string, attachmentIds: string[] = []) {
     return runClientEffect(this.steerEffect(id, messageId, text, attachmentIds))
   }
+  isRestarting() {
+    return this.stopping || (this.restartLease?.expiresAt ?? 0) > Date.now()
+  }
   prepareRestart(resumeInterrupted?: boolean) {
-    if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
-      throw new HttpError(409, 'A runtime restart is already in progress')
+    if (this.isRestarting()) throw new HttpError(409, 'A runtime restart is already in progress')
     if (
       resumeInterrupted === undefined &&
       (this.running.size ||
@@ -2041,7 +2043,7 @@ export class Tasks {
       // A paused Bot may finish an interrupted turn, but starts no new work.
       if (!continuingRunId && botPaused(this.store.taskSummary(id)))
         return Effect.fail(new HttpError(409, botPausedMessage))
-      if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
+      if (this.isRestarting())
         return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
       if (admit && !admit()) return Effect.succeed({ completion: Effect.void })
       const next = this.store.taskSummary(id)
@@ -2122,7 +2124,7 @@ export class Tasks {
             )
           if (this.deletionReservations.has(id))
             return Effect.fail(new HttpError(409, 'This thread is being deleted.'))
-          if (this.stopping || (this.restartLease && this.restartLease.expiresAt > Date.now()))
+          if (this.isRestarting())
             return Effect.fail(new HttpError(503, 'Runtime is restarting. Try again shortly.'))
           if (admit && !admit()) {
             const completion: Effect.Effect<void, RuntimeFailure> = Effect.void

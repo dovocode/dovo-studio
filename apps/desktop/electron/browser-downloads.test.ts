@@ -112,6 +112,22 @@ it('releases a destination when native setup fails', async () => {
   next.emit('done', {}, 'cancelled')
 })
 
+it('preserves a different file at a saved download path after restart', async () => {
+  const work = profile('work')
+  const native = item()
+  const id = await start(work, native)
+  const path = native.getSavePath()
+  await writeFile(path, 'original download')
+  native.emit('done', {}, 'completed')
+  work.tracker.dispose()
+  await rm(path)
+  await writeFile(path, 'replacement document')
+  const restored = profile('work').tracker
+  expect(() => restored.removeFile(id)).toThrow('original downloaded file could not be verified')
+  expect(await readFile(path, 'utf8')).toBe('replacement document')
+  expect(restored.erase({ id })).toEqual([id])
+})
+
 it('retains assigned native ownership through a setup and cancellation failure until done', async () => {
   const work = profile('work'),
     personal = profile('personal')

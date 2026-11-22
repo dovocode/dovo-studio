@@ -102,6 +102,20 @@ export function StepFields({
             multiline
             style={{ minHeight: 96, textAlignVertical: 'top' }}
           />
+          <Field
+            label={uiText('Result schema (optional)')}
+            value={data.resultSchema ?? ''}
+            editable={!disabled && snapshot?.automationStepResultsSupported === true}
+            onChangeText={(resultSchema) => onChange({ resultSchema: resultSchema || undefined })}
+            maxLength={32000}
+            multiline
+            style={{ minHeight: 80, textAlignVertical: 'top' }}
+          />
+          <Text style={styles.muted}>
+            {snapshot?.automationStepResultsSupported
+              ? uiText('Enter a JSON Schema for the final reply. Leave blank to keep plain text.')
+              : uiText('Update this runtime to validate step results.')}
+          </Text>
           {!snapshot?.automationStepInputsSupported && (
             <Text style={styles.muted}>
               {uiText('Update this runtime to pass step results and files.')}

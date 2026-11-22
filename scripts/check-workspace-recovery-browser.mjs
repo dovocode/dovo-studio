@@ -19,7 +19,7 @@ import {WorkspaceScope} from './packages/studio-core/src/workspace/scope.tsx';
 import {ApplicationStateProvider} from './packages/studio-core/src/runtime/application-state.ts';
 import {sha256} from '@noble/hashes/sha2.js';
 import {bytesToHex,utf8ToBytes} from '@noble/hashes/utils.js';
-import {browserMutationStorage,writeWorkspaceDocument} from './packages/studio-core/src/workspace/read-cache.ts';
+import {browserMutationStorage,readWorkspaceDocument,writeWorkspaceDocument} from './packages/studio-core/src/workspace/read-cache.ts';
 import {updateAppPreferences} from './packages/studio-core/src/preferences.ts';
 import {LauncherWorkspaceProvider} from './packages/studio-core/src/workspace/launcher-provider.tsx';
 import {readRuntimeRegistry,writeRuntimeRegistry} from './packages/studio-core/src/workspace/runtime-registry.ts';
@@ -123,6 +123,7 @@ window.saveMessage=()=>window.workspaceContext.request('/api/tasks/message',{tas
 window.editWorkspace=()=>window.workspaceContext.setWorkspace(value=>({...value,agents:value.agents.map(agent=>({...agent,name:'Edited'}))}));
 window.changeSettings=()=>updateAppPreferences({sharedScopedSettings:[{key:'global',updatedAt:10,changeId:'retry-settings',value:{taskDefaults:{setupCommand:'echo retry'}}}]});
 window.readDeviceHub=()=>window.workspaceContext.request('/api/device-hosts',undefined,Schema.Struct({enabled:Schema.Boolean,hosts:Schema.Array(Schema.Unknown)}),'GET');
+window.recoveryCopy=index=>readWorkspaceDocument('dovo.workspace.v1.unsent-backup.'+encodeURIComponent(window.profiles[index].id));
 `,
       loader: 'tsx',
       resolveDir: root,
@@ -505,6 +506,38 @@ try {
     401,
     'A rejected pairing does not open using the offline fallback',
   )
+  const shared = await browser.newContext()
+  await shared.route('http://localhost/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const tabs = await Promise.all([shared.newPage(), shared.newPage()])
+  for (const tab of tabs) {
+    await tab.goto('http://localhost/')
+    await tab.addScriptTag({ content: built.outputFiles[0].text })
+    await tab.waitForFunction(() => window.workspaceContext?.connected)
+  }
+  await tabs[0].evaluate(async () => {
+    await window.workspaceContext.switchRuntime(window.profiles[1].id)
+    await window.publishRegistry(4)
+  })
+  await tabs[1].waitForFunction(() =>
+    window.workspaceContext.runtimeRegistry.profiles[4].name.endsWith('renamed'),
+  )
+  assert.deepEqual(
+    await tabs[1].evaluate(async () => {
+      await window.readDeviceHub()
+      return [
+        window.workspaceContext.activeRuntimeId === window.profiles[0].id,
+        window.workspaceContext.connection.address,
+        window.calls.filter(({ path }) => path === '/api/device-hosts').at(-1).host,
+      ]
+    }),
+    [true, 'http://host0.lan:8787', 'host0.lan:8787'],
+  )
+  await tabs[1].evaluate(() => window.workspaceContext.discardAndReload())
+  assert.equal(await tabs[1].evaluate(async () => !!(await window.recoveryCopy(0))), true)
+  assert.equal(await tabs[1].evaluate(() => window.recoveryCopy(1)), null)
+  await shared.close()
   console.log(
     'Workspace recovery: six HTTP hosts, offline switching and edit recovery, scoped polling, Device Hub reads, settings retry, automatic conflict reconciliation, Stop bypass and selective action recovery passed.',
   )

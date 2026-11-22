@@ -39,7 +39,9 @@ const built = await build({
         }
       };
       const uiRoot=createRoot(document.getElementById('app'));let viewRevision=0;
-      window.remount=()=>uiRoot.render(<StudioConfirmationProvider><View key={++viewRevision}/></StudioConfirmationProvider>);window.remount();
+      const render=()=>uiRoot.render(<StudioConfirmationProvider><View key={viewRevision}/></StudioConfirmationProvider>);
+      window.remount=()=>{viewRevision++;render()};
+      window.setConnected=connected=>{window.runtime.connected=connected;render()};render();
     `,
     loader: 'tsx',
     resolveDir: root,
@@ -96,9 +98,25 @@ try {
     .fill('~/.ssh/id_ed25519')
   await page.getByRole('button', { name: 'Test connection', exact: true }).click()
   await page.getByText('Connection ready', { exact: true }).waitFor()
-  await page.getByRole('textbox', { name: 'SSH host or alias', exact: true }).fill('device-mac')
+  const host = page.getByRole('textbox', { name: 'SSH host or alias', exact: true })
+  const saveHost = page.getByRole('button', { name: 'Save host', exact: true })
+  await host.fill('device-mac')
   assert.equal(await page.getByText('Connection ready', { exact: true }).count(), 0)
-  await page.getByRole('button', { name: 'Save host', exact: true }).click()
+  await page.evaluate(() => window.setConnected(false))
+  assert.equal(await host.inputValue(), 'device-mac')
+  assert.equal(await saveHost.isDisabled(), true)
+  await host.fill('device-mac-offline')
+  await page.evaluate(() => {
+    window.saved.revision = 4
+    window.setConnected(true)
+  })
+  await page.waitForFunction(
+    () =>
+      window.calls.filter((call) => call.method === 'GET' && call.path === '/api/device-hosts')
+        .length === 2,
+  )
+  assert.equal(await host.inputValue(), 'device-mac-offline')
+  await saveHost.click()
   await page.getByRole('button', { name: 'Edit', exact: true }).waitFor()
   const save = await page.evaluate(() =>
     window.calls.find(
@@ -107,6 +125,7 @@ try {
   )
   assert.equal(save.input.hosts[0].token, 'paired-secret-never-render')
   assert.equal(save.input.hosts[0].agentAccess, false)
+  assert.equal(save.input.revision, 4)
   assert.equal(save.input.hosts[0].identityFile, '~/.ssh/id_ed25519')
   assert.equal(
     (await page.locator('body').innerText()).includes('paired-secret-never-render'),
@@ -118,7 +137,7 @@ try {
   await page.getByRole('button', { name: 'Edit', exact: true }).click()
   assert.equal(
     await page.getByRole('textbox', { name: 'SSH host or alias', exact: true }).inputValue(),
-    'device-mac',
+    'device-mac-offline',
   )
   // An SSH-reachable loopback address does not match any saved profile on the client.
   await page

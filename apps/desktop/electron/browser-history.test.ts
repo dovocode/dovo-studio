@@ -15,8 +15,13 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { unlinkSync } from 'node:fs'
 const f = vi.hoisted(() => ({ root: '' }))
 vi.mock('electron', () => ({ app: { getPath: () => f.root } }))
+vi.mock('node:fs', async (importOriginal) => {
+  const fs = await importOriginal<typeof import('node:fs')>()
+  return { ...fs, unlinkSync: vi.fn<typeof fs.unlinkSync>(fs.unlinkSync) }
+})
 import { clearBrowserHistories, createBrowserHistory } from './browser-history'
 beforeEach(async () => {
   f.root = await mkdtemp(join(tmpdir(), 'browser-history-'))
@@ -162,6 +167,21 @@ it('keeps removals when the process stops before the journal is deleted', async 
       .toSorted(),
   ).toEqual(['https://example.com/kept', 'https://example.com/later'])
   expect(restarted.visits('https://example.com/kept')).toHaveLength(1)
+})
+
+it('keeps a published removal through a journal cleanup failure and a later edit', () => {
+  const history = createBrowserHistory('work', vi.fn<(...args: unknown[]) => void>())
+  history.add('https://example.com/removed')
+  vi.mocked(unlinkSync).mockImplementationOnce(() => {
+    throw new Error('Journal is busy')
+  })
+  expect(() => history.remove('https://example.com/removed')).toThrow('Journal is busy')
+  expect(history.search({ text: '', startTime: 0 })).toEqual([])
+  history.add('https://example.com/new')
+  const reopened = createBrowserHistory('work', vi.fn<(...args: unknown[]) => void>())
+  expect(reopened.search({ text: '', startTime: 0 }).map(({ url }) => url)).toEqual([
+    'https://example.com/new',
+  ])
 })
 
 it('compacts a long journal, keeps private profiles in memory and clears every journal', async () => {

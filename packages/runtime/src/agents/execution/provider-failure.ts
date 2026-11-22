@@ -8,9 +8,10 @@ export type ProviderFailureKind =
   | 'unavailable'
   | 'unknown'
 export function providerFailureKind(error: unknown): ProviderFailureKind {
+  if (error instanceof ProviderFailure) return error.kind
   const message = errorMessage(error)
   if (
-    /\b(?:401|invalid_api_key|authentication_required|authRequired)\b|(?:access|refresh) token (?:expired|revoked)|authentication (?:failed|required)/i.test(
+    /\b(?:401|invalid_api_key|authentication_required|authRequired|auth_not_found|UNAUTHENTICATED)\b|(?:access|refresh) token (?:expired|revoked)|authentication (?:failed|required)/i.test(
       message,
     )
   )

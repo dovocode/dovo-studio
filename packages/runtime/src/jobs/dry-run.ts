@@ -1,6 +1,5 @@
 import {
   automationDryRunDefaults,
-  automationIssues,
   botPaused,
   githubEventChoices,
   projectDisplayName,
@@ -14,6 +13,7 @@ import {
 } from '@dovo/protocol'
 import { ROUTINE_SOURCE_TEXT_LIMIT } from './source-monitor.js'
 import { taskStepObjective, triggerContext } from './step-input.js'
+import { runtimeAutomationIssues } from './validation.js'
 
 type DryRunStepKind = AutomationData['kind'] | 'source'
 type DryRunStep = AutomationDryRun['steps'][number]
@@ -65,7 +65,7 @@ export function dryRunAutomation(
     trigger: trigger?.data.trigger ?? 'manual',
     generated: !request.input,
     input,
-    issues: automationIssues(flow, context.workspace),
+    issues: runtimeAutomationIssues(flow, context.workspace),
     warnings: [],
     steps: [],
     unexercised: [],
@@ -248,6 +248,8 @@ export function dryRunAutomation(
       name: 'Instructions',
       value: taskStepObjective(data.objective, { triggerPayload, ...source }),
     })
+    if (data.resultSchema !== undefined)
+      inputs.push({ name: 'Result schema', value: data.resultSchema })
     if (data.inputFrom?.length)
       inputs.push({
         name: 'Preceding step inputs',

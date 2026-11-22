@@ -36,7 +36,7 @@ const reply=(id,result)=>send({id,result});const update=update=>send({method:'se
 const configOptions=[{configId:'model',type:'select',name:'Model',...(mode==='categoryless-model'?{}:{category:'model'}),currentValue:'a',options:[{value:'a',name:'A'},{value:'b',name:'B'}]},{configId:'mode',type:'select',name:'Mode',category:'mode',currentValue:'code',options:[{value:'code',name:'Code'},{value:'plan',name:'Plan'}]},{configId:'toggle',type:'boolean',name:'Toggle',currentValue:false}];
 if(mode==='antigravity')Object.assign(configOptions[1],{currentValue:'yolo',options:['yolo','default','auto','plan'].map(value=>({value,name:value}))});
 if(mode==='kiro')configOptions.push({configId:'autopilot',type:'select',name:'Autopilot',currentValue:'on',options:['on','off'].map(value=>({value,name:value}))});
-if(mode==='categoryless-model')configOptions.push({configId:'thought',type:'select',name:'Effort',category:'thought_level',currentValue:'low',options:[{value:'low',name:'Low'},{value:'high',name:'High'}]});
+if(mode==='categoryless-model')configOptions.push({configId:'thought',type:'select',name:'Effort',category:'thinking',currentValue:'low',options:[{value:'low',name:'Low'},{value:'high',name:'High'}]});
 let pending;
 const background=[{type:'terminal',terminalId:'background'}];
 const cancelBackground=mode.startsWith('cancel-background');
@@ -63,7 +63,10 @@ if(mode==='busy-output') {
    update({sessionUpdate:'state_update',state:'idle',stopReason:'end_turn',background});
  },40);
 }
-reply(m.id,{configOptions});
+if(mode==='resume-config-update'){
+ update({sessionUpdate:'config_option_update',configOptions});
+ reply(m.id,{});
+}else reply(m.id,{configOptions});
 if(mode==='busy-input') {
  send({id:'resumed-permission',method:'session/request_permission',params:{sessionId:'s',title:'Continue build',subject:{type:'command',command:'pnpm build',cwd:process.cwd()},options:[{optionId:'yes',name:'Allow',kind:'allow_once'},{optionId:'no',name:'Reject',kind:'reject_once'}]}})
 }
@@ -389,6 +392,37 @@ it('does not prompt when ACP v2 acknowledges a model change but keeps the old mo
   f.run.agent.model = 'b'
   await expect(f.adapter.run(f.run)).rejects.toThrow('ACP did not apply Model: b')
   expect((await f.messages()).map(({ method }) => method)).not.toContain('session/prompt')
+})
+
+it('discovers alternatives to unavailable ACP v2 settings', async () => {
+  const f = await fixture()
+  const catalog = await acpModels(
+    {
+      ...f.run.agent,
+      model: 'removed',
+      acpMode: 'removed',
+      acpConfig: { missing: 'removed', toggle: 'removed' },
+    },
+    f.launch,
+  )
+  expect(catalog.models.map(({ id }) => id)).toEqual(['a', 'b'])
+  expect(catalog.acp?.modes.map(({ id }) => id)).toEqual(['code', 'plan'])
+  expect(
+    (await f.messages()).filter(({ method }) => method === 'session/set_config_option'),
+  ).toEqual([])
+})
+
+it('applies the selected model using the ACP v2 resume notification', async () => {
+  const f = await fixture('resume-config-update')
+  await f.adapter.run({ ...f.run, sessionId: 's', agent: { ...f.run.agent, model: 'b' } })
+  expect(
+    (await f.messages()).filter(({ method }) => method === 'session/set_config_option'),
+  ).toEqual([
+    expect.objectContaining({
+      params: { sessionId: 's', configId: 'model', type: 'id', value: 'b' },
+    }),
+  ])
+  expect(f.output.join('')).toBe('Final answer')
 })
 
 it.each(['v1', 'v1-error'])(

@@ -134,8 +134,42 @@ try {
     )
     await page.close()
   }
+  const context = await browser.newContext()
+  await context.route('http://studio.test/**', (route) =>
+    route.fulfill({ contentType: 'text/html', body: '<div id="app"></div>' }),
+  )
+  const tabs = await Promise.all([context.newPage(), context.newPage()])
+  for (const tab of tabs) {
+    await tab.goto('http://studio.test/')
+    await tab.addScriptTag({ content: built.outputFiles[0].text })
+  }
+  const connect = (tab) => tab.getByLabel('Dovo Connect URL', { exact: true })
+  const artifacts = (tab) => tab.getByLabel('Dovo Artifacts URL', { exact: true })
+  const save = (tab) => tab.getByRole('button', { name: 'Save URLs', exact: true }).click()
+  await connect(tabs[0]).fill('https://connect.example.test')
+  await artifacts(tabs[1]).fill('https://artifacts.example.test')
+  await save(tabs[1])
+  await tabs[0].waitForFunction(
+    () => window.readPrefs().artifactsOrigin === 'https://artifacts.example.test',
+  )
+  await save(tabs[0])
+  await tabs[1].waitForFunction(
+    () => window.readPrefs().connectOrigin === 'https://connect.example.test',
+  )
+  assert.equal(await artifacts(tabs[1]).inputValue(), 'https://artifacts.example.test')
+  await connect(tabs[0]).fill('https://draft.example.test')
+  await connect(tabs[1]).fill('https://other.example.test')
+  await save(tabs[1])
+  await save(tabs[0])
+  await tabs[0].getByRole('alert').filter({ hasText: 'changed in another window' }).waitFor()
+  assert.equal(await connect(tabs[0]).inputValue(), 'https://draft.example.test')
+  assert.equal(
+    await tabs[0].evaluate(() => window.readPrefs().connectOrigin),
+    'https://other.example.test',
+  )
+  await context.close()
   console.log(
-    'Web and desktop preferences: failed reads and saves preserve settings and edits; retry saves URLs without false success.',
+    'Web and desktop preferences: failed saves, retry, cross-tab field merging and same-field conflicts passed.',
   )
 } finally {
   await browser.close()

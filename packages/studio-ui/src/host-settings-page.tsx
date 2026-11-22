@@ -53,10 +53,10 @@ export function HostSettingsPage({
     }
   }, [initialRuntimeId, setChosen, setSettingsTarget])
   const selectedId = initialRuntimeId ? chosen : settingsTarget?.target.environmentId || chosen
-  const source =
-    sources.find((entry) => entry.profile.id === selectedId) ??
-    sources.find((entry) => entry.profile.id === activeRuntimeId) ??
-    sources[0]
+  const source = selectedId
+    ? sources.find((entry) => entry.profile.id === selectedId)
+    : (sources.find((entry) => entry.profile.id === activeRuntimeId) ?? sources[0])
+  const missingSelection = !!selectedId && !source
   useEffect(() => {
     generation.current++
     setRefreshing(false)
@@ -85,24 +85,28 @@ export function HostSettingsPage({
       description={description}
       beforeToolbar={localSettings}
       toolbar={
-        source && (
+        (source || missingSelection) && (
           <div className="studio-settings-target space-y-2">
             <h2 className="text-sm font-semibold">Computer settings</h2>
             <div className="studio-settings-target-inner flex max-w-3xl flex-wrap items-center gap-3">
               <SettingsStorageInfo>
-                <span title={`Computer: ${source.name}`}>Computer: {source.name}</span>
-                {source.connected && saveInfo && (
+                {source ? (
+                  <span title={`Computer: ${source.name}`}>Computer: {source.name}</span>
+                ) : (
+                  <span role="status">Selected computer unavailable</span>
+                )}
+                {source?.connected && saveInfo && (
                   <>
                     {' '}
                     · <span>{saveInfo}</span>
                   </>
                 )}
               </SettingsStorageInfo>
-              {sources.length > 1 && (
+              {(sources.length > 1 || (missingSelection && sources.length > 0)) && (
                 <ChoicePicker
                   aria-label="Computer"
                   className="h-9 w-48 min-w-0 max-w-full rounded-md px-2 text-xs"
-                  value={source.profile.id}
+                  value={source?.profile.id ?? selectedId}
                   disabled={refreshing}
                   onValueChange={async (value) => {
                     const current = ++generation.current
@@ -118,6 +122,7 @@ export function HostSettingsPage({
                     if (accepted && current === generation.current) setChosen(value)
                   }}
                 >
+                  {missingSelection && <option value={selectedId}>Unavailable computer</option>}
                   {sources.map((entry) => (
                     <option key={entry.profile.id} value={entry.profile.id}>
                       {entry.name}
@@ -126,7 +131,7 @@ export function HostSettingsPage({
                   ))}
                 </ChoicePicker>
               )}
-              {!source.connected && (
+              {source && !source.connected && (
                 <span role="status" className="text-[0.8125rem] leading-normal text-foreground/80">
                   Offline · edits kept here
                 </span>
@@ -138,7 +143,9 @@ export function HostSettingsPage({
     >
       {!source ? (
         <p className="text-[0.8125rem] leading-normal text-foreground/80">
-          Connect a computer in Devices & runtime to change these settings.
+          {missingSelection && sources.length
+            ? 'Choose a saved computer to change these settings.'
+            : 'Connect a computer in Devices & runtime to change these settings.'}
         </p>
       ) : (
         <WorkspaceScope key={source.scope} profile={source.profile}>

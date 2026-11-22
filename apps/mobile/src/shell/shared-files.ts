@@ -11,7 +11,7 @@ import {
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import type { SharedHandoff, SharedFile } from './shared-inbox'
-import { SHARED_DRAFT_BUDGET } from './shared-inbox'
+import { InvalidSharedHandoff, SHARED_DRAFT_BUDGET } from './shared-inbox'
 
 const bridge = requireOptionalNativeModule<{
   pending: () => Promise<string>
@@ -81,7 +81,7 @@ function bytes(directory: Directory): number {
 /** Copies into Documents, never caches or provider URIs, before the native manifest can be cleared. */
 export async function ownSharedFiles(handoff: SharedHandoff): Promise<SharedFile[]> {
   const files = handoff.payloads.filter((payload) => !['text', 'url'].includes(payload.shareType))
-  if (files.length > 5) throw new Error('Attach up to 5 files per message.')
+  if (files.length > 5) throw new InvalidSharedHandoff('Attach up to 5 files per message.')
   const directory = new Directory(root(), handoff.id)
   if (directory.exists) directory.delete() // An interrupted copy has no durable draft yet.
   directory.create({ intermediates: true })
@@ -90,9 +90,9 @@ export async function ownSharedFiles(handoff: SharedHandoff): Promise<SharedFile
   try {
     for (const [index, payload] of files.entries()) {
       if (!payload.value.startsWith('file://'))
-        throw new Error('Shared file is not stored locally.')
+        throw new InvalidSharedHandoff('Shared file is not stored locally.')
       const source = new File(payload.value)
-      if (!source.exists) throw new Error('The shared file is no longer available.')
+      if (!source.exists) throw new InvalidSharedHandoff('The shared file is no longer available.')
       remaining -= source.size
       if (remaining < 0)
         throw new Error('Shared drafts can use up to 50 MB. Open or discard a saved share first.')

@@ -17,7 +17,7 @@ import { shutdownSignal } from './shutdown-signal.js'
 import { acquireProcessLock } from './process-lock.js'
 import { runtimeOwnerToken } from './owner-token.js'
 import { assertLaunchAllowed } from './server-update-recovery.js'
-import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
+import { refreshableLoginPath } from './login-path.js'
 
 if (!process.env.DOVO_RELEASE_VERSION) {
   try {
@@ -80,8 +80,8 @@ process.on('uncaughtException', (error) => {
 const profile = startupProfile('server')
 profile?.('modules loaded')
 const shutdown = shutdownSignal(process)
-if (process.env.DOVO_LOGIN_PATH !== 'off')
-  process.env.PATH = mergePath(process.env.PATH, loginShellPath(), knownToolDirectories())
+const refreshProviderPath =
+  process.env.DOVO_LOGIN_PATH === 'off' ? undefined : refreshableLoginPath()
 profile?.('login path resolved')
 
 const program = Effect.scoped(
@@ -171,6 +171,7 @@ const program = Effect.scoped(
         runtimeLayer({
           databasePath,
           ownerToken,
+          refreshProviderPath,
           host: desktopDualListener ? '127.0.0.1' : bindHost,
           port: desktopDualListener ? 0 : externalPort,
           ...(desktopDualListener

@@ -171,22 +171,23 @@ pnpm --filter @dovo/mobile android
 Both platforms use native device push tokens, not Expo's hosted push relay. In the mobile app, open
 **Settings → App & updates → Push notifications** and enable Task notifications. The app requests
 system permission and registers with its connected computers. It sends completion, failure, and
-input-request notifications with a task title and short preview. Tapping a notification opens the
-originating thread and computer, including from cold launch. Question notifications include an
-**Answer question** action that opens the full form for that exact request, including all choices
-and fields, alongside its thread, computer, and project. An answered request is shown as no longer
-pending instead of silently opening another question. A question from a delegated child thread on
-another computer opens on the computer that owns it when the phone is paired with that computer;
-otherwise it opens the directly paired child thread. Permission is opt-in; input requests show
-foreground banners and sound, while other task events remain quiet in the foreground. Turning the
-setting off unregisters it from reachable runtimes; disconnected runtimes can only unregister when
-they reconnect. Until then, Dovo shows no banner, sound or Notification Center entry for their
-pushes while it is open, and the same applies to a computer whose notifications are off. The
-operating system still shows such pushes while Dovo is in the background. In-app input notices
-follow their own setting. Changes during registration are applied after the in-flight request
-finishes. Revoking system notification permission unregisters reachable runtimes on the next
-foreground sync; restoring permission registers them again if Task notifications remain enabled.
-Revoking the device on the runtime also stops delivery.
+input-request notifications with a task title and short preview. Shortening a title, project name,
+or preview keeps each Unicode code point intact. Tapping a notification opens the originating thread
+and computer, including from cold launch. Question notifications include an **Answer question**
+action that opens the full form for that exact request, including all choices and fields, alongside
+its thread, computer, and project. An answered request is shown as no longer pending instead of
+silently opening another question. A question from a delegated child thread on another computer
+opens on the computer that owns it when the phone is paired with that computer; otherwise it opens
+the directly paired child thread. Permission is opt-in; input requests show foreground banners and
+sound, while other task events remain quiet in the foreground. Turning the setting off unregisters
+it from reachable runtimes; disconnected runtimes can only unregister when they reconnect. Until
+then, Dovo shows no banner, sound or Notification Center entry for their pushes while it is open,
+and the same applies to a computer whose notifications are off. The operating system still shows
+such pushes while Dovo is in the background. In-app input notices follow their own setting. Changes
+during registration are applied after the in-flight request finishes. Revoking system notification
+permission unregisters reachable runtimes on the next foreground sync; restoring permission
+registers them again if Task notifications remain enabled. Revoking the device on the runtime also
+stops delivery.
 
 The runtime sends a delegated child thread's request as a notification for the parent thread. While
 Dovo is open and that request's form shows on screen, Dovo shows no banner, sound or in-app notice

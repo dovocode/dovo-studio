@@ -33,6 +33,7 @@ type Warm = {
     prompting: boolean
     resuming: boolean
     compact: boolean
+    configOptions?: Session['configOptions']
     foreground?: string
     idle?: () => void
     cancelled?: () => void
@@ -192,6 +193,8 @@ export function createAcpV2Adapter() {
                 state.compact = params.update.availableCommands.some(
                   (command) => command.name === 'compact',
                 )
+              if (SessionUpdate.isConfigOptionUpdate(params.update))
+                state.configOptions = params.update.configOptions
               try {
                 sessionUpdates.accept(params, state.prompting, synchronized)
               } catch (error) {
@@ -340,7 +343,7 @@ export function createAcpV2Adapter() {
           await configureAcpV2(
             connection,
             id,
-            session.configOptions,
+            state.configOptions ?? session.configOptions,
             run.agent,
             run.tools === 'none',
             permissionProvider,

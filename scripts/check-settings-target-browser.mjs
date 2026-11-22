@@ -11,7 +11,7 @@ const cssServer = await createServer({
   configFile: false,
   root,
   plugins: [tailwindcss()],
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   logLevel: 'error',
 })
 let css
@@ -27,7 +27,7 @@ try {
       ? root + '/apps/mobile/src/runtime/preferences'
       : root + '/packages/studio-core/src'
     const header = mobile ? 'ScopedSettings' : 'SettingsScopePage'
-    const core = `export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';import {createContext,useContext} from 'react';export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request:(path,input)=>window.request(profile.id,path,input)}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
+    const core = `export const useStudioHost=()=>({navigate:target=>window.navigations.push(target)});export {ConfirmationContext,useConfirmation} from '${root}/packages/studio-core/src/confirmation.tsx';import {createContext,useContext,useCallback} from 'react';export const useRuntimeSources=()=>window.sources;export {SettingsTargetProvider,useSettingsTarget,useOptionalSettingsTarget,useSettingsDraft,useConfirmSettingsNavigation} from '${root}/packages/studio-core/src/settings-target.tsx';const Scope=createContext(null);export const useWorkspace=()=>useContext(Scope)||window.runtime;export const WorkspaceScope=({profile,children})=>{const entry=window.sources.find(entry=>entry.profile.id===profile.id);const request=useCallback((path,input)=>window.request(profile.id,path,input),[profile.id]);return <Scope.Provider value={{...window.runtime,activeRuntimeId:profile.id,snapshot:entry.snapshot,connected:entry.connected,request}}><div data-owner={profile.id}>{children}</div></Scope.Provider>};`
     const nativeRuntime = `import {createContext,useContext,useCallback} from 'react';const Scope=createContext(null);export const useRuntime=()=>useContext(Scope)||window.runtime;export const RuntimeScope=({runtimeId,children})=>{const call=useCallback((path,input)=>window.request(runtimeId,path,input),[runtimeId]);const entry=window.sources.find(entry=>entry.profile.id===runtimeId);return <Scope.Provider value={{...window.runtime,activeId:runtimeId,snapshot:entry.snapshot,connected:entry.connected,call}}><div data-owner={runtimeId}>{children}</div></Scope.Provider>};`
     const mocks = {
       '@dovo/studio-core': core,
@@ -44,7 +44,7 @@ try {
     }
     const built = await build({
       stdin: {
-        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{scopedAgentsSupported:false,taskBehaviorSupported:false,defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{scopedAgentsSupported:false,taskBehaviorSupported:true,defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.navigations=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><button onClick={()=>setPage('agents')}>Agents page</button><button onClick={()=>setPage('lifecycle')}>Lifecycle page</button><${header} ${mobile ? '' : 'title={page} description="Scoped settings" offlineRecovery={page==="defaults"} supportsEditing={page==="agents"?(snapshot=>snapshot?.scopedAgentsSupported===true):page==="lifecycle"?(snapshot=>snapshot?.taskBehaviorSupported===true):undefined} saveInfo={page==="agents"?"Use Save changes to apply profile edits.":page==="defaults"||page==="lifecycle"?"Use Save changes to apply edits.":"Tool changes use Save."}'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}></SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
+        contents: `import {StudioConfirmationProvider} from '${root}/packages/studio-ui/src/confirmation-provider.tsx';import {useState} from 'react';import {createRoot} from 'react-dom/client';import {SettingsTargetProvider${mobile ? ',ScopedSettings' : ''}} from '${base}/settings-target.tsx';${mobile ? '' : `import {SettingsScopePage} from '${root}/packages/studio-ui/src/settings-scope-page.tsx';import {HostSettingsPage} from '${root}/packages/studio-ui/src/host-settings-page.tsx';import {useWorkspace} from '@dovo/studio-core';`}import {TaskDefaultSettings} from '${mobile ? base : root + '/packages/studio-ui/src'}/task-default-settings.tsx';const repo={id:'mac-repo',name:'Shared project',path:'/mac/repo',branch:'main',gitIdentity:'github.com/team/repo'};window.sources=[{profile:{id:'mac',name:'Mac',connection:{address:'http://mac.local',token:'test-token'}},name:'Mac',scope:'mac',connected:true,snapshot:{scopedAgentsSupported:false,taskBehaviorSupported:false,defaults:{},workspace:{repositories:[repo,{id:'local-folder',name:'Local folder',path:'/mac/folder',kind:'folder'}]}}},{profile:{id:'linux',name:'Linux',connection:{address:'http://linux.local',token:'test-token'}},name:'Linux',scope:'linux',connected:true,snapshot:{scopedAgentsSupported:true,taskBehaviorSupported:true,defaults:{scopedSettings:{environment:{taskDefaults:{setupCommand:'linux setup'}},shared:[]}},workspace:{repositories:[{...repo,id:'linux-repo',path:'/linux/repo'}]}}},{profile:{id:'empty',name:'Empty',connection:{address:'http://empty.local',token:'test-token'}},name:'Empty',scope:'empty',connected:true,snapshot:{scopedAgentsSupported:false,taskBehaviorSupported:true,defaults:{},workspace:{repositories:[]}}}];window.writes=[];window.navigations=[];window.request=async(host,path,input)=>{if(path.endsWith('/read'))return {value:{taskDefaults:{setupCommand:'scope setup'}},inherited:{taskDefaults:{}},projectKey:'project:github.com/team/repo'};if(path.endsWith('/save')){window.writes.push({host,...input});return {value:input.after,inherited:{}}}throw Error(path)};window.runtime={runtimes:window.sources,overviews:window.sources,activeId:'mac',activeRuntimeId:'mac',snapshot:window.sources[0].snapshot,connected:true,readRuntime:(profile,path,input)=>window.request(profile.id,path,input)};const savedSources=window.sources;function OwnerProbe(){const w=useWorkspace();return <button onClick={()=>w.request('/api/settings-fixture/save',{})}>Apply fixture setting</button>}function App(){const [revision,setRevision]=useState(0);window.configureSources=(count,offline=false)=>{window.sources=savedSources.slice(0,count).map((entry,index)=>({...entry,connected:!(offline&&index===count-1)}));window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};window.setMacConnected=connected=>{window.sources=window.sources.map(entry=>entry.profile.id==='mac'?{...entry,connected}:entry);window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};window.removeMac=()=>{window.sources=window.sources.filter(entry=>entry.profile.id==='linux');window.runtime={...window.runtime,runtimes:window.sources,overviews:window.sources};setRevision(value=>value+1)};const [page,setPage]=useState('defaults');window.openPinnedSettings=()=>setPage('pinned');return <SettingsTargetProvider><button onClick={()=>setPage('defaults')}>Defaults page</button><button onClick={()=>setPage('tools')}>Tools page</button><button onClick={()=>setPage('agents')}>Agents page</button><button onClick={()=>setPage('lifecycle')}>Lifecycle page</button>{page==='pinned'?<HostSettingsPage initialRuntimeId='mac' title='Device settings' description='Pinned computer'><OwnerProbe/></HostSettingsPage>:<${header} ${mobile ? '' : 'title={page} description="Scoped settings" offlineRecovery={page==="defaults"} supportsEditing={page==="agents"?(snapshot=>snapshot?.scopedAgentsSupported===true):page==="lifecycle"?(snapshot=>snapshot?.taskBehaviorSupported===true):undefined} saveInfo={page==="agents"?"Use Save changes to apply profile edits.":page==="defaults"||page==="lifecycle"?"Use Save changes to apply edits.":"Tool changes use Save."}'}>{selection=>page==='defaults'?<TaskDefaultSettings inline scope={selection.scope} repository={selection.repository}/>:<p data-testid="target">{selection.scope}:{selection.repository?.id||''}</p>}</${header}>}</SettingsTargetProvider>}createRoot(document.getElementById('app')).render(<StudioConfirmationProvider><App/></StudioConfirmationProvider>);`,
         loader: 'tsx',
         resolveDir: root,
       },
@@ -429,6 +429,48 @@ try {
       assert.equal(await page.getByText('Tool changes use Save.', { exact: true }).count(), 0)
       await select(environments, '')
     }
+    const recovery = await browser.newPage()
+    recovery.on('pageerror', (error) => errors.push(error.message))
+    await recovery.setContent('<div id="app"></div>')
+    await recovery.addStyleTag({ content: css })
+    await recovery.addScriptTag({ content: built.outputFiles[0].text })
+    await recovery.locator('[data-owner=mac]').waitFor()
+    if (mobile)
+      await recovery
+        .getByRole('button', { name: 'Show Advanced workspace setup', exact: true })
+        .click()
+    else await recovery.locator('summary[data-setting-label="Advanced workspace setup"]').click()
+    const setupCommand = recovery.getByLabel('Setup command', { exact: true })
+    await setupCommand.fill('Unsaved setup on the Mac')
+    await recovery.evaluate(() => window.setMacConnected(false))
+    const save = recovery.getByRole('button', { name: 'Save changes', exact: true })
+    await save.waitFor()
+    assert.equal(await save.isDisabled(), true)
+    assert.equal(await recovery.locator('[data-owner=linux]').count(), 0)
+    assert.equal(await setupCommand.inputValue(), 'Unsaved setup on the Mac')
+    await recovery.evaluate(() => window.setMacConnected(true))
+    await save.click()
+    await recovery.waitForFunction(() =>
+      window.writes.some(
+        (write) =>
+          write.host === 'mac' &&
+          write.after.taskDefaults?.setupCommand === 'Unsaved setup on the Mac',
+      ),
+    )
+    if (!mobile) {
+      await recovery.evaluate(() => window.openPinnedSettings())
+      await recovery.locator('[data-owner=mac]').waitFor()
+      await recovery.evaluate(() => window.removeMac())
+      await recovery.getByText('Selected computer unavailable', { exact: true }).waitFor()
+      assert.equal(await recovery.getByRole('button', { name: 'Apply fixture setting' }).count(), 0)
+      const otherComputer = recovery.getByRole('button', { name: 'Computer', exact: true })
+      await otherComputer.click()
+      await recovery.getByRole('option', { name: 'Linux', exact: true }).click()
+      await recovery.locator('[data-owner=linux]').waitFor()
+      await recovery.getByRole('button', { name: 'Apply fixture setting' }).click()
+      await recovery.waitForFunction(() => window.writes.at(-1)?.host === 'linux')
+    }
+    await recovery.close()
     await page.evaluate(() => window.configureSources(0))
     await environments.waitFor({ state: 'detached' })
     await page

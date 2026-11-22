@@ -1,12 +1,13 @@
 /// <reference types="node" />
 import * as warmProcesses from '../../execution/warm-processes.js'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import type { AgentRun } from '../../execution/types.js'
 import { acpAdapter, createAcpAdapter } from './acp.js'
 import { decode, resourceSettingsSchema } from '@dovo/protocol'
+import Database from 'better-sqlite3'
 
 const dirs: string[] = []
 afterEach(async () => {
@@ -46,6 +47,7 @@ const configOptions = [
 const modes = { currentModeId: 'code', availableModes: [{ id: 'code', name: 'Code' }, { id: 'plan', name: 'Plan' }] };
 const configMode = !!process.env.TEST_ACP_CONFIG_MODE;
 if (configMode) configOptions.push({ id: 'agent_mode', name: 'Mode', type: 'select', category: 'mode', currentValue: 'code', options: modes.availableModes.map(({id, name}) => ({value:id, name})) });
+if (process.env.TEST_ACP_THINKING) configOptions.push({ id: 'effort', name: 'Effort', type: 'select', category: 'thought_level', currentValue: 'low', options: [{ value: 'low', name: 'Low' }, { value: 'high', name: 'High' }] });
 if (process.env.TEST_ACP_KIRO) configOptions.push({ id: 'autopilot', name: 'Autopilot', type: 'select', currentValue: 'on', options: ['on', 'off'].map(value => ({ value, name: value })) });
 const session = { configOptions, ...(!configMode && { modes }) };
 let pendingPrompt
@@ -75,9 +77,29 @@ createInterface({ input: process.stdin }).on('line', (line) => {
   if (input.method === 'session/set_config_option') {
     const option = configOptions.find(option => option.id === input.params.configId)
     if (option && !(option.id === 'model' && process.env.TEST_IGNORE_ACP_MODEL) && !(option.id === 'agent_mode' && process.env.TEST_IGNORE_ACP_MODE) && !(option.id === 'toggle' && process.env.TEST_IGNORE_ACP_TOGGLE)) option.currentValue = input.params.value
+    if (option?.id === 'model' && process.env.TEST_ACP_THINKING) configOptions.find(({ id }) => id === 'effort').currentValue = 'low';
+    if (option?.id === 'model' && process.env.TEST_MODEL_CATALOG) {
+      option.options.push({ value: 'c', name: 'C' })
+      configOptions.push({ id: 'effort', name: 'Effort', type: 'select', category: 'thought_level', currentValue: 'high', options: [{ value: 'high', name: 'High' }] })
+    }
     respond(input.id, { configOptions })
   }
-  if (input.method === 'session/prompt') { if (${nativeChildren === true}) native('running'); update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
+  if (input.method === 'session/prompt' && process.env.TEST_ACP_NATIVE_OUTCOME) {
+    const fixture = process.env.TEST_ACP_NATIVE_OUTCOME;
+    if (fixture !== 'quoted') {
+      const { DatabaseSync } = require('node:sqlite');
+      const db = new DatabaseSync(require('node:path').join(process.env.GEMINI_HOME, 'antigravity-acp', 'conversations', 'session.db'));
+      db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(2, 17, Buffer.from('Error 503: auth_not_found'));
+      db.close();
+    }
+    if (fixture !== 'receipt') process.stdout.write(JSON.stringify({jsonrpc:'2.0',method:'session/update',params:{sessionId:'session',update:{sessionUpdate:'usage_update',size:8192,used:10}}})+'\\n');
+    update('503 auth_');
+    update('not_found');
+    if (fixture === 'missing') pendingPrompt = input.id;
+    else respond(input.id, {stopReason:'end_turn'});
+    return;
+  }
+  if (input.method === 'session/prompt') { if (${nativeChildren === true}) native('running'); if (!process.env.TEST_ACP_SILENT_PROMPT) update('new'); if (${holdPrompt} || permissionKinds.length) pendingPrompt = input.id; else respond(input.id, { stopReason: 'end_turn' }); if (permissionKinds.length) requestPermission() }
   if (input.id === 'permission-' + permissionIndex && input.method === undefined) { permissionIndex++; if (permissionIndex < permissionKinds.length) requestPermission(); else respond(pendingPrompt, { stopReason: 'end_turn' }) }
   if (input.method === 'session/prompt' && ${!!nativeChildren}) setTimeout(() => process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'native-approval',method:'session/request_permission',params:{sessionId:'native-child',toolCall:{toolCallId:'native-tool',kind:'execute',title:'Child command'},options:[{optionId:'allow',name:'Allow',kind:'allow_once'},{optionId:'reject',name:'Reject',kind:'reject_once'}]}})+'\\n'),30)
   if (input.method === 'session/cancel' && input.params.sessionId === 'native-child') native('idle')
@@ -191,6 +213,38 @@ it('fails before prompting when the ACP agent leaves the requested model unchang
   await expect(acpAdapter.run(input.run)).rejects.toThrow('ACP did not apply Model: b')
   const calls = JSON.parse(await readFile(record, 'utf8'))
   expect(calls.map((call: { method: string }) => call.method)).not.toContain('session/prompt')
+})
+
+it('lists the ACP v1 models after a removed choice fails validation', async () => {
+  const { cwd, launch } = await fixture()
+  const input = run(cwd, launch)
+  const agent = {
+    ...input.run.agent,
+    model: 'removed',
+    acpMode: 'removed',
+    acpConfig: { removedOption: 'old', toggle: 'removed' },
+  }
+  const catalog = await acpAdapter.models!(agent, launch)
+  expect(catalog.models.map(({ id }) => id)).toEqual(['a', 'b'])
+  await expect(
+    acpAdapter.run({
+      ...input.run,
+      agent: { ...agent, acpMode: undefined, acpConfig: undefined },
+    }),
+  ).rejects.toThrow('ACP configuration model does not offer removed')
+})
+
+it('returns the updated ACP v1 model and reasoning options after selection', async () => {
+  const { cwd, launch } = await fixture()
+  const configured = { ...launch, env: { ...launch.env, TEST_MODEL_CATALOG: '1' } }
+  const input = run(cwd, configured)
+  const catalog = await acpAdapter.models!(input.run.agent, configured)
+  expect(catalog.models.map(({ id }) => id)).toEqual(['a', 'b', 'c'])
+  expect(catalog.models.find(({ id }) => id === 'b')).toMatchObject({
+    isDefault: true,
+    defaultReasoning: 'high',
+  })
+  expect(catalog.reasoning).toEqual([{ id: 'high', name: 'High' }])
 })
 
 it('discovers and applies ACP v1 mode config options without legacy session modes', async () => {
@@ -319,6 +373,114 @@ it('keeps the ACP connection and session for a follow-up turn', async () => {
   }
 })
 
+it('applies Antigravity model and reasoning changes in the same idle session', async () => {
+  const { cwd, record, launch } = await fixture(false, true)
+  const adapter = createAcpAdapter()
+  const pressure = vi.spyOn(warmProcesses, 'releaseIdleProvider').mockReturnValue(false)
+  const input = run(
+    cwd,
+    { ...launch, env: { ...launch.env, TEST_ACP_THINKING: '1', TEST_ACP_CONFIG_MODE: '1' } },
+    {
+      taskId: 'antigravity-selection',
+    },
+  )
+  const agent = { ...input.run.agent, acpInstallationId: 'antigravity-acp', reasoning: 'high' }
+  try {
+    await adapter.run({ ...input.run, agent })
+    const resume = { ...input.run, sessionId: 'session' }
+    await adapter.run({ ...resume, agent: { ...agent, model: 'a' } })
+    await adapter.run({ ...resume, agent: { ...agent, model: 'a', reasoning: 'low' } })
+    const messages: Array<{
+      method: string
+      params: { configId?: string; value?: string | boolean }
+    }> = JSON.parse(await readFile(record, 'utf8'))
+    expect(
+      messages.map(({ method }) => method).filter((method) => method.startsWith('session/')),
+    ).toEqual([
+      'session/new',
+      'session/set_config_option',
+      'session/set_config_option',
+      'session/set_config_option',
+      'session/set_config_option',
+      'session/prompt',
+      'session/set_config_option',
+      'session/set_config_option',
+      'session/prompt',
+      'session/set_config_option',
+      'session/prompt',
+    ])
+    expect(
+      messages
+        .filter(({ method }) => method === 'session/set_config_option')
+        .map(({ params }) => [params.configId, params.value]),
+    ).toEqual([
+      ['model', 'b'],
+      ['effort', 'high'],
+      ['toggle', true],
+      ['agent_mode', 'plan'],
+      ['model', 'a'],
+      ['effort', 'high'],
+      ['effort', 'low'],
+    ])
+    expect(input.output).toEqual(['new', 'new', 'new'])
+
+    await adapter.run({
+      ...resume,
+      agent: { ...agent, model: 'a', reasoning: 'low', configDirectory: 'another-profile' },
+    })
+    const restarted: Array<{ method: string }> = JSON.parse(await readFile(record, 'utf8'))
+    expect(restarted.map(({ method }) => method).slice(0, 2)).toEqual([
+      'initialize',
+      'session/resume',
+    ])
+  } finally {
+    await adapter.dispose?.()
+    pressure.mockRestore()
+  }
+})
+
+async function antigravityFailureFixture(mode: 'receipt' | 'missing' | 'quoted') {
+  const { cwd, launch } = await fixture(false, true)
+  const profile = join(cwd, 'profile')
+  const directory = join(profile, 'antigravity-acp', 'conversations')
+  await mkdir(directory, { recursive: true })
+  const db = new Database(join(directory, 'session.db'))
+  try {
+    db.exec('CREATE TABLE steps (idx INTEGER PRIMARY KEY, step_type INTEGER, step_payload BLOB)')
+    db.prepare('INSERT INTO steps VALUES (?, ?, ?)').run(1, 17, Buffer.from('503 auth_not_found'))
+  } finally {
+    db.close()
+  }
+  const input = run(
+    cwd,
+    {
+      ...launch,
+      env: { ...launch.env, GEMINI_HOME: profile, TEST_ACP_NATIVE_OUTCOME: mode },
+    },
+    { signal: AbortSignal.timeout(1500) },
+  )
+  input.run.agent.acpInstallationId = 'antigravity-acp'
+  return input
+}
+
+it.each(['receipt', 'missing'] as const)(
+  'reports a current Antigravity auth failure with %s ACP receipt',
+  async (mode) => {
+    const { run } = await antigravityFailureFixture(mode)
+    await expect(acpAdapter.run(run)).rejects.toMatchObject({
+      kind: 'authentication',
+      message: expect.stringContaining('503 auth_not_found'),
+    })
+    expect(run.signal.aborted).toBe(false)
+  },
+)
+
+it('does not use quota updates, quoted errors or an older Antigravity log row as a terminal failure', async () => {
+  const input = await antigravityFailureFixture('quoted')
+  await acpAdapter.run(input.run)
+  expect(input.output.join('')).toBe('503 auth_not_found')
+})
+
 it('selects the restrictive mode for a tools-none turn', async () => {
   const { cwd, launch } = await fixture()
   const input = run(cwd, launch, { tools: 'none' })
@@ -364,10 +526,15 @@ it('classifies ACP fetch permissions independently of display titles and keeps e
   ])
 })
 
-it('sends session/cancel and accepts the cancelled stop reason', async () => {
+it('acknowledges cancellation without treating it as prompt acceptance', async () => {
   const { cwd, record, launch } = await fixture(true)
   const controller = new AbortController()
-  const input = run(cwd, launch, { signal: controller.signal })
+  const onPromptAccepted = vi.fn<() => void>()
+  const input = run(
+    cwd,
+    { ...launch, env: { ...launch.env, TEST_ACP_SILENT_PROMPT: '1' } },
+    { signal: controller.signal, onPromptAccepted },
+  )
   const running = acpAdapter.run(input.run)
   for (let tries = 0; tries < 100; tries++) {
     const messages = await readFile(record, 'utf8')
@@ -380,6 +547,7 @@ it('sends session/cancel and accepts the cancelled stop reason', async () => {
   await running
   const messages = JSON.parse(await readFile(record, 'utf8'))
   expect(messages.some((item: { method: string }) => item.method === 'session/cancel')).toBe(true)
+  expect(onPromptAccepted).not.toHaveBeenCalled()
 })
 
 it.each([true, false])(

@@ -191,6 +191,9 @@ export function RunProgress({
                     {
                       id: run.id,
                       allow: true,
+                      nodeId: run.waitingNodeId,
+                      attempt:
+                        run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
                     },
                     responses.ok,
                   ),
@@ -208,6 +211,9 @@ export function RunProgress({
                     {
                       id: run.id,
                       allow: false,
+                      nodeId: run.waitingNodeId,
+                      attempt:
+                        run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
                     },
                     responses.ok,
                   ),

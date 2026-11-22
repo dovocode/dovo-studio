@@ -105,15 +105,14 @@ createInterface({input:process.stdin}).on('line',line=>{
         'initialize',
         'session/new',
         'session/set_config_option',
-        'session/set_config_option',
         'session/prompt',
         'session/close',
       ])
       expect(
         calls
-          .filter(({ params }) => params?.configId === 'mode')
-          .map(({ params }) => params?.value),
-      ).toEqual([applied])
+          .filter(({ method }) => method === 'session/set_config_option')
+          .map(({ params }) => params),
+      ).toEqual([{ sessionId: 'agy-session', configId: 'mode', value: applied }])
       expect(approvals).toEqual(permission === 'auto' ? ['Escalated'] : [])
     } finally {
       await registry.dispose()

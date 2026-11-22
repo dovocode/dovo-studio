@@ -7,6 +7,7 @@ import {
   nativeAgentWorking,
 } from '@dovo/protocol'
 import { readListenAddress, writeListenAddress } from '@dovo/api/listen-address'
+import { rotateRuntimeLog } from '@dovo/runtime/log-rotation'
 import { desktopRuntimeDirectory } from './runtime-data-directory.js'
 import { homedir, uptime } from 'node:os'
 import {
@@ -60,19 +61,19 @@ const MAX_RELAUNCHES = 6
 const failure = (cause: unknown) => (cause instanceof Error ? cause : new Error(String(cause)))
 const exited = (child: ChildProcess) => child.exitCode !== null || child.signalCode !== null
 class RuntimeCompatibilityError extends Error {}
-/** Owned children share the supervised service's log name, so the runtime's own rotation
- * (`rotateRuntimeLogs`) bounds it and every error message names one file per data directory. */
+/** Owned children share the supervised service's log name for diagnostics. */
 const ownedRuntimeLogPath = () => join(desktopRuntimeDirectory(), 'runtime-service.log')
 /** Bytes the log stream may buffer before output is dropped rather than growing memory. */
 const LOG_BUFFER_LIMIT = 4 * 1024 * 1024
 /** Durable output for an owned child: packaged apps have no console, and the in-memory tail
- * only holds the last few kilobytes of stderr. Append-only so rotation's truncate stays valid.
+ * only holds the last few kilobytes of stderr.
  * Failures degrade to the console; they never fail or stop the runtime. */
 function openOwnedRuntimeLog(path: string) {
   let stream: WriteStream | undefined
   let dropped = false
   try {
     mkdirSync(dirname(path), { recursive: true, mode: 0o700 })
+    rotateRuntimeLog(path)
     stream = createWriteStream(path, { flags: 'a', mode: 0o600 })
     stream.on('error', (error) => {
       console.error(`Local runtime log is unavailable (${path}):`, error)

@@ -1169,13 +1169,10 @@ and an integrity/history inspection report. Malformed values are preserved verba
 resumes and no workspace records are rewritten. These private files include sensitive runtime data.
 Retain the original database and inspect the report before choosing a backup to restore.
 
-Runtime logs (`server.log`, `runtime-service.log`, `service.log`, `server-update.log`) are checked
-once a minute. Files above 10 MB rotate into three retained 10 MB tails. Copy/truncate keeps the
-runtime and supervisor's append descriptors valid. A burst may exceed the budget until the next
-check, and writes racing truncation can be lost. Use the OS journal or an external log collector if
-complete log retention is required. Server startup and source-update commands also check rotation
-before opening a log. Source-build `update.log` files rotate in their release directory. The OS
-journal remains managed by the OS.
+The standalone server, desktop-owned runtime and updater check their log before opening it for a new
+process. A log above 10 MB moves to an archive. Dovo keeps three complete archives. Late writes from
+the previous process stay in its archive. Logs can exceed 10 MB while a process runs. The operating
+system manages journal retention and logs for running system services.
 
 Archive and Homebrew service updates durably record activation before stopping: SQLite backup,
 immutable launcher selection, startup, and the requested remote-release version check share one

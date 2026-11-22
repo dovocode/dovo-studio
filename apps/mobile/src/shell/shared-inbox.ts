@@ -17,10 +17,20 @@ export type SharedDraft = {
   source: 'share'
   files: SharedFile[]
   shareError?: string
+  shareRetryable?: boolean
 }
 
+export class InvalidSharedHandoff extends Error {}
+
 /** Persist the draft before acknowledging native ownership. A replay uses its original handoff ID. */
-export async function ingestSharedHandoffs<T extends { id: string; shareError?: string }>(
+export async function ingestSharedHandoffs<
+  T extends {
+    id: string
+    source?: 'share'
+    shareError?: string
+    shareRetryable?: boolean
+  },
+>(
   saved: T[],
   handoffs: SharedHandoff[],
   ports: {
@@ -32,7 +42,13 @@ export async function ingestSharedHandoffs<T extends { id: string; shareError?: 
   let updated: (T | SharedDraft)[] = saved
   for (const handoff of handoffs) {
     let entry = updated.find((entry) => entry.id === handoff.id)
-    if (!entry) {
+    if (
+      !entry ||
+      (entry.source === 'share' &&
+        entry.shareError &&
+        entry.shareRetryable !== false &&
+        !handoff.error)
+    ) {
       if (!handoff.payloads.length && !handoff.error) {
         await ports.acknowledge(handoff.id)
         continue
@@ -40,25 +56,36 @@ export async function ingestSharedHandoffs<T extends { id: string; shareError?: 
       let text = ''
       let files: SharedFile[] = []
       let shareError = handoff.error
+      let shareRetryable = false
       if (!shareError) {
         try {
           text = sharedMessage(handoff.payloads)
-          files = await ports.ownFiles(handoff)
+          try {
+            files = await ports.ownFiles(handoff)
+          } catch (error) {
+            shareRetryable = !(error instanceof InvalidSharedHandoff)
+            throw error
+          }
         } catch (error) {
           shareError = error instanceof Error ? error.message : String(error)
         }
       }
-      entry = {
+      const next: SharedDraft = {
         id: handoff.id,
         text,
         title: 'Shared content',
         repositoryId: '',
         agentId: '',
         source: 'share',
+        ...entry,
         files,
-        ...(shareError ? { shareError: shareError.slice(0, 2000) } : {}),
+        shareError: shareError?.slice(0, 2000),
+        shareRetryable: shareError ? shareRetryable : undefined,
       }
-      updated = [...updated, entry]
+      updated = entry
+        ? updated.map((item) => (item.id === handoff.id ? next : item))
+        : [...updated, next]
+      entry = next
       await ports.save(updated)
     }
     // Rejected items remain native-owned until the user explicitly discards the error draft.
@@ -107,16 +134,20 @@ export async function restoreShortcutInbox<T extends { id: string }>(ports: {
     return decoded ? [decoded] : []
   })
   const recoveryKey = `${SHORTCUT_INBOX_STORAGE}.recovery`
-  let recovery = await ports.read(recoveryKey)
+  const recovery = await ports.read(recoveryKey)
   if (!Array.isArray(parsed) || items.length !== entries.length) {
     // Write the recovery archive first. If that fails, neither the inbox nor its files change.
-    if (recovery === null) {
-      recovery = value ?? ''
-      await ports.write(recoveryKey, recovery)
+    let key = recoveryKey
+    let saved = recovery
+    for (let revision = 1; saved !== null && saved !== value; revision++) {
+      key = `${recoveryKey}.${revision}`
+      saved = await ports.read(key)
     }
+    if (saved === null) await ports.write(key, value ?? '')
     await ports.write(SHORTCUT_INBOX_STORAGE, JSON.stringify(items))
   }
   // A recovery archive may reference any owned file, including those with an undecodable ID.
-  if (recovery === null) ports.cleanup(items.map((item) => item.id))
+  if (recovery === null && Array.isArray(parsed) && items.length === entries.length)
+    ports.cleanup(items.map((item) => item.id))
   return items
 }

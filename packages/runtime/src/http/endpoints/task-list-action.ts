@@ -1,17 +1,14 @@
-import { randomUUID } from 'node:crypto'
-import { isDeepStrictEqual } from 'node:util'
 import { Schema } from 'effect'
 import {
   decode,
   mutableStruct,
-  taskFamilyIds,
   taskFamilyRunToken,
   ValidationError,
   safeValidationMessage,
-  type TaskSummary,
 } from '@dovo/protocol'
 import { HttpError } from '../../errors.js'
 import type { Services } from '../../services.js'
+import { taskListFamily, taskListUndoMatches } from '../../storage/task-list-undo.js'
 
 const actionSchema = Schema.Union([
   mutableStruct({
@@ -24,39 +21,6 @@ const actionSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('undo'), token: Schema.String }),
 ])
 
-function lifecycle(task: TaskSummary) {
-  return {
-    id: task.id,
-    archived: task.archived,
-    archivedAt: task.archivedAt,
-    autoSettled: task.autoSettled,
-    settledAt: task.settledAt,
-    snoozedUntil: task.snoozedUntil,
-    quotaContinuation: task.quotaContinuation,
-    status: task.status,
-    activeRunId: task.activeRunId,
-  }
-}
-type Lifecycle = ReturnType<typeof lifecycle>
-type Ticket = {
-  owner: string
-  root: string
-  before: Lifecycle[]
-  after: Lifecycle[]
-  runToken: string
-  expires: number
-  invalidated?: boolean
-}
-const tickets = new WeakMap<Services['store'], Map<string, Ticket>>()
-const lifetime = 30_000
-
-function family(tasks: readonly TaskSummary[], root: string) {
-  const ids = taskFamilyIds(tasks, root)
-  return tasks
-    .filter((task) => ids.has(task.id))
-    .map(lifecycle)
-    .sort((a, b) => a.id.localeCompare(b.id))
-}
 function rejected(message: string): never {
   throw new HttpError(409, message, { mutationRejected: true })
 }
@@ -75,37 +39,13 @@ export function taskListAction(s: Services, owner: string, input: unknown) {
 
 function applyTaskListAction(s: Services, owner: string, input: unknown) {
   const request = decode(actionSchema, input)
-  let entries = tickets.get(s.store)
-  if (!entries) {
-    entries = new Map()
-    tickets.set(s.store, entries)
-    const active = entries
-    s.store.onCommitted((_before, after) => {
-      for (const [token, ticket] of active) {
-        if (ticket.expires <= Date.now()) active.delete(token)
-        else if (
-          !ticket.invalidated &&
-          (!isDeepStrictEqual(family(after.tasks, ticket.root), ticket.after) ||
-            taskFamilyRunToken(after.tasks, ticket.root) !== ticket.runToken)
-        )
-          ticket.invalidated = true
-      }
-    })
-  }
-  const now = Date.now()
-  for (const [token, entry] of entries) if (entry.expires <= now) entries.delete(token)
-
   if (request.action === 'undo') {
-    const ticket = entries.get(request.token)
-    if (!ticket || ticket.owner !== owner) return rejected('Undo has expired or is unavailable.')
-    if (ticket.invalidated)
-      return rejected('This thread or a subthread changed; Undo was not applied.')
     s.store.transaction(() => {
-      if (
-        !isDeepStrictEqual(family(s.store.get().tasks, ticket.root), ticket.after) ||
-        taskFamilyRunToken(s.store.get().tasks, ticket.root) !== ticket.runToken
-      )
+      const ticket = s.taskListUndo.read(request.token)
+      if (!ticket || ticket.owner !== owner) return rejected('Undo has expired or is unavailable.')
+      if (ticket.invalidated || !taskListUndoMatches(s.store.get().tasks, ticket))
         return rejected('This thread or a subthread changed; Undo was not applied.')
+      s.taskListUndo.remove(request.token)
       const previous = new Map(ticket.before.map((state) => [state.id, state]))
       s.store.update(
         (workspace) => ({
@@ -129,7 +69,6 @@ function applyTaskListAction(s: Services, owner: string, input: unknown) {
         { preserveSettledAt: true },
       )
     })
-    entries.delete(request.token)
     return { ok: true }
   }
 
@@ -137,12 +76,12 @@ function applyTaskListAction(s: Services, owner: string, input: unknown) {
     request.action === 'snooze' &&
     (!request.snoozedUntil ||
       !Number.isFinite(Date.parse(request.snoozedUntil)) ||
-      Date.parse(request.snoozedUntil) <= now)
+      Date.parse(request.snoozedUntil) <= Date.now())
   )
     return rejected('Choose a valid snooze duration.')
   if (request.action === 'snooze' && request.snoozedUntil === request.expectedSnoozedUntil)
     return rejected('This thread is already snoozed until that time.')
-  const result = s.store.transaction(() => {
+  return s.store.transaction(() => {
     const task = s.store.get().tasks.find((entry) => entry.id === request.id)
     if (
       !task ||
@@ -152,7 +91,7 @@ function applyTaskListAction(s: Services, owner: string, input: unknown) {
       task.archivedAt
     )
       return rejected('This thread changed; refresh before trying again.')
-    const before = family(s.store.get().tasks, request.id)
+    const before = taskListFamily(s.store.get().tasks, request.id)
     s.store.patch({
       collection: 'tasks',
       id: request.id,
@@ -164,13 +103,13 @@ function applyTaskListAction(s: Services, owner: string, input: unknown) {
             }
           : { snoozedUntil: { before: task.snoozedUntil ?? null, after: request.snoozedUntil } },
     })
-    return {
+    const undo = s.taskListUndo.create({
+      owner,
+      root: request.id,
       before,
-      after: family(s.store.get().tasks, request.id),
+      after: taskListFamily(s.store.get().tasks, request.id),
       runToken: taskFamilyRunToken(s.store.get().tasks, request.id),
-    }
+    })
+    return { ok: true, undo }
   })
-  const token = randomUUID()
-  entries.set(token, { owner, root: request.id, ...result, expires: now + lifetime })
-  return { ok: true, undo: token }
 }

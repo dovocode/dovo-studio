@@ -3,16 +3,17 @@ import { mkdir } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import { build } from 'esbuild'
 import { chromium } from './browser/harness.mjs'
-import { readFileSync } from 'node:fs'
 
 const screenshotDirectory = '/tmp/dovo-mobile-settings'
 await mkdir(screenshotDirectory, { recursive: true })
 const navigationOnly = process.argv.includes('--navigation-only')
 const translationsOnly = process.argv.includes('--translations-only')
-const catalog = JSON.parse(
-  readFileSync(
-    new URL('../packages/studio-core/src/interface-catalog.json', import.meta.url),
-    'utf8',
+const catalog = Object.fromEntries(
+  await Promise.all(
+    ['en', 'nl', 'de', 'el', 'tr', 'ar'].map(async (language) => [
+      language,
+      (await import(`../packages/studio-core/src/interface-catalogs/${language}.ts`)).default,
+    ]),
   ),
 )
 const root = fileURLToPath(new URL('../', import.meta.url))

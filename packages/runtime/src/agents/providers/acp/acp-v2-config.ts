@@ -24,6 +24,16 @@ export function acpV2ModelOption(
   )
 }
 
+export function acpV2ReasoningOption(
+  options: SessionConfigOption[] | undefined,
+): Extract<SessionConfigOption, { type: 'select' }> | undefined {
+  const select = options?.filter(SessionConfigOption.isSelect)
+  return (
+    select?.find((option) => option.category === 'thought_level') ??
+    select?.find((option) => option.category === 'thinking')
+  )
+}
+
 export async function configureAcpV2(
   connection: ReturnType<typeof openAcpV2Connection>,
   id: string,
@@ -32,14 +42,25 @@ export async function configureAcpV2(
     Partial<Pick<Agent, 'permission' | 'reasoning' | 'approvalPolicy' | 'sandboxMode'>>,
   textOnly = false,
   permissionProvider?: AcpPermissionProvider,
+  purpose: 'run' | 'discover' = 'run',
 ): Promise<SessionConfigOption[] | undefined> {
   let options = initial
   const configure = async (configId: string, value: string) => {
     const option = options?.find((option) => option.configId === configId)
-    if (!option) throw new Error(`ACP configuration ${configId} is unavailable`)
+    if (!option) {
+      if (purpose === 'discover') return
+      throw new Error(`ACP configuration ${configId} is unavailable`)
+    }
+    if (
+      String(option.currentValue) === value &&
+      !(permissionProvider === 'kiro' && configId === 'autopilot')
+    )
+      return
     if (SessionConfigOption.isBoolean(option)) {
-      if (value !== 'true' && value !== 'false')
+      if (value !== 'true' && value !== 'false') {
+        if (purpose === 'discover') return
         throw new Error(`ACP configuration ${configId} must be true or false`)
+      }
       options = (
         await connection.control(
           connection.rpc.request('session/set_config_option', {
@@ -53,8 +74,10 @@ export async function configureAcpV2(
       ).configOptions
     } else if (SessionConfigOption.isSelect(option)) {
       const choices = option.options.flatMap((item) => ('options' in item ? item.options : [item]))
-      if (!choices.some((item) => item.value === value))
+      if (!choices.some((item) => item.value === value)) {
+        if (purpose === 'discover') return
         throw new Error(`ACP configuration ${configId} does not offer ${value}`)
+      }
       options = (
         await connection.control(
           connection.rpc.request('session/set_config_option', {
@@ -66,7 +89,10 @@ export async function configureAcpV2(
           'configuration',
         )
       ).configOptions
-    } else throw new Error(`ACP configuration ${configId} has an unsupported type`)
+    } else {
+      if (purpose === 'discover') return
+      throw new Error(`ACP configuration ${configId} has an unsupported type`)
+    }
     const applied = options?.find((updated) => updated.configId === configId)
     if (!applied || String(applied.currentValue) !== value)
       throw new Error(`ACP did not apply ${option.name}: ${value}`)
@@ -84,8 +110,10 @@ export async function configureAcpV2(
       : undefined)
   const applyMode = async () => {
     const mode = findMode()
-    if (!mode || !SessionConfigOption.isSelect(mode))
+    if (!mode || !SessionConfigOption.isSelect(mode)) {
+      if (purpose === 'discover') return
       throw new Error('This ACP v2 agent does not advertise the required mode')
+    }
     const choices = mode.options
       .flatMap((item) => ('options' in item ? item.options : [item]))
       .map(({ value }) => value)
@@ -113,20 +141,18 @@ export async function configureAcpV2(
     ['thought_level', agent.reasoning],
   ]) {
     if (!value) continue
-    const option =
-      category === 'model'
-        ? acpV2ModelOption(options)
-        : options?.find(
-            (option) => option.category === category && SessionConfigOption.isSelect(option),
-          )
-    if (!option) throw new Error(`This ACP v2 agent does not advertise ${category} configuration`)
+    const option = category === 'model' ? acpV2ModelOption(options) : acpV2ReasoningOption(options)
+    if (!option) {
+      if (purpose === 'discover') continue
+      throw new Error(`This ACP v2 agent does not advertise ${category} configuration`)
+    }
     await configure(option.configId, value)
   }
   for (const [configId, value] of Object.entries(agent.acpConfig ?? {})) {
     const option = options?.find((option) => option.configId === configId)
     if (
       (agent.model && acpV2ModelOption(options)?.configId === configId) ||
-      (agent.reasoning && option?.category === 'thought_level') ||
+      (agent.reasoning && acpV2ReasoningOption(options)?.configId === configId) ||
       (antigravity && option && acpPermissionModeOption(option, configId)) ||
       (permissionProvider === 'kiro' && configId === 'autopilot')
     )

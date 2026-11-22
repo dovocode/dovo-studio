@@ -832,6 +832,34 @@ it('matches GitHub owner-qualified branches and settles their freshly confirmed 
     pullStatus: { number: 7, state: 'merged' },
   })
 })
+
+it('settles only the explicitly linked thread when two threads share the PR branch', async () => {
+  const f = await smartFixture('merged')
+  const owner = f.s.tasks.create({
+    title: 'PR owner',
+    agentId: 'agent',
+    repositoryId: 'repo',
+    objective: '',
+  })
+  f.s.store.updateTask(owner.id, (task) => ({
+    ...task,
+    checkoutBranch: 'dovo/fix-7',
+    status: 'review',
+    pullRequest: {
+      number: 7,
+      url: pull('open', null).url,
+      repositoryUrl: 'https://github.com/o/r',
+      headSha: 'a'.repeat(40),
+      baseSha: 'b'.repeat(40),
+    },
+  }))
+  await f.watcher.refresh()
+  f.list.mockResolvedValue({ pulls: [], hasMore: false, page: 1 })
+  f.s.preferences.save({ settleOnPullClose: true })
+  await f.watcher.refresh()
+  expect(f.s.store.task(owner.id).archived).toBe(true)
+  expect(f.s.store.task(f.task.id).archived).not.toBe(true)
+})
 it('does not associate another owner’s same-named fork branch with the thread', async () => {
   const f = await smartFixture('merged')
   f.list.mockResolvedValue({

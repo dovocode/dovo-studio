@@ -821,6 +821,10 @@ export class WorkspaceStore {
     tasks: TaskSummary[],
     agents: WorkspaceSummary['agents'],
   ) => TaskSummary[]
+  private taskSettlingGuard?: (ids: ReadonlySet<string>) => void
+  setTaskSettlingGuard(guard: (ids: ReadonlySet<string>) => void) {
+    this.taskSettlingGuard = guard
+  }
   /** Reconcile watch cancellation and the Waiting projection inside the workspace transaction. */
   setTaskWatchLifecycle(
     reconcile: (tasks: TaskSummary[], agents: WorkspaceSummary['agents']) => TaskSummary[],
@@ -2038,6 +2042,7 @@ export class WorkspaceStore {
       )
     )
       throw new HttpError(409, 'Stop active child agents before settling or reopening this thread')
+    if (family && patch.changes.archived?.after === true) this.taskSettlingGuard?.(family)
     this.update((w) => ({
       ...w,
       ...(updatedTask

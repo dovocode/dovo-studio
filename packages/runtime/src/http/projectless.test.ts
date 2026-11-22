@@ -70,6 +70,30 @@ async function registerFolder(f: Awaited<ReturnType<typeof setup>>, path: string
   expect(repository.kind).toBe('folder')
   return repository
 }
+it('keeps a project when an unreadable thread row still references it', async () => {
+  const f = await setup()
+  const directory = join(f.root, 'project')
+  await mkdir(directory)
+  const project = await registerFolder(f, directory)
+  const task = f.draft('damaged-thread', project.id)
+  await f.create(task)
+  f.runtime.services.db
+    .prepare(
+      "UPDATE workspace_tasks SET value=json_set(value,'$.status','unreadable') WHERE task_id=?",
+    )
+    .run(task.id)
+  await f.runtime.close()
+  const reopened = await startRuntime({ databasePath: f.databasePath, ownerToken: token, port: 0 })
+  cleanups.push(() => reopened.close())
+  expect(reopened.services.store.unreadableTaskIds()).toContain(task.id)
+  const response = await fetch(`http://127.0.0.1:${reopened.port}/api/scm/repositories/delete`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ repositoryId: project.id }),
+  })
+  expect(response.status).toBe(409)
+  expect(reopened.services.store.get().repositories.some(({ id }) => id === project.id)).toBe(true)
+})
 it('keeps shared project metadata when removing the last local clone', async () => {
   const f = await setup()
   f.runtime.services.store.update((workspace) => ({

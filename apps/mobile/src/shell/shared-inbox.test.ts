@@ -207,6 +207,50 @@ it('does not rewrite damaged storage when its recovery archive cannot be saved',
   expect(cleanup).not.toHaveBeenCalled()
 })
 
+it('archives a second distinct damaged inbox before repairing the active value', async () => {
+  const storage = new Map([
+    [SHORTCUT_INBOX_STORAGE, '{new damage'],
+    [`${SHORTCUT_INBOX_STORAGE}.recovery`, '{old damage'],
+  ])
+  const cleanup = vi.fn<() => void>()
+  await restoreShortcutInbox({
+    read: async (key) => storage.get(key) ?? null,
+    write: async (key, value) => {
+      storage.set(key, value)
+    },
+    decode: () => undefined,
+    cleanup,
+  })
+  expect(storage.get(`${SHORTCUT_INBOX_STORAGE}.recovery`)).toBe('{old damage')
+  expect(storage.get(`${SHORTCUT_INBOX_STORAGE}.recovery.1`)).toBe('{new damage')
+  expect(storage.get(SHORTCUT_INBOX_STORAGE)).toBe('[]')
+  expect(cleanup).not.toHaveBeenCalled()
+})
+
+it('retries a copy failure and keeps the saved draft selections', async () => {
+  const ownFiles = vi
+    .fn<() => Promise<(typeof file)[]>>()
+    .mockRejectedValueOnce(new Error('Free storage first'))
+    .mockResolvedValueOnce([file])
+  const acknowledge = vi.fn<(id: string) => Promise<void>>(async () => {})
+  const save = vi.fn<(items: SharedDraft[]) => Promise<void>>(async () => {})
+  const ports = { ownFiles, acknowledge, save }
+  const [failed] = await ingestSharedHandoffs<SharedDraft>([], [handoff], ports)
+  expect(acknowledge).not.toHaveBeenCalled()
+  const [recovered] = await ingestSharedHandoffs(
+    [{ ...failed, title: 'Edited title', repositoryId: 'project' }],
+    [handoff],
+    ports,
+  )
+  expect(recovered).toMatchObject({
+    title: 'Edited title',
+    repositoryId: 'project',
+    files: [file],
+  })
+  expect(recovered.shareError).toBeUndefined()
+  expect(acknowledge).toHaveBeenCalledExactlyOnceWith(handoff.id)
+})
+
 it('makes oversized text and unreadable files discardable without blocking later valid shares', async () => {
   const oversized = {
     ...handoff,

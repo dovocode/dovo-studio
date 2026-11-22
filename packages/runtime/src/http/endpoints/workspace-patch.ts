@@ -9,7 +9,7 @@ import {
 } from '@dovo/protocol'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
-import { validateAutomation } from '../../jobs/validation.js'
+import { automationResultSchemaIssues, validateAutomation } from '../../jobs/validation.js'
 import {
   recordRoutineChange,
   routineChangeSource,
@@ -100,25 +100,21 @@ export async function patchWorkspace(
 function apply(s: Services, requested: WorkspacePatch): WorkspacePatchResult {
   const patch = s.store.previewPatch(requested)
   if (!(patch.collection === 'repositories' && patch.id === SCRATCH_PROJECT_ID)) {
-    if (
-      patch.collection === 'automations' &&
-      (patch.changes.enabled?.after === true ||
-        s.store.get().automations.find((item) => item.id === patch.id)?.enabled)
-    ) {
+    if (patch.collection === 'automations') {
       const current = s.store.get().automations.find((item) => item.id === patch.id)
-      if (current)
-        validateAutomation(
-          decode(workspaceSchema.fields.automations.schema.value, {
-            ...current,
-            ...Object.fromEntries(
-              Object.entries(patch.changes).map(([key, change]) => [
-                key,
-                change.after ?? undefined,
-              ]),
-            ),
-          }),
-          s.store.get(),
-        )
+      const source = patch.create ?? current
+      if (source && typeof source === 'object') {
+        const definition = decode(workspaceSchema.fields.automations.schema.value, {
+          ...source,
+          ...Object.fromEntries(
+            Object.entries(patch.changes).map(([key, change]) => [key, change.after ?? undefined]),
+          ),
+        })
+        const schemaIssue = automationResultSchemaIssues(definition)[0]
+        if (schemaIssue) throw new HttpError(400, schemaIssue)
+        if (current && (definition.enabled || current.enabled))
+          validateAutomation(definition, s.store.get())
+      }
     }
     if (
       patch.collection === 'tasks' &&

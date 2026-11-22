@@ -8,41 +8,69 @@ import {
 } from '@dovo/studio-core'
 import { Button, Input, SettingsGroup, SettingsSaveBar, SettingsStorageInfo } from '@dovo/studio-ui'
 
+type ServiceUrlField = 'connectOrigin' | 'artifactsOrigin'
+type ServiceUrlDraft = Partial<Record<ServiceUrlField, { before: string; value: string }>>
+const labels = { connectOrigin: 'Dovo Connect URL', artifactsOrigin: 'Dovo Artifacts URL' }
+
 export function ServiceUrlSettings() {
   const saved = useAppPreferences()
   const preferenceError = useAppPreferenceSaveError()
-  const [draft, setDraft] = useState<{ connectOrigin: string; artifactsOrigin: string }>()
+  const [draft, setDraft] = useState<ServiceUrlDraft>({})
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
-  const [saveFailed, setSaveFailed] = useState(false)
+  const [failedDraft, setFailedDraft] = useState<ServiceUrlDraft>()
   useEffect(() => {
-    if (!saveFailed || preferenceError !== null) return
-    setSaveFailed(false)
+    if (!failedDraft || preferenceError !== null) return
+    setFailedDraft(undefined)
+    setDraft((current) => (current === failedDraft ? {} : current))
     setError('')
     setNotice('Service URLs saved on this device.')
-  }, [saveFailed, preferenceError])
+  }, [failedDraft, preferenceError])
   const id = useId()
-  const fields = draft ?? saved
-  const dirty =
-    fields.connectOrigin !== saved.connectOrigin ||
-    fields.artifactsOrigin !== saved.artifactsOrigin ||
-    (draft !== undefined && error !== '')
+  const fields = {
+    connectOrigin: draft.connectOrigin?.value ?? saved.connectOrigin,
+    artifactsOrigin: draft.artifactsOrigin?.value ?? saved.artifactsOrigin,
+  }
+  const changeCount = Object.keys(draft).length
+  const dirty = changeCount > 0
+  const edit = (field: ServiceUrlField, value: string) => {
+    setDraft((previous) => {
+      const next = { ...previous }
+      if (value === saved[field]) delete next[field]
+      else next[field] = { before: previous[field]?.before ?? saved[field], value }
+      return next
+    })
+    setError('')
+    setNotice('')
+  }
   useSettingsDraft(dirty)
   const save = () => {
     if (!dirty) return
-    setSaveFailed(false)
+    setFailedDraft(undefined)
     try {
-      const normalized = normalizeServiceUrls(fields)
-      const saved = updateAppPreferences({
-        ...normalized,
-        connectOrigin:
-          normalized.connectOrigin === ACCOUNT_DIRECTORY_URL ? '' : normalized.connectOrigin,
+      const saved = updateAppPreferences((current) => {
+        const normalized = normalizeServiceUrls({
+          connectOrigin: draft.connectOrigin?.value ?? current.connectOrigin,
+          artifactsOrigin: draft.artifactsOrigin?.value ?? current.artifactsOrigin,
+        })
+        if (normalized.connectOrigin === ACCOUNT_DIRECTORY_URL) normalized.connectOrigin = ''
+        const patch: Partial<typeof normalized> = {}
+        for (const field of ['connectOrigin', 'artifactsOrigin'] as const) {
+          const change = draft[field]
+          if (!change) continue
+          if (current[field] !== change.before && current[field] !== normalized[field])
+            throw new Error(
+              `${labels[field]} changed in another window. Discard the edit and review the saved URL.`,
+            )
+          patch[field] = normalized[field]
+        }
+        return patch
       })
       if (saved === false) {
-        setSaveFailed(true)
+        setFailedDraft(draft)
         throw new Error('Could not save service URLs on this device. Retry saving.')
       }
-      setDraft(undefined)
+      setDraft({})
       setError('')
       setNotice('Service URLs saved on this device.')
     } catch (cause) {
@@ -74,13 +102,7 @@ export function ServiceUrlSettings() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              onChange={(event) => {
-                setDraft({
-                  connectOrigin: event.target.value,
-                  artifactsOrigin: fields.artifactsOrigin,
-                })
-                setNotice('')
-              }}
+              onChange={(event) => edit('connectOrigin', event.target.value)}
             />
           </label>
           <p id={`${id}-connect-help`} className="text-xs leading-relaxed text-muted-foreground">
@@ -97,13 +119,7 @@ export function ServiceUrlSettings() {
               autoCapitalize="none"
               autoCorrect="off"
               spellCheck={false}
-              onChange={(event) => {
-                setDraft({
-                  connectOrigin: fields.connectOrigin,
-                  artifactsOrigin: event.target.value,
-                })
-                setNotice('')
-              }}
+              onChange={(event) => edit('artifactsOrigin', event.target.value)}
             />
           </label>
           <p id={`${id}-artifacts-help`} className="text-xs leading-relaxed text-muted-foreground">
@@ -117,9 +133,8 @@ export function ServiceUrlSettings() {
               size="sm"
               variant="outline"
               onClick={() => {
-                setDraft({ connectOrigin: '', artifactsOrigin: '' })
-                setError('')
-                setNotice('')
+                edit('connectOrigin', '')
+                edit('artifactsOrigin', '')
               }}
             >
               Reset to defaults
@@ -145,13 +160,10 @@ export function ServiceUrlSettings() {
           saveLabel="Save service URLs"
           saveType="submit"
           description="Save service URLs to apply these changes on this device."
-          changeCount={
-            Number(fields.connectOrigin !== saved.connectOrigin) +
-            Number(fields.artifactsOrigin !== saved.artifactsOrigin)
-          }
+          changeCount={changeCount}
           onSave={save}
           onDiscard={() => {
-            setDraft(undefined)
+            setDraft({})
             setError('')
             setNotice('')
           }}

@@ -3,7 +3,7 @@ import { mkdtemp, open, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
-import { rotateRuntimeLogs } from './log-rotation'
+import { rotateRuntimeLog } from './log-rotation'
 
 const paths: string[] = []
 afterEach(async () => {
@@ -15,22 +15,26 @@ async function setup() {
   return { dir, path: join(dir, 'runtime-service.log') }
 }
 
-it('bounds the archived tail, leaves small logs untouched and keeps the append descriptor valid', async () => {
+it('leaves small logs untouched and preserves late appends in the archived log', async () => {
   const f = await setup()
   const writer = await open(f.path, 'a')
   try {
     await writer.write('small\n')
-    await rotateRuntimeLogs(f.dir, 100)
+    rotateRuntimeLog(f.path, 100)
     expect(await stat(f.path + '.1').catch(() => null)).toBeNull()
     expect(await readFile(f.path, 'utf8')).toBe('small\n')
     await writer.write('x'.repeat(300) + '\nnewest\n')
-    await rotateRuntimeLogs(f.dir, 100)
-    const archived = await readFile(f.path + '.1', 'utf8')
-    expect(archived.length).toBe(100)
-    expect(archived.endsWith('newest\n')).toBe(true)
-    expect((await stat(f.path)).size).toBe(0)
-    await writer.write('after rotation\n')
-    expect(await readFile(f.path, 'utf8')).toBe('after rotation\n')
+    rotateRuntimeLog(f.path, 100)
+    const next = await open(f.path, 'a', 0o600)
+    try {
+      await Promise.all([writer.write('late append\n'), next.write('new generation\n')])
+    } finally {
+      await next.close()
+    }
+    expect(await readFile(f.path + '.1', 'utf8')).toBe(
+      'small\n' + 'x'.repeat(300) + '\nnewest\nlate append\n',
+    )
+    expect(await readFile(f.path, 'utf8')).toBe('new generation\n')
   } finally {
     await writer.close()
   }

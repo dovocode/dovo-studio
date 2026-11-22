@@ -1,9 +1,23 @@
 import { expect, it } from 'vite-plus/test'
 import { dictationLanguages, interfaceLanguages, resolveInterfaceLanguage } from '@dovo/protocol'
-import { interfaceDirection, interfaceText } from './interface-language'
-import catalog from './interface-catalog.json'
+import { interfaceDirection, interfaceText, loadInterfaceCatalog } from './interface-language'
+import en from './interface-catalogs/en'
 import pending from './interface-copy-pending.json'
 
+const catalog = {
+  en,
+  ...Object.fromEntries(
+    await Promise.all(
+      interfaceLanguages
+        .filter(({ id }) => id !== 'auto' && !id.startsWith('en-'))
+        .map(async ({ id }) => {
+          const translations = await loadInterfaceCatalog(id)
+          if (!translations) throw new Error(`Missing interface catalog for ${id}`)
+          return [id.split('-')[0], translations] as const
+        }),
+    ),
+  ),
+}
 it('uses English for explicitly tracked copy pending translation', () => {
   expect(new Set(pending).size).toBe(pending.length)
   for (const source of pending) {
@@ -14,7 +28,7 @@ it('uses English for explicitly tracked copy pending translation', () => {
 })
 it('has a complete interface catalog for every ASR language and keeps speech independent', () => {
   expect(interfaceLanguages.map((item) => item.id)).toEqual(dictationLanguages.map(([id]) => id))
-  const catalogs: Record<string, Record<string, string>> = catalog
+  const catalogs: Record<string, Readonly<Record<string, string>>> = catalog
   for (const { id } of interfaceLanguages) {
     if (id === 'auto') continue
     const translations = catalogs[id.split('-')[0]]

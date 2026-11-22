@@ -511,7 +511,7 @@ it('does not advance a cancelled task into a review gate', async () => {
   expect(s.jobs.list()[0].status).toBe('cancelled')
   expect(s.jobs.list()[0].completedNodes).not.toContain('task')
 })
-it('retries only the failed task, retaining successful steps and approved reviews', async () => {
+it('retries only the failed task and rejects delayed approval of an earlier review', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
   const runtime = await startRuntime({
@@ -585,7 +585,16 @@ it('retries only the failed task, retaining successful steps and approved review
   })
   const id = s.jobs.startManual(flow.id, 'request-one')
   await waitForJob(() => expect(s.jobs.list()[0].waitingNodeId).toBe('middle-review'))
-  s.jobs.approve(id, true)
+  const review = (nodeId: string) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/jobs/review`, {
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer test-owner-token-with-at-least-32-characters',
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ id, nodeId, attempt: 1, allow: true }),
+    })
+  expect((await review('middle-review')).status).toBe(200)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('failed'))
   const failed = s.jobs.list()[0]
   expect(failed.failedNodeId).toBe('second-task')
@@ -646,9 +655,57 @@ it('retries only the failed task, retaining successful steps and approved review
     attempt: 2,
     taskId: failed.taskIds[1],
   })
-  s.jobs.approve(id, true)
+  expect((await review('middle-review')).status).toBe(409)
+  expect(s.jobs.detail(id).waitingNodeId).toBe('review')
+  expect((await review('review')).status).toBe(200)
   await waitForJob(() => expect(s.jobs.list()[0].status).toBe('completed'))
 })
+it('keeps a later manual answer out of an automation retry and its downstream input', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'automation-test-owner-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  const flow = createFlow()
+  flow.nodes.push({
+    ...flow.nodes[1],
+    id: 'downstream',
+    data: { ...flow.nodes[1].data, objective: 'Process result', inputFrom: ['task'] },
+  })
+  flow.edges.push({ id: 'downstream-edge', source: 'review', target: 'downstream' })
+  s.store.update(() => ({ ...f.workspace, automations: [flow] }))
+  const prompts: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      prompts.push(run.prompt)
+      if (prompts.length === 1) throw new Error('Original step failed')
+      run.onText(prompts.length === 2 ? 'Manual answer' : 'Automation answer')
+    },
+  })
+  const id = s.jobs.start(flow.id)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('failed'))
+  const original = s.jobs.detail(id).taskIds[0]
+  const manual = await fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: original, messageId: 'manual-turn', text: 'Manual question' }),
+  })
+  expect(manual.status).toBe(200)
+  await waitForJob(() => expect(s.store.taskSummary(original).status).toBe('review'))
+  s.jobs.retry(id)
+  await waitForJob(() => expect(s.jobs.detail(id).waitingNodeId).toBe('review'))
+  expect(s.jobs.detail(id).steps?.find(({ nodeId }) => nodeId === 'task')?.taskId).not.toBe(
+    original,
+  )
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+  expect(prompts).toHaveLength(4)
+  expect(prompts[3]).toContain('Automation answer')
+  expect(prompts[3]).not.toContain('Manual answer')
+})
+
 it('cancels during checkout preparation and retries the same unfinished task', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -1250,6 +1307,11 @@ it('runs one-time reminders after downtime and never repeats accepted deliveries
   await runtime.close()
   runtime = await startRuntime(options)
   runtime.services.jobs.dispose()
+  const maintenance = runtime.services.tasks.prepareMaintenance()
+  runtime.services.jobs.tick(due + 60_000)
+  expect(runtime.services.jobs.list()).toHaveLength(0)
+  expect(runtime.services.store.get().automations[0].enabled).toBe(true)
+  runtime.services.tasks.cancelRestart(maintenance.id)
   runtime.services.jobs.tick(due + 60_000)
   await waitForJob(() => expect(runtime.services.jobs.list()[0]?.status).toBe('waiting'))
   expect(runtime.services.jobs.list()[0]).toMatchObject({
@@ -1411,20 +1473,17 @@ it('watches selected JSON values through the real scheduler and keeps the succes
     BEGIN SELECT RAISE(ABORT, 'Monitor baseline storage unavailable'); END`)
   content = '{"release":{"version":3}}'
   const interrupted = s.jobs.start('flow', 'schedule:baseline-write-failed')
-  await waitForJob(() => expect(s.jobs.detail(interrupted).status).not.toBe('running'))
-  expect(s.jobs.detail(interrupted)).toMatchObject({
-    status: 'failed',
-    error: expect.stringContaining('Monitor baseline storage unavailable'),
-  })
-  // The source stays as the last success. Only the latest outcome changes.
-  expect(JSON.parse(String(readBaseline()))).toEqual({
-    ...JSON.parse(String(baseline)),
-    lastStatus: 'failed',
-  })
+  await waitForJob(() =>
+    expect(s.jobs.detail(interrupted).completedNodes).toHaveLength(flow.nodes.length),
+  )
+  expect(s.jobs.detail(interrupted).status).toBe('running')
+  expect(readBaseline()).toBe(baseline)
   expect(prompts).toHaveLength(3)
   s.db.exec('DROP TRIGGER fail_baseline')
-  s.jobs.retry(interrupted)
-  await waitForJob(() => expect(s.jobs.detail(interrupted).status).toBe('completed'))
+  await waitForJob(() => {
+    s.jobs.tick()
+    expect(s.jobs.detail(interrupted).status).toBe('completed')
+  })
   const recoveredBaseline = readBaseline()
   if (typeof recoveredBaseline !== 'string') throw new Error('Missing monitor baseline')
   expect(JSON.parse(recoveredBaseline)).toMatchObject({ text: '{"version":3}' })
@@ -1599,6 +1658,102 @@ it('passes only selected preceding results and destination-owned files through a
   })
 })
 
+it('validates a typed result from the exact worker attempt before passing it downstream', async () => {
+  const f = await fixture()
+  cleanups.push(f.cleanup)
+  const token = 'typed-result-test-token-at-least-32-characters'
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanups.push(runtime.close)
+  const s = runtime.services
+  const flow = createFlow()
+  const taskNode = flow.nodes[1]!
+  taskNode.data.resultSchema = JSON.stringify({
+    type: 'object',
+    properties: { findingCount: { type: 'integer' } },
+    required: ['findingCount'],
+    additionalProperties: false,
+  })
+  flow.nodes.push({
+    ...taskNode,
+    id: 'read-result',
+    data: {
+      ...taskNode.data,
+      label: 'Use validated result',
+      inputFrom: ['task'],
+      resultSchema: undefined,
+    },
+  })
+  flow.edges.push({ id: 'consume-result', source: 'review', target: 'read-result' })
+  s.store.update(() => ({ ...f.workspace, automations: [] }))
+  const save = (draft: Automation) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/workspace`, {
+      method: 'PATCH',
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ collection: 'automations', id: draft.id, create: draft, changes: {} }),
+    })
+  const invalid = structuredClone(flow)
+  invalid.nodes[1]!.data.resultSchema = '{"$async":true,"type":"object"}'
+  expect((await save(invalid)).status).toBe(400)
+  expect((await save(flow)).status).toBe(200)
+  const prompts: string[] = []
+  vi.spyOn(s.agents, 'get').mockResolvedValue({
+    probe: vi.fn<AgentAdapter['probe']>(),
+    run: async (run) => {
+      const attempt = prompts.length
+      prompts.push(run.prompt)
+      if (attempt === 2) throw new Error('Provider stopped during the worker turn')
+      const outputs = [
+        '{"findingCount":"wrong type"}',
+        '{"findingCount":99}',
+        '',
+        '{ "findingCount": 2 }',
+        'Processed',
+      ]
+      run.onText(outputs[attempt] ?? '')
+    },
+  })
+  const id = s.jobs.start(flow.id)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('failed'))
+  const failed = s.jobs.detail(id)
+  expect(failed.error).toContain('does not match its schema')
+  expect(failed.completedNodes).not.toContain('task')
+  const original = failed.taskIds[0]!
+  const manual = await fetch(`http://127.0.0.1:${runtime.port}/api/tasks/message`, {
+    method: 'POST',
+    headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ id: original, messageId: 'unrelated', text: 'Manual question' }),
+  })
+  expect(manual.status).toBe(200)
+  await waitForJob(() => expect(prompts).toHaveLength(2))
+  await waitForJob(() => expect(s.store.taskSummary(original).status).toBe('review'))
+  s.jobs.retry(id)
+  await waitForJob(() => expect(s.jobs.detail(id).error).toContain('Provider stopped'))
+  const failedWorker = s.jobs.detail(id).steps?.find(({ nodeId }) => nodeId === 'task')?.taskId
+  expect(failedWorker).not.toBe(original)
+  s.jobs.retry(id)
+  await waitForJob(() => expect(s.jobs.detail(id).waitingNodeId).toBe('review'))
+  const step = s.jobs.detail(id).steps?.find(({ nodeId }) => nodeId === 'task')
+  expect(step).toMatchObject({ status: 'completed', attempt: 3, turnId: expect.any(String) })
+  expect(step?.taskId).not.toBe(failedWorker)
+  expect(s.jobs.audit(id).results).toBeUndefined()
+  expect(s.jobs.audit(id, 0, true)).toMatchObject({
+    results: [
+      {
+        nodeId: 'task',
+        taskId: step?.taskId,
+        turnId: step?.turnId,
+        attempt: 3,
+        value: { findingCount: 2 },
+      },
+    ],
+  })
+  s.jobs.approve(id, true)
+  await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
+  expect(prompts[0]).toContain('single JSON value matching this JSON Schema')
+  expect(prompts[4]).toContain('{"findingCount":2}')
+  expect(prompts[4]).not.toContain('99')
+})
+
 it('fails an empty automation answer and keeps an intentional no-update reply valid', async () => {
   const f = await fixture()
   cleanups.push(f.cleanup)
@@ -1622,9 +1777,13 @@ it('fails an empty automation answer and keeps an intentional no-update reply va
   await waitForJob(() => expect(s.jobs.detail(id).status).toBe('completed'))
 })
 
-it.each([false, true])(
-  'retries scheduled startup failures only before prompt acceptance, accepted=%s',
-  async (accepted) => {
+it.each([
+  { accepted: false, once: false },
+  { accepted: false, once: true },
+  { accepted: true, once: false },
+])(
+  'retries scheduled startup failures only before prompt acceptance, accepted=$accepted, once=$once',
+  async ({ accepted, once }) => {
     const f = await fixture()
     cleanups.push(f.cleanup)
     const runtime = await startRuntime({
@@ -1637,6 +1796,12 @@ it.each([false, true])(
     const flow = createFlow()
     flow.enabled = true
     flow.policy = { startupRetry: true }
+    if (once)
+      Object.assign(flow.nodes[0].data, {
+        trigger: 'once',
+        runAt: '2026-10-28T09:30',
+        timezone: 'UTC',
+      })
     s.store.update(() => ({ ...f.workspace, automations: [flow] }))
     let calls = 0
     vi.spyOn(s.agents, 'get').mockResolvedValue({
@@ -1650,7 +1815,9 @@ it.each([false, true])(
         input.onText('Recovered')
       },
     })
-    const id = s.jobs.start('flow', `schedule:${Date.now()}`)
+    if (once) s.jobs.tick(Date.parse('2026-10-28T09:30:00Z'))
+    const id = once ? s.jobs.list()[0].id : s.jobs.start('flow', `schedule:${Date.now()}`)
+    expect(s.store.get().automations[0].enabled).toBe(!once)
     await waitForJob(() => expect(s.jobs.detail(id).status).toBe(accepted ? 'failed' : 'waiting'))
     expect(!!s.jobs.detail(id).retryAt).toBe(!accepted)
     expect(calls).toBe(1)

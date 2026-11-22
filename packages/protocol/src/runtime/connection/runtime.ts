@@ -224,6 +224,8 @@ export const jobRunStepSchema = mutableStruct({
   kind: Schema.Literals(['trigger', 'task', 'review']),
   status: Schema.Literals(['pending', 'running', 'waiting', 'completed', 'failed', 'cancelled']),
   taskId: Schema.optional(Schema.String),
+  /** The isolated worker turn whose result the step recorded. */
+  turnId: Schema.optional(Schema.String),
   /** Bot steps: the routine message in the Bot thread. Its turn is this step's result. */
   messageId: Schema.optional(Schema.String),
   attempt: minValue(
@@ -393,6 +395,7 @@ export const snapshotSchema = mutableStruct({
   attachmentDraftCompareSupported: Schema.optional(Schema.Boolean),
   automationRestoreSupported: Schema.optional(Schema.Literal(true)),
   automationStepInputsSupported: Schema.optional(Schema.Literal(true)),
+  automationStepResultsSupported: Schema.optional(Schema.Literal(true)),
   automationStartupRetrySupported: Schema.optional(Schema.Literal(true)),
   browserTimezoneSupported: Schema.optional(Schema.Literal(true)),
   browserCertificatesSupported: Schema.optional(Schema.Literal(true)),

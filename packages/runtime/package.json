@@ -7,6 +7,11 @@
   ],
   "type": "module",
   "exports": {
+    "./log-rotation": {
+      "types": "./src/storage/log-rotation.ts",
+      "development": "./src/storage/log-rotation.ts",
+      "import": "./dist/storage/log-rotation.js"
+    },
     "./managed-policy": {
       "types": "./src/policy/managed-policy.ts",
       "development": "./src/policy/managed-policy.ts",

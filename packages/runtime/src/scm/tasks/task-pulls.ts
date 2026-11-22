@@ -820,6 +820,12 @@ export class TaskPullWatcher {
             latest.pullStatus?.url === status.url &&
             (latest.pullStatus.state === 'merged' || latest.pullStatus.state === 'closed') &&
             !latest.ignoredPullRequestUrls?.includes(status.url) &&
+            (latest.pullRequest?.url === status.url ||
+              this.commandPulls.get(latest.id)?.url === status.url ||
+              !tasks.some(
+                (other) =>
+                  other.id !== latest.id && !other.example && other.pullRequest?.url === status.url,
+              )) &&
             tasks.every(
               (member) =>
                 !ids.has(member.id) ||

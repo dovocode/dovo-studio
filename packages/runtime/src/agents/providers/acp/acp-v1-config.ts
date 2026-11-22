@@ -17,6 +17,14 @@ export function acpV1ModeOption(options: readonly SessionConfigOption[] | null |
   return options?.find((option) => option.category === 'mode' && option.type === 'select')
 }
 
+export function acpV1OptionOffers(option: SessionConfigOption, value: string) {
+  return option.type === 'boolean'
+    ? value === 'true' || value === 'false'
+    : option.options
+        .flatMap((item) => ('options' in item ? item.options : [item]))
+        .some((item) => item.value === value)
+}
+
 export async function applyAcpV1Option(
   connection: Connection,
   sessionId: string,
@@ -26,15 +34,12 @@ export async function applyAcpV1Option(
   phase = 'configuration',
 ) {
   if (String(option.currentValue) === value) return options
-  if (option.type === 'boolean' && value !== 'true' && value !== 'false')
-    throw new Error(`ACP configuration ${option.id} must be true or false`)
-  if (
-    option.type === 'select' &&
-    !option.options
-      .flatMap((item) => ('options' in item ? item.options : [item]))
-      .some((item) => item.value === value)
-  )
-    throw new Error(`ACP configuration ${option.id} does not offer ${value}`)
+  if (!acpV1OptionOffers(option, value))
+    throw new Error(
+      option.type === 'boolean'
+        ? `ACP configuration ${option.id} must be true or false`
+        : `ACP configuration ${option.id} does not offer ${value}`,
+    )
   const { configOptions } = await acpControl(
     connection,
     connection.rpc.request(methods.agent.session.setConfigOption, {

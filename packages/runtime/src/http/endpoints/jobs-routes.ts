@@ -9,7 +9,8 @@ import { body } from '../support/body.js'
 import { newSecret, hashSecret } from '../../auth/devices.js'
 import { dryRunAutomation } from '../../jobs/dry-run.js'
 import { isDeepStrictEqual } from 'node:util'
-import { automationSchema, automationIssues, restorableAutomation } from '@dovo/protocol'
+import { automationSchema, restorableAutomation } from '@dovo/protocol'
+import { runtimeAutomationIssues } from '../../jobs/validation.js'
 import { recordRoutineChange } from '../../jobs/routine-provenance.js'
 import { routineChangeSource, type RoutineActor } from '../../jobs/routine-provenance.js'
 import { routineChanges } from '../../jobs/routine-provenance.js'
@@ -49,7 +50,7 @@ export function jobsRoute(
         if (input.definition.id !== current.id)
           throw new HttpError(400, 'Restore must keep the automation ID')
         const restored = restorableAutomation(input.definition, current)
-        const issues = automationIssues(restored, s.store.get())
+        const issues = runtimeAutomationIssues(restored, s.store.get())
         if (issues.length) throw new HttpError(400, issues.join('\n'))
         s.store.transaction(() => {
           s.store.update((workspace) => ({
@@ -129,10 +130,12 @@ export function jobsRoute(
           mutableStruct({
             id: idSchema,
             allow: Schema.Boolean,
+            nodeId: Schema.optional(Schema.String),
+            attempt: Schema.optional(Schema.Number),
           }),
           yield* serviceResult(body(request)),
         )
-        s.jobs.approve(input.id, input.allow)
+        s.jobs.approve(input.id, input.allow, input)
         return yield* serviceResult({
           ok: true,
         })

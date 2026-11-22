@@ -414,18 +414,25 @@ export default function TasksView({
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
   const toolsExpanded = surface !== 'chat' && (!compact || surface !== 'terminal')
   const fileViewer = surface === 'files' || surface === 'changes'
+  const loadChangePreviews = surface === 'changes'
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
     if (!task || task.replica || repository?.kind || editingFile.current) return
     await store.request(
       '/api/scm/changes',
-      { repositoryId: task.repositoryId, taskId: task.id, includeFiles: false },
+      {
+        repositoryId: task.repositoryId,
+        taskId: task.id,
+        includeFiles: false,
+        metadataOnly: !loadChangePreviews,
+      },
       responses.changesRefresh,
     )
   }, [
     task?.id,
     task?.repositoryId,
     repository?.kind,
+    loadChangePreviews,
     store.request,
     store.connection?.address,
     store.connection?.token,

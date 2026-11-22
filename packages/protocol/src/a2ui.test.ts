@@ -1,4 +1,5 @@
 import { expect, it } from 'vite-plus/test'
+import { z } from 'zod3'
 import example from '../../../examples/a2ui/issue-picker.json'
 import workbench from '../../../examples/a2ui/change-review-workbench.json'
 import {
@@ -10,6 +11,34 @@ import {
   a2uiProcessor,
   a2uiValidateInputs,
 } from './a2ui'
+
+it('checks Zod 3 collection limits before validating elements in both parse modes', async () => {
+  let elementChecks = 0
+  const element = z.string().refine(() => {
+    elementChecks++
+    return true
+  })
+  const collections = [
+    { schema: z.array(element).max(1), input: ['first', 'second'] },
+    { schema: z.array(element).length(1), input: ['first', 'second'] },
+    { schema: z.set(element).max(1), input: new Set(['first', 'second']) },
+    { schema: z.set(element).size(1), input: new Set(['first', 'second']) },
+  ]
+  const overflow = {
+    success: false,
+    error: { issues: [{ code: 'too_big', maximum: 1 }] },
+  }
+  for (const { schema, input } of collections) {
+    expect(schema.safeParse(input)).toMatchObject(overflow)
+    expect(await schema.safeParseAsync(input)).toMatchObject(overflow)
+  }
+  expect(elementChecks).toBe(0)
+  expect(z.array(element).max(1).safeParse(['first'])).toEqual({
+    success: true,
+    data: ['first'],
+  })
+  expect(elementChecks).toBe(1)
+})
 
 it('processes real A2UI v1.0 messages, applies typed input and restores a compact snapshot', () => {
   const processor = a2uiProcessor(example.messages)

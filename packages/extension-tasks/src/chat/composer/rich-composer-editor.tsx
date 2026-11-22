@@ -23,6 +23,7 @@ import {
   referenceNodeView,
 } from './composer-references'
 import { registerComposerInput } from './composer-input'
+import { pasteAttachmentFiles } from './attachment-paste'
 import {
   parseRichMarkdown,
   positionAtSourceOffset,
@@ -266,11 +267,7 @@ export default function RichComposerEditor(props: RichComposerEditorProps) {
       // Files are attachments: the composer form uploads them instead of pasting text.
       handlePaste(_, event) {
         const data = event.clipboardData
-        const files = Array.from(data?.files ?? [])
-        return (
-          !!files.length &&
-          (!data?.getData('text/plain') || files.some((file) => file.type.startsWith('image/')))
-        )
+        return !!data && pasteAttachmentFiles(data, Array.from(data.files))
       },
       handleDrop: (_, event) => !!(event as DragEvent).dataTransfer?.files.length,
       clipboardTextParser: (text, $context) =>

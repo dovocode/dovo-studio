@@ -349,6 +349,7 @@ export function runtimeSnapshot(
       runAuditSupported: true,
       automationRestoreSupported: true,
       automationStepInputsSupported: true,
+      automationStepResultsSupported: true,
       automationStartupRetrySupported: true,
       browserTimezoneSupported: true,
       browserCertificatesSupported: true,

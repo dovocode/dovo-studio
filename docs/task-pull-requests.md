@@ -83,6 +83,9 @@ active turns, approvals/questions, open terminals, queued or scheduled messages,
 stay put. Unlinked PRs do not trigger automatic settlement. Forge errors and stale status cannot
 settle a thread.
 
+When threads share a branch, a thread that explicitly owns the PR takes precedence over threads
+whose only match is the branch. Those branch matches do not trigger Settle or archive.
+
 The existing auto-archive option remains separate. If enabled too, it archives the thread instead of
 just settling it. Settling alone does not set the archive timestamp or trigger archived-worktree
 cleanup. Either action can be undone through the existing thread lifecycle controls.

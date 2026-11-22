@@ -1,5 +1,3 @@
-import { rotateRuntimeLogs } from '../../storage/log-rotation.js'
-import { dirname, resolve } from 'node:path'
 import { spawn, type ChildProcess } from 'node:child_process'
 import { startPolling } from '@dovo/client-runtime'
 import { Effect } from 'effect'
@@ -184,7 +182,6 @@ export class Housekeeping {
     }
   }
   private archiver?: ReturnType<typeof startPolling>
-  private logs?: ReturnType<typeof startPolling>
   private waker?: ReturnType<typeof startPolling>
   private caffeinate?: ChildProcess
   constructor(
@@ -239,13 +236,6 @@ export class Housekeeping {
         onError: (error) => console.error('Housekeeping failed', error),
       },
     )
-    if (this.s.db.name !== ':memory:')
-      this.logs = startPolling(
-        Effect.tryPromise(() =>
-          this.runStep(() => rotateRuntimeLogs(dirname(resolve(this.s.db.name)))),
-        ),
-        { interval: 60_000, onError: (error) => console.error('Log rotation failed', error) },
-      )
     this.waker = startPolling(
       Effect.try(() => this.updateKeepAwake()),
       {
@@ -443,7 +433,7 @@ export class Housekeeping {
     }
   }
   async dispose() {
-    await Promise.all([this.archiver?.stop(), this.waker?.stop(), this.logs?.stop()])
+    await Promise.all([this.archiver?.stop(), this.waker?.stop()])
     // Poll cancellation cannot abort filesystem/SQLite promises. Drain them before DB close.
     const results = await Promise.allSettled([...this.pending])
     for (const result of results)

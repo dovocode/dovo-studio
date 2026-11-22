@@ -24,11 +24,13 @@ export function NewTask({
   repositoryId: selectedRepositoryId,
   onCreated,
   onCancel,
+  onRetryShare,
 }: {
   repositoryId?: string
   initial?: ShortcutInput
   onCreated: (id: string) => void
   onCancel: () => void
+  onRetryShare?: () => void
 }) {
   const uiText = useInterfaceText()
 
@@ -175,6 +177,9 @@ export function NewTask({
         <Text style={styles.muted}>{initial.files.map((file) => file.name).join(', ')}</Text>
       )}
       {!!initial?.shareError && <Text style={styles.error}>{initial.shareError}</Text>}
+      {!!initial?.shareError && initial.shareRetryable !== false && onRetryShare && (
+        <Action label={uiText('Retry shared files')} secondary onPress={onRetryShare} />
+      )}
       {!requested && (
         <>
           <FolderPicker

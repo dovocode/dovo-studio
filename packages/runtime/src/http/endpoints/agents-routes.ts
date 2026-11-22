@@ -209,6 +209,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           }),
           yield* serviceResult(body(request)),
         )
+        if (refresh && s.agents.refreshPath) yield* serviceResult(s.agents.refreshPath())
         const { availability: checker } = agentDiscoveryCache(s.db, s.agents)
         const checkout = s.store.get().repositories.find((item) => item.id === repositoryId)?.path
         const sandboxSupport = (agent: Agent) => {
@@ -722,6 +723,8 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           }),
           yield* serviceResult(body(request)),
         )
+        if (path === '/api/agents/models' && input.refresh && s.agents.refreshPath)
+          yield* serviceResult(s.agents.refreshPath())
         const agent = modelDiscoveryInput(s.agents.configure(input))
         const key = configuredModelCatalogKey(input, s.agents, s.acpInstallations.list())
         const { catalogs: cache } = agentDiscoveryCache(s.db, s.agents)
@@ -780,6 +783,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
           : s.store.agentsFor(repositoryId)
         const agent = candidates.find((a) => a.id === id)
         if (!agent) throw new HttpError(404, 'Agent not found')
+        if (s.agents.refreshPath) yield* serviceResult(s.agents.refreshPath())
         return yield* serviceResult(
           (yield* serviceResult(s.agents.get(agent.provider))).probe(agent),
         )
@@ -1208,12 +1212,9 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             return s.git.commit(cwd, commitMessage)
           }),
         )
-        const files = yield* serviceResult(s.git.changes(cwd).catch(() => undefined))
-        if (files)
-          s.store.updateTask(input.id, (task) => ({
-            ...task,
-            files: retainChangedFiles(task.files, files),
-          }))
+        yield* serviceResult(
+          refreshTaskChanges(s.store, s.git, input.id, cwd).catch(() => undefined),
+        )
         s.activity.add('task', input.id, `Committed ${commit.slice(0, 8)}`, { commit })
         let pushError: string | undefined
         if (input.push)
@@ -1715,7 +1716,7 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
     }),
   )
 }
-import { retainChangedFiles } from '../../scm/git/retain-changes.js'
+import { refreshTaskChanges } from '../../scm/git/task-changes.js'
 
 export function taskLifecycle(
   s: Services,

@@ -424,13 +424,14 @@ async function checkComposerSend() {
     .getByRole('status')
     .filter({ hasText: 'Drop files to attach' })
     .waitFor({ state: 'detached' })
-  const paste = (files, text = '') =>
+  const paste = (files, text = '', html = '') =>
     page.evaluate(
-      ({ files, text }) => {
+      ({ files, text, html }) => {
         const clipboardData = new DataTransfer()
         for (const { name, type } of files)
           clipboardData.items.add(new File(['content'], name, { type }))
         if (text) clipboardData.setData('text/plain', text)
+        if (html) clipboardData.setData('text/html', html)
         const event = new ClipboardEvent('paste', {
           clipboardData,
           bubbles: true,
@@ -439,20 +440,39 @@ async function checkComposerSend() {
         document.querySelector('textarea').dispatchEvent(event)
         return { prevented: event.defaultPrevented, uploads: window.dropped.length }
       },
-      { files, text },
+      { files, text, html },
     )
   const rtf = [{ name: 'clipboard.rtf', type: 'text/rtf' }]
   assert.deepEqual(await paste(rtf, 'Copied rich text'), { prevented: false, uploads: 1 })
   assert.equal(await input.inputValue(), 'Keep this draft', 'Paste handling changed the draft')
   assert.deepEqual(await paste(rtf), { prevented: true, uploads: 2 })
   const image = [{ name: 'clipboard.png', type: 'image/png' }]
-  assert.deepEqual(await paste(image, 'Image description'), { prevented: true, uploads: 3 })
+  assert.deepEqual(await paste(image, 'Copied from Word', '<p>Copied from Word</p>'), {
+    prevented: false,
+    uploads: 2,
+  })
+  assert.deepEqual(
+    await paste(image, 'Text beside an image', '<img src="data:image/png,preview">'),
+    {
+      prevented: false,
+      uploads: 2,
+    },
+  )
+  assert.deepEqual(
+    await paste(
+      image,
+      'https://fixture.test/image.png',
+      '<img src="https://fixture.test/image.png">',
+    ),
+    { prevented: true, uploads: 3 },
+  )
+  assert.deepEqual(await paste(image, 'clipboard.png'), { prevented: true, uploads: 4 })
   await page.evaluate(() => window.setConnected(false))
   await page.waitForFunction(() => document.querySelector('button[type=submit]').disabled)
-  assert.deepEqual(await paste(rtf, 'Offline rich text'), { prevented: false, uploads: 3 })
+  assert.deepEqual(await paste(rtf, 'Offline rich text'), { prevented: false, uploads: 4 })
   assert.deepEqual(await paste(image, 'Offline image fallback'), {
     prevented: false,
-    uploads: 3,
+    uploads: 4,
   })
   await page.evaluate(() => window.setConnected(true))
   await page.waitForFunction(() => !document.querySelector('button[type=submit]').disabled)

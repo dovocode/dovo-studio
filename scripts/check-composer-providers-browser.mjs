@@ -42,16 +42,19 @@ const built = await build({
   stdin: {
     contents: `
 import {useState,useCallback} from 'react';import {createRoot} from 'react-dom/client';import {Context,defaultTaskHarness} from '@dovo/studio-core';import {MobileContext} from '../runtime/connection/provider';import {ComposerModelPicker} from './src/composer-model-picker';import {TaskLauncherPicker as TaskLauncherControls} from '../../apps/mobile/src/tasks/creation/task-launcher-controls';
-const agents=[{...defaultTaskHarness('codex'),id:'custom',name:'Custom Codex'},{...defaultTaskHarness('cursor'),id:'missing',name:'Missing Cursor'}];
+const acpAccount=(id,name)=>({...defaultTaskHarness('acp'),id,name,endpoint:'agy',args:['acp'],env:{DOVO_ACCOUNT:name}});
+const work=acpAccount('acp-work','Work ACP');
+const personal=acpAccount('acp-personal','Personal ACP');
+const agents=[{...defaultTaskHarness('codex'),id:'custom',name:'Custom Codex'},{...defaultTaskHarness('cursor'),id:'missing',name:'Missing Cursor'},work,personal];
 const installations=[{id:'installed',registryId:'installed',name:'Installed ACP',version:'1',distribution:'npx',installedAt:'2026-10-01T00:00:00Z'}];
 const repository={id:'repo',name:'Repo',path:'/repo',branch:'main'};
 const snapshot={workspace:{agents,repositories:[repository],tasks:[]},defaults:{},acpInstallations:installations};
 window.deferModels=false;window.pendingModels=[];window.modelRequests=[];window.pending=[];window.changes=[];window.mode='desktop';
-function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;
-const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(input.provider==='codex'?[{id:'gpt-6.1-sol',name:'GPT-6.1 Sol'}]:[]),...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
+function App(){const[host,setHost]=useState('one');const[mode,setMode]=useState('desktop');const[locked,setLocked]=useState(undefined);const[value,setValue]=useState(defaultTaskHarness('codex'));window.host=setHost;window.mode=setMode;window.lock=setLocked;window.value=value;window.selectWork=()=>setValue(work);
+const request=useCallback(async(path,input)=>{if(path==='/api/agents/models/cached')return null;if(path==='/api/agents/models'){window.modelRequests.push({host,input});if(window.deferModels)return new Promise((resolve,reject)=>window.pendingModels.push({resolve,reject}));if(input.env?.DOVO_ACCOUNT)return {models:[{id:'shared-model',name:input.env.DOVO_ACCOUNT+' model'}],reasoning:[]};return {models:[{id:'',name:'Provider default'},{id:'default',name:'Default (recommended)',isDefault:true},{id:'model',name:input.provider+' model'},...(input.provider==='codex'?[{id:'gpt-6.1-sol',name:'GPT-6.1 Sol'}]:[]),...(window.terraAvailable?[{id:'gpt-6.1-terra',name:'GPT-6.1 Terra'}]:[])],reasoning:[]}}if(path!='/api/agents/availability')throw new Error('Unexpected request '+path);return new Promise((resolve,reject)=>window.pending.push({host,input,resolve,reject}));},[host]);
 const profile={id:host,connection:{address:'http://'+host,token:'token-'+host}};
 const change=async next=>{window.changes.push(next);setValue(next);return true};
-return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={change}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
+return mode==='desktop'?<Context.Provider value={{request,connected:true,connection:profile.connection,snapshot}}><ComposerModelPicker repositoryId="repo" value={value} agents={agents} selectedAgent={value===work?work:undefined} disabled={false} lockedProvider={locked} onChange={change} onConfigure={()=>{}} onSelectAgent={async id=>{window.changes.push(id);return true}} onUseHarness={async next=>{window.standalone=next;return change(next)}}/></Context.Provider>:<MobileContext.Provider value={{profile,connected:true,snapshot,readRuntime:(_profile,path,input)=>request(path,input)}}><TaskLauncherControls snapshot={snapshot} repository={repository} selection={{key:'harness:codex',name:'Codex',provider:'codex',model:'',harness:value}} disabled={false} onChange={next=>window.changes.push(next)}/></MobileContext.Provider>};
 createRoot(document.getElementById('app')).render(<App/>);
 `,
     resolveDir: fileURLToPath(new URL('../packages/studio-ui/', import.meta.url)),
@@ -308,6 +311,27 @@ try {
   await page.getByRole('option', { name: '6.1 Terra', exact: true }).waitFor()
   if (!(await page.evaluate(() => window.modelRequests.at(-1).input.refresh)))
     throw new Error('Picker refresh did not bypass the cached model list')
+
+  await page.getByRole('button', { name: 'Close model picker', exact: true }).click()
+  await page.evaluate(() => {
+    window.selectWork()
+    window.host('acp-accounts')
+  })
+  await page.getByRole('button', { name: 'Choose agent and model' }).click()
+  await waitRequests(11)
+  await finish(10, ['agent:acp-work', 'agent:acp-personal'])
+  await page.getByRole('button', { name: 'Personal ACP models', exact: true }).click()
+  const personalModel = page.getByRole('option', { name: 'Personal ACP model', exact: true })
+  await personalModel.click({ timeout: 5_000 })
+  if (
+    !(await page.evaluate(
+      () =>
+        window.standalone?.env.DOVO_ACCOUNT === 'Personal ACP' &&
+        window.standalone.model === 'shared-model',
+    ))
+  )
+    throw new Error('A model from another ACP account did not keep that account’s configuration')
+
   if (errors.length) throw new Error(errors.join('\n'))
   console.log(
     'Desktop/mobile provider availability, favorites, saved agents, runtime isolation, locks, cached reopening, stale model refresh and failure recovery passed.',

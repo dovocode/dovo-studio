@@ -362,11 +362,14 @@ export function readAppPreferences(): AppPreferences {
   }
   return cached
 }
-export function updateAppPreferences(changes: Partial<AppPreferences>) {
+export function updateAppPreferences(
+  update: Partial<AppPreferences> | ((current: AppPreferences) => Partial<AppPreferences>),
+) {
   const bridge = decodeResult(desktopSettingsBridge, globalThis)
   // Read the latest stored document before replacing it, including writes from other windows.
   cached = undefined
   const current = readAppPreferences()
+  const changes = typeof update === 'function' ? update(current) : update
   if (
     !pending &&
     readError === null &&

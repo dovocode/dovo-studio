@@ -57,7 +57,9 @@ export class A2uiApps {
     const raw = object(JSON.parse(row.value))
     const app = decode(mcpAppSchema, raw)
     if (!isA2uiApp(app)) throw new HttpError(403, 'This is not a built-in A2UI card')
-    return { raw, app, state: a2uiStateSchema.parse(object(app.result).structuredContent) }
+    const state = object(app.result).structuredContent
+    a2uiBounded(state)
+    return { raw, app, state: a2uiStateSchema.parse(state) }
   }
   private save(taskId: string, id: string, state: A2uiState) {
     a2uiBounded(state)
@@ -90,6 +92,8 @@ export class A2uiApps {
       const task = this.store.taskSummary(taskId)
       if (task.activeRunId !== runId)
         throw new HttpError(409, 'A2UI tools require this thread’s active agent turn')
+      const raw = object(input)
+      if (raw.action === 'publish' && Array.isArray(raw.messages)) a2uiBounded(raw.messages)
       const command = a2uiCommandSchema.parse(input)
       if (command.action === 'catalog')
         return {
@@ -286,9 +290,10 @@ export class A2uiApps {
           'This A2UI response is already recorded. Wait for the agent to update the card.',
         )
       const submit = method === 'tools/call'
-      const input = submit
-        ? a2uiSubmitSchema.parse(call.arguments)
-        : a2uiDraftSchema.parse(call.structuredContent)
+      const payload = submit ? call.arguments : call.structuredContent
+      const values = object(payload).values
+      if (values !== undefined) a2uiBounded(values)
+      const input = submit ? a2uiSubmitSchema.parse(payload) : a2uiDraftSchema.parse(payload)
       const check = () => {
         const latest = this.saved(taskId, id).state
         if (
@@ -313,7 +318,7 @@ export class A2uiApps {
           })
           return {}
         }
-        const submitted = a2uiSubmitSchema.parse(call.arguments)
+        const submitted = a2uiSubmitSchema.parse(payload)
         const event = a2uiEvent(processor, submitted.surfaceId, submitted.sourceComponentId)
         const values = a2uiInputValues(processor)
         const text = JSON.stringify({ event, values })

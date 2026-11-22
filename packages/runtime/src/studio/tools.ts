@@ -1,4 +1,5 @@
 import { isDeepStrictEqual } from 'node:util'
+import { runtimeAutomationIssues } from '../jobs/validation.js'
 import { restorableAutomation } from '@dovo/protocol'
 import { nextQueuedMessage } from '@dovo/protocol'
 import { threadSnapshot } from './thread-snapshot.js'
@@ -13,7 +14,6 @@ import {
   studioUICommandSchema,
   studioDiagnosticsCommandSchema,
   enabledStudioTools,
-  automationIssues,
   resolveTaskAgent,
   permissionPolicyWithinCeiling,
   inheritedPermissionPolicy,
@@ -252,7 +252,7 @@ function validateFlow(s: Services, flow: Automation, policy?: StudioPolicy) {
       policy,
     )
   }
-  return automationIssues(flow, s.store.get())
+  return runtimeAutomationIssues(flow, s.store.get())
 }
 async function waitFor<T>(
   read: () => T,
@@ -673,7 +673,7 @@ export async function studioTool(
       const flow = command.automation
       const issues =
         command.action === 'validate'
-          ? automationIssues(flow, workspace)
+          ? runtimeAutomationIssues(flow, workspace)
           : validateFlow(s, flow, policy)
       if (command.action === 'validate') return { issues, valid: !issues.length }
       if (issues.length) throw new HttpError(400, issues.join('\n'))

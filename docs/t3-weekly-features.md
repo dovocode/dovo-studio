@@ -48,6 +48,10 @@ and real HTTP requests. Browser tests check resizing and stale responses after a
 
 ## Interface languages
 
+Desktop and web load the selected interface language as a separate chunk. English uses the source
+text. Desktop and mobile include local language packs. Web starts with source text until its
+selected pack loads. A server render with a known language can preload that pack.
+
 Select Settings, General, Interface language. The choice is local to each device. The default stays
 English. Automatic uses the device locale and falls back to English.
 

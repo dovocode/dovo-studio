@@ -3,8 +3,13 @@ import { grokSteering } from './grok-steering.js'
 import { acpV2Enabled } from './acp-v2-connection.js'
 import type { AcpClient } from './acp-client.js'
 import { checkedPolicyRun } from '../shared/permission-policy.js'
-import { acpModelOption, legacyAcpModels } from './acp-models.js'
-import { acpV1ModeOption, applyAcpV1Option, setAcpV1Mode } from './acp-v1-config.js'
+import { acpModelOption, acpReasoningOption, legacyAcpModels } from './acp-models.js'
+import {
+  acpV1ModeOption,
+  acpV1OptionOffers,
+  applyAcpV1Option,
+  setAcpV1Mode,
+} from './acp-v1-config.js'
 import {
   acpPermissionDisposition,
   acpPermissionModeOption,
@@ -41,6 +46,8 @@ import {
 import { acpClientTools } from './acp-client-tools.js'
 import { updateSubagents } from '../../execution/subagents.js'
 import { IdleProviders, releaseIdleProvider } from '../../execution/warm-processes.js'
+import { watchAntigravityOutcome } from './antigravity-outcome.js'
+import { providerFailureKind } from '../../execution/provider-failure.js'
 type AcpConnection = ReturnType<typeof openAcpConnection>
 type AcpSession = NewSessionResponse | ResumeSessionResponse | LoadSessionResponse
 type WarmAcp = {
@@ -60,6 +67,9 @@ type WarmAcp = {
     lifetime: AbortController
     owner: AgentRun
     prompting: boolean
+    model: string
+    reasoning?: string
+    configOptions?: SessionConfigOption[]
   }
 }
 export function createAcpAdapter(): AgentAdapter {
@@ -84,7 +94,7 @@ export function createAcpAdapter(): AgentAdapter {
       provider: 'acp',
       available:
         !!(launch?.command || agent.endpoint) &&
-        (await executableAvailable(launch?.command || agent.endpoint)),
+        (await executableAvailable(launch?.command || agent.endpoint, launch?.env ?? agent.env)),
       detail:
         launch?.command || agent.endpoint
           ? 'ACP executable configured.'
@@ -108,14 +118,32 @@ export function createAcpAdapter(): AgentAdapter {
         (run.agent.permission === 'auto' || run.agent.permission === 'workspace-write')
       )
         run = { ...run, agent: { ...run.agent, permission: 'ask' } }
-      const launchKey = JSON.stringify([launch, run.agent, run.tools])
+      const { model, reasoning, ...agentSettings } = run.agent
+      const antigravity = permissionProvider === 'antigravity' ? run.agent : undefined
+      const launchKey = JSON.stringify([launch, antigravity ? agentSettings : run.agent, run.tools])
+      const sameSelection = (value: WarmAcp) =>
+        value.native.model === model && value.native.reasoning === reasoning
+      const canReuse = (value: WarmAcp | undefined) => {
+        if (
+          !value ||
+          value.launchKey !== launchKey ||
+          value.sessionId !== run.sessionId ||
+          value.cwd !== run.cwd ||
+          value.connection.signal.aborted
+        )
+          return false
+        if (sameSelection(value)) return true
+        const option = antigravity && acpModelOption(value.native.configOptions)
+        return (
+          !!option &&
+          !!model &&
+          (model !== value.native.model || !!reasoning) &&
+          acpV1OptionOffers(option, model) &&
+          !value.native.agents.some(nativeAgentWorking)
+        )
+      }
       const held = run.taskId ? idle.get(run.taskId) : undefined
-      const knownV1 =
-        held &&
-        held.launchKey === launchKey &&
-        held.sessionId === run.sessionId &&
-        held.cwd === run.cwd &&
-        !held.connection.signal.aborted
+      const knownV1 = canReuse(held)
       if (acpV2Enabled(launch) && !knownV1) {
         if (held?.native.agents.some(nativeAgentWorking))
           throw new Error('Stop native ACP agents before changing protocol versions')
@@ -124,14 +152,7 @@ export function createAcpAdapter(): AgentAdapter {
       } else if (run.taskId) await v2.beforeV1(run.taskId)
       const previous = run.taskId ? idle.get(run.taskId) : undefined
       if (run.taskId) idle.delete(run.taskId)
-      const reusable =
-        previous &&
-        previous.sessionId === run.sessionId &&
-        previous.cwd === run.cwd &&
-        previous.launchKey === launchKey &&
-        !previous.connection.signal.aborted
-          ? previous
-          : undefined
+      const reusable = canReuse(previous) ? previous : undefined
       if (previous && !reusable) {
         if (previous.native.agents.some(nativeAgentWorking)) {
           if (run.taskId) idle.set(run.taskId, previous)
@@ -144,6 +165,11 @@ export function createAcpAdapter(): AgentAdapter {
       let sessionId: string | undefined = reusable?.sessionId
       let compactAvailable = reusable?.compactAvailable ?? false
       let updatedConfig: SessionConfigOption[] | undefined
+      let checkOutcome: ReturnType<typeof watchAntigravityOutcome>
+      let failPrompt: ((error: Error) => void) | undefined
+      let failedBeforeReceipt = false
+      let sawUsage = false
+      let diagnosticTail = ''
       const children = reusable?.native.children ?? new Map<string, SubagentUpdate>()
       const lifetime = reusable?.native.lifetime ?? new AbortController()
       const native = reusable?.native
@@ -303,8 +329,10 @@ export function createAcpAdapter(): AgentAdapter {
           if (
             params.sessionId === (sessionId ?? run.sessionId) &&
             params.update.sessionUpdate === 'config_option_update'
-          )
+          ) {
             updatedConfig = params.update.configOptions
+            if (nativeState) nativeState.configOptions = updatedConfig
+          }
           if (loading || !prompting) return
           if (params.sessionId !== sessionId) return
           if (
@@ -320,6 +348,21 @@ export function createAcpAdapter(): AgentAdapter {
           if (params.update.sessionUpdate === 'tool_call') run.onTextBoundary?.()
           run.onEvent?.(params.update.sessionUpdate, params)
           const update = params.update
+          if (checkOutcome && failPrompt) {
+            if (update.sessionUpdate === 'usage_update') sawUsage = true
+            if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text')
+              diagnosticTail = (diagnosticTail + update.content.text.slice(-512)).slice(-512)
+            if (sawUsage && /\b(?:auth_not_found|UNAUTHENTICATED)\b/i.test(diagnosticTail)) {
+              // Usage and output can arrive in either order. Only a current terminal error in
+              // the provider log can end a prompt that never returned its ACP receipt.
+              const failure = checkOutcome()
+              if (failure && providerFailureKind(failure) === 'authentication') {
+                failedBeforeReceipt = true
+                failPrompt(failure)
+                failPrompt = undefined
+              }
+            }
+          }
           if (update.sessionUpdate === 'agent_message_chunk' && update.content.type === 'text')
             run.onText(update.content.text)
           if (update.sessionUpdate === 'tool_call') run.onActivity(update.title)
@@ -333,6 +376,8 @@ export function createAcpAdapter(): AgentAdapter {
         lifetime,
         owner: run,
         prompting: false,
+        model,
+        reasoning,
       }
       nativeState.owner = run
       const state = nativeState
@@ -485,10 +530,9 @@ export function createAcpAdapter(): AgentAdapter {
           },
           id,
         )
-        if (!reusable) {
+        if (!reusable || !sameSelection(reusable)) {
           const restrictive = run.agent.permission === 'read-only' || run.tools === 'none'
-          const antigravity = permissionProvider === 'antigravity' ? run.agent : undefined
-          let configOptions = updatedConfig ?? session.configOptions
+          let configOptions = updatedConfig ?? state.configOptions ?? session.configOptions
           if (!antigravity && (restrictive || run.agent.acpMode)) {
             configOptions =
               (await setAcpV1Mode(
@@ -504,56 +548,41 @@ export function createAcpAdapter(): AgentAdapter {
           if (run.agent.model) {
             const model = acpModelOption(configOptions)
             if (!model) {
-              if (
-                !legacyAcpModels(session)?.availableModels.some(
-                  (model) => model.modelId === run.agent.model,
-                )
-              )
+              const legacy = legacyAcpModels(session)
+              if (!legacy?.availableModels.some((model) => model.modelId === run.agent.model))
                 throw new Error('ACP agent does not advertise the selected model')
-              updatedConfig = undefined
-              await acpControl(
+              if (legacy.currentModelId !== run.agent.model) {
+                updatedConfig = undefined
+                await acpControl(
+                  connection,
+                  rpc.request('session/set_model', { sessionId: id, modelId: run.agent.model }),
+                  'model selection',
+                )
+                configOptions = updatedConfig ?? configOptions
+              }
+            } else if (configOptions) {
+              configOptions = await applyAcpV1Option(
                 connection,
-                rpc.request('session/set_model', { sessionId: id, modelId: run.agent.model }),
+                id,
+                configOptions,
+                model,
+                run.agent.model,
                 'model selection',
               )
-              configOptions = updatedConfig ?? configOptions
-            } else {
-              const updated = await acpControl(
-                connection,
-                rpc.request(methods.agent.session.setConfigOption, {
-                  sessionId: id,
-                  configId: model.id,
-                  value: run.agent.model,
-                }),
-                'model selection',
-              )
-              configOptions = updated.configOptions
-              if (acpModelOption(configOptions)?.currentValue !== run.agent.model)
-                throw new Error(`ACP did not apply ${model.name}: ${run.agent.model}`)
             }
           }
           if (run.agent.reasoning) {
-            const option = configOptions?.find(
-              (o) => o.category === 'thought_level' && o.type === 'select',
-            )
-            if (!option)
+            const option = acpReasoningOption(configOptions)
+            if (!option || !configOptions)
               throw new Error('This ACP model does not advertise reasoning configuration')
-            configOptions = (
-              await acpControl(
-                connection,
-                rpc.request(methods.agent.session.setConfigOption, {
-                  sessionId: id,
-                  configId: option.id,
-                  value: run.agent.reasoning,
-                }),
-                'reasoning selection',
-              )
-            ).configOptions
-            if (
-              configOptions?.find((updated) => updated.id === option.id)?.currentValue !==
-              run.agent.reasoning
+            configOptions = await applyAcpV1Option(
+              connection,
+              id,
+              configOptions,
+              option,
+              run.agent.reasoning,
+              'reasoning selection',
             )
-              throw new Error(`ACP did not apply ${option.name}: ${run.agent.reasoning}`)
           }
           for (const [configId, value] of Object.entries(run.agent.acpConfig ?? {})) {
             const option = configOptions?.find((item) => item.id === configId)
@@ -563,7 +592,7 @@ export function createAcpAdapter(): AgentAdapter {
               (antigravity && acpPermissionModeOption(option, configId)) ||
               (permissionProvider === 'kiro' && configId === 'autopilot') ||
               (run.agent.model && acpModelOption(configOptions)?.id === configId) ||
-              (run.agent.reasoning && option.category === 'thought_level')
+              (run.agent.reasoning && acpReasoningOption(configOptions)?.id === configId)
             )
               continue
             if (restrictive && option.category === 'mode')
@@ -577,14 +606,18 @@ export function createAcpAdapter(): AgentAdapter {
               configOptions?.find(
                 (option) => option.type === 'select' && acpPermissionModeOption(option, option.id),
               )
-            await setAcpV1Mode(
-              connection,
-              id,
-              { ...session, configOptions },
-              run.agent.acpMode ?? (storedMode ? run.agent.acpConfig?.[storedMode.id] : undefined),
-              restrictive,
-              antigravity,
-            )
+            configOptions =
+              (await setAcpV1Mode(
+                connection,
+                id,
+                { ...session, configOptions },
+                run.agent.acpMode ??
+                  (storedMode ? run.agent.acpConfig?.[storedMode.id] : undefined),
+                restrictive,
+                antigravity,
+              )) ??
+              updatedConfig ??
+              configOptions
           }
           if (permissionProvider === 'kiro') {
             const autopilot = configOptions?.find((option) => option.id === 'autopilot')
@@ -599,6 +632,9 @@ export function createAcpAdapter(): AgentAdapter {
               autopilot.type === 'boolean' ? String(value === 'on') : value,
             )
           }
+          state.configOptions = configOptions ?? undefined
+          state.model = model
+          state.reasoning = reasoning
         }
         if (run.signal.aborted) throw new Error('Task cancelled')
         if (run.compact && !compactAvailable)
@@ -642,12 +678,25 @@ export function createAcpAdapter(): AgentAdapter {
             },
           ],
         }
+        if (antigravity) checkOutcome = watchAntigravityOutcome(launch, id)
+        const nativeFailure = checkOutcome
+          ? [
+              new Promise<never>((_, reject) => {
+                failPrompt = reject
+              }),
+            ]
+          : []
         const result = await Promise.race([
           rpc.request(methods.agent.session.prompt, prompt),
           exited,
+          ...nativeFailure,
         ])
         run.onTextBoundary?.()
-        run.onPromptAccepted?.()
+        if (result.stopReason !== 'cancelled') {
+          const failure = checkOutcome?.()
+          if (failure) throw failure
+        }
+        if (result.stopReason !== 'cancelled') run.onPromptAccepted?.()
         if (result.stopReason !== 'end_turn' && !(cancelling && result.stopReason === 'cancelled'))
           throw new Error(`ACP stopped: ${result.stopReason}`)
         if (run.compact && !cancelling)
@@ -670,6 +719,8 @@ export function createAcpAdapter(): AgentAdapter {
         }
       } finally {
         prompting = false
+        failPrompt = undefined
+        checkOutcome = undefined
         state.prompting = false
         run.onSteer?.(undefined)
         if (sessionId) await tools.stopSession(sessionId)
@@ -678,6 +729,7 @@ export function createAcpAdapter(): AgentAdapter {
           (!succeeded || !run.taskId || run.tools === 'none' || run.signal.aborted) &&
           sessionId &&
           !run.signal.aborted &&
+          !failedBeforeReceipt &&
           !connection.signal.aborted &&
           canCloseSession
         ) {

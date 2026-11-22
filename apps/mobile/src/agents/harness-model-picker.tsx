@@ -504,7 +504,7 @@ function ProviderModels({
   const models = modelCatalogChoices(catalog?.models ?? [])
     .filter(
       (model) =>
-        isNamedModelId(model.id) &&
+        isNamedModelId(model.id, candidate.provider) &&
         (manageHidden ||
           ((showLegacy || !model.hidden || favorite(candidate, model.id)) &&
             !preferences?.[
@@ -517,14 +517,14 @@ function ProviderModels({
     .sort((a, b) => Number(favorite(candidate, b.id)) - Number(favorite(candidate, a.id)))
   const savedCustom =
     !favoritesOnly &&
-    isNamedModelId(candidate.model) &&
+    isNamedModelId(candidate.model, candidate.provider) &&
     !catalog?.models.some((model) => model.id === candidate.model) &&
     matches(candidate.model, modelDisplayName(candidate.model), choice.name)
   const typed = query.trim()
   const customSearch =
     allowCustom &&
     !favoritesOnly &&
-    isNamedModelId(typed) &&
+    isNamedModelId(typed, candidate.provider) &&
     !/\s/.test(typed) &&
     !models.length &&
     !(savedCustom && candidate.model === typed)

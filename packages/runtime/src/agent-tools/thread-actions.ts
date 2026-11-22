@@ -1,4 +1,5 @@
 import { prepareThreadTerminal } from '../sandbox/thread-terminal.js'
+import { runtimeAutomationIssues } from '../jobs/validation.js'
 import { createHash } from 'node:crypto'
 import { Effect, Schema } from 'effect'
 import { runClientEffect } from '@dovo/client-runtime'
@@ -11,7 +12,6 @@ import {
   automationListByteBudget,
   automationReviewWorkflowSchema,
   automationActionSendSchema,
-  automationIssues,
   botPaused,
   taskResources,
   threadActionReviewSchema,
@@ -786,7 +786,7 @@ function automationReview(s: Services, automationId: string): AutomationAction {
     throw rejected(409, 'This automation is paused. Resume it before reviewing this action.')
   // The shared graph validator has no runtime defaults. Validate the same effective
   // harness that Tasks.create will use, while keeping the saved workflow unchanged.
-  const issues = automationIssues(
+  const issues = runtimeAutomationIssues(
     {
       ...workflow,
       nodes: workflow.nodes.map((node) =>

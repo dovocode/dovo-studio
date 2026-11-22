@@ -1,6 +1,7 @@
 import { useApplicationState } from '@dovo/studio-core/state'
 import { useRef } from 'react'
 import { responses, useWorkspace } from '@dovo/studio-core'
+import type { JobRun } from '@dovo/protocol'
 import {
   acknowledgeAutomationStart,
   automationStartRequest,
@@ -74,13 +75,15 @@ export function useJobActions() {
         )
         select(run.id)
       }),
-    review: (id: string, allow: boolean) =>
+    review: (run: JobRun, allow: boolean) =>
       act(() =>
         request(
           '/api/jobs/review',
           {
-            id,
+            id: run.id,
             allow,
+            nodeId: run.waitingNodeId,
+            attempt: run.steps?.find((step) => step.nodeId === run.waitingNodeId)?.attempt ?? 1,
           },
           responses.ok,
         ),

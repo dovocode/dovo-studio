@@ -217,6 +217,7 @@ export function createBrowserHistory(
   /** Write the snapshot, then drop the journal it now contains. */
   const compact = (next: readonly Item[]) => {
     write(next)
+    items = next
     unlinkIfPresent(journal)
     journalEntries = 0
     incomplete = false
@@ -277,7 +278,10 @@ export function createBrowserHistory(
   const remove = (entry: JournalEntry) => {
     const next = applyEntry(items, entry)
     if (persistent) {
-      if (journalEntries) append(entry)
+      if (journalEntries) {
+        append(entry)
+        items = next
+      }
       compact(next)
     }
     items = next

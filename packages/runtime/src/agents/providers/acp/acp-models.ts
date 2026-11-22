@@ -10,6 +10,14 @@ export function acpModelOption(options: readonly SessionConfigOption[] | null | 
   return option?.type === 'select' ? option : undefined
 }
 
+export function acpReasoningOption(options: readonly SessionConfigOption[] | null | undefined) {
+  const select = options?.filter((option) => option.type === 'select')
+  return (
+    select?.find((option) => option.category === 'thought_level') ??
+    select?.find((option) => option.category === 'thinking')
+  )
+}
+
 /** Older stable ACP hosts, including Grok, may still advertise session.models. */
 export function legacyAcpModels(session: unknown) {
   return decodeResult(

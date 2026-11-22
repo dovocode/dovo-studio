@@ -394,6 +394,16 @@ export function WorkspaceProvider({
     },
     [install, synchronization, mutations],
   )
+  const clearConnection = useCallback(() => {
+    if (connectionRef.current) clearRuntimeRequestCache(connectionRef.current)
+    connecting.current++
+    setConnection(null)
+    setConnected(false)
+    setSnapshot(null, null)
+    synchronization.bind(null)
+    setSyncError(null)
+    install({ ...createWorkspace(), repositories: [], agents: [], tasks: [], automations: [] })
+  }, [install, synchronization])
   // False once the saved registry could not be read: writing would replace every saved
   // computer with the empty fallback the session started from.
   const registryWritable = useRef(true)
@@ -419,7 +429,11 @@ export function WorkspaceProvider({
       }).pipe(
         Effect.tap((saved) =>
           Effect.sync(() => {
-            setRegistry(saved)
+            const activeId = value.activeId
+            setRegistry({
+              ...saved,
+              activeId: saved.profiles.some((profile) => profile.id === activeId) ? activeId : null,
+            })
             setStorageError('')
           }),
         ),
@@ -450,13 +464,24 @@ export function WorkspaceProvider({
             Effect.tryPromise({
               try: readRuntimeRegistry,
               catch: connectionError,
-            }).pipe(Effect.tap((saved) => Effect.sync(() => setRegistry(selectRegistry(saved))))),
+            }).pipe(
+              Effect.tap((saved) =>
+                Effect.sync(() => {
+                  const prior = registryRef.current
+                  const active = prior.profiles.find((profile) => profile.id === prior.activeId)
+                  const retained = active && resolveRuntimeTarget(saved.profiles, active)
+                  // The list is shared with other windows. The current selection is local to this one.
+                  setRegistry({ ...saved, activeId: retained?.id ?? null })
+                  if (active && !retained && connectionRef.current) clearConnection()
+                }),
+              ),
+            ),
           ),
         ).catch((error: unknown) =>
           setStorageError(`Could not reload saved computers. ${String(error)}`),
         )
       }),
-    [storageLock, selectRegistry],
+    [storageLock, clearConnection],
   )
   const cancelPairing = useCallback(
     (address: string, proof: PairingProof) =>
@@ -974,20 +999,8 @@ export function WorkspaceProvider({
     connecting.current++
     await flush()
     await saveRegistry((saved) => ({ ...saved, activeId: null }))
-    if (connectionRef.current) clearRuntimeRequestCache(connectionRef.current)
-    setConnection(null)
-    setConnected(false)
-    setSnapshot(null, null)
-    synchronization.bind(null)
-    setSyncError(null)
-    install({
-      ...createWorkspace(),
-      repositories: [],
-      agents: [],
-      tasks: [],
-      automations: [],
-    })
-  }, [flush, install, saveRegistry, synchronization])
+    clearConnection()
+  }, [flush, saveRegistry, clearConnection])
   const disconnect = useCallback(async () => {
     if (changingConnection.current) throw new Error('Wait for the connection change to finish.')
     changingConnection.current = true
@@ -1127,6 +1140,15 @@ export function WorkspaceProvider({
     if (synchronization.isSending())
       throw new Error('Wait for the current sync attempt to finish before reloading.')
     if (!target || target !== connectionRef.current) throw new Error('Runtime connection changed')
+    const profile = registryRef.current.profiles.find(
+      (entry) =>
+        entry.id === registryRef.current.activeId &&
+        sameRuntimeConnection(entry.connection, target),
+    )
+    if (!profile) throw new Error('This runtime is no longer saved')
+    const stillSelected = () =>
+      registryRef.current.activeId === profile.id &&
+      !!resolveRuntimeTarget(registryRef.current.profiles, profile)
     const attempt = ++connecting.current
     const checkpoint = synchronization.checkpoint()
     const value = await createRuntimeClient(target).request(
@@ -1135,16 +1157,12 @@ export function WorkspaceProvider({
       snapshotSchema,
       { method: 'GET' },
     )
-    if (target !== connectionRef.current || attempt !== connecting.current)
+    if (target !== connectionRef.current || attempt !== connecting.current || !stillSelected())
       throw new Error('Runtime connection changed')
     if (synchronization.isSending() || synchronization.checkpoint().version !== checkpoint.version)
       throw new Error(
         'Edits or sync activity changed while reloading. Review the current changes and try again.',
       )
-    const profile = registryRef.current.profiles.find(
-      (entry) => entry.id === registryRef.current.activeId,
-    )
-    if (!profile) throw new Error('This runtime is no longer saved')
     // A failed backup must leave the unsent queue and workspace intact.
     await writeWorkspaceDocument(
       `${storageKey}.unsent-backup.${encodeURIComponent(profile.id)}`,
@@ -1153,12 +1171,13 @@ export function WorkspaceProvider({
     if (
       target !== connectionRef.current ||
       attempt !== connecting.current ||
+      !stillSelected() ||
       synchronization.isSending() ||
       synchronization.checkpoint().version !== checkpoint.version
     )
       throw new Error('The workspace changed while backing up. Review changes before reloading.')
     await synchronization.discard(checkpoint)
-    if (target !== connectionRef.current || attempt !== connecting.current)
+    if (target !== connectionRef.current || attempt !== connecting.current || !stillSelected())
       throw new Error('Runtime connection changed while reloading.')
     adopt(profile, value, true)
     updateOverview({

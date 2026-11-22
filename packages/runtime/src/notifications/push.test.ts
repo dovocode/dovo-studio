@@ -27,8 +27,9 @@ afterEach(async () => {
   vi.unstubAllGlobals()
 })
 function setup(managed = false) {
+  let service: PushNotifications
   const db = openDatabase(':memory:'),
-    store = new WorkspaceStore(db),
+    store = new WorkspaceStore(db, (change) => service?.workspace?.(change)),
     devices = new Devices(db, 'owner-token')
   const device = devices.add('Phone', 'phone-token')
   const send = vi
@@ -49,14 +50,7 @@ function setup(managed = false) {
         prompt?: QuestionPrompt
       }>
     | undefined
-  const service = new PushNotifications(
-    db,
-    store,
-    devices,
-    () => input,
-    managed ? {} : { send },
-    send,
-  )
+  service = new PushNotifications(db, store, devices, () => input, managed ? {} : { send }, send)
   cleanups.push(async () => {
     await service.dispose()
     db.close()
@@ -100,6 +94,37 @@ function setup(managed = false) {
     },
   }
 }
+it('delivers a completion between polls with a damaged registration on another device', async () => {
+  const f = setup()
+  const damaged = f.devices.add('Damaged phone', 'other-token')
+  f.db.prepare('INSERT INTO push_devices VALUES (?,?)').run(damaged, '{broken')
+  f.store.updateTask('task', (task) => ({ ...task, status: 'draft' }))
+  await f.service.flush()
+  f.store.updateTask('task', (task) => ({ ...task, status: 'running' }))
+  f.store.updateTask('task', (task) => ({ ...task, status: 'review' }))
+  await f.service.flush()
+  await f.service.flush()
+  expect(f.send.mock.calls.map(([message]) => message.data.kind)).toEqual(['done'])
+  expect(
+    f.db.prepare('SELECT value FROM push_devices WHERE device_id=?').pluck().get(damaged),
+  ).toBe('{broken')
+})
+
+it('keeps a renewed registration when an older test reports its token invalid', async () => {
+  const f = setup()
+  let invalid = () => {}
+  f.send.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        invalid = () => resolve({ delivered: false, invalidToken: true })
+      }),
+  )
+  const test = f.service.test(f.device)
+  f.service.register(f.device, { ...f.registration, token: 'b'.repeat(64) })
+  invalid()
+  await expect(test).rejects.toThrow('Run the test again')
+  expect(f.service.status(f.device).registered).toBe(true)
+})
 it('only sends direct actions to capable phones and keeps secret questions out of action data', async () => {
   const f = setup()
   await f.service.flush()
@@ -366,6 +391,29 @@ it('delivers questions already pending on the first capture without replaying th
   expect(f.send.mock.calls[0][0].data).toMatchObject({
     inputId: 'first-question',
     inputType: 'question',
+  })
+})
+
+it('keeps title, project and preview Unicode intact when an emoji crosses the limit', async () => {
+  const f = setup()
+  f.store.update((workspace) => ({
+    ...workspace,
+    repositories: [
+      { id: 'repo', name: `${'z'.repeat(199)}🚀`, path: '/tmp/project', branch: 'main' },
+    ],
+  }))
+  f.store.updateTask('task', (task) => ({
+    ...task,
+    repositoryId: 'repo',
+    title: `${'x'.repeat(159)}🚀`,
+  }))
+  f.input({ id: 'emoji', type: 'question', preview: `${'y'.repeat(349)}🚀` })
+  await f.service.flush()
+  expect(f.send).toHaveBeenCalledOnce()
+  expect(f.send.mock.calls[0]?.[0]).toMatchObject({
+    title: 'x'.repeat(159),
+    body: 'y'.repeat(349),
+    data: { project: 'z'.repeat(199) },
   })
 })
 

@@ -87,7 +87,7 @@ export type ModelCatalog = Schema.Schema.Type<typeof modelCatalogSchema>
 /** ACP advertises these settings in the same controls as built-in providers. */
 export function acpModelSetting(option: { id: string; category?: string | null }) {
   if (option.category === 'model' || (!option.category && option.id === 'model')) return 'model'
-  if (option.category === 'thought_level') return 'reasoning'
+  if (option.category === 'thought_level' || option.category === 'thinking') return 'reasoning'
   return undefined
 }
 
@@ -155,16 +155,19 @@ export function changeModelSettings<T extends TaskHarness>(
 }
 
 /** Model pickers show concrete models, while saved provider defaults remain valid. */
-export function isNamedModelId(id: string) {
+export function isNamedModelId(id: string, provider?: TaskHarness['provider']) {
   const value = id.trim().toLowerCase()
-  return value !== '' && value !== 'default'
+  return value !== '' && (provider === 'acp' || value !== 'default')
 }
 
 export function modelCatalogChoices(models: ModelCatalog['models']) {
-  const names = models.map((model) => modelDisplayName(model.id, model.name))
+  const byId = new Map<string, ModelCatalog['models'][number]>()
+  for (const model of models) if (!byId.has(model.id)) byId.set(model.id, model)
+  const choices = [...byId.values()]
+  const names = choices.map((model) => modelDisplayName(model.id, model.name))
   const counts = new Map<string, number>()
   for (const name of names) counts.set(name, (counts.get(name) ?? 0) + 1)
-  return models.map((model, index) => ({
+  return choices.map((model, index) => ({
     ...model,
     name:
       (counts.get(names[index]) ?? 0) > 1

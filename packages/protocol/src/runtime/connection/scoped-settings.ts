@@ -425,6 +425,7 @@ export function resolveSettingsTarget<T extends SettingsTargetSource>(
   sources: readonly T[],
   target: SettingsTarget,
   activeId?: string | null,
+  draftOwnerId?: string,
 ) {
   const scope: SettingsScope = target.projectId
     ? target.environmentId
@@ -443,8 +444,9 @@ export function resolveSettingsTarget<T extends SettingsTargetSource>(
             (scope !== 'project' || !!repository.gitIdentity),
         )),
   )
-  const source = target.environmentId
-    ? matching[0]
+  const ownerId = target.environmentId || draftOwnerId
+  const source = ownerId
+    ? matching.find((entry) => entry.profile.id === ownerId)
     : (matching.find((source) => source.connected && source.profile.id === activeId) ??
       matching.find((source) => source.connected) ??
       matching[0])

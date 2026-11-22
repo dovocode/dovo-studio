@@ -58,6 +58,7 @@ export function InAppInputNotifications() {
   latest.current = { overviews, ready, active, navigationReady: !!navigation?.key }
   useEffect(() => {
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'inactive') return
       setForeground(state === 'active')
     })
     return () => subscription.remove()

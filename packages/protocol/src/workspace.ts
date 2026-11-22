@@ -337,6 +337,7 @@ export const fileSchema = mutableStruct({
   changedSinceViewed: Schema.optional(Schema.Literal(true)),
   diskContents: Schema.optional(Schema.String),
   preview: Schema.optional(filePreviewMetadataSchema),
+  workingRevision: Schema.optional(Schema.String),
   // Working scans only. Older runtimes and historical reviews may omit this metadata.
   gitStatus: Schema.optional(
     mutableStruct({ index: gitFileChangeSchema, workingTree: gitFileChangeSchema }),
@@ -1137,6 +1138,8 @@ export const nodeDataSchema = mutableStruct({
   /** Selected upstream task results. Omission preserves independent step prompts. */
   inputFrom: Schema.optional(maxValue(mutableArray(maxValue(minValue(Schema.String, 1), 200)), 32)),
   inputFiles: Schema.optional(Schema.Boolean),
+  /** A JSON Schema document for the final reply of this task step. */
+  resultSchema: Schema.optional(maxValue(Schema.String, 32000)),
   kind: Schema.Literals(['trigger', 'task', 'review']),
   label: Schema.String,
   trigger: Schema.Literals(['manual', 'schedule', 'once', 'webhook', 'github']),

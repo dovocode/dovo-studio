@@ -324,6 +324,21 @@ export function NodeInspector({
               onChange={(event) => field({ objective: event.target.value })}
             />
           </FormField>
+          <FormField label={uiText('Result schema (optional)')}>
+            <Textarea
+              aria-label={uiText('Result schema (optional)')}
+              rows={4}
+              maxLength={32000}
+              value={data.resultSchema ?? ''}
+              disabled={!snapshot?.automationStepResultsSupported}
+              onChange={(event) => field({ resultSchema: event.target.value || undefined })}
+            />
+            <p className="text-muted-foreground">
+              {snapshot?.automationStepResultsSupported
+                ? uiText('Enter a JSON Schema for the final reply. Leave blank to keep plain text.')
+                : uiText('Update this runtime to validate step results.')}
+            </p>
+          </FormField>
           <fieldset disabled={!snapshot?.automationStepInputsSupported} className="space-y-2">
             <legend>Inputs from preceding tasks</legend>
             {!snapshot?.automationStepInputsSupported && (

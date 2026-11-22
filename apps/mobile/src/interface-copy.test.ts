@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { parse } from '@babel/parser'
 import { expect, it } from 'vite-plus/test'
-import catalog from '../../../packages/studio-core/src/interface-catalog.json'
+import english from '../../../packages/studio-core/src/interface-catalogs/en'
 import pending from '../../../packages/studio-core/src/interface-copy-pending.json'
 
 const root = fileURLToPath(new URL('./', import.meta.url))
@@ -89,7 +89,7 @@ function unmarkedCopy(value: unknown): string[] {
 it('bundles every marked mobile message and prevents new untranslated JSX copy', () => {
   const missing = new Set<string>()
   const unmarked: string[] = []
-  const en: Readonly<Record<string, string>> = catalog.en
+  const en: Readonly<Record<string, string>> = english
   const pendingCopy = new Set(pending)
   const requireCopy = (value: unknown) => {
     const node = object(value)

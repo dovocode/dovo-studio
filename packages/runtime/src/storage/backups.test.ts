@@ -17,7 +17,7 @@ import { openDatabase } from './database'
 import { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './backups'
 import { acquireProcessLock } from './process-lock'
 import { exportRuntimeRecovery } from './recovery'
-import { rotateRuntimeLogs } from './log-rotation'
+import { rotateRuntimeLog } from './log-rotation'
 import { Devices } from '../auth/devices'
 import { RetrievalPeers } from '../retrieval/peers'
 import { WorkspaceStore } from './workspace'
@@ -67,6 +67,45 @@ it('cleans owned verification sidecars and abandoned partial snapshots without t
     expect((await readdir(f.dir)).filter((name) => name.includes('.restore-'))).toEqual([])
   } finally {
     if (f.db.open) f.db.close()
+  }
+})
+
+it('preserves the live database and its pre-restore backup when publication fails', async () => {
+  const f = await setup()
+  try {
+    f.db.pragma('wal_autocheckpoint = 0')
+    const insert = f.db.prepare('INSERT OR REPLACE INTO documents VALUES (?,?)')
+    insert.run('marker', 'old')
+    const source = await f.backups.create()
+    insert.run('marker', 'live')
+    const backup = Database.prototype.backup
+    vi.spyOn(Database.prototype, 'backup').mockImplementation(function (
+      this: Database.Database,
+      target,
+      options,
+    ) {
+      return target === f.path
+        ? Promise.reject(new Error('Restore publication interrupted'))
+        : backup.call(this, target, options)
+    })
+    await expect(restoreRuntimeBackup(f.path, source.path)).rejects.toThrow(
+      'Restore publication interrupted',
+    )
+    expect(f.db.prepare('SELECT value FROM documents WHERE id = ?').pluck().get('marker')).toBe(
+      'live',
+    )
+    const preserved = (await f.backups.list()).find((entry) => entry.path !== source.path)
+    if (!preserved) throw new Error('Missing the pre-restore backup')
+    const reader = new Database(preserved.path, { readonly: true })
+    try {
+      expect(reader.prepare('SELECT value FROM documents WHERE id = ?').pluck().get('marker')).toBe(
+        'live',
+      )
+    } finally {
+      reader.close()
+    }
+  } finally {
+    f.db.close()
   }
 })
 
@@ -225,24 +264,23 @@ it('inspects version 3 task rows and their history counts when exporting', async
     f.db.close()
   }
 })
-it('rotates bounded tails while keeping an existing append descriptor usable', async () => {
+it('retains three complete log generations across writer restarts', async () => {
   const f = await setup()
   f.db.close()
   const path = join(f.dir, 'server.log')
-  const handle = await open(path, 'a')
-  try {
-    for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < 5; i++) {
+    rotateRuntimeLog(path, 100)
+    const handle = await open(path, 'a')
+    try {
       await handle.write('old\n'.repeat(100) + `tail ${i}\n`)
-      await rotateRuntimeLogs(f.dir, 100)
+    } finally {
+      await handle.close()
     }
-    await handle.write('still logging\n')
-    expect(await readFile(path, 'utf8')).toBe('still logging\n')
-    expect(await readFile(path + '.1', 'utf8')).toContain('tail 4')
-    expect((await stat(path + '.3')).size).toBeLessThanOrEqual(100)
-    expect(await stat(path + '.4').catch(() => null)).toBeNull()
-  } finally {
-    await handle.close()
   }
+  expect(await readFile(path, 'utf8')).toContain('tail 4')
+  expect(await readFile(path + '.1', 'utf8')).toBe('old\n'.repeat(100) + 'tail 3\n')
+  expect(await readFile(path + '.3', 'utf8')).toBe('old\n'.repeat(100) + 'tail 1\n')
+  expect(await stat(path + '.4').catch(() => null)).toBeNull()
 })
 it('backs up databases above the old budget and retains two large verified snapshots', async () => {
   const f = await setup()

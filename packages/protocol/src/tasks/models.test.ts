@@ -63,6 +63,7 @@ it('uses host display names, formats raw versioned GPT IDs and keeps custom iden
   expect(
     modelCatalogChoices([
       { id: 'openai/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
+      { id: 'openai/gpt-5.1-sol', name: 'Reported twice' },
       { id: 'azure/gpt-5.1-sol', name: 'GPT-5.1-Sol' },
     ]).map((model) => model.name),
   ).toEqual(['5.1 Sol · openai', '5.1 Sol · azure'])
@@ -264,7 +265,8 @@ it('distinguishes inheriting custom-agent modes from explicitly clearing them ov
 })
 
 it('excludes provider-default aliases from model choices without hiding named defaults', () => {
-  expect(['', 'default', ' DEFAULT '].filter(isNamedModelId)).toEqual([])
+  expect(['', 'default', ' DEFAULT '].filter((id) => isNamedModelId(id))).toEqual([])
+  expect(isNamedModelId('default', 'acp')).toBe(true)
   const models = [
     { id: '', name: 'Provider default' },
     { id: 'default', name: 'Default (recommended)', isDefault: true },

@@ -6,7 +6,7 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
+  useLayoutEffect,
   useRef,
   useState,
   type ReactNode,
@@ -92,7 +92,7 @@ export function useConfirmSettingsNavigation() {
 export function useSettingsDraft(dirty: boolean, saving = false) {
   const context = useContext(Context)
   const id = useRef(Symbol('settings-draft'))
-  useEffect(
+  useLayoutEffect(
     () => context?.registerDraft(id.current, dirty, saving),
     [context?.registerDraft, dirty, saving],
   )
@@ -107,7 +107,15 @@ function useSettingsTargetState() {
   const context = useContext(Context)
   if (!context) throw new Error('SettingsTargetProvider is required')
   const { overviews, activeId } = useRuntime()
-  const resolved = resolveSettingsTarget(overviews, context.target, activeId)
+  const { target, draftFlags } = context
+  const previous = useRef<{ target: SettingsTarget; ownerId: string } | undefined>(undefined)
+  const ownerId =
+    draftFlags && previous.current?.target === target ? previous.current.ownerId : undefined
+  const resolved = resolveSettingsTarget(overviews, target, activeId, ownerId)
+  const selectedId = resolved.source?.profile.id
+  useLayoutEffect(() => {
+    if (selectedId) previous.current = { target, ownerId: selectedId }
+  }, [target, selectedId])
   return {
     ...context,
     ...resolved,

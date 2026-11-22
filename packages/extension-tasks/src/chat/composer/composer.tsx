@@ -1,4 +1,5 @@
 import { browserSnapshotPaste } from '../../browser/browser-snapshot-clipboard'
+import { pasteAttachmentFiles } from './attachment-paste'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useScopedError } from '@dovo/studio-core/scoped-error'
 import { useNextPrompt } from '@dovo/studio-core/next-prompt'
@@ -1692,12 +1693,9 @@ export function Composer({
           if (browserSnapshot) {
             event.preventDefault()
             event.stopPropagation()
-          } else if (!files.length) {
+          } else if (!pasteAttachmentFiles(event.clipboardData, files)) {
             return
           }
-          // Rich-text sources can expose a synthetic file alongside their useful plain text.
-          if (!browserSnapshot && text && !files.some((file) => file.type.startsWith('image/')))
-            return
           if (
             connected &&
             !sending &&

@@ -1,4 +1,13 @@
-import { createContext, useCallback, useContext, useEffect, useRef, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react'
 import { resolveSettingsTarget, type SettingsTarget } from '@dovo/protocol'
 import { useConfirmation } from './confirmation'
 import { useApplicationState } from './runtime/application-state'
@@ -7,6 +16,7 @@ import { useRuntimeSources } from './workspace/runtime-sources'
 
 const Context = createContext<{
   target: SettingsTarget
+  hasDraft: boolean
   setTarget: (target: SettingsTarget) => Promise<boolean>
   confirmNavigation: () => Promise<boolean>
   registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
@@ -17,12 +27,17 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
     projectId: '',
   })
   const drafts = useRef(new Map<symbol, { dirty: boolean; saving: boolean }>())
+  const [hasDraft, setHasDraft] = useState(false)
   const currentTarget = useRef(target)
   currentTarget.current = target
   const registerDraft = useCallback((id: symbol, dirty: boolean, saving: boolean) => {
+    const update = () =>
+      setHasDraft([...drafts.current.values()].some((draft) => draft.dirty || draft.saving))
     drafts.current.set(id, { dirty, saving })
+    update()
     return () => {
       drafts.current.delete(id)
+      update()
     }
   }, [])
   const confirm = useConfirmation()
@@ -63,7 +78,7 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
     [updateTarget, confirmNavigation],
   )
   return (
-    <Context.Provider value={{ target, setTarget, confirmNavigation, registerDraft }}>
+    <Context.Provider value={{ target, hasDraft, setTarget, confirmNavigation, registerDraft }}>
       {children}
     </Context.Provider>
   )
@@ -71,7 +86,7 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
 export function useSettingsDraft(dirty: boolean, saving = false) {
   const context = useContext(Context)
   const id = useRef(Symbol('settings-draft'))
-  useEffect(
+  useLayoutEffect(
     () => context?.registerDraft(id.current, dirty, saving),
     [context?.registerDraft, dirty, saving],
   )
@@ -97,5 +112,14 @@ export function useSettingsTarget() {
   if (!context) throw new Error('SettingsTargetProvider is required')
   const sources = useRuntimeSources()
   const { activeRuntimeId } = useWorkspace()
-  return { ...context, sources, ...resolveSettingsTarget(sources, context.target, activeRuntimeId) }
+  const { target, hasDraft } = context
+  const previous = useRef<{ target: SettingsTarget; ownerId: string } | undefined>(undefined)
+  const ownerId =
+    hasDraft && previous.current?.target === target ? previous.current.ownerId : undefined
+  const resolved = resolveSettingsTarget(sources, target, activeRuntimeId, ownerId)
+  const selectedId = resolved.source?.profile.id
+  useLayoutEffect(() => {
+    if (selectedId) previous.current = { target, ownerId: selectedId }
+  }, [target, selectedId])
+  return { ...context, sources, ...resolved }
 }

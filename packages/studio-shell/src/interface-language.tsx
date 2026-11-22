@@ -8,7 +8,10 @@ import {
 export function AppInterfaceLanguage({ children }: { children: ReactNode }) {
   const { interfaceLanguage } = useAppPreferences()
   return (
-    <InterfaceLanguageProvider language={interfaceLanguage} deviceLanguages={navigator.languages}>
+    <InterfaceLanguageProvider
+      language={interfaceLanguage}
+      deviceLanguages={globalThis.navigator?.languages}
+    >
       <DocumentLanguage />
       {children}
     </InterfaceLanguageProvider>

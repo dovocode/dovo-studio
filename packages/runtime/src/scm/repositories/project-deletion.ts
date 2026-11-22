@@ -1,11 +1,13 @@
 import {
   decode,
+  decodeResult,
   deleteProjectSchema,
+  taskMetadataSchema,
   SCRATCH_PROJECT_ID,
   taskFamilyIds,
   type Automation,
 } from '@dovo/protocol'
-import { Effect } from 'effect'
+import { Effect, Struct } from 'effect'
 import type { Services } from '../../services.js'
 import { HttpError } from '../../errors.js'
 import { routeProgram, serviceResult } from '../../http/support/effect.js'
@@ -37,6 +39,10 @@ const flowReferences = (flow: Automation, repositoryId: string) =>
       node.data.linkedCheckouts?.some((link) => link.repositoryId === repositoryId),
   )
 
+const projectOwnership = taskMetadataSchema.mapFields(
+  Struct.pick(['repositoryId', 'linkedCheckouts', 'pendingLinkedCheckouts']),
+)
+
 export function deleteProjectEffect(s: Services, value: unknown) {
   return routeProgram(
     Effect.gen(function* () {
@@ -46,6 +52,30 @@ export function deleteProjectEffect(s: Services, value: unknown) {
       if (!repository) throw new HttpError(404, 'Project not found')
       if (repositoryId === SCRATCH_PROJECT_ID || repository.kind === 'scratch')
         throw new HttpError(409, 'General cannot be deleted')
+      for (const id of s.store.unreadableTaskIds()) {
+        const value = s.db
+          .prepare('SELECT value FROM workspace_tasks WHERE task_id = ?')
+          .pluck()
+          .get(id)
+        let metadata: unknown
+        if (typeof value === 'string') {
+          try {
+            metadata = JSON.parse(value)
+          } catch {
+            /* The row remains unreadable. */
+          }
+        }
+        const ownership = decodeResult(projectOwnership, metadata)
+        if (
+          !ownership.success ||
+          ownership.data.repositoryId === repositoryId ||
+          projectReferences(ownership.data, repositoryId)
+        )
+          throw new HttpError(
+            409,
+            'Recover the unreadable thread records before deleting this project.',
+          )
+      }
 
       for (const task of workspace.tasks) {
         if (task.repositoryId === repositoryId) continue

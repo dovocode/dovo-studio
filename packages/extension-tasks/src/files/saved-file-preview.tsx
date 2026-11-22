@@ -57,6 +57,7 @@ export function SavedFilePreview({
     ownerKey,
     contentKey,
     filePreviewIdentity(file.preview),
+    file.workingRevision,
     full,
     attempt,
   ])

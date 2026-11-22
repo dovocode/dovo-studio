@@ -9,16 +9,15 @@ import {
   useRef,
   useState,
   useEffect,
-  type ReactNode,
 } from 'react'
 import type { SettingsChange } from '@dovo/protocol'
 import { View, ScrollView, Pressable } from 'react-native'
 import { SettingsAction } from './settings-controls'
+import { SettingsFooterContext } from './settings-theme'
 import { Text } from '../ui/content/text'
 import { useTheme } from '../ui/theme'
 import { Surface } from '../ui/layout/surface'
 
-export const SettingsFooterContext = createContext<((footer: ReactNode) => void) | null>(null)
 export const SettingsSaveScope = createContext<{ label: string; online: boolean } | null>(null)
 
 /** SettingsPage owns the footer so actions stay outside the scrolling editor. */

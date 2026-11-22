@@ -1,8 +1,9 @@
 import { expect, it } from 'vite-plus/test'
-import { mkdtempSync, mkdirSync } from 'node:fs'
+import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { knownToolDirectories, loginShellPath, mergePath } from './login-path.js'
+import * as loginPath from './login-path.js'
 
 it('puts login-shell entries first without duplicating the app PATH', () => {
   expect(
@@ -29,3 +30,35 @@ it('adds existing version-manager shims that a prompt hook would have added', ()
   expect(known).not.toContain(join(home, '.cargo/bin'))
   expect(mergePath('/usr/bin:/bin', '/usr/bin', known)).toBe(`/usr/bin:${known.join(':')}:/bin`)
 })
+
+it.skipIf(process.platform === 'win32')(
+  'refreshes the login path in place and shares concurrent requests',
+  async () => {
+    const directory = mkdtempSync(join(tmpdir(), 'dovo-refresh-path-'))
+    try {
+      const shell = join(directory, 'shell')
+      const pathFile = join(directory, 'path')
+      const env = { SHELL: shell, PATH: '/usr/bin:/bin', DOVO_TEST_PATH_FILE: pathFile }
+      writeFileSync(
+        shell,
+        '#!/bin/sh\nprintf "__DOVO_LOGIN_PATH__%s__DOVO_LOGIN_PATH__" "$(cat "$DOVO_TEST_PATH_FILE")"\n',
+        { mode: 0o700 },
+      )
+      writeFileSync(pathFile, '/before:/usr/bin')
+      if (
+        !('refreshableLoginPath' in loginPath) ||
+        typeof loginPath.refreshableLoginPath !== 'function'
+      )
+        throw new Error('The runtime does not expose a login PATH refresh')
+      const refresh = loginPath.refreshableLoginPath(env)
+      expect(env.PATH).toBe('/before:/usr/bin:/bin')
+      writeFileSync(pathFile, '/after:/usr/bin')
+      const pending = refresh()
+      expect(refresh()).toBe(pending)
+      await pending
+      expect(env.PATH).toBe('/after:/usr/bin:/bin')
+    } finally {
+      rmSync(directory, { recursive: true, force: true })
+    }
+  },
+)

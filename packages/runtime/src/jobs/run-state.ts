@@ -9,6 +9,8 @@ import {
 } from '@dovo/protocol'
 import { Schema } from 'effect'
 import { createHash } from 'node:crypto'
+import { botStepTurn } from './bot-step.js'
+import { readStepResult } from './step-result.js'
 export const storedRunSchema = mutableStruct({
   retryTurnId: Schema.optional(Schema.String),
   outputs: Schema.optional(
@@ -18,6 +20,7 @@ export const storedRunSchema = mutableStruct({
         taskId: Schema.String,
         text: Schema.String,
         attachments: Schema.Array(attachmentSchema),
+        result: Schema.optional(Schema.Json),
         longAnswer: Schema.optional(
           mutableStruct({ excerpt: Schema.String, digest: Schema.String }),
         ),
@@ -39,18 +42,29 @@ export const storedRunSchema = mutableStruct({
 })
 export type StoredRun = Schema.Schema.Type<typeof storedRunSchema>
 type StepOutput = NonNullable<StoredRun['outputs']>[string]
+export function runReadyToFinish(run: StoredRun) {
+  return (
+    run.outcome === 'unchanged' ||
+    run.flow.nodes.every((node) => run.completedNodes.includes(node.id))
+  )
+}
 const stepTextLimit = 32768
 const truncationNote =
   '\n[Result truncated at 32768 characters. Read the preceding task for the rest.]'
 
 /** Reuse the saved answer for the step, including files. Legacy recovery can read the
  * worker up to the saved step finish so a later manual turn cannot become its result. */
-export function stepOutput(task: Task, finishedAt?: string): StepOutput {
-  const turns = finishedAt ? task.turns?.filter((turn) => turn.startedAt <= finishedAt) : task.turns
+export function stepOutput(task: Task, finishedAt?: string, turnId?: string): StepOutput {
+  const turns = turnId
+    ? task.turns?.filter((turn) => turn.id === turnId)
+    : finishedAt
+      ? task.turns?.filter((turn) => turn.startedAt <= finishedAt)
+      : task.turns
   const turn = turns?.at(-1)
   const replies = task.messages.filter(
     (message) =>
       message.role === 'assistant' &&
+      (!turnId || !!turn) &&
       (!finishedAt || !message.createdAt || message.createdAt <= finishedAt) &&
       (!turn ||
         message.id === turn.assistantId ||
@@ -80,10 +94,22 @@ export function stepOutput(task: Task, finishedAt?: string): StepOutput {
   }
 }
 
+export function stepWorkerTurn(task: Task, runId: string, step: JobRunStep) {
+  if (step.turnId) return task.turns?.find((turn) => turn.id === step.turnId)
+  const objective = task.messages.find(
+    (message) =>
+      message.role === 'user' &&
+      message.source?.kind === 'automation' &&
+      message.source.runId === runId,
+  )
+  return objective ? botStepTurn(task, objective.id) : undefined
+}
+
 export function reportStepOutput(
   saved: StepOutput | undefined,
   readTask: () => Task | undefined,
   finishedAt?: string,
+  turnId?: string,
 ) {
   if (
     saved &&
@@ -94,7 +120,7 @@ export function reportStepOutput(
     return saved
   // Older runs kept the beginning of a long answer. Recover the ending from its original turn.
   const task = readTask()
-  return task ? stepOutput(task, finishedAt) : saved
+  return task ? stepOutput(task, finishedAt, turnId) : saved
 }
 export function runSteps(run: StoredRun): JobRunStep[] {
   // Before step metadata existed, tasks were appended in execution order. Completed
@@ -165,23 +191,47 @@ export function reconcileCompletedTasks(
   const steps = runSteps(run).map((step) => {
     if (!step.taskId) return step
     // Bot steps share a long-lived thread; their own message decides completion.
-    if (run.flow.nodes.find((node) => node.id === step.nodeId)?.data.botId === step.taskId)
-      return step
+    const node = run.flow.nodes.find((node) => node.id === step.nodeId)
+    if (node?.data.botId === step.taskId) return step
     const task = tasks.find((task) => task.id === step.taskId)
     if (!task) return step
     if (completedNodes.includes(step.nodeId)) {
       if (!outputs?.[step.nodeId])
-        outputs = { ...outputs, [step.nodeId]: stepOutput(readTask(task.id), step.finishedAt) }
+        outputs = {
+          ...outputs,
+          [step.nodeId]: stepOutput(readTask(task.id), step.finishedAt, step.turnId),
+        }
       return step
     }
     if (!['review', 'done'].includes(task.status) || taskFamilyWorking(tasks, task.id)) return step
-    if (!outputs?.[step.nodeId])
-      outputs = { ...outputs, [step.nodeId]: stepOutput(readTask(task.id)) }
+    const history = readTask(task.id)
+    const turn = stepWorkerTurn(history, run.id, step)
+    const schema = node?.data.resultSchema
+    if (
+      turn?.status !== 'completed' ||
+      (schema === undefined && task.history.latestTurn?.id !== turn.id)
+    )
+      return step
+    if (!outputs?.[step.nodeId]) {
+      try {
+        outputs = {
+          ...outputs,
+          [step.nodeId]: {
+            ...stepOutput(history, undefined, turn.id),
+            ...(schema !== undefined ? { result: readStepResult(schema, history, turn) } : {}),
+          },
+        }
+      } catch {
+        // The worker completed without a valid result. A retry must start another attempt.
+        return step
+      }
+    }
     completedNodes.push(step.nodeId)
     return {
       ...step,
       status: 'completed' as const,
-      finishedAt: task.history.latestTurn?.finishedAt ?? task.updatedAt,
+      turnId: turn.id,
+      finishedAt: turn.finishedAt ?? task.updatedAt,
       error: undefined,
     }
   })

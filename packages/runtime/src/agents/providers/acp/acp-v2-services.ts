@@ -8,7 +8,7 @@ import {
 import type { AgentDiscovery, ModelCatalog } from '@dovo/protocol'
 import type { AcpLaunch } from '../../execution/types.js'
 import { openAcpV2Connection, acpV2Enabled, AcpV1Fallback } from './acp-v2-connection.js'
-import { acpV2ModelOption, configureAcpV2 } from './acp-v2-config.js'
+import { acpV2ModelOption, acpV2ReasoningOption, configureAcpV2 } from './acp-v2-config.js'
 
 /** The only fallback boundary is initialization, before running the requested operation. */
 export async function withAcpV2<T>(
@@ -71,23 +71,26 @@ export async function acpV2Models(launch: AcpLaunch, agent: AgentDiscovery) {
         session.sessionId,
         session.configOptions,
         agent,
+        false,
+        undefined,
+        'discover',
       )
       const choices = (category: string) => {
         const option =
           category === 'model'
             ? acpV2ModelOption(options)
-            : options?.find(
-                (option) => option.category === category && SessionConfigOption.isSelect(option),
-              )
+            : category === 'thought_level'
+              ? acpV2ReasoningOption(options)
+              : options?.find(
+                  (option) => option.category === category && SessionConfigOption.isSelect(option),
+                )
         return option && SessionConfigOption.isSelect(option)
           ? option.options
               .flatMap((item) => ('options' in item ? item.options : [item]))
               .map((item) => ({ id: item.value, name: item.name }))
           : []
       }
-      const thought = options?.find((option) => option.category === 'thought_level')
-      const defaultReasoning =
-        thought && SessionConfigOption.isSelect(thought) ? thought.currentValue : undefined
+      const defaultReasoning = acpV2ReasoningOption(options)?.currentValue
       const currentModel = acpV2ModelOption(options)?.currentValue
       return {
         models: choices('model').map((model) => ({

@@ -1,6 +1,9 @@
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { Schema } from 'effect'
-import { decode, type Task } from '@dovo/protocol'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { decode, questionPromptSchema, type Task } from '@dovo/protocol'
 import { startRuntime } from '../index'
 import { taskListAction } from './endpoints/task-list-action'
 
@@ -150,3 +153,105 @@ it('binds undo to the original device and expires it', async () => {
   ).toThrow('Undo has expired or is unavailable.')
   expect(services.store.task('parent').archived).toBe(true)
 })
+
+it('keeps a pending question answerable by rejecting Settle through both client routes', async () => {
+  const runtime = await startRuntime({ databasePath: ':memory:', ownerToken: token, port: 0 })
+  cleanup.push(runtime.close)
+  const { store, questions } = runtime.services
+  store.update((workspace) => ({
+    ...workspace,
+    tasks: [
+      task,
+      {
+        ...task,
+        id: 'child',
+        delegation: { parentTaskId: task.id, parentRunId: 'ended', key: 'child' },
+      },
+    ],
+  }))
+  const pending = questions.request(
+    'child',
+    decode(questionPromptSchema, {
+      title: 'Choose a branch',
+      questions: [{ id: 'branch', header: 'Branch', question: 'Which branch?', custom: true }],
+    }),
+    new AbortController().signal,
+  )
+  const question = questions.list()[0]!
+  const request = (path: string, input: unknown, method = 'POST') =>
+    fetch(`http://127.0.0.1:${runtime.port}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const attempts = [
+    () => request('/api/tasks/list-action', settle),
+    () =>
+      request(
+        '/api/workspace',
+        {
+          collection: 'tasks',
+          id: task.id,
+          changes: { archived: { before: null, after: true } },
+        },
+        'PATCH',
+      ),
+  ]
+  for (const attempt of attempts) {
+    const response = await attempt()
+    expect(response.status).toBe(409)
+    expect(await response.text()).toContain('Choose a branch')
+    expect(store.get().tasks.map((entry) => entry.archived)).toEqual([undefined, undefined])
+    expect(questions.status(question.id)).toBe('pending')
+  }
+  const answer = await request('/api/tasks/answer', {
+    id: question.id,
+    answers: { branch: ['main'] },
+  })
+  expect(answer.status).toBe(200)
+  await expect(pending).resolves.toEqual({ branch: ['main'] })
+  expect((await attempts[0]!()).status).toBe(200)
+})
+
+it.each([false, true])(
+  'replays the Settle receipt after restart and checks intervening changes ($0)',
+  async (changed) => {
+    const dir = await mkdtemp(join(tmpdir(), 'dovo-task-list-undo-'))
+    cleanup.push(() => rm(dir, { recursive: true, force: true }))
+    const options = { databasePath: join(dir, 'runtime.sqlite'), ownerToken: token, port: 0 }
+    let runtime = await startRuntime(options)
+    cleanup.unshift(runtime.close)
+    runtime.services.store.update((workspace) => ({ ...workspace, tasks: [task] }))
+    const send = (input: unknown, mutationId?: string) =>
+      fetch(`http://127.0.0.1:${runtime.port}/api/tasks/list-action`, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${token}`,
+          'Content-Type': 'application/json',
+          ...(mutationId ? { 'x-dovo-mutation-id': mutationId } : {}),
+        },
+        body: JSON.stringify(input),
+      })
+    const response = await send(settle, 'settle-restart')
+    expect(response.status).toBe(200)
+    const receipt = decode(resultSchema, await response.json())
+    if (changed) {
+      for (const snoozedUntil of ['2026-12-01T00:00:00Z', undefined])
+        runtime.services.store.updateTask(task.id, (current) => ({ ...current, snoozedUntil }))
+    }
+    await runtime.close()
+    runtime = await startRuntime(options)
+    cleanup.unshift(runtime.close)
+    expect(decode(resultSchema, await (await send(settle, 'settle-restart')).json())).toEqual(
+      receipt,
+    )
+    const undo = await send({ action: 'undo', token: receipt.undo })
+    expect(undo.status).toBe(changed ? 409 : 200)
+    expect(await undo.text()).toContain(
+      changed ? 'This thread or a subthread changed' : '"ok":true',
+    )
+    const updated = runtime.services.store.taskSummary(task.id)
+    expect(updated.archived).toBe(changed ? true : undefined)
+    expect(updated.snoozedUntil).toBe(changed ? undefined : task.snoozedUntil)
+  },
+)

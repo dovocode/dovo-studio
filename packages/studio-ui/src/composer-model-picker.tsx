@@ -222,10 +222,7 @@ export function ComposerModelPicker({
         ? availableInstallations[0]?.id
         : undefined
   const selectedHarness =
-    browsedAgent &&
-    (value.provider !== 'acp' ||
-      value.endpoint !== browsedAgent.endpoint ||
-      value.acpInstallationId !== browsedAgent.acpInstallationId)
+    browsedAgent && browsedAgent.id !== selectedAgent?.id
       ? browsedAgent
       : activeProvider === value.provider &&
           (activeProvider !== 'acp' || activeInstallationId === value.acpInstallationId)
@@ -327,7 +324,7 @@ export function ComposerModelPicker({
           ]
   const filtered = items.filter(
     (item) =>
-      (item.agent || isNamedModelId(item.id)) &&
+      (item.agent || isNamedModelId(item.id, item.provider)) &&
       itemAvailable(item) &&
       ((mode === 'models' && manageModels) || !preferences[itemKey(item)]?.disabled) &&
       (!lockedProvider || item.provider === lockedProvider) &&
@@ -361,15 +358,25 @@ export function ComposerModelPicker({
     const sameHarness =
       item.provider === value.provider &&
       (item.provider !== 'acp' || item.installationId === value.acpInstallationId)
-    const installation = installations.find((entry) => entry.id === item.installationId)
-    const base = sameHarness
-      ? value
-      : installation
-        ? { ...selectedHarness, acpInstallationId: installation.id }
-        : item.provider === activeProvider
-          ? selectedHarness
-          : changeHarnessProvider(value, item.provider)
-    const saved = await onChange(changeModelSettings(base, { model: item.id }, catalog))
+    const usesBrowsedCatalog =
+      mode === 'models' &&
+      item.provider === selectedHarness.provider &&
+      item.installationId === selectedHarness.acpInstallationId
+    const otherAgent = !!item.sourceAgentId && item.sourceAgentId !== selectedAgent?.id
+    const base = usesBrowsedCatalog
+      ? selectedHarness
+      : sameHarness
+        ? value
+        : {
+            ...changeHarnessProvider(value, item.provider),
+            acpInstallationId: item.installationId,
+          }
+    const next = changeModelSettings(
+      base,
+      { model: item.id },
+      usesBrowsedCatalog ? catalog : sameHarness ? selectedCatalog.catalog : undefined,
+    )
+    const saved = await (otherAgent ? onUseHarness(next) : onChange(next))
     if (saved && settings) {
       requestAnimationFrame(() =>
         settingsRef.current

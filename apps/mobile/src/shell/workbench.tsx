@@ -669,6 +669,9 @@ export function Workbench() {
               {(runtimeId) => (
                 <NewTask
                   initial={shortcuts.input}
+                  onRetryShare={() => {
+                    if (shortcuts.input) shortcuts.retryShare(shortcuts.input.id)
+                  }}
                   onCreated={(id) => {
                     void finishShortcut(runtimeId, id)
                   }}

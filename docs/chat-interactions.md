@@ -1,5 +1,8 @@
 # Queue, steer and agent questions
 
+On desktop and web, pasting text with an image preview from a document inserts the text in the
+composer. Use **Copy image** or paste a copied image file to attach the image.
+
 ## Native goals
 
 Claude and Codex threads support these commands on desktop, web and mobile:
@@ -75,6 +78,11 @@ Right-click a desktop task (or press Shift+F10 on its row) for task actions, inc
 pinning, snooze, settle/reopen, read/unread, project filtering and copying task details. Marking the
 open chat unread closes its conversation so it stays unread until you open it again. Task actions
 target the computer that owns the thread, including in the unified list.
+
+Answer or dismiss a pending question in the thread or its subthreads before settling it. When the
+thread list offers **Undo** for Settle or Snooze, the runtime keeps the Undo record for 30 seconds,
+including across a runtime restart. A change to the affected thread or subthread lifecycle can
+invalidate Undo before the deadline.
 
 Select the trash icon on a queued chat message to remove that message before delivery.
 

@@ -6,6 +6,22 @@ it('keeps review marks and the same collection for an unchanged scan', () => {
   const previous = [file]
   expect(retainChangedFiles(previous, [{ ...file, viewed: false }])).toBe(previous)
 })
+it('preserves an inline diff across metadata-only refreshes and invalidates it on disk change', () => {
+  const saved = { ...file, workingRevision: 'first' }
+  const metadata = {
+    ...saved,
+    before: '',
+    after: '',
+    viewed: false,
+    preview: { kind: 'deferred' as const },
+  }
+  expect(retainChangedFiles([saved], [metadata], true)[0]).toBe(saved)
+  const changed = { ...metadata, workingRevision: 'second' }
+  expect(retainChangedFiles([metadata], [changed], true)[0]).toBe(changed)
+  expect(
+    retainChangedFiles([{ ...metadata, viewed: true }], [{ ...saved, viewed: false }]),
+  ).toEqual([saved])
+})
 it('invalidates review marks when content changes and includes additions and removals', () => {
   const changed = { ...file, after: 'newer', viewed: false }
   const added = { ...file, path: 'new.ts', viewed: false }

@@ -115,6 +115,15 @@ export function automationIssues(
     errors.push('Connect every node to the trigger.')
   for (const node of flow.nodes) {
     const data = node.data
+    if (data.resultSchema !== undefined) {
+      try {
+        const schema: unknown = JSON.parse(data.resultSchema)
+        if (data.kind !== 'task' || !schema || typeof schema !== 'object' || Array.isArray(schema))
+          throw new Error('Expected a JSON Schema object on a task step')
+      } catch {
+        errors.push(`Enter a JSON Schema object for ${data.label}.`)
+      }
+    }
     if (data.inputFrom?.length) {
       const sources = new Set(automationInputSources(flow, node.id).map((source) => source.id))
       if (

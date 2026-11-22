@@ -57,6 +57,26 @@ desktop edits are reported instead of overwritten.
 The mobile editor supports a single ordered path. Existing branching graphs remain visible and
 runnable, and their connections are preserved. Edit those in the desktop/web canvas.
 
+## Validate a step result
+
+Enter a JSON Schema object in **Result schema (optional)** on a Task step. For a step that must
+return a count, enter
+`{"type":"object","properties":{"count":{"type":"integer"}},"required":["count"]}`. The runtime
+supports draft 2020-12 and draft-07. Include `$schema` to select draft-07. Clear the field to use
+plain text. An older runtime shows an update message in the editor.
+
+The worker returns one JSON value in its final reply, with any files attached separately. If the
+JSON is missing, invalid, over 32 KiB, or fails validation, the step fails and later steps wait.
+Retry starts a new worker when the previous attempt already ran a turn and cannot resume it. The
+previous worker thread stays available for review. A later manual reply cannot supply the step
+result.
+
+Select the preceding task under **Inputs from preceding tasks** to pass its saved JSON to the next
+task. File copying still uses **Include files**. Open the run audit and select **Load output for
+this page** on the first page to see the redacted JSON and its step, worker, attempt and turn IDs.
+Agents can set `data.resultSchema` in a task node through `studio_automations` and use `validate` or
+`dryRun` to check the definition. A dry run shows the schema without running the worker.
+
 ## Run a step in a Bot
 
 A task step with `botId` creates an isolated worker with that [Bot](bots.md)'s settings. Set
@@ -164,7 +184,8 @@ older runtime rejects the `dryRun` action.
 
 Each run records the current step, completed steps, review gates, failures, task links and start/end
 times. Expand run details on mobile or open **Runs** beside the desktop canvas. Steps distinguish
-queued work from work that is running, awaiting review, completed, failed or cancelled.
+queued work from work that is running, awaiting review, completed, failed or cancelled. An approval
+applies to the displayed step and attempt. Refresh the run after a stale approval.
 
 Only one run of an automation may be active or waiting for review at a time. Different automations
 can run at the same time. Tasks that use the same checkout share its files and uncommitted changes.
@@ -175,15 +196,17 @@ waiting for review, the due occurrence is skipped. The schedule then moves to it
 **Activity & message history** on desktop or the computer’s **Activity** panel on mobile shows
 **Skipped: previous run still active**, the automation name and due time. Expand the entry for the
 automation ID, occurrence key and previous run ID. These entries follow the seven-day diagnostic
-retention window, even when activity history has no limit. One-time reminders keep their durable
-pending and retry behavior until a run is accepted.
+retention window, even when activity history has no limit. Maintenance keeps due occurrences
+pending. An accepted one-time reminder can retry a provider startup failure after its schedule has
+been consumed. Cancel the run to stop its retry.
 
 ## Retry and stop
 
 **Retry** resumes a failed or cancelled run. It preserves completed steps and reuses the unfinished
-step's task, conversation and checkout. A review that was rejected must be approved again before
-execution can continue. Retry waits for cancellation to finish and refuses to overlap another run of
-the same automation.
+step's task, conversation and checkout when that task still belongs to the unfinished step. If a
+later chat reply replaced the failed result, Retry starts a fresh task for the step. A review that
+was rejected must be approved again before execution can continue. Retry waits for cancellation to
+finish and refuses to overlap another run of the same automation.
 
 Retry does not roll back files or guarantee that an interrupted tool command had no effect. Inspect
 the failed task's output and changes when the error happened during an external action. Retrying
@@ -193,7 +216,8 @@ uses the original run configuration; to use edited instructions, start a new run
 interrupted runs are marked failed with an explicit recovery message. Retry reconciles tasks that
 already completed before the run saved its next step, avoiding an unnecessary second execution. It
 recovers the worker's saved answer and attachments for any later steps that use them. Waiting review
-gates survive restarts.
+gates survive restarts. If all steps finished before the final save failed, the runtime records
+completion from the saved steps on the next scheduler pass or restart.
 
 ## Delivery and scheduling
 

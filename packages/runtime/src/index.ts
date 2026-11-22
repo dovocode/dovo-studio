@@ -13,7 +13,7 @@ import { startupProfile } from './diagnostics/startup-profile.js'
 export { startupProfile } from './diagnostics/startup-profile.js'
 export { RuntimeBackups, restoreRuntimeBackup, verifyRuntimeBackup } from './storage/backups.js'
 export { exportRuntimeRecovery } from './storage/recovery.js'
-export { rotateRuntimeLogs } from './storage/log-rotation.js'
+export { rotateRuntimeLog } from './storage/log-rotation.js'
 export { recordLastCrash } from './storage/last-crash.js'
 export { backupRuntimeDatabase } from './storage/backup.js'
 export { stopOwnedChild } from './agents/execution/stop-owned-child.js'
@@ -25,6 +25,7 @@ export interface RuntimeOptions {
   host?: string
   port?: number
   external?: { host: string; port: number; enabled: boolean }
+  refreshProviderPath?: () => Promise<void>
 }
 export class RuntimeStartupError extends Data.TaggedError('RuntimeStartupError')<{
   readonly operation: string
@@ -64,7 +65,7 @@ export const runtimeLayer = (options: RuntimeOptions) =>
       )
       profile?.('database opened')
       const services = yield* Effect.try({
-        try: () => createServices(db, options.ownerToken),
+        try: () => createServices(db, options.ownerToken, undefined, options.refreshProviderPath),
         catch: (cause) => new RuntimeStartupError({ operation: 'service initialization', cause }),
       })
       const startOptional = (name: string, start: () => void | Promise<void>) =>

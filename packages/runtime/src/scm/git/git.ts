@@ -1508,7 +1508,7 @@ export class GitService {
       )
     }
   }
-  async changes(path: string): Promise<ChangedFile[]> {
+  async changes(path: string, loadPreviews = true): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
     // Status and HEAD are independent reads; neither takes a repository lock.
     const [status, head] = await Promise.all([
@@ -1549,11 +1549,15 @@ export class GitService {
       for (const [name, gitStatus] of changed) {
         const before = old.get(name)
         let unreadable = false
-        const after = await this.workingFile(root, name).catch(() => {
+        const working = await this.workingFile(root, name).catch(() => {
           unreadable = true
           return undefined
         })
+        const after = working && { hash: working.hash, size: working.size, mode: working.mode }
         const sides = { before, after }
+        const workingRevision = createHash('sha256')
+          .update(JSON.stringify([before?.hash, before?.mode, working?.revision, unreadable]))
+          .digest('hex')
         const entries = [before, after].filter((side) => side !== undefined)
         let kind: FilePreviewMetadata['kind'] = entries.some((side) => side.mode === '160000')
           ? 'submodule'
@@ -1563,6 +1567,7 @@ export class GitService {
               ? 'large'
               : 'deferred'
         if (
+          loadPreviews &&
           files.length < 200 &&
           !unreadable &&
           entries.length &&
@@ -1602,6 +1607,7 @@ export class GitService {
                 diskContents: text,
                 viewed: false,
                 gitStatus,
+                workingRevision,
               })
               remaining -= entries.reduce((sum, side) => sum + side.size, 0)
               continue
@@ -1617,6 +1623,7 @@ export class GitService {
           after: '',
           viewed: false,
           gitStatus,
+          workingRevision,
           preview: { kind, ...sides },
         })
       }
@@ -1657,7 +1664,12 @@ export class GitService {
     const hash = info.isDirectory()
       ? (await this.command(file, ['rev-parse', 'HEAD'])).trim()
       : 'working'
-    return { hash, size: info.size, mode }
+    return {
+      hash,
+      size: info.size,
+      mode,
+      revision: [hash, info.dev, info.ino, info.size, info.mtimeMs, info.ctimeMs, mode],
+    }
   }
   async workingFilePreview(
     root: string,

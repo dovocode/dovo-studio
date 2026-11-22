@@ -57,7 +57,7 @@ const server = await createServer({
   configFile: false,
   root,
   plugins: [tailwindcss()],
-  server: { middlewareMode: true },
+  server: { middlewareMode: true, watch: null },
   logLevel: 'error',
 })
 let css

@@ -31,6 +31,7 @@ const item = mutableStruct({
   source: Schema.optional(Schema.Literal('share')),
   files: Schema.optional(sharedFilesSchema),
   shareError: Schema.optional(Schema.String),
+  shareRetryable: Schema.optional(Schema.Boolean),
 })
 export type ShortcutInput = Schema.Schema.Type<typeof item>
 const storage = SHORTCUT_INBOX_STORAGE
@@ -51,6 +52,7 @@ export function useShortcuts() {
   const [queue, setQueue] = useApplicationState<ShortcutInput[]>([])
   const [error, setError] = useApplicationState('')
   const mounted = useRef(false)
+  const retryShare = useRef<(id: string) => void>(() => {})
   useEffect(() => {
     mounted.current = true
     let stopped = false,
@@ -61,7 +63,7 @@ export function useShortcuts() {
       Effect.sync(() => {
         if (!stopped) setError(String(cause))
       })
-    const receiveShare = () => {
+    const receiveShare = (id?: string) => {
       void commands.run(
         inboxLock
           .withPermits(1)(
@@ -70,14 +72,18 @@ export function useShortcuts() {
               const saved = yield* readInbox
               const handoffs = yield* nativeEffect(() => pendingSharedHandoffs())
               const updated = yield* nativeEffect(() =>
-                ingestSharedHandoffs(saved, handoffs, {
-                  ownFiles: ownSharedFiles,
-                  save: async (items) => {
-                    await AsyncStorage.setItem(storage, JSON.stringify(items))
-                    if (!stopped) setQueue(items)
+                ingestSharedHandoffs(
+                  saved,
+                  id ? handoffs.filter((handoff) => handoff.id === id) : handoffs,
+                  {
+                    ownFiles: ownSharedFiles,
+                    save: async (items) => {
+                      await AsyncStorage.setItem(storage, JSON.stringify(items))
+                      if (!stopped) setQueue(items)
+                    },
+                    acknowledge: acknowledgeSharedHandoff,
                   },
-                  acknowledge: acknowledgeSharedHandoff,
-                }),
+                ),
               )
               if (!stopped) setError('')
               if (!stopped) setQueue(updated)
@@ -86,6 +92,7 @@ export function useShortcuts() {
           .pipe(Effect.catch(report)),
       )
     }
+    retryShare.current = receiveShare
     const receive = (url: string) => {
       void commands.run(
         inboxLock
@@ -151,6 +158,7 @@ export function useShortcuts() {
     return () => {
       stopped = true
       mounted.current = false
+      retryShare.current = () => {}
       listener.remove()
       foreground.remove()
       void commands.stop()
@@ -180,5 +188,5 @@ export function useShortcuts() {
           ),
         ),
     )
-  return { input: queue[0], consume, error }
+  return { input: queue[0], consume, error, retryShare: (id: string) => retryShare.current(id) }
 }

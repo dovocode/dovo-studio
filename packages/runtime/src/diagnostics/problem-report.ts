@@ -237,7 +237,9 @@ async function logSection(
   const tails: { name: string; lines: string[] }[] = []
   for (const name of LOG_NAMES) {
     // Redact the whole tail first: a private key or other value can span several lines.
-    const lines = redactReportText(await readTail(join(directory, name)), secrets)
+    const current = await readTail(join(directory, name))
+    const archived = await readTail(join(directory, name + '.1'))
+    const lines = redactReportText([archived, current].filter(Boolean).join('\n'), secrets)
       .split(/\r?\n/)
       .filter((line) => line.trim())
       .slice(-LOG_TAIL_LINES)
