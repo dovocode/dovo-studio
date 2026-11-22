@@ -1,6 +1,14 @@
 import { extensionKeySchema } from './studio-extension-views.js'
 import { Schema } from 'effect'
 import {
+  isStudioDataSource,
+  studioApiDataFields,
+  studioCliDataFields,
+  studioCommandFields,
+  studioDataDisplay,
+  studioHttpUrlSchema,
+} from './studio-data-sources.js'
+import {
   maxValue,
   minValue,
   mutableArray,
@@ -13,44 +21,25 @@ const text = maxValue(Schema.String, 4096)
 const title = maxValue(minValue(Schema.String, 1), 100)
 const revision = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)))
 const size = Schema.Int.pipe(Schema.check(Schema.isBetween({ minimum: 1, maximum: 4 })))
-const url = refine(
-  text,
-  (value) => {
-    if (!/^https?:\/\//i.test(value) || value !== value.trim()) return false
-    try {
-      const parsed = new URL(value)
-      return (
-        (parsed.protocol === 'http:' || parsed.protocol === 'https:') &&
-        !parsed.username &&
-        !parsed.password
-      )
-    } catch {
-      return false
-    }
-  },
-  'Enter an HTTP or HTTPS URL without credentials',
-)
-
 const tile = { id: uuidSchema, title, span: size, height: size }
-const data = { chart: Schema.Literals(['table', 'number', 'line']), pointer: text }
-const command = { repositoryId: text, command: maxValue(minValue(Schema.String, 1), 20000) }
 
 export const dashboardTileSchema = Schema.Union([
-  strictStruct({ ...tile, ...data, kind: Schema.Literal('api'), url }),
+  strictStruct({ ...tile, ...studioApiDataFields }),
+  strictStruct({ ...tile, ...studioCliDataFields }),
   strictStruct({
     ...tile,
-    ...data,
+    ...studioDataDisplay,
     kind: Schema.Literal('mcp'),
     taskId: text,
     server: text,
     tool: text,
     arguments: text,
   }),
-  strictStruct({ ...tile, ...command, kind: Schema.Literal('command') }),
-  strictStruct({ ...tile, ...command, kind: Schema.Literal('tui') }),
+  strictStruct({ ...tile, ...studioCommandFields, kind: Schema.Literal('command') }),
+  strictStruct({ ...tile, ...studioCommandFields, kind: Schema.Literal('tui') }),
   strictStruct({ ...tile, kind: Schema.Literal('terminal'), terminalId: text }),
-  strictStruct({ ...tile, kind: Schema.Literal('iframe'), url }),
-  strictStruct({ ...tile, kind: Schema.Literal('browser'), url }),
+  strictStruct({ ...tile, kind: Schema.Literal('iframe'), url: studioHttpUrlSchema }),
+  strictStruct({ ...tile, kind: Schema.Literal('browser'), url: studioHttpUrlSchema }),
   strictStruct({ ...tile, kind: Schema.Literal('gui') }),
   strictStruct({
     ...tile,
@@ -77,7 +66,17 @@ export const dashboardSchema = strictStruct({
 export type Dashboard = typeof dashboardSchema.Type
 export type DashboardTile = typeof dashboardTileSchema.Type
 
-export const dashboardListRequestSchema = strictStruct({})
+export function needsStudioDataSources(dashboard: Dashboard) {
+  return dashboard.tiles.some(
+    (tile) =>
+      ('panels' in tile && tile.panels !== undefined) ||
+      (isStudioDataSource(tile) && (tile.kind === 'cli' || tile.refreshSeconds !== undefined)),
+  )
+}
+
+export const dashboardListRequestSchema = strictStruct({
+  dataSources: Schema.optionalKey(Schema.Literal(true)),
+})
 export const dashboardSaveRequestSchema = strictStruct({
   dashboard: dashboardSchema,
   expectedRevision: revision,

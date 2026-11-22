@@ -5,6 +5,7 @@ import {
   threadCommands,
   useStudioExtensions,
   extensionComponentVersion,
+  studioExtensionPageTarget,
 } from '@dovo/studio-core'
 import { parseStudioLink, recordClientAction } from '@dovo/protocol'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
@@ -65,7 +66,7 @@ import {
   useCompactLayout,
 } from '@dovo/studio-ui'
 import { SettingsNav } from './settings-nav'
-import { useConfirmSettingsNavigation } from '@dovo/studio-core'
+import { useConfirmSettingsNavigation, WorkspaceDraftScope } from '@dovo/studio-core'
 import { appSettingsExtension } from './app-extension'
 import { useAppearance, type WindowColors } from './appearance'
 import { useTaskNotifications, type NotificationTarget } from './task-notifications'
@@ -302,7 +303,9 @@ function WorkbenchContent({
     if (browserWindowId || threadWindow)
       return { viewId: browserWindowId ? 'browser' : 'tasks', entityId: threadWindow?.taskId }
     const views = extensions.flatMap((extension) => extension.views)
-    const initialView = views.find((view) => view.navigationGroup !== 'settings') ?? views[0]
+    const initialView =
+      views.find((view) => !view.navigationGroup) ??
+      views.find((view) => view.navigationGroup === 'settings')
     return visibleWorkspaceTarget({ viewId: initialView?.id ?? '' }, workspaceModes)
   })
   const [settingsTarget, setSettingsTarget] = useApplicationState<StudioNavigation | null>(null)
@@ -337,12 +340,19 @@ function WorkbenchContent({
   const [navigationKey, setNavigationKey] = useState(0)
   const [settingsNavigationKey, setSettingsNavigationKey] = useState(0)
   const canLeave = useCallback(
-    async () => !settingsNavigation.current.settingsTarget || settingsConfirmation.current(),
+    (scope: 'settings' | 'all' = 'all') => settingsConfirmation.current(scope),
+    [],
+  )
+  const isSettingsView = useCallback(
+    (viewId: string) =>
+      [appSettingsExtension, ...settingsNavigation.current.extensions].some((extension) =>
+        extension.views.some((view) => view.navigationGroup === 'settings' && view.id === viewId),
+      ),
     [],
   )
   const closeSettings = useCallback(async () => {
     const attempt = ++navigationAttempt.current
-    if (!(await canLeave()) || !mounted.current || attempt !== navigationAttempt.current)
+    if (!(await canLeave('settings')) || !mounted.current || attempt !== navigationAttempt.current)
       return false
     settingsNavigation.current.settingsTarget = null
     setSettingsTarget(null)
@@ -356,14 +366,8 @@ function WorkbenchContent({
       if (next.viewId === 'pull-request-settings')
         next = { ...next, viewId: 'pull-request-monitoring-settings' }
       const navigation = settingsNavigation.current
-      const { target, extensions } = navigation
-      if (
-        [appSettingsExtension, ...extensions].some((extension) =>
-          extension.views.some(
-            (view) => view.navigationGroup === 'settings' && view.id === next.viewId,
-          ),
-        )
-      ) {
+      const { target } = navigation
+      if (isSettingsView(next.viewId)) {
         if (!navigation.settingsTarget)
           settingsTrigger.current =
             document.activeElement instanceof HTMLElement ? document.activeElement : null
@@ -397,14 +401,14 @@ function WorkbenchContent({
       setNavigationKey((key) => key + 1)
       return true
     },
-    [updateTarget, setSettingsTarget, browserWindowId],
+    [updateTarget, setSettingsTarget, browserWindowId, isSettingsView],
   )
   const navigate = useCallback(
     async (next: StudioNavigation, options?: { replace?: boolean }) => {
       const attempt = ++navigationAttempt.current
       const runtimeId = currentRuntime.current
       if (
-        !(await canLeave()) ||
+        !(await canLeave(isSettingsView(next.viewId) ? 'settings' : 'all')) ||
         !mounted.current ||
         attempt !== navigationAttempt.current ||
         runtimeId !== currentRuntime.current
@@ -412,7 +416,7 @@ function WorkbenchContent({
         return false
       return commitNavigation(next, options)
     },
-    [canLeave, commitNavigation],
+    [canLeave, commitNavigation, isSettingsView],
   )
   const goBack = useCallback(async () => {
     if (settingsNavigation.current.settingsTarget) {
@@ -1045,6 +1049,13 @@ function WorkbenchContent({
     showIssues,
     showJira,
   }
+  const pageRuntimeId = runtimeRegistry.activeId
+  const pinnedExtensionPages = pageRuntimeId
+    ? (snapshot?.studioExtensionPinnedPages ?? []).map((page) => ({
+        ...studioExtensionPageTarget(pageRuntimeId, page.extensionId, page.pageId),
+        title: page.title,
+      }))
+    : []
   if (captureContent) return <StudioHostProvider api={api}>{captureContent}</StudioHostProvider>
   return (
     <StudioHostProvider api={api}>
@@ -1123,6 +1134,15 @@ function WorkbenchContent({
                   navigationViewVisible(view, navigationAvailability),
                 )}
                 activeId={settingsTarget?.viewId ?? target.viewId}
+                extensionPages={pinnedExtensionPages}
+                activeExtensionPage={
+                  settingsTarget
+                    ? undefined
+                    : target.viewId === 'studio-extension-page'
+                      ? target.entityId
+                      : undefined
+                }
+                onOpenExtensionPage={(page) => void navigate(page)}
                 onSelect={(viewId) => {
                   navigateSection(viewId)
                 }}
@@ -1244,33 +1264,35 @@ function WorkbenchContent({
                 <BrowserMediaControls onIndicatorChange={setBrowserIndicator} />
               )}
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-                <ErrorBoundary key={target.viewId} diagnosticContext={{ viewId: target.viewId }}>
-                  <Suspense
-                    fallback={
-                      <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
-                    }
-                  >
-                    {ready && View ? (
-                      <View
-                        entityId={target.entityId}
-                        nativeAgentKey={target.nativeAgentKey}
-                        threadRequest={target.threadRequest}
-                        threadParent={parentThread}
-                        pullTarget={target.pullTarget}
-                        automationTarget={target.automationTarget}
-                        messageId={target.messageId}
-                        threadConnection={target.threadConnection}
-                        navigationKey={navigationKey}
-                      />
-                    ) : !ready ? (
-                      <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
-                    ) : (
-                      <div className="p-6 text-xs text-muted-foreground">
-                        This view is unavailable. Select another view from the sidebar.
-                      </div>
-                    )}
-                  </Suspense>
-                </ErrorBoundary>
+                <WorkspaceDraftScope>
+                  <ErrorBoundary key={target.viewId} diagnosticContext={{ viewId: target.viewId }}>
+                    <Suspense
+                      fallback={
+                        <p className="p-6 text-xs text-muted-foreground">Loading extension…</p>
+                      }
+                    >
+                      {ready && View ? (
+                        <View
+                          entityId={target.entityId}
+                          nativeAgentKey={target.nativeAgentKey}
+                          threadRequest={target.threadRequest}
+                          threadParent={parentThread}
+                          pullTarget={target.pullTarget}
+                          automationTarget={target.automationTarget}
+                          messageId={target.messageId}
+                          threadConnection={target.threadConnection}
+                          navigationKey={navigationKey}
+                        />
+                      ) : !ready ? (
+                        <p className="p-6 text-xs text-muted-foreground">Opening workspace…</p>
+                      ) : (
+                        <div className="p-6 text-xs text-muted-foreground">
+                          This view is unavailable. Select another view from the sidebar.
+                        </div>
+                      )}
+                    </Suspense>
+                  </ErrorBoundary>
+                </WorkspaceDraftScope>
               </div>
               <Dialog
                 open={settingsOpen}
@@ -1437,10 +1459,20 @@ function WorkbenchContent({
                             id: `studio-extension.${entry.id}/${contribution.id}`,
                             title: `${entry.installed?.name}: ${contribution.title}`,
                             run: () =>
-                              navigate({
-                                viewId: 'studio-extensions',
-                                entityId: `${entry.id}/${contribution.id}`,
-                              }),
+                              navigate(
+                                pageRuntimeId &&
+                                  contribution.kind === 'view' &&
+                                  contribution.placement === 'page'
+                                  ? studioExtensionPageTarget(
+                                      pageRuntimeId,
+                                      entry.id,
+                                      contribution.id,
+                                    )
+                                  : {
+                                      viewId: 'studio-extensions',
+                                      entityId: `${entry.id}/${contribution.id}`,
+                                    },
+                              ),
                           }))
                         : [],
                     )

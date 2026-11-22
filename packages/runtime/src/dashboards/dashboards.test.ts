@@ -172,7 +172,7 @@ it('rejects reads for tiles without data and for a device that loses access', as
   const dashboards = setup()
   dashboards.save(dashboard([{ ...base, kind: 'gui' }]), 0)
   await expect(dashboards.read(id, tileId, revision(dashboards), () => undefined)).rejects.toThrow(
-    'Only API and MCP tiles',
+    'This tile has no data source',
   )
   await expect(
     dashboards.read(id, 'missing', revision(dashboards), () => undefined),
@@ -390,4 +390,36 @@ it('keeps no session for a dashboard deleted while its terminal started', () => 
   dashboards.save(dashboard([{ ...base, kind: 'threads' }]), 1)
   dashboards.recordSession(id, command, 'terminal-2')
   expect(dashboards.session(id, command)).toBeUndefined()
+})
+
+it('lists readable dashboards past an unreadable row, and never overwrites or deletes that row', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'dovo-dashboards-'))
+  cleanups.push(() => rm(directory, { recursive: true, force: true }))
+  const path = join(directory, 'runtime.sqlite')
+  const dashboards = setup(undefined, path)
+  const unreadableId = '00000000-0000-4000-8000-000000000009'
+  dashboards.save({ ...dashboard(), id: unreadableId, title: 'Newer' }, 0)
+  dashboards.save(dashboard(), 0)
+  const db = openDatabase(path)
+  cleanups.push(() => {
+    db.close()
+  })
+  // A newer Studio version wrote a tile kind this runtime does not know.
+  const newer = { ...dashboard(), id: unreadableId, revision: 1, tiles: [{ kind: 'future' }] }
+  db.prepare('UPDATE dashboards SET definition=? WHERE id=?').run(
+    JSON.stringify(newer),
+    unreadableId,
+  )
+  expect(dashboards.list().map((entry) => entry.id)).toEqual([id])
+  expect(() => dashboards.get(unreadableId)).toThrow('cannot read this dashboard')
+  expect(() => dashboards.save({ ...dashboard(), id: unreadableId }, 0)).toThrow(
+    'cannot read this dashboard',
+  )
+  expect(() => dashboards.save({ ...dashboard(), id: unreadableId }, 1)).toThrow(
+    'cannot read this dashboard',
+  )
+  expect(() => dashboards.delete(unreadableId, 1)).toThrow('cannot read this dashboard')
+  expect(db.prepare('SELECT definition FROM dashboards WHERE id=?').get(unreadableId)).toEqual({
+    definition: JSON.stringify(newer),
+  })
 })

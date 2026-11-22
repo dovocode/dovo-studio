@@ -16,6 +16,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   const [state, setState] = useState<InputPreview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const answering = useRef(new Set<string>())
   const currentKey = useRef(state?.key)
   currentKey.current = state?.key
   useEffect(() => {
@@ -31,8 +32,9 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
     setBusy(false)
   }, [state?.key])
   const answer = async (value: InputPreviewAnswer['answer'], decision?: ApprovalDecision) => {
-    if (!state || busy) return
+    if (!state?.connected || answering.current.has(state.key)) return
     const key = state.key
+    answering.current.add(key)
     setBusy(true)
     setError('')
     try {
@@ -42,6 +44,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
         setError(cause instanceof Error ? cause.message : String(cause))
       throw cause
     } finally {
+      answering.current.delete(key)
       if (currentKey.current === key) setBusy(false)
     }
   }
@@ -88,44 +91,60 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
       </header>
       {state && (
         <>
-          <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
-            <div className="space-y-1">
-              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                Thread
-              </p>
-              <p className="break-words text-sm font-medium leading-relaxed">{state.taskTitle}</p>
+          <section
+            ref={state.request.kind === 'approval' ? approval : undefined}
+            key={state.key}
+            data-approval-id={
+              state.request.kind === 'approval' ? state.request.value.id : undefined
+            }
+            tabIndex={state.request.kind === 'approval' ? 0 : undefined}
+            aria-keyshortcuts={approvalShortcutKeys(actions) || undefined}
+            className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
+          >
+            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
+              <div className="space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  Thread
+                </p>
+                <p className="break-words text-sm font-medium leading-relaxed">{state.taskTitle}</p>
+              </div>
+              {!state.connected && (
+                <p
+                  role="status"
+                  className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground"
+                >
+                  Reconnecting to server… Answers are disabled until connected.
+                </p>
+              )}
+              {state.request.kind === 'question' ? (
+                <QuestionForm
+                  key={state.key}
+                  request={state.request.value}
+                  connected={state.connected}
+                  onAnswer={(answers) => answer(answers)}
+                />
+              ) : (
+                <div className="space-y-3 rounded-xl border bg-card p-3">
+                  <h2 className="break-words text-sm font-semibold">{state.request.value.title}</h2>
+                  <ApprovalDetails detail={state.request.value.detail} bounded={false} />
+                </div>
+              )}
             </div>
-            {!state.connected && (
-              <p
-                role="status"
-                className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground"
-              >
-                Reconnecting to server… Answers are disabled until connected.
-              </p>
-            )}
-            {state.request.kind === 'question' ? (
-              <QuestionForm
-                key={state.key}
-                request={state.request.value}
-                connected={state.connected}
-                onAnswer={(answers) => answer(answers)}
-              />
-            ) : (
-              <section
-                ref={approval}
-                key={state.key}
-                data-approval-id={state.request.value.id}
-                tabIndex={0}
-                aria-keyshortcuts={approvalShortcutKeys(actions)}
-                className="space-y-4 rounded-xl border bg-card p-4"
-              >
-                <h2 className="text-sm font-medium">{state.request.value.title}</h2>
-                <ApprovalDetails detail={state.request.value.detail} />
-                <div className="flex flex-wrap gap-2">
+            {state.request.kind === 'approval' && (
+              <div className="shrink-0 space-y-2 border-t bg-background px-5 py-3">
+                {error && (
+                  <p
+                    role="alert"
+                    className="max-h-16 overflow-y-auto break-words text-xs text-destructive"
+                  >
+                    {error}
+                  </p>
+                )}
+                <div className="grid grid-cols-2 gap-2">
                   {actions.map((action) => (
                     <Button
                       key={action.decision}
-                      className="flex-1"
+                      className="h-auto min-h-8 min-w-0 whitespace-normal text-center"
                       variant={action.decision === 'approve' ? 'default' : 'outline'}
                       disabled={!state.connected || busy}
                       onClick={() =>
@@ -141,9 +160,9 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
                     </Button>
                   ))}
                 </div>
-              </section>
+              </div>
             )}
-          </div>
+          </section>
           <footer className="flex shrink-0 items-center justify-between gap-3 border-t bg-card px-5 py-3">
             <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
               {state.connected ? (
@@ -160,7 +179,7 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
           </footer>
         </>
       )}
-      {error && (
+      {error && state?.request.kind !== 'approval' && (
         <p role="alert" className="shrink-0 px-5 py-3 text-xs text-destructive">
           {error}
         </p>

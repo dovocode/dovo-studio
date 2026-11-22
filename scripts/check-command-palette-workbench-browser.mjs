@@ -24,11 +24,17 @@ window.dovo={readRuntimeRegistry:async()=>JSON.stringify({version:1,activeId:pro
 const task=createTask({title:'Palette thread',objective:'',agentId:'',repositoryId:'scratch'});
 task.messages=[{id:'first-message',role:'user',text:'Saved user message',createdAt:'2026-11-03T10:00:00.000Z'}];
 const shell={id:'standalone-shell',taskId:'studio:terminals',title:'Standalone shell',directory:'/tmp',exited:false,dormant:true};
-const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,terminalWorkspaceToolsSupported:true,botsSupported:true,workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[shell],runs:[],devices:[],pendingDevices:[]});
+const extensionId='example.pages';
+const page=(id,title)=>({id,title,kind:'view',placement:'page',view:{version:1,root:'content',nodes:[{id:'content',kind:'text',value:'Loaded '+title}]}});
+const pinned=page('overview','Pinned overview');
+const unpinned=page('insights','Project insights');
+const extensions=[{id:extensionId,revision:1,enabled:true,canRollback:false,settings:{},installed:{id:extensionId,version:1,name:'Example tools',contributions:[pinned,unpinned]}}];
+const snapshot=decode(snapshotSchema,{revision:1,runtimeId:'fixture',owner:false,terminalWorkspaceToolsSupported:true,botsSupported:true,studioExtensionsSupported:true,studioExtensionsRevision:1,studioDataSourcesSupported:true,studioExtensionPinnedPages:[{extensionId,pageId:pinned.id,title:pinned.title}],workspace:{version:1,runtimeAddress:'',agents:[],repositories:[{id:'scratch',kind:'scratch',name:'General',path:'/tmp',branch:''}],tasks:[task],automations:[]},approvals:[],questions:[],terminals:[shell],runs:[],devices:[],pendingDevices:[]});
 window.setPreferences=updateAppPreferences;window.calls=[];window.revision=1;
 window.fetch=async(url,init={})=>{
  const path=new URL(url).pathname,input=init.body?JSON.parse(init.body):undefined;
  window.calls.push({path,input});
+ if(path==='/api/studio-extensions'&&input?.action==='list')return Response.json({extensions,allowAgentInstall:false});
  if(path==='/api/snapshot')return Response.json({...snapshot,revision:++window.revision});
  if(path==='/health')return Response.json({service:'dovo-runtime',runtimeId:snapshot.runtimeId});
  if(path==='/api/retrieval/peers')return Response.json({ok:true});
@@ -181,11 +187,18 @@ try {
   await section('Bots').waitFor()
   assert.equal(count(await openPalette(), 'Open Bots'), 1)
   await page.keyboard.press('Escape')
+  await section('Pinned overview').click()
+  await page.getByRole('heading', { name: 'Pinned overview', exact: true }).waitFor()
+  assert.equal(await section('Pinned overview').getAttribute('aria-current'), 'page')
+  assert.equal(await section('Project insights').count(), 0)
+  await openPalette()
+  await run('Example tools: Project insights')
+  await page.getByRole('heading', { name: 'Project insights', exact: true }).waitFor()
   assert.deepEqual(errors, [])
   await page.close()
 } finally {
   await browser.close()
 }
 console.log(
-  'Command palette: one Open Browser with detached-window focus, Bots only when shown, and New thread, Go to thread and Search conversations from Terminals passed in the real Workbench.',
+  'Command palette: one Open Browser with detached-window focus, Bots only when shown, and New thread, Go to thread and Search conversations from Terminals passed in the real Workbench. Pinned and unpinned extension pages opened from the sidebar and palette.',
 )

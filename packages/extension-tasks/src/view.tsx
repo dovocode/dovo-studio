@@ -1368,6 +1368,7 @@ export default function TasksView({
           <PaneAddMenu
             label="Open thread workspace launcher"
             addable={rightPaneTabsToAdd.filter((tab) => tab !== 'changes' || hasDiff)}
+            open={rightTabs}
             onAdd={(tab) => selectSurface(tab)}
             onNewThread={() =>
               void startTask(taskCollectionKey(activeRuntimeId, task.repositoryId), true)

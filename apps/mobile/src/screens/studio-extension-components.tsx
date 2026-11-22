@@ -1,3 +1,5 @@
+import { useSettingsDraft } from '../runtime/preferences/settings-target'
+import { MobileDataSource } from './studio-data-source'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { Pressable, View } from 'react-native'
@@ -21,7 +23,7 @@ import { Switch } from '../ui/controls/switch'
 import { Sheet } from '../ui/layout/sheet'
 import { Surface } from '../ui/layout/surface'
 import { useTheme } from '../ui/theme'
-import { DataView } from './dashboard-data-view'
+import { DataGrid, DataView } from './dashboard-data-view'
 
 const stack = { gap: 8 }
 const row = { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 8 } as const
@@ -74,6 +76,7 @@ export function ExtensionComponents({
   const uiText = useInterfaceText()
   const { read, connected } = useRuntime()
   const state = useExtensionView(contribution.view, entry, read, connected, save)
+  useSettingsDraft(state.dirty, state.settingsSaving)
   return (
     <ExtensionComponentBoundary
       fallback={
@@ -81,6 +84,9 @@ export function ExtensionComponents({
       }
     >
       <View style={stack}>
+        {state.implicitSources.map((source) => (
+          <ViewSource key={source.id} id={source.id} state={state} />
+        ))}
         <Node id={contribution.view.root} state={state} />
         <ExtensionSettingsConflicts {...state} />
         {state.dirty && (
@@ -102,6 +108,19 @@ export function ExtensionComponents({
         {state.error && <Text accessibilityRole="alert">{state.error}</Text>}
       </View>
     </ExtensionComponentBoundary>
+  )
+}
+
+function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
+  const source = state.sources.find((item) => item.id === id)
+  if (!source) return null
+  return (
+    <MobileDataSource
+      key={JSON.stringify(source)}
+      source={source}
+      read={() => state.readSource(id)}
+      onData={(value) => state.setResult(id, value)}
+    />
   )
 }
 
@@ -308,6 +327,10 @@ function Node({ id, state }: { id: string; state: ExtensionViewState }) {
           )}
         </>
       )
+    case 'data-grid':
+      return <DataGrid value={state.get(node.value)} panels={node.panels} />
+    case 'data-source':
+      return <ViewSource id={node.source} state={state} />
     case 'table':
     case 'chart':
       return (

@@ -16,13 +16,15 @@ On mobile, new labels for dashboards and extensions use English until translatio
   thread, server, tool, and JSON arguments. Studio displays the result in the extension view or
   tile. Use a source with read-only credentials. The MCP server's read-only annotation is a
   declaration. The runtime checks the tool declaration and validates the arguments before each call.
+- **Data sources** read an HTTP API or capture CLI stdout. Use a source as a dashboard tile or bind
+  its result to Studio components in an extension view.
 - **MCP App views** open a saved MCP App in its original thread's app host. Give the source thread
   ID and saved app ID. The app keeps the existing sandbox, permissions, and tool approvals.
 - **Settings** declare text and switch fields. Studio renders a settings view for each extension
   with fields. A tool can map settings to named input arguments. Studio stores the values on the
   paired computer and retains compatible values during an update.
-- **Component views** use Studio controls in a settings section, tool view, or dashboard tile. They
-  can show settings, call declared tools, and display fields from the result.
+- **Component views** use Studio controls in a settings section, tool view, standalone page, or
+  dashboard tile. They can show settings, call declared tools, and display fields from the result.
 - **Dashboard tiles** use any installed contribution. Edit a dashboard, add a **Studio extension**
   tile, and choose a contribution. Exported dashboards keep extension and contribution IDs. Install
   the matching extension on the destination computer to use the tile there.
@@ -32,15 +34,112 @@ or focus a specific contribution. Actions run only when selected in that view or
 Studio loads extension definitions when you open an extension view, a dashboard with an extension
 tile, or the command palette.
 
+## Open and pin extension pages
+
+Select a page in **Studio extensions** to open it in the main workspace. On desktop and web, you can
+also search for it in the command palette. Use **Pin to sidebar** on desktop or web, or **Pin to
+navigation** on mobile. The shortcut appears when that computer is selected. Use the same control to
+unpin it. Disable the extension to hide its shortcuts. Enable it again to restore them.
+
+Use the UI SDK to define the page, its API source, and the Studio controls that display its data.
+
+```ts
+import {
+  apiSource,
+  defineExtension,
+  page,
+  result,
+  sourceControls,
+} from '@dovo/protocol/studio-extension-sdk'
+
+const health = apiSource({
+  id: 'health-feed',
+  title: 'Service status',
+  url: 'http://service.lan/status',
+  refreshSeconds: 60,
+})
+
+export default defineExtension({
+  id: 'example.service-status',
+  name: 'Service status',
+  contributions: [
+    health,
+    page({
+      id: 'overview',
+      title: 'Service overview',
+      root: {
+        id: 'summary',
+        kind: 'card',
+        children: [
+          sourceControls('refresh', health),
+          { id: 'status', kind: 'status', value: result(health, 'status') },
+          dataGrid({
+            id: 'metrics',
+            value: result(health),
+            panels: [
+              { title: 'Active builds', pointer: '/active', chart: 'number' },
+              { title: 'Latency', pointer: '/latency', chart: 'line' },
+              { title: 'Workers', pointer: '/workers', chart: 'table' },
+            ],
+          }),
+        ],
+      },
+    }),
+  ],
+})
+```
+
+Use `cliSource()` for command output. Both source helpers default to a table and the whole result.
+Use `sourceControls()` to place refresh controls in the layout. If you omit it, Studio places
+refresh controls above the components that use the source. Use the other UI SDK components for
+settings, tabs, dialogs, buttons, menus, and custom fallbacks. An agent can create and stage these
+pages. Paired users control pins and start source reads.
+
+## Add HTTP or CLI data
+
+Add an `api` or `cli` contribution to the manifest. An API source takes `url` and reads it with GET.
+A CLI source takes `repositoryId` and `command` and runs on that computer. Both use `pointer` to
+select part of the response and `chart` to choose the standalone display. Chart values are `table`,
+`number`, and `line`.
+
+```json
+{
+  "id": "build-count",
+  "kind": "cli",
+  "title": "Build count",
+  "repositoryId": "PROJECT_ID",
+  "command": "your-cli --json",
+  "pointer": "/count",
+  "chart": "number",
+  "refreshSeconds": 60
+}
+```
+
+In a typed UI SDK view, use `result('build-count')` as the value of a metric. Studio renders refresh
+controls for each source the view references. Use `result('build-count', 'field')` to read a field
+when the selected result is an object. The contribution also appears on the extension page and can
+be selected directly for a dashboard tile.
+
+Leave `refreshSeconds` out for manual refresh. With an interval of 30 to 86,400 seconds, a paired
+user can start or stop auto refresh. CLI sources show the exact command for confirmation. The
+schedule pauses when the view is closed or disconnected. It reads once when the view is available
+again if a read is overdue. Saving unrelated settings preserves the result and schedule. Install and
+agent authoring only store the source. Agents cannot run these contributions. The
+[dashboard data source limits](dashboards.md#timed-refresh) also apply to extensions.
+
+Use a runtime that supports data sources to manage extensions that contain API or CLI definitions.
+Older runtimes can fail to load saved manifests that contain these contribution types.
+
 ## Install from the marketplace
 
 In **Studio extensions**, select **Browse extension marketplace**. Search by name, publisher, or
 description. Preview a package to see its version, contributions, and any dashboard template.
 
 For each MCP tool or app, choose a thread on the selected computer and an available local source.
-Tools use a configured MCP server. Apps use a saved MCP App from that thread. Studio checks the
-source selection when it stages the package. For tools, the runtime checks that the named tool
-declares read-only access when you run it.
+For a CLI source, choose a project or **No Project** on that computer. Tools use a configured MCP
+server. Apps use a saved MCP App from that thread. Studio checks the source selection when it stages
+the package. For tools, the runtime checks that the named tool declares read-only access when you
+run it.
 
 Select **Stage package**, then **Review staged draft**. Review the exact manifest with the local
 bindings and select **Install draft**. To change an existing installation, preview the required
@@ -67,10 +166,10 @@ For the request schema, call `catalog` with `component: "marketplace"`.
 | `sources`          | No extra inputs for an agent. Returns the available sources in its current thread.            |
 | `stage`            | Package `id`, `digest`, `expectedRevision`, and `bindings`. Use revision 0 for a new install. |
 
-Each binding has a `contributionId` and a `source` containing the MCP server name or saved app ID.
-An agent binds sources in its current thread. Set `bindings: []` for a package with no sources. The
-standard `install` action still requires the computer's agent-install opt-in and ownership checks. A
-paired user can review and install an agent's staged draft.
+Each binding has a `contributionId` and a `source` containing the MCP server name, saved app ID, or
+CLI project ID. An agent binds sources in its current thread. Set `bindings: []` for a package with
+no sources. The standard `install` action still requires the computer's agent-install opt-in and
+ownership checks. A paired user must review and install a staged draft with a CLI source.
 
 ### Publish a package
 
@@ -99,14 +198,15 @@ the component names and UI SDK entry point. Use `{"action":"catalog","component"
 one component schema, or use `component: "manifest"` to get the full JSON Schema. Ask the agent to
 validate the manifest and stage it. Install the draft in Studio. To let an agent install its own
 drafts, turn on **Allow agents to install their own extensions on this computer**. Studio leaves
-this setting off by default. An agent can replace a pending draft from its own thread. A paired user
-can discard or replace a draft from any author.
+this setting off by default. A paired user must install drafts with CLI sources, even when this
+setting is on. An agent can replace a pending draft from its own thread. A paired user can discard
+or replace a draft from any author.
 
 | Action     | Inputs                                                                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
 | `catalog`  | Optional `component` kind or `manifest` for a schema                                                                                       |
 | `read`     | Extension `id`. Returns the draft and installed manifest that this thread authored. Saved setting values are private to the paired client. |
-| `install`  | Extension `id` and `expectedRevision`. Requires opt-in and a draft from this thread.                                                       |
+| `install`  | Extension `id` and `expectedRevision`. Requires opt-in and a draft from this thread without CLI sources.                                   |
 | `validate` | `manifest`                                                                                                                                 |
 | `stage`    | `manifest`, `expectedRevision`. Use 0 for a new ID.                                                                                        |
 | `list`     | None. Returns revisions and tool contributions available in the current thread.                                                            |

@@ -3,6 +3,7 @@ import { randomUUID } from '@dovo/protocol'
 import {
   dashboardDataRows,
   dashboardLinePlot,
+  dashboardPanelValue,
   dashboardTemplate,
   dashboardTemplateFilename,
   maxDashboardTemplateBytes,
@@ -44,6 +45,8 @@ it('keeps source fields in a stable order and renders finite chart coordinates',
       ['failed', '2'],
     ],
   })
+  expect(dashboardPanelValue({ 'a/b': { count: 7 } }, '/a~1b/count')).toBe(7)
+  expect(dashboardPanelValue({ count: 7 }, '/missing')).toBeUndefined()
   expect(dashboardLinePlot([1])).toBeNull()
   expect(dashboardLinePlot([-Number.MAX_VALUE, { value: Number.MAX_VALUE }])?.points).toBe(
     '5,115 315,5',
@@ -72,4 +75,21 @@ it('rebinds imported local references and handles UTF-8 template files', () => {
     '1 MB',
   )
   expect(() => importDashboardTemplate('{')).toThrow('valid dashboard JSON')
+})
+
+it('exports CLI data settings without the local project binding', () => {
+  const tile = newDashboardTile('cli')
+  if (tile.kind !== 'cli') throw new Error('Expected a CLI data tile')
+  const dashboard = {
+    id: randomUUID(),
+    title: 'Ops',
+    revision: 1,
+    tiles: [{ ...tile, repositoryId: 'repo', command: 'your-cli --json', refreshSeconds: 60 }],
+  }
+  expect(importDashboardTemplate(dashboardTemplate(dashboard)).tiles[0]).toMatchObject({
+    kind: 'cli',
+    repositoryId: '',
+    command: 'your-cli --json',
+    refreshSeconds: 60,
+  })
 })

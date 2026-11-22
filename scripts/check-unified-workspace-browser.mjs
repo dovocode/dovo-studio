@@ -121,7 +121,7 @@ export {Checkbox} from '${root}/packages/studio-ui/src/components/ui/checkbox';
 export {FormField} from '${root}/packages/studio-ui/src/components/form-field';
 export {ComposerSurface,ComposerTextarea,ComposerSubmit,ComposerWorkspaceBar} from '${root}/packages/studio-ui/src/composer-surface';
 export {ProjectIcon} from '${root}/packages/studio-ui/src/project-icon';
-export {FileChangeCounts,FileTypeIcon} from '${root}/packages/studio-ui/src/file-tree';
+export {FileBrowserTree,FileChangeCounts,FileTypeIcon} from '${root}/packages/studio-ui/src/file-tree';
 export {AgentAvatar} from '${root}/packages/studio-ui/src/agent-avatar';
 export {BotAvatar} from '${root}/packages/studio-ui/src/bot-avatar';
 export {pullRequestIconTone,PullRequestIcon} from '${root}/packages/studio-ui/src/pull-request-icon';

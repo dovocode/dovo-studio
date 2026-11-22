@@ -20,13 +20,14 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
     const Host=createContext(null);
     export const StudioHostProvider=({api,children})=><Host.Provider value={api}>{children}</Host.Provider>;
     export const useStudioHost=()=>useContext(Host);
-    export const SettingsTargetProvider=({children})=>children;
+    export {SettingsTargetProvider,WorkspaceDraftScope,useSettingsDraft} from '${root}packages/studio-core/src/settings-target.tsx';
+    import {useConfirmSettingsNavigation as useDraftConfirmation} from '${root}packages/studio-core/src/settings-target.tsx';
     export * from '${root}packages/studio-core/src/shortcuts.ts';
-export {useStudioExtensions,extensionComponentVersion} from '${root}packages/studio-core/src/studio-extensions.ts';
+export {useStudioExtensions,extensionComponentVersion,studioExtensionPageTarget} from '${root}packages/studio-core/src/studio-extensions.ts';
 export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],interfaceLanguage:'en-US',botsOverviewEnabled:true,lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const useAppPreferences=readAppPreferences;export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
     export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
-    const confirmSettingsNavigation=()=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : Promise.resolve(window.allowSettings);export const useConfirmSettingsNavigation=()=>confirmSettingsNavigation;
+    export function useConfirmSettingsNavigation(){const confirm=useDraftConfirmation();return scope=>window.holdSettings ? new Promise(resolve=>window.finishSettings=resolve) : window.allowSettings ? confirm(scope) : Promise.resolve(false)}
     export function WorkspaceProvider({children}) {
       const [runtimeId,setRuntimeId]=useState('mac');
       const [defaults,setDefaults]=useState(null);
@@ -74,7 +75,7 @@ const built = await build({
       import {useEffect,useState,useSyncExternalStore} from 'react';import {createRoot} from 'react-dom/client';
       import {Workbench} from '../studio-shell/src/workbench';
       import {TerminalCloseDialog} from '../extension-tasks/src/terminal/terminal-close-dialog';
-      import {useStudioHost,useWorkspace} from '@dovo/studio-core';
+      import {useStudioHost,useWorkspace,useSettingsDraft} from '@dovo/studio-core';
       import {useComposerDraft} from '../extension-tasks/src/chat/composer/use-composer-draft';
       window.allowSettings=true;
       function Composer({task}){const {controller,update}=useComposerDraft(task);const text=useSyncExternalStore(controller.subscribe,()=>controller.text);return <textarea aria-label="Message" value={text} onChange={e=>update(e.target.value)}/>;}
@@ -84,7 +85,8 @@ const built = await build({
       function PRs({entityId,navigationKey}){const host=useStudioHost();window.host=host;return <><PipelineAnchor/><p>PR section</p><output id="pull-target">{entityId}</output><output id="navigation-key">{navigationKey}</output><button onClick={()=>host.goBack()}>Back to origin</button><button onClick={()=>host.navigate({viewId:'tasks'})}>Explicit fresh composer</button></>;}
       function Browser(){const {registerCommand,navigate}=useStudioHost();useEffect(()=>registerCommand({id:'browser.detach',title:'Detach browser',run:()=>{window.detachCalls=(window.detachCalls||0)+1;navigate({viewId:'tasks'})}}),[registerCommand,navigate]);return <p>Embedded browser</p>;}
       function Settings(){return <p>Settings section</p>;}
-      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'bots',title:'Bots',order:5,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'pipelines',title:'Pipelines',navigationGroup:'hidden',order:10,load:async()=>({default:Pipelines})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
+      function ExtensionPage(){const [value,setValue]=useState('');useSettingsDraft(!!value);return <input aria-label="Extension draft" value={value} onChange={event=>setValue(event.target.value)}/>;}
+      const extensions=[{views:[{id:'tasks',title:'Threads',order:0,load:async()=>({default:Threads})},{id:'bots',title:'Bots',order:5,load:async()=>({default:Threads})},{id:'browser',title:'Browser',order:4,load:async()=>({default:Browser})},{id:'pulls',title:'PRs',order:1,load:async()=>({default:PRs})},{id:'shortcuts',title:'Shortcuts',order:2,load:async()=>({default:()=> <p>Shortcuts section</p>})},{id:'pipelines',title:'Pipelines',navigationGroup:'hidden',order:10,load:async()=>({default:Pipelines})},{id:'extension-page-fixture',title:'Extension page',order:11,load:async()=>({default:ExtensionPage})},{id:'settings',title:'Settings',navigationGroup:'settings',order:3,load:async()=>({default:Settings})}]}];
       const app=createRoot(document.getElementById('app'));window.restart=()=>app.render(<Workbench key={window.run=(window.run||0)+1} extensions={extensions} openExternalLink={async url=>{window.externalURL=url}} openBrowserWindow={async()=>{}} browser={async command=>{if(command.action!=="focus-detached-browser")return;window.browserFocusCalls=(window.browserFocusCalls||0)+1;if(window.holdBrowserFocus)await new Promise(resolve=>window.finishBrowserFocus=resolve);return window.detachedBrowser?{focusedWindowId:2}:undefined}}/>);window.restart();
     `,
   },
@@ -204,7 +206,20 @@ try {
   await page.getByRole('button', { name: 'Select mac-a', exact: true }).click()
   await selected('mac-a')
   await page.getByRole('textbox', { name: 'Message' }).fill('Unsent feedback')
+  await section('Extension page')
+  const extensionDraft = page.getByLabel('Extension draft')
+  await extensionDraft.fill('Unsaved extension settings')
+  await section('Settings')
+  await settings.waitFor()
+  await closeSettings()
+  await settings.waitFor({ state: 'hidden' })
+  assert.equal(await extensionDraft.inputValue(), 'Unsaved extension settings')
   await section('PRs')
+  const discardDraft = page.getByRole('dialog', { name: 'Discard unsaved changes?' })
+  await discardDraft.getByRole('button', { name: 'Cancel', exact: true }).click()
+  assert.equal(await extensionDraft.inputValue(), 'Unsaved extension settings')
+  await section('PRs')
+  await discardDraft.getByRole('button', { name: 'Discard changes', exact: true }).click()
   await page.getByText('PR section', { exact: true }).waitFor()
   await section('Threads')
   await selected('mac-a')

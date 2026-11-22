@@ -2,10 +2,14 @@ import type Database from 'better-sqlite3'
 import { Schema } from 'effect'
 import {
   decode,
+  extensionViewResultIds,
+  isStudioDataSource,
+  studioDataSourceIssue,
   extensionViewComponents,
   extensionViewLimits,
   mutableStruct,
   marketplaceOriginSchema,
+  marketplaceNeedsSource,
   type MarketplaceOrigin,
   type StudioMarketplaceRequest,
   studioExtensionEntrySchema,
@@ -16,9 +20,11 @@ import {
   type StudioExtensionComponentVersion,
   type StudioExtensionEntry,
   type StudioExtensionManifest,
+  type StudioExtensionPageLink,
 } from '@dovo/protocol'
 import type { McpApps } from '../mcp-apps/bridge.js'
 import { HttpError } from '../errors.js'
+import { readStudioData, type DataSourceDirectory } from '../dashboards/data-sources.js'
 import { exactMarketplaceRelease, marketplaceCatalog } from './marketplace.js'
 
 const row = mutableStruct({ id: Schema.String, revision: Schema.Number, entry: Schema.String })
@@ -50,6 +56,10 @@ function settingsFor(
 function validate(manifest: StudioExtensionManifest) {
   const settings = new Set(manifest.settings?.map((field) => field.id))
   for (const contribution of manifest.contributions) {
+    if (isStudioDataSource(contribution)) {
+      const issue = studioDataSourceIssue(contribution)
+      if (issue) throw new HttpError(400, `${contribution.title}: ${issue}`)
+    }
     if (contribution.kind !== 'tool') continue
     argumentsFor(contribution.arguments)
     if (contribution.server === 'dovo_task')
@@ -59,7 +69,19 @@ function validate(manifest: StudioExtensionManifest) {
   }
 }
 
-function requiredComponentVersion(manifest?: StudioExtensionManifest): 0 | 1 | 2 {
+function viewNeedsVersion3(item: Extract<ExtensionContribution, { kind: 'view' }>) {
+  return item.placement === 'page' || item.view.nodes.some((node) => node.kind === 'data-grid')
+}
+
+function requiredComponentVersion(
+  manifest?: StudioExtensionManifest,
+): 0 | StudioExtensionComponentVersion {
+  if (
+    manifest?.contributions.some(
+      (item) => isStudioDataSource(item) || (item.kind === 'view' && viewNeedsVersion3(item)),
+    )
+  )
+    return 3
   let version: 0 | 1 = 0
   for (const item of manifest?.contributions ?? []) {
     if (item.kind !== 'view') continue
@@ -93,10 +115,17 @@ function projectEntry(
 ): StudioExtensionEntry {
   const project = (manifest: StudioExtensionManifest | undefined) => {
     if (requiredComponentVersion(manifest) <= version || !manifest) return manifest
-    const contributions =
-      version === 0
-        ? manifest.contributions.filter((item) => item.kind !== 'view')
-        : manifest.contributions.map((item) => projectContribution(item, version))
+    const sources = new Set(manifest.contributions.filter(isStudioDataSource).map(({ id }) => id))
+    const contributions = manifest.contributions
+      .filter(
+        (item) =>
+          !isStudioDataSource(item) &&
+          (item.kind !== 'view' ||
+            (version > 0 &&
+              !viewNeedsVersion3(item) &&
+              ![...extensionViewResultIds(item.view)].some((id) => sources.has(id)))),
+      )
+      .map((item) => projectContribution(item, version))
     return { ...manifest, contributions }
   }
   return {
@@ -113,7 +142,17 @@ function projectEntry(
 const uiSdk = {
   version: 1,
   module: '@dovo/protocol/studio-extension-sdk',
-  helpers: ['defineExtension', 'view', 'setting', 'result'],
+  helpers: [
+    'defineExtension',
+    'view',
+    'page',
+    'apiSource',
+    'cliSource',
+    'sourceControls',
+    'dataGrid',
+    'setting',
+    'result',
+  ],
   manifestContract: { action: 'catalog', component: 'manifest' },
   guide: { tool: 'dovo_help', action: 'search', query: 'typed UI SDK' },
   help: 'Use the TypeScript module in the Studio workspace. In other projects, use the manifest JSON Schema for editor or TypeScript checking. Run validate before stage.',
@@ -121,27 +160,47 @@ const uiSdk = {
 
 type ExtensionAgent = { taskId: string; readOnly: boolean }
 
-type ActiveCall = { controller: AbortController; id: string }
+type DataContribution = Extract<ExtensionContribution, { kind: 'api' | 'cli' }>
+
+type ActiveCall = { controller: AbortController; id: string; source?: DataContribution }
+
+/** The fields that decide what a data source reads. Titles and displays do not. */
+function dataTarget(source: DataContribution) {
+  return JSON.stringify(
+    source.kind === 'api'
+      ? [source.id, source.kind, source.url, source.pointer]
+      : [source.id, source.kind, source.repositoryId, source.command, source.pointer],
+  )
+}
+
+type DataRead = { data: unknown; updatedAt: number }
+
+/** One read of an installed data source, shared by every paired caller that asks for it. */
+type SharedRead = { read: Promise<DataRead>; callers: Set<() => void> }
 
 export class StudioExtensions {
   private ready = false
   private generation = 0
+  private pageCache?: { revision: number; pages: StudioExtensionPageLink[] }
 
   get revision() {
     return this.generation
   }
   private readonly calls = new Set<ActiveCall>()
+  private readonly sourceReads = new Map<string, SharedRead>()
   private readonly shutdown = new AbortController()
   constructor(
     private db: Database.Database,
     private mcp: Pick<McpApps, 'feedRead' | 'marketplaceSources'>,
     private requireActiveThread: (id: string) => void,
+    private dataDirectory?: DataSourceDirectory,
   ) {}
 
   private storage() {
     if (!this.ready) {
       this.db.exec(
         `CREATE TABLE IF NOT EXISTS studio_extensions(id TEXT PRIMARY KEY, revision INTEGER NOT NULL, entry TEXT NOT NULL);
+         CREATE TABLE IF NOT EXISTS studio_extension_page_pins(extension TEXT NOT NULL, page TEXT NOT NULL, PRIMARY KEY(extension, page));
          CREATE TABLE IF NOT EXISTS studio_extension_preferences(id INTEGER PRIMARY KEY CHECK(id=1), agent_install INTEGER NOT NULL);
          CREATE TABLE IF NOT EXISTS studio_extension_revision(id INTEGER PRIMARY KEY CHECK(id=1), revision INTEGER NOT NULL);
          INSERT OR IGNORE INTO studio_extension_revision
@@ -150,6 +209,52 @@ export class StudioExtensions {
       this.ready = true
     }
     return this.db
+  }
+
+  pinnedPages(): StudioExtensionPageLink[] {
+    if (this.pageCache?.revision === this.generation) return this.pageCache.pages
+    const schema = mutableStruct({ extension: Schema.String, page: Schema.String })
+    const hasPins =
+      this.ready ||
+      this.db.prepare("SELECT 1 FROM sqlite_master WHERE name='studio_extension_page_pins'").get()
+    const pins = hasPins
+      ? this.storage()
+          .prepare('SELECT extension,page FROM studio_extension_page_pins ORDER BY rowid')
+          .all()
+      : []
+    const installed = new Map<string, StudioExtensionEntry | undefined>()
+    const pages = pins.flatMap((value) => {
+      const pin = decode(schema, value)
+      if (!installed.has(pin.extension))
+        installed.set(pin.extension, this.get(pin.extension)?.extension)
+      const entry = installed.get(pin.extension)
+      if (!entry?.enabled) return []
+      const page = entry.installed?.contributions.find((item) => item.id === pin.page)
+      return page?.kind === 'view' && page.placement === 'page'
+        ? [{ extensionId: pin.extension, pageId: page.id, title: page.title }]
+        : []
+    })
+    this.pageCache = { revision: this.generation, pages }
+    return pages
+  }
+
+  private pinPage(input: Extract<StudioExtensionCommand, { action: 'pin-page' }>) {
+    const entry = this.get(input.id)?.extension
+    if (
+      !entry?.enabled ||
+      !entry.installed?.contributions.some(
+        (item) =>
+          item.id === input.contributionId && item.kind === 'view' && item.placement === 'page',
+      )
+    )
+      throw new HttpError(404, 'This extension page is unavailable.')
+    if (entry.revision !== input.expectedRevision)
+      throw new HttpError(409, 'The extension changed. Reload it before changing its sidebar pins.')
+    const sql = input.pinned
+      ? 'INSERT OR IGNORE INTO studio_extension_page_pins VALUES(?,?)'
+      : 'DELETE FROM studio_extension_page_pins WHERE extension=? AND page=?'
+    if (this.storage().prepare(sql).run(input.id, input.contributionId).changes) this.generation++
+    return { ok: true as const }
   }
 
   private allowsAgentInstall() {
@@ -208,9 +313,22 @@ export class StudioExtensions {
     return found === undefined ? undefined : this.decodeRow(found)
   }
 
+  /** The installed, enabled data source that still reads the same target, if any. */
+  private currentSource(id: string, source: DataContribution) {
+    const entry = this.get(id)?.extension
+    const saved = entry?.enabled
+      ? entry.installed?.contributions.find((item) => item.id === source.id)
+      : undefined
+    return saved && isStudioDataSource(saved) && dataTarget(saved) === dataTarget(source)
+  }
+
+  /**
+   * Cancels tool calls after any change. A data read continues while its source reads the same
+   * target, so a settings save does not cancel it.
+   */
   private stop(id: string) {
     for (const call of this.calls)
-      if (call.id === id)
+      if (call.id === id && (!call.source || !this.currentSource(id, call.source)))
         call.controller.abort(new HttpError(409, 'The extension changed during the call.'))
   }
 
@@ -221,7 +339,7 @@ export class StudioExtensions {
       : this.execute(input, authorize, agent)
   }
 
-  private marketplace(
+  private async marketplace(
     input: StudioMarketplaceRequest,
     authorize: () => void,
     agent?: ExtensionAgent,
@@ -275,22 +393,31 @@ export class StudioExtensions {
     if (pending.size !== input.bindings.length)
       throw new HttpError(400, 'Each marketplace contribution can have one binding.')
     const cached = new Map<string | undefined, ReturnType<typeof sources>>()
-    const contributions = release.manifest.contributions.map((item) => {
-      if (item.kind !== 'tool' && item.kind !== 'app') return item
-      const binding = pending.get(item.id)
-      if (!binding) throw new HttpError(400, `Choose a source for ${item.title}.`)
-      pending.delete(item.id)
-      const selected = cached.get(binding.taskId) ?? sources(binding.taskId)
-      cached.set(binding.taskId, selected)
-      if (item.kind === 'tool') {
-        if (!selected.servers.includes(binding.source))
-          throw new HttpError(400, 'Choose an enabled MCP server in the source thread.')
-        return { ...item, taskId: selected.taskId, server: binding.source }
-      }
-      if (!selected.apps.some((app) => app.id === binding.source))
-        throw new HttpError(400, 'Choose a saved MCP App in the source thread.')
-      return { ...item, taskId: selected.taskId, appId: binding.source }
-    })
+    const contributions = await Promise.all(
+      release.manifest.contributions.map(async (item) => {
+        if (!marketplaceNeedsSource(item)) return item
+        const binding = pending.get(item.id)
+        if (!binding) throw new HttpError(400, `Choose a source for ${item.title}.`)
+        pending.delete(item.id)
+        if (item.kind === 'cli') {
+          if (!this.dataDirectory || binding.taskId)
+            throw new HttpError(400, 'Choose a project on this computer for the command.')
+          await this.dataDirectory(binding.source, authorize)
+          return { ...item, repositoryId: binding.source }
+        }
+        const selected = cached.get(binding.taskId) ?? sources(binding.taskId)
+        cached.set(binding.taskId, selected)
+        if (item.kind === 'tool') {
+          if (!selected.servers.includes(binding.source))
+            throw new HttpError(400, 'Choose an enabled MCP server in the source thread.')
+          return { ...item, taskId: selected.taskId, server: binding.source }
+        }
+        if (!selected.apps.some((app) => app.id === binding.source))
+          throw new HttpError(400, 'Choose a saved MCP App in the source thread.')
+        return { ...item, taskId: selected.taskId, appId: binding.source }
+      }),
+    )
+    authorize()
     if (pending.size)
       throw new HttpError(400, 'One or more bindings do not belong to this package.')
     return this.execute(
@@ -359,12 +486,12 @@ export class StudioExtensions {
         },
         views: {
           version: 1,
-          placements: ['settings', 'tool'],
+          placements: ['settings', 'tool', 'page'],
           components: Object.keys(extensionViewComponents),
           limits: extensionViewLimits,
           discovery: 'Call catalog with component set to a kind for its property schema.',
           bindings:
-            'Use {setting: id} or {result: toolContributionId, path: ["field", "0"]}. Buttons and menus call declared tool contributions on a click. Edit controls bind to settings. A custom component requires a Studio fallback. Custom type diagram renders bounded rect, circle and text shapes. Other types render the fallback.',
+            'Use {setting: id} or {result: contributionId, path: ["field", "0"]}. Buttons and menus call declared tool contributions on a click. Views that bind an API or CLI result show refresh controls. Use sourceControls to place refresh controls and dataGrid to show multiple displays from one result. Edit controls bind to settings. A custom component requires a Studio fallback. Custom type diagram renders bounded rect, circle and text shapes. Other types render the fallback.',
         },
         example: {
           id: 'example.delivery',
@@ -402,8 +529,28 @@ export class StudioExtensions {
             },
           ],
         },
+        pages: {
+          placement: 'page',
+          sdk: 'page({ id, title, root })',
+          help: 'A page opens in the main workspace. Paired Studio users choose which pages to pin.',
+        },
+        dataSources: {
+          kinds: ['api', 'cli'],
+          refreshSeconds:
+            'Optional integer from 30 to 86400. Paired users start and stop timed refresh in Studio.',
+          example: {
+            kind: 'cli',
+            id: 'metrics',
+            title: 'Metrics',
+            repositoryId: 'PROJECT_ID',
+            command: 'your-cli --json',
+            pointer: '',
+            chart: 'table',
+            refreshSeconds: 60,
+          },
+        },
         destinations: ['tasks', 'terminal', 'browser', 'dashboards', 'jobs', 'pulls'],
-        help: 'Use unique lowercase IDs. Settings support text and booleans. Studio displays settings on the extension page. A dashboard tile references the extension ID and contribution ID. Agents can stage a draft. A paired user installs it by default. Agents can install their own drafts if the computer enables agent installation.',
+        help: 'Use unique lowercase IDs. Settings support text and booleans. Studio displays settings on the extension page. A dashboard tile references the extension ID and contribution ID. Agents can stage a draft. A paired user installs it by default. Agents can install their own drafts if the computer enables agent installation. A paired user must install a draft with a CLI data source.',
       }
     }
     if (input.action === 'list') {
@@ -470,14 +617,37 @@ export class StudioExtensions {
       const contribution = entry?.installed?.contributions.find(
         (item) => item.id === input.contributionId,
       )
-      if (!entry?.enabled || !contribution || contribution.kind === 'tool')
+      if (
+        !entry?.enabled ||
+        !contribution ||
+        contribution.kind === 'tool' ||
+        isStudioDataSource(contribution)
+      )
         throw new HttpError(404, 'This extension view is unavailable.')
       if (entry.revision !== input.expectedRevision)
         throw new HttpError(409, 'The extension changed. Reload it before opening the view.')
+      if (contribution.kind === 'view' && (input.componentVersion ?? 0) < 3) {
+        const results = extensionViewResultIds(contribution.view)
+        if (
+          viewNeedsVersion3(contribution) ||
+          entry.installed?.contributions.some(
+            (item) => isStudioDataSource(item) && results.has(item.id),
+          )
+        )
+          throw new HttpError(409, 'Update Studio to open this extension view.')
+      }
       if (contribution.kind === 'app') this.requireActiveThread(contribution.taskId)
       return { contribution: projectContribution(contribution, input.componentVersion ?? 0) }
     }
     if (input.action === 'call') return this.call(input, authorize, agent?.taskId)
+    if (input.action === 'read-data') {
+      if (agent) throw new HttpError(403, 'Read extension data from a paired Studio client.')
+      return this.readData(input, authorize)
+    }
+    if (input.action === 'pin-page') {
+      if (agent) throw new HttpError(403, 'Pin extension pages from a paired Studio client.')
+      return this.pinPage(input)
+    }
 
     if (agent) {
       if (agent.readOnly || (input.action !== 'stage' && input.action !== 'install'))
@@ -557,6 +727,11 @@ export class StudioExtensions {
             403,
             'Agents can only install their own extension drafts with sources in this thread.',
           )
+        if (agent && current.draft.contributions.some((item) => item.kind === 'cli'))
+          throw new HttpError(
+            403,
+            'This draft runs a command on this computer. A paired user must review and install it.',
+          )
         previousTaskId = current.installed ? installedTaskId : undefined
         previousRelease = current.installed ? installedRelease : undefined
         installedRelease = draftRelease
@@ -600,15 +775,32 @@ export class StudioExtensions {
         next.settings = updated
         break
       }
-      case 'remove':
-        this.storage().prepare('DELETE FROM studio_extensions WHERE id=?').run(id)
+      case 'remove': {
+        const storage = this.storage()
+        storage.transaction(() => {
+          storage.prepare('DELETE FROM studio_extension_page_pins WHERE extension=?').run(id)
+          storage.prepare('DELETE FROM studio_extensions WHERE id=?').run(id)
+        })()
         this.generation++
         this.stop(id)
         return { ok: true }
+      }
     }
     next.canRollback = !!previous
     const storage = this.storage()
     storage.transaction(() => {
+      if (input.action === 'install' || input.action === 'rollback') {
+        const pageIds =
+          next.installed?.contributions
+            .filter((item) => item.kind === 'view' && item.placement === 'page')
+            .map((item) => item.id) ?? []
+        const slots = pageIds.map(() => '?').join(',')
+        storage
+          .prepare(
+            `DELETE FROM studio_extension_page_pins WHERE extension=? AND page NOT IN (${slots})`,
+          )
+          .run(id, ...pageIds)
+      }
       const allocated = storage
         .prepare(
           'UPDATE studio_extension_revision SET revision=revision+1 WHERE id=1 RETURNING revision',
@@ -645,6 +837,82 @@ export class StudioExtensions {
       : { id, revision: next.revision, installed: true }
   }
 
+  /**
+   * Reads one installed data source of the revision the client shows. Identical reads in flight
+   * share one request. Each caller is checked when it joins and again before it receives data.
+   */
+  private async readData(
+    input: Extract<StudioExtensionCommand, { action: 'read-data' }>,
+    authorize: () => void,
+  ): Promise<DataRead> {
+    if (this.shutdown.signal.aborted) throw new HttpError(503, 'The runtime is stopping.')
+    const entry = this.get(input.id)?.extension
+    const source = entry?.installed?.contributions.find((item) => item.id === input.contributionId)
+    if (!entry?.enabled || !source || !isStudioDataSource(source))
+      throw new HttpError(404, 'This extension data source is unavailable.')
+    authorize()
+    if (entry.revision !== input.expectedRevision)
+      throw new HttpError(409, 'The extension changed. Reload its data sources.')
+    const key = JSON.stringify([input.id, dataTarget(source)])
+    let shared = this.sourceReads.get(key)
+    if (shared) shared.callers.add(authorize)
+    else {
+      if (this.calls.size >= 8) throw new HttpError(429, 'The extension data source is busy.')
+      shared = this.startRead(input.id, source, key, authorize)
+    }
+    try {
+      const result = await shared.read
+      authorize()
+      if (!this.currentSource(input.id, source))
+        throw new HttpError(409, 'The extension changed. Reload its data sources.')
+      return result
+    } catch (error) {
+      // A caller without access gets its own access error, not the shared result.
+      authorize()
+      throw error
+    } finally {
+      shared.callers.delete(authorize)
+    }
+  }
+
+  private startRead(id: string, source: DataContribution, key: string, authorize: () => void) {
+    const active: ActiveCall = { id, source, controller: new AbortController() }
+    const signal = AbortSignal.any([active.controller.signal, this.shutdown.signal])
+    const callers = new Set([authorize])
+    // The command or request continues while at least one waiting caller keeps access.
+    const check = () => {
+      signal.throwIfAborted()
+      let denied: unknown = new HttpError(401, 'No paired client is waiting for this data.')
+      if (
+        ![...callers].some((caller) => {
+          try {
+            caller()
+            return true
+          } catch (error) {
+            denied = error
+            return false
+          }
+        })
+      )
+        throw denied
+      if (!this.currentSource(id, source))
+        throw new HttpError(409, 'The extension changed. Reload its data sources.')
+    }
+    this.calls.add(active)
+    const read = readStudioData(source, signal, check, this.dataDirectory)
+      .then((data) => {
+        check()
+        return { data, updatedAt: Date.now() }
+      })
+      .finally(() => {
+        this.calls.delete(active)
+        this.sourceReads.delete(key)
+      })
+    const shared = { read, callers }
+    this.sourceReads.set(key, shared)
+    return shared
+  }
+
   private async call(
     input: Extract<StudioExtensionCommand, { action: 'call' }>,
     authorize: () => void,
@@ -660,7 +928,10 @@ export class StudioExtensions {
       throw new HttpError(409, 'The extension changed. Reload it before running the tool.')
     if (taskId && taskId !== target.taskId)
       throw new HttpError(403, 'This tool belongs to a different thread.')
-    if (this.calls.size >= 8 || [...this.calls].some((entry) => entry.id === input.id))
+    if (
+      this.calls.size >= 8 ||
+      [...this.calls].some((entry) => entry.id === input.id && !entry.source)
+    )
       throw new HttpError(429, 'The extension is busy.')
     const active = { id: input.id, controller: new AbortController() }
     const callSignal = AbortSignal.any([
@@ -720,7 +991,8 @@ export class StudioExtensions {
     })
   }
 
-  dispose() {
+  async dispose() {
     this.shutdown.abort(new HttpError(503, 'The runtime is stopping.'))
+    await Promise.allSettled([...this.sourceReads.values()].map(({ read }) => read))
   }
 }

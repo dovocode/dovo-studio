@@ -231,8 +231,13 @@ try {
       (await page.locator('[data-line]').count()) < 500,
       'Scrolling mounted the entire diff',
     )
-  await page.getByRole('button', { name: 'Split', exact: true }).click()
-  await page.getByRole('button', { name: 'Unified', exact: true }).waitFor()
+  const split = page.getByRole('button', { name: 'Split diff', exact: true })
+  assert.equal(await split.getAttribute('aria-pressed'), 'true')
+  await split.click()
+  await page.waitForFunction(
+    () =>
+      document.querySelector('[aria-label="Split diff"]')?.getAttribute('aria-pressed') === 'false',
+  )
   await page.evaluate(() => window.setFocus(500000))
   await page.evaluate(
     () =>

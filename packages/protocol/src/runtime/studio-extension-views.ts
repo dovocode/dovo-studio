@@ -1,3 +1,4 @@
+import { studioDataPanelsSchema } from './studio-data-sources.js'
 import { Schema } from 'effect'
 import { mutableArray, refine, strictStruct } from '../shared/schema.js'
 
@@ -107,6 +108,13 @@ export const extensionViewComponents = {
   }),
   disclosure: strictStruct({ ...id, kind: Schema.Literal('disclosure'), ...title, child: key }),
   dialog: strictStruct({ ...id, kind: Schema.Literal('dialog'), ...title, child: key }),
+  'data-grid': strictStruct({
+    ...id,
+    kind: Schema.Literal('data-grid'),
+    value: binding,
+    panels: studioDataPanelsSchema,
+  }),
+  'data-source': strictStruct({ ...id, kind: Schema.Literal('data-source'), source: key }),
   table: strictStruct({ ...id, kind: Schema.Literal('table'), ...title, value: binding }),
   chart: strictStruct({ ...id, kind: Schema.Literal('chart'), ...title, value: binding }),
   metric: strictStruct({ ...id, kind: Schema.Literal('metric'), ...title, value }),
@@ -155,10 +163,30 @@ export function extensionViewChildren(node: ExtensionViewNode): string[] {
   }
 }
 
+function extensionViewNodeValues(node: ExtensionViewNode): ExtensionViewValue[] {
+  if ('value' in node) return [node.value]
+  if (node.kind !== 'custom') return []
+  return (
+    node.component.shapes?.flatMap((shape) => (shape.kind === 'text' ? [shape.value] : [])) ?? []
+  )
+}
+
+export function extensionViewResultIds(view: ExtensionView) {
+  return new Set(
+    view.nodes.flatMap((node) => {
+      if (node.kind === 'data-source') return [node.source]
+      return extensionViewNodeValues(node).flatMap((value) =>
+        typeof value === 'object' && 'result' in value ? [value.result] : [],
+      )
+    }),
+  )
+}
+
 export function extensionViewIssue(
   view: ExtensionView,
   settings: ReadonlyMap<string, string | boolean>,
   tools: ReadonlySet<string>,
+  results: ReadonlySet<string> = tools,
 ): string | undefined {
   const nodes = new Map(view.nodes.map((node) => [node.id, node]))
   if (nodes.size !== view.nodes.length) return 'Component IDs must be unique.'
@@ -179,7 +207,15 @@ export function extensionViewIssue(
   const treeIssue = visit(view.root, 1, false)
   if (treeIssue) return treeIssue
   if (visited.size !== nodes.size) return 'All components must belong to the view tree.'
+  const sourceControls = new Set<string>()
   for (const node of view.nodes) {
+    if (node.kind === 'data-source') {
+      if (!results.has(node.source) || tools.has(node.source))
+        return `Unknown data source: ${node.source}`
+      if (sourceControls.has(node.source))
+        return `A view can have only one refresh control for data source ${node.source}.`
+      sourceControls.add(node.source)
+    }
     if ('setting' in node) {
       const type = node.kind === 'checkbox' || node.kind === 'switch' ? 'boolean' : 'string'
       const setting = settings.get(node.setting)
@@ -205,19 +241,11 @@ export function extensionViewIssue(
       !node.component.shapes?.length
     )
       return `Custom diagram ${node.id} requires shapes.`
-    const values =
-      'value' in node
-        ? [node.value]
-        : node.kind === 'custom'
-          ? (node.component.shapes?.flatMap((shape) =>
-              shape.kind === 'text' ? [shape.value] : [],
-            ) ?? [])
-          : []
-    for (const value of values) {
+    for (const value of extensionViewNodeValues(node)) {
       if (typeof value !== 'object') continue
       if ('setting' in value && !settings.has(value.setting))
         return `Unknown setting: ${value.setting}`
-      if ('result' in value && !tools.has(value.result))
+      if ('result' in value && !results.has(value.result))
         return `Unknown tool result: ${value.result}`
     }
   }

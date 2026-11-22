@@ -1,11 +1,13 @@
 import { Component, useMemo, useRef, useState, type ReactNode } from 'react'
-import type {
-  ExtensionSettingValue,
-  ExtensionView,
-  ExtensionViewValue,
-  StudioExtensionEntry,
+import {
+  extensionViewResultIds,
+  isStudioDataSource,
+  type ExtensionSettingValue,
+  type ExtensionView,
+  type ExtensionViewValue,
+  type StudioExtensionEntry,
 } from '@dovo/protocol'
-import { callStudioExtension } from './studio-extensions'
+import { callStudioExtension, readExtensionDataSource } from './studio-extensions'
 import type { WorkspaceRequest } from './workspace/context'
 
 export type SaveExtensionSettings = (settings: StudioExtensionEntry['settings']) => Promise<void>
@@ -145,8 +147,28 @@ export function useExtensionView(
     }
   }
 
+  function setResult(id: string, data: unknown) {
+    setToolState((previous) =>
+      previous.manifest === manifest
+        ? { ...previous, results: new Map(previous.results).set(id, data) }
+        : previous,
+    )
+  }
+
+  const results = extensionViewResultIds(view)
+  const sources =
+    entry.installed?.contributions
+      .filter(isStudioDataSource)
+      .filter((source) => results.has(source.id)) ?? []
+  const positioned = new Set(
+    view.nodes.flatMap((node) => (node.kind === 'data-source' ? [node.source] : [])),
+  )
   const { dirty, values } = draft
   return {
+    sources,
+    implicitSources: sources.filter((source) => !positioned.has(source.id)),
+    readSource: (id: string) => readExtensionDataSource(request, entry, id),
+    setResult,
     nodes: new Map(view.nodes.map((node) => [node.id, node])),
     get: (value: ExtensionViewValue) => extensionViewValue(value, values, toolState.results),
     getSetting: (id: string) => (Object.hasOwn(values, id) ? values[id] : undefined),
@@ -156,17 +178,14 @@ export function useExtensionView(
     conflicts: draft.conflicts,
     resolveConflicts: draft.resolveConflicts,
     save: draft.commit,
+    settingsSaving: draft.saving,
     run: (id: string) => {
       if (dirty || draft.saving) return
       return perform(async () => {
         if (!entry.installed?.contributions.some((item) => item.kind === 'tool' && item.id === id))
           return
         const { data } = await callStudioExtension(request, entry, id)
-        setToolState((previous) =>
-          previous.manifest === manifest
-            ? { ...previous, results: new Map(previous.results).set(id, data) }
-            : previous,
-        )
+        setResult(id, data)
       })
     },
     error: draft.error || error,

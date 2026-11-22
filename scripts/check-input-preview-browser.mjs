@@ -137,6 +137,7 @@ try {
         kind: 'approval',
         value: {
           ...window.initialPreview.request.value,
+          scopes: { once: true, session: true, always: true },
           detail: JSON.stringify({
             reason: 'Review this long command',
             command: 'x'.repeat(3000),
@@ -147,6 +148,38 @@ try {
     }),
   )
   await page.getByText('Tool input', { exact: true }).waitFor()
+  const minimumHeight = 300
+  await page.setViewportSize({ width: 360, height: minimumHeight })
+  for (const label of ['Allow once', 'Deny', 'Allow for session', 'Always allow', 'Open thread']) {
+    const button = page.getByRole('button', { name: label, exact: true })
+    const box = await button.boundingBox()
+    assert.ok(
+      box && box.y >= 0 && box.y + box.height <= minimumHeight,
+      `${label} fits without scrolling`,
+    )
+  }
+  const command = page.getByRole('region', { name: 'Command', exact: true })
+  assert.ok(
+    await command.evaluate((element) => element.scrollHeight > element.clientHeight),
+    'Long commands scroll inside the preview',
+  )
+  await command.focus()
+  const answersBeforeReading = await page.evaluate(() => window.answers.length)
+  for (const key of ['y', 'n', 'Enter']) await page.keyboard.press(key)
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    answersBeforeReading,
+    'Reading the command cannot answer the request',
+  )
+  await page.evaluate(() => {
+    window.dovoCopyText = async (text) => {
+      window.copied = text
+    }
+  })
+  await command.locator('..').getByRole('button', { name: 'Copy', exact: true }).click()
+  await page.getByText('Copied', { exact: true }).waitFor()
+  assert.equal(await page.evaluate(() => window.copied), 'x'.repeat(3000))
+  await page.setViewportSize({ width: 480, height: 560 })
   assert.equal(
     await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth),
     true,

@@ -48,15 +48,24 @@ terminal's original checkout, including a linked worktree. Devices use the termi
 side threads start with the terminal's project selected. Files, worktree changes and device previews
 require an updated runtime. Older runtimes can still show changes for the project's main checkout.
 
+**Changes** lists the changed files as a tree with added and removed line counts, and opens the
+first file. Use the up and down arrows in the header to move to the previous or next file in tree
+order. The header shows your place, for example `2 of 7`. Select the file tree button to hide the
+list and give the diff the full pane height. **Refresh changes** keeps the current list visible
+while it reloads. If the open file no longer has changes, the next file in the same place opens.
+Dovo keeps the open file when you switch to another tool tab and back. If the terminal's project or
+checkout changes, **Changes** starts again at the first file.
+
 In Browser, **Thread for this tab** can create a thread in **No Project**. The new thread belongs to
 the tab's computer. You can choose a different project on that computer before creating it.
 
-Each pane has one header row. The selected tab has bright text. Other tabs have dimmed text. The
-thread's Files tab shows the open file's name, with **Edit**, file tree, refresh and expand controls
-in the same row. With a mouse, the terminal's split, move and location controls and the tab's rename
-button appear when you point at the header or move keyboard focus into it. On touch screens they
-always show. Point at a terminal tab to see its computer and checkout. Exit and offline notices
-always show.
+Each pane has one header row. The selected tab has bright text. Other tabs have dimmed text. Each
+tab and each tool menu item has the same icon as the tool in **Thread tools**. Tool menus mark tools
+that already have a tab with **Open**. Choosing one switches to its tab. The thread's Files tab
+shows the open file's name, with **Edit**, file tree, refresh and expand controls in the same row.
+With a mouse, the terminal's split, move and location controls and the tab's rename button appear
+when you point at the header or move keyboard focus into it. On touch screens they always show.
+Point at a terminal tab to see its computer and checkout. Exit and offline notices always show.
 
 In the desktop app, choose **DevTools** from the right pane's **+** menu to inspect the current
 local browser page in Chrome DevTools. The inspector opens below the page in the same pane.

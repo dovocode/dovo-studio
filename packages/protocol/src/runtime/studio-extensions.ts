@@ -1,4 +1,9 @@
 import { Schema } from 'effect'
+import {
+  isStudioDataSource,
+  studioApiDataFields,
+  studioCliDataFields,
+} from './studio-data-sources.js'
 import { mutableArray, refine, strictStruct } from '../shared/schema.js'
 
 import {
@@ -18,7 +23,7 @@ const common = { id: extensionKeySchema, title: label }
 export const extensionViewContributionSchema = strictStruct({
   ...common,
   kind: Schema.Literal('view'),
-  placement: Schema.Literals(['settings', 'tool']),
+  placement: Schema.Literals(['settings', 'tool', 'page']),
   view: extensionViewSchema,
 })
 export const extensionContributionSchema = Schema.Union([
@@ -28,6 +33,8 @@ export const extensionContributionSchema = Schema.Union([
     destination: Schema.Literals(['tasks', 'terminal', 'browser', 'dashboards', 'jobs', 'pulls']),
   }),
   extensionViewContributionSchema,
+  strictStruct({ ...common, ...studioApiDataFields }),
+  strictStruct({ ...common, ...studioCliDataFields }),
   strictStruct({ ...common, kind: Schema.Literal('app'), taskId: reference, appId: reference }),
   strictStruct({
     ...common,
@@ -61,9 +68,13 @@ export const studioExtensionManifestSchema = strictStruct({
       const tools = new Set(
         manifest.contributions.filter((item) => item.kind === 'tool').map((item) => item.id),
       )
+      const results = new Set([
+        ...tools,
+        ...manifest.contributions.filter(isStudioDataSource).map((item) => item.id),
+      ])
       for (const contribution of manifest.contributions) {
         if (contribution.kind !== 'view') continue
-        const issue = extensionViewIssue(contribution.view, settings, tools)
+        const issue = extensionViewIssue(contribution.view, settings, tools, results)
         if (issue) return { path: ['contributions', contribution.id, 'view'], issue }
       }
       return true
@@ -73,6 +84,13 @@ export const studioExtensionManifestSchema = strictStruct({
 export type StudioExtensionManifest = typeof studioExtensionManifestSchema.Type
 export type ExtensionContribution = typeof extensionContributionSchema.Type
 export type ExtensionSettingValue = typeof value.Type
+
+export const studioExtensionPageLinkSchema = strictStruct({
+  extensionId: extensionKeySchema,
+  pageId: extensionKeySchema,
+  title: label,
+})
+export type StudioExtensionPageLink = typeof studioExtensionPageLinkSchema.Type
 
 export const studioExtensionEntrySchema = strictStruct({
   id: extensionKeySchema,
@@ -95,7 +113,7 @@ export const studioExtensionOpenResultSchema = strictStruct({
 })
 export const studioExtensionCallResultSchema = strictStruct({ data: Schema.Unknown })
 
-const componentVersion = Schema.Literals([1, 2])
+const componentVersion = Schema.Literals([1, 2, 3])
 export type StudioExtensionComponentVersion = typeof componentVersion.Type
 
 export const marketplaceDigestSchema = Schema.String.check(Schema.isPattern(/^[a-f0-9]{64}$/))
@@ -167,5 +185,16 @@ export const studioExtensionCommandSchema = Schema.Union([
     componentVersion: Schema.optional(componentVersion),
   }),
   strictStruct({ ...edit, action: Schema.Literal('call'), contributionId: extensionKeySchema }),
+  strictStruct({
+    ...edit,
+    action: Schema.Literal('read-data'),
+    contributionId: extensionKeySchema,
+  }),
+  strictStruct({
+    ...edit,
+    action: Schema.Literal('pin-page'),
+    contributionId: extensionKeySchema,
+    pinned: Schema.Boolean,
+  }),
 ])
 export type StudioExtensionCommand = typeof studioExtensionCommandSchema.Type

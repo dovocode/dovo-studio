@@ -1,3 +1,4 @@
+import { DataSource } from '../dashboards/data-source'
 import {
   Button,
   Dialog,
@@ -11,6 +12,7 @@ import { ExtensionComponents, ExtensionSettingsConflicts } from './components'
 import { lazy, Suspense, useState } from 'react'
 import {
   decode,
+  isStudioDataSource,
   runtimeComputerName,
   studioExtensionManifestSchema,
   type ExtensionContribution,
@@ -18,11 +20,15 @@ import {
 } from '@dovo/protocol'
 import {
   callStudioExtension,
+  readExtensionDataSource,
   openStudioExtension,
   clientScopeKey,
   useStudioExtensions,
+  useSettingsDraft,
+  useConfirmSettingsNavigation,
   useExtensionSettingsDraft,
   extensionComponentVersion,
+  studioExtensionPageTarget,
   useStudioHost,
   useWorkspace,
   WorkspaceScope,
@@ -37,6 +43,7 @@ const item = 'space-y-3 rounded-lg border bg-card p-4'
 export default function ExtensionsView({ entityId }: StudioViewProps) {
   const { activeRuntimeId, runtimes } = useWorkspace()
   const [owner, setOwner] = useState(activeRuntimeId ?? '')
+  const confirmNavigation = useConfirmSettingsNavigation()
   const sources = runtimes.filter((entry) => entry.snapshot?.studioExtensionsSupported)
   const source = sources.find((entry) => entry.profile.id === owner) ?? sources[0]
   return (
@@ -49,7 +56,10 @@ export default function ExtensionsView({ entityId }: StudioViewProps) {
             <select
               className={control}
               value={source.profile.id}
-              onChange={(event) => setOwner(event.target.value)}
+              onChange={async (event) => {
+                const id = event.currentTarget.value
+                if (await confirmNavigation()) setOwner(id)
+              }}
             >
               {sources.map((entry) => (
                 <option key={entry.profile.id} value={entry.profile.id}>
@@ -70,7 +80,8 @@ export default function ExtensionsView({ entityId }: StudioViewProps) {
 }
 
 function ExtensionList({ focus }: { focus?: string }) {
-  const { request, connected, snapshot } = useWorkspace()
+  const { request, connected, snapshot, activeRuntimeId } = useWorkspace()
+  const host = useStudioHost()
   const state = useStudioExtensions(
     request,
     connected,
@@ -81,6 +92,7 @@ function ExtensionList({ focus }: { focus?: string }) {
   const [marketplace, setMarketplace] = useState({ focus, open: focus === 'marketplace' })
   if (focus !== marketplace.focus) setMarketplace({ focus, open: focus === 'marketplace' })
   const [source, setSource] = useState('')
+  useSettingsDraft(!!source.trim(), !!source.trim() && state.busy)
   const [error, setError] = useState('')
   const [review, setReview] = useState<StudioExtensionEntry>()
   const reviewChanged =
@@ -88,6 +100,15 @@ function ExtensionList({ focus }: { focus?: string }) {
   async function stage() {
     try {
       const manifest = decode(studioExtensionManifestSchema, JSON.parse(source))
+      if (!snapshot?.studioDataSourcesSupported && manifest.contributions.some(isStudioDataSource))
+        throw new Error('Update the paired computer to use extension data sources.')
+      if (
+        !snapshot?.studioExtensionPinnedPages &&
+        manifest.contributions.some(
+          (contribution) => contribution.kind === 'view' && contribution.placement === 'page',
+        )
+      )
+        throw new Error('Update the paired computer to use extension pages.')
       const current = state.entries.find((entry) => entry.id === manifest.id)
       setError('')
       if (
@@ -249,7 +270,22 @@ function ExtensionList({ focus }: { focus?: string }) {
             <ExtensionSettings entry={entry} disabled={!connected || state.busy} save={save} />
             {entry.enabled &&
               entry.installed?.contributions.map((contribution) =>
-                contribution.kind === 'view' ? (
+                contribution.kind === 'view' && contribution.placement === 'page' ? (
+                  <Button
+                    key={contribution.id}
+                    size="sm"
+                    variant="outline"
+                    disabled={!activeRuntimeId}
+                    onClick={() => {
+                      if (activeRuntimeId)
+                        host.navigate(
+                          studioExtensionPageTarget(activeRuntimeId, entry.id, contribution.id),
+                        )
+                    }}
+                  >
+                    {contribution.title}
+                  </Button>
+                ) : contribution.kind === 'view' ? (
                   <Disclosure
                     key={contribution.id}
                     title={contribution.title}
@@ -345,6 +381,7 @@ function ExtensionSettings({
     saving,
     error,
   } = useExtensionSettingsDraft(entry, save)
+  useSettingsDraft(dirty, saving)
   const fields = entry.installed?.settings
   if (!fields?.length) return null
   return (
@@ -416,7 +453,12 @@ export function ExtensionTile({ id, contributionId }: { id: string; contribution
         />
       </div>
     )
-  if (!connected || !entry || !contribution || contribution.kind === 'view')
+  if (
+    !entry ||
+    !contribution ||
+    contribution.kind === 'view' ||
+    (!connected && !isStudioDataSource(contribution))
+  )
     return (
       <div className="space-y-2 p-3 text-sm">
         <p role="status">{state.error || 'This extension contribution is unavailable.'}</p>
@@ -483,6 +525,17 @@ function ExtensionAction({
       setBusy(false)
     }
   }
+
+  if (isStudioDataSource(contribution))
+    return (
+      <div className="space-y-2">
+        <p className="text-sm font-medium">{contribution.title}</p>
+        <DataSource
+          source={contribution}
+          read={() => readExtensionDataSource(request, entry, contribution.id)}
+        />
+      </div>
+    )
 
   return (
     <div className="space-y-2">

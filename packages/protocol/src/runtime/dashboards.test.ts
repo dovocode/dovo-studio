@@ -38,3 +38,20 @@ it('requires a current revision and rejects duplicate IDs and unknown tile setti
   expect(decodeResult(dashboardTileSchema, { ...tile, autoRun: true }).success).toBe(false)
   expect(decodeResult(dashboardTileSchema, { ...tile, span: 5 }).success).toBe(false)
 })
+
+it('accepts timed API and CLI sources while keeping refresh optional', () => {
+  expect(decodeResult(dashboardTileSchema, { ...tile, refreshSeconds: 60 }).success).toBe(true)
+  for (const refreshSeconds of [0, 29, 30.5, 86401, '60'])
+    expect(decodeResult(dashboardTileSchema, { ...tile, refreshSeconds }).success).toBe(false)
+  const { url: _url, ...fields } = tile
+  expect(
+    decodeResult(dashboardTileSchema, {
+      ...fields,
+      kind: 'cli',
+      chart: 'number',
+      command: 'your-cli --json',
+      repositoryId: 'repo',
+      refreshSeconds: 30,
+    }).success,
+  ).toBe(true)
+})

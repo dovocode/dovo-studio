@@ -1,3 +1,4 @@
+import { openExtensionPage } from './extension-page-route'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../runtime/connection/provider'
 import { useCarMode, useMobilePreferences } from '../runtime/preferences/app-preferences'
@@ -7,7 +8,7 @@ import type { StudioNavigation } from './navigation'
 export function useMoreActions(navigate: StudioNavigation['navigate']): HeaderAction[] {
   const uiText = useInterfaceText()
 
-  const { overviews } = useRuntime()
+  const { overviews, activeId, snapshot } = useRuntime()
   const car = useCarMode()
   const { botsOverviewEnabled } = useMobilePreferences()
   const destinations: HeaderAction[] = [
@@ -35,6 +36,13 @@ export function useMoreActions(navigate: StudioNavigation['navigate']): HeaderAc
             onPress: () => navigate('dashboards'),
           },
         ]
+      : []),
+    ...(!car && activeId
+      ? (snapshot?.studioExtensionPinnedPages ?? []).map((page) => ({
+          label: page.title,
+          icon: 'artifact' as const,
+          onPress: () => openExtensionPage(activeId, page.extensionId, page.pageId),
+        }))
       : []),
     { label: uiText('Settings'), icon: 'settings', onPress: () => navigate('settings') },
   ]

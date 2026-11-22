@@ -8,6 +8,7 @@ import {
   extensionViewContributionSchema,
   studioExtensionManifestSchema,
   type StudioExtensionManifest,
+  type ExtensionContribution,
 } from './runtime/studio-extensions.js'
 
 export type {
@@ -83,7 +84,36 @@ export function view(
   })
 }
 
-/** Build a v1 manifest and check references to settings and declared tools. */
+export function page(input: Omit<Parameters<typeof view>[0], 'placement'>): ViewContribution {
+  return view({ ...input, placement: 'page' })
+}
+
+type Source<K extends 'api' | 'cli'> = Extract<ExtensionContribution, { kind: K }>
+type SourceInput<K extends 'api' | 'cli'> = Omit<Source<K>, 'kind' | 'chart' | 'pointer'> &
+  Partial<Pick<Source<K>, 'chart' | 'pointer'>>
+
+export function apiSource(input: SourceInput<'api'>): Source<'api'> {
+  return { chart: 'table', pointer: '', ...input, kind: 'api' }
+}
+
+export function cliSource(input: SourceInput<'cli'>): Source<'cli'> {
+  return { chart: 'table', pointer: '', ...input, kind: 'cli' }
+}
+
+/** Place the source's refresh controls in the layout. */
+export function sourceControls(
+  id: string,
+  source: Pick<Source<'api' | 'cli'>, 'id'> | string,
+): Node<'data-source'> {
+  return { id, kind: 'data-source', source: typeof source === 'string' ? source : source.id }
+}
+
+/** Present multiple displays from one result in a responsive card grid. */
+export function dataGrid(input: Omit<Node<'data-grid'>, 'kind'>): Node<'data-grid'> {
+  return { ...input, kind: 'data-grid' }
+}
+
+/** Build a v1 manifest and check references to settings, tools and data sources. */
 export function defineExtension(
   input: Omit<StudioExtensionManifest, 'version'>,
 ): StudioExtensionManifest {
@@ -95,8 +125,9 @@ export function setting(id: string): Extract<ExtensionViewValue, { setting: stri
 }
 
 export function result(
-  tool: string,
+  contribution: string | Pick<ExtensionContribution, 'id'>,
   ...path: string[]
 ): Extract<ExtensionViewValue, { result: string }> {
-  return path.length ? { result: tool, path } : { result: tool }
+  const id = typeof contribution === 'string' ? contribution : contribution.id
+  return path.length ? { result: id, path } : { result: id }
 }

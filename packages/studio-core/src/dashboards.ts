@@ -10,6 +10,7 @@ import {
   dashboardSaveResultSchema,
   dashboardSchema,
   decode,
+  artifactFeedSelect,
   randomUUID,
   type Dashboard,
   type DashboardTile,
@@ -19,6 +20,7 @@ import type { WorkspaceRequest } from './workspace/context'
 
 export const dashboardTileLabels = {
   api: 'HTTP data',
+  cli: 'CLI data',
   mcp: 'MCP data',
   command: 'Command',
   tui: 'TUI',
@@ -33,11 +35,23 @@ export const dashboardTileLabels = {
   jobs: 'Automations',
 } satisfies Record<DashboardTile['kind'], string>
 
+export const dashboardDisplayLabels = {
+  table: 'Table',
+  number: 'Metric',
+  line: 'Line graph',
+} as const
+
+export function isDashboardDisplay(value: string): value is keyof typeof dashboardDisplayLabels {
+  return Object.hasOwn(dashboardDisplayLabels, value)
+}
+
 export function newDashboardTile(kind: DashboardTile['kind']): DashboardTile {
   const base = { id: randomUUID(), title: dashboardTileLabels[kind], span: 2, height: 2 }
   switch (kind) {
     case 'api':
       return { ...base, kind, url: '', pointer: '', chart: 'table' }
+    case 'cli':
+      return { ...base, kind, repositoryId: '', command: '', pointer: '', chart: 'table' }
     case 'mcp':
       return {
         ...base,
@@ -75,6 +89,12 @@ export function dashboardTileFields(
     case 'api':
       return [
         ['url', 'URL', tile.url],
+        ['pointer', 'JSON pointer', tile.pointer],
+      ]
+    case 'cli':
+      return [
+        ['repositoryId', 'Project', tile.repositoryId],
+        ['command', 'Command', tile.command],
         ['pointer', 'JSON pointer', tile.pointer],
       ]
     case 'mcp':
@@ -123,6 +143,14 @@ export function moveDashboardTile(tiles: DashboardTile[], index: number, offset:
   return next
 }
 
+export function dashboardPanelValue(value: unknown, pointer: string) {
+  try {
+    return artifactFeedSelect(value, pointer)
+  } catch {
+    return undefined
+  }
+}
+
 export function dashboardDataRows(data: unknown) {
   const entries = Array.isArray(data) ? data : [data]
   const rows = entries
@@ -160,10 +188,12 @@ export function useDashboards(
   connected: boolean,
   readCache: RuntimeReadCache | null,
   focused = true,
+  dataSources = false,
 ) {
   const [dashboards, setDashboards] = useState<Dashboard[]>([])
   const [selection, select] = useState('')
   const [draft, edit] = useState<Dashboard>()
+  const [draftBase, setDraftBase] = useState<Dashboard>()
   const [pending, setPending] = useState(false)
   const [error, setError] = useState('')
   const [cacheError, setCacheError] = useState('')
@@ -227,7 +257,11 @@ export function useDashboards(
     const current = ++generation.current
     setError('')
     try {
-      const result = await request('/api/dashboards/list', {}, dashboardListResultSchema)
+      const result = await request(
+        '/api/dashboards/list',
+        dataSources ? { dataSources: true } : {},
+        dashboardListResultSchema,
+      )
       if (current !== generation.current) return
       publish(result.dashboards)
       await cache(result.dashboards)
@@ -242,20 +276,27 @@ export function useDashboards(
     return () => {
       generation.current++
     }
-  }, [connected, focused])
+  }, [connected, focused, dataSources])
 
   return {
     dashboards,
     dashboard,
     select,
     draft,
+    dirty: !!draft && JSON.stringify(draft) !== JSON.stringify(draftBase),
     edit,
+    beginEdit: (next: Dashboard) => {
+      setDraftBase(next.revision ? next : undefined)
+      edit(next)
+    },
     pending,
     error,
     cacheError,
     load,
     create: () => {
-      edit({ id: randomUUID(), title: 'New dashboard', revision: 0, tiles: [] })
+      const next = { id: randomUUID(), title: 'New dashboard', revision: 0, tiles: [] }
+      setDraftBase(next)
+      edit(next)
     },
     copyDraft: () => {
       if (draft) edit({ ...draft, id: randomUUID(), revision: 0 })
@@ -303,7 +344,12 @@ function portableDashboard(dashboard: Dashboard): Dashboard {
     revision: 0,
     tiles: dashboard.tiles.map((tile) => {
       if (tile.kind === 'terminal') return { ...tile, terminalId: '' }
-      if (tile.kind === 'command' || tile.kind === 'tui' || tile.kind === 'pipelines')
+      if (
+        tile.kind === 'command' ||
+        tile.kind === 'tui' ||
+        tile.kind === 'pipelines' ||
+        tile.kind === 'cli'
+      )
         return { ...tile, repositoryId: '' }
       if (tile.kind === 'mcp') return { ...tile, taskId: '' }
       if (tile.kind === 'app') return { ...tile, taskId: '', appId: '' }
@@ -367,6 +413,18 @@ export function dashboardLinePlot(data: unknown) {
     })
     .join(' ')
   return { min, max, latest: values.at(-1), points }
+}
+
+export function readDashboardDataSource(
+  request: WorkspaceRequest,
+  dashboard: Dashboard,
+  tile: Extract<DashboardTile, { kind: 'api' | 'cli' }>,
+) {
+  return request(
+    tile.kind === 'cli' ? '/api/dashboards/command-data' : '/api/dashboards/read',
+    { id: dashboard.id, tileId: tile.id, expectedRevision: dashboard.revision },
+    dashboardReadResultSchema,
+  )
 }
 
 export function useDashboardTile(

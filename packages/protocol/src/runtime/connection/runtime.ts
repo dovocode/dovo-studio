@@ -9,6 +9,7 @@ import { localCommitsSchema } from '../../scm/local-commits.js'
 import { remoteDesktopSessionSchema } from '../remote-desktop.js'
 import { peerConfigSchema, peerRelayIdentitySchema, peerRelayProviderSchema } from './peer.js'
 import { projectTransferSchema } from '../../scm/repositories/project-transfer.js'
+import { studioExtensionPageLinkSchema } from '../studio-extensions.js'
 import { studioToolsSchema } from '../studio-tools.js'
 import { runtimeIconSchema } from './runtime-icon.js'
 import { unattendedSpendLimitSchema } from '../../tasks/spend-limit.js'
@@ -377,9 +378,11 @@ export const snapshotSchema = mutableStruct({
   taskSearchScopeSupported: Schema.optional(Schema.Literal(true)),
   /** `/api/bots/*`, `Task.bot`, bot memory and automation Bot steps. */
   botsSupported: Schema.optional(Schema.Literal(true)),
+  studioDataSourcesSupported: Schema.optional(Schema.Literal(true)),
   dashboardsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionCustomPropsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionComponentVersion: Schema.optional(Schema.Literal(1)),
+  studioExtensionPinnedPages: Schema.optional(mutableArray(studioExtensionPageLinkSchema)),
   studioExtensionMarketplaceSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionsSupported: Schema.optional(Schema.Literal(true)),
   studioExtensionsRevision: Schema.optional(Schema.Number),

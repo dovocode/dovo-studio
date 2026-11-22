@@ -66,8 +66,17 @@ try {
             .evaluate((el) => el === document.activeElement),
           true,
         )
+        if (payload.command) {
+          const preview = page.getByRole('region', { name: 'Command', exact: true })
+          assert.equal(await preview.textContent(), payload.command)
+          await preview.focus()
+          assert.equal(await preview.evaluate((el) => el === document.activeElement), true)
+        }
         await page.getByText('Full JSON', { exact: true }).click()
-        assert.deepEqual(JSON.parse(await page.locator('pre').textContent()), payload)
+        assert.deepEqual(
+          JSON.parse(await page.locator('[data-approval-json]').textContent()),
+          payload,
+        )
       } else {
         const button = page.getByRole('button', { name: 'Show full JSON', exact: true })
         await button.waitFor()

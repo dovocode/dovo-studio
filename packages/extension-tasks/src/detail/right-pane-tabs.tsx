@@ -1,8 +1,9 @@
 import { useLayoutEffect, useRef, type KeyboardEvent, type ReactNode } from 'react'
-import { ChevronRight, Plus, X } from 'lucide-react'
+import { Check, ChevronRight, Plus, X } from 'lucide-react'
 import { DropdownMenu, IconButton, cn } from '@dovo/studio-ui'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import type { TaskSurface } from './task-header'
+import { RightPaneTabIcon } from './tool-icons'
 
 const labels = {
   changes: 'Changes',
@@ -241,7 +242,7 @@ export function RightPaneTabs({
               aria-controls={panelId}
               tabIndex={tab === active ? 0 : -1}
               className={cn(
-                'rounded-md px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
+                'flex items-center gap-1.5 rounded-md px-2 py-1 text-xs outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-ring',
                 tab === active
                   ? 'font-medium text-foreground'
                   : 'text-muted-foreground hover:text-foreground',
@@ -250,6 +251,7 @@ export function RightPaneTabs({
               onKeyDown={(event) => keyboard(event, tab)}
               title={uiText(tabLabels?.[tab] ?? labels[tab])}
             >
+              <RightPaneTabIcon tab={tab} />
               {uiText(tabLabels?.[tab] ?? labels[tab])}
             </button>
             <IconButton
@@ -294,6 +296,7 @@ export function PaneAddMenu({
   label,
   icon,
   addable,
+  open = [],
   onAdd,
   onDevTools,
   onNewThread,
@@ -303,6 +306,8 @@ export function PaneAddMenu({
   label: string
   icon?: ReactNode
   addable: readonly RightPaneTab[]
+  /** Tools that already have a pane tab. Choosing one shows that tab again. */
+  open?: readonly RightPaneTab[]
   onAdd?: (tab: RightPaneTab) => void
   onDevTools?: () => void
   onNewThread?: () => void
@@ -338,10 +343,27 @@ export function PaneAddMenu({
           {addable.map((tab) => (
             <DropdownMenu.Item
               key={tab}
-              className="cursor-default rounded-md px-2 py-1.5 outline-none focus:bg-accent"
+              // Keep the tool name stable for assistive technology and announce the tab state.
+              aria-label={uiText(tabLabels?.[tab] ?? labels[tab])}
+              aria-description={open.includes(tab) ? uiText('Open') : undefined}
+              className="flex cursor-default items-center gap-2 rounded-md px-2 py-1.5 outline-none focus:bg-accent"
               onSelect={() => onAdd?.(tab)}
             >
-              {uiText(tabLabels?.[tab] ?? labels[tab])}
+              <span className="text-muted-foreground">
+                <RightPaneTabIcon tab={tab} size={14} />
+              </span>
+              <span className="min-w-0 flex-1 truncate">
+                {uiText(tabLabels?.[tab] ?? labels[tab])}
+              </span>
+              {open.includes(tab) && (
+                <span
+                  aria-hidden="true"
+                  className="flex shrink-0 items-center gap-1 text-[0.6875rem] text-muted-foreground"
+                >
+                  <Check size={12} aria-hidden="true" />
+                  {uiText('Open')}
+                </span>
+              )}
             </DropdownMenu.Item>
           ))}
           {actions.map(({ label, onSelect }) => (

@@ -125,6 +125,8 @@ function ScreenWorkspace({
               ? [...root.snapshot.questions, busyDesktopQuestion]
               : root.snapshot.questions,
           artifactsEnabled: true,
+          studioExtensionPinnedPages: [],
+          studioDataSourcesSupported: true as const,
           dashboardsSupported: true as const,
           remoteDesktopEnabled: state === 'legacy' ? undefined : false,
           scopedAgentsSupported: state !== 'legacy',

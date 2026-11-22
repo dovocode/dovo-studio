@@ -2,6 +2,7 @@ import { Schema } from 'effect'
 import { useEffect, useEffectEvent, useRef, useState } from 'react'
 import {
   decode,
+  dashboardReadResultSchema,
   responses,
   studioExtensionCallResultSchema,
   studioExtensionCommandSchema,
@@ -19,9 +20,46 @@ const mutationResult = Schema.Union([responses.ok, studioExtensionResultSchema])
 export function extensionComponentVersion(
   snapshot?: RuntimeSnapshot | null,
 ): StudioExtensionComponentVersion | undefined {
+  if (snapshot?.studioDataSourcesSupported || snapshot?.studioExtensionPinnedPages) return 3
   return snapshot?.studioExtensionCustomPropsSupported
     ? 2
     : snapshot?.studioExtensionComponentVersion
+}
+
+export function studioExtensionPageTarget(runtimeId: string, extensionId: string, pageId: string) {
+  return {
+    viewId: 'studio-extension-page',
+    entityId: JSON.stringify([runtimeId, extensionId, pageId]),
+  }
+}
+
+export function parseStudioExtensionPageTarget(entityId?: string) {
+  if (!entityId) return undefined
+  try {
+    const value: unknown = JSON.parse(entityId)
+    if (
+      Array.isArray(value) &&
+      value.length === 3 &&
+      value.every((id) => typeof id === 'string' && id)
+    ) {
+      const [runtimeId, extensionId, pageId]: string[] = value
+      return { runtimeId, extensionId, pageId }
+    }
+  } catch {
+    return undefined
+  }
+}
+
+export function isStudioExtensionPagePinned(
+  snapshot: RuntimeSnapshot | null | undefined,
+  extensionId: string,
+  pageId: string,
+) {
+  return (
+    snapshot?.studioExtensionPinnedPages?.some(
+      (page) => page.extensionId === extensionId && page.pageId === pageId,
+    ) ?? false
+  )
 }
 
 export function useStudioExtensions(
@@ -143,6 +181,67 @@ export function useStudioExtensions(
     change,
     saveSettings,
   }
+}
+
+export function useStudioExtensionPage(
+  request: WorkspaceRequest,
+  snapshot: RuntimeSnapshot | null | undefined,
+  connected: boolean,
+  extensionId: string,
+  pageId: string,
+) {
+  const supported = snapshot?.studioExtensionPinnedPages !== undefined
+  const state = useStudioExtensions(
+    request,
+    connected && supported,
+    null,
+    snapshot?.studioExtensionsRevision,
+    extensionComponentVersion(snapshot),
+  )
+  const entry = state.entries.find((item) => item.id === extensionId && item.enabled)
+  const contribution = entry?.installed?.contributions.find((item) => item.id === pageId)
+  const page =
+    contribution?.kind === 'view' && contribution.placement === 'page' ? contribution : undefined
+  const pinned = isStudioExtensionPagePinned(snapshot, extensionId, pageId)
+  const message =
+    page || !connected
+      ? ''
+      : !supported
+        ? 'Update the paired computer to open extension pages.'
+        : state.loaded
+          ? 'This extension page is unavailable.'
+          : 'Loading extension page…'
+  return {
+    entry,
+    page,
+    pinned,
+    message,
+    error: state.error,
+    busy: state.busy,
+    saveSettings: state.saveSettings,
+    togglePin: () => {
+      if (!entry || !page) return
+      void state.change({
+        action: 'pin-page',
+        id: entry.id,
+        expectedRevision: entry.revision,
+        contributionId: page.id,
+        pinned: !pinned,
+      })
+    },
+  }
+}
+
+export function readExtensionDataSource(
+  request: WorkspaceRequest,
+  extension: StudioExtensionEntry,
+  contributionId: string,
+) {
+  return request(
+    '/api/studio-extensions',
+    { action: 'read-data', id: extension.id, expectedRevision: extension.revision, contributionId },
+    dashboardReadResultSchema,
+  )
 }
 
 export async function callStudioExtension(

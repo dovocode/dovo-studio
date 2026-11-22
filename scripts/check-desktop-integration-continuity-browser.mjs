@@ -12,9 +12,9 @@ export const useWorkspace=()=>useContext(Store);export const useStudioHost=()=>u
 export const useRuntimeSources=()=>[];
 export const WorkspaceScope=({children})=>children;
 export const StudioHostProvider=({api,children})=>{window.host=api;return <Host.Provider value={api}>{children}</Host.Provider>};
-export const SettingsTargetProvider=({children})=>children;
+export const SettingsTargetProvider=({children})=>children;export const WorkspaceDraftScope=({children})=>children;
 export * from '${root}packages/studio-core/src/shortcuts.ts';
-export {useStudioExtensions,extensionComponentVersion} from '${root}packages/studio-core/src/studio-extensions.ts';
+export {useStudioExtensions,extensionComponentVersion,studioExtensionPageTarget} from '${root}packages/studio-core/src/studio-extensions.ts';
 export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],interfaceLanguage:'en-US',showIssues:true,showJira:true,pullProjectVisibility:{}});export const useAppPreferences=readAppPreferences;export const updateAppPreferences=()=>{};
 export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
 export const useConfirmSettingsNavigation=()=>()=>true;export const repositorySourceKey=(r,p)=>JSON.stringify([r,p]);

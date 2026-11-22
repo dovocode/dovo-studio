@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { buildFileTree, fileIconKind } from './file-tree'
+import { buildFileTree, fileIconKind, fileTreePaths } from './file-tree'
 
 it('builds nested, folder-first trees with compressed directory chains and natural file ordering', () => {
   const files = [
@@ -39,6 +39,13 @@ it('builds nested, folder-first trees with compressed directory chains and natur
     ],
   })
   expect(files).toEqual(original)
+  expect(fileTreePaths(nodes)).toEqual([
+    'src/ui/components/view2.tsx',
+    'src/ui/components/view10.tsx',
+    'src/main.ts',
+    '.gitattributes',
+    'README.md',
+  ])
 })
 
 it('keeps similarly named directories distinct and handles empty lists and unusual filenames', () => {

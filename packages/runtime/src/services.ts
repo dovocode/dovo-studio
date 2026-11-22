@@ -1,3 +1,4 @@
+import { studioDataDirectory } from './dashboards/data-sources.js'
 import { StudioExtensions } from './studio-extensions/extensions.js'
 import { Dashboards } from './dashboards/dashboards.js'
 import { piSessionStorage, recoverPiSessionCopies } from './agents/providers/pi/session-copies.js'
@@ -607,6 +608,7 @@ export function createServices(
     return work
   }
   const backups = new RuntimeBackups(db.name)
+  const dataDirectory = studioDataDirectory(store)
   const services: Services = {
     dictation: new RuntimeDictation(db.name === ':memory:' ? tmpdir() : dirname(resolve(db.name))),
     policy,
@@ -634,12 +636,17 @@ export function createServices(
     runtimeAddresses: () => [],
     peers: (peerConnections = new PeerConnections(db, devices, policy)),
     mcpApps,
-    dashboards: new Dashboards(db, mcpApps, store),
-    studioExtensions: new StudioExtensions(db, mcpApps, (taskId) => {
-      const task = store.taskSummary(taskId)
-      if (task.archived || task.archivedAt)
-        throw new HttpError(409, 'Restore the extension source thread.')
-    }),
+    dashboards: new Dashboards(db, mcpApps, store, dataDirectory),
+    studioExtensions: new StudioExtensions(
+      db,
+      mcpApps,
+      (taskId) => {
+        const task = store.taskSummary(taskId)
+        if (task.archived || task.archivedAt)
+          throw new HttpError(409, 'Restore the extension source thread.')
+      },
+      dataDirectory,
+    ),
     artifacts,
     artifactFeeds: new ArtifactFeeds(
       db,

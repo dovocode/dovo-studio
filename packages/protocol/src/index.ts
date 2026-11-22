@@ -333,6 +333,13 @@ export * from './desktop-dictation.js'
 
 export * from './runtime/remote-desktop.js'
 export * from './runtime/dashboards.js'
+export {
+  isStudioDataSource,
+  studioDataSourceIssue,
+  studioDataPanelLimit,
+  type StudioDataPanel,
+  type StudioDataSource,
+} from './runtime/studio-data-sources.js'
 export * from './runtime/studio-extensions.js'
 export * from './runtime/studio-extension-marketplace.js'
 export * from './runtime/studio-extension-views.js'

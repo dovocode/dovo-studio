@@ -1,9 +1,11 @@
+import { DataSource } from '../dashboards/data-source'
 import { useState } from 'react'
 import type { ExtensionContribution, ExtensionViewNode, StudioExtensionEntry } from '@dovo/protocol'
 import {
   ExtensionComponentBoundary,
   extensionViewText,
   useExtensionView,
+  useSettingsDraft,
   useWorkspace,
   type ExtensionViewState,
   type SaveExtensionSettings,
@@ -34,7 +36,7 @@ import {
   TabsTab,
   Textarea,
 } from '@dovo/studio-ui'
-import { DataView } from '../dashboards/data-view'
+import { DataGrid, DataView } from '../dashboards/data-view'
 
 export function ExtensionSettingsConflicts({
   conflicts,
@@ -85,9 +87,13 @@ export function ExtensionComponents({
 }) {
   const { request, connected } = useWorkspace()
   const state = useExtensionView(contribution.view, entry, request, connected, save)
+  useSettingsDraft(state.dirty, state.settingsSaving)
   return (
     <ExtensionComponentBoundary fallback={<p role="alert">This extension view could not load.</p>}>
       <div className="min-w-0 space-y-3 break-words">
+        {state.implicitSources.map((source) => (
+          <ViewSource key={source.id} id={source.id} state={state} />
+        ))}
         <Node id={contribution.view.root} state={state} />
         <ExtensionSettingsConflicts {...state} />
         {state.dirty && (
@@ -126,6 +132,19 @@ const textStyles = {
   heading: 'text-base font-semibold',
   muted: 'text-sm text-muted-foreground',
   code: 'whitespace-pre-wrap font-mono text-xs',
+}
+
+function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
+  const source = state.sources.find((item) => item.id === id)
+  if (!source) return null
+  return (
+    <DataSource
+      key={JSON.stringify(source)}
+      source={source}
+      read={() => state.readSource(id)}
+      onData={(value) => state.setResult(id, value)}
+    />
+  )
 }
 
 function Node({ id, state }: { id: string; state: ExtensionViewState }) {
@@ -289,6 +308,10 @@ function Node({ id, state }: { id: string; state: ExtensionViewState }) {
           </DialogContent>
         </Dialog>
       )
+    case 'data-grid':
+      return <DataGrid value={state.get(node.value)} panels={node.panels} />
+    case 'data-source':
+      return <ViewSource id={node.source} state={state} />
     case 'table':
     case 'chart':
       return (

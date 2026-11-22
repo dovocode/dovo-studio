@@ -28,10 +28,26 @@ const bundle = await bundleBrowser(
         import Extensions from './packages/extension-tasks/src/studio-extensions/view'
         function Views() {
           const [extensions, setExtensions] = React.useState(false)
-          React.useEffect(() => { window.showExtensions = setExtensions }, [])
-          return extensions ? <Extensions /> : <Dashboards />
+          const { snapshot, activeRuntimeId } = useWorkspace()
+          const [page, setPage] = React.useState()
+          React.useEffect(() => {
+            window.showExtensions = (show) => { setExtensions(show); setPage(undefined) }
+            window.openExtensionPage = setPage
+          }, [])
+          const pins = snapshot.studioExtensionPinnedPages.map((pin) => ({
+            ...studioExtensionPageTarget(activeRuntimeId, pin.extensionId, pin.pageId),
+            title: pin.title,
+          }))
+          return <TooltipProvider>
+            {pins.length > 0 && <ActivityBar views={[]} activeId="" onSelect={() => {}}
+              extensionPages={pins} activeExtensionPage={page} onOpenExtensionPage={(item) => setPage(item.entityId)} />}
+            {page ? <ExtensionPage entityId={page} /> : extensions ? <Extensions /> : <Dashboards />}
+          </TooltipProvider>
         }
-        import { Fixture } from '@dovo/studio-core'
+        import { Fixture, studioExtensionPageTarget, useWorkspace } from '@dovo/studio-core'
+        import ExtensionPage from './packages/extension-tasks/src/studio-extensions/page'
+        import { ActivityBar } from './packages/studio-shell/src/activity-bar'
+        import { TooltipProvider } from '@dovo/studio-ui'
         createRoot(document.getElementById('app')).render(<Fixture><Views /></Fixture>)
       `,
       loader: 'tsx',
@@ -52,11 +68,13 @@ const bundle = await bundleBrowser(
         export * from '${root}packages/studio-core/src/index'
         export const encodeWorkTarget = JSON.stringify
         export const clientScopeKey = () => 1
-        export const useStudioHost = () => ({ navigate() {}, openThread() {} })
+        export const useStudioHost = () => ({ navigate(target) {
+          if (target.viewId === 'studio-extension-page') window.openExtensionPage(target.entityId)
+        }, openThread() {} })
         const Workspace = createContext(null)
         const profile = { id: 'owner', name: 'Test runtime', connection: { address: 'http://test:51464' } }
         const workspace = { repositories: [{ id: 'repo', name: 'Example project' }], tasks: [{ id: 'thread', title: 'Delivery thread' }], automations: [] }
-        const snapshot = { dashboardsSupported: true, studioExtensionsSupported: true, studioExtensionComponentVersion: 1, studioExtensionCustomPropsSupported: true, studioExtensionMarketplaceSupported: true, workspace, terminals: [] }
+        const snapshot = { dashboardsSupported: true, studioDataSourcesSupported: true, studioExtensionsSupported: true, studioExtensionComponentVersion: 1, studioExtensionCustomPropsSupported: true, studioExtensionMarketplaceSupported: true, workspace, terminals: [] }
         const dashboards = []
         let extension
         let marketplaceEntry
@@ -121,6 +139,14 @@ const bundle = await bundleBrowser(
               if (input.action === 'open') {
                 return { contribution: extension.installed.contributions.find((item) => item.id === input.contributionId) }
               }
+              if (input.action === 'read-data') return { data: { count: 73, durations: [1, 4, 3] }, updatedAt: Date.now() }
+              if (input.action === 'pin-page') {
+                const item = extension.installed.contributions.find(({ id }) => id === input.contributionId)
+                window.setExtensionPins(input.pinned
+                  ? [{extensionId: extension.id, pageId: item.id, title: item.title}]
+                  : [])
+                return { ok: true }
+              }
               if (input.action === 'call') {
                 if (!extension.enabled) throw Error('Extension unavailable')
                 return { data: { branch: extension.settings.branch, series: [1, 3, 2] } }
@@ -133,7 +159,9 @@ const bundle = await bundleBrowser(
             }
             return { extension: structuredClone(extension) }
           }
-          if (path.endsWith('/list')) return { dashboards: [...dashboards] }
+          if (path.endsWith('/list')) return { dashboards: dashboards.filter((item) =>
+            input.dataSources || !item.tiles.some((tile) => tile.kind === 'cli' || tile.refreshSeconds || tile.panels),
+          ) }
           if (path.endsWith('/save')) {
             const index = dashboards.findIndex((item) => item.id === input.dashboard.id)
             if ((dashboards[index]?.revision ?? 0) !== input.expectedRevision) throw Error('Dashboard changed')
@@ -151,6 +179,7 @@ const bundle = await bundleBrowser(
             }
             return { terminalId }
           }
+          if (path.endsWith('/command-data')) return { data: { count: 42, durations: [2, 4, 3] }, updatedAt: Date.now() }
           if (path.endsWith('/read')) return { data: [3, 5, 2], updatedAt: Date.now() }
           throw Error('Unexpected request ' + path)
         }
@@ -158,7 +187,10 @@ const bundle = await bundleBrowser(
           const [connected, setConnected] = useState(true)
           const [revision, remount] = useState(0)
           const [extensionRevision, setExtensionRevision] = useState(0)
-          const liveSnapshot = React.useMemo(() => ({ ...snapshot, studioExtensionsRevision: extensionRevision }), [extensionRevision])
+          const [pins, setPins] = useState([])
+          const liveSnapshot = React.useMemo(() => ({
+            ...snapshot, studioExtensionsRevision: extensionRevision, studioExtensionPinnedPages: pins,
+          }), [extensionRevision, pins])
           useEffect(() => {
             window.stageElsewhere = (name) => {
               const manifest = extension.draft ?? extension.installed
@@ -169,6 +201,15 @@ const bundle = await bundleBrowser(
               extension = { ...extension, revision: extension.revision + 1, settings: { ...extension.settings, branch } }
               if (notify) setExtensionRevision(extension.revision)
             }
+            window.addTimedTileToMarketplaceDashboard = () => {
+              const index = dashboards.findIndex((item) => item.title === 'Service overview')
+              const dashboard = dashboards[index]
+              const tile = { id: 'timed', title: 'Timed API', kind: 'api', span: 2,
+                height: 1, url: 'http://metrics.test', pointer: '', chart: 'number', refreshSeconds: 30 }
+              dashboards[index] = { ...dashboard, revision: dashboard.revision + 1,
+                tiles: [...dashboard.tiles, tile] }
+            }
+            window.setExtensionPins = setPins
             window.setConnected = setConnected
             window.reopen = () => remount((previous) => previous + 1)
           }, [])
@@ -219,19 +260,33 @@ try {
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
 
+  const addTile = async (name) => {
+    await page.getByRole('button', { name: 'Add tile', exact: true }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+  }
+  const dashboardAction = async (name) => {
+    await page.getByRole('button', { name: 'Dashboard actions' }).click()
+    await page.getByRole('menuitem', { name, exact: true }).click()
+  }
+
   await page.getByRole('button', { name: 'New dashboard' }).click()
   await page.getByLabel('Dashboard title').fill('Delivery')
-  await page.getByRole('button', { name: 'Add tile' }).click()
+  await addTile('HTTP data')
   await page.getByLabel('URL', { exact: true }).fill('http://builds.lan/metrics')
   await page.getByLabel('Display').selectOption('line')
   await page.getByLabel('Width').selectOption('4')
-  await page.getByLabel('Tile type').selectOption('command')
-  await page.getByRole('button', { name: 'Add tile' }).click()
+  await addTile('Command')
+  assert.equal(await page.getByLabel('URL', { exact: true }).count(), 0)
+  await page.getByRole('button', { name: 'HTTP data', exact: true }).click()
+  assert.equal(
+    await page.getByLabel('URL', { exact: true }).inputValue(),
+    'http://builds.lan/metrics',
+  )
+  await page.getByRole('button', { name: 'Command', exact: true }).click()
   await page.getByLabel('Project').selectOption('repo')
   await page.getByLabel('Command', { exact: true }).fill('pnpm build')
   await page.getByRole('button', { name: 'Move earlier' }).last().click()
-  await page.getByLabel('Tile type').selectOption('iframe')
-  await page.getByRole('button', { name: 'Add tile' }).click()
+  await addTile('Iframe')
   await page.getByLabel('URL', { exact: true }).last().fill('https://dashboard-embed.invalid/')
 
   await page.evaluate(() => window.setConnected(false))
@@ -291,7 +346,7 @@ try {
   assert.equal((await page.evaluate(() => window.calls)).length, calls.length)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
-    page.getByRole('button', { name: 'Export dashboard' }).click(),
+    dashboardAction('Export dashboard'),
   ])
   assert.equal(download.suggestedFilename(), 'delivery.dovo-dashboard.json')
   const path = await download.path()
@@ -303,7 +358,7 @@ try {
 
   const [picker] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Import dashboard' }).click(),
+    dashboardAction('Import dashboard'),
   ])
   await picker.setFiles({
     name: 'invalid.json',
@@ -316,7 +371,7 @@ try {
     .waitFor()
   const [retryPicker] = await Promise.all([
     page.waitForEvent('filechooser'),
-    page.getByRole('button', { name: 'Import dashboard' }).click(),
+    dashboardAction('Import dashboard'),
   ])
   await retryPicker.setFiles(path)
   assert.equal(await page.getByLabel('Dashboard title').inputValue(), 'Delivery')
@@ -370,11 +425,43 @@ try {
           inputs: { branch: 'branch' },
         },
         {
+          id: 'metrics',
+          kind: 'api',
+          title: 'Build metrics',
+          url: 'http://builds.lan/metrics',
+          pointer: '',
+          chart: 'table',
+          refreshSeconds: 30,
+        },
+        {
           id: 'report',
           kind: 'app',
           title: 'Open delivery app',
           taskId: 'thread',
           appId: 'report',
+        },
+        {
+          id: 'report-page',
+          kind: 'view',
+          placement: 'page',
+          title: 'Build report',
+          view: {
+            version: 1,
+            root: 'main',
+            nodes: [
+              { id: 'main', kind: 'card', children: ['metrics-refresh', 'total'] },
+              { id: 'metrics-refresh', kind: 'data-source', source: 'metrics' },
+              {
+                id: 'total',
+                kind: 'data-grid',
+                value: { result: 'metrics' },
+                panels: [
+                  { title: 'Build count', pointer: '/count', chart: 'number' },
+                  { title: 'Build time', pointer: '/durations', chart: 'line' },
+                ],
+              },
+            ],
+          },
         },
         {
           id: 'delivery-view',
@@ -393,6 +480,7 @@ try {
                   'run',
                   'result',
                   'trend',
+                  'count',
                   'custom',
                   'unsupported',
                   'tabs',
@@ -407,6 +495,12 @@ try {
                 kind: 'chart',
                 label: 'Delivery trend',
                 value: { result: 'status', path: ['series'] },
+              },
+              {
+                id: 'count',
+                kind: 'metric',
+                label: 'Build count',
+                value: { result: 'metrics', path: ['count'] },
               },
               {
                 id: 'custom',
@@ -463,6 +557,29 @@ try {
   await review.getByText('Revised integration', { exact: true }).waitFor()
   await review.getByRole('button', { name: 'Install draft' }).click()
   await page.getByText('Unknown component fallback', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Build report', exact: true }).click()
+  const report = page.getByRole('heading', { name: 'Build report', exact: true })
+  await report.waitFor()
+  await page.getByRole('button', { name: 'Refresh data' }).click()
+  await page.getByRole('region', { name: 'Build count' }).getByText('73', { exact: true }).waitFor()
+  await page
+    .getByRole('region', { name: 'Build time' })
+    .getByRole('img', { name: 'Line graph, range 1 to 4' })
+    .waitFor()
+  await page.getByRole('button', { name: 'Pin to sidebar' }).click()
+  const sidebar = page.getByRole('navigation', { name: 'Main navigation' })
+  await sidebar.getByRole('button', { name: 'Build report' }).waitFor()
+  await page.evaluate(() => window.showExtensions(false))
+  await sidebar.getByRole('button', { name: 'Build report' }).click()
+  await report.waitFor()
+  assert.equal(
+    await sidebar.getByRole('button', { name: 'Build report' }).getAttribute('aria-current'),
+    'page',
+  )
+  await page.getByRole('button', { name: 'Unpin from sidebar' }).click()
+  await sidebar.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.showExtensions(true))
+  await page.getByText('Unknown component fallback', { exact: true }).waitFor()
   await page.getByRole('tab', { name: 'Details' }).click()
   await page.getByRole('tabpanel').getByText('Delivery details', { exact: true }).waitFor()
   await page.getByRole('button', { name: 'Help', exact: true }).click()
@@ -507,13 +624,21 @@ try {
   assert.equal(await page.getByLabel('Branch', { exact: true }).inputValue(), 'stable')
   await page.evaluate(() => window.showExtensions(false))
   await page.getByRole('button', { name: 'Edit dashboard' }).click()
-  await page.getByLabel('Tile type').selectOption('extension')
-  await page.getByRole('button', { name: 'Add tile' }).click()
+  await addTile('Studio extension')
   await page.getByLabel('Extension contribution').selectOption('example.ci/delivery-view')
   await page.getByRole('button', { name: 'Save dashboard' }).click()
   await page.getByRole('button', { name: 'Read delivery' }).click()
   await page.getByText('stable', { exact: true }).waitFor()
   await page.getByRole('img', { name: 'Line graph, range 1 to 3' }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.filter(({ input }) => input.action === 'read-data').length,
+    ),
+    1,
+  )
+  await page.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
+  await page.getByText('73', { exact: true }).waitFor()
+  await page.getByRole('button', { name: 'Stop auto refresh' }).click()
   const saveSettings = page.getByRole('button', { name: 'Save extension settings' })
   await page.getByLabel('Delivery branch').fill('local')
   await page.evaluate(() => window.saveElsewhere('shared', true))
@@ -537,9 +662,34 @@ try {
     await page.evaluate(
       () => window.calls.find(({ input }) => input.action === 'install').input.componentVersion,
     ),
-    2,
+    3,
   )
   await page.evaluate(() => window.showExtensions(true))
+  const delivery = page
+    .locator('details')
+    .filter({ has: page.locator('summary').getByText('Delivery overview', { exact: true }) })
+  const sourceReads = () =>
+    page.evaluate(() => window.calls.filter(({ input }) => input.action === 'read-data').length)
+  await page.clock.install()
+  const readsBeforeStart = await sourceReads()
+  await delivery.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
+  await delivery.getByText('73', { exact: true }).waitFor()
+  assert.equal(await sourceReads(), readsBeforeStart + 1)
+  await delivery.getByLabel('Delivery branch').fill('timed')
+  await delivery.getByRole('button', { name: 'Save extension settings' }).click()
+  await delivery.getByRole('button', { name: 'Stop auto refresh' }).waitFor()
+  await delivery.getByText('73', { exact: true }).waitFor()
+  const summary = delivery.locator('summary').filter({ hasText: 'Delivery overview' })
+  await summary.click()
+  await delivery.getByRole('button', { name: 'Stop auto refresh' }).waitFor({ state: 'hidden' })
+  await page.clock.fastForward(31_000)
+  assert.equal(await sourceReads(), readsBeforeStart + 1, 'Closed views pause refresh')
+  await summary.click()
+  await page.waitForFunction(
+    (count) => window.calls.filter(({ input }) => input.action === 'read-data').length === count,
+    readsBeforeStart + 2,
+  )
+  await delivery.getByRole('button', { name: 'Stop auto refresh' }).click()
   await page.getByRole('button', { name: 'Disable extension' }).click()
   await page.getByRole('button', { name: 'Enable extension' }).waitFor()
   await page.evaluate(() => window.showExtensions(false))
@@ -568,6 +718,12 @@ try {
     ),
   )
   assert.equal(installedDashboard.length, 1)
+  assert.equal(
+    await page.evaluate(
+      () => window.calls.findLast(({ path }) => path === '/api/dashboards/list').input.dataSources,
+    ),
+    true,
+  )
   assert.deepEqual(
     installedDashboard[0].input.dashboard.tiles.map(({ kind, extensionId, contributionId }) => ({
       kind,
@@ -576,12 +732,88 @@ try {
     })),
     [{ kind: 'extension', extensionId: 'dovo.service-status', contributionId: 'overview' }],
   )
+  await page.evaluate(() => window.addTimedTileToMarketplaceDashboard())
+  await page.getByRole('button', { name: 'Close marketplace' }).click()
+  await page.getByRole('button', { name: 'Browse extension marketplace' }).click()
+  await page.getByRole('button', { name: 'Preview Service status 1.0.0' }).click()
+  await page.getByRole('button', { name: 'Add dashboard' }).click()
+  await page.getByRole('button', { name: 'Open dashboards' }).waitFor()
+  assert.equal(
+    await page.evaluate(
+      () =>
+        window.calls.filter(
+          ({ path, input }) =>
+            path.endsWith('/save') && input.dashboard.title === 'Service overview',
+        ).length,
+    ),
+    1,
+    'The marketplace finds an installed dashboard with a timed tile',
+  )
   await page.evaluate(() => window.showExtensions(false))
   await page.getByLabel('Dashboard', { exact: true }).selectOption({ label: 'Service overview' })
   await page.getByRole('button', { name: 'Read status', exact: true }).waitFor()
+  await page.getByRole('button', { name: 'New dashboard' }).click()
+  await page.getByLabel('Dashboard title').fill('Local metrics')
+  await addTile('CLI data')
+  await page.getByLabel('Project').selectOption('repo')
+  await page.getByLabel('Command', { exact: true }).fill('your-cli --json')
+  await page.getByLabel('Display').selectOption('number')
+  await page.getByLabel('Refresh interval in seconds').fill('30')
+  await page.getByRole('button', { name: 'Add display' }).click()
+  await page.getByLabel('Display title').fill('Total builds')
+  await page.getByLabel('JSON pointer', { exact: true }).last().fill('/count')
+  await page.getByRole('button', { name: 'Add display' }).click()
+  await page.getByLabel('Display title').last().fill('Build duration')
+  await page.getByLabel('JSON pointer', { exact: true }).last().fill('/durations')
+  await page
+    .getByRole('combobox', { name: /^Display/ })
+    .last()
+    .selectOption('line')
+  await page.getByLabel('Width').selectOption('4')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await page.getByRole('heading', { name: 'CLI data' }).waitFor()
+  const readCount = () =>
+    page.evaluate(() => window.calls.filter(({ path }) => path.endsWith('/command-data')).length)
+  await page.clock.fastForward(31_000)
+  assert.equal(await readCount(), 0, 'Opening the dashboard never runs the command')
+  const cliTile = page
+    .locator('section')
+    .filter({ has: page.getByRole('heading', { name: 'CLI data' }) })
+  await cliTile.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
+  await page
+    .getByRole('region', { name: 'Total builds' })
+    .getByText('42', { exact: true })
+    .waitFor()
+  await page
+    .getByRole('region', { name: 'Build duration' })
+    .getByRole('img', { name: 'Line graph, range 2 to 4' })
+    .waitFor()
+  assert.equal(await readCount(), 1)
+  await page.setViewportSize({ width: 1200, height: 900 })
+  const chartCardFits = await page
+    .getByRole('region', { name: 'Build duration' })
+    .evaluate((card) => {
+      const tile = card.closest('section[style*="--tile-span"]')
+      return card.getBoundingClientRect().bottom <= tile.getBoundingClientRect().bottom
+    })
+  assert.equal(chartCardFits, true, 'The chart card fits in the default full-width tile')
+  await page.clock.fastForward(30_000)
+  assert.equal(await readCount(), 2)
+  await page.evaluate(() => window.setConnected(false))
+  await page.getByRole('status').getByText('Computer offline.').waitFor()
+  await page.clock.fastForward(30_000)
+  assert.equal(await readCount(), 2)
+  await page.evaluate(() => window.setConnected(true))
+  await page.getByRole('status').getByText('Computer offline.').waitFor({ state: 'hidden' })
+  await page.waitForFunction(
+    () => window.calls.filter(({ path }) => path.endsWith('/command-data')).length === 3,
+  )
+  await page.getByRole('button', { name: 'Stop auto refresh' }).click()
+  await page.clock.fastForward(30_000)
+  assert.equal(await readCount(), 3)
   assert.deepEqual(errors, [])
   console.log(
-    'Dashboard editor, offline draft, chart, run recovery, template file round-trip, and Studio extension components, fallback, and tiles passed.',
+    'Dashboard editor, offline draft, chart, run recovery, template export, timed CLI data and reconnect, compound data cards, and Studio extension pages and sidebar pins passed.',
   )
 } finally {
   await browser.close()

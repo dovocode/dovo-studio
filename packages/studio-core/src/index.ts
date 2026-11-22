@@ -284,3 +284,5 @@ export { useSecretReferenceCheck } from './use-secret-reference-check'
 export * from './shortcuts'
 
 export * from './scm/use-linear-issues'
+
+export * from './studio-data-sources'

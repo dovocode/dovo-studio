@@ -377,9 +377,7 @@ try {
     for (const value of [
       'Reason',
       requestDetail.reason,
-      'Command',
       requestDetail.command,
-      'Working folder',
       requestDetail.cwd,
       'Additional permissions',
       'File access',
@@ -388,6 +386,10 @@ try {
       'Not set',
     ])
       await ui.getByText(value, { exact: true }).waitFor()
+    for (const label of ['Command', 'Working folder']) {
+      if (id === 'mobile') await ui.getByText(label, { exact: true }).waitFor()
+      else await ui.getByRole('region', { name: label, exact: true }).waitFor()
+    }
     await ui.getByText('/tmp/test-output', { exact: true }).scrollIntoViewIfNeeded()
     assert.equal(
       await ui.getByRole('button', { name: 'Allow once', exact: true }).isVisible(),

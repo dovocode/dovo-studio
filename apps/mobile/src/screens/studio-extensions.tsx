@@ -1,3 +1,9 @@
+import {
+  useSettingsDraft,
+  useConfirmSettingsNavigation,
+} from '../runtime/preferences/settings-target'
+import { openExtensionPage } from '../shell/extension-page-route'
+import { MobileDataSource } from './studio-data-source'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { ExtensionMarketplace } from './extension-marketplace'
 import { ExtensionComponents, ExtensionSettingsConflicts } from './studio-extension-components'
@@ -6,6 +12,7 @@ import { Alert, ScrollView, Switch, View } from 'react-native'
 import { router, type Href } from 'expo-router'
 import {
   decode,
+  isStudioDataSource,
   runtimeComputerName,
   studioExtensionManifestSchema,
   type ExtensionContribution,
@@ -13,6 +20,7 @@ import {
 } from '@dovo/protocol'
 import {
   callStudioExtension,
+  readExtensionDataSource,
   openStudioExtension,
   useStudioExtensions,
   useExtensionSettingsDraft,
@@ -43,6 +51,7 @@ export default function StudioExtensionsScreen() {
   const uiText = useInterfaceText()
   const { activeId, overviews } = useRuntime()
   const [owner, setOwner] = useState(activeId ?? '')
+  const confirmNavigation = useConfirmSettingsNavigation()
   const sources = overviews.filter((entry) => entry.snapshot?.studioExtensionsSupported)
   const source = sources.find((entry) => entry.profile.id === owner) ?? sources[0]
   return (
@@ -61,7 +70,7 @@ export default function StudioExtensionsScreen() {
                 id: entry.profile.id,
                 name: runtimeComputerName(entry),
               }))}
-              onChange={setOwner}
+              onChange={(id) => confirmNavigation(() => setOwner(id))}
             />
             <RuntimeScope key={source.profile.id} runtimeId={source.profile.id}>
               <ExtensionsList />
@@ -76,8 +85,9 @@ export default function StudioExtensionsScreen() {
 }
 
 function ExtensionsList() {
+  const confirmNavigation = useConfirmSettingsNavigation()
   const uiText = useInterfaceText()
-  const { read, connected, snapshot } = useRuntime()
+  const { read, connected, snapshot, activeId } = useRuntime()
   const state = useStudioExtensions(
     read,
     connected,
@@ -86,6 +96,7 @@ function ExtensionsList() {
     extensionComponentVersion(snapshot),
   )
   const [source, setSource] = useState('')
+  useSettingsDraft(!!source.trim(), !!source.trim() && state.busy)
   const [error, setError] = useState('')
   const [adding, setAdding] = useState(false)
   const [marketplace, setMarketplace] = useState(false)
@@ -96,7 +107,16 @@ function ExtensionsList() {
   async function stage() {
     try {
       const manifest = decode(studioExtensionManifestSchema, JSON.parse(source))
+      if (
+        !snapshot?.studioExtensionPinnedPages &&
+        manifest.contributions.some(
+          (contribution) => contribution.kind === 'view' && contribution.placement === 'page',
+        )
+      )
+        throw new Error(uiText('Update the paired computer to use extension pages.'))
       setError('')
+      if (!snapshot?.studioDataSourcesSupported && manifest.contributions.some(isStudioDataSource))
+        throw new Error(uiText('Update the paired computer to use extension data sources.'))
       const current = state.entries.find((entry) => entry.id === manifest.id)
       if (
         await state.change({ action: 'stage', manifest, expectedRevision: current?.revision ?? 0 })
@@ -268,7 +288,18 @@ function ExtensionsList() {
             <ExtensionSettings entry={entry} disabled={!connected || state.busy} save={save} />
             {entry.enabled &&
               entry.installed?.contributions.map((item) =>
-                item.kind === 'view' ? (
+                item.kind === 'view' && item.placement === 'page' ? (
+                  <Action
+                    key={item.id}
+                    secondary
+                    label={item.title}
+                    disabled={!activeId}
+                    onPress={() => {
+                      if (activeId)
+                        confirmNavigation(() => openExtensionPage(activeId, entry.id, item.id))
+                    }}
+                  />
+                ) : item.kind === 'view' ? (
                   <ExtensionViewSection
                     key={item.id}
                     entry={entry}
@@ -369,6 +400,7 @@ function ExtensionSettings({
     saving,
     error,
   } = useExtensionSettingsDraft(entry, save)
+  useSettingsDraft(dirty, saving)
   const fields = entry.installed?.settings
   if (!fields?.length) return null
   return (
@@ -449,7 +481,10 @@ export function MobileExtensionTile({
         />
       </View>
     )
-  return connected && entry && contribution && contribution.kind !== 'view' ? (
+  return entry &&
+    contribution &&
+    contribution.kind !== 'view' &&
+    (connected || isStudioDataSource(contribution)) ? (
     <ExtensionAction
       key={JSON.stringify([entry.id, contribution])}
       entry={entry}
@@ -506,6 +541,17 @@ function ExtensionAction({
       setBusy(false)
     }
   }
+
+  if (isStudioDataSource(contribution))
+    return (
+      <View style={{ gap: 8 }}>
+        <Text accessibilityRole="header">{contribution.title}</Text>
+        <MobileDataSource
+          source={contribution}
+          read={() => readExtensionDataSource(read, entry, contribution.id)}
+        />
+      </View>
+    )
 
   return (
     <>

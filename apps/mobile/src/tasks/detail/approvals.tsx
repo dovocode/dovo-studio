@@ -32,7 +32,7 @@ import { remoteInputHref } from '../../notifications/target'
 export function TaskApprovals({ taskId }: { taskId: string }) {
   const uiText = useInterfaceText()
 
-  const { styles } = useTheme()
+  const { styles, colors } = useTheme()
 
   const { snapshot, connected, profile, profiles, overviews, connection, readEffect, callEffect } =
       useRuntime(),
@@ -153,7 +153,7 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
       {approvals.map((item) => (
         <NotificationInputView
           key={item.id}
-          style={styles.card}
+          style={[styles.card, { gap: 10 }]}
           input={
             profile?.id
               ? {
@@ -170,6 +170,16 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           }
           enabled={visible && connected && !busy}
         >
+          <Text
+            style={[
+              styles.text,
+              {
+                fontWeight: '600',
+              },
+            ]}
+          >
+            {item.title}
+          </Text>
           <Text style={styles.muted}>
             <InterfaceText
               values={{
@@ -186,18 +196,10 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
               {'Permission request · {value0}{value1}'}
             </InterfaceText>
           </Text>
-          <Text
-            style={[
-              styles.text,
-              {
-                fontWeight: '600',
-              },
-            ]}
-          >
-            {item.title}
-          </Text>
           <ApprovalDetails key={item.id} detail={item.detail} />
-          <View style={styles.row}>
+          <View
+            style={[styles.row, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 }]}
+          >
             {approvalActions(item).map((action) => (
               <Action
                 key={action.decision}

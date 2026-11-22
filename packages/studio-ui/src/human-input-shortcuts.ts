@@ -56,6 +56,7 @@ export function useApprovalShortcuts({
       if (disabled || pending.current) return
       const key = event.key.toLowerCase()
       if (key !== 'y' && key !== 'n' && key !== 'enter') return
+      if (event.target instanceof Element && event.target.closest('[data-approval-preview]')) return
       if (
         key === 'enter' &&
         (event.shiftKey ||

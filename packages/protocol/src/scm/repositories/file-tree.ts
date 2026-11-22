@@ -87,6 +87,13 @@ export function buildFileTree(files: readonly FileTreeEntry[]): FileTreeNode[] {
   return nodes(root)
 }
 
+/** File paths in the order a fully expanded tree lists them. File navigation follows this order. */
+export function fileTreePaths(nodes: readonly FileTreeNode[]): string[] {
+  return nodes.flatMap((node) =>
+    node.kind === 'directory' ? fileTreePaths(node.children) : node.path,
+  )
+}
+
 export function fileIconKind(path: string) {
   const name = path.split('/').at(-1)?.toLowerCase() ?? ''
   const extension = name.split('.').at(-1) ?? ''

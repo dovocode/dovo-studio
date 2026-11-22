@@ -338,3 +338,47 @@ it.skipIf(process.platform === 'win32')(
     expect(s.terminals.list()).toEqual([])
   },
 )
+
+it('reads saved CLI stdout only through the paired command data endpoint', async () => {
+  const { runtime, post, marker, definition, directory } = await setup()
+  const command =
+    process.platform === 'win32'
+      ? `Set-Content -Path '${marker}' -Value (Get-Location).Path; '{"value":7}'`
+      : `pwd > '${marker}'; printf '%s' '{"value":7}'`
+  const dashboard = {
+    ...definition('true'),
+    tiles: [
+      {
+        id: commandTile,
+        kind: 'cli',
+        title: 'Build count',
+        span: 2,
+        height: 1,
+        repositoryId: 'repo',
+        command,
+        pointer: '/value',
+        chart: 'number',
+        refreshSeconds: 60,
+      },
+    ],
+  }
+  expect((await post('dashboards/save', { dashboard, expectedRevision: 0 })).status).toBe(200)
+  expect(await (await post('dashboards/list', {})).json()).toEqual({ dashboards: [] })
+  expect(await (await post('dashboards/list', { dataSources: true })).json()).toMatchObject({
+    dashboards: [{ tiles: [{ kind: 'cli', refreshSeconds: 60 }] }],
+  })
+  const input = { id, tileId: commandTile, expectedRevision: 1 }
+  expect((await post('dashboards/read', input)).status).toBe(400)
+  expect((await post('dashboards/command-data', { ...input, expectedRevision: 0 })).status).toBe(
+    409,
+  )
+  expect(
+    (await post('dashboards/command-data', input, { 'x-dovo-agent-access': '1' })).status,
+  ).toBe(403)
+  await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+  const response = await post('dashboards/command-data', input)
+  expect(response.status).toBe(200)
+  expect(await response.json()).toMatchObject({ data: 7, updatedAt: expect.any(Number) })
+  expect(await realpath((await readFile(marker, 'utf8')).trim())).toBe(await realpath(directory))
+  expect(runtime.services.terminals.list()).toEqual([])
+})

@@ -13,25 +13,7 @@ import { startLiveRefresh } from './live-refresh'
 import { taskPullLinks } from './task-pull-links'
 import { useThreadChildren } from './use-thread-children'
 import { useSideThreadAttention } from '../chat/thread/side-threads-panel'
-import {
-  Bot,
-  MessagesSquare,
-  Files,
-  FileCode2,
-  GitPullRequest,
-  Shapes,
-  Globe,
-  Smartphone,
-  FolderSymlink,
-  PanelRightOpen,
-  PanelRightClose,
-  PanelBottom,
-  Plug,
-  BookOpen,
-  Brain,
-  Workflow,
-  Wrench,
-} from 'lucide-react'
+import { PanelRightOpen, PanelRightClose, Wrench } from 'lucide-react'
 import {
   Button,
   IconButton,
@@ -42,6 +24,7 @@ import {
   cn,
 } from '@dovo/studio-ui'
 import type { TaskSurface } from './task-header'
+import { RightPaneTabIcon } from './tool-icons'
 
 /** Icon-only navigation needs tooltips. The picker menu shows text labels, so it skips them. */
 function OptionalTooltip({
@@ -203,13 +186,13 @@ export function TaskTools({
                 {
                   label: 'Bot',
                   tools: [
-                    ['bot-settings', 'Settings', Bot, 0],
-                    ['bot-mcp', 'MCP servers', Plug, 0],
-                    ['bot-skills', 'Skills', BookOpen, 0],
-                    ['bot-memory', 'Memory', Brain, 0],
-                    ['bot-routines', 'Routines', Workflow, 0],
-                    ['files', 'Files', Files, 0],
-                    ['side-chats', 'Side threads', MessagesSquare, sideChatCount],
+                    ['bot-settings', 'Settings', 0],
+                    ['bot-mcp', 'MCP servers', 0],
+                    ['bot-skills', 'Skills', 0],
+                    ['bot-memory', 'Memory', 0],
+                    ['bot-routines', 'Routines', 0],
+                    ['files', 'Files', 0],
+                    ['side-chats', 'Side threads', sideChatCount],
                   ],
                 },
               ] as const)
@@ -217,27 +200,21 @@ export function TaskTools({
           {
             label: 'Thread workspace',
             tools: [
-              ...(task.bot ? [] : [['files', 'Files', Files, 0] as const]),
-              ...(task.bot ? [] : [['projects', 'Linked projects', FolderSymlink, 0] as const]),
-              ...(hasArtifacts ? [['artifacts', 'Artifacts', Shapes, 0] as const] : []),
-              ...(hasDiff
-                ? [['changes', 'Diff', FileCode2, task.files?.length ?? 0] as const]
-                : []),
-              ...(hasLinkedPulls
-                ? [['linked-pulls', 'Linked PRs', GitPullRequest, linkedPullCount] as const]
-                : []),
-              ...(hasAgents ? [['agents', 'Agents', Bot, agentCount] as const] : []),
-              ...(task.bot
-                ? []
-                : [['side-chats', 'Side chats', MessagesSquare, sideChatCount] as const]),
+              ...(task.bot ? [] : [['files', 'Files', 0] as const]),
+              ...(task.bot ? [] : [['projects', 'Linked projects', 0] as const]),
+              ...(hasArtifacts ? [['artifacts', 'Artifacts', 0] as const] : []),
+              ...(hasDiff ? [['changes', 'Diff', task.files?.length ?? 0] as const] : []),
+              ...(hasLinkedPulls ? [['linked-pulls', 'Linked PRs', linkedPullCount] as const] : []),
+              ...(hasAgents ? [['agents', 'Agents', agentCount] as const] : []),
+              ...(task.bot ? [] : [['side-chats', 'Side chats', sideChatCount] as const]),
             ],
           },
           {
             label: 'Previews',
             tools: [
-              ['terminal', 'Terminal', PanelBottom, 0],
-              ['browser', 'Browsers', Globe, 0],
-              ['devices', 'Devices', Smartphone, 0],
+              ['terminal', 'Terminal', 0],
+              ['browser', 'Browsers', 0],
+              ['devices', 'Devices', 0],
             ],
           },
         ] as const
@@ -250,7 +227,7 @@ export function TaskTools({
             aria-label={groupLabel}
             key={groupLabel}
           >
-            {tools.map(([id, label, Icon, count]) => (
+            {tools.map(([id, label, count]) => (
               <OptionalTooltip
                 key={id}
                 enabled={!picker}
@@ -287,7 +264,7 @@ export function TaskTools({
                     else onSelect(id)
                   }}
                 >
-                  <Icon size={18} strokeWidth={1.7} aria-hidden="true" />
+                  <RightPaneTabIcon tab={id} size={18} strokeWidth={1.7} />
                   <span className={picker ? undefined : 'studio-navigation-label'}>{label}</span>
                   {(count > 0 || (id === 'side-chats' && sideAttention)) && (
                     <span

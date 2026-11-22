@@ -1,8 +1,5 @@
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useSettingsDraftState } from '../../../runtime/preferences/settings-target'
-import { usePreventRemove } from 'expo-router'
-import { useState } from 'react'
-import { Alert } from 'react-native'
+import { usePreventSettingsDraftRemoval } from '../../../runtime/preferences/settings-draft-route'
 import { SettingsSearchContext } from '../../../screens/settings-search'
 import TaskLifecycleScreen from '../../../screens/task-lifecycle'
 import type { ComponentType } from 'react'
@@ -79,22 +76,7 @@ export default function SettingsSection() {
   const uiText = useInterfaceText()
 
   const { styles } = useTheme()
-  const draftFlags = useSettingsDraftState()
-  const [leaving, setLeaving] = useState(false)
-  usePreventRemove(!!draftFlags && !leaving, ({ repeat }) => {
-    if (draftFlags & 2) return
-    Alert.alert(uiText('Unsaved settings'), uiText('Discard unsaved settings changes?'), [
-      { text: uiText('Keep editing'), style: 'cancel' },
-      {
-        text: uiText('Discard'),
-        style: 'destructive',
-        onPress: () => {
-          setLeaving(true)
-          repeat()
-        },
-      },
-    ])
-  })
+  usePreventSettingsDraftRemoval()
 
   const { section, setting } = useLocalSearchParams<{ section: string; setting?: string }>()
   const Screen = Object.hasOwn(screens, section) ? screens[section] : undefined

@@ -1,10 +1,12 @@
 import { useState } from 'react'
 import { Button, Card, Input } from '@dovo/studio-ui'
-import type {
-  MarketplaceBinding,
-  MarketplaceRelease,
-  StudioExtensionCommand,
-  StudioExtensionEntry,
+import {
+  marketplaceNeedsSource,
+  SCRATCH_PROJECT_ID,
+  type MarketplaceBinding,
+  type MarketplaceSourceContribution,
+  type StudioExtensionCommand,
+  type StudioExtensionEntry,
 } from '@dovo/protocol'
 import {
   addMarketplaceDashboard,
@@ -14,11 +16,6 @@ import {
   useStudioHost,
   useWorkspace,
 } from '@dovo/studio-core'
-
-type SourceContribution = Extract<
-  MarketplaceRelease['manifest']['contributions'][number],
-  { kind: 'tool' | 'app' }
->
 
 export function ExtensionMarketplace({
   entries,
@@ -107,7 +104,7 @@ export function ExtensionMarketplace({
                 {release.manifest.contributions.map((item) => (
                   <li key={item.id} className="space-y-2">
                     <p className="text-sm">{item.title}</p>
-                    {(item.kind === 'tool' || item.kind === 'app') && (
+                    {marketplaceNeedsSource(item) && (
                       <SourceFields
                         contribution={item}
                         binding={state.binding(item.id)}
@@ -158,7 +155,11 @@ export function ExtensionMarketplace({
                         onClick={async () => {
                           setAdding(true)
                           try {
-                            await addMarketplaceDashboard(request, release)
+                            await addMarketplaceDashboard(
+                              request,
+                              release,
+                              snapshot.studioDataSourcesSupported === true,
+                            )
                             setDashboard({ digest: selected.digest, added: true })
                           } catch (cause) {
                             setDashboard({
@@ -194,13 +195,44 @@ function SourceFields({
   binding,
   bind,
 }: {
-  contribution: SourceContribution
+  contribution: MarketplaceSourceContribution
   binding?: MarketplaceBinding
   bind: (binding: MarketplaceBinding) => void
 }) {
   const { request, connected, snapshot } = useWorkspace()
   const taskId = binding?.taskId ?? ''
   const sources = useMarketplaceSources(request, taskId, connected)
+  if (contribution.kind === 'cli') {
+    const repositories = snapshot?.workspace.repositories ?? []
+    return (
+      <div className="space-y-2">
+        <pre className="whitespace-pre-wrap break-all rounded-md bg-muted p-2 text-xs">
+          {contribution.command}
+        </pre>
+        <label className="grid gap-1 text-sm">
+          Project
+          <select
+            className="max-w-72 rounded-md border bg-background p-2"
+            disabled={!connected}
+            value={binding?.source ?? ''}
+            onChange={(event) =>
+              bind({ contributionId: contribution.id, source: event.currentTarget.value })
+            }
+          >
+            <option value="">Choose project</option>
+            {!repositories.some(({ id }) => id === SCRATCH_PROJECT_ID) && (
+              <option value={SCRATCH_PROJECT_ID}>No Project</option>
+            )}
+            {repositories.map(({ id, name }) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+      </div>
+    )
+  }
   const items =
     contribution.kind === 'tool'
       ? sources?.data?.servers.map((name) => ({ id: name, title: name }))

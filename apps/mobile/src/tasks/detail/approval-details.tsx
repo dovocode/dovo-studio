@@ -18,20 +18,28 @@ function Fields({ fields }: { fields: ApprovalDetailField[] }) {
             <View style={{ borderLeftWidth: 1, borderLeftColor: colors.border, paddingLeft: 10 }}>
               <Fields fields={field.children} />
             </View>
-          ) : (
-            <Text
-              selectable
-              style={[
-                styles.text,
-                { fontSize: 13, lineHeight: 19 },
-                field.code && {
-                  fontFamily: 'monospace',
-                  padding: 8,
-                  backgroundColor: colors.background,
-                  borderRadius: 6,
-                },
-              ]}
+          ) : field.code ? (
+            <ScrollView
+              nestedScrollEnabled
+              style={{
+                maxHeight: 144,
+                flexGrow: 0,
+                backgroundColor: colors.background,
+                borderColor: colors.border,
+                borderWidth: 1,
+                borderRadius: 8,
+              }}
+              contentContainerStyle={{ padding: 8 }}
             >
+              <Text
+                selectable
+                style={[styles.text, { fontFamily: 'monospace', fontSize: 13, lineHeight: 19 }]}
+              >
+                {field.text}
+              </Text>
+            </ScrollView>
+          ) : (
+            <Text selectable style={[styles.text, { fontSize: 13, lineHeight: 19 }]}>
               {field.text}
             </Text>
           )}

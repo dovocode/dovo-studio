@@ -3,6 +3,7 @@ import {
   dashboardListResultSchema,
   dashboardSaveResultSchema,
   marketplaceDetailSchema,
+  marketplaceNeedsSource,
   marketplaceListSchema,
   marketplaceSourcesSchema,
   randomUUID,
@@ -103,9 +104,7 @@ export function useExtensionMarketplace(
       ]),
     stage: (installed: StudioExtensionEntry | undefined): StudioExtensionCommand | undefined => {
       if (!selection || preview?.digest !== selection.digest) return
-      const required = preview.release.manifest.contributions.filter(
-        (item) => item.kind === 'tool' || item.kind === 'app',
-      )
+      const required = preview.release.manifest.contributions.filter(marketplaceNeedsSource)
       if (
         !required.every(({ id }) =>
           bindings.some((item) => item.contributionId === id && item.source),
@@ -166,13 +165,18 @@ export function marketplaceContributionSource(
 export async function addMarketplaceDashboard(
   request: WorkspaceRequest,
   release: MarketplaceRelease,
+  dataSources: boolean,
 ) {
   const template = release.dashboard
   if (!template) return
   const hasDashboard = async () =>
-    (await request('/api/dashboards/list', {}, dashboardListResultSchema)).dashboards.some(
-      (dashboard) => dashboard.id === template.id,
-    )
+    (
+      await request(
+        '/api/dashboards/list',
+        dataSources ? { dataSources: true } : {},
+        dashboardListResultSchema,
+      )
+    ).dashboards.some((dashboard) => dashboard.id === template.id)
   if (await hasDashboard()) return
   try {
     await request(

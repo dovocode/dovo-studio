@@ -1,8 +1,25 @@
+import { Button, DropdownMenu } from '@dovo/studio-ui'
+import {
+  ChevronDown,
+  ChevronRight,
+  LayoutGrid,
+  Maximize2,
+  Minimize2,
+  MoreHorizontal,
+  Pencil,
+  Plus,
+} from 'lucide-react'
+import { DataSource } from './data-source'
 import { DataView } from './data-view'
 import { lazy, Suspense, useRef, useState, type CSSProperties } from 'react'
 import {
   STUDIO_BROWSER_SCOPE,
   runtimeComputerName,
+  isStudioDataSource,
+  needsStudioDataSources,
+  studioDataPanelLimit,
+  type StudioDataPanel,
+  SCRATCH_PROJECT_ID,
   type Dashboard,
   type DashboardTile,
 } from '@dovo/protocol'
@@ -15,11 +32,16 @@ import {
   maxDashboardTemplateBytes,
   importDashboardTemplate,
   dashboardTileFields,
+  dashboardDisplayLabels,
+  isDashboardDisplay,
+  readDashboardDataSource,
   dashboardTileLabels,
   moveDashboardTile,
   newDashboardTile,
   useDashboardTile,
   useDashboards,
+  useSettingsDraft,
+  useConfirmSettingsNavigation,
   extensionTileOptions,
   useStudioExtensions,
   extensionComponentVersion,
@@ -42,6 +64,10 @@ const RemoteDesktopViewer = lazy(async () => ({
   default: (await import('@dovo/extension-runtime/remote-desktop-viewer')).RemoteDesktopViewer,
 }))
 
+const menu =
+  'z-50 max-h-[var(--radix-dropdown-menu-content-available-height)] min-w-44 overflow-auto rounded-lg border bg-popover p-1 text-popover-foreground shadow-lg'
+const menuItem =
+  'cursor-pointer rounded-md px-2.5 py-1.5 text-sm outline-none focus:bg-accent data-[disabled]:pointer-events-none data-[disabled]:opacity-50'
 const button = 'rounded-md border px-2.5 py-1.5 text-sm hover:bg-muted disabled:opacity-50'
 type TileStyle = CSSProperties & { '--tile-span': number }
 function tileLayout(tile: DashboardTile, expanded: boolean): TileStyle {
@@ -100,8 +126,11 @@ function Board({
   setOwner: (id: string) => void
 }) {
   const { request, connected, readCache, snapshot } = useWorkspace()
-  const state = useDashboards(request, connected, readCache)
+  const dataSources = snapshot?.studioDataSourcesSupported === true
+  const state = useDashboards(request, connected, readCache, true, dataSources)
   const { dashboard, draft } = state
+  useSettingsDraft(state.dirty, !!draft && state.pending)
+  const confirmNavigation = useConfirmSettingsNavigation()
   const supported = snapshot?.studioExtensionsSupported === true
   const extensions = useStudioExtensions(
     request,
@@ -111,9 +140,12 @@ function Board({
     extensionComponentVersion(snapshot),
   )
   const extensionOptions = extensionTileOptions(extensions.entries)
-  const availableKinds = tileKinds.filter((kind) => kind !== 'extension' || supported)
+  const availableKinds = tileKinds.filter(
+    (kind) => (kind !== 'extension' || supported) && (kind !== 'cli' || dataSources),
+  )
+  const needsUpdate = !!draft && !dataSources && needsStudioDataSources(draft)
 
-  const [kind, setKind] = useState<DashboardTile['kind']>('api')
+  const [editingTile, setEditingTile] = useState<string>()
   const [template, setTemplate] = useState<string>()
   const [templateError, setTemplateError] = useState('')
   const [importedId, setImportedId] = useState('')
@@ -146,7 +178,8 @@ function Board({
   }
   function openTemplate(source: string) {
     const imported = importDashboardTemplate(source)
-    state.edit(imported)
+    state.beginEdit(imported)
+    setEditingTile(imported.tiles[0]?.id)
     setImportedId(imported.id)
     setTemplate(undefined)
     setTemplateError('')
@@ -162,143 +195,197 @@ function Board({
   }
   return (
     <>
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <label className="flex items-center gap-2 text-sm">
-          Computer
-          <select
-            className={field}
-            disabled={!!draft || state.pending || readingFile}
-            value={owner}
-            onChange={(event) => setOwner(event.target.value)}
-          >
-            {computers.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.name}
-              </option>
-            ))}
-          </select>
-        </label>
-        {state.dashboards.length > 0 && (
-          <select
-            aria-label="Dashboard"
-            className={field}
-            disabled={!!draft || state.pending || readingFile}
-            value={dashboard?.id ?? ''}
-            onChange={(event) => state.select(event.target.value)}
-          >
-            {state.dashboards.map((entry) => (
-              <option key={entry.id} value={entry.id}>
-                {entry.title}
-              </option>
-            ))}
-          </select>
-        )}
-        {draft ? (
-          <>
-            <button
-              className={button}
-              disabled={!connected || state.pending}
-              onClick={() => void state.save()}
-            >
-              Save dashboard
-            </button>
-            {draft.revision > 0 && state.error && (
-              <button className={button} disabled={state.pending} onClick={state.copyDraft}>
-                Keep as new dashboard
-              </button>
+      <div
+        className={`mb-5 flex flex-wrap items-center justify-between gap-3 border-b pb-4 ${draft ? 'mx-auto max-w-3xl' : ''}`}
+      >
+        {!draft ? (
+          <div className="flex min-w-0 flex-wrap items-center gap-2">
+            {computers.length > 1 && (
+              <select
+                aria-label="Computer"
+                className={field}
+                disabled={state.pending || readingFile}
+                value={owner}
+                onChange={(event) => setOwner(event.target.value)}
+              >
+                {computers.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </select>
             )}
-            <button
-              className={button}
-              disabled={state.pending}
-              onClick={() => state.edit(undefined)}
-            >
-              Cancel edits
-            </button>
-          </>
+            {state.dashboards.length > 0 && (
+              <select
+                aria-label="Dashboard"
+                className={field}
+                disabled={state.pending || readingFile}
+                value={dashboard?.id ?? ''}
+                onChange={(event) => state.select(event.target.value)}
+              >
+                {state.dashboards.map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.title}
+                  </option>
+                ))}
+              </select>
+            )}
+          </div>
         ) : (
-          <>
-            <button
-              className={button}
-              disabled={state.pending || readingFile}
-              onClick={state.create}
-            >
-              New dashboard
-            </button>
-            <button
-              className={button}
-              disabled={state.pending || readingFile}
-              onClick={() => picker.current?.click()}
-            >
-              Import dashboard
-            </button>
+          <label className="grid max-w-md grow gap-1 text-xs text-muted-foreground">
+            Dashboard title
             <input
-              ref={picker}
-              aria-label="Dashboard file"
-              hidden
-              type="file"
-              accept=".json,application/json"
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0]
-                event.currentTarget.value = ''
-                if (file) void importFile(file)
-              }}
+              className={`${field} text-base font-medium text-foreground`}
+              maxLength={100}
+              value={draft.title}
+              disabled={state.pending}
+              onChange={(event) => state.edit({ ...draft, title: event.target.value })}
             />
-            <button
-              className={button}
-              disabled={state.pending || readingFile}
-              onClick={() => {
-                setTemplate('')
-                setTemplateError('')
-              }}
-            >
-              Paste template
-            </button>
-            {dashboard && (
-              <>
-                <button
-                  className={button}
-                  disabled={state.pending || readingFile}
-                  onClick={() => state.edit(dashboard)}
-                >
-                  Edit dashboard
-                </button>
-                <button
-                  className={button}
-                  disabled={readingFile}
-                  onClick={() => exportFile(dashboard)}
-                >
-                  Export dashboard
-                </button>
-                <button
-                  className={button}
-                  disabled={readingFile}
-                  onClick={() => {
-                    setTemplate(dashboardTemplate(dashboard))
-                    setTemplateError('')
-                  }}
-                >
-                  View template
-                </button>
-                <button
-                  className={button}
-                  disabled={!connected || state.pending || readingFile}
-                  onClick={() => {
-                    if (window.confirm(`Delete "${dashboard.title}"?`)) void state.remove()
-                  }}
-                >
-                  Delete dashboard
-                </button>
-              </>
-            )}
-            <button
-              className={button}
-              disabled={!connected || state.pending}
-              onClick={() => void state.load()}
-            >
-              Reload
-            </button>
-          </>
+          </label>
         )}
+        <div className="flex flex-wrap items-center gap-2">
+          {draft ? (
+            <>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={state.pending}
+                onClick={async () => {
+                  if (await confirmNavigation()) state.edit(undefined)
+                }}
+              >
+                Cancel edits
+              </Button>
+              {draft.revision > 0 && state.error && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={state.pending}
+                  onClick={state.copyDraft}
+                >
+                  Keep as new dashboard
+                </Button>
+              )}
+              <Button
+                size="sm"
+                disabled={!connected || state.pending || needsUpdate}
+                onClick={() => void state.save()}
+              >
+                Save dashboard
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button
+                size="sm"
+                variant={dashboard ? 'outline' : 'default'}
+                disabled={state.pending || readingFile}
+                onClick={() => {
+                  setEditingTile(undefined)
+                  state.create()
+                }}
+              >
+                <Plus size={16} /> New dashboard
+              </Button>
+              {dashboard && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={state.pending || readingFile}
+                  onClick={() => {
+                    setEditingTile(dashboard.tiles[0]?.id)
+                    state.beginEdit(dashboard)
+                  }}
+                >
+                  <Pencil size={15} /> Edit dashboard
+                </Button>
+              )}
+              <DropdownMenu.Root>
+                <DropdownMenu.Trigger asChild>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    aria-label="Dashboard actions"
+                    disabled={state.pending || readingFile}
+                  >
+                    <MoreHorizontal size={18} />
+                  </Button>
+                </DropdownMenu.Trigger>
+                <DropdownMenu.Portal>
+                  <DropdownMenu.Content className={menu} align="end" sideOffset={6}>
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      onSelect={() => picker.current?.click()}
+                    >
+                      Import dashboard
+                    </DropdownMenu.Item>
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      onSelect={() => {
+                        setTemplate('')
+                        setTemplateError('')
+                      }}
+                    >
+                      Paste template
+                    </DropdownMenu.Item>
+                    {dashboard && (
+                      <>
+                        <DropdownMenu.Item
+                          className={menuItem}
+                          onSelect={() => exportFile(dashboard)}
+                        >
+                          Export dashboard
+                        </DropdownMenu.Item>
+                        <DropdownMenu.Item
+                          className={menuItem}
+                          onSelect={() => {
+                            setTemplate(dashboardTemplate(dashboard))
+                            setTemplateError('')
+                          }}
+                        >
+                          View template
+                        </DropdownMenu.Item>
+                      </>
+                    )}
+                    <DropdownMenu.Item
+                      className={menuItem}
+                      disabled={!connected}
+                      onSelect={() => void state.load()}
+                    >
+                      Reload
+                    </DropdownMenu.Item>
+                    {dashboard && (
+                      <>
+                        <DropdownMenu.Separator className="my-1 h-px bg-border" />
+                        <DropdownMenu.Item
+                          className={`${menuItem} text-destructive`}
+                          disabled={!connected}
+                          onSelect={() => {
+                            if (window.confirm(`Delete "${dashboard.title}"?`)) void state.remove()
+                          }}
+                        >
+                          Delete dashboard
+                        </DropdownMenu.Item>
+                      </>
+                    )}
+                  </DropdownMenu.Content>
+                </DropdownMenu.Portal>
+              </DropdownMenu.Root>
+            </>
+          )}
+        </div>
+        <input
+          ref={picker}
+          aria-label="Dashboard file"
+          hidden
+          type="file"
+          accept=".json,application/json"
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0]
+            event.currentTarget.value = ''
+            if (file) void importFile(file)
+          }}
+        />
       </div>
       {!draft && template !== undefined && (
         <section className="mb-4 grid max-w-2xl gap-2">
@@ -324,6 +411,11 @@ function Board({
             </button>
           </div>
         </section>
+      )}
+      {needsUpdate && (
+        <p role="alert" className="mb-3 text-sm">
+          Update the paired computer to use these data displays.
+        </p>
       )}
       {templateError && (
         <p role="alert" className="text-sm text-destructive">
@@ -351,87 +443,109 @@ function Board({
         </p>
       )}
       {draft ? (
-        <fieldset data-dashboard-editing disabled={state.pending} className="space-y-4">
-          <label className="grid max-w-md gap-1 text-sm">
-            Dashboard title
-            <input
-              className={field}
-              maxLength={100}
-              value={draft.title}
-              onChange={(event) => state.edit({ ...draft, title: event.target.value })}
-            />
-          </label>
-          <div className="flex flex-wrap gap-2">
-            <select
-              aria-label="Tile type"
-              className={field}
-              value={kind}
-              onChange={(event) => {
-                if (isTileKind(event.target.value)) setKind(event.target.value)
-              }}
-            >
-              {availableKinds.map((type) => (
-                <option key={type} value={type}>
-                  {dashboardTileLabels[type]}
-                </option>
-              ))}
-            </select>
-            <button
-              className={button}
-              disabled={draft.tiles.length >= 32}
-              onClick={() =>
-                state.edit({ ...draft, tiles: [...draft.tiles, newDashboardTile(kind)] })
-              }
-            >
-              Add tile
-            </button>
+        <fieldset
+          data-dashboard-editing
+          disabled={state.pending}
+          className="mx-auto max-w-3xl space-y-3"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <h2 className="text-sm font-medium">Tiles</h2>
+            <DropdownMenu.Root>
+              <DropdownMenu.Trigger asChild>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  disabled={state.pending || draft.tiles.length >= 32}
+                >
+                  <Plus size={16} /> Add tile
+                </Button>
+              </DropdownMenu.Trigger>
+              <DropdownMenu.Portal>
+                <DropdownMenu.Content className={menu} align="end" sideOffset={6}>
+                  {availableKinds.map((type) => (
+                    <DropdownMenu.Item
+                      key={type}
+                      className={menuItem}
+                      onSelect={() => {
+                        const tile = newDashboardTile(type)
+                        state.edit({ ...draft, tiles: [...draft.tiles, tile] })
+                        setEditingTile(tile.id)
+                      }}
+                    >
+                      {dashboardTileLabels[type]}
+                    </DropdownMenu.Item>
+                  ))}
+                </DropdownMenu.Content>
+              </DropdownMenu.Portal>
+            </DropdownMenu.Root>
           </div>
-          <div className="grid gap-3 xl:grid-cols-2">
-            {draft.tiles.map((tile, index) => (
-              <TileEditor
-                key={tile.id}
-                extensionOptions={extensionOptions}
-                tile={tile}
-                change={(updated) =>
-                  state.edit({
-                    ...draft,
-                    tiles: draft.tiles.map((entry) => (entry.id === tile.id ? updated : entry)),
-                  })
-                }
-                move={(offset) =>
-                  state.edit({ ...draft, tiles: moveDashboardTile(draft.tiles, index, offset) })
-                }
-                first={index === 0}
-                last={index === draft.tiles.length - 1}
-                remove={() =>
-                  state.edit({
-                    ...draft,
-                    tiles: draft.tiles.filter((entry) => entry.id !== tile.id),
-                  })
-                }
-              />
-            ))}
-          </div>
+          {draft.tiles.map((tile, index) => {
+            const expanded = editingTile === tile.id
+            const label = dashboardTileLabels[tile.kind]
+            return (
+              <section key={tile.id} className="rounded-xl border bg-card">
+                <button
+                  type="button"
+                  aria-expanded={expanded}
+                  className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-muted/60"
+                  onClick={() => setEditingTile(expanded ? undefined : tile.id)}
+                >
+                  <LayoutGrid size={16} className="shrink-0 text-muted-foreground" />
+                  <span className="min-w-0 flex-1 truncate text-sm font-medium">
+                    {tile.title || label}
+                  </span>
+                  {tile.title && tile.title !== label && (
+                    <span className="text-xs text-muted-foreground">{label}</span>
+                  )}
+                  {expanded ? <ChevronDown size={16} /> : <ChevronRight size={16} />}
+                </button>
+                {expanded && (
+                  <TileEditor
+                    extensionOptions={extensionOptions}
+                    tile={tile}
+                    change={(updated) =>
+                      state.edit({
+                        ...draft,
+                        tiles: draft.tiles.map((entry) => (entry.id === tile.id ? updated : entry)),
+                      })
+                    }
+                    move={(offset) =>
+                      state.edit({ ...draft, tiles: moveDashboardTile(draft.tiles, index, offset) })
+                    }
+                    first={index === 0}
+                    last={index === draft.tiles.length - 1}
+                    remove={() => {
+                      const remaining = draft.tiles.filter((entry) => entry.id !== tile.id)
+                      state.edit({ ...draft, tiles: remaining })
+                      setEditingTile(remaining[Math.min(index, remaining.length - 1)]?.id)
+                    }}
+                  />
+                )}
+              </section>
+            )
+          })}
         </fieldset>
       ) : dashboard ? (
         <div className="grid grid-cols-4 gap-3">
           {dashboard.tiles.map((tile) => (
             <section
               key={`${dashboard.id}:${tile.id}:${dashboard.revision}`}
-              className="col-span-4 flex min-w-0 flex-col overflow-hidden rounded-lg border bg-card text-card-foreground md:[grid-column:span_var(--tile-span)]"
+              className="col-span-4 flex min-w-0 flex-col overflow-hidden rounded-xl border bg-card text-card-foreground md:[grid-column:span_var(--tile-span)]"
               style={tileLayout(tile, expandedTile === tile.id)}
             >
-              <div className="flex items-center justify-between gap-2 border-b px-3 py-1.5">
+              <div className="flex items-center justify-between gap-2 border-b px-3 py-2">
                 <h2 className="min-w-0 truncate text-sm font-medium">{tile.title}</h2>
-                <button
+                <Button
                   type="button"
-                  className={button}
+                  variant="ghost"
+                  size="icon"
+                  className="size-8"
                   aria-label={`${expandedTile === tile.id ? 'Collapse' : 'Expand'} ${tile.title}`}
                   aria-expanded={expandedTile === tile.id}
                   onClick={() => setExpandedTile((id) => (id === tile.id ? '' : tile.id))}
                 >
-                  {expandedTile === tile.id ? 'Collapse' : 'Expand'}
-                </button>
+                  {expandedTile === tile.id ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+                </Button>
               </div>
               <div className="min-h-0 flex-1 overflow-auto">
                 <Suspense fallback={<p className="p-3 text-sm">Loading tile…</p>}>
@@ -447,7 +561,10 @@ function Board({
           )}
         </div>
       ) : (
-        <p className="text-sm text-muted-foreground">Create a dashboard to add your first tile.</p>
+        <div className="grid place-items-center gap-2 rounded-xl border border-dashed p-10 text-center text-sm text-muted-foreground">
+          <LayoutGrid size={22} />
+          Create a dashboard to add your first tile.
+        </div>
       )}
     </>
   )
@@ -472,8 +589,7 @@ function TileEditor({
 }) {
   const { workspace, snapshot } = useWorkspace()
   return (
-    <section className="grid gap-3 rounded-lg border bg-card p-3">
-      <h2 className="font-medium">{dashboardTileLabels[tile.kind]}</h2>
+    <div className="grid gap-3 border-t p-3 sm:grid-cols-2">
       <label className="grid gap-1 text-sm">
         Tile title
         <input
@@ -526,7 +642,13 @@ function TileEditor({
               >
                 <option value="">Select {label.toLowerCase()}</option>
                 {(key === 'repositoryId'
-                  ? workspace.repositories.map((item) => [item.id, item.name])
+                  ? [
+                      ...workspace.repositories.map((item) => [item.id, item.name]),
+                      ...(tile.kind === 'cli' &&
+                      !workspace.repositories.some((item) => item.id === SCRATCH_PROJECT_ID)
+                        ? [[SCRATCH_PROJECT_ID, 'No Project']]
+                        : []),
+                    ]
                   : key === 'taskId'
                     ? workspace.tasks.map((item) => [item.id, item.title])
                     : (snapshot?.terminals ?? []).map((item) => [
@@ -554,25 +676,32 @@ function TileEditor({
             )}
           </label>
         ))}
-      {tile.kind === 'api' || tile.kind === 'mcp' ? (
+      {isStudioDataSource(tile) && snapshot?.studioDataSourcesSupported && (
         <label className="grid gap-1 text-sm">
-          Display
-          <select
+          Refresh interval in seconds
+          <input
             className={field}
-            value={tile.chart}
+            type="number"
+            min={30}
+            max={86400}
+            placeholder="Manual refresh"
+            value={tile.refreshSeconds ?? ''}
             onChange={(event) => {
-              const chart = event.target.value
-              if (chart === 'table' || chart === 'line' || chart === 'number')
-                change({ ...tile, chart })
+              const { refreshSeconds: _, ...manual } = tile
+              const value = event.currentTarget.valueAsNumber
+              change(Number.isFinite(value) ? { ...manual, refreshSeconds: value } : manual)
             }}
-          >
-            <option value="table">Table</option>
-            <option value="number">Metric</option>
-            <option value="line">Line graph</option>
-          </select>
+          />
         </label>
-      ) : null}
-      <div className="flex flex-wrap items-center gap-2">
+      )}
+      {(isStudioDataSource(tile) || tile.kind === 'mcp') && (
+        <DisplayEditor
+          tile={tile}
+          change={change}
+          compound={snapshot?.studioDataSourcesSupported === true}
+        />
+      )}
+      <div className="flex flex-wrap items-center gap-2 sm:col-span-2">
         {(['span', 'height'] as const).map((key) => (
           <label key={key} className="flex items-center gap-1 text-sm">
             {key === 'span' ? 'Width' : 'Height'}
@@ -597,7 +726,102 @@ function TileEditor({
           Remove tile
         </button>
       </div>
-    </section>
+    </div>
+  )
+}
+
+function DisplayEditor({
+  tile,
+  change,
+  compound,
+}: {
+  tile: Extract<DashboardTile, { kind: 'api' | 'cli' | 'mcp' }>
+  change: (tile: DashboardTile) => void
+  compound: boolean
+}) {
+  const panels = tile.panels ?? []
+  const changePanels = (next: StudioDataPanel[]) => {
+    const { panels: _, ...single } = tile
+    change(next.length ? { ...single, panels: next } : single)
+  }
+  const display = (
+    chart: StudioDataPanel['chart'],
+    onChange: (chart: StudioDataPanel['chart']) => void,
+  ) => (
+    <label className="grid gap-1 text-sm">
+      Display
+      <select
+        className={field}
+        value={chart}
+        onChange={(event) => {
+          const value = event.currentTarget.value
+          if (isDashboardDisplay(value)) onChange(value)
+        }}
+      >
+        {Object.entries(dashboardDisplayLabels).map(([value, label]) => (
+          <option key={value} value={value}>
+            {label}
+          </option>
+        ))}
+      </select>
+    </label>
+  )
+  return (
+    <div className="grid gap-2 sm:col-span-2">
+      {panels.length === 0 && (
+        <div className="max-w-xs">{display(tile.chart, (chart) => change({ ...tile, chart }))}</div>
+      )}
+      {panels.map((panel, index) => {
+        const update = (patch: Partial<StudioDataPanel>) =>
+          changePanels(
+            panels.map((item, position) => (position === index ? { ...item, ...patch } : item)),
+          )
+        return (
+          <div key={index} className="grid gap-2 rounded-lg border bg-muted/20 p-2 sm:grid-cols-3">
+            <label className="grid gap-1 text-sm">
+              Display title
+              <input
+                className={field}
+                value={panel.title}
+                maxLength={100}
+                onChange={(event) => update({ title: event.currentTarget.value })}
+              />
+            </label>
+            <label className="grid gap-1 text-sm">
+              JSON pointer
+              <input
+                className={field}
+                value={panel.pointer}
+                onChange={(event) => update({ pointer: event.currentTarget.value })}
+              />
+            </label>
+            {display(panel.chart, (chart) => update({ chart }))}
+            <Button
+              className="justify-self-start"
+              variant="ghost"
+              size="sm"
+              onClick={() => changePanels(panels.filter((_, position) => position !== index))}
+            >
+              Remove display
+            </Button>
+          </div>
+        )
+      })}
+      {compound && (
+        <Button
+          className="justify-self-start"
+          variant="outline"
+          size="sm"
+          disabled={panels.length >= studioDataPanelLimit}
+          onClick={() => {
+            const chart = panels.length ? 'number' : tile.chart
+            changePanels([...panels, { title: dashboardDisplayLabels[chart], chart, pointer: '' }])
+          }}
+        >
+          <Plus size={16} /> Add display
+        </Button>
+      )}
+    </div>
   )
 }
 
@@ -614,6 +838,12 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
         tile.repositoryId)
       : undefined
 
+  if (isStudioDataSource(tile))
+    return (
+      <div className="p-3">
+        <DataSource source={tile} read={() => readDashboardDataSource(request, dashboard, tile)} />
+      </div>
+    )
   if (tile.kind === 'extension')
     return <ExtensionTile id={tile.extensionId} contributionId={tile.contributionId} />
   if (tile.kind === 'app' && embedded)
@@ -676,10 +906,10 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3 text-sm">
-      {(tile.kind === 'api' || tile.kind === 'mcp') && (
+      {tile.kind === 'mcp' && (
         <>
           <p className="break-all text-xs text-muted-foreground">
-            {tile.kind === 'api' ? tile.url : `${tile.server} · ${tile.tool}`}
+            {`${tile.server} · ${tile.tool}`}
           </p>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -699,7 +929,7 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
             )}
             {!connected && <span>Computer offline</span>}
           </div>
-          {data && <DataView value={data.data} chart={tile.chart} />}
+          {data && <DataView value={data.data} chart={tile.chart} panels={tile.panels} />}
         </>
       )}
       {(tile.kind === 'command' || tile.kind === 'tui') && (

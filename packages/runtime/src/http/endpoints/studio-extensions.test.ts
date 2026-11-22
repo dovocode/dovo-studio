@@ -509,3 +509,125 @@ it('previews and stages pinned marketplace releases with local sources and recor
   expect((await person(update('rollback', 4))).status).toBe(200)
   expect(await installed()).toEqual({ digest, version: '1.0.0' })
 })
+
+it('runs extension API and CLI data only on explicit paired reads', async () => {
+  const { person, agent, issue, manifest } = await setup()
+  const origin = createServer((_request, response) => {
+    response.end('{"series":[1,2,3]}')
+  })
+  origin.listen(0, '127.0.0.1')
+  await once(origin, 'listening')
+  cleanups.push(
+    () =>
+      new Promise<void>((resolve, reject) => {
+        origin.closeAllConnections()
+        origin.close((error) => (error ? reject(error) : resolve()))
+      }),
+  )
+  const address = origin.address()
+  if (!address || typeof address === 'string') throw new Error('Missing test server')
+  const sources = [
+    {
+      id: 'latency',
+      kind: 'api',
+      title: 'Latency',
+      url: `http://127.0.0.1:${address.port}`,
+      pointer: '/series',
+      chart: 'line',
+      refreshSeconds: 30,
+    },
+    {
+      id: 'workers',
+      kind: 'cli',
+      title: 'Workers',
+      repositoryId: 'repo',
+      command: process.platform === 'win32' ? "'4'" : "printf '%s' '4'",
+      pointer: '',
+      chart: 'number',
+    },
+  ]
+  const stage = await person({
+    action: 'stage',
+    manifest: { ...manifest, contributions: [...manifest.contributions, ...sources] },
+    expectedRevision: 0,
+  })
+  expect(stage.status).toBe(200)
+  const install = { action: 'install', id: manifest.id, expectedRevision: 1 }
+  expect((await person({ ...install, componentVersion: 2 })).status).toBe(409)
+  expect((await person({ ...install, componentVersion: 3 })).status).toBe(200)
+
+  const list = async (componentVersion: number) =>
+    decode(
+      studioExtensionsListSchema,
+      await (await person({ action: 'list', componentVersion })).json(),
+    ).extensions[0]?.installed?.contributions.map(({ id }) => id)
+  expect(await list(2)).toEqual(['status', 'terminal'])
+  expect(await list(3)).toEqual(['status', 'terminal', 'latency', 'workers'])
+
+  for (const [contributionId, data] of [
+    ['latency', [1, 2, 3]],
+    ['workers', 4],
+  ]) {
+    const input = { action: 'read-data', id: manifest.id, expectedRevision: 2, contributionId }
+    expect((await agent(issue(false), input)).status).toBe(403)
+    expect((await person({ ...input, action: 'call' })).status).toBe(404)
+    expect((await person({ ...input, expectedRevision: 1 })).status).toBe(409)
+    const response = await person(input)
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ data, updatedAt: expect.any(Number) })
+  }
+})
+
+it('pins installed pages for paired clients and removes the shortcut while disabled', async () => {
+  const { s, person, agent, issue, manifest, runtime } = await setup()
+  const page = {
+    id: 'overview',
+    kind: 'view',
+    title: 'Delivery overview',
+    placement: 'page',
+    view: { version: 1, root: 'title', nodes: [{ id: 'title', kind: 'text', value: 'Delivery' }] },
+  }
+  expect(
+    (
+      await person({
+        action: 'stage',
+        manifest: { ...manifest, contributions: [...manifest.contributions, page] },
+        expectedRevision: 0,
+      })
+    ).status,
+  ).toBe(200)
+  const install = { action: 'install', id: manifest.id, expectedRevision: 1 }
+  expect((await person({ ...install, componentVersion: 2 })).status).toBe(409)
+  expect((await person({ ...install, componentVersion: 3 })).status).toBe(200)
+  const getPins = async () =>
+    decode(
+      snapshotSchema,
+      await (
+        await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
+          headers: { Authorization: `Bearer ${human}` },
+        })
+      ).json(),
+    ).studioExtensionPinnedPages
+  expect(await getPins()).toEqual([])
+  const pin = {
+    action: 'pin-page',
+    id: manifest.id,
+    expectedRevision: 2,
+    contributionId: page.id,
+    pinned: true,
+  }
+  expect((await agent(issue(false), pin)).status).toBe(403)
+  expect((await person({ ...pin, expectedRevision: 1 })).status).toBe(409)
+  expect((await person(pin)).status).toBe(200)
+  expect(await getPins()).toEqual([
+    { extensionId: manifest.id, pageId: page.id, title: page.title },
+  ])
+  expect(s.studioExtensions.pinnedPages()).toHaveLength(1)
+  const edit = { id: manifest.id, expectedRevision: 2 }
+  expect((await person({ ...edit, action: 'disable' })).status).toBe(200)
+  expect(await getPins()).toEqual([])
+  expect((await person({ ...edit, expectedRevision: 3, action: 'enable' })).status).toBe(200)
+  expect(await getPins()).toHaveLength(1)
+  expect((await person({ ...pin, expectedRevision: 4, pinned: false })).status).toBe(200)
+  expect(await getPins()).toEqual([])
+})

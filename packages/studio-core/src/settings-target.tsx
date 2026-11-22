@@ -14,55 +14,77 @@ import { useApplicationState } from './runtime/application-state'
 import { useWorkspace } from './workspace/provider'
 import { useRuntimeSources } from './workspace/runtime-sources'
 
+type DraftScope = 'settings' | 'workspace'
+const DraftScopeContext = createContext<DraftScope>('settings')
+
+export function WorkspaceDraftScope({ children }: { children: ReactNode }) {
+  return <DraftScopeContext.Provider value="workspace">{children}</DraftScopeContext.Provider>
+}
+
 const Context = createContext<{
   target: SettingsTarget
   hasDraft: boolean
   setTarget: (target: SettingsTarget) => Promise<boolean>
-  confirmNavigation: () => Promise<boolean>
-  registerDraft: (id: symbol, dirty: boolean, saving: boolean) => () => void
+  confirmNavigation: (scope?: DraftScope | 'all') => Promise<boolean>
+  registerDraft: (id: symbol, scope: DraftScope, dirty: boolean, saving: boolean) => () => void
 } | null>(null)
 export function SettingsTargetProvider({ children }: { children: ReactNode }) {
   const [target, updateTarget] = useApplicationState<SettingsTarget>({
     environmentId: '',
     projectId: '',
   })
-  const drafts = useRef(new Map<symbol, { dirty: boolean; saving: boolean }>())
+  const drafts = useRef(new Map<symbol, { scope: DraftScope; dirty: boolean; saving: boolean }>())
   const [hasDraft, setHasDraft] = useState(false)
   const currentTarget = useRef(target)
   currentTarget.current = target
-  const registerDraft = useCallback((id: symbol, dirty: boolean, saving: boolean) => {
-    const update = () =>
-      setHasDraft([...drafts.current.values()].some((draft) => draft.dirty || draft.saving))
-    drafts.current.set(id, { dirty, saving })
-    update()
-    return () => {
-      drafts.current.delete(id)
+  const registerDraft = useCallback(
+    (id: symbol, scope: DraftScope, dirty: boolean, saving: boolean) => {
+      const update = () =>
+        setHasDraft(
+          [...drafts.current.values()].some(
+            (draft) => draft.scope === 'settings' && (draft.dirty || draft.saving),
+          ),
+        )
+      drafts.current.set(id, { scope, dirty, saving })
       update()
-    }
-  }, [])
+      return () => {
+        drafts.current.delete(id)
+        update()
+      }
+    },
+    [],
+  )
   const confirm = useConfirmation()
   const attempt = useRef(0)
-  const confirmNavigation = useCallback(async () => {
-    const decision = ++attempt.current
-    const current = currentTarget.current
-    const values = [...drafts.current.values()]
-    if (values.some((draft) => draft.saving)) return false
-    if (
-      values.some((draft) => draft.dirty) &&
-      !(await confirm({
-        title: 'Discard unsaved settings changes?',
-        description: 'Your edits will be lost when you leave these settings.',
-        confirmLabel: 'Discard changes',
-        destructive: true,
-      }))
-    )
-      return false
-    return (
-      decision === attempt.current &&
-      currentTarget.current === current &&
-      ![...drafts.current.values()].some((draft) => draft.saving)
-    )
-  }, [confirm])
+  const confirmNavigation = useCallback(
+    async (scope: DraftScope | 'all' = 'settings') => {
+      const decision = ++attempt.current
+      const current = currentTarget.current
+      const values = () =>
+        [...drafts.current.values()].filter((draft) => scope === 'all' || draft.scope === scope)
+      if (values().some((draft) => draft.saving)) return false
+      if (
+        values().some((draft) => draft.dirty) &&
+        !(await confirm({
+          title:
+            scope === 'settings' ? 'Discard unsaved settings changes?' : 'Discard unsaved changes?',
+          description:
+            scope === 'settings'
+              ? 'Your edits will be lost when you leave these settings.'
+              : 'Your edits will be lost when you leave this view.',
+          confirmLabel: 'Discard changes',
+          destructive: true,
+        }))
+      )
+        return false
+      return (
+        decision === attempt.current &&
+        currentTarget.current === current &&
+        !values().some((draft) => draft.saving)
+      )
+    },
+    [confirm],
+  )
   const setTarget = useCallback(
     async (next: SettingsTarget) => {
       const current = currentTarget.current
@@ -85,10 +107,11 @@ export function SettingsTargetProvider({ children }: { children: ReactNode }) {
 }
 export function useSettingsDraft(dirty: boolean, saving = false) {
   const context = useContext(Context)
+  const scope = useContext(DraftScopeContext)
   const id = useRef(Symbol('settings-draft'))
   useLayoutEffect(
-    () => context?.registerDraft(id.current, dirty, saving),
-    [context?.registerDraft, dirty, saving],
+    () => context?.registerDraft(id.current, scope, dirty, saving),
+    [context?.registerDraft, scope, dirty, saving],
   )
   useEffect(() => {
     if (!dirty) return
@@ -99,8 +122,12 @@ export function useSettingsDraft(dirty: boolean, saving = false) {
 }
 const allowSettingsNavigation = async () => true
 export function useConfirmSettingsNavigation() {
-  const context = useContext(Context)
-  return context?.confirmNavigation ?? allowSettingsNavigation
+  const confirm = useContext(Context)?.confirmNavigation ?? allowSettingsNavigation
+  const scope = useContext(DraftScopeContext)
+  return useCallback(
+    (requestedScope: DraftScope | 'all' = scope) => confirm(requestedScope),
+    [confirm, scope],
+  )
 }
 /** Scoped controls can also render outside the settings area, where there is no target to move. */
 export function useOptionalSettingsTarget() {

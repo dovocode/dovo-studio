@@ -6,13 +6,13 @@ runtime. Dashboard definitions live on the selected computer. Paired devices can
 dashboard over HTTP or HTTPS. Older runtimes do not offer the workspace.
 
 1. Choose a computer and select **New dashboard**.
-2. Give the dashboard a name. Choose a tile type and select **Add tile**.
-3. Configure the tile. Use **Move earlier** and **Move later** to change its position. The width
-   sets how many of the four grid columns the tile uses on desktop and web. Phones show tiles in
-   order and open interactive views at full size.
-4. Select **Save dashboard**. Use **Reload** to fetch dashboard edits from other devices or agents.
-   If a save conflicts, Studio keeps the current draft. Reload the saved version after copying your
-   edits or save the draft as a new dashboard.
+2. Give the dashboard a name. Select **Add tile**, then choose a tile type.
+3. Configure the tile. Select another tile to open its settings. Use **Move earlier** and **Move
+   later** to change its position. The width sets how many of the four grid columns the tile uses on
+   desktop and web. Phones show tiles in order and open interactive views at full size.
+4. Select **Save dashboard**. Use **Reload** in **Dashboard actions** to fetch dashboard edits from
+   other devices or agents. If a save conflicts, Studio keeps the current draft. Reload the saved
+   version after copying your edits or save the draft as a new dashboard.
 
 Use **Expand** for a larger tile on desktop or web. A previously loaded dashboard list remains
 available offline. Data and command actions need a connection to the owning computer.
@@ -22,13 +22,16 @@ available offline. Data and command actions need a connection to the owning comp
 - **HTTP data** reads a saved HTTP or HTTPS URL from the computer when you select **Refresh data**.
   It uses GET and accepts JSON or text. It uses no redirects, cookies, or configured authorization
   headers.
+- **CLI data** runs a saved command on the selected computer and uses its stdout as data. Choose a
+  project to run in its main checkout or **No Project** to run in the home folder. Select **Run
+  command** and review the command before it starts. Use Command or TUI when you need a terminal.
 - **MCP data** reads a saved tool and arguments from a configured MCP server in an existing thread.
   Use an editable thread and a tool declared read-only and non-destructive. Use MCP credentials that
   enforce read-only access at the source. Select **Refresh data** to run it.
-- **Metric**, **Table**, and **Line graph** display data from HTTP and MCP tiles. An empty JSON
-  pointer selects the whole response. Use a pointer such as `/stats/durations` to select a field. A
-  line graph accepts an array of numbers or objects with a numeric `value` field, in order. Return
-  historical values from your API to plot a time series.
+- **Metric**, **Table**, and **Line graph** display data from HTTP, CLI, and MCP tiles. An empty
+  JSON pointer selects the whole response. Use a pointer such as `/stats/durations` to select a
+  field. A line graph accepts an array of numbers or objects with a numeric `value` field, in order.
+  Return historical values from your API to plot a time series.
 - **Command** runs a saved command in the project's main checkout and displays the terminal output.
   **TUI** opens an interactive terminal on that checkout and starts the configured program. Select
   **Run command** and review the command before it starts. Use **Recover run** after a lost
@@ -46,12 +49,35 @@ available offline. Data and command actions need a connection to the owning comp
 - **Pipelines** lists runs for the selected project on **Refresh pipelines**. Select a run to open
   its details. **Threads** and **Automations** show entries from the owning computer.
 
+## Show more than one display
+
+Select **Add display** in a data tile. Enter a title, choose a metric, line graph, or table, and
+enter a JSON pointer for that card. Each pointer starts at the result selected by the tile's main
+pointer. Add up to eight cards. Studio reads the source once per refresh and uses that response for
+all cards. Cards fit side by side when there is room and stack on narrow screens.
+
+Agents can set `panels` on API, CLI, and MCP tiles with entries such as
+`{ "title": "Build count", "pointer": "/count", "chart": "number" }`.
+
+## Timed refresh
+
+For HTTP and CLI data, set **Refresh interval in seconds** to a whole number between 30 and 86,400.
+Leave it blank for manual refresh. Save the dashboard and select **Start auto refresh** on the tile.
+Studio reads the source once, then at the selected interval while the tile is open and connected.
+Select **Stop auto refresh** to stop future reads. Timed refresh pauses while the computer is
+offline or the browser tab is hidden. It reads once when the tile becomes available again if a read
+is overdue. Leaving the dashboard or saving a new dashboard revision clears the current activation.
+
+CLI data parses stdout as JSON when possible. Otherwise it displays stdout as text. The process has
+15 seconds to finish. A failed exit reports its exit code. Raw output can be at most 1 MB and the
+selected JSON value can be at most 256 KB. Use a command that can run without terminal input.
+
 ## Templates and API
 
-Use **Export dashboard** to download a `.dovo-dashboard.json` file on desktop or web. On mobile,
-choose where to save or send the file in the share sheet. The file contains the layout, tile
-settings, URLs, queries, and command text. It leaves out results, terminal sessions, and bindings to
-local projects, terminals, threads, and apps.
+Open **Dashboard actions** and select **Export dashboard** to download a `.dovo-dashboard.json` file
+on desktop or web. On mobile, choose where to save or send the file in the share sheet. The file
+contains the layout, tile settings, URLs, queries, and command text. It leaves out results, terminal
+sessions, and bindings to local projects, terminals, threads, and apps.
 
 Choose a computer and use **Import dashboard** to open the file as a new draft. You can also use
 **Paste template** to open JSON from the clipboard. Bind the required sources, review the tile
@@ -59,14 +85,23 @@ settings, and save the draft. Import and save only store configuration.
 
 The paired API uses POST for each operation.
 
-| Path                      | Input                                         | Result                |
-| ------------------------- | --------------------------------------------- | --------------------- |
-| `/api/dashboards/list`    | `{}`                                          | `{ dashboards }`      |
-| `/api/dashboards/save`    | `{ dashboard, expectedRevision }`             | `{ dashboard }`       |
-| `/api/dashboards/delete`  | `{ id, expectedRevision }`                    | `{ ok: true }`        |
-| `/api/dashboards/read`    | `{ id, tileId, expectedRevision }`            | `{ data, updatedAt }` |
-| `/api/dashboards/session` | `{ id, tileId, expectedRevision }`            | `{ terminalId }`      |
-| `/api/dashboards/run`     | `{ id, tileId, expectedRevision, requestId }` | `{ terminalId }`      |
+| Path                           | Input                                         | Result                |
+| ------------------------------ | --------------------------------------------- | --------------------- |
+| `/api/dashboards/list`         | `{ dataSources: true }`                       | `{ dashboards }`      |
+| `/api/dashboards/save`         | `{ dashboard, expectedRevision }`             | `{ dashboard }`       |
+| `/api/dashboards/delete`       | `{ id, expectedRevision }`                    | `{ ok: true }`        |
+| `/api/dashboards/read`         | `{ id, tileId, expectedRevision }`            | `{ data, updatedAt }` |
+| `/api/dashboards/command-data` | `{ id, tileId, expectedRevision }`            | `{ data, updatedAt }` |
+| `/api/dashboards/session`      | `{ id, tileId, expectedRevision }`            | `{ terminalId }`      |
+| `/api/dashboards/run`          | `{ id, tileId, expectedRevision, requestId }` | `{ terminalId }`      |
+
+Use the list flag on runtimes with `studioDataSourcesSupported` in the snapshot. A list request
+without the flag omits dashboards with CLI data, timed API refresh, or multiple displays for
+compatibility with older clients. Only paired clients can read source data.
+
+Nightly 1038 cannot read saved dashboards with CLI tiles, timed API refresh, or multiple data
+displays. One such dashboard can prevent it from listing any dashboard. Before downgrading to that
+runtime, export the affected dashboards and remove those settings or tiles on the current runtime.
 
 The runtime returns HTTP 409 for a stale revision. The read result gives `updatedAt` in Unix
 milliseconds. The session result gives a terminal ID for the last run of the current command, or
@@ -98,13 +133,18 @@ For example, these arguments create a dashboard with an HTTP line graph and a th
         "height": 2,
         "url": "http://builds.lan/metrics",
         "pointer": "/durations",
-        "chart": "line"
+        "chart": "line",
+        "refreshSeconds": 60
       },
       { "kind": "threads", "title": "Recent threads", "span": 1, "height": 2 }
     ]
   }
 }
 ```
+
+For CLI data, use `kind: "cli"`, `repositoryId`, and `command` instead of `kind: "api"` and `url`.
+CLI and HTTP data both accept optional `refreshSeconds`. Studio requires a paired user to start
+refresh.
 
 The runtime assigns IDs. For an update, first read the dashboard. Send the ID and `expectedRevision`
 beside the replacement `dashboard` object. Keep the existing tile IDs and omit the ID for each new
@@ -126,6 +166,6 @@ pnpm test:dashboards:browser
 ```
 
 The browser check uses the production editor with fixture runtime responses. It checks grid sizing,
-command retry, iframe loading, offline drafts, and reopening a cached dashboard. The runtime tests
-check saved definitions, API requests, terminal execution and retries. Physical device tests are
-needed for native WebView and terminal input behavior.
+command retry, iframe loading, offline drafts, timed refresh, and reconnect. The runtime tests check
+saved definitions, API requests, terminal execution and retries. Physical device tests are needed
+for native WebView and terminal input behavior.

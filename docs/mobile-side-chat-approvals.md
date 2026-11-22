@@ -8,6 +8,12 @@ A link to a resolved or removed approval shows a message. It does not select ano
 Show pending approvals to leave the exact request view. Offline, reconnect to check the request.
 Approval actions stay disabled until connected.
 
+Long approval commands scroll inside the command preview. Read the preview, then use the decision
+buttons below the request. On desktop and web, select Copy in the command preview to copy the full
+command. Open Full JSON to inspect or copy the original request. In the desktop notification, the
+decision buttons stay visible while you scroll the request. Dismiss for now leaves the request
+pending.
+
 Remote child request links also keep the exact approval or question ID and runtime identity.
 
 Reopen an exact approval link after a disconnect to check its recorded decision. If the runtime has

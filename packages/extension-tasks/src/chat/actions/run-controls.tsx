@@ -1,3 +1,4 @@
+import { Shield } from 'lucide-react'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import {
   runtimeComputerName,
@@ -24,6 +25,11 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
       useWorkspace(),
     [error, setError] = useApplicationState(''),
     [busy, setBusy] = useApplicationState(false)
+  const [approvalResponse, setApprovalResponse] = useApplicationState<{
+    id: string
+    error?: string
+  } | null>(null)
+  const approvalInFlight = useRef(false)
   const [retryError, setRetryError] = useScopedError(
     showFailure && task.status === 'failed'
       ? JSON.stringify([activeRuntimeId, task.id, taskFailureVersion(task)])
@@ -39,6 +45,18 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
         reportError(error instanceof Error ? error.message : String(error)),
       )
       .finally(() => setBusy(false))
+  }
+  const answerApproval = (
+    id: string,
+    decision: ReturnType<typeof approvalActions>[number]['decision'],
+  ) => {
+    if (!connected || busy || approvalInFlight.current) return
+    approvalInFlight.current = true
+    return act('/api/approvals', { id, allow: decision !== 'deny', decision }, (message) =>
+      setApprovalResponse({ id, error: message || undefined }),
+    )?.finally(() => {
+      approvalInFlight.current = false
+    })
   }
   const continueStopped = () => {
     if (!connected || busy) return
@@ -74,7 +92,7 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
       // Y and Enter mean "Allow once". A request without that scope ignores them.
       const decision = allow ? 'approve' : 'deny'
       if (approval && approvalActions(approval).some((action) => action.decision === decision))
-        return act('/api/approvals', { id, allow, decision })
+        return answerApproval(id, decision)
     },
   })
   const executionHost = runtimeComputerName({
@@ -166,65 +184,80 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
           </Button>
         </div>
       ))}
-      {approvals.map((approval) => (
-        <div
-          key={approval.id}
-          data-studio-human-only
-          className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
-        >
-          <p
-            data-request-kind="approval"
-            data-request-id={approval.id}
-            tabIndex={-1}
-            className="text-xs font-medium"
-          >
-            {approval.title}
-          </p>
-          <div
+      {approvals.map((approval) => {
+        const actions = approvalActions(approval)
+        const response = approvalResponse?.id === approval.id ? approvalResponse : null
+        return (
+          <section
+            key={approval.id}
+            data-studio-human-only
             data-approval-id={approval.id}
             tabIndex={0}
             aria-label={approval.title}
-            aria-keyshortcuts={approvalShortcutKeys(approvalActions(approval))}
+            aria-keyshortcuts={approvalShortcutKeys(actions)}
+            aria-busy={busy && !!response}
+            className="mx-auto max-w-[var(--chat-max)] min-w-0 rounded-xl border bg-card shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
           >
-            <p className="mb-1 text-[0.6875rem] text-muted-foreground">
-              Permission request · {executionHost}
-              {approval.taskId !== task.id && (
-                <>
-                  {' '}
-                  · For child thread:{' '}
-                  {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)?.title ??
-                    approval.taskId}
-                </>
-              )}
-            </p>
-            <ApprovalDetails key={approval.id} detail={approval.detail} />
-            <div className="flex flex-wrap gap-2">
-              {approvalActions(approval).map((action) => (
-                <Button
-                  key={action.decision}
-                  size="sm"
-                  variant={action.decision === 'approve' ? 'default' : 'outline'}
-                  disabled={busy || !connected}
-                  onClick={() =>
-                    act('/api/approvals', {
-                      id: approval.id,
-                      allow: action.decision !== 'deny',
-                      decision: action.decision,
-                    })
-                  }
+            <header className="flex min-w-0 items-start gap-2.5 border-b px-3 py-2.5">
+              <Shield
+                size={17}
+                className="mt-0.5 shrink-0 text-muted-foreground"
+                aria-hidden="true"
+              />
+              <div className="min-w-0">
+                <p
+                  data-request-kind="approval"
+                  data-request-id={approval.id}
+                  tabIndex={-1}
+                  className="break-words text-sm font-semibold"
                 >
-                  {action.label}
-                  {action.decision === 'approve' || action.decision === 'deny' ? (
-                    <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                      {action.decision === 'approve' ? 'Y / Enter' : 'N'}
-                    </kbd>
-                  ) : null}
-                </Button>
-              ))}
+                  {approval.title}
+                </p>
+                <p className="break-words text-xs text-muted-foreground">
+                  {uiText('Permission request')} · {executionHost}
+                  {approval.taskId !== task.id && (
+                    <>
+                      {' '}
+                      · For child thread:{' '}
+                      {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)
+                        ?.title ?? approval.taskId}
+                    </>
+                  )}
+                </p>
+              </div>
+            </header>
+            <div className="px-3 py-2.5">
+              <ApprovalDetails key={approval.id} detail={approval.detail} />
             </div>
-          </div>
-        </div>
-      ))}
+            <div className="space-y-2 rounded-b-xl border-t bg-muted/20 px-3 py-2.5">
+              {response?.error && (
+                <p role="alert" className="break-words text-xs text-destructive">
+                  {response.error}
+                </p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {actions.map((action) => (
+                  <Button
+                    key={action.decision}
+                    size="sm"
+                    variant={action.decision === 'approve' ? 'default' : 'outline'}
+                    className={action.decision === 'deny' ? 'ml-auto' : undefined}
+                    disabled={busy || !connected}
+                    onClick={() => void answerApproval(approval.id, action.decision)}
+                  >
+                    {action.label}
+                    {action.decision === 'approve' || action.decision === 'deny' ? (
+                      <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
+                        {action.decision === 'approve' ? 'Y / Enter' : 'N'}
+                      </kbd>
+                    ) : null}
+                  </Button>
+                ))}
+              </div>
+            </div>
+          </section>
+        )
+      })}
       {(alert || failed) && (
         <div className="mx-auto max-w-[var(--chat-max)] space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
           {alert && (

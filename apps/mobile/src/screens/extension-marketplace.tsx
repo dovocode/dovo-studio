@@ -2,11 +2,13 @@ import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useState } from 'react'
 import { View } from 'react-native'
 import { router } from 'expo-router'
-import type {
-  MarketplaceBinding,
-  MarketplaceRelease,
-  StudioExtensionCommand,
-  StudioExtensionEntry,
+import {
+  marketplaceNeedsSource,
+  SCRATCH_PROJECT_ID,
+  type MarketplaceBinding,
+  type MarketplaceSourceContribution,
+  type StudioExtensionCommand,
+  type StudioExtensionEntry,
 } from '@dovo/protocol'
 import {
   addMarketplaceDashboard,
@@ -20,10 +22,6 @@ import { Choice } from '../ui/controls/choice'
 import { Text } from '../ui/content/text'
 import { Surface } from '../ui/layout/surface'
 
-type SourceContribution = Extract<
-  MarketplaceRelease['manifest']['contributions'][number],
-  { kind: 'tool' | 'app' }
->
 const card = { padding: 12, gap: 8, borderRadius: 10 }
 
 export function ExtensionMarketplace({
@@ -104,7 +102,7 @@ export function ExtensionMarketplace({
               {release.manifest.contributions.map((item) => (
                 <View key={item.id} style={{ gap: 8 }}>
                   <Text>{item.title}</Text>
-                  {(item.kind === 'tool' || item.kind === 'app') && (
+                  {marketplaceNeedsSource(item) && (
                     <SourceFields
                       contribution={item}
                       binding={state.binding(item.id)}
@@ -158,7 +156,11 @@ export function ExtensionMarketplace({
                         onPress={async () => {
                           setAdding(true)
                           try {
-                            await addMarketplaceDashboard(read, release)
+                            await addMarketplaceDashboard(
+                              read,
+                              release,
+                              snapshot.studioDataSourcesSupported === true,
+                            )
                             setDashboard({ digest: selected.digest, added: true })
                           } catch (cause) {
                             setDashboard({
@@ -192,7 +194,7 @@ function SourceFields({
   binding,
   bind,
 }: {
-  contribution: SourceContribution
+  contribution: MarketplaceSourceContribution
   binding?: MarketplaceBinding
   bind: (binding: MarketplaceBinding) => void
 }) {
@@ -200,6 +202,24 @@ function SourceFields({
   const { read, connected, snapshot } = useRuntime()
   const taskId = binding?.taskId ?? ''
   const sources = useMarketplaceSources(read, taskId, connected)
+  if (contribution.kind === 'cli') {
+    const repositories = snapshot?.workspace.repositories ?? []
+    const items = repositories.map(({ id, name }) => ({ id, name }))
+    if (!items.some(({ id }) => id === SCRATCH_PROJECT_ID))
+      items.push({ id: SCRATCH_PROJECT_ID, name: uiText('No Project') })
+    return (
+      <>
+        <Text selectable>{contribution.command}</Text>
+        <Choice
+          label={uiText('Project')}
+          disabled={!connected}
+          value={binding?.source ?? ''}
+          items={items}
+          onChange={(source) => bind({ contributionId: contribution.id, source })}
+        />
+      </>
+    )
+  }
   const items =
     contribution.kind === 'tool'
       ? sources?.data?.servers.map((name) => ({ id: name, name }))

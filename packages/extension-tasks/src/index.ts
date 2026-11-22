@@ -12,6 +12,14 @@ export const tasksExtension = defineStudioExtension(
       settingsScope: 'computer',
       load: () => import('./studio-extensions/view'),
     },
+    {
+      id: 'studio-extension-page',
+      title: 'Extension page',
+      icon: 'workspace',
+      order: 9,
+      navigationGroup: 'hidden',
+      load: () => import('./studio-extensions/page'),
+    },
     { id: 'tasks', title: 'Threads', icon: 'tasks', order: 0, load: () => import('./view') },
     {
       id: 'dashboards',

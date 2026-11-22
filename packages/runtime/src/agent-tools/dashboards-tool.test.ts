@@ -91,6 +91,18 @@ it('authors dashboards and extension drafts through dovo_task without running an
               repositoryId: 'repo',
               command: 'touch ran',
             },
+            {
+              title: 'Local metrics',
+              kind: 'cli',
+              span: 2,
+              height: 1,
+              repositoryId: 'repo',
+              command: 'metrics --json',
+              chart: 'number',
+              pointer: '/total',
+              refreshSeconds: 60,
+              panels: [{ title: 'Recent results', pointer: '/history', chart: 'line' }],
+            },
           ],
         },
       },
@@ -98,6 +110,11 @@ it('authors dashboards and extension drafts through dovo_task without running an
   )
   expect(created.isError).toBe(false)
   const { dashboard } = decode(dashboardSaveResultSchema, JSON.parse(created.text))
+  expect(dashboard.tiles[1]).toMatchObject({
+    kind: 'cli',
+    refreshSeconds: 60,
+    panels: [{ title: 'Recent results', pointer: '/history', chart: 'line' }],
+  })
   expect(s.dashboards.get(dashboard.id)).toEqual(dashboard)
   expect(s.terminals.list()).toEqual([])
 
@@ -149,9 +166,22 @@ it('authors dashboards and extension drafts through dovo_task without running an
   expect(JSON.parse(viewCatalog.text)).toMatchObject({
     sdk: {
       module: '@dovo/protocol/studio-extension-sdk',
-      helpers: ['defineExtension', 'view', 'setting', 'result'],
+      helpers: expect.arrayContaining([
+        'defineExtension',
+        'view',
+        'setting',
+        'result',
+        'page',
+        'apiSource',
+        'cliSource',
+        'sourceControls',
+        'dataGrid',
+      ]),
     },
-    views: { components: expect.arrayContaining(['card', 'custom', 'chart']) },
+    views: {
+      components: expect.arrayContaining(['card', 'custom', 'chart', 'data-source', 'data-grid']),
+      placements: expect.arrayContaining(['settings', 'tool', 'page']),
+    },
   })
   const contract = await extensions({ action: 'catalog', component: 'manifest' })
   expect(contract.isError).toBe(false)

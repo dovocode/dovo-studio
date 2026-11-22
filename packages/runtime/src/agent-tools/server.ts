@@ -386,7 +386,7 @@ const tools: Array<
   {
     name: 'studio_extensions',
     description:
-      'Studio extensions. catalog shows UI SDK schemas. marketplace accepts marketplace.action list/read/sources/stage. read finds own manifests. validate or stage; new IDs use revision 0. install requires opt-in. call needs id, contributionId and expectedRevision.',
+      'Studio extensions. catalog provides UI SDK schemas. marketplace actions: list/read/sources/stage. Stage new IDs at revision 0. Install requires opt-in. CLI drafts require a paired user. Call needs id, contributionId and expectedRevision.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -408,8 +408,7 @@ const tools: Array<
   },
   {
     name: 'dashboards',
-    description:
-      'Build Studio dashboards. list/read before edits. create uses dashboard. update/delete need id and expectedRevision. People run tiles in Studio.',
+    description: 'Build dashboards. Read before edits. Update/delete need id and expectedRevision.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -429,12 +428,13 @@ const tools: Array<
               items: {
                 type: 'object' as const,
                 properties: {
-                  id: { type: 'string' as const, description: 'Keep from read; omit for new.' },
+                  id: { type: 'string' as const },
                   title: { type: 'string' as const, minLength: 1, maxLength: 100 },
                   kind: {
                     type: 'string' as const,
                     enum: [
                       'api',
+                      'cli',
                       'mcp',
                       'command',
                       'tui',
@@ -449,17 +449,33 @@ const tools: Array<
                       'jobs',
                     ],
                     description:
-                      'api: url. mcp: taskId, server, read-only tool, arguments. Both: chart, pointer. command/tui: repositoryId, command. pipelines: repositoryId. app: taskId, appId. terminal: terminalId. iframe/browser: url. extension: extensionId, contributionId.',
+                      'api/iframe/browser: url. cli/command/tui: repositoryId, command. mcp: taskId, server, tool, arguments.',
                   },
                   span: { type: 'integer' as const, minimum: 1, maximum: 4 },
                   height: { type: 'integer' as const, minimum: 1, maximum: 4 },
                   chart: { type: 'string' as const, enum: ['table', 'number', 'line'] },
-                  pointer: { type: 'string' as const, description: 'JSON pointer; empty for all.' },
+                  pointer: { type: 'string' as const },
+                  refreshSeconds: { type: 'integer' as const, minimum: 30, maximum: 86400 },
+                  panels: {
+                    type: 'array' as const,
+                    minItems: 1,
+                    maxItems: 8,
+                    items: {
+                      type: 'object' as const,
+                      properties: {
+                        title: { type: 'string' as const },
+                        pointer: { type: 'string' as const },
+                        chart: { type: 'string' as const, enum: ['table', 'number', 'line'] },
+                      },
+                      required: ['title', 'pointer', 'chart'],
+                      additionalProperties: false,
+                    },
+                  },
                   url: { type: 'string' as const },
                   taskId: { type: 'string' as const },
                   server: { type: 'string' as const },
                   tool: { type: 'string' as const },
-                  arguments: { type: 'string' as const, description: 'JSON object text.' },
+                  arguments: { type: 'string' as const },
                   repositoryId: { type: 'string' as const },
                   command: { type: 'string' as const },
                   terminalId: { type: 'string' as const },

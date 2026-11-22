@@ -261,11 +261,13 @@ export function PierreEditor({
         )}
         <Button
           size="sm"
-          variant="ghost"
+          variant={split ? 'secondary' : 'ghost'}
           className="h-6 px-2 text-[0.625rem]"
+          aria-label="Split diff"
+          aria-pressed={split}
           onClick={() => setSplit((v) => !v)}
         >
-          {split ? 'Split' : 'Unified'}
+          Split
         </Button>
         {!readOnly && editing && (
           <Button

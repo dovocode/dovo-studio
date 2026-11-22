@@ -1,7 +1,11 @@
 import { Schema } from 'effect'
 import { mutableArray, refine, strictStruct, uuidSchema } from '../shared/schema.js'
 import { extensionKeySchema } from './studio-extension-views.js'
-import { marketplaceDigestSchema, studioExtensionManifestSchema } from './studio-extensions.js'
+import {
+  marketplaceDigestSchema,
+  studioExtensionManifestSchema,
+  type ExtensionContribution,
+} from './studio-extensions.js'
 
 const title = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(100))
 const description = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1000))
@@ -37,6 +41,7 @@ export const marketplaceReleaseSchema = refine(
     const contributions = new Set(manifest.contributions.map(({ id }) => id))
     return (
       manifest.contributions.every((item) => {
+        if (item.kind === 'cli') return item.repositoryId === marketplaceSourcePlaceholder
         if (item.kind === 'tool')
           return (
             item.taskId === marketplaceSourcePlaceholder &&
@@ -55,6 +60,17 @@ export const marketplaceReleaseSchema = refine(
   'Marketplace releases must use portable sources and dashboard tiles must refer to contributions in the release',
 )
 export type MarketplaceRelease = typeof marketplaceReleaseSchema.Type
+
+export type MarketplaceSourceContribution = Extract<
+  ExtensionContribution,
+  { kind: 'tool' | 'app' | 'cli' }
+>
+
+export function marketplaceNeedsSource(
+  item: ExtensionContribution,
+): item is MarketplaceSourceContribution {
+  return item.kind === 'tool' || item.kind === 'app' || item.kind === 'cli'
+}
 
 export const marketplaceSourcesSchema = strictStruct({
   servers: mutableArray(Schema.String),

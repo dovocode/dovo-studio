@@ -32,6 +32,8 @@ const snapshot = decode(snapshotSchema, {
   revision: 1,
   owner: false,
   artifactsEnabled: true,
+  studioExtensionPinnedPages: [],
+  studioDataSourcesSupported: true,
   dashboardsSupported: true,
   workspace: {
     version: 1,

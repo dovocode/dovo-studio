@@ -4,11 +4,10 @@ import {
   randomUUID,
   STUDIO_BROWSER_SCOPE,
   STUDIO_TERMINAL_SCOPE,
-  type ChangedFile,
   type RuntimeProfile,
 } from '@dovo/protocol'
-import { responses, useStudioHost, useWorkspace, WorkspaceScope } from '@dovo/studio-core'
-import { Button, cn } from '@dovo/studio-ui'
+import { useStudioHost, WorkspaceScope } from '@dovo/studio-core'
+import { cn } from '@dovo/studio-ui'
 import {
   PaneAddMenu,
   RightPaneTabs,
@@ -31,90 +30,9 @@ const SideThread = lazy(() =>
     default: BrowserThreadPanel,
   })),
 )
-const CheckpointDiff = lazy(() =>
-  import('../files/saved-file-diff').then(({ CheckpointDiff }) => ({ default: CheckpointDiff })),
+const CheckoutChanges = lazy(() =>
+  import('./checkout-changes').then(({ CheckoutChanges }) => ({ default: CheckoutChanges })),
 )
-
-function CheckoutChanges({
-  repositoryId,
-  terminalId,
-}: {
-  repositoryId: string
-  terminalId?: string
-}) {
-  const { connected, request } = useWorkspace()
-  const [files, setFiles] = useState<ChangedFile[]>()
-  const [selected, setSelected] = useState('')
-  const [error, setError] = useState('')
-  const [attempt, setAttempt] = useState(0)
-  useEffect(() => {
-    if (!connected) return
-    let current = true
-    setError('')
-    void request(
-      terminalId ? '/api/terminals/workspace/changes' : '/api/scm/changes',
-      terminalId ? { id: terminalId } : { repositoryId },
-      responses.files,
-    ).then(
-      (response) => {
-        if (current) setFiles(response.files)
-      },
-      (cause: unknown) => {
-        if (current) setError(cause instanceof Error ? cause.message : String(cause))
-      },
-    )
-    return () => {
-      current = false
-    }
-  }, [attempt, connected, repositoryId, request, terminalId])
-  const file = files?.find((item) => item.path === selected) ?? files?.[0]
-  return (
-    <div className="min-h-0 flex-1 overflow-auto p-3 text-sm">
-      <div className="flex items-center gap-2">
-        {file && (
-          <select
-            aria-label="Changed file"
-            className="min-w-0 flex-1 rounded border bg-background px-2 py-1"
-            value={file.path}
-            onChange={(event) => setSelected(event.target.value)}
-          >
-            {files?.map((item) => (
-              <option key={item.path}>{item.path}</option>
-            ))}
-          </select>
-        )}
-        <Button
-          size="sm"
-          variant="ghost"
-          disabled={!connected}
-          onClick={() => setAttempt((value) => value + 1)}
-        >
-          Refresh
-        </Button>
-      </div>
-      {!connected && (
-        <p role="status" className="text-muted-foreground">
-          Reconnect to refresh checkout changes.
-        </p>
-      )}
-      {error && (
-        <p role="alert" className="text-destructive">
-          {error}
-        </p>
-      )}
-      {file ? (
-        <CheckpointDiff file={file} />
-      ) : (
-        connected &&
-        !error && (
-          <p role="status" className="text-muted-foreground">
-            {files ? 'No working tree changes.' : 'Loading changes…'}
-          </p>
-        )
-      )}
-    </div>
-  )
-}
 
 export function WorkspaceToolsFrame({
   scope,
@@ -138,6 +56,18 @@ export function WorkspaceToolsFrame({
   const [layout, setLayout] = useState(() => readRightPaneLayout(key))
   const [devTools, setDevTools] = useState<string | undefined>()
   const [browserLink, setBrowserLink] = useState<{ id: string; url: string } | null>(null)
+  // The open changed file belongs to one checkout. Another project, worktree or endpoint starts
+  // again, so a path with the same name in a different checkout is never reused.
+  const changesScope = terminal?.project
+    ? JSON.stringify([
+        terminal.profile.id,
+        terminal.id,
+        terminal.project.repositoryId,
+        terminal.project.worktree ?? '',
+        terminal.supported,
+      ])
+    : ''
+  const [changedFile, setChangedFile] = useState({ scope: '', path: '' })
   const available: RightPaneTab[] = ['browser']
   if (terminal) {
     available.push('side-chats', 'devices')
@@ -187,6 +117,7 @@ export function WorkspaceToolsFrame({
               label="Workspace tools"
               icon={<Wrench size={15} />}
               addable={available}
+              open={tabs}
               onAdd={select}
               onDevTools={openDevTools}
               tabLabels={labels}
@@ -260,8 +191,11 @@ export function WorkspaceToolsFrame({
                   <WorkspaceScope profile={terminal.profile}>
                     {active === 'changes' && terminal.project ? (
                       <CheckoutChanges
+                        key={changesScope}
                         repositoryId={terminal.project.repositoryId}
                         terminalId={terminal.supported ? terminal.id : undefined}
+                        selected={changedFile.scope === changesScope ? changedFile.path : ''}
+                        onSelect={(path) => setChangedFile({ scope: changesScope, path })}
                       />
                     ) : !terminal.supported ? (
                       <p role="status" className="p-3 text-xs text-muted-foreground">

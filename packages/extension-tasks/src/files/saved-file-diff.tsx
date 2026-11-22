@@ -28,6 +28,9 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
       ? parsed
       : null
   const diff = current?.diff
+  const separator = file.path.lastIndexOf('/')
+  const name = file.path.slice(separator + 1)
+  const folder = separator > 0 ? file.path.slice(0, separator) : ''
   useEffect(() => {
     if (file.before === file.after) return
     const input = { path: file.path, before: file.before, after: file.after }
@@ -64,23 +67,32 @@ export function CheckpointDiff({ file }: { file: ChangedFile }) {
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
       <div className="flex shrink-0 flex-wrap items-center gap-2 border-b bg-muted/20 px-3 py-2">
-        <span className="min-w-0 flex-1 truncate font-mono text-xs" title={file.path}>
-          {file.path}
+        {/* Lead with the file name. The folder shrinks first; a long name then truncates too.
+            The title and the text keep the full path. */}
+        <span
+          className="flex min-w-0 flex-1 items-baseline gap-1.5 font-mono text-xs"
+          title={file.path}
+        >
+          <span className="min-w-0 truncate">{name}</span>
+          {folder && (
+            <span className="min-w-0 shrink-[1000] truncate text-muted-foreground">{folder}</span>
+          )}
         </span>
         <DiffAmounts stats={stats} />
+        {/* Fixed labels stay inside the accessible names. Pressed toggles use the IconButton style. */}
         <Button
           size="sm"
-          variant="ghost"
+          variant={split ? 'secondary' : 'ghost'}
           className="h-6 px-2 text-[0.6875rem]"
           aria-label="Split diff"
           aria-pressed={split}
           onClick={() => setSplit((value) => !value)}
         >
-          {split ? 'Split' : 'Unified'}
+          Split
         </Button>
         <Button
           size="sm"
-          variant="ghost"
+          variant={overflow === 'wrap' ? 'secondary' : 'ghost'}
           className="h-6 px-2 text-[0.6875rem]"
           aria-label="Wrap diff lines"
           aria-pressed={overflow === 'wrap'}

@@ -26,6 +26,11 @@ Cancel remains available if a refresh removes the file or replaces its text with
 inline PR drafts retain their original revision and range across pushes; stale drafts cannot post
 against the new revision.
 
+Desktop and web diff headers show the file name first and then its folder. In a narrow pane the
+folder shortens first. A very long file name then shortens too. Point at the header to see the full
+path. **Split** and **Wrap** are toggle buttons. A highlighted button is on. Their accessible names
+are "Split diff" and "Wrap diff lines".
+
 Desktop/web PR diffs mount as files enter the viewport; file navigation loads the destination
 directly. Loaded diffs stay mounted to preserve inline drafts. Mobile renders only the selected
 file. Both viewers honor `.gitattributes` from the exact PR head commit: `binary` and `-diff`

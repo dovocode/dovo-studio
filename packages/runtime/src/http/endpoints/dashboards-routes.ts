@@ -3,6 +3,7 @@ import { isDeepStrictEqual } from 'node:util'
 import { Effect } from 'effect'
 import {
   decode,
+  needsStudioDataSources,
   dashboardDeleteRequestSchema,
   dashboardListRequestSchema,
   dashboardReadRequestSchema,
@@ -105,9 +106,14 @@ export function dashboardsRoute(
       if (agentAccess) throw new HttpError(403, 'Dashboards require a paired human client')
       const device = s.devices.authenticate(token)
       if (path === '/api/dashboards/list') {
-        decode(dashboardListRequestSchema, yield* serviceResult(body(request)))
+        const input = decode(dashboardListRequestSchema, yield* serviceResult(body(request)))
         s.devices.authenticate(token)
-        return { dashboards: s.dashboards.list() }
+        const dashboards = s.dashboards.list()
+        return {
+          dashboards: input.dataSources
+            ? dashboards
+            : dashboards.filter((dashboard) => !needsStudioDataSources(dashboard)),
+        }
       }
       if (path === '/api/dashboards/save') {
         const input = decode(
@@ -124,12 +130,18 @@ export function dashboardsRoute(
         s.dashboards.delete(input.id, input.expectedRevision)
         return { ok: true as const }
       }
-      if (path === '/api/dashboards/read') {
+      if (path === '/api/dashboards/read' || path === '/api/dashboards/command-data') {
         const input = decode(dashboardReadRequestSchema, yield* serviceResult(body(request)))
         return yield* runtimeOperation(() =>
-          s.dashboards.read(input.id, input.tileId, input.expectedRevision, () => {
-            s.devices.authenticate(token)
-          }),
+          s.dashboards.read(
+            input.id,
+            input.tileId,
+            input.expectedRevision,
+            () => {
+              s.devices.authenticate(token)
+            },
+            path === '/api/dashboards/command-data',
+          ),
         )
       }
       if (path === '/api/dashboards/session') {

@@ -87,7 +87,13 @@ export function ActivityBar({
   onCheckUpdates,
   onDetachBrowser,
   indicators,
+  extensionPages,
+  activeExtensionPage,
+  onOpenExtensionPage,
 }: {
+  extensionPages?: readonly (StudioNavigation & { entityId: string; title: string })[]
+  activeExtensionPage?: string
+  onOpenExtensionPage?: (page: StudioNavigation) => void
   views: readonly StudioView[]
   activeId: string
   onSelect: (id: string) => void
@@ -215,6 +221,23 @@ export function ActivityBar({
             })}
           </div>
         ))}
+      {!!extensionPages?.length && (
+        <div
+          className="studio-navigation-group"
+          role="group"
+          aria-label={uiText('Extension pages')}
+        >
+          {extensionPages.map((page) =>
+            item(
+              page.entityId,
+              page.title,
+              PanelsTopLeft,
+              activeExtensionPage === page.entityId,
+              () => onOpenExtensionPage?.({ viewId: page.viewId, entityId: page.entityId }),
+            ),
+          )}
+        </div>
+      )}
       <div className="studio-navigation-settings">
         {(onCheckUpdates || onUpdate) && (
           <Popover.Root open={updateOpen} onOpenChange={setUpdateOpen}>
