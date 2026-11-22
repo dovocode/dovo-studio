@@ -22,6 +22,7 @@ export {composerRecoveryKey,createComposerRecovery,composerCaretRecoveryKey} fro
     export const useStudioHost=()=>useContext(Host);
     export const SettingsTargetProvider=({children})=>children;
     export * from '${root}packages/studio-core/src/shortcuts.ts';
+export {useStudioExtensions,extensionComponentVersion} from '${root}packages/studio-core/src/studio-extensions.ts';
 export const readAppPreferences=()=>({shortcutOverrides:{},savedFilterViews:[],interfaceLanguage:'en-US',botsOverviewEnabled:true,lastThreadId:'mac-a',showIssues:true,showJira:true,browserWorkspaceEnabled:true,browserProfiles:[]});
     export const useAppPreferences=readAppPreferences;export const updateAppPreferences=changes=>{(window.preferenceWrites??=[]).push(changes)};
     export const useAppPreferenceSaveError=()=>null;export const retryAppPreferences=()=>true;
