@@ -41,7 +41,7 @@ try {
       'expo-document-picker': `export const getDocumentAsync=async()=>({canceled:true});`,
       'expo-clipboard': `export const getImageAsync=async()=>null;`,
       'expo-crypto': `let id=0;export const randomUUID=()=>"00000000-0000-4000-8000-"+String(++id).padStart(12,'0');`,
-      'expo-file-system': `const files=new Map([['file://note.txt','hello']]);export const Paths={cache:'cache'};export class File{constructor(...parts){this.uri=parts.join('/')}get exists(){return files.has(this.uri)}get size(){return (files.get(this.uri)??'').length}async base64(){return btoa(files.get(this.uri)??'')}write(data){files.set(this.uri,atob(data))}delete(){files.delete(this.uri)}}`,
+      'expo-file-system': `const files=new Map([['file://note.txt','hello']]);export const Paths={cache:'cache'};export class File{constructor(...parts){this.uri=parts.join('/')}get exists(){return files.has(this.uri)}get size(){return (files.get(this.uri)??'').length}async base64(){return btoa(files.get(this.uri)??'')}async copy(destination){if(!this.exists)throw Error('Source file missing');files.set(destination.uri,files.get(this.uri))}write(data){files.set(this.uri,atob(data))}delete(){files.delete(this.uri)}}`,
     }
     const built = await build({
       stdin: {
