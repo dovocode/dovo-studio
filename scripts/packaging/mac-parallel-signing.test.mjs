@@ -200,6 +200,59 @@ await test('installed signer bounds concurrency, isolates bundle executables and
   assert.ok(commands.at(-1).includes('--display'))
 })
 
+await test('retries the affected file when codesign reports a missing timestamp', async (t) => {
+  const f = await fixture(t)
+  const attempts = []
+  const signed = new Set()
+  const execute = mock.method(transport, 'execFileAsync', async (command, args) => {
+    assert.equal(command, 'codesign')
+    const file = args.at(-1)
+    if (args.includes('--sign')) {
+      if (file === f.parallel[0]) {
+        attempts.push(args)
+        if (attempts.length === 1) {
+          throw new Error(
+            `Command failed: codesign\n${file}: A timestamp was expected but was not found.\n`,
+          )
+        }
+      }
+      assert.ok(!signed.has(file), file)
+      signed.add(file)
+    } else {
+      assert.ok(signed.has(f.parallel[0]))
+      assert.ok(signed.has(f.app))
+    }
+    return ''
+  })
+  t.after(() => execute.mock.restore())
+  await signAsync(options(f))
+  assert.equal(attempts.length, 2)
+  assert.deepEqual(attempts[0], attempts[1])
+  assert.equal(
+    execute.mock.calls.filter(({ arguments: [, args] }) => args.includes('--verify')).length,
+    1,
+  )
+})
+
+await test('reports the last timestamp failure after three attempts', async (t) => {
+  const f = await fixture(t)
+  const failures = []
+  const execute = mock.method(transport, 'execFileAsync', async (_command, args) => {
+    assert.ok(args.includes('--sign'), 'Failure must prevent verification')
+    const file = args.at(-1)
+    assert.notEqual(file, f.app, 'Failure must prevent signing the enclosing app')
+    if (file === f.parallel[0]) {
+      const error = new Error(`${file}: A timestamp was expected but was not found.`)
+      failures.push(error)
+      throw error
+    }
+    return ''
+  })
+  t.after(() => execute.mock.restore())
+  await assert.rejects(signAsync(options(f)), (error) => error === failures.at(-1))
+  assert.equal(failures.length, 3)
+})
+
 await test('failed signatures stop new work and drain active tasks before rejecting', async (t) => {
   const f = await fixture(t)
   const failure = new Error('timestamp service failed')

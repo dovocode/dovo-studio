@@ -25,9 +25,22 @@ index 080036e410e2e4b0445f841416b3d5966915c66a..5242b7ba131dba6d208ab21880e289b0
          }
          const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
          // preAutoEntitlements should only be applied to the top level app bundle.
-@@ -265,6 +268,59 @@ async function signApplication(opts, identity) {
+@@ -265,6 +268,71 @@ async function signApplication(opts, identity) {
          }
-         await (0, util_1.execFileAsync)('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
+-        await (0, util_1.execFileAsync)('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
++        const signArgs = perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath);
++        for (let attempt = 1; ; attempt++) {
++            try {
++                await (0, util_1.execFileAsync)('codesign', signArgs);
++                return;
++            }
++            catch (error) {
++                if (attempt === 3 || !(error instanceof Error) ||
++                    !error.message.trimEnd().endsWith('A timestamp was expected but was not found.')) throw error;
++                (0, util_1.debugLog)('Retrying missing timestamp for ' + filePath);
++                await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
++            }
++        }
      }
 +    const concurrency = opts.signingConcurrency || 1;
 +    if (concurrency === 1) {
@@ -173,9 +186,22 @@ index c1615966d19abb6e9ee7b0a8afd76ad011c6d382..3cf28695ce0c0fc2380db9b80d736827
          }
          const perFileOptions = await mergeOptionsForFile(opts.optionsForFile ? opts.optionsForFile(filePath) : null, defaultOptionsForFile(filePath, opts.platform));
          // preAutoEntitlements should only be applied to the top level app bundle.
-@@ -236,6 +239,59 @@ async function signApplication(opts, identity) {
+@@ -236,6 +239,71 @@ async function signApplication(opts, identity) {
          }
-         await execFileAsync('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
+-        await execFileAsync('codesign', perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath));
++        const signArgs = perFileArgs.concat('--entitlements', perFileOptions.entitlements, filePath);
++        for (let attempt = 1; ; attempt++) {
++            try {
++                await execFileAsync('codesign', signArgs);
++                return;
++            }
++            catch (error) {
++                if (attempt === 3 || !(error instanceof Error) ||
++                    !error.message.trimEnd().endsWith('A timestamp was expected but was not found.')) throw error;
++                debugLog('Retrying missing timestamp for ' + filePath);
++                await new Promise((resolve) => setTimeout(resolve, attempt * 1000));
++            }
++        }
      }
 +    const concurrency = opts.signingConcurrency || 1;
 +    if (concurrency === 1) {
