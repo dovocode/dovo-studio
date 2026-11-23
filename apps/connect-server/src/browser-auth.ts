@@ -4,12 +4,15 @@ import type { IdentityProvider } from './oidc.js'
 import { html, RequestError } from './http.js'
 import { connectConsent, connectSuccess } from './pages.js'
 import type { Organization } from './organizations.js'
+import type { RemoteMcp } from './remote-mcp.js'
+import { remoteMcpSignIn } from './remote-mcp-pages.js'
 
 export function browserAuth(
   options: {
     store: AccountStore
     origin: string
     organizations?: readonly Organization[]
+    remoteMcp?: RemoteMcp
   } & IdentityProvider,
 ) {
   const { store, origin } = options
@@ -26,7 +29,13 @@ export function browserAuth(
         'Set-Cookie',
         `${cookieName}=${login.id}.${browser}; Max-Age=300; ${cookieFlags}`,
       )
-      html(res, 200, connectConsent(login, options.organizations ?? []))
+      if (login.remoteMcp && !options.remoteMcp)
+        throw new RequestError(403, 'Remote MCP is disabled.')
+      html(
+        res,
+        200,
+        login.remoteMcp ? remoteMcpSignIn() : connectConsent(login, options.organizations ?? []),
+      )
       return true
     }
     const browserLogin = () => {
@@ -79,6 +88,11 @@ export function browserAuth(
           req.headers,
         )
         store.approve(login, user)
+        if (login.remoteMcp) {
+          if (!options.remoteMcp) throw new RequestError(403, 'Remote MCP is disabled.')
+          options.remoteMcp.signedIn(login, user.id, req, res)
+          return true
+        }
       } catch (error) {
         store.cancelLogin(login)
         throw error

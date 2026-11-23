@@ -9,11 +9,13 @@ import {
 import { bearerToken, json, readJson, RequestError } from './http.js'
 import type { InternetStore } from './internet-store.js'
 import type { PeerRelay } from '@dovo/protocol'
+import type { RemoteMcpMailbox } from './remote-mcp-mailbox.js'
 export function internetApi(
   store: InternetStore,
   relay?: (
     host: NonNullable<ReturnType<InternetStore['host']>>,
   ) => Promise<{ name: string; relay?: PeerRelay; unavailable?: true } | undefined>,
+  mailbox?: RemoteMcpMailbox,
 ) {
   return async (req: IncomingMessage, res: ServerResponse, url: URL) => {
     if (!url.pathname.startsWith('/v1/internet/')) return false
@@ -28,8 +30,14 @@ export function internetApi(
       const inbox = store.inbox(token)
       const host = store.host(token)
       const organizationRelay = host && (await relay?.(host))
-      if (!store.host(token)) throw new RequestError(401, 'Internet access has been revoked')
-      return json(res, 200, { ...inbox, ...(organizationRelay ? { organizationRelay } : {}) })
+      const current = store.host(token)
+      if (!current) throw new RequestError(401, 'Internet access has been revoked')
+      const mcp = url.searchParams.get('remoteMcp') === '1' ? mailbox?.offer(current) : undefined
+      return json(res, 200, {
+        ...inbox,
+        ...(organizationRelay ? { organizationRelay } : {}),
+        ...(mcp ? { mcp } : {}),
+      })
     }
     if (req.method === 'POST' && url.pathname === '/v1/internet/host/block') {
       const input = decode(Schema.Struct({ session: Schema.String }), await readJson(req))

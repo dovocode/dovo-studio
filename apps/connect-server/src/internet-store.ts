@@ -69,8 +69,18 @@ export class InternetStore {
       identity: String(row.identity),
       publicKey: String(row.public_key),
       session: String(row.session),
+      installation: hash(grant),
       seen: Number(row.seen),
     }
+  }
+  installation(user: string, id: string) {
+    if (this.accounts.deleting(user)) return
+    const row = this.accounts.db
+      .prepare(
+        'SELECT h.grant_hash,h.name FROM internet_hosts h JOIN sessions s ON s.token=h.session WHERE h.user=? AND h.id=? AND s.expires>?',
+      )
+      .get(user, id, this.accounts.now())
+    if (typeof row?.grant_hash === 'string') return { id: row.grant_hash, name: String(row.name) }
   }
   remove(user: string, id: string) {
     this.accounts.db.prepare('DELETE FROM internet_blocks WHERE user=? AND host=?').run(user, id)

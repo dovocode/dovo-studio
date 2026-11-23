@@ -13,6 +13,9 @@ import {
   peerAddress,
   peerConfigSchema,
   peerRelaySchema,
+  remoteMcpClaimSchema,
+  remoteMcpOfferSchema,
+  type RemoteMcpClaim,
   type PeerConfig,
   type InternetRegistration,
 } from '@dovo/protocol'
@@ -29,6 +32,7 @@ const inboxSchema = Schema.Struct({
     }),
   ),
   active: Schema.Array(Schema.String),
+  mcp: Schema.optional(remoteMcpOfferSchema),
   requests: Schema.Array(
     Schema.Struct({ id: Schema.String, publicKey: Schema.String, session: Schema.String }),
   ),
@@ -46,6 +50,8 @@ export class AccountInternet {
   private timer?: ReturnType<typeof setTimeout>
   private controllers = new Set<AbortController>()
   private provisioning?: Promise<void>
+  private mcpWork?: Promise<void>
+  private mcp?: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>
   private polling = new Set<Promise<void>>()
   private generation = 0
   private lease = 0
@@ -308,13 +314,23 @@ export class AccountInternet {
     this.polling.add(pending)
     return pending
   }
+  enableRemoteMcp(handler: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>) {
+    this.mcp = handler
+  }
   private async refresh() {
     if (!this.running || !this.state) return
     if (this.timer) clearTimeout(this.timer)
     const generation = this.generation,
       state = this.state
     try {
-      const inbox = decode(inboxSchema, await this.request('/v1/internet/host', state.grant))
+      const remoteMcp = !!this.mcp && this.peers.relay.connectionMode() !== 'lan'
+      const inbox = decode(
+        inboxSchema,
+        await this.request(
+          remoteMcp ? '/v1/internet/host?remoteMcp=1' : '/v1/internet/host',
+          state.grant,
+        ),
+      )
       if (generation !== this.generation) return
       if (
         inbox.organizationRelay?.relay &&
@@ -330,6 +346,14 @@ export class AccountInternet {
       this.error = ''
       this.activeRequests = new Set(inbox.active)
       this.removeExcept(this.activeRequests)
+      if (remoteMcp && inbox.mcp && !this.mcpWork) {
+        const pending = this.handleRemoteMcp(inbox.mcp.id, state.grant, generation)
+          .catch(() => {})
+          .finally(() => {
+            if (this.mcpWork === pending) this.mcpWork = undefined
+          })
+        this.mcpWork = pending
+      }
       // Authentication has its own cadence: signaling setup and broker writes must never
       // consume the short authorization lease. Keep one pass even across disable/re-enable:
       // an old generation must finish its device cleanup before its replacement provisions.
@@ -349,6 +373,43 @@ export class AccountInternet {
         this.timer.unref()
       }
     }
+  }
+  private async handleRemoteMcp(id: string, grant: string, generation: number) {
+    const deadline = Date.now() + 12000
+    const authorize = () => {
+      if (
+        generation !== this.generation ||
+        !this.running ||
+        Math.min(deadline, this.lease) <= Date.now() ||
+        this.peers.relay.connectionMode() === 'lan'
+      )
+        throw new HttpError(403, 'Remote MCP is disabled on this computer.')
+    }
+    authorize()
+    const claim = decode(
+      remoteMcpClaimSchema,
+      await this.request('/v1/internet/host/mcp/claim', grant, 'POST', { id }),
+    )
+    if (claim.id !== id) throw new HttpError(403, 'MCP claim did not match this request.')
+    let reply: unknown
+    try {
+      authorize()
+      const result = await this.mcp!(claim, authorize)
+      reply = { id, ok: true, result: result ?? null }
+      if (Buffer.byteLength(JSON.stringify(reply)) > 262144)
+        throw new HttpError(413, 'MCP response exceeded its size limit.')
+    } catch (error) {
+      reply = {
+        id,
+        ok: false,
+        error:
+          error instanceof HttpError
+            ? error.message.slice(0, 1000)
+            : 'The runtime could not complete the Studio operation.',
+      }
+    }
+    authorize()
+    await this.request('/v1/internet/host/mcp/reply', grant, 'POST', reply)
   }
   private async failed(error: unknown, generation: number) {
     if (generation !== this.generation) return
@@ -495,6 +556,7 @@ export class AccountInternet {
   async drain() {
     const pending = [...this.polling]
     if (this.provisioning) pending.push(this.provisioning)
+    if (this.mcpWork) pending.push(this.mcpWork)
     // Observe every owned continuation even if another one fails during shutdown.
     const settled = await Promise.allSettled(pending)
     for (const result of settled) if (result.status === 'rejected') throw result.reason

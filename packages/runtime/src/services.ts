@@ -1,3 +1,4 @@
+import { remoteMcpTool } from './studio/remote-mcp.js'
 import { studioDataDirectory } from './dashboards/data-sources.js'
 import { StudioExtensions } from './studio-extensions/extensions.js'
 import { Dashboards } from './dashboards/dashboards.js'
@@ -727,6 +728,10 @@ export function createServices(
   }
   // Before any thread can run, apply the latest move decisions, including after a backup restore.
   reconcileTransferOwnership(db, store)
+  if (process.env.DOVO_REMOTE_MCP === '1')
+    services.peers.internet.enableRemoteMcp((claim, authorize) =>
+      remoteMcpTool(services, claim, authorize),
+    )
   return services
 }
 export interface Services {

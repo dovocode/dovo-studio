@@ -21,3 +21,4 @@ check_cases() {
 check_cases ProviderRecovery.lean provider-recovery-cases.jsonl
 check_cases RuntimeRegistry.lean runtime-registry-cases.jsonl
 check_cases SendReceipts.lean send-receipt-cases.jsonl
+check_cases RemoteMcp.lean remote-mcp-cases.jsonl

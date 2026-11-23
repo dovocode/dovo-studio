@@ -17,6 +17,14 @@ export type Login = {
   browserHash?: string
   organization?: string
   artifactsOrigin?: string
+  remoteMcp?: RemoteMcpLogin | 'manage'
+}
+export type RemoteMcpLogin = {
+  runtimeId: string
+  clientId: string
+  redirect: string
+  challenge: string
+  state?: string
 }
 export class AccountStore {
   private organizations: ReadonlyMap<string, string> = new Map()
@@ -433,11 +441,21 @@ export class AccountStore {
         'sharing_key_sync',
         'sharing_key_identity',
         'sharing_key_recovery',
+        'remote_mcp_grants',
       ]) {
         if (
           this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)
         )
           this.db.prepare(`DELETE FROM ${table} WHERE user=?`).run(user)
+      }
+      for (const [table, path] of [
+        ['remote_mcp_browser', '$.user'],
+        ['remote_mcp_codes', '$.grant.user'],
+      ]) {
+        if (
+          this.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name=?").get(table)
+        )
+          this.db.prepare(`DELETE FROM ${table} WHERE json_extract(value,?)=?`).run(path, user)
       }
       this.db.prepare('DELETE FROM users WHERE id=?').run(user)
       this.db.prepare('DELETE FROM organization_identities WHERE user=?').run(user)

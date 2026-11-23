@@ -1,0 +1,291 @@
+import { createServer, type Server as HttpServer } from 'node:http'
+import { createHash, randomBytes } from 'node:crypto'
+import { once } from 'node:events'
+import { afterEach, expect, it, vi } from 'vite-plus/test'
+import { Client } from '@modelcontextprotocol/sdk/client/index.js'
+import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
+import { AccountStore } from '../../../../apps/connect-server/src/store.js'
+import { createConnectServer } from '../../../../apps/connect-server/src/server.js'
+import { fixture } from '../testing/fixture.js'
+import { startRuntime } from '../index.js'
+import type { AgentAdapter } from '../agents/execution/types.js'
+
+const cleanup: (() => void | Promise<void>)[] = []
+afterEach(async () => {
+  for (const close of cleanup.splice(0).reverse()) await close()
+  vi.unstubAllEnvs()
+  vi.restoreAllMocks()
+})
+
+it('links an OAuth app to a Connect computer, starts one agent on retry and revokes access', async () => {
+  const workspace = await fixture()
+  cleanup.push(workspace.cleanup)
+  const accounts = new AccountStore(':memory:')
+  cleanup.push(() => accounts.db.close())
+  let connect: HttpServer
+  const front = createServer((req, res) => connect.emit('request', req, res))
+  front.listen(0, '127.0.0.1')
+  await once(front, 'listening')
+  const address = front.address()
+  if (!address || typeof address === 'string') throw new Error('No broker port')
+  const origin = 'http://127.0.0.1:' + address.port
+  connect = createConnectServer({
+    store: accounts,
+    origin,
+    remoteMcp: true,
+    authorizationOrigin: 'https://identity.example',
+    authorize: async (login) => {
+      login.state = 'identity-state'
+      return 'https://identity.example/authorize'
+    },
+    exchange: async () => ({ id: 'owner', name: 'Owner' }),
+  })
+  cleanup.push(() => {
+    connect.close()
+    front.closeAllConnections()
+    return new Promise<void>((resolve, reject) =>
+      front.close((error) => (error ? reject(error) : resolve())),
+    )
+  })
+  vi.stubEnv('DOVO_CONNECT_ORIGIN', origin)
+  vi.stubEnv('DOVO_REMOTE_MCP', '1')
+  const runtime = await startRuntime({
+    databasePath: ':memory:',
+    ownerToken: 'remote-mcp-local-test-owner-token',
+  })
+  cleanup.push(runtime.close)
+  const { services: s } = runtime
+  s.store.update(() => workspace.workspace)
+  s.preferences.save({ enableStudioThreads: true, enableStudioAutomations: true })
+  const ran = vi.fn<AgentAdapter['run']>(async (run) => {
+    run.onText('Remote MCP answer')
+    if (run.prompt.includes('One follow-up') && !run.signal.aborted)
+      await new Promise<void>((resolve) =>
+        run.signal.addEventListener('abort', () => resolve(), { once: true }),
+      )
+  })
+  vi.spyOn(s.agents, 'get').mockResolvedValue({ probe: vi.fn<AgentAdapter['probe']>(), run: ran })
+  const account = accounts.createLogin()
+  accounts.approve(account.login, { id: 'owner', name: 'Owner' })
+  const runtimeId = s.runtimeId
+  await s.peers.internet.enable(account.token, runtimeId, 'Fixture computer')
+
+  const request = (path: string, options?: RequestInit) =>
+    fetch(new URL(path, origin), { redirect: 'manual', ...options })
+  const browser = (path: string, cookie?: string, body?: URLSearchParams) =>
+    request(path, {
+      ...(body ? { method: 'POST', body } : {}),
+      headers: { Origin: origin, ...(cookie ? { Cookie: cookie } : {}) },
+    })
+  const authorizeBrowser = async (path: string) => {
+    const begin = await request(path)
+    expect(begin.status).toBe(303)
+    const signIn = await browser(begin.headers.get('location')!)
+    const cookie = signIn.headers.get('set-cookie')!.split(';')[0]
+    expect((await browser('/auth/authorize', cookie, new URLSearchParams())).status).toBe(303)
+    const complete = await browser('/auth/callback?state=identity-state&code=valid', cookie)
+    return { cookie, complete }
+  }
+
+  const endpoint = '/mcp/' + runtimeId
+  const resource = origin + endpoint
+  const issuer = '/mcp-oauth/' + runtimeId
+  const unauthenticated = await request(endpoint)
+  expect(unauthenticated.status).toBe(401)
+  expect(unauthenticated.headers.get('www-authenticate')).toContain('oauth-protected-resource')
+  expect(
+    await (await request('/.well-known/oauth-protected-resource' + endpoint)).json(),
+  ).toMatchObject({
+    resource,
+    authorization_servers: [origin + issuer],
+  })
+  expect(
+    await (await request('/.well-known/oauth-authorization-server' + issuer)).json(),
+  ).toMatchObject({
+    issuer: origin + issuer,
+    code_challenge_methods_supported: ['S256'],
+  })
+  const callback = 'https://assistant.example/dovo/callback'
+  const registration = await request(issuer + '/register', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      client_name: 'Fixture AI',
+      redirect_uris: [callback],
+      token_endpoint_auth_method: 'none',
+    }),
+  })
+  expect(registration.status).toBe(201)
+  const { client_id } = await registration.json()
+  const verifier = randomBytes(32).toString('base64url')
+  const challenge = createHash('sha256').update(verifier).digest('base64url')
+  const params = new URLSearchParams({
+    client_id,
+    redirect_uri: callback,
+    resource,
+    response_type: 'code',
+    code_challenge: challenge,
+    code_challenge_method: 'S256',
+    state: 'external-client-state',
+  })
+  const { cookie, complete } = await authorizeBrowser(issuer + '/authorize?' + params.toString())
+  expect(complete.status).toBe(200)
+  expect(complete.headers.get('content-security-policy')).toContain(
+    "form-action 'self' https://assistant.example;",
+  )
+  expect(await complete.text()).toContain('Fixture computer')
+  const consent = await browser('/mcp/approve', cookie, new URLSearchParams({ access: 'run' }))
+  expect(consent.status).toBe(303)
+  const returned = new URL(consent.headers.get('location')!)
+  expect(returned.searchParams.get('state')).toBe('external-client-state')
+  const code = returned.searchParams.get('code')!
+  const exchange = (code_verifier: string) =>
+    request(issuer + '/token', {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id,
+        code,
+        code_verifier,
+        redirect_uri: callback,
+        resource,
+      }),
+    })
+  expect((await exchange('x'.repeat(43))).status).toBe(400)
+  const token = await (await exchange(verifier)).json()
+  expect(token).toMatchObject({ token_type: 'Bearer', scope: 'dovo:studio' })
+  expect((await exchange(verifier)).status).toBe(400)
+  expect(
+    (
+      await request('/mcp/different-computer', {
+        headers: { Authorization: 'Bearer ' + token.access_token },
+      })
+    ).status,
+  ).toBe(401)
+
+  const client = new Client({ name: 'fixture-assistant', version: '1' })
+  const transport = new StreamableHTTPClientTransport(new URL(resource), {
+    requestInit: { headers: { Authorization: 'Bearer ' + token.access_token } },
+  })
+  cleanup.push(() => client.close())
+  await client.connect(transport)
+  expect((await client.listTools()).tools.map(({ name }) => name)).toEqual([
+    'dovo_discover',
+    'dovo_threads',
+    'dovo_automations',
+  ])
+  const call = async (arguments_: Record<string, unknown>) => {
+    const response = await client.callTool({ name: 'dovo_threads', arguments: arguments_ })
+    expect(response).not.toMatchObject({ isError: true })
+    return JSON.parse((response.content as { text: string }[])[0].text)
+  }
+  const launch = {
+    action: 'create',
+    title: 'External launch',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    prompt: 'Read the project and respond.',
+    requestId: 'external-launch-1',
+    start: true,
+  }
+  const escalation = await client.callTool({
+    name: 'dovo_threads',
+    arguments: {
+      ...launch,
+      allowPermissionIncrease: true,
+      agentOverrides: { permission: 'full-access' },
+    },
+  })
+  expect(escalation.isError).toBe(true)
+  expect(ran).not.toHaveBeenCalled()
+  const admitted = await call(launch)
+  expect(admitted.startError).toBeUndefined()
+  expect(admitted.id).toBeTruthy()
+  const retried = await call(launch)
+  expect(retried.id).toBe(admitted.id)
+  expect(s.store.get().tasks.filter((task) => task.title === launch.title)).toHaveLength(1)
+  expect(s.store.task(admitted.id).agentOverrides?.permission).toBe('ask')
+  expect(ran).toHaveBeenCalledTimes(1)
+  expect(JSON.stringify(await call({ action: 'read', id: admitted.id }))).toContain(
+    'Remote MCP answer',
+  )
+  await call({
+    action: 'send',
+    id: admitted.id,
+    text: 'One follow-up',
+    messageId: 'external-follow-up-1',
+  })
+  expect(
+    s.store.task(admitted.id).messages.filter((message) => message.id === 'external-follow-up-1'),
+  ).toHaveLength(1)
+
+  await call({ action: 'stop', id: admitted.id })
+  await vi.waitFor(() => expect(s.store.task(admitted.id).activeRunId).toBeUndefined())
+  const refresh = () =>
+    request(issuer + '/token', {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'refresh_token',
+        client_id,
+        refresh_token: token.refresh_token,
+        resource,
+      }),
+    })
+  const rotated = await (await refresh()).json()
+  expect(rotated.access_token).toBeTruthy()
+  expect((await refresh()).status).toBe(400)
+  expect(
+    (await request(endpoint, { headers: { Authorization: 'Bearer ' + token.access_token } }))
+      .status,
+  ).toBe(401)
+  const management = await authorizeBrowser('/mcp/manage')
+  expect(management.complete.status).toBe(303)
+  const page = await (await browser('/mcp/manage', management.cookie)).text()
+  expect(page).toContain(resource)
+  const field = /<input[^>]+name="grant"[^>]*>/.exec(page)?.[0] ?? ''
+  const grant = /value="([a-zA-Z0-9_-]+)"/.exec(field)?.[1]
+  expect(grant).toBeTruthy()
+  expect(
+    (await browser('/mcp/manage/revoke', management.cookie, new URLSearchParams({ grant: grant! })))
+      .status,
+  ).toBe(303)
+  expect(
+    (await request(endpoint, { headers: { Authorization: 'Bearer ' + rotated.access_token } }))
+      .status,
+  ).toBe(401)
+  const readSignIn = await authorizeBrowser(issuer + '/authorize?' + params.toString())
+  const readConsent = await browser(
+    '/mcp/approve',
+    readSignIn.cookie,
+    new URLSearchParams({ access: 'read' }),
+  )
+  const readCode = new URL(readConsent.headers.get('location')!).searchParams.get('code')!
+  const readToken = await (
+    await request(issuer + '/token', {
+      method: 'POST',
+      body: new URLSearchParams({
+        grant_type: 'authorization_code',
+        client_id,
+        code: readCode,
+        code_verifier: verifier,
+        redirect_uri: callback,
+        resource,
+      }),
+    })
+  ).json()
+  const readClient = new Client({ name: 'read-only-assistant', version: '1' })
+  cleanup.push(() => readClient.close())
+  await readClient.connect(
+    new StreamableHTTPClientTransport(new URL(resource), {
+      requestInit: { headers: { Authorization: 'Bearer ' + readToken.access_token } },
+    }),
+  )
+  expect((await readClient.callTool({ name: 'dovo_threads', arguments: launch })).isError).toBe(
+    true,
+  )
+  await s.peers.internet.disable()
+  expect(
+    (await request(endpoint, { headers: { Authorization: 'Bearer ' + readToken.access_token } }))
+      .status,
+  ).toBe(401)
+}, 40000)

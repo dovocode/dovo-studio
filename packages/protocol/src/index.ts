@@ -305,6 +305,7 @@ export * from './scm/work/pipeline-links.js'
 export * from './tasks/task-project-selection.js'
 
 export * from './runtime/studio-tools.js'
+export * from './runtime/remote-mcp.js'
 export * from './runtime/problem-reports.js'
 export * from './runtime/studio-reference.js'
 export * from './runtime/studio-peers.js'

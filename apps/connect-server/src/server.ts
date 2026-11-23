@@ -22,6 +22,7 @@ import { organizationRelay, type Organization } from './organizations.js'
 import { artifactApi, artifactServiceToken, type ArtifactService } from './artifact-api.js'
 import { sharingKeySyncApi } from './sharing-key-sync.js'
 import { sharingRecoveryApi } from './sharing-recovery.js'
+import { RemoteMcp } from './remote-mcp.js'
 
 export function createConnectServer(
   options: {
@@ -36,6 +37,7 @@ export function createConnectServer(
     artifacts?: ArtifactService
     sharing?: ArtifactService
     sharingRecoverySecret?: Uint8Array
+    remoteMcp?: boolean
   } & IdentityProvider,
 ) {
   const origin = new URL(options.origin).origin
@@ -45,7 +47,6 @@ export function createConnectServer(
     ),
   )
   const identityOrigin = new URL(options.authorizationOrigin).origin
-  const authenticate = browserAuth({ ...options, origin })
   const artifacts = artifactApi(options.store, origin, options.artifacts)
   const sharing = artifactApi(
     options.store,
@@ -58,8 +59,14 @@ export function createConnectServer(
   const pushStore = new PushStore(options.store)
   const push = pushApi(options.store, pushStore, options.push)
   const internetStore = new InternetStore(options.store, origin)
-  const internet = internetApi(internetStore, (host) =>
-    organizationRelay(options.organizations ?? [], options.store, host),
+  const remoteMcp = options.remoteMcp
+    ? new RemoteMcp(options.store, internetStore, origin)
+    : undefined
+  const authenticate = browserAuth({ ...options, origin, remoteMcp })
+  const internet = internetApi(
+    internetStore,
+    (host) => organizationRelay(options.organizations ?? [], options.store, host),
+    remoteMcp?.mailbox,
   )
   const account = accountApi(options.store, origin, options.deleteIdentity, internetStore)
   const limit = rateLimit(options.store.now)
@@ -115,6 +122,7 @@ export function createConnectServer(
                 : `ip:${address(req)}`,
       )
     if (await authenticate(req, res, url)) return
+    if (await remoteMcp?.handle(req, res, url)) return
     if (await sharingKeys(req, res, url)) return
     if (await sharingRecovery(req, res, url)) return
     if (url.pathname.startsWith('/v1/sharing/')) {
@@ -177,6 +185,7 @@ export function createConnectServer(
   const closeServer = server.close.bind(server)
   server.close = (callback) => {
     closeSignaling()
+    remoteMcp?.mailbox.close()
     const stopped = deletions?.stop()
     return closeServer((error) => void Promise.resolve(stopped).then(() => callback?.(error)))
   }

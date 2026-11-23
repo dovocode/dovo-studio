@@ -30,6 +30,7 @@ const unconfiguredSignIn = async () => {
 const server = createConnectServer({
   store,
   origin,
+  remoteMcp: process.env.DOVO_CONNECT_REMOTE_MCP === '1',
   sharingRecoverySecret: sharingRecoverySecret(
     join(root, 'sharing-recovery.key'),
     !!store.db.prepare('SELECT user FROM sharing_key_recovery LIMIT 1').get(),

@@ -21,16 +21,20 @@ export const html = (r: ServerResponse, status: number, content: string) => {
   r.writeHead(status, { 'Content-Type': 'text/html; charset=utf-8' })
   r.end(connectPage(content))
 }
-export const readJson = async (req: IncomingMessage) => {
+export const readBody = async (req: IncomingMessage, limit = 16_384) => {
   const chunks: Buffer[] = []
   let size = 0
   for await (const chunk of req) {
     size += chunk.length
-    if (size > 16_384) throw new RequestError(413, 'Request is too large')
+    if (size > limit) throw new RequestError(413, 'Request is too large')
     chunks.push(Buffer.from(chunk))
   }
+  return Buffer.concat(chunks).toString()
+}
+export const readJson = async (req: IncomingMessage, limit?: number) => {
+  const body = await readBody(req, limit)
   try {
-    return JSON.parse(Buffer.concat(chunks).toString()) as unknown
+    return JSON.parse(body) as unknown
   } catch {
     throw new RequestError(400, 'Invalid request')
   }

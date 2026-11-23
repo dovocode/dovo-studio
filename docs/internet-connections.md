@@ -1,5 +1,8 @@
 # Internet connections
 
+[Connect remote MCP](connect-remote-mcp.md) gives external AI apps their own access to Studio
+threads and automations on a selected Connect computer.
+
 For your own TURN server or organization OIDC and automatic relay distribution, see
 [Custom TURN and organization SSO](custom-turn-and-sso.md).
 
