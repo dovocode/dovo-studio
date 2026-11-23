@@ -186,11 +186,6 @@ export default {
   'Edits stay in the Bot draft. Select Save Bot to apply them. Shared definitions stay unchanged.':
     'Edits stay in the Bot draft. Select Save Bot to apply them. Shared definitions stay unchanged.',
   'MCP server': 'MCP server',
-  'MCP event': 'MCP event',
-  'Event name': 'Event name',
-  'Event arguments (JSON)': 'Event arguments (JSON)',
-  'Update this computer to configure MCP event triggers.':
-    'Update this computer to configure MCP event triggers.',
   Skill: 'Skill',
   Inherited: 'Inherited',
   'Bot override': 'Bot override',
@@ -4416,10 +4411,6 @@ export default {
   'Header bindings (JSON)': 'Header bindings (JSON)',
   'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.':
     'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.',
-  'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing lists tools and any advertised MCP Events.':
-    'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing lists tools and any advertised MCP Events.',
-  'Saved app or A2UI card': 'Saved app or A2UI card',
-  'MCP event · {value0} · {value1}': 'MCP event · {value0} · {value1}',
   'SKILL.md path on runtime': 'SKILL.md path on runtime',
   'Import SKILL.md': 'Import SKILL.md',
   'Skill name': 'Skill name',
