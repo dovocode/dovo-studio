@@ -30,7 +30,8 @@
     "./pull-code-review": "./src/scm/use-pull-code-review.ts",
     "./pull-reads": "./src/scm/pull-reads.ts",
     "./jira-reads": "./src/scm/jira-reads.ts",
-    "./interface-language": "./src/interface-language.tsx"
+    "./interface-language": "./src/interface-language.tsx",
+    "./working-change-preview": "./src/use-working-change-preview.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit"

@@ -182,6 +182,22 @@ export function extensionViewResultIds(view: ExtensionView) {
   )
 }
 
+function extensionViewNodeActions(node: ExtensionViewNode) {
+  return node.kind === 'button'
+    ? [node]
+    : node.kind === 'menu'
+      ? node.items
+      : node.kind === 'custom'
+        ? (node.component.actions ?? [])
+        : []
+}
+
+export function extensionViewActionIds(view: ExtensionView) {
+  return new Set(
+    view.nodes.flatMap((node) => extensionViewNodeActions(node).map(({ action }) => action)),
+  )
+}
+
 export function extensionViewIssue(
   view: ExtensionView,
   settings: ReadonlyMap<string, string | boolean>,
@@ -225,15 +241,7 @@ export function extensionViewIssue(
         if (choices.size !== node.items.length) return `Component ${node.id} has duplicate choices.`
       }
     }
-    const actions =
-      node.kind === 'button'
-        ? [node]
-        : node.kind === 'menu'
-          ? node.items
-          : node.kind === 'custom'
-            ? (node.component.actions ?? [])
-            : []
-    for (const { action } of actions)
+    for (const { action } of extensionViewNodeActions(node))
       if (!tools.has(action)) return `Unknown tool action: ${action}`
     if (
       node.kind === 'custom' &&

@@ -195,7 +195,11 @@ async function healthSection(s: Services, now = new Date()) {
       count: health.uncertain.count,
       kinds: health.uncertain.actions.slice(0, 20).map((item) => item.kind),
     },
-    backups: { active: health.backups.active, failure: health.backups.failure ?? null },
+    backups: {
+      active: health.backups.active,
+      progress: health.backups.progress,
+      failure: health.backups.failure ?? null,
+    },
     memory: health.memory && {
       rssBytes: health.memory.rssBytes,
       heapUsedBytes: health.memory.heapUsedBytes,

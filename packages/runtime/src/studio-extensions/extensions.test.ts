@@ -338,6 +338,16 @@ it('cancels a data read when the extension is disabled and a tool call after any
         signal.addEventListener('abort', () => reject(signal.reason), { once: true })
       }),
   )
+  await registry.sourcePolicy(
+    {
+      owner: 'extension',
+      id,
+      sourceId: 'status',
+      expectedRevision: 2,
+      policy: { access: 'session', autoLoad: false },
+    },
+    authorize,
+  )
   const tool = registry.command(
     { action: 'call', id, contributionId: 'status', expectedRevision: 2 },
     authorize,

@@ -55,6 +55,16 @@ it('browses and compares the standalone terminal checkout without creating a tas
     ).toMatchObject({
       files: [{ path: 'hello.txt' }],
     })
+    const changes = 'terminals/workspace/changes'
+    expect(
+      await (await call(changes, { id: terminal.id, metadataOnly: true })).json(),
+    ).toMatchObject({
+      files: [{ path: 'hello.txt', before: '', after: '', preview: { kind: 'deferred' } }],
+    })
+    expect(await (await call(changes, input)).json()).toMatchObject({
+      after: { text: 'Edited in the terminal checkout\n' },
+    })
+    expect((await call(changes, { ...input, path: '../hello.txt' })).status).toBe(400)
     expect((await call(read, { ...input, path: '../hello.txt' })).status).toBe(400)
     const devices = vi
       .spyOn(s.deviceHosts, 'list')

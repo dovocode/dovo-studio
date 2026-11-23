@@ -338,6 +338,7 @@ export const fileSchema = mutableStruct({
   diskContents: Schema.optional(Schema.String),
   preview: Schema.optional(filePreviewMetadataSchema),
   workingRevision: Schema.optional(Schema.String),
+  comparisonRevision: Schema.optional(Schema.String),
   // Working scans only. Older runtimes and historical reviews may omit this metadata.
   gitStatus: Schema.optional(
     mutableStruct({ index: gitFileChangeSchema, workingTree: gitFileChangeSchema }),

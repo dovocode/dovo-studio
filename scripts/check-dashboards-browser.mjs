@@ -90,9 +90,15 @@ const bundle = await bundleBrowser(
           write: async (_key, value) => { stored = value },
         }
         window.calls = []
+        const permissions = new Map()
         let loseRunResponse = true
         async function request(path, input) {
           window.calls.push({ path, input })
+          if (path === '/api/studio/source-policy') {
+            const key = JSON.stringify([input.owner, input.id, input.sourceId, input.expectedRevision])
+            if (input.policy) permissions.set(key, input.policy)
+            return permissions.get(key) ?? { access: 'off', autoLoad: false }
+          }
           if (path === '/api/studio-extensions') {
             if (input.action === 'marketplace') {
               const command = input.marketplace
@@ -156,6 +162,7 @@ const bundle = await bundleBrowser(
                 extension = { ...extension, enabled: true, installed: extension.draft, draft: undefined, settings: { branch: 'main' } }
               } else if (input.action === 'settings') extension = { ...extension, settings: { ...extension.settings, ...input.settings } }
               else if (input.action === 'disable') extension = { ...extension, enabled: false }
+              else if (input.action === 'enable') extension = { ...extension, enabled: true }
               extension.revision++
             }
             return { extension: structuredClone(extension) }
@@ -195,9 +202,11 @@ const bundle = await bundleBrowser(
           const [revision, remount] = useState(0)
           const [extensionRevision, setExtensionRevision] = useState(0)
           const [pins, setPins] = useState([])
+          const [sourcePolicies, setSourcePolicies] = useState(false)
           const liveSnapshot = React.useMemo(() => ({
             ...snapshot, studioExtensionsRevision: extensionRevision, studioExtensionPinnedPages: pins,
-          }), [extensionRevision, pins])
+            studioSourcePoliciesSupported: sourcePolicies,
+          }), [extensionRevision, pins, sourcePolicies])
           useEffect(() => {
             window.stageElsewhere = (name) => {
               const manifest = extension.draft ?? extension.installed
@@ -218,6 +227,7 @@ const bundle = await bundleBrowser(
             }
             window.setExtensionPins = setPins
             window.setConnected = setConnected
+            window.setSourcePolicies = setSourcePolicies
             window.replacePairing = () => setConnection({ ...profile.connection })
             window.reopen = () => remount((previous) => previous + 1)
           }, [])
@@ -923,6 +933,49 @@ try {
   )
   await page.getByRole('button', { name: 'Close session' }).click()
   await tui.waitFor({ state: 'detached' })
+
+  await page.evaluate(() => window.setSourcePolicies(true))
+  await page.getByLabel('Dashboard', { exact: true }).selectOption({ label: 'Local metrics' })
+  await cliTile.getByRole('button', { name: 'Load on open', exact: true }).waitFor()
+  await cliTile.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
+  await cliTile.getByRole('button', { name: 'Run command', exact: true }).waitFor()
+  const beforeAuto = await readCount()
+  await cliTile.getByRole('button', { name: 'Load on open', exact: true }).click()
+  assert.match(confirmations.at(-1), /Enable automatic loading for this command\?/)
+  await page.waitForFunction(
+    (count) =>
+      window.calls.filter(({ path, input }) => path.endsWith('/command-data') && input.automatic)
+        .length === count,
+    1,
+  )
+  assert.equal(await readCount(), beforeAuto + 1)
+  await cliTile.getByRole('button', { name: 'Disable load on open', exact: true }).click()
+  await cliTile.getByRole('button', { name: 'Start auto refresh (30s)' }).waitFor()
+  await page.clock.fastForward(31_000)
+  assert.equal(await readCount(), beforeAuto + 1, 'Disabling load on open also stops the old timer')
+  await cliTile.getByRole('button', { name: 'Load on open', exact: true }).click()
+  await page.waitForFunction(
+    (count) => window.calls.filter(({ path }) => path.endsWith('/command-data')).length === count,
+    beforeAuto + 2,
+  )
+  await page.evaluate(() => window.showExtensions(true))
+  await page.getByRole('button', { name: 'Enable extension', exact: true }).click()
+  const appActions = page
+    .getByRole('button', { name: 'Open delivery app', exact: true })
+    .locator('..')
+  await appActions.getByRole('button', { name: 'Always allow', exact: true }).click()
+  await appActions.getByRole('button', { name: 'Load on open', exact: true }).click()
+  await page.getByRole('button', { name: 'Close app', exact: true }).waitFor()
+  await page.evaluate(() => window.showExtensions(false))
+  await page.getByLabel('Dashboard', { exact: true }).selectOption({ label: 'Local metrics' })
+  await page.waitForFunction(
+    (count) => window.calls.filter(({ path }) => path.endsWith('/command-data')).length === count,
+    beforeAuto + 3,
+  )
+  await cliTile.getByRole('button', { name: 'Disable load on open', exact: true }).click()
+  await cliTile.getByRole('button', { name: 'Load on open', exact: true }).waitFor()
+  await page.clock.fastForward(31_000)
+  assert.equal(await readCount(), beforeAuto + 3)
   assert.deepEqual(errors, [])
   console.log(
     'Dashboard editor, offline draft, chart, run recovery, template export, timed CLI data and reconnect, compound data cards, and Studio extension pages and sidebar pins passed.',

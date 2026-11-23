@@ -6,6 +6,39 @@ import { openDatabase } from './database'
 import { WorkspaceStore } from './workspace'
 import { recentTools, type Task } from '@dovo/protocol'
 
+it('indexes tool pages and lookups by saved call identity without indexing unrelated activity', () => {
+  const db = openDatabase(':memory:')
+  try {
+    const log = new Activity(db)
+    const insert = db.prepare('INSERT INTO activity VALUES(?,?,?,?,?,?)')
+    insert.run('old', '2026-01-01', 'tool', 'task', 'Old unreadable entry', '{')
+    log.add('tool', 'task', 'Check', { turnId: 'turn', toolId: 'call', status: 'failed' }, 'end')
+    expect(log.overview(0, 'task', true).events).toContainEqual(
+      expect.objectContaining({ id: 'end', status: 'failed' }),
+    )
+    const plans = [
+      db
+        .prepare(
+          "EXPLAIN QUERY PLAN SELECT * FROM activity WHERE scope=? AND kind='tool' ORDER BY time DESC,id DESC LIMIT 100",
+        )
+        .all('task'),
+      db
+        .prepare(
+          "EXPLAIN QUERY PLAN SELECT * FROM activity WHERE scope=? AND kind='tool' AND json_valid(payload) AND json_extract(payload,'$.turnId')=? AND json_extract(payload,'$.toolId')=?",
+        )
+        .all('task', 'turn', 'call'),
+    ]
+    expect(plans[0]).toContainEqual(
+      expect.objectContaining({ detail: expect.stringContaining('activity_tool_scope_time') }),
+    )
+    expect(plans[1]).toContainEqual(
+      expect.objectContaining({ detail: expect.stringContaining('activity_tool_call') }),
+    )
+  } finally {
+    db.close()
+  }
+})
+
 it('keeps the first input and full duration when progress and completion fall on a later page', () => {
   const db = openDatabase(':memory:')
   try {

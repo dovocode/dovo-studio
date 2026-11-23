@@ -43,11 +43,51 @@ async function setup() {
   return { dir, path, db: openDatabase(path), backups: new RuntimeBackups(path) }
 }
 
+it('reports backup progress until the worker publishes a verified copy', async () => {
+  const f = await setup()
+  const original = backup.backupRuntimeDatabase
+  const reached = Promise.withResolvers<void>()
+  const finish = Promise.withResolvers<void>()
+  vi.spyOn(backup, 'backupRuntimeDatabase').mockImplementation(
+    async (source, destination, options) => {
+      options?.onProgress?.({ phase: 'copying', copiedPages: 10, totalPages: 20 })
+      reached.resolve()
+      await finish.promise
+      await original(source, destination, options)
+    },
+  )
+  const operation = f.backups.create()
+  try {
+    await Promise.race([reached.promise, operation])
+    expect(await f.backups.status()).toMatchObject({
+      active: true,
+      entries: [],
+      progress: {
+        startedAt: expect.any(String),
+        phase: 'copying',
+        copiedPages: 10,
+        totalPages: 20,
+      },
+    })
+  } finally {
+    finish.resolve()
+    try {
+      await operation
+    } finally {
+      f.db.close()
+    }
+  }
+  const status = await f.backups.status()
+  expect(status.active).toBe(false)
+  expect(status.progress).toBeUndefined()
+  expect(status.entries).toHaveLength(1)
+})
+
 it('cleans owned verification sidecars and abandoned partial snapshots without touching other files', async () => {
   const f = await setup()
   try {
     await f.backups.create()
-    for (const suffix of ['', '-wal', '-shm'])
+    for (const suffix of ['', '-wal', '-shm', '-journal'])
       await writeFile(
         join(f.backups.directory, `runtime-backup-abandoned.sqlite.partial${suffix}`),
         'abandoned',
@@ -111,17 +151,8 @@ it('preserves the live database and its pre-restore backup when publication fail
 
 it('removes staged sidecars when verification rejects a completed backup copy', async () => {
   const f = await setup()
-  const original = backup.backupRuntimeDatabase
-  vi.spyOn(backup, 'backupRuntimeDatabase').mockImplementation(async (source, destination) => {
-    await original(source, destination)
-    const copy = new Database(destination)
-    try {
-      copy.exec('DROP TABLE documents')
-    } finally {
-      copy.close()
-    }
-  })
   try {
+    f.db.exec('DROP TABLE documents')
     await expect(f.backups.create()).rejects.toThrow('not a Dovo runtime database')
     expect(
       (await readdir(f.backups.directory)).filter((name) => name.includes('.partial')),

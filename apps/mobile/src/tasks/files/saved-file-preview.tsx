@@ -23,12 +23,14 @@ export function SavedFilePreview({
   checkoutId,
   working = false,
   sideThreadSnapshot,
+  branchComparison,
 }: {
   file: ChangedFile
   taskId: string
   turnId?: string
   commitSha?: string
   checkoutId?: string
+  branchComparison?: string
   working?: boolean
   sideThreadSnapshot?: { before: string; after: string }
 }) {
@@ -47,6 +49,7 @@ export function SavedFilePreview({
     commitSha,
     checkoutId,
     working,
+    branchComparison,
     sideThreadSnapshot?.before,
     sideThreadSnapshot?.after,
     file.path,
@@ -99,6 +102,7 @@ export function SavedFilePreview({
             turnId,
             checkoutId,
             working,
+            branchComparison,
             full,
             patch: true,
             sha: commitSha,
@@ -121,7 +125,19 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [read, taskId, turnId, commitSha, checkoutId, working, file.path, key, full, file])
+  }, [
+    read,
+    taskId,
+    turnId,
+    commitSha,
+    checkoutId,
+    working,
+    file.path,
+    key,
+    full,
+    file,
+    branchComparison,
+  ])
   const patch = preview?.patch
   const displayDiff = diff && patch && patch.length <= 512 * 1024
   if (displayDiff)

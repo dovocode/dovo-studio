@@ -4,6 +4,47 @@ import { retainChangedFiles } from './retain-changes.js'
 
 const pending = new WeakMap<WorkspaceStore, Map<string, symbol>>()
 
+export async function loadSelectedTaskChange(
+  store: WorkspaceStore,
+  git: GitService,
+  id: string,
+  cwd: string,
+  path: string,
+) {
+  const task = store.taskSummary(id)
+  const file = task.files.find((item) => item.path === path)
+  if (file?.preview?.kind !== 'deferred') return
+  const preview = await git.selectedWorkingChange(cwd, file)
+  if (!preview) return
+  store.updateTask(id, (current) => {
+    if (
+      current.repositoryId !== task.repositoryId ||
+      current.checkoutBranch !== task.checkoutBranch ||
+      current.existingWorktreePath !== task.existingWorktreePath ||
+      !current.files.some(
+        (item) =>
+          item.path === path &&
+          item.workingRevision === file.workingRevision &&
+          item.preview?.kind === 'deferred',
+      )
+    )
+      return current
+    return {
+      ...current,
+      files: current.files.map((item) =>
+        item.path === path
+          ? {
+              ...preview,
+              gitStatus: item.gitStatus,
+              viewed: item.viewed,
+              changedSinceViewed: item.changedSinceViewed,
+            }
+          : item,
+      ),
+    }
+  })
+}
+
 /** Publish only the latest requested scan for this task. */
 export async function refreshTaskChanges(
   store: WorkspaceStore,

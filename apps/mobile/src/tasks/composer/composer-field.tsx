@@ -4,6 +4,7 @@ import {
   type Ref,
   memo,
   useCallback,
+  useContext,
   useLayoutEffect,
   useRef,
   useEffect,
@@ -17,6 +18,9 @@ import type { DraftSelection } from './dictation-draft'
 import type { ComposerReferenceResources } from '@dovo/protocol'
 import { NativeComposerInput, nativeComposerAvailable } from './native-composer-input'
 import type { ComposerInputHandle } from './native-composer-input.types'
+import { NavigationContext } from '../../shell/navigation'
+import { useAppActive } from '../../runtime/state/app-active'
+import { markMobileResume } from '../../runtime/state/resume-timing'
 
 const emptyResources: ComposerReferenceResources = { skills: [], mcpServers: [] }
 
@@ -47,6 +51,12 @@ export const ComposerField = memo(function ComposerField({
   const uiText = useInterfaceText()
 
   const { styles, reduceMotion } = useTheme()
+  const appActive = useAppActive()
+  const focused = useContext(NavigationContext)?.focused ?? true
+  useEffect(() => {
+    if (Platform.OS !== 'web' && appActive && focused && props.editable !== false)
+      markMobileResume('composer-ready')
+  }, [appActive, focused, props.editable])
 
   const input = useRef<ComponentRef<typeof TextInput>>(null)
   useEffect(() => {

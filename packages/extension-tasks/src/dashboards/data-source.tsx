@@ -3,6 +3,7 @@ import { SCRATCH_PROJECT_ID, type dashboardReadResultSchema } from '@dovo/protoc
 import {
   studioReadingKey,
   useStudioDataSource,
+  useStudioSourcePolicy,
   useWorkspace,
   type StudioReadingOwner,
   type StudioReadingSource,
@@ -14,7 +15,8 @@ import { DataView } from './data-view'
 type Props = {
   source: StudioReadingSource
   owner: StudioReadingOwner
-  read: () => Promise<typeof dashboardReadResultSchema.Type>
+  revision?: number
+  read: (automatic?: boolean) => Promise<typeof dashboardReadResultSchema.Type>
   onData?: (value: unknown) => void
 }
 
@@ -45,49 +47,30 @@ export function DataSource(props: Props) {
 
 function DataSourceView({
   source,
+  owner,
+  revision,
   read,
   onData,
   identity,
   projectName,
 }: Props & { identity: string; projectName?: string }) {
   const uiText = useInterfaceText()
-  const { connected, snapshot } = useWorkspace()
+  const { connected, snapshot, request } = useWorkspace()
   const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
   // Existing HTTP tiles continue to work with runtimes that predate structured sources.
   const supported =
     source.kind === 'mcp' ||
     (source.kind === 'api' && seconds === undefined && !source.panels) ||
     snapshot?.studioDataSourcesSupported === true
-  const host = useRef<HTMLDivElement>(null)
-  const disclosures = useRef<HTMLDetailsElement[]>([])
-  const canRead = useCallback(
-    () =>
-      !document.hidden &&
-      (source.kind !== 'api' || document.hasFocus()) &&
-      disclosures.current.every((node) => node.open),
-    [source.kind],
+  const { host, visible, canRead } = useVisibleStudioSource(source.kind === 'api')
+  const policy = useStudioSourcePolicy(
+    request,
+    connected && !!snapshot?.studioSourcePoliciesSupported,
+    owner,
+    revision,
+    source.id,
   )
-  const [visible, setVisible] = useState(false)
-  useLayoutEffect(() => {
-    const ancestors: HTMLDetailsElement[] = []
-    for (let node = host.current?.parentElement; node; node = node.parentElement)
-      if (node instanceof HTMLDetailsElement) ancestors.push(node)
-    disclosures.current = ancestors
-    const update = () => setVisible(canRead())
-    const observer = new MutationObserver(update)
-    for (const node of ancestors)
-      observer.observe(node, { attributes: true, attributeFilter: ['open'] })
-    document.addEventListener('visibilitychange', update)
-    window.addEventListener('focus', update)
-    window.addEventListener('blur', update)
-    update()
-    return () => {
-      observer.disconnect()
-      document.removeEventListener('visibilitychange', update)
-      window.removeEventListener('focus', update)
-      window.removeEventListener('blur', update)
-    }
-  }, [canRead])
+  const autoLoad = !!policy.policy?.autoLoad
   const state = useStudioDataSource(
     identity,
     source,
@@ -95,6 +78,7 @@ function DataSourceView({
     read,
     onData,
     canRead,
+    autoLoad,
   )
   const project =
     source.kind === 'cli'
@@ -131,7 +115,27 @@ function DataSourceView({
         >
           {state.busy ? 'Reading…' : source.kind === 'cli' ? 'Run command' : 'Refresh data'}
         </Button>
-        {seconds !== undefined && (
+        {policy.policy && (
+          <Button
+            size="sm"
+            variant="outline"
+            aria-pressed={autoLoad}
+            disabled={policy.saving}
+            onClick={() => {
+              if (autoLoad) void policy.save({ access: 'off', autoLoad: false })
+              else if (
+                source.kind !== 'cli' ||
+                window.confirm(
+                  `${uiText('Enable automatic loading for this command?')}\n\n${project}\n${detail}${seconds ? `\n\n${uiText('Refresh every {seconds} seconds while open', { seconds })}` : ''}`,
+                )
+              )
+                void policy.save({ access: 'persistent', autoLoad: true })
+            }}
+          >
+            {uiText(autoLoad ? 'Disable load on open' : 'Load on open')}
+          </Button>
+        )}
+        {seconds !== undefined && !autoLoad && (
           <Button
             size="sm"
             variant="outline"
@@ -163,9 +167,9 @@ function DataSourceView({
         {!supported && <span>Update the paired computer to use these data displays.</span>}
         {!connected && <span>Computer offline</span>}
       </div>
-      {state.error && (
+      {(state.error || policy.error) && (
         <p role="alert" className="text-destructive">
-          {state.error}
+          {state.error || policy.error}
         </p>
       )}
       {!onData && state.data && (
@@ -173,4 +177,38 @@ function DataSourceView({
       )}
     </div>
   )
+}
+
+export function useVisibleStudioSource(requireFocus = false) {
+  const host = useRef<HTMLDivElement>(null)
+  const disclosures = useRef<HTMLDetailsElement[]>([])
+  const canRead = useCallback(
+    () =>
+      !document.hidden &&
+      (!requireFocus || document.hasFocus()) &&
+      disclosures.current.every((node) => node.open),
+    [requireFocus],
+  )
+  const [visible, setVisible] = useState(false)
+  useLayoutEffect(() => {
+    const ancestors: HTMLDetailsElement[] = []
+    for (let node = host.current?.parentElement; node; node = node.parentElement)
+      if (node instanceof HTMLDetailsElement) ancestors.push(node)
+    disclosures.current = ancestors
+    const update = () => setVisible(canRead())
+    const observer = new MutationObserver(update)
+    for (const node of ancestors)
+      observer.observe(node, { attributes: true, attributeFilter: ['open'] })
+    document.addEventListener('visibilitychange', update)
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
+    update()
+    return () => {
+      observer.disconnect()
+      document.removeEventListener('visibilitychange', update)
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
+    }
+  }, [canRead])
+  return { host, visible, canRead }
 }

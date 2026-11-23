@@ -178,11 +178,14 @@ export async function readStudioData(
   signal: AbortSignal,
   authorize: () => void,
   directory?: DataSourceDirectory,
+  approvedDirectory?: string,
 ) {
   authorize()
   if (source.kind === 'api') return select(await readApi(source.url, signal), source.pointer)
   if (!directory) throw new HttpError(403, 'A paired client must start this command')
   const cwd = await directory(source.repositoryId, authorize)
+  if (approvedDirectory !== undefined && cwd !== approvedDirectory)
+    throw new HttpError(409, 'The project folder changed. Enable automatic loading again.')
   authorize()
   return select(await readCli(source.command, cwd, signal), source.pointer)
 }

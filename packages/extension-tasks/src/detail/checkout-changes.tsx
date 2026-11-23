@@ -11,6 +11,7 @@ import { responses, useWorkspace } from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { FileBrowserTree, FileChangeCounts, IconButton, cn } from '@dovo/studio-ui'
 import { CheckpointDiff } from '../files/saved-file-diff'
+import { SavedFilePreview } from '../files/saved-file-preview'
 import { fileStats } from '../files/presentation'
 
 /** Working tree changes for a terminal or project checkout in the workspace tools pane. */
@@ -27,7 +28,8 @@ export function CheckoutChanges({
   onSelect: (path: string) => void
 }) {
   const uiText = useInterfaceText()
-  const { connected, request } = useWorkspace()
+  const { connected, request, snapshot } = useWorkspace()
+  const metadataOnly = snapshot?.selectedCheckoutDiffSupported || undefined
   const [files, setFiles] = useState<ChangedFile[]>()
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
@@ -39,9 +41,10 @@ export function CheckoutChanges({
     let current = true
     setError('')
     setLoading(true)
+    const input = terminalId ? { id: terminalId } : { repositoryId }
     void request(
       terminalId ? '/api/terminals/workspace/changes' : '/api/scm/changes',
-      terminalId ? { id: terminalId } : { repositoryId },
+      metadataOnly ? { ...input, metadataOnly } : input,
       responses.files,
     )
       .then(
@@ -58,7 +61,7 @@ export function CheckoutChanges({
     return () => {
       current = false
     }
-  }, [attempt, connected, repositoryId, request, terminalId])
+  }, [attempt, connected, repositoryId, request, terminalId, metadataOnly])
   const entries = useMemo(
     () =>
       (files ?? []).map((file) => {
@@ -109,7 +112,9 @@ export function CheckoutChanges({
               })
             : uiText('Changes')}
         </span>
-        {!!order.length && <FileChangeCounts additions={additions} deletions={deletions} />}
+        {!!order.length && !metadataOnly && (
+          <FileChangeCounts additions={additions} deletions={deletions} />
+        )}
         <span className="flex-1" />
         {order.length > 1 && (
           <nav aria-label={uiText('Changed file navigation')} className="flex items-center">
@@ -172,7 +177,9 @@ export function CheckoutChanges({
         </nav>
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {file?.preview ? (
+        {metadataOnly && file?.preview ? (
+          <SavedFilePreview file={file} working workspaceCheckout={{ repositoryId, terminalId }} />
+        ) : file?.preview ? (
           <p className="p-4 text-xs text-muted-foreground">
             <span className="font-mono text-foreground">{file.path}</span>
             <br />

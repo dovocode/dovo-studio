@@ -325,12 +325,9 @@ export function expensiveRequestName(method: string | undefined, path: string) {
   if (path === '/api/tasks/files/directory') return 'directory page'
   if (path === '/api/tasks/history') return 'history page'
   if (path === '/api/tasks/search') return 'history search'
-  if (
-    path === '/api/scm/changes' ||
-    path === '/api/scm/branch-changes' ||
-    path === '/api/tasks/checkouts/changes'
-  )
-    return 'diff'
+  if (path === '/api/scm/changes') return 'working tree diff'
+  if (path === '/api/scm/branch-changes') return 'branch diff'
+  if (path === '/api/tasks/checkouts/changes') return 'checkout diff'
   if (path === '/api/scm/pulls/detail') return 'pull request diff'
   if (
     path === '/api/tasks/files/read' ||

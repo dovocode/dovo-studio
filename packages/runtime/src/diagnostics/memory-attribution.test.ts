@@ -107,7 +107,9 @@ describe('MemoryAttribution', () => {
   it('classifies only the expensive snapshot, history, diff and file endpoints', () => {
     expect(expensiveRequestName('GET', '/api/snapshot')).toBe('snapshot')
     expect(expensiveRequestName('POST', '/api/tasks/history')).toBe('history page')
-    expect(expensiveRequestName('POST', '/api/scm/changes')).toBe('diff')
+    expect(expensiveRequestName('POST', '/api/scm/changes')).toBe('working tree diff')
+    expect(expensiveRequestName('POST', '/api/scm/branch-changes')).toBe('branch diff')
+    expect(expensiveRequestName('POST', '/api/tasks/checkouts/changes')).toBe('checkout diff')
     expect(expensiveRequestName('POST', '/api/tasks/files/read')).toBe('file read')
     expect(expensiveRequestName('POST', '/api/snapshot')).toBeUndefined()
     expect(expensiveRequestName('POST', '/api/tasks/message')).toBeUndefined()

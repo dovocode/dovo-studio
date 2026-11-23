@@ -104,6 +104,15 @@ function changesRepositoryIdentity(args: readonly string[]) {
 }
 export class GitService {
   retrieval?: RetrievalHook
+  private pendingChangeMetadata = new Map<string, Promise<ChangedFile[]>>()
+  private pendingBranchSnapshots = new Map<
+    string,
+    Promise<{ before: string; after: string; base: string }>
+  >()
+  private branchComparisons = new Map<
+    string,
+    { paths: Set<string>; before: string; after: string }
+  >()
   private sharedReaders = new Map<string, { until: number; value: Promise<string> }>()
   async retrievalReader(account: GithubAccount) {
     const key = createHash('sha256')
@@ -1508,7 +1517,17 @@ export class GitService {
       )
     }
   }
-  async changes(path: string, loadPreviews = true): Promise<ChangedFile[]> {
+  changes(path: string, loadPreviews = true): Promise<ChangedFile[]> {
+    if (loadPreviews) return this.scanChanges(path, true)
+    const pending = this.pendingChangeMetadata.get(path)
+    if (pending) return pending
+    const scan = this.scanChanges(path, false).finally(() =>
+      this.pendingChangeMetadata.delete(path),
+    )
+    this.pendingChangeMetadata.set(path, scan)
+    return scan
+  }
+  private async scanChanges(path: string, loadPreviews: boolean): Promise<ChangedFile[]> {
     const { path: root } = await this.inspect(path)
     // Status and HEAD are independent reads; neither takes a repository lock.
     const [status, head] = await Promise.all([
@@ -1555,9 +1574,7 @@ export class GitService {
         })
         const after = working && { hash: working.hash, size: working.size, mode: working.mode }
         const sides = { before, after }
-        const workingRevision = createHash('sha256')
-          .update(JSON.stringify([before?.hash, before?.mode, working?.revision, unreadable]))
-          .digest('hex')
+        const workingRevision = this.workingChangeRevision(before, working?.revision, unreadable)
         const entries = [before, after].filter((side) => side !== undefined)
         let kind: FilePreviewMetadata['kind'] = entries.some((side) => side.mode === '160000')
           ? 'submodule'
@@ -1629,6 +1646,45 @@ export class GitService {
       }
       return files
     })
+  }
+  private workingChangeRevision(
+    before: FilePreviewMetadata['before'],
+    revision: unknown,
+    unreadable = false,
+  ) {
+    return createHash('sha256')
+      .update(JSON.stringify([before?.hash, before?.mode, revision, unreadable]))
+      .digest('hex')
+  }
+  async selectedWorkingChange(path: string, file: ChangedFile): Promise<ChangedFile | undefined> {
+    if (file.preview?.kind !== 'deferred' || !file.workingRevision) return undefined
+    const { path: root } = await this.inspect(path)
+    const matches = async () => {
+      const working = await this.workingFile(root, file.path)
+      return (
+        this.workingChangeRevision(file.preview?.before, working?.revision) === file.workingRevision
+      )
+    }
+    if (!(await matches())) return undefined
+    const preview = await this.workingFilePreview(root, file.path, file.preview)
+    if (!(await matches())) return undefined
+    const sides = [preview.before, preview.after]
+    if (sides.some((side) => side && (side.kind !== 'text' || side.truncated))) {
+      const kind = sides.some((side) => side?.kind === 'image')
+        ? 'image'
+        : sides.some((side) => side?.truncated)
+          ? 'large'
+          : 'binary'
+      return { ...file, preview: { ...file.preview, kind } }
+    }
+    const after = preview.after?.text ?? ''
+    return {
+      ...file,
+      before: preview.before?.text ?? '',
+      after,
+      diskContents: after,
+      preview: undefined,
+    }
   }
   private async workingFile(root: string, name: string) {
     // Validate the parent without following the leaf: symlink targets are previewed as text.
@@ -1983,6 +2039,8 @@ export class GitService {
     cwd: string,
     before: string | undefined,
     after: string,
+    metadataOnly = false,
+    includeComparisonRevision = false,
   ): Promise<{ files: ChangedFile[]; omitted: string[] }> {
     const names = (
       await this.command(
@@ -2015,10 +2073,13 @@ export class GitService {
     // These limits bound embedded previews, never the list of saved files.
     let remaining = 1024 * 1024
     let previews = 0
-    return this.withBlobs(cwd, async (blobs) => {
+    const collect = async (blobs?: GitBlobReader) => {
       for (const name of names) {
         const sides = { before: trees[0].get(name), after: trees[1].get(name) }
         const entries = [sides.before, sides.after].filter((side) => side !== undefined)
+        const comparisonRevision = includeComparisonRevision
+          ? createHash('sha256').update(JSON.stringify(sides)).digest('hex')
+          : undefined
         let kind: FilePreviewMetadata['kind'] | undefined = entries.some(
           (side) => side.mode === '160000',
         )
@@ -2027,11 +2088,13 @@ export class GitService {
             ? 'symlink'
             : entries.some((side) => side.size > 256 * 1024)
               ? 'large'
-              : previews >= 200 || entries.reduce((sum, side) => sum + side.size, 0) > remaining
+              : !blobs ||
+                  previews >= 200 ||
+                  entries.reduce((sum, side) => sum + side.size, 0) > remaining
                 ? 'deferred'
                 : undefined
         const contents: string[] = []
-        if (!kind) {
+        if (!kind && blobs) {
           for (const side of [sides.before, sides.after]) {
             const content = side ? await blobs.text(side.hash, side.size) : ''
             if (content.includes('\0') || content.includes('\ufffd')) {
@@ -2049,16 +2112,24 @@ export class GitService {
             before: '',
             after: '',
             viewed: false,
+            ...(comparisonRevision && { comparisonRevision }),
             preview: { kind, ...sides },
           })
         } else {
           remaining -= entries.reduce((sum, side) => sum + side.size, 0)
           previews++
-          files.push({ path: name, before: contents[0], after: contents[1], viewed: false })
+          files.push({
+            path: name,
+            before: contents[0],
+            after: contents[1],
+            viewed: false,
+            ...(comparisonRevision && { comparisonRevision }),
+          })
         }
       }
       return { files, omitted: [] }
-    })
+    }
+    return metadataOnly ? collect() : this.withBlobs(cwd, collect)
   }
   private async withBlobs<T>(cwd: string, read: (blobs: GitBlobReader) => Promise<T>): Promise<T> {
     const args = [this.settings().git, 'cat-file', '--batch']
@@ -2175,15 +2246,87 @@ export class GitService {
   }
 
   /** Committed changes on this branch since its merge base with its recorded or default base. */
-  async branchChangesFiles(cwd: string, recorded?: BranchBase) {
+  async branchChangesFiles(cwd: string, recorded?: BranchBase, metadataOnly = false) {
     const { before, after, base } = await this.branchTrees(cwd, recorded)
-    return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
+    return {
+      ...(await this.checkpointChanges(cwd, before, after, metadataOnly, metadataOnly)),
+      base,
+      before,
+      after,
+    }
   }
   /** Whole branch against the merge base, including staged, unstaged and untracked files. */
-  async reviewBranchChangesFiles(cwd: string, recorded?: BranchBase) {
-    const { before, base } = await this.branchTrees(cwd, recorded)
-    const after = await this.snapshot(cwd, 'refs/dovo/reviews/branch-preview')
-    return { ...(await this.checkpointChanges(cwd, before, after)), base, before, after }
+  async reviewBranchChangesFiles(
+    cwd: string,
+    recorded?: BranchBase,
+    metadataOnly = false,
+    includeComparisonRevision = metadataOnly,
+  ) {
+    const key = JSON.stringify([cwd, recorded])
+    let pending = this.pendingBranchSnapshots.get(key)
+    if (!pending) {
+      pending = this.branchTrees(cwd, recorded)
+        .then(async ({ before, base }) => ({
+          before,
+          base,
+          after: await this.snapshot(cwd, 'refs/dovo/reviews/branch-preview'),
+        }))
+        .finally(() => this.pendingBranchSnapshots.delete(key))
+      this.pendingBranchSnapshots.set(key, pending)
+    }
+    const { before, after, base } = await pending
+    return {
+      ...(await this.checkpointChanges(
+        cwd,
+        before,
+        after,
+        metadataOnly,
+        includeComparisonRevision,
+      )),
+      base,
+      before,
+      after,
+    }
+  }
+  rememberBranchComparison(
+    cwd: string,
+    taskId: string,
+    result: { files: ChangedFile[]; before: string; after: string },
+  ) {
+    const comparison = createHash('sha256')
+      .update(JSON.stringify([cwd, taskId, result.before, result.after]))
+      .digest('hex')
+    this.branchComparisons.delete(comparison)
+    this.branchComparisons.set(comparison, {
+      paths: new Set(result.files.map((file) => file.path)),
+      before: result.before,
+      after: result.after,
+    })
+    if (this.branchComparisons.size > 32) {
+      const oldest = this.branchComparisons.keys().next().value
+      if (oldest !== undefined) this.branchComparisons.delete(oldest)
+    }
+    return comparison
+  }
+  branchComparisonPreview(
+    cwd: string,
+    taskId: string,
+    comparison: string,
+    path: string,
+    full: boolean,
+    patch: boolean,
+  ) {
+    const saved = this.branchComparisons.get(comparison)
+    const expected =
+      saved &&
+      createHash('sha256')
+        .update(JSON.stringify([cwd, taskId, saved.before, saved.after]))
+        .digest('hex')
+    if (!saved || expected !== comparison)
+      throw new HttpError(409, 'This branch comparison expired. Reload its changes.')
+    if (!saved.paths.has(path))
+      throw new HttpError(404, 'This file is not in the branch comparison.')
+    return this.checkpointFilePreview(cwd, saved.before, saved.after, path, full, patch)
   }
   /** A recorded base applies only while its branch is checked out: its ref first, then the
    * commit the branch started from once that ref is deleted. Otherwise the default branch is

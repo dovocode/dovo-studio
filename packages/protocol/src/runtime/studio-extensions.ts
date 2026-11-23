@@ -182,13 +182,20 @@ export const studioExtensionCommandSchema = Schema.Union([
     ...edit,
     action: Schema.Literal('open'),
     contributionId: extensionKeySchema,
+    automatic: Schema.optionalKey(Schema.Boolean),
     componentVersion: Schema.optional(componentVersion),
   }),
-  strictStruct({ ...edit, action: Schema.Literal('call'), contributionId: extensionKeySchema }),
+  strictStruct({
+    ...edit,
+    action: Schema.Literal('call'),
+    contributionId: extensionKeySchema,
+    automatic: Schema.optionalKey(Schema.Boolean),
+  }),
   strictStruct({
     ...edit,
     action: Schema.Literal('read-data'),
     contributionId: extensionKeySchema,
+    automatic: Schema.optionalKey(Schema.Boolean),
   }),
   strictStruct({
     ...edit,

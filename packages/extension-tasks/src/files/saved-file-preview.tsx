@@ -20,16 +20,21 @@ export function SavedFilePreview({
   checkoutId,
   working = false,
   sideThreadSnapshot,
+  branchComparison,
+  workspaceCheckout,
 }: {
   file: ChangedFile
   taskId?: string
   turnId?: string
   commitSha?: string
   checkoutId?: string
+  branchComparison?: string
+  workspaceCheckout?: { repositoryId: string; terminalId?: string }
   working?: boolean
   sideThreadSnapshot?: { before: string; after: string }
 }) {
   const { request, activeRuntimeId, connection } = useWorkspace()
+  const { repositoryId, terminalId } = workspaceCheckout ?? {}
   const [fullKey, setFullKey] = useState('')
   const [attempt, setAttempt] = useState(0)
   const ownerKey = JSON.stringify([
@@ -41,6 +46,9 @@ export function SavedFilePreview({
     commitSha,
     checkoutId,
     working,
+    branchComparison,
+    repositoryId,
+    terminalId,
     sideThreadSnapshot?.before,
     sideThreadSnapshot?.after,
     file.path,
@@ -87,18 +95,23 @@ export function SavedFilePreview({
   const error = result?.key === key ? result.error : ''
   useEffect(() => {
     let active = true
-    if (!taskId) return
-    void request(
-      sideThreadSnapshot
-        ? '/api/tasks/side-thread/file-preview'
-        : commitSha
-          ? '/api/tasks/commits/file-preview'
-          : '/api/tasks/file/preview',
-      sideThreadSnapshot
-        ? { id: taskId, path: file.path, ...sideThreadSnapshot, full }
-        : { id: taskId, path: file.path, turnId, checkoutId, working, full, sha: commitSha },
-      filePreviewSchema,
-    ).then(
+    if (!taskId && !repositoryId) return
+    let endpoint = '/api/tasks/file/preview'
+    let input: object = { id: taskId, path, turnId, checkoutId, working, branchComparison, full }
+    if (terminalId) {
+      endpoint = '/api/terminals/workspace/changes'
+      input = { id: terminalId, path, full }
+    } else if (repositoryId) {
+      endpoint = '/api/scm/file-preview'
+      input = { repositoryId, path, full, comparison: 'working' }
+    } else if (sideThreadSnapshot) {
+      endpoint = '/api/tasks/side-thread/file-preview'
+      input = { id: taskId, path, ...sideThreadSnapshot, full }
+    } else if (commitSha) {
+      endpoint = '/api/tasks/commits/file-preview'
+      input = { id: taskId, path, checkoutId, full, sha: commitSha }
+    }
+    void request(endpoint, input, filePreviewSchema).then(
       (result) => {
         if (active) setResult({ key, preview: result, error: '' })
       },
@@ -114,7 +127,21 @@ export function SavedFilePreview({
     return () => {
       active = false
     }
-  }, [request, taskId, turnId, commitSha, checkoutId, working, file.path, key, full])
+  }, [
+    request,
+    taskId,
+    turnId,
+    commitSha,
+    checkoutId,
+    working,
+    file.path,
+    key,
+    full,
+    branchComparison,
+    repositoryId,
+    terminalId,
+    path,
+  ])
   if (diff) return <CheckpointDiff file={diff} />
   return (
     <div className="space-y-3 p-4 text-xs">
@@ -132,7 +159,7 @@ export function SavedFilePreview({
         <p role="alert" className="text-destructive">
           {error}
         </p>
-      ) : !preview && taskId ? (
+      ) : !preview && (taskId || repositoryId) ? (
         <p role="status">{full ? 'Loading full diff…' : 'Loading compact preview…'}</p>
       ) : null}
       {((preview &&

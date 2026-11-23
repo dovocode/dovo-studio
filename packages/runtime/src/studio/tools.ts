@@ -832,7 +832,7 @@ export async function studioTool(
     const offset = command.before === undefined ? 0 : Number(command.before)
     if (!Number.isSafeInteger(offset) || offset < 0)
       throw new HttpError(400, 'Invalid activity cursor')
-    return s.activity.overview(offset, command.scope)
+    return s.activity.overview(offset, command.scope, command.toolsOnly)
   }
   throw new HttpError(400, 'Unknown Studio Tools part')
 }

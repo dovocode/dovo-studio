@@ -797,8 +797,9 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
     return (
       <MobileDataSource
         owner={['dashboard', dashboard.id]}
+        revision={dashboard.revision}
         source={tile}
-        read={() => readDashboardDataSource(call, dashboard, tile)}
+        read={(automatic) => readDashboardDataSource(call, dashboard, tile, automatic)}
       />
     )
   if (tile.kind === 'extension')

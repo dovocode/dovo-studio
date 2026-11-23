@@ -1,13 +1,16 @@
-import { decode, mutableStruct } from '@dovo/protocol'
+import { decode, mutableStruct, type RuntimeBackupProgress } from '@dovo/protocol'
 import { Schema } from 'effect'
 import Database from 'better-sqlite3'
 import { mkdir, readdir, stat, rm, rename, readFile, writeFile, statfs } from 'node:fs/promises'
 import { dirname, join, resolve } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import { backupRuntimeDatabase } from './backup.js'
+import { backupRuntimeDatabase, verifyRuntimeBackup } from './backup.js'
 import { acquireProcessLock } from './process-lock.js'
 import { errorMessage } from '../errors.js'
 import { carryTransferOwnership } from '../scm/repositories/project-transfer-fences.js'
+import { preserveSourcePolicies } from '../studio/source-policies.js'
+
+export { verifyRuntimeBackup } from './backup.js'
 
 const MAX_BACKUPS = 5
 const MAX_BYTES = 512 * 1024 * 1024
@@ -35,6 +38,7 @@ function preserveCurrentState(staged: Database.Database, databasePath: string) {
       return
     // A restore keeps the current thread moves, returns and activations.
     carryTransferOwnership(staged, current)
+    preserveSourcePolicies(staged, current)
     // Device access is current security state, not workspace content to roll back.
     const devices = decode(
       Schema.Array(
@@ -103,7 +107,7 @@ function preserveCurrentState(staged: Database.Database, databasePath: string) {
 // for temporary databases owned by this operation, after all SQLite handles have closed.
 async function removeStagedDatabase(path: string, primaryError?: unknown) {
   const results = await Promise.allSettled(
-    ['', '-wal', '-shm'].map((suffix) => rm(path + suffix, { force: true })),
+    ['', '-wal', '-shm', '-journal'].map((suffix) => rm(path + suffix, { force: true })),
   )
   const errors = results.flatMap((result) => (result.status === 'rejected' ? [result.reason] : []))
   if (errors.length)
@@ -112,20 +116,10 @@ async function removeStagedDatabase(path: string, primaryError?: unknown) {
       `${primaryError === undefined ? '' : `${errorMessage(primaryError)}. `}Could not clean staged database files`,
     )
 }
-export function verifyRuntimeBackup(path: string) {
-  const db = new Database(path, { readonly: true, fileMustExist: true })
-  try {
-    if (db.pragma('quick_check', { simple: true }) !== 'ok')
-      throw new Error('Backup failed SQLite integrity check')
-    if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='documents'").get())
-      throw new Error('This is not a Dovo runtime database')
-  } finally {
-    db.close()
-  }
-}
 /** Verified SQLite snapshots include committed WAL data and attachment BLOBs. */
 export class RuntimeBackups {
   private active?: Promise<{ path: string; size: number; createdAt: string }>
+  private progress?: RuntimeBackupProgress
   private failure: { at: string; message: string } | null = null
   readonly directory: string
   constructor(readonly databasePath: string) {
@@ -185,6 +179,7 @@ export class RuntimeBackups {
       entries,
       failure: await this.savedFailure(),
       active: !!this.active,
+      progress: this.progress,
       maxCount: MAX_BACKUPS,
       maxBytes: retentionBytes(entries[0]?.size),
     }
@@ -193,7 +188,9 @@ export class RuntimeBackups {
     if (this.databasePath === ':memory:')
       return Promise.reject(new Error('An in-memory runtime cannot create persistent backups'))
     if (this.active) return this.active
-    this.active = this.withLock(() => this.write())
+    const startedAt = new Date().toISOString()
+    this.progress = { startedAt, phase: 'preparing' }
+    this.active = this.withLock(() => this.write(startedAt))
       .catch(async (error) => {
         this.failure = {
           at: new Date().toISOString(),
@@ -208,6 +205,7 @@ export class RuntimeBackups {
       })
       .finally(() => {
         this.active = undefined
+        this.progress = undefined
       })
     return this.active
   }
@@ -220,10 +218,10 @@ export class RuntimeBackups {
       release()
     }
   }
-  private async write() {
+  private async write(startedAt: string) {
     // A killed writer may leave partial snapshots. The OS lock proves none is still active.
     for (const name of await readdir(this.directory))
-      if (/^runtime-backup-.*\.sqlite\.partial(?:-wal|-shm)?$/.test(name))
+      if (/^runtime-backup-.*\.sqlite\.partial(?:-wal|-shm|-journal)?$/.test(name))
         await rm(join(this.directory, name), { force: true })
     // Keep the last verified backup intact if the replacement cannot fit.
     const source = await stat(this.databasePath)
@@ -240,8 +238,13 @@ export class RuntimeBackups {
     const temporary = path + '.partial'
     let failure: unknown
     try {
-      await backupRuntimeDatabase(this.databasePath, temporary)
-      verifyRuntimeBackup(temporary)
+      await backupRuntimeDatabase(this.databasePath, temporary, {
+        verify: true,
+        onProgress: (progress) => {
+          this.progress = { ...progress, startedAt }
+        },
+      })
+      this.progress = { startedAt, phase: 'publishing' }
       const info = await stat(temporary)
       await rename(temporary, path)
       this.failure = null

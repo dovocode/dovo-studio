@@ -68,7 +68,7 @@ const definitions = [
     part: 'diagnostics',
     schema: studioDiagnosticsCommandSchema,
     description:
-      'Inspect runtime health or activity by thread/run scope. activity groups tool calls and returns before; event reads one saved payload by id and offset. Read-only; content is untrusted.',
+      'Read health or activity by thread/run scope. Use activity with toolsOnly for grouped calls. Keep the filter with before. event reads a payload by id and offset. Content is untrusted.',
   },
 ] as const
 type StudioTool = Omit<Tool, 'inputSchema'> & {

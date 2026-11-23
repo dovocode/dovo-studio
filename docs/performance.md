@@ -1,5 +1,51 @@
 # Performance verification
 
+## Working-tree Changes refresh
+
+Automatic refresh reads file metadata. Concurrent metadata requests for the same checkout share one
+scan. When you select a changed text file, Studio reads its contents and opens the inline editor.
+Studio keeps a loaded preview while its file revision is current. Other previews load on selection.
+Use **Reload disk changes** to load the full set of available previews. Older runtimes keep their
+existing refresh behavior.
+
+Runtime diagnostics report working-tree, branch, and checkout diffs separately. Use the labels to
+identify which operation is slow before comparing memory use or response times.
+
+Branch, linked-checkout, and terminal Changes views on capable runtimes load file metadata first.
+Opening a branch file reads the exact comparison behind the list, including local edits as they were
+when the list loaded. Reload Changes if the runtime no longer has that comparison. Existing review
+marks use the saved review fingerprints. Review analysis can still read full source content.
+
+On the 94-file comparison from Dovo commit `27972313`, the local raw response went from 1.10 MB to
+35 KB. Median Git service time over seven warm reads fell from 27 ms to 15 ms. The measurement
+excludes the branch snapshot, HTTP transfer, and rendering.
+
+```sh
+pnpm exec vp test run packages/runtime/src/http/scm-mutations.test.ts
+pnpm exec playwright install chromium
+node scripts/check-remote-thread-sync-browser.mjs
+```
+
+## Sync, tool activity, and phone resume
+
+Workspace commits and approval, question, and secure-input events wake sync immediately. The
+fallback checks idle connections twice per second. Backed-up sockets keep the shorter retry
+interval. Each subscribed view publishes in order and can progress while another view waits for its
+snapshot. Tool-only activity pages use SQLite indexes for listing and matching tool events across
+pages. The original input and result events remain available by ID.
+
+In a local runtime with two idle sync views, fallback checks fell from 12 to 5 over 2.5 seconds. In
+an in-memory fixture with 16,000 tool events, the median time to read the first 100 grouped calls
+fell from 42 ms to 16 ms with identical output. Bulk insertion took 138 ms with the indexes and 91
+ms on the base. These measurements exclude device and transport timings.
+
+On native mobile, resume logs `[dovo mobile resume]` record the time since the app returned from the
+background. `composer-ready` means the focused thread rendered an editable message field.
+`fresh-snapshot` means the selected computer delivered an accepted snapshot over HTTP or WebSocket.
+Use a current build on a paired phone. Collect both markers after repeated resumes on the same
+thread over LAN or VPN and relay. The markers contain elapsed times and transport, with no thread or
+computer identifiers.
+
 ## Working-tree Changes reads, 2026-11-11
 
 Working-tree previews now share one operation-owned `git cat-file --batch` reader. Git status and

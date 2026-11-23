@@ -1,7 +1,10 @@
 import { useSettingsDraft } from '../runtime/preferences/settings-target'
 import { MobileDataSource } from './studio-data-source'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useState } from 'react'
+import { useContext, useState } from 'react'
+import { ExtensionSourceAccess } from './extension-source-access'
+import { useAppActive } from '../runtime/state/app-active'
+import { NavigationContext } from '../shell/navigation'
 import { Pressable, View } from 'react-native'
 import Svg, { Circle, Rect, Text as SvgText } from 'react-native-svg'
 import type { ExtensionContribution, ExtensionViewNode, StudioExtensionEntry } from '@dovo/protocol'
@@ -9,6 +12,8 @@ import {
   ExtensionComponentBoundary,
   extensionViewText,
   useExtensionView,
+  useStudioAutoLoad,
+  useStudioSourcePolicy,
   type ExtensionViewState,
   type SaveExtensionSettings,
 } from '@dovo/studio-core'
@@ -84,6 +89,9 @@ export function ExtensionComponents({
       }
     >
       <View style={stack}>
+        {state.tools.map((tool) => (
+          <ViewToolAccess key={tool.id} tool={tool} state={state} />
+        ))}
         {state.implicitSources.map((source) => (
           <ViewSource key={source.id} id={source.id} state={state} />
         ))}
@@ -111,6 +119,39 @@ export function ExtensionComponents({
   )
 }
 
+function ViewToolAccess({
+  tool,
+  state,
+}: {
+  tool: ExtensionViewState['tools'][number]
+  state: ExtensionViewState
+}) {
+  const { connected, read, snapshot } = useRuntime()
+  const focused = useContext(NavigationContext)?.focused ?? true
+  const foreground = useAppActive()
+  const policy = useStudioSourcePolicy(
+    read,
+    connected && !!snapshot?.studioSourcePoliciesSupported,
+    ['extension', state.extensionId],
+    state.extensionRevision,
+    tool.id,
+  )
+  useStudioAutoLoad(
+    connected && focused && foreground && !state.dirty && !state.settingsSaving,
+    !!policy.policy?.autoLoad,
+    () => void state.run(tool.id, true),
+  )
+  if (!snapshot?.studioSourcePoliciesSupported) return null
+  return (
+    <View style={stack}>
+      <Text>
+        {tool.server} · {tool.tool}
+      </Text>
+      <ExtensionSourceAccess policy={policy} title={`${tool.server} · ${tool.tool}`} />
+    </View>
+  )
+}
+
 function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
   const source = state.sources.find((item) => item.id === id)
   if (!source) return null
@@ -118,8 +159,9 @@ function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
     <MobileDataSource
       key={state.resultScope}
       owner={['extension', state.extensionId]}
+      revision={state.extensionRevision}
       source={source}
-      read={() => state.readSource(id)}
+      read={(automatic) => state.readSource(id, automatic)}
       onData={(value) => state.setResult(id, value)}
     />
   )

@@ -386,6 +386,18 @@ it('coalesces tool starts and results across activity pages and pages the saved 
     await post('diagnostics', { action: 'activity', scope: parent.id, before: first.before })
   ).json()
   expect(second.events.some((event: { kind: string }) => event.kind === 'tool')).toBe(false)
+  const toolsOnly = await (
+    await post('diagnostics', { action: 'activity', scope: parent.id, toolsOnly: true })
+  ).json()
+  expect(toolsOnly.events).toEqual([
+    expect.objectContaining({
+      kind: 'tool',
+      id: 'result',
+      inputEventId: 'started',
+      durationMs: 2000,
+    }),
+  ])
+  expect(toolsOnly.before).toBeUndefined()
   const detail = await (
     await post('diagnostics', { action: 'event', scope: parent.id, id: 'result' })
   ).json()

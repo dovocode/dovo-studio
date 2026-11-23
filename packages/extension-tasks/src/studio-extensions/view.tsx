@@ -1,4 +1,5 @@
-import { DataSource } from '../dashboards/data-source'
+import { DataSource, useVisibleStudioSource } from '../dashboards/data-source'
+import { ExtensionSourceAccess } from './source-access'
 import {
   Button,
   Dialog,
@@ -24,6 +25,8 @@ import {
   openStudioExtension,
   clientScopeKey,
   useStudioExtensions,
+  useStudioSourcePolicy,
+  useStudioAutoLoad,
   useSettingsDraft,
   useConfirmSettingsNavigation,
   useExtensionSettingsDraft,
@@ -487,15 +490,28 @@ function ExtensionAction({
   contribution: Exclude<ExtensionContribution, { kind: 'view' }>
   focused?: boolean
 }) {
-  const { request, connected } = useWorkspace()
+  const { request, connected, snapshot } = useWorkspace()
   const host = useStudioHost()
   const [open, setOpen] = useState(false)
   const [result, setResult] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  async function activate() {
+  const { host: sourceHost, visible, canRead } = useVisibleStudioSource()
+  const policy = useStudioSourcePolicy(
+    request,
+    connected &&
+      !!snapshot?.studioSourcePoliciesSupported &&
+      (contribution.kind === 'app' || contribution.kind === 'tool'),
+    ['extension', entry.id],
+    entry.revision,
+    contribution.id,
+  )
+  useStudioAutoLoad(connected && visible, !!policy.policy?.autoLoad, () => {
+    if (canRead()) void activate(true)
+  })
+  async function activate(automatic = false) {
     if (open) {
-      setOpen(false)
+      if (!automatic) setOpen(false)
       return
     }
     if (busy) return
@@ -506,13 +522,18 @@ function ExtensionAction({
       if (contribution.kind === 'tool') {
         setResult(
           JSON.stringify(
-            (await callStudioExtension(request, entry, contribution.id)).data,
+            (await callStudioExtension(request, entry, contribution.id, automatic)).data,
             null,
             2,
           ),
         )
       } else {
-        const { contribution: opened } = await openStudioExtension(request, entry, contribution.id)
+        const { contribution: opened } = await openStudioExtension(
+          request,
+          entry,
+          contribution.id,
+          automatic,
+        )
         if (opened.kind === 'studio')
           host.navigate({
             viewId: opened.destination === 'terminal' ? 'terminals' : opened.destination,
@@ -532,18 +553,37 @@ function ExtensionAction({
         <p className="text-sm font-medium">{contribution.title}</p>
         <DataSource
           owner={['extension', entry.id]}
+          revision={entry.revision}
           source={contribution}
-          read={() => readExtensionDataSource(request, entry, contribution.id)}
+          read={(automatic) => readExtensionDataSource(request, entry, contribution.id, automatic)}
         />
       </div>
     )
 
   return (
-    <div className="space-y-2">
+    <div ref={sourceHost} className="space-y-2">
+      {snapshot?.studioSourcePoliciesSupported &&
+        (contribution.kind === 'tool' || contribution.kind === 'app') && (
+          <ExtensionSourceAccess
+            policy={policy}
+            title={
+              contribution.kind === 'tool'
+                ? `${entry.installed?.name ?? entry.id} · ${contribution.server} · ${contribution.tool}`
+                : contribution.title
+            }
+            app={contribution.kind === 'app'}
+          />
+        )}
       <button
         autoFocus={focused}
         className={control}
-        disabled={!connected || busy}
+        disabled={
+          !connected ||
+          busy ||
+          (contribution.kind === 'tool' &&
+            !!snapshot?.studioSourcePoliciesSupported &&
+            (!policy.policy || policy.policy.access === 'off'))
+        }
         onClick={() => void activate()}
       >
         {open ? 'Close app' : busy ? 'Running…' : contribution.title}
@@ -559,6 +599,11 @@ function ExtensionAction({
       {open && connected && contribution.kind === 'app' && (
         <Suspense fallback={<p>Loading app…</p>}>
           <McpAppView
+            extension={
+              snapshot?.studioSourcePoliciesSupported
+                ? { id: entry.id, contributionId: contribution.id }
+                : undefined
+            }
             reference={{
               id: contribution.appId,
               taskId: contribution.taskId,

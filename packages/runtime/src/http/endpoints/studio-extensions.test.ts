@@ -192,7 +192,7 @@ it('projects custom props for older component clients and preserves them for cur
 })
 
 it('lets agents stage an extension, then installs, edits settings and rolls back on human request', async () => {
-  const { s, person, agent, issue, manifest } = await setup()
+  const { s, task, post, person, agent, issue, manifest } = await setup()
   const run = issue(false)
   const queries: unknown[] = []
   let requests = 0
@@ -295,6 +295,26 @@ it('lets agents stage an extension, then installs, edits settings and rolls back
     installed: manifest,
   })
   expect((await person({ ...call, expectedRevision: 2 })).status).toBe(409)
+  const access = { owner: 'extension', id: manifest.id, sourceId: 'status', expectedRevision: 3 }
+  expect((await person({ ...call, expectedRevision: 3 })).status).toBe(403)
+  expect(
+    (
+      await post(
+        'studio/source-policy',
+        { ...access, policy: { access: 'persistent', autoLoad: true } },
+        run,
+      )
+    ).status,
+  ).toBe(403)
+  expect(
+    await (
+      await post('studio/source-policy', {
+        ...access,
+        policy: { access: 'session', autoLoad: false },
+      })
+    ).json(),
+  ).toEqual({ access: 'session', autoLoad: false })
+  expect((await person({ ...call, expectedRevision: 3, automatic: true })).status).toBe(403)
   expect(await (await agent(run, { ...call, expectedRevision: 3 })).json()).toEqual({
     data: { healthy: true },
   })
@@ -304,6 +324,23 @@ it('lets agents stage an extension, then installs, edits settings and rolls back
   readOnly = false
   expect((await agent(run, { ...call, expectedRevision: 3 })).status).toBe(403)
   expect(queries).toHaveLength(1)
+  readOnly = true
+  expect(
+    (
+      await post('studio/source-policy', {
+        ...access,
+        policy: { access: 'persistent', autoLoad: true },
+      })
+    ).status,
+  ).toBe(200)
+  s.store.updateTask(task.id, (entry) => ({ ...entry, archivedAt: new Date().toISOString() }))
+  expect((await person({ ...call, expectedRevision: 3, automatic: true })).status).toBe(200)
+  s.store.updateTask(task.id, (entry) => ({ ...entry, archivedAt: undefined }))
+  expect(
+    (await post('studio/source-policy', { ...access, policy: { access: 'off', autoLoad: false } }))
+      .status,
+  ).toBe(200)
+  expect((await person({ ...call, expectedRevision: 3 })).status).toBe(403)
   expect(
     (
       await person({
@@ -405,10 +442,22 @@ it.skipIf(process.platform === 'win32')(
           release = () => resolve({ data: 'late', fingerprint: 'fixture' })
         }),
     )
+    vi.spyOn(s.mcpApps, 'extensionSourceIdentity').mockReturnValue('fixture')
     cleanups.push(async () => release())
     await person({ action: 'stage', manifest, expectedRevision: 0 })
     const edit = (action: string) => ({ action, id: manifest.id, expectedRevision: 2 })
     await person({ ...edit('install'), expectedRevision: 1 })
+    expect(
+      (
+        await post('studio/source-policy', {
+          owner: 'extension',
+          id: manifest.id,
+          sourceId: 'status',
+          expectedRevision: 2,
+          policy: { access: 'session', autoLoad: false },
+        })
+      ).status,
+    ).toBe(200)
     const tool = person({ ...edit('call'), contributionId: 'status' })
     await vi.waitFor(() => expect(hanging).toHaveBeenCalledTimes(1))
     const snapshot = await fetch(`http://127.0.0.1:${runtime.port}/api/snapshot`, {
@@ -510,9 +559,11 @@ it('previews and stages pinned marketplace releases with local sources and recor
   expect(await installed()).toEqual({ digest, version: '1.0.0' })
 })
 
-it('runs extension API and CLI data only on explicit paired reads', async () => {
-  const { person, agent, issue, manifest } = await setup()
+it('loads extension API and CLI sources automatically only after paired consent', async () => {
+  const { person, agent, issue, manifest, post } = await setup()
+  let apiReads = 0
   const origin = createServer((_request, response) => {
+    apiReads++
     response.end('{"series":[1,2,3]}')
   })
   origin.listen(0, '127.0.0.1')
@@ -564,6 +615,7 @@ it('runs extension API and CLI data only on explicit paired reads', async () => 
   expect(await list(2)).toEqual(['status', 'terminal'])
   expect(await list(3)).toEqual(['status', 'terminal', 'latency', 'workers'])
 
+  let repeatedApi: unknown
   for (const [contributionId, data] of [
     ['latency', [1, 2, 3]],
     ['workers', 4],
@@ -572,10 +624,40 @@ it('runs extension API and CLI data only on explicit paired reads', async () => 
     expect((await agent(issue(false), input)).status).toBe(403)
     expect((await person({ ...input, action: 'call' })).status).toBe(404)
     expect((await person({ ...input, expectedRevision: 1 })).status).toBe(409)
-    const response = await person(input)
+    expect((await person({ ...input, automatic: true })).status).toBe(403)
+    const policy = {
+      owner: 'extension',
+      id: manifest.id,
+      sourceId: contributionId,
+      expectedRevision: 2,
+    }
+    expect(
+      (
+        await post('studio/source-policy', {
+          ...policy,
+          policy: { access: 'persistent', autoLoad: true },
+        })
+      ).status,
+    ).toBe(200)
+    const response = await person({ ...input, automatic: true })
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ data, updatedAt: expect.any(Number) })
+    if (contributionId === 'latency') {
+      const repeated = await person({ ...input, automatic: true })
+      repeatedApi = await repeated.json()
+    }
+    expect(
+      (
+        await post('studio/source-policy', {
+          ...policy,
+          policy: { access: 'off', autoLoad: false },
+        })
+      ).status,
+    ).toBe(200)
+    expect((await person({ ...input, automatic: true })).status).toBe(403)
   }
+  expect(repeatedApi).toMatchObject({ data: [1, 2, 3], refreshAfterMs: expect.any(Number) })
+  expect(apiReads).toBe(1)
 })
 
 it('pins installed pages for paired clients and removes the shortcut while disabled', async () => {

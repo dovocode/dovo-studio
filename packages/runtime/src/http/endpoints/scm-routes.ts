@@ -34,7 +34,7 @@ import {
 import { gitActionState } from '../../scm/git/action-state.js'
 import { checkGithubConnection } from '../../scm/forges/integration/github-connection-check.js'
 import { githubConnectionCheckQuerySchema } from '@dovo/protocol'
-import { refreshTaskChanges } from '../../scm/git/task-changes.js'
+import { loadSelectedTaskChange, refreshTaskChanges } from '../../scm/git/task-changes.js'
 import {
   repositoryFolderSchema,
   createGithubRepositorySchema,
@@ -854,18 +854,30 @@ export function scmRoute(request: IncomingMessage, path: string) {
           return yield* serviceResult(result)
         }
         if (path === '/api/scm/file-preview') {
+          if (input.comparison === 'working') {
+            const name = decode(maxValue(minValue(Schema.String, 1), 4000), input.path)
+            const full = decode(Schema.UndefinedOr(Schema.Boolean), input.full)
+            return yield* serviceResult(s.git.workingFilePreview(cwd, name, undefined, full))
+          }
           const { path: name, comparison } = decode(stagingFilePreviewQuerySchema, input)
           return yield* serviceResult(s.git.stagingFilePreview(cwd, name, comparison))
         }
         if (path === '/api/scm/changes') {
           const includeFiles = decode(Schema.UndefinedOr(Schema.Boolean), input.includeFiles)
           const metadataOnly = decode(Schema.UndefinedOr(Schema.Boolean), input.metadataOnly)
+          if (input.previewPath !== undefined) {
+            if (typeof input.taskId !== 'string' || includeFiles !== false)
+              throw new HttpError(400, 'A thread is required for a selected file preview')
+            const name = decode(maxValue(minValue(Schema.String, 1), 4096), input.previewPath)
+            yield* serviceResult(loadSelectedTaskChange(s.store, s.git, input.taskId, cwd, name))
+            return { ok: true }
+          }
           if (includeFiles === false && typeof input.taskId !== 'string')
             throw new HttpError(400, 'A thread is required for a Changes refresh')
           const files = yield* serviceResult(
             typeof input.taskId === 'string'
               ? refreshTaskChanges(s.store, s.git, input.taskId, cwd, !metadataOnly)
-              : s.git.changes(cwd),
+              : s.git.changes(cwd, !metadataOnly),
           )
           // Live sync already delivers the authoritative files to thread clients.
           if (includeFiles === false) return yield* serviceResult({ ok: true })
@@ -875,11 +887,15 @@ export function scmRoute(request: IncomingMessage, path: string) {
         }
         if (path === '/api/scm/branch-changes') {
           const base = input.taskId ? s.checkouts.branchBase(input.taskId) : undefined
-          return yield* serviceResult(
+          const metadataOnly = !!input.taskId && input.metadataOnly === true
+          const result = yield* serviceResult(
             input.includeWorking === true
-              ? s.git.reviewBranchChangesFiles(cwd, base)
-              : s.git.branchChangesFiles(cwd, base),
+              ? s.git.reviewBranchChangesFiles(cwd, base, metadataOnly)
+              : s.git.branchChangesFiles(cwd, base, metadataOnly),
           )
+          return metadataOnly && input.taskId
+            ? { ...result, comparison: s.git.rememberBranchComparison(cwd, input.taskId, result) }
+            : result
         }
         if (path === '/api/scm/apply') {
           const data = decode(

@@ -29,6 +29,12 @@ export const mcpAppRpcSchema = mutableStruct({
   requestId: Schema.String,
   method: Schema.String,
   params: Schema.optional(Schema.Unknown),
+  extension: Schema.optional(
+    mutableStruct({
+      id: Schema.String.check(Schema.isMaxLength(200)),
+      contributionId: Schema.String.check(Schema.isMaxLength(200)),
+    }),
+  ),
 })
 export function mcpAppReferences(payload: unknown): McpAppReference[] {
   try {

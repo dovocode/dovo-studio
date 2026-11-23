@@ -1,10 +1,13 @@
-import { DataSource } from '../dashboards/data-source'
+import { DataSource, useVisibleStudioSource } from '../dashboards/data-source'
+import { ExtensionSourceAccess } from './source-access'
 import { useState } from 'react'
 import type { ExtensionContribution, ExtensionViewNode, StudioExtensionEntry } from '@dovo/protocol'
 import {
   ExtensionComponentBoundary,
   extensionViewText,
   useExtensionView,
+  useStudioAutoLoad,
+  useStudioSourcePolicy,
   useSettingsDraft,
   useWorkspace,
   type ExtensionViewState,
@@ -91,6 +94,9 @@ export function ExtensionComponents({
   return (
     <ExtensionComponentBoundary fallback={<p role="alert">This extension view could not load.</p>}>
       <div className="min-w-0 space-y-3 break-words">
+        {state.tools.map((tool) => (
+          <ViewToolAccess key={tool.id} tool={tool} state={state} />
+        ))}
         {state.implicitSources.map((source) => (
           <ViewSource key={source.id} id={source.id} state={state} />
         ))}
@@ -121,6 +127,40 @@ export function ExtensionComponents({
   )
 }
 
+function ViewToolAccess({
+  tool,
+  state,
+}: {
+  tool: ExtensionViewState['tools'][number]
+  state: ExtensionViewState
+}) {
+  const { connected, request, snapshot } = useWorkspace()
+  const { host, visible, canRead } = useVisibleStudioSource()
+  const policy = useStudioSourcePolicy(
+    request,
+    connected && !!snapshot?.studioSourcePoliciesSupported,
+    ['extension', state.extensionId],
+    state.extensionRevision,
+    tool.id,
+  )
+  useStudioAutoLoad(
+    connected && visible && !state.dirty && !state.settingsSaving,
+    !!policy.policy?.autoLoad,
+    () => {
+      if (canRead()) void state.run(tool.id, true)
+    },
+  )
+  if (!snapshot?.studioSourcePoliciesSupported) return null
+  return (
+    <div ref={host} className="space-y-1">
+      <p className="text-xs text-muted-foreground">
+        {tool.server} · {tool.tool}
+      </p>
+      <ExtensionSourceAccess policy={policy} title={`${tool.server} · ${tool.tool}`} />
+    </div>
+  )
+}
+
 const tones = {
   normal: 'text-foreground',
   muted: 'text-muted-foreground',
@@ -141,8 +181,9 @@ function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
     <DataSource
       key={state.resultScope}
       owner={['extension', state.extensionId]}
+      revision={state.extensionRevision}
       source={source}
-      read={() => state.readSource(id)}
+      read={(automatic) => state.readSource(id, automatic)}
       onData={(value) => state.setResult(id, value)}
     />
   )

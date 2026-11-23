@@ -10,7 +10,7 @@ its own toggle; all five default to off.
 | Automations    | studio_automations | Create/edit/validate/dry run workflows, configure triggers, enable/disable, run, inspect runs, wait, cancel/retry                     |
 | Browsers       | studio_browsers    | List/open/close tabs, navigate/interact, capture screenshots/accessibility snapshots, inspect console and failed-request logs         |
 | UI interaction | studio_ui          | Inspect and control live desktop/web Studio sessions on this machine only                                                             |
-| Diagnostics    | studio_diagnostics | Read runtime health and paginated activity, optionally scoped to a thread/run                                                         |
+| Diagnostics    | studio_diagnostics | Read runtime health, backup progress, and paginated activity, optionally scoped to a thread/run                                       |
 
 The discovery tool, studio_discover, accompanies any enabled part. It returns project IDs/defaults
 and configured agents/models, plus the computers already paired in the local Studio app. Pass
@@ -67,10 +67,12 @@ its response includes compact history. Older paired runtimes still return the fu
 combined browser state. Use `studio_discover` on that computer to check for
 `capabilities.compactToolResults`.
 
-Use diagnostics `activity` to see recent event headers and grouped tool calls. A tool row includes
-its outcome, duration when known, command, and a short output preview. Use the returned `before`
-cursor to read older activity. Use `{ "action": "event", "id": "event-id" }` to read one retained
-raw event. Pass `nextOffset` as `offset` to continue a large payload. When the provider records a
+Use diagnostics `activity` to see recent event headers and grouped tool calls. Set `toolsOnly: true`
+and pass the thread or run ID as `scope` to inspect just its tool calls. Keep both fields when you
+pass the returned `before` cursor. Older runtimes return mixed activity. A tool row includes its
+outcome, duration when known, command, and a short output preview. Use the returned `before` cursor
+to read older activity. Use `{ "action": "event", "id": "event-id" }` to read one retained raw
+event. Pass `nextOffset` as `offset` to continue a large payload. When the provider records a
 separate start event, `inputEventId` opens its original arguments, even if progress and completion
 appear on a later page. The duration starts at the earliest retained event for the call. When a
 provider wraps a terminal command, Activity shows the recorded command once across pages. A failed

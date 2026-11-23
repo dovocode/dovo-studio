@@ -21,7 +21,14 @@ const subscribeVisibility = (notify: () => void) => {
   return () => document.removeEventListener('visibilitychange', notify)
 }
 const documentVisible = () => document.visibilityState === 'visible'
-export const McpAppView = memo(function McpAppView({ reference }: { reference: McpAppReference }) {
+export const McpAppView = memo(function McpAppView({
+  reference,
+  extension,
+}: {
+  reference: McpAppReference
+  extension?: { id: string; contributionId: string }
+}) {
+  const { id: extensionId, contributionId } = extension ?? {}
   const paneVisible = useContext(ConversationVisibilityContext)
   const documentIsVisible = useSyncExternalStore(
     subscribeVisibility,
@@ -268,6 +275,9 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
             id: reference.id,
             requestId: `${key}_${requestId}`,
             method: value.method,
+            ...(extensionId && contributionId
+              ? { extension: { id: extensionId, contributionId } }
+              : {}),
             params:
               value.method === 'ui/cancel'
                 ? { requestId: `${key}_${String(object(value.params).requestId)}` }
@@ -306,6 +316,8 @@ export const McpAppView = memo(function McpAppView({ reference }: { reference: M
     confirm,
     operationScope,
     inline,
+    extensionId,
+    contributionId,
   ])
   return (
     <div

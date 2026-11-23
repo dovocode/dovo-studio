@@ -1,15 +1,42 @@
 import Database from 'better-sqlite3'
-import { closeSync, openSync } from 'node:fs'
+import { existsSync } from 'node:fs'
+import { Worker } from 'node:worker_threads'
+import type { RuntimeBackupProgress } from '@dovo/protocol'
 
-// SQLite's backup API includes committed WAL contents; copying a live .sqlite file does not.
-export async function backupRuntimeDatabase(source: string, destination: string) {
-  const database = new Database(source, { readonly: true, fileMustExist: true })
+export type BackupWorkerProgress = Omit<RuntimeBackupProgress, 'startedAt'>
+
+export function backupRuntimeDatabase(
+  source: string,
+  destination: string,
+  {
+    verify = false,
+    onProgress,
+  }: { verify?: boolean; onProgress?: (progress: BackupWorkerProgress) => void } = {},
+) {
+  const compiled = new URL('./backup-worker.js', import.meta.url)
+  const entry = existsSync(compiled) ? compiled : new URL('./backup-worker.ts', import.meta.url)
+  return new Promise<void>((resolve, reject) => {
+    const worker = new Worker(entry, {
+      workerData: { source, destination, verify, reportProgress: !!onProgress },
+      execArgv: entry.pathname.endsWith('.ts') ? ['--import', import.meta.resolve('tsx')] : [],
+    })
+    if (onProgress) worker.on('message', onProgress)
+    worker.once('error', reject)
+    worker.once('exit', (code) => {
+      if (code === 0) resolve()
+      else reject(new Error(`SQLite backup worker exited with code ${code}`))
+    })
+  })
+}
+
+export function verifyRuntimeBackup(path: string) {
+  const db = new Database(path, { readonly: true, fileMustExist: true })
   try {
-    // Restrict access before the first SQLite page is written, including interrupted backups.
-    // Destinations are operation-owned; never overwrite a pre-existing recovery file.
-    closeSync(openSync(destination, 'wx', 0o600))
-    await database.backup(destination)
+    if (db.pragma('quick_check', { simple: true }) !== 'ok')
+      throw new Error('Backup failed SQLite integrity check')
+    if (!db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='documents'").get())
+      throw new Error('This is not a Dovo runtime database')
   } finally {
-    database.close()
+    db.close()
   }
 }

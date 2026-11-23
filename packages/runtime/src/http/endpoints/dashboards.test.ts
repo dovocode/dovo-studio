@@ -133,6 +133,74 @@ it('saves, lists and deletes dashboards for paired human clients only', async ()
 })
 
 it.skipIf(process.platform === 'win32')(
+  'shares scheduled CLI results with another paired client',
+  async () => {
+    const { runtime, post, marker, definition } = await setup()
+    const dashboard = {
+      ...definition('true'),
+      tiles: [
+        {
+          kind: 'cli' as const,
+          id: commandTile,
+          repositoryId: 'repo',
+          title: 'Read count',
+          command: `printf 'run\\n' >> '${marker}'; printf '42'`,
+          pointer: '',
+          chart: 'number' as const,
+          span: 1,
+          height: 1,
+          refreshSeconds: 30,
+        },
+      ],
+    }
+    expect((await post('dashboards/save', { dashboard, expectedRevision: 0 })).status).toBe(200)
+    const policy = { owner: 'dashboard', id, sourceId: commandTile, expectedRevision: 1 }
+    expect(
+      (
+        await post('studio/source-policy', {
+          ...policy,
+          policy: { access: 'persistent', autoLoad: true },
+        })
+      ).status,
+    ).toBe(200)
+    const input = { id, tileId: commandTile, expectedRevision: 1, automatic: true }
+    const read = async (headers?: Record<string, string>) => {
+      const response = await post('dashboards/command-data', input, headers)
+      expect(response.status).toBe(200)
+      return response.json()
+    }
+    const first = await read()
+    const secondToken = 'second-dashboard-paired-token-at-least-32'
+    runtime.services.devices.add('Phone', secondToken)
+    const second = await read({ Authorization: `Bearer ${secondToken}` })
+    expect(second).toMatchObject({
+      data: 42,
+      updatedAt: first.updatedAt,
+      refreshAfterMs: expect.any(Number),
+    })
+    expect(second.refreshAfterMs).toBeLessThanOrEqual(first.refreshAfterMs)
+    expect(await readFile(marker, 'utf8')).toBe('run\n')
+    const manual = await post('dashboards/command-data', { ...input, automatic: false })
+    expect(manual.status).toBe(200)
+    const manuallyUpdated = await manual.json()
+    expect(await read({ Authorization: `Bearer ${secondToken}` })).toMatchObject({
+      data: 42,
+      updatedAt: manuallyUpdated.updatedAt,
+    })
+    expect(await readFile(marker, 'utf8')).toBe('run\nrun\n')
+    expect(
+      (
+        await post('studio/source-policy', {
+          ...policy,
+          policy: { access: 'off', autoLoad: false },
+        })
+      ).status,
+    ).toBe(200)
+    expect((await post('dashboards/command-data', input)).status).toBe(403)
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
   'runs a saved command once per request, in the project checkout, and reports its exit code',
   async () => {
     const { runtime, post, marker, definition, directory } = await setup()
@@ -418,9 +486,28 @@ it('reads saved CLI stdout only through the paired command data endpoint', async
     (await post('dashboards/command-data', input, { 'x-dovo-agent-access': '1' })).status,
   ).toBe(403)
   await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
-  const response = await post('dashboards/command-data', input)
+  const automatic = { ...input, automatic: true }
+  expect((await post('dashboards/command-data', automatic)).status).toBe(403)
+  const policy = {
+    owner: 'dashboard',
+    id,
+    sourceId: commandTile,
+    expectedRevision: 1,
+    policy: { access: 'persistent', autoLoad: true },
+  }
+  expect((await post('studio/source-policy', policy, { 'x-dovo-agent-access': '1' })).status).toBe(
+    403,
+  )
+  expect((await post('studio/source-policy', policy)).status).toBe(200)
+  await expect(readFile(marker)).rejects.toMatchObject({ code: 'ENOENT' })
+  const response = await post('dashboards/command-data', automatic)
   expect(response.status).toBe(200)
   expect(await response.json()).toMatchObject({ data: 7, updatedAt: expect.any(Number) })
   expect(await realpath((await readFile(marker, 'utf8')).trim())).toBe(await realpath(directory))
   expect(runtime.services.terminals.list()).toEqual([])
+  expect(
+    (await post('studio/source-policy', { ...policy, policy: { access: 'off', autoLoad: false } }))
+      .status,
+  ).toBe(200)
+  expect((await post('dashboards/command-data', automatic)).status).toBe(403)
 })

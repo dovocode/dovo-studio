@@ -89,6 +89,7 @@ export const dashboardReadRequestSchema = strictStruct({
   id: uuidSchema,
   tileId: uuidSchema,
   expectedRevision: revision,
+  automatic: Schema.optionalKey(Schema.Boolean),
 })
 export const dashboardRunRequestSchema = strictStruct({
   id: uuidSchema,
@@ -102,6 +103,7 @@ export const dashboardDeleteResultSchema = strictStruct({ ok: Schema.Literal(tru
 export const dashboardReadResultSchema = strictStruct({
   data: Schema.Unknown,
   updatedAt: Schema.Number,
+  refreshAfterMs: Schema.optionalKey(Schema.Number),
 })
 export const dashboardRunResultSchema = strictStruct({ terminalId: text })
 export const dashboardSessionResultSchema = strictStruct({ terminalId: Schema.NullOr(text) })

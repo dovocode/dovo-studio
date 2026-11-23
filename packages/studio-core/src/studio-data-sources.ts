@@ -52,9 +52,10 @@ export function useStudioDataSource(
   key: string,
   source: StudioReadingSource,
   active: boolean,
-  read: () => Promise<Reading>,
+  read: (automatic?: boolean) => Promise<Reading>,
   onData?: (value: unknown) => void,
   canRead?: () => boolean,
+  autoLoad = false,
 ) {
   const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
   const [data, setData] = useState(() => readings.get(key))
@@ -64,6 +65,7 @@ export function useStudioDataSource(
   const [attempt, setAttempt] = useState(0)
   const [running, setRunning] = useState(false)
   const lastAttempt = useRef<number | undefined>(undefined)
+  const refreshAt = useRef<number | undefined>(undefined)
   const pending = useRef(false)
   const mounted = useRef(false)
   const enabled = useRef(false)
@@ -93,14 +95,18 @@ export function useStudioDataSource(
     }
   }, [key])
 
-  async function refresh() {
+  async function refresh(automatic = false) {
     if (!available.current || canRead?.() === false || pending.current || !mounted.current) return
     lastAttempt.current = Date.now()
+    refreshAt.current = undefined
     pending.current = true
     setBusy(true)
     setError('')
     try {
-      remember(key, await read())
+      const result = await read(automatic)
+      if (result.refreshAfterMs !== undefined)
+        refreshAt.current = Date.now() + result.refreshAfterMs
+      remember(key, result)
     } catch (cause) {
       if (mounted.current) setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -123,22 +129,31 @@ export function useStudioDataSource(
       setData(saved)
       setStale(true)
     }
-    if ((saved || data) && source.kind === 'api') void refresh()
+    if (!autoLoad && (saved || data) && source.kind === 'api') void refresh()
   })
   useEffect(() => {
     if (active) reactivate()
     else setStale(true)
   }, [active])
 
+  const loadOnOpen = useEffectEvent(() => void refresh(true))
+  useEffect(() => {
+    if (!autoLoad) return
+    enabled.current = false
+    setRunning(false)
+    if (active) loadOnOpen()
+  }, [active, autoLoad])
+
   const tick = useEffectEvent(() => {
-    if (enabled.current) void refresh()
+    if (autoLoad || enabled.current) void refresh(autoLoad)
   })
   useEffect(() => {
-    if (!active || !running || busy || seconds === undefined) return
-    const remaining = (lastAttempt.current ?? Date.now()) + seconds * 1000 - Date.now()
+    if (!active || (!running && !autoLoad) || busy || seconds === undefined) return
+    const deadline = refreshAt.current ?? (lastAttempt.current ?? Date.now()) + seconds * 1000
+    const remaining = deadline - Date.now()
     const timer = setTimeout(() => tick(), Math.max(0, remaining))
     return () => clearTimeout(timer)
-  }, [active, running, busy, seconds, attempt])
+  }, [active, running, busy, seconds, attempt, autoLoad])
 
   return {
     data,

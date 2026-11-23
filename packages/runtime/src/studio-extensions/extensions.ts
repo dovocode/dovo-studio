@@ -21,11 +21,14 @@ import {
   type StudioExtensionEntry,
   type StudioExtensionManifest,
   type StudioExtensionPageLink,
+  type StudioSourcePolicyRequest,
 } from '@dovo/protocol'
 import type { McpApps } from '../mcp-apps/bridge.js'
 import { HttpError } from '../errors.js'
 import { readStudioData, type DataSourceDirectory } from '../dashboards/data-sources.js'
 import { exactMarketplaceRelease, marketplaceCatalog } from './marketplace.js'
+import { SourcePolicies, sourcePolicyTarget } from '../studio/source-policies.js'
+import { RecentSourceReadings } from '../studio/recent-source-readings.js'
 
 const row = mutableStruct({ id: Schema.String, revision: Schema.Number, entry: Schema.String })
 const object = Schema.Record(Schema.String, Schema.Unknown)
@@ -162,7 +165,12 @@ type ExtensionAgent = { taskId: string; readOnly: boolean }
 
 type DataContribution = Extract<ExtensionContribution, { kind: 'api' | 'cli' }>
 
-type ActiveCall = { controller: AbortController; id: string; source?: DataContribution }
+type ActiveCall = {
+  controller: AbortController
+  id: string
+  source?: DataContribution
+  tool?: string
+}
 
 /** The fields that decide what a data source reads. Titles and displays do not. */
 function dataTarget(source: DataContribution) {
@@ -179,6 +187,8 @@ type DataRead = { data: unknown; updatedAt: number }
 type SharedRead = { read: Promise<DataRead>; callers: Set<() => void> }
 
 export class StudioExtensions {
+  private readonly policies: SourcePolicies
+  private readonly recent = new RecentSourceReadings()
   private ready = false
   private generation = 0
   private pageCache?: { revision: number; pages: StudioExtensionPageLink[] }
@@ -191,10 +201,72 @@ export class StudioExtensions {
   private readonly shutdown = new AbortController()
   constructor(
     private db: Database.Database,
-    private mcp: Pick<McpApps, 'feedRead' | 'marketplaceSources'>,
+    private mcp: Pick<McpApps, 'feedRead' | 'marketplaceSources'> &
+      Partial<Pick<McpApps, 'extensionSourceIdentity' | 'extensionAppIdentity'>>,
     private requireActiveThread: (id: string) => void,
     private dataDirectory?: DataSourceDirectory,
-  ) {}
+  ) {
+    this.policies = new SourcePolicies(db, 'extension')
+  }
+
+  private policyTarget(entry: StudioExtensionEntry, source: ExtensionContribution, cwd?: string) {
+    if (source.kind === 'tool')
+      return sourcePolicyTarget([
+        source,
+        this.mcp.extensionSourceIdentity?.(source.taskId, source.server),
+        Object.values(source.inputs ?? {}).map((id) => entry.settings[id]),
+      ])
+    if (source.kind === 'app')
+      return sourcePolicyTarget([
+        source,
+        this.mcp.extensionAppIdentity?.(source.taskId, source.appId),
+      ])
+    return sourcePolicyTarget([source, cwd])
+  }
+
+  private policySource(id: string, sourceId: string, revision?: number) {
+    const entry = this.get(id)?.extension
+    const source = entry?.installed?.contributions.find((item) => item.id === sourceId)
+    if (
+      !entry?.enabled ||
+      !source ||
+      (source.kind !== 'tool' && source.kind !== 'app' && !isStudioDataSource(source))
+    )
+      throw new HttpError(404, 'This extension source is unavailable.')
+    if (revision !== undefined && entry.revision !== revision)
+      throw new HttpError(409, 'The extension changed. Reload its sources.')
+    return { entry, source }
+  }
+
+  async sourcePolicy(input: StudioSourcePolicyRequest, authorize: () => void) {
+    const { entry, source } = this.policySource(input.id, input.sourceId, input.expectedRevision)
+    if (input.policy?.access === 'off') {
+      authorize()
+      this.policies.clear(input.id, input.sourceId)
+      this.recent.clear(input.id, input.sourceId)
+      return { access: 'off' as const, autoLoad: false }
+    }
+    const cwd =
+      source.kind === 'cli' ? await this.dataDirectory?.(source.repositoryId, authorize) : undefined
+    authorize()
+    this.policySource(input.id, input.sourceId, input.expectedRevision)
+    const target = this.policyTarget(entry, source, cwd)
+    if (input.policy) this.recent.clear(input.id, input.sourceId)
+    return input.policy
+      ? this.policies.save(input.id, input.sourceId, target, input.policy)
+      : this.policies.read(input.id, input.sourceId, target)
+  }
+
+  authorizeAppTools(id: string, sourceId: string, taskId: string, appId: string) {
+    const { entry, source } = this.policySource(id, sourceId)
+    if (
+      source.kind !== 'app' ||
+      source.taskId !== taskId ||
+      source.appId !== appId ||
+      this.policies.read(id, sourceId, this.policyTarget(entry, source)).access === 'off'
+    )
+      throw new HttpError(403, 'Allow this extension to use the MCP App tools first.')
+  }
 
   private storage() {
     if (!this.ready) {
@@ -636,7 +708,13 @@ export class StudioExtensions {
         )
           throw new HttpError(409, 'Update Studio to open this extension view.')
       }
-      if (contribution.kind === 'app') this.requireActiveThread(contribution.taskId)
+      if (
+        input.automatic &&
+        (contribution.kind !== 'app' ||
+          !this.policies.read(entry.id, contribution.id, this.policyTarget(entry, contribution))
+            .autoLoad)
+      )
+        throw new HttpError(403, 'Enable automatic loading for this app first.')
       return { contribution: projectContribution(contribution, input.componentVersion ?? 0) }
     }
     if (input.action === 'call') return this.call(input, authorize, agent?.taskId)
@@ -780,6 +858,7 @@ export class StudioExtensions {
         storage.transaction(() => {
           storage.prepare('DELETE FROM studio_extension_page_pins WHERE extension=?').run(id)
           storage.prepare('DELETE FROM studio_extensions WHERE id=?').run(id)
+          this.policies.clear(id)
         })()
         this.generation++
         this.stop(id)
@@ -853,29 +932,58 @@ export class StudioExtensions {
     authorize()
     if (entry.revision !== input.expectedRevision)
       throw new HttpError(409, 'The extension changed. Reload its data sources.')
-    const key = JSON.stringify([input.id, dataTarget(source)])
+    const interval = (source.refreshSeconds ?? 0) * 1000
+    const sharedReading = input.automatic || interval
+    const cwd =
+      sharedReading && source.kind === 'cli'
+        ? await this.dataDirectory?.(source.repositoryId, authorize)
+        : undefined
+    const target = sharedReading ? this.policyTarget(entry, source, cwd) : undefined
+    const check = () => {
+      authorize()
+      if (target && !this.currentSource(input.id, source))
+        throw new HttpError(409, 'The extension changed. Reload its data sources.')
+      if (input.automatic && target && !this.policies.read(input.id, source.id, target).autoLoad)
+        throw new HttpError(403, 'Enable automatic loading for this extension source first.')
+    }
+    check()
+    if (input.automatic && target && interval) {
+      const recent = this.recent.read(input.id, source.id, target, interval)
+      if (recent) return recent
+    }
+    const key = JSON.stringify([input.id, dataTarget(source), !!input.automatic, target])
     let shared = this.sourceReads.get(key)
-    if (shared) shared.callers.add(authorize)
+    if (shared) shared.callers.add(check)
     else {
       if (this.calls.size >= 8) throw new HttpError(429, 'The extension data source is busy.')
-      shared = this.startRead(input.id, source, key, authorize)
+      shared = this.startRead(input.id, source, key, check, cwd)
     }
     try {
       const result = await shared.read
-      authorize()
+      check()
       if (!this.currentSource(input.id, source))
         throw new HttpError(409, 'The extension changed. Reload its data sources.')
+      if (target && interval && this.policies.read(input.id, source.id, target).autoLoad) {
+        const reading = this.recent.remember(input.id, source.id, target, interval, result)
+        if (input.automatic) return reading
+      }
       return result
     } catch (error) {
       // A caller without access gets its own access error, not the shared result.
       authorize()
       throw error
     } finally {
-      shared.callers.delete(authorize)
+      shared.callers.delete(check)
     }
   }
 
-  private startRead(id: string, source: DataContribution, key: string, authorize: () => void) {
+  private startRead(
+    id: string,
+    source: DataContribution,
+    key: string,
+    authorize: () => void,
+    cwd?: string,
+  ) {
     const active: ActiveCall = { id, source, controller: new AbortController() }
     const signal = AbortSignal.any([active.controller.signal, this.shutdown.signal])
     const callers = new Set([authorize])
@@ -899,7 +1007,7 @@ export class StudioExtensions {
         throw new HttpError(409, 'The extension changed. Reload its data sources.')
     }
     this.calls.add(active)
-    const read = readStudioData(source, signal, check, this.dataDirectory)
+    const read = readStudioData(source, signal, check, this.dataDirectory, cwd)
       .then((data) => {
         check()
         return { data, updatedAt: Date.now() }
@@ -930,19 +1038,29 @@ export class StudioExtensions {
       throw new HttpError(403, 'This tool belongs to a different thread.')
     if (
       this.calls.size >= 8 ||
-      [...this.calls].some((entry) => entry.id === input.id && !entry.source)
+      [...this.calls].some((entry) => entry.id === input.id && entry.tool === target.id)
     )
       throw new HttpError(429, 'The extension is busy.')
-    const active = { id: input.id, controller: new AbortController() }
+    const active = { id: input.id, tool: target.id, controller: new AbortController() }
     const callSignal = AbortSignal.any([
       active.controller.signal,
       this.shutdown.signal,
       AbortSignal.timeout(10_000),
     ])
+    const permission = () => {
+      const { entry, source } = this.policySource(input.id, target.id)
+      const grant = this.policies.read(input.id, target.id, this.policyTarget(entry, source))
+      if (grant.access === 'off' || (input.automatic && !grant.autoLoad))
+        throw new HttpError(403, 'Allow this extension to use the MCP tool first.')
+      if (this.policyTarget(entry, source) !== approvedTarget)
+        throw new HttpError(409, 'The MCP tool changed. Review its extension grant again.')
+    }
+    const approvedTarget = this.policyTarget(current, target)
     const check = () => {
       authorize()
       callSignal.throwIfAborted()
-      this.requireActiveThread(target.taskId)
+      if (taskId) this.requireActiveThread(target.taskId)
+      permission()
     }
     const args = argumentsFor(target.arguments)
     for (const [key, setting] of Object.entries(target.inputs ?? {}))
@@ -976,6 +1094,7 @@ export class StudioExtensions {
             undefined,
             callSignal,
             check,
+            !taskId,
           )
         })
         .then((result) => {

@@ -1,6 +1,6 @@
-import { expect, it } from 'vite-plus/test'
+import { expect, it, vi } from 'vite-plus/test'
 import Database from 'better-sqlite3'
-import { mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdtempSync, rmSync, statSync, writeFileSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { backupRuntimeDatabase } from './backup'
@@ -15,12 +15,7 @@ it('backs up committed WAL data while the source remains open and restricts back
     database.exec("CREATE TABLE test (value TEXT); INSERT INTO test VALUES ('saved work')")
     const mask = process.umask(0)
     try {
-      const pending = backupRuntimeDatabase(source, target)
-      try {
-        expect(statSync(target).mode & 0o777).toBe(0o600)
-      } finally {
-        await pending
-      }
+      await backupRuntimeDatabase(source, target)
     } finally {
       process.umask(mask)
     }
@@ -33,6 +28,41 @@ it('backs up committed WAL data while the source remains open and restricts back
     expect(statSync(target).mode & 0o777).toBe(0o600)
   } finally {
     database.close()
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+it('keeps a fixed WAL snapshot while another connection commits a change', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'dovo-backup-live-'))
+  const source = join(directory, 'source.sqlite')
+  const target = join(directory, 'backup.sqlite')
+  const writer = new Database(source)
+  try {
+    writer.pragma('journal_mode = WAL')
+    writer.exec(`
+      CREATE TABLE test (value TEXT, padding BLOB);
+      INSERT INTO test VALUES ('before backup', zeroblob(16 * 1024 * 1024));
+    `)
+    const pending = backupRuntimeDatabase(source, target)
+    try {
+      await Promise.race([
+        vi.waitFor(() => expect(existsSync(target)).toBe(true), { interval: 1, timeout: 3000 }),
+        pending,
+      ])
+      expect(statSync(target).mode & 0o777).toBe(0o600)
+      writer.exec("UPDATE test SET value = 'saved during backup'")
+    } finally {
+      await pending
+    }
+    const copy = new Database(target, { readonly: true })
+    try {
+      expect(copy.prepare('SELECT value FROM test').pluck().get()).toBe('before backup')
+      expect(writer.prepare('SELECT value FROM test').pluck().get()).toBe('saved during backup')
+    } finally {
+      copy.close()
+    }
+  } finally {
+    writer.close()
     rmSync(directory, { recursive: true, force: true })
   }
 })

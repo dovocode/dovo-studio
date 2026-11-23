@@ -143,6 +143,7 @@ export function dashboardsRoute(
               s.devices.authenticate(token)
             },
             path === '/api/dashboards/command-data',
+            input.automatic,
           ),
         )
       }

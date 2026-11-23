@@ -42,6 +42,54 @@ async function setup() {
   return { ...f, s: runtime.services, cwd: await realpath(f.directory), request, post }
 }
 
+it('scans working metadata once for concurrent reads and loads only the selected file', async () => {
+  const f = await setup()
+  const task = f.s.tasks.create({
+    title: 'Preview selected change',
+    repositoryId: 'repo',
+    agentId: 'agent',
+    objective: '',
+    execution: 'main',
+  })
+  await writeFile(join(f.cwd, 'hello.txt'), 'edited\n')
+  await writeFile(join(f.cwd, 'other.txt'), 'another change\n')
+  const command = vi.spyOn(f.s.git, 'command')
+  const previews = vi.spyOn(f.s.git, 'workingFilePreview')
+  await Promise.all([f.s.git.changes(f.cwd, false), f.s.git.changes(f.cwd, false)])
+  expect(command.mock.calls.filter(([, args]) => args[0] === 'status')).toHaveLength(1)
+  const refresh = { taskId: task.id, includeFiles: false, metadataOnly: true }
+  expect((await f.request('changes', refresh)).status).toBe(200)
+  expect(previews).not.toHaveBeenCalled()
+  const load = { taskId: task.id, includeFiles: false, previewPath: 'hello.txt' }
+  const statusReads = command.mock.calls.filter(([, args]) => args[0] === 'status').length
+  expect((await f.request('changes', load)).status).toBe(200)
+  expect(command.mock.calls.filter(([, args]) => args[0] === 'status')).toHaveLength(statusReads)
+  expect(previews).toHaveBeenCalledTimes(1)
+  expect(f.s.store.taskSummary(task.id).files).toEqual([
+    expect.objectContaining({
+      path: 'hello.txt',
+      before: 'original\n',
+      after: 'edited\n',
+      diskContents: 'edited\n',
+    }),
+    expect.objectContaining({
+      path: 'other.txt',
+      after: '',
+      preview: expect.objectContaining({ kind: 'deferred' }),
+    }),
+  ])
+  expect((await f.request('changes', refresh)).status).toBe(200)
+  expect(f.s.store.taskSummary(task.id).files[0].after).toBe('edited\n')
+  expect((await f.request('changes', { ...load, previewPath: '../not-listed.txt' })).status).toBe(
+    200,
+  )
+  expect(previews).toHaveBeenCalledTimes(1)
+  await writeFile(join(f.cwd, 'other.txt'), 'changed after scan\n')
+  expect((await f.request('changes', { ...load, previewPath: 'other.txt' })).status).toBe(200)
+  expect(f.s.store.taskSummary(task.id).files[1].preview?.kind).toBe('deferred')
+  expect(previews).toHaveBeenCalledTimes(1)
+})
+
 it('acknowledges background Changes refreshes after saving files and retains full replies for other callers', async () => {
   const f = await setup()
   const task = f.s.tasks.create({

@@ -72,6 +72,16 @@ computer is offline or the browser tab is hidden. CLI refresh reads once when an
 becomes available again. Leaving the dashboard or saving a new dashboard revision stops the
 interval.
 
+Select **Load on open** for an HTTP, CLI, or MCP data tile to read it when the dashboard opens or
+reconnects. A saved refresh interval runs while the tile is visible. The choice stays on the paired
+computer across restarts and applies to the source you approved. For CLI data, review the project
+and command before enabling it. Select **Disable load on open** to stop. The setting stays on the
+paired computer when you export or share the dashboard.
+
+For a source with **Load on open** and a saved refresh interval, open clients share the latest
+reading until that interval is due. **Run command** and **Refresh data** still request an immediate
+read. Source grants remain separate.
+
 Studio keeps recent results in the current app session. It labels the last result stale while
 offline, after a failed refresh, or when you reopen the tile. Once you have read an HTTP source,
 Studio refreshes it when the view or window becomes active again. It keeps the last result visible

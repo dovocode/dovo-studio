@@ -4,6 +4,7 @@ import { SCRATCH_PROJECT_ID, type dashboardReadResultSchema } from '@dovo/protoc
 import {
   studioReadingKey,
   useStudioDataSource,
+  useStudioSourcePolicy,
   type StudioReadingOwner,
   type StudioReadingSource,
 } from '@dovo/studio-core'
@@ -18,7 +19,8 @@ import { DataView } from './dashboard-data-view'
 type Props = {
   source: StudioReadingSource
   owner: StudioReadingOwner
-  read: () => Promise<typeof dashboardReadResultSchema.Type>
+  revision?: number
+  read: (automatic?: boolean) => Promise<typeof dashboardReadResultSchema.Type>
   onData?: (value: unknown) => void
 }
 
@@ -49,13 +51,15 @@ export function MobileDataSource(props: Props) {
 
 function MobileDataSourceView({
   source,
+  owner,
+  revision,
   read,
   onData,
   identity,
   projectName,
 }: Props & { identity: string; projectName?: string }) {
   const uiText = useInterfaceText()
-  const { connected, snapshot } = useRuntime()
+  const { connected, snapshot, read: request } = useRuntime()
   const focused = useContext(NavigationContext)?.focused ?? true
   const foreground = useAppActive()
   const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
@@ -64,7 +68,15 @@ function MobileDataSourceView({
     (source.kind === 'api' && seconds === undefined && !source.panels) ||
     snapshot?.studioDataSourcesSupported === true
   const active = connected && focused && foreground && supported
-  const state = useStudioDataSource(identity, source, active, read, onData)
+  const policy = useStudioSourcePolicy(
+    request,
+    connected && !!snapshot?.studioSourcePoliciesSupported,
+    owner,
+    revision,
+    source.id,
+  )
+  const autoLoad = !!policy.policy?.autoLoad
+  const state = useStudioDataSource(identity, source, active, read, onData, undefined, autoLoad)
   const project =
     source.kind === 'cli'
       ? (projectName ??
@@ -107,7 +119,31 @@ function MobileDataSourceView({
             )
           }
         />
-        {seconds !== undefined && (
+        {policy.policy && (
+          <Action
+            label={uiText(autoLoad ? 'Disable load on open' : 'Load on open')}
+            secondary
+            disabled={policy.saving}
+            onPress={() => {
+              if (autoLoad) void policy.save({ access: 'off', autoLoad: false })
+              else if (source.kind !== 'cli')
+                void policy.save({ access: 'persistent', autoLoad: true })
+              else
+                Alert.alert(
+                  uiText('Enable automatic loading for this command?'),
+                  `${project}\n${detail}${seconds ? `\n\n${uiText('Refresh every {seconds} seconds while open', { seconds })}` : ''}`,
+                  [
+                    { text: uiText('Cancel'), style: 'cancel' },
+                    {
+                      text: uiText('Load on open'),
+                      onPress: () => void policy.save({ access: 'persistent', autoLoad: true }),
+                    },
+                  ],
+                )
+            }}
+          />
+        )}
+        {seconds !== undefined && !autoLoad && (
           <Action
             label={
               state.running
@@ -136,7 +172,9 @@ function MobileDataSourceView({
       {!supported && (
         <Text>{uiText('Update the paired computer to use these data displays.')}</Text>
       )}
-      {state.error && <Text accessibilityRole="alert">{state.error}</Text>}
+      {(state.error || policy.error) && (
+        <Text accessibilityRole="alert">{state.error || policy.error}</Text>
+      )}
       {state.data && (
         <>
           <Text>

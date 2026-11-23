@@ -1,4 +1,4 @@
-import { decode } from '@dovo/protocol'
+import { decode, reviewProgressSchema } from '@dovo/protocol'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { writeFile, readFile, mkdir, realpath, rm } from 'node:fs/promises'
 import { join } from 'node:path'
@@ -690,6 +690,60 @@ it('compares stacked task branches with the base recorded before the folder swit
   // An explicit stacked base, and the folder's current branch chosen by default.
   const chosen = await start('chosen', 'refs/heads/feature/base')
   const current = await start('current')
+  const post = (path: string, input: object) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${ownerToken}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  await writeFile(join(chosen.cwd, 'chosen.txt'), 'local work at list time\n')
+  const listed = await post('scm/branch-changes', {
+    repositoryId: 'repo',
+    taskId: chosen.id,
+    includeWorking: true,
+    metadataOnly: true,
+  })
+  const metadata = decode(responses.branchDiff, await listed.json())
+  expect(metadata.files).toEqual([
+    expect.objectContaining({
+      path: 'chosen.txt',
+      before: '',
+      after: '',
+      preview: expect.objectContaining({ kind: 'deferred' }),
+    }),
+  ])
+  expect(metadata.comparison).toEqual(expect.any(String))
+  const context = { kind: 'task', taskId: chosen.id, source: 'branch' }
+  const review = async () =>
+    decode(reviewProgressSchema, await (await post('review/read', { context })).json())
+  const mark = (await review()).files[0]!
+  expect(mark.sourceRevision).toBe(metadata.files[0]?.comparisonRevision)
+  expect(
+    (
+      await post('review/set', {
+        context,
+        path: mark.path,
+        fingerprint: mark.fingerprint,
+        version: mark.version,
+        viewed: true,
+      })
+    ).status,
+  ).toBe(200)
+  expect((await review()).files[0]).toMatchObject({ viewed: true, fingerprint: mark.fingerprint })
+  await writeFile(join(chosen.cwd, 'chosen.txt'), 'newer local work\n')
+  const savedComparison = { branchComparison: metadata.comparison, path: 'chosen.txt' }
+  expect(
+    await (await post('tasks/file/preview', { ...savedComparison, id: chosen.id })).json(),
+  ).toMatchObject({ after: { text: 'local work at list time\n' } })
+  expect((await post('tasks/file/preview', { ...savedComparison, id: current.id })).status).toBe(
+    409,
+  )
+  expect(
+    (await post('tasks/file/preview', { ...savedComparison, id: chosen.id, path: 'base.txt' }))
+      .status,
+  ).toBe(404)
+  expect((await review()).files[0]).toMatchObject({ viewed: false, changedSinceViewed: true })
+  await writeFile(join(chosen.cwd, 'chosen.txt'), 'task work\n')
   const branch = s.store.taskSummary(current.id).checkoutBranch
   expect(s.store.taskSummary(current.id).worktreeBase).toEqual({
     branch,

@@ -446,10 +446,16 @@ export function readDashboardDataSource(
   request: WorkspaceRequest,
   dashboard: Dashboard,
   tile: Extract<DashboardTile, { kind: 'api' | 'cli' | 'mcp' }>,
+  automatic = false,
 ) {
   return request(
     tile.kind === 'cli' ? '/api/dashboards/command-data' : '/api/dashboards/read',
-    { id: dashboard.id, tileId: tile.id, expectedRevision: dashboard.revision },
+    {
+      id: dashboard.id,
+      tileId: tile.id,
+      expectedRevision: dashboard.revision,
+      ...(automatic ? { automatic } : {}),
+    },
     dashboardReadResultSchema,
   )
 }

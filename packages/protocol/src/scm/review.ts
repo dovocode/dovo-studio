@@ -62,6 +62,7 @@ export const reviewProgressSchema = mutableStruct({
     mutableStruct({
       path,
       fingerprint: Schema.String,
+      sourceRevision: Schema.optional(Schema.String),
       viewed: Schema.Boolean,
       changedSinceViewed: Schema.optional(Schema.Literal(true)),
       version: integer,
@@ -231,6 +232,7 @@ export function createReviewFileLookup(progress: ReviewProgress | null) {
     }
     // Preserve the existing first-match behavior, including historical duplicate revisions.
     if (!revisions.has(file.fingerprint)) revisions.set(file.fingerprint, file)
+    if (file.sourceRevision) revisions.set(file.sourceRevision, file)
   }
   return (path: string, fingerprint: string) => paths.get(path)?.get(fingerprint)
 }

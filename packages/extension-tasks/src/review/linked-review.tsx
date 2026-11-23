@@ -16,8 +16,9 @@ import type { LocalCommit } from '@dovo/protocol'
 import { CheckpointDiff } from '../chat/thread/turn-checkpoint'
 
 export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: string }) {
-  const { request, workspace, setWorkspace, connected, activeRuntimeId, connection } =
+  const { request, workspace, setWorkspace, connected, activeRuntimeId, connection, snapshot } =
     useWorkspace()
+  const lazyCheckout = snapshot?.selectedCheckoutDiffSupported === true
   const [turnId, setTurnId] = useState('')
   const [commit, setCommit] = useState<LocalCommit | null>(null)
   const commitKey = JSON.stringify([
@@ -69,13 +70,22 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     },
     reviewVersion,
   )
-  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
+  const fileState = useMemo(() => {
+    const lookup = createReviewFileLookup(review.progress)
+    return (file: ChangedFile) =>
+      lookup(
+        file.path,
+        (!turnId && !commit && lazyCheckout ? file.workingRevision : undefined) ??
+          fingerprints.get(file.path) ??
+          '',
+      )
+  }, [review.progress?.files, fingerprints, turnId, commit, lazyCheckout])
   const [related, setRelated] = useState(true)
   const files = useMemo(
     () =>
       orderReviewFiles(
         sourceFiles.map((file) => {
-          const state = fileState(file.path, fingerprints.get(file.path) ?? '')
+          const state = fileState(file)
           return {
             ...file,
             viewed: state?.viewed ?? false,
@@ -96,7 +106,11 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     let active = true
     setLoading(true)
     setError('')
-    void request('/api/tasks/checkouts/changes', { id: task.id, checkoutId }, responses.files).then(
+    void request(
+      '/api/tasks/checkouts/changes',
+      { id: task.id, checkoutId, metadataOnly: lazyCheckout || undefined },
+      responses.files,
+    ).then(
       (result) => {
         if (active) {
           setLive(result.files)
@@ -113,7 +127,7 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
     return () => {
       active = false
     }
-  }, [request, task.id, checkoutId, turnId, commit, connected, refresh])
+  }, [request, task.id, checkoutId, turnId, commit, connected, refresh, lazyCheckout])
   useEffect(() => {
     if (!commit || !connected) return
     let active = true
@@ -238,11 +252,10 @@ export function LinkedReview({ task, checkoutId }: { task: Task; checkoutId: str
         selected={file?.path ?? ''}
         onSelect={setPath}
         onViewed={(viewed) => {
-          if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+          const mark = file && fileState(file)
+          if (file && mark) review.setViewed(file.path, mark.fingerprint, viewed)
         }}
-        disabled={
-          !review.ready || !file || !fileState(file.path, fingerprints.get(file.path) ?? '')
-        }
+        disabled={!review.ready || !file || !fileState(file)}
         busy={review.busy}
         error={review.error}
         onRetry={review.reload}

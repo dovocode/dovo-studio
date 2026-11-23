@@ -849,8 +849,9 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
       <div className="p-3">
         <DataSource
           owner={['dashboard', dashboard.id]}
+          revision={dashboard.revision}
           source={tile}
-          read={() => readDashboardDataSource(request, dashboard, tile)}
+          read={(automatic) => readDashboardDataSource(request, dashboard, tile, automatic)}
         />
       </div>
     )

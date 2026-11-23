@@ -402,6 +402,79 @@ it('requires UI approval and deduplicates calls, including persisted completed a
   ).rejects.toThrow('declined')
   expect(s.calls()).toBe(2)
 })
+it('uses only the selected installed extension grant for app tool calls', async () => {
+  const s = await setup()
+  const { mcpApps, activity, approvals, store } = s.runtime.services
+  await mcpApps.proxy(s.token, 'tools/call', { name: 'chart' })
+  const ref = recentTools(activity.list('', 'task-activity', 0, s.task.id).events).flatMap(
+    (event) => mcpAppReferences(event.payload),
+  )[0]
+  const owner = 'test-owner-token-with-at-least-32-characters'
+  const call = (path: string, input: object) =>
+    fetch(`http://127.0.0.1:${s.runtime.port}/api/${path}`, {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${owner}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+    })
+  const id = 'test.chart'
+  const contributionId = 'chart'
+  expect(
+    (
+      await call('studio-extensions', {
+        action: 'stage',
+        expectedRevision: 0,
+        manifest: {
+          id,
+          version: 1,
+          name: 'Chart',
+          contributions: [
+            { kind: 'app', id: contributionId, title: 'Chart', taskId: s.task.id, appId: ref.id },
+          ],
+        },
+      })
+    ).status,
+  ).toBe(200)
+  expect(
+    (await call('studio-extensions', { action: 'install', id, expectedRevision: 1 })).status,
+  ).toBe(200)
+  const rpc = {
+    taskId: s.task.id,
+    id: ref.id,
+    requestId: 'extension-grant',
+    method: 'tools/call',
+    params: { name: 'refresh' },
+    extension: { id, contributionId },
+  }
+  const permission = { owner: 'extension', id, sourceId: contributionId, expectedRevision: 2 }
+  const approve = vi.spyOn(approvals, 'request').mockResolvedValue('approve')
+  expect((await call('mcp-apps/rpc', rpc)).status).toBe(403)
+  expect(
+    (
+      await call('studio/source-policy', {
+        ...permission,
+        policy: { access: 'persistent', autoLoad: true },
+      })
+    ).status,
+  ).toBe(200)
+  store.updateTask(s.task.id, (task) => ({ ...task, status: 'done' }))
+  expect((await call('mcp-apps/rpc', rpc)).status).toBe(200)
+  expect(approve).not.toHaveBeenCalled()
+  expect(s.calls()).toBe(2)
+  expect(
+    (await call('mcp-apps/rpc', { ...rpc, extension: { id, contributionId: 'another-app' } }))
+      .status,
+  ).toBe(404)
+  expect(
+    (
+      await call('studio/source-policy', {
+        ...permission,
+        policy: { access: 'off', autoLoad: false },
+      })
+    ).status,
+  ).toBe(200)
+  expect((await call('mcp-apps/rpc', rpc)).status).toBe(403)
+  expect(s.calls()).toBe(2)
+})
 it('keeps the UI request alive through approval and a slow upstream tool without duplicate execution', async () => {
   const s = await setup(true, undefined, 450),
     bridge = s.runtime.services.mcpApps

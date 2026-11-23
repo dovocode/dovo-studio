@@ -96,6 +96,13 @@ export const runtimeMemoryDiagnosticsSchema = mutableStruct({
   ),
 })
 export type RuntimeMemoryDiagnostics = Schema.Schema.Type<typeof runtimeMemoryDiagnosticsSchema>
+export const runtimeBackupProgressSchema = mutableStruct({
+  startedAt: Schema.String,
+  phase: Schema.Literals(['preparing', 'copying', 'verifying', 'publishing']),
+  copiedPages: Schema.optional(Schema.Number),
+  totalPages: Schema.optional(Schema.Number),
+})
+export type RuntimeBackupProgress = typeof runtimeBackupProgressSchema.Type
 export const runtimeDiagnosticsSchema = mutableStruct({
   ready: Schema.Boolean,
   checkedAt: Schema.String,
@@ -157,6 +164,7 @@ export const runtimeDiagnosticsSchema = mutableStruct({
     entries: mutableArray(backupEntry),
     failure: Schema.NullOr(mutableStruct({ at: Schema.String, message: Schema.String })),
     active: Schema.Boolean,
+    progress: Schema.optional(runtimeBackupProgressSchema),
     maxCount: Schema.Number,
     maxBytes: Schema.Number,
   }),

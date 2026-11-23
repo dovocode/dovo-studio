@@ -342,6 +342,7 @@ export {
   type StudioDataSource,
 } from './runtime/studio-data-sources.js'
 export * from './runtime/studio-extensions.js'
+export * from './runtime/studio-source-policy.js'
 export * from './runtime/studio-extension-marketplace.js'
 export * from './runtime/studio-extension-views.js'
 

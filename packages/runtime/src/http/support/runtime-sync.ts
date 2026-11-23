@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { Effect, Fiber } from 'effect'
+import { Effect } from 'effect'
 import { WebSocket } from 'ws'
 import {
   decode,
@@ -52,6 +52,8 @@ type View = {
   history: Array<{ sequence: number; wire: string }>
   bytes: number
   pending?: Promise<void>
+  publishing?: Promise<void>
+  publishAgain?: boolean
 }
 const hubs = new WeakMap<Services, RuntimeSync>()
 export function attachRuntimeSync(
@@ -93,16 +95,15 @@ export async function disposeRuntimeSync(services: Services) {
 class RuntimeSync {
   private controller = new AbortController()
   private views = new Map<string, View>()
-  private timer?: Fiber.Fiber<never, never>
-  private busy = false
+  private timer?: ReturnType<typeof setTimeout>
   private wakeup?: ReturnType<typeof setTimeout>
   private stopCommitted?: () => void
-  private dirty = false
+  private stopActivity?: () => void
   private wake() {
     if (this.controller.signal.aborted || this.wakeup) return
     this.wakeup = setTimeout(() => {
       this.wakeup = undefined
-      void this.tick()
+      this.tick()
     }, 20)
     this.wakeup.unref()
   }
@@ -141,12 +142,14 @@ class RuntimeSync {
   async dispose() {
     this.controller.abort()
     this.stopCommitted?.()
+    this.stopActivity?.()
     clearTimeout(this.wakeup)
-    if (this.timer) await Effect.runPromise(Fiber.interrupt(this.timer))
+    clearTimeout(this.timer)
     const pending: Promise<void>[] = []
     for (const view of this.views.values()) {
       clearTimeout(view.expiry)
       if (view.pending) pending.push(view.pending)
+      if (view.publishing) pending.push(view.publishing)
       for (const client of view.clients) {
         client.ready = false
         client.socket.close(1001, 'Runtime shutting down')
@@ -510,7 +513,9 @@ class RuntimeSync {
       if (![...this.views.values()].some((item) => item.clients.size)) {
         this.stopCommitted?.()
         this.stopCommitted = undefined
-        if (this.timer) Effect.runFork(Fiber.interrupt(this.timer))
+        this.stopActivity?.()
+        this.stopActivity = undefined
+        clearTimeout(this.timer)
         this.timer = undefined
         clearTimeout(this.wakeup)
         this.wakeup = undefined
@@ -519,9 +524,10 @@ class RuntimeSync {
     })
     if (!this.timer) {
       this.stopCommitted = this.services.store.onCommitted(() => this.wake())
-      this.timer = Effect.runFork(
-        Effect.forever(Effect.promise(() => this.tick()).pipe(Effect.andThen(Effect.sleep(200)))),
-      )
+      this.stopActivity = this.services.activity.onRecorded((kind, scope) => {
+        if (kind === 'approval' || kind === 'question' || scope === 'secure-input') this.wake()
+      })
+      this.scheduleTick()
     }
   }
   private send(client: Client, wire: string) {
@@ -683,108 +689,123 @@ class RuntimeSync {
       } else this.catchUp(view, client)
     }
   }
-  private async tick() {
-    if (this.busy) {
-      this.dirty = true
+  private scheduleTick() {
+    if (this.controller.signal.aborted) return
+    const catchingUp = [...this.views.values()].some((view) =>
+      [...view.clients].some(
+        (client) => client.ready && (client.sequence !== view.sequence || !this.writable(client)),
+      ),
+    )
+    this.timer = setTimeout(
+      () => {
+        this.tick()
+        this.scheduleTick()
+      },
+      catchingUp ? 200 : 500,
+    )
+    this.timer.unref()
+  }
+  private tick() {
+    if (this.controller.signal.aborted) return
+    const signature = this.signature()
+    for (const view of this.views.values()) {
+      if (!view.clients.size) continue
+      if (view.publishing) {
+        view.publishAgain = true
+        continue
+      }
+      view.publishing = this.publish(view, signature).finally(() => {
+        view.publishing = undefined
+        if (!view.publishAgain) return
+        view.publishAgain = false
+        if (view.clients.size) this.wake()
+      })
+    }
+  }
+  private async publish(view: View, signature: string) {
+    try {
+      this.services.devices.authenticate(view.token)
+    } catch {
+      for (const client of view.clients) client.socket.close(1008, 'Device authentication required')
       return
     }
-    this.busy = true
+    // Coalesce state changes while every reader is backed up. The next writable
+    // tick builds one delta from the last published state to the latest workspace.
+    if (![...view.clients].some((client) => client.ready && this.writable(client))) return
     try {
-      const signature = this.signature()
-      for (const view of this.views.values()) {
-        if (!view.clients.size) continue
-        try {
-          this.services.devices.authenticate(view.token)
-        } catch {
-          for (const client of view.clients)
-            client.socket.close(1008, 'Device authentication required')
-          continue
-        }
-        // Coalesce state changes while every reader is backed up. The next writable
-        // tick builds one delta from the last published state to the latest workspace.
-        if (![...view.clients].some((client) => client.ready && this.writable(client))) continue
-        try {
-          await this.refresh(view, signature)
-          if (this.controller.signal.aborted) return
-          for (const client of view.clients) {
-            if (!client.ready || !this.writable(client)) continue
-            this.catchUp(view, client)
-            for (const [scope, previous] of client.scopes) {
-              if (!this.writable(client)) break
-              const cached = this.activityScopes.get(scope)
-              if (!cached) continue
-              const revision = cached.watch.revision()
-              const initial = !client.activityVersions.has(scope)
-              if (!initial && client.activityVersions.get(scope) === revision) continue
-              if (cached.revision !== revision) {
-                cached.full = this.services.activity.list('', 'task-activity', 0, scope).events
-                cached.compact = undefined
-                cached.revision = revision
-              }
-              const events = client.detailScopes.has(scope)
-                ? cached.full
-                : (cached.compact ??= cached.compactEvents(cached.full))
-              const old = new Map(previous.map((event) => [event.id, event]))
-              const changed = events.filter((event) => {
-                const previous = old.get(event.id)
-                return (
-                  !previous ||
-                  event.payload !== previous.payload ||
-                  event.summary !== previous.summary ||
-                  event.time !== previous.time ||
-                  event.kind !== previous.kind ||
-                  event.scope !== previous.scope
-                )
-              })
-              if (
-                initial ||
-                changed.length ||
-                events.some((event, index) => event.id !== previous[index]?.id) ||
-                events.length !== previous.length
-              )
-                this.send(
-                  client,
-                  JSON.stringify(
-                    view.compact && !initial
-                      ? ({
-                          type: 'activity-delta',
-                          scope,
-                          delta: activityDelta(previous, events),
-                        } satisfies SyncFrame)
-                      : ({
-                          type: 'activity',
-                          scope,
-                          order: events.map((event) => event.id),
-                          events: changed,
-                        } satisfies SyncFrame),
-                  ),
-                )
-              client.scopes.set(scope, events)
-              client.activityVersions.set(scope, revision)
-            }
-            // Application-level heartbeat works in both browser and React Native sockets.
-            if (this.writable(client) && Date.now() - client.heartbeat >= 15000) {
-              client.heartbeat = Date.now()
-              this.send(
-                client,
-                JSON.stringify({
-                  type: 'heartbeat',
-                  epoch: view.epoch,
-                  sequence: client.sequence,
-                } satisfies SyncFrame),
-              )
-            }
+      await this.refresh(view, signature)
+      if (this.controller.signal.aborted) return
+      for (const client of view.clients) {
+        if (!client.ready || !this.writable(client)) continue
+        this.catchUp(view, client)
+        for (const [scope, previous] of client.scopes) {
+          if (!this.writable(client)) break
+          const cached = this.activityScopes.get(scope)
+          if (!cached) continue
+          const revision = cached.watch.revision()
+          const initial = !client.activityVersions.has(scope)
+          if (!initial && client.activityVersions.get(scope) === revision) continue
+          if (cached.revision !== revision) {
+            cached.full = this.services.activity.list('', 'task-activity', 0, scope).events
+            cached.compact = undefined
+            cached.revision = revision
           }
-        } catch {
-          for (const client of view.clients) client.socket.close(1011, 'Sync unavailable')
+          const events = client.detailScopes.has(scope)
+            ? cached.full
+            : (cached.compact ??= cached.compactEvents(cached.full))
+          const old = new Map(previous.map((event) => [event.id, event]))
+          const changed = events.filter((event) => {
+            const previous = old.get(event.id)
+            return (
+              !previous ||
+              event.payload !== previous.payload ||
+              event.summary !== previous.summary ||
+              event.time !== previous.time ||
+              event.kind !== previous.kind ||
+              event.scope !== previous.scope
+            )
+          })
+          if (
+            initial ||
+            changed.length ||
+            events.some((event, index) => event.id !== previous[index]?.id) ||
+            events.length !== previous.length
+          )
+            this.send(
+              client,
+              JSON.stringify(
+                view.compact && !initial
+                  ? ({
+                      type: 'activity-delta',
+                      scope,
+                      delta: activityDelta(previous, events),
+                    } satisfies SyncFrame)
+                  : ({
+                      type: 'activity',
+                      scope,
+                      order: events.map((event) => event.id),
+                      events: changed,
+                    } satisfies SyncFrame),
+              ),
+            )
+          client.scopes.set(scope, events)
+          client.activityVersions.set(scope, revision)
+        }
+        // Application-level heartbeat works in both browser and React Native sockets.
+        if (this.writable(client) && Date.now() - client.heartbeat >= 15000) {
+          client.heartbeat = Date.now()
+          this.send(
+            client,
+            JSON.stringify({
+              type: 'heartbeat',
+              epoch: view.epoch,
+              sequence: client.sequence,
+            } satisfies SyncFrame),
+          )
         }
       }
-    } finally {
-      this.busy = false
-      if (this.dirty) {
-        this.dirty = false
-        this.wake()
-      }
+    } catch {
+      for (const client of view.clients) client.socket.close(1011, 'Sync unavailable')
     }
   }
 }

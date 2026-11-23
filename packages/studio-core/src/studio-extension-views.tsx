@@ -2,8 +2,10 @@ import { Component, useMemo, useRef, useState, type ReactNode } from 'react'
 import { clientScopeKey } from '@dovo/client-runtime'
 import {
   extensionViewResultIds,
+  extensionViewActionIds,
   isStudioDataSource,
   type ExtensionSettingValue,
+  type ExtensionContribution,
   type ExtensionView,
   type ExtensionViewValue,
   type StudioExtensionEntry,
@@ -135,11 +137,11 @@ export function useExtensionView(
   if (toolState.manifest !== manifest) setToolState({ manifest, results: new Map() })
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  const running = useRef(false)
+  const running = useRef(0)
 
-  async function perform(work: () => Promise<void>) {
-    if (!connected || running.current) return
-    running.current = true
+  async function perform(work: () => Promise<void>, automatic = false) {
+    if (!connected || (running.current && !automatic)) return
+    running.current++
     setBusy(true)
     setError('')
     try {
@@ -147,8 +149,8 @@ export function useExtensionView(
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
-      running.current = false
-      setBusy(false)
+      running.current--
+      if (!running.current) setBusy(false)
     }
   }
 
@@ -161,6 +163,12 @@ export function useExtensionView(
   }
 
   const results = extensionViewResultIds(view)
+  const actions = extensionViewActionIds(view)
+  const tools =
+    entry.installed?.contributions.filter(
+      (item): item is Extract<ExtensionContribution, { kind: 'tool' }> =>
+        item.kind === 'tool' && (actions.has(item.id) || results.has(item.id)),
+    ) ?? []
   const sources =
     entry.installed?.contributions
       .filter(isStudioDataSource)
@@ -171,10 +179,13 @@ export function useExtensionView(
   const { dirty, values } = draft
   return {
     extensionId: entry.id,
+    extensionRevision: entry.revision,
     resultScope: manifest,
     sources,
+    tools,
     implicitSources: sources.filter((source) => !positioned.has(source.id)),
-    readSource: (id: string) => readExtensionDataSource(request, entry, id),
+    readSource: (id: string, automatic?: boolean) =>
+      readExtensionDataSource(request, entry, id, automatic),
     setResult,
     nodes: new Map(view.nodes.map((node) => [node.id, node])),
     get: (value: ExtensionViewValue) => extensionViewValue(value, values, toolState.results),
@@ -186,14 +197,14 @@ export function useExtensionView(
     resolveConflicts: draft.resolveConflicts,
     save: draft.commit,
     settingsSaving: draft.saving,
-    run: (id: string) => {
+    run: (id: string, automatic = false) => {
       if (dirty || draft.saving) return
       return perform(async () => {
         if (!entry.installed?.contributions.some((item) => item.kind === 'tool' && item.id === id))
           return
-        const { data } = await callStudioExtension(request, entry, id)
+        const { data } = await callStudioExtension(request, entry, id, automatic)
         setResult(id, data)
-      })
+      }, automatic)
     },
     error: draft.error || error,
     busy: busy || draft.saving,

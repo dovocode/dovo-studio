@@ -90,6 +90,7 @@ type Scope = {
   approvalPolicy?: Agent['approvalPolicy']
   sandboxMode?: Agent['sandboxMode']
   signal?: AbortSignal
+  extensionTools?: boolean
 }
 type StoredApp = McpApp & { fingerprint: string; cwd: string }
 const fingerprint = (server: McpServer) =>
@@ -235,6 +236,28 @@ export class McpApps {
       approvalPolicy: agent.approvalPolicy,
       sandboxMode: agent.sandboxMode,
     }
+  }
+  private extensionScope(taskId: string, name: string) {
+    const task = this.store.taskSummary(taskId)
+    const project = this.store.get().repositories.find((item) => item.id === task.repositoryId)
+    return this.current(taskId, name, project?.path)
+  }
+
+  extensionSourceIdentity(taskId: string, name: string) {
+    const scope = this.extensionScope(taskId, name)
+    return createHash('sha256')
+      .update(JSON.stringify([fingerprint(scope.server), scope.cwd]))
+      .digest('hex')
+  }
+
+  extensionAppIdentity(taskId: string, id: string) {
+    const app = this.saved(taskId, id)
+    if (isA2uiApp(app)) return 'a2ui'
+    if (fingerprint(this.current(taskId, app.server).server) !== app.fingerprint)
+      throw new HttpError(409, 'This saved app uses an older MCP configuration')
+    return createHash('sha256')
+      .update(JSON.stringify([app.fingerprint, app.cwd]))
+      .digest('hex')
   }
   /** Synchronously returns the key's reservation, evicting an unprotected idle session at capacity. */
   private reserve(scope: Scope): Reservation {
@@ -680,9 +703,10 @@ export class McpApps {
     signal: AbortSignal,
     authorize: () => void,
     expected?: string,
+    extension = false,
   ) {
-    const scope = this.current(taskId, server)
-    if (scope.permission === 'read-only')
+    const scope = extension ? this.extensionScope(taskId, server) : this.current(taskId, server)
+    if (!extension && scope.permission === 'read-only')
       throw new HttpError(403, 'Live feeds are disabled for read-only threads')
     const scopeKey = createHash('sha256')
       .update(
@@ -791,6 +815,7 @@ export class McpApps {
     expected: string | undefined,
     signal: AbortSignal,
     authorize: () => void,
+    extension = false,
   ) {
     const { scope, session, tool, key } = await this.feedTool(
       taskId,
@@ -799,6 +824,7 @@ export class McpApps {
       signal,
       authorize,
       expected,
+      extension,
     )
     try {
       if (expected && expected !== key)
@@ -820,12 +846,16 @@ export class McpApps {
       )
       authorize()
       signal.throwIfAborted()
-      const current = this.current(taskId, query.server)
+      const current = extension
+        ? this.extensionScope(taskId, query.server)
+        : this.current(taskId, query.server)
       if (
         fingerprint(current.server) !== fingerprint(scope.server) ||
-        current.permission !== scope.permission ||
-        current.approvalPolicy !== scope.approvalPolicy ||
-        current.sandboxMode !== scope.sandboxMode
+        current.cwd !== scope.cwd ||
+        (!extension &&
+          (current.permission !== scope.permission ||
+            current.approvalPolicy !== scope.approvalPolicy ||
+            current.sandboxMode !== scope.sandboxMode))
       )
         throw new HttpError(409, 'MCP configuration changed during the read')
       if (result.isError) throw new HttpError(502, 'MCP data read failed')
@@ -934,7 +964,7 @@ export class McpApps {
         (tool) => tool.name === input.name && visibleTo(tool, ui ? 'app' : 'model'),
       )
       if (!tool) throw new HttpError(403, 'Tool is not available in this MCP scope')
-      if (ui) {
+      if (ui && !scope.extensionTools) {
         const task = this.store.taskSummary(scope.taskId)
         if (task.status === 'done' || task.archivedAt)
           throw new HttpError(409, 'Reopen this thread before using its MCP Apps')
@@ -1224,20 +1254,29 @@ export class McpApps {
     method: string,
     params: unknown,
     authorize: () => void = () => {},
+    extensionKey?: string,
   ) {
+    if (extensionKey) authorize()
     const app = this.saved(taskId, id)
     if (method === 'ui/cancel') {
       const target = object(params).requestId
       if (typeof target === 'string')
-        this.actions.get(`${taskId}:${id}:${target}`)?.controller.abort()
+        this.actions
+          .get(`${taskId}:${id}:${target}${extensionKey ? `:${extensionKey}` : ''}`)
+          ?.controller.abort()
       return {}
     }
-    const scope = isA2uiApp(app) ? undefined : this.current(taskId, app.server)
+    const scope = isA2uiApp(app)
+      ? undefined
+      : {
+          ...this.current(taskId, app.server, extensionKey ? app.cwd : undefined),
+          extensionTools: !!extensionKey,
+        }
     if (scope && fingerprint(scope.server) !== app.fingerprint)
       throw new HttpError(409, 'This saved app uses an older MCP configuration')
     if (!/^[a-zA-Z0-9_-]{1,128}$/.test(requestId))
       throw new HttpError(400, 'Invalid MCP App request identity')
-    const key = `${taskId}:${id}:${requestId}`,
+    const key = `${taskId}:${id}:${requestId}${extensionKey ? `:${extensionKey}` : ''}`,
       input = JSON.stringify({ method, params })
     const previous = this.actions.get(key)
     if (previous) {

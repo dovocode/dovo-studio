@@ -10,10 +10,13 @@ import {
   type Dashboard,
   type DashboardTile,
   type TaskSummary,
+  type StudioSourcePolicyRequest,
 } from '@dovo/protocol'
 import type { McpApps } from '../mcp-apps/bridge.js'
 import { HttpError } from '../errors.js'
 import { readStudioData, type DataSourceDirectory } from './data-sources.js'
+import { SourcePolicies, sourcePolicyTarget } from '../studio/source-policies.js'
+import { RecentSourceReadings } from '../studio/recent-source-readings.js'
 
 /** Dashboards per runtime. Each one holds at most 32 tiles. */
 const MAX_DASHBOARDS = 64
@@ -80,12 +83,15 @@ function mcpArguments(tile: Extract<DashboardTile, { kind: 'mcp' }>) {
 export class Dashboards {
   private readonly shutdown = new AbortController()
   private readonly reads = new Map<string, Promise<DashboardTileRead>>()
+  private readonly policies: SourcePolicies
+  private readonly recent = new RecentSourceReadings()
   constructor(
     private db: Database.Database,
-    private mcp: Pick<McpApps, 'feedRead'>,
+    private mcp: Pick<McpApps, 'feedRead'> & Partial<Pick<McpApps, 'extensionSourceIdentity'>>,
     private store: { taskSummary(id: string): Pick<TaskSummary, 'archived' | 'archivedAt'> },
     private directory?: DataSourceDirectory,
   ) {
+    this.policies = new SourcePolicies(db, 'dashboard')
     db.exec(
       `CREATE TABLE IF NOT EXISTS dashboards(id TEXT PRIMARY KEY,revision INTEGER NOT NULL,definition TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS dashboard_sessions(dashboard TEXT NOT NULL,tile TEXT NOT NULL,
@@ -172,7 +178,39 @@ export class Dashboards {
     this.db.transaction(() => {
       this.db.prepare('DELETE FROM dashboards WHERE id=? AND revision=?').run(id, expectedRevision)
       this.db.prepare('DELETE FROM dashboard_sessions WHERE dashboard=?').run(id)
+      this.policies.clear(id)
     })()
+  }
+
+  private async policyTarget(tile: DataTile, authorize: () => void) {
+    const cwd =
+      tile.kind === 'cli' ? await this.directory?.(tile.repositoryId, authorize) : undefined
+    return { cwd, target: this.policyFingerprint(tile, cwd) }
+  }
+
+  private policyFingerprint(tile: DataTile, cwd?: string) {
+    const server =
+      tile.kind === 'mcp' ? this.mcp.extensionSourceIdentity?.(tile.taskId, tile.server) : undefined
+    return sourcePolicyTarget([tile, cwd, server])
+  }
+
+  async sourcePolicy(input: StudioSourcePolicyRequest, authorize: () => void) {
+    const { tile } = this.current(input.id, input.sourceId, input.expectedRevision)
+    if (!isStudioDataSource(tile) && tile.kind !== 'mcp')
+      throw new HttpError(400, 'This tile has no data source')
+    if (input.policy?.access === 'off') {
+      authorize()
+      this.policies.clear(input.id, input.sourceId)
+      this.recent.clear(input.id, input.sourceId)
+      return { access: 'off' as const, autoLoad: false }
+    }
+    const { target } = await this.policyTarget(tile, authorize)
+    authorize()
+    this.current(input.id, input.sourceId, input.expectedRevision)
+    if (input.policy) this.recent.clear(input.id, input.sourceId)
+    return input.policy
+      ? this.policies.save(input.id, input.sourceId, target, input.policy)
+      : this.policies.read(input.id, input.sourceId, target)
   }
   tile(id: string, tileId: string) {
     const dashboard = this.get(id)
@@ -191,6 +229,7 @@ export class Dashboards {
     expectedRevision: number,
     authorize: () => void,
     command = false,
+    automatic = false,
   ): Promise<DashboardTileRead> {
     if (this.shutdown.signal.aborted) throw new HttpError(503, 'The runtime is stopping')
     const { dashboard, tile } = this.current(id, tileId, expectedRevision)
@@ -198,20 +237,41 @@ export class Dashboards {
       throw new HttpError(400, 'This tile has no data source')
     if (command !== (tile.kind === 'cli'))
       throw new HttpError(400, 'Use the read operation for the saved source type')
-    const check = () => this.access(dashboard, tile, authorize)
+    const interval = isStudioDataSource(tile) ? (tile.refreshSeconds ?? 0) * 1000 : 0
+    const configured = automatic || interval ? await this.policyTarget(tile, authorize) : undefined
+    const check = () => {
+      this.access(dashboard, tile, authorize)
+      if (
+        automatic &&
+        configured &&
+        (this.policyFingerprint(tile, configured.cwd) !== configured.target ||
+          !this.policies.read(id, tileId, configured.target).autoLoad)
+      )
+        throw new HttpError(403, 'Enable automatic loading for this dashboard source first')
+    }
     check()
-    const key = JSON.stringify([id, tileId, dashboard.revision])
+    if (automatic && configured && interval) {
+      const recent = this.recent.read(id, tileId, configured.target, interval)
+      if (recent) return recent
+    }
+    const key = JSON.stringify([id, tileId, dashboard.revision, automatic, configured?.target])
     let read = this.reads.get(key)
     if (!read) {
       if (this.reads.size >= MAX_READS)
         throw new HttpError(429, 'Too many dashboard reads are running. Try again soon.')
-      read = this.perform(dashboard, tile, check).finally(() => this.reads.delete(key))
+      read = this.perform(dashboard, tile, check, configured?.cwd).finally(() =>
+        this.reads.delete(key),
+      )
       this.reads.set(key, read)
     }
     const result = await read
     // Every caller, including one that joined a shared read, is checked again before it receives
     // the result: its device, the revision it shows, and the MCP thread.
     check()
+    if (configured && interval && this.policies.read(id, tileId, configured.target).autoLoad) {
+      const reading = this.recent.remember(id, tileId, configured.target, interval, result)
+      if (automatic) return reading
+    }
     return result
   }
   private access(dashboard: Dashboard, tile: DataTile, authorize: () => void) {
@@ -254,12 +314,12 @@ export class Dashboards {
     const session = decode(sessionSchema, row)
     return session.fingerprint === sessionFingerprint(tile) ? session.terminal : undefined
   }
-  private async perform(dashboard: Dashboard, tile: DataTile, authorize: () => void) {
+  private async perform(dashboard: Dashboard, tile: DataTile, authorize: () => void, cwd?: string) {
     const signal = this.shutdown.signal
     const data =
       tile.kind === 'mcp'
         ? await this.readMcp(tile, signal, authorize)
-        : await readStudioData(tile, signal, authorize, this.directory)
+        : await readStudioData(tile, signal, authorize, this.directory, cwd)
     // A definition edited or deleted during the read must not show stale data as current.
     if (this.get(dashboard.id)?.revision !== dashboard.revision)
       throw new HttpError(409, 'This dashboard changed during the read. Reload it.')

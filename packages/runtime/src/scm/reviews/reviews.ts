@@ -216,7 +216,12 @@ export class FileReviews {
         changes = checkpointFiles(history)
       } else if (context.source === 'branch') {
         const cwd = await s.checkouts.directory(task.id)
-        const diff = await s.git.reviewBranchChangesFiles(cwd, s.checkouts.branchBase(task.id))
+        const diff = await s.git.reviewBranchChangesFiles(
+          cwd,
+          s.checkouts.branchBase(task.id),
+          false,
+          true,
+        )
         changes = checkpointFiles(diff)
       } else if (context.checkoutId) {
         changes = await s.git.changes(
@@ -235,6 +240,9 @@ export class FileReviews {
     }
     // Fresh full PR fetches reconcile in PullCache. A cached read can decorate progress,
     // but must never roll it back after a newer fetch completed.
+    const versionedCheckout =
+      context.kind === 'task' &&
+      (context.source === 'branch' || (context.source === 'working' && !!context.checkoutId))
     let states = working
       ? files.map((file, index) => ({
           ...file,
@@ -242,7 +250,7 @@ export class FileReviews {
           changedSinceViewed: working?.[index]?.changedSinceViewed,
           version: workingVersions?.[file.path] ?? 0,
         }))
-      : organize || s.reviewMarks.hasScope(scope)
+      : organize || (!versionedCheckout && s.reviewMarks.hasScope(scope))
         ? s.reviewMarks.files(scope)
         : s.reviewMarks.reconcile(scope, files)
     if (mark) {
@@ -365,8 +373,18 @@ export class FileReviews {
         )
       }
     }
+    const revisions = new Map(
+      versionedCheckout
+        ? (changes ?? []).map((file) => [
+            file.path,
+            file.comparisonRevision ?? file.workingRevision,
+          ])
+        : [],
+    )
     return {
-      files: working ? states : s.reviewMarks.files(scope),
+      files: (working ? states : s.reviewMarks.files(scope)).map((file) =>
+        revisions.has(file.path) ? { ...file, sourceRevision: revisions.get(file.path) } : file,
+      ),
       groups,
       revision,
       ...(guide ? { guide } : {}),

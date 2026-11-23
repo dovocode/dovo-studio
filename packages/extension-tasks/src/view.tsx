@@ -414,7 +414,8 @@ export default function TasksView({
   const browserDetached = surface === 'browser' && browserPlacement !== 'inline'
   const toolsExpanded = surface !== 'chat' && (!compact || surface !== 'terminal')
   const fileViewer = surface === 'files' || surface === 'changes'
-  const loadChangePreviews = surface === 'changes'
+  const loadChangePreviews =
+    surface === 'changes' && !store.snapshot?.selectedWorkingChangeSupported
   const repository = workspace.repositories.find((item) => item.id === task?.repositoryId)
   const refreshChanges = useCallback(async () => {
     if (!task || task.replica || repository?.kind || editingFile.current) return

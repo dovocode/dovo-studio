@@ -18,8 +18,8 @@ On mobile, new labels for dashboards and extensions use English until translatio
   declaration. The runtime checks the tool declaration and validates the arguments before each call.
 - **Data sources** read an HTTP API or capture CLI stdout. Use a source as a dashboard tile or bind
   its result to Studio components in an extension view.
-- **MCP App views** open a saved MCP App in its original thread's app host. Give the source thread
-  ID and saved app ID. The app keeps the existing sandbox, permissions, and tool approvals.
+- **MCP App views** open a saved MCP App in Studio's sandbox. Give the source thread ID and saved
+  app ID. A paired user grants MCP tool access to the installed extension contribution.
 - **Settings** declare text and switch fields. Studio renders a settings view for each extension
   with fields. A tool can map settings to named input arguments. Studio stores the values on the
   paired computer and retains compatible values during an update.
@@ -131,6 +131,23 @@ Studio keeps the last API or CLI result for each source in the current app sessi
 result in cards and views that use the same source, including after a sidebar change. A previously
 read API source refreshes when its view becomes active again. Reopening a view restores a CLI
 result. The user can run the command again or start a new interval.
+
+Select **Load on open** to read an HTTP or CLI contribution automatically when its dashboard or
+extension view opens or reconnects. A saved refresh interval also runs while the view is open.
+Studio shows the machine's project and command before enabling automatic CLI runs. Select **Disable
+load on open** to stop automatic reads. Manifests and marketplace packages carry the source
+definition. The paired computer stores the automatic loading choice. Open clients share timed
+automatic readings for the same approved contribution. **Refresh data** and **Run command** still
+request an immediate read.
+
+For MCP tools and Apps, choose **Allow for session** or **Always allow** on the contribution. A
+session grant lasts until the runtime restarts. A persistent grant survives a restart. The grant
+belongs to the installed extension and its source configuration. The source thread still identifies
+the configured server or saved App. When an MCP App opens through an extension, its grant covers the
+server tools exposed to that App, which can include tools that make changes. Select **Revoke
+access** to remove the grant. After granting access, select **Load on open** to read a named tool or
+open the saved App automatically. Adding a contribution to a view or dashboard does not grant
+access.
 
 Use a runtime that supports data sources to manage extensions that contain API or CLI definitions.
 Older runtimes can fail to load saved manifests that contain these contribution types.
@@ -388,8 +405,8 @@ Disabling or removing an extension cancels its pending tool requests and prevent
 
 Use **Disable extension** or **Remove extension** from Settings when a contribution fails. **Restore
 previous version** reinstalls the last manifest and its settings. This works even when the current
-tool server is unreachable. Selecting an existing MCP App still uses the platform's existing app
-renderer and its original thread permissions.
+tool server is unreachable. Opening a saved MCP App from its conversation uses that conversation's
+approval flow. Opening it from an extension uses the extension contribution's grant.
 
 ## Verify
 

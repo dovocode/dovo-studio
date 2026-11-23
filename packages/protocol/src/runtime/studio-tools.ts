@@ -225,7 +225,12 @@ export const studioUIPollSchema = mutableStruct({
 export const studioUIPollResultSchema = mutableStruct({ job: Schema.NullOr(studioUIJobSchema) })
 export const studioDiagnosticsCommandSchema = Schema.Union([
   mutableStruct({ action: Schema.Literal('health') }),
-  mutableStruct({ action: Schema.Literal('activity'), scope: Schema.optional(id), before: page }),
+  mutableStruct({
+    action: Schema.Literal('activity'),
+    scope: Schema.optional(id),
+    before: page,
+    toolsOnly: Schema.optional(Schema.Boolean),
+  }),
   mutableStruct({
     action: Schema.Literal('event'),
     id,

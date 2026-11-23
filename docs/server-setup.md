@@ -1136,9 +1136,11 @@ snapshot is always retained; older copies are pruned only after a replacement ha
 Free-space checks preserve existing snapshots when a replacement cannot fit. Automatic failures back
 off for an hour; explicit backup attempts remain available. Failed writes retain earlier snapshots,
 and an interrupted partial snapshot is removed under the backup lock before the next write. The
-panel shows the most recent successful snapshot and persisted failure. SQLite's backup API includes
-committed WAL contents and attachment BLOBs; repository/worktree files, host `settings.json` and
-owner-token files need their own backup.
+panel shows the start time, copy progress, and verification state. It also shows the last successful
+backup and any saved failure. SQLite's backup API includes committed WAL contents and attachment
+BLOBs. A worker copies and verifies the database. The copy uses the committed state at backup start,
+so new writes can continue without restarting the copy. Repository and worktree files, host
+`settings.json`, and owner-token files need their own backup.
 
 ```sh
 dovo-server backup --data-dir ~/.dovo

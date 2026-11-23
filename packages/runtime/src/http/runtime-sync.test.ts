@@ -108,6 +108,41 @@ it('syncs extension revisions and rejects installation from before a draft was r
   expect((await command({ action: 'install', ...edit })).status).toBe(409)
 })
 
+it('publishes a new workspace revision while another selection is still projecting it', async () => {
+  const { runtime, open } = await setup()
+  const slow = await open(token, 5, ['task'], true)
+  slow.socket.send(JSON.stringify({ type: 'resume' }))
+  const slowBaseline = await slow.wait('snapshot')
+  const fast = await open(token, 5, [], true)
+  fast.socket.send(JSON.stringify({ type: 'resume' }))
+  const fastBaseline = await fast.wait('snapshot')
+  let entered = false
+  const gate = Promise.withResolvers<undefined>()
+  const availability = vi
+    .spyOn(runtime.services.scratch, 'available')
+    .mockImplementationOnce(() => {
+      entered = true
+      return gate.promise
+    })
+  try {
+    runtime.services.store.updateTask('task', (task) => ({ ...task, title: 'Independent views' }))
+    await expect.poll(() => entered).toBe(true)
+    const delivered = await fast.wait('delta')
+    expect(
+      applySnapshotDelta(fastBaseline.snapshot, delivered.delta).workspace.tasks[0]?.title,
+    ).toBe('Independent views')
+    expect(slow.frames.some(({ type }) => type === 'delta')).toBe(false)
+    gate.resolve(undefined)
+    const resumed = await slow.wait('delta')
+    expect(applySnapshotDelta(slowBaseline.snapshot, resumed.delta).workspace.tasks[0]?.title).toBe(
+      'Independent views',
+    )
+  } finally {
+    gate.resolve(undefined)
+    availability.mockRestore()
+  }
+})
+
 it('pushes secure input metadata and removal to open clients without storing private input', async () => {
   const { runtime, open } = await setup()
   const client = await open(token, 5, ['task'], true)

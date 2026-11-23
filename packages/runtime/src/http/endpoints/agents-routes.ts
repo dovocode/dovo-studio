@@ -1334,19 +1334,24 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
       }
       if (method === 'POST' && path === '/api/tasks/checkouts/changes') {
         const input = decode(
-          mutableStruct({ id: idSchema, checkoutId: idSchema, turnId: Schema.optional(idSchema) }),
+          mutableStruct({
+            id: idSchema,
+            checkoutId: idSchema,
+            turnId: Schema.optional(idSchema),
+            metadataOnly: Schema.optional(Schema.Boolean),
+          }),
           yield* serviceResult(body(request)),
         )
-        const task = s.store.task(input.id)
         if (input.turnId) {
-          const checkpoint = task.turns
-            ?.find((turn) => turn.id === input.turnId)
+          const checkpoint = s.store
+            .task(input.id)
+            .turns?.find((turn) => turn.id === input.turnId)
             ?.checkpoint?.linked?.find((item) => item.checkoutId === input.checkoutId)
           if (!checkpoint) throw new HttpError(404, 'Linked checkpoint not found')
           return { files: checkpoint.files }
         }
         const cwd = yield* serviceResult(s.checkouts.selectedDirectory(input.id, input.checkoutId))
-        return { files: yield* serviceResult(s.git.changes(cwd)) }
+        return { files: yield* serviceResult(s.git.changes(cwd, !input.metadataOnly)) }
       }
       if (method === 'POST' && path === '/api/tasks/file/preview') {
         const input = decode(
@@ -1358,9 +1363,23 @@ export function agentsRoute(request: IncomingMessage, path: string, owner = fals
             working: Schema.optional(Schema.Boolean),
             full: Schema.optional(Schema.Boolean),
             patch: Schema.optional(Schema.Boolean),
+            branchComparison: Schema.optional(maxValue(Schema.String, 64)),
           }),
           yield* serviceResult(body(request)),
         )
+        if (input.branchComparison) {
+          const cwd = yield* serviceResult(s.checkouts.directory(input.id))
+          return yield* serviceResult(
+            s.git.branchComparisonPreview(
+              cwd,
+              input.id,
+              input.branchComparison,
+              input.path,
+              !!input.full,
+              !!input.patch,
+            ),
+          )
+        }
         return yield* serviceResult(
           s.tasks.filePreview(
             input.id,

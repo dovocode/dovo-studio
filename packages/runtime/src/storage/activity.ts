@@ -52,6 +52,11 @@ export type RetainedToolOutput = {
 }
 
 export class Activity {
+  private readonly recordListeners = new Set<(kind: string, scope: string) => void>()
+  onRecorded(listener: (kind: string, scope: string) => void) {
+    this.recordListeners.add(listener)
+    return () => this.recordListeners.delete(listener)
+  }
   private scopes = new Map<
     string,
     { revision: number; users: number; listeners: Set<() => void> }
@@ -97,6 +102,23 @@ export class Activity {
     db.exec(
       'CREATE TABLE IF NOT EXISTS activity (id TEXT PRIMARY KEY,time TEXT NOT NULL,kind TEXT NOT NULL,scope TEXT NOT NULL,summary TEXT NOT NULL,payload TEXT NOT NULL); CREATE INDEX IF NOT EXISTS activity_time ON activity(time DESC); CREATE INDEX IF NOT EXISTS activity_scope_time ON activity(scope,time DESC,id DESC)',
     )
+    db.exec(`
+      CREATE INDEX IF NOT EXISTS activity_tool_time
+        ON activity(time DESC,id DESC) WHERE kind='tool';
+      CREATE INDEX IF NOT EXISTS activity_tool_scope_time
+        ON activity(scope,time DESC,id DESC) WHERE kind='tool';
+      CREATE INDEX IF NOT EXISTS activity_tool_call
+        ON activity(scope,json_extract(payload,'$.turnId'),json_extract(payload,'$.toolId'))
+        WHERE kind='tool' AND json_valid(payload);
+      CREATE INDEX IF NOT EXISTS activity_tool_blocks
+        ON activity(scope,json_extract(payload,'$.turnId'))
+        WHERE kind='tool' AND CASE WHEN json_valid(payload)
+          THEN json_type(payload,'$.event.message.content')='array' ELSE 0 END;
+      CREATE INDEX IF NOT EXISTS activity_terminal_receipt
+        ON activity(scope,json_extract(payload,'$.turnId'),json_extract(payload,'$.presentation.input'))
+        WHERE kind='tool' AND CASE WHEN json_valid(payload)
+          THEN json_extract(payload,'$.terminalCommand')=1 ELSE 0 END;
+    `)
     // Remove previously recorded literal MCP values and API-key fields once per database.
     if (!db.prepare('SELECT value FROM documents WHERE id=?').get('activity-redaction-v4')) {
       db.transaction(() => {
@@ -139,6 +161,7 @@ export class Activity {
       )
     if (['tool', 'reasoning', 'task-activity'].includes(kind)) this.changed(scope)
     else this.revision++
+    for (const listener of this.recordListeners) listener(kind, scope)
   }
   imagePayload(scope: string, id: string) {
     return decode(
@@ -374,8 +397,8 @@ export class Activity {
     )
   }
   /** Page by saved events so collapsed tool calls do not make the next page skip a record. */
-  overview(offset: number, scope = '') {
-    const page = this.list('', '', offset, scope, true).events
+  overview(offset: number, scope = '', toolsOnly = false) {
+    const page = this.list('', toolsOnly ? 'tool' : '', offset, scope, true).events
     const rawTools = page.filter((event) => event.kind === 'tool')
     const pageIds = new Set(rawTools.map((event) => event.id))
     const calls = recentTools(rawTools)
@@ -395,20 +418,25 @@ export class Activity {
               SELECT json_extract(value,'$[0]') AS scope, json_extract(value,'$[1]') AS turn_id,
                      json_extract(value,'$[2]') AS tool_id FROM json_each(?)
             )
-            SELECT activity.* FROM (SELECT DISTINCT scope FROM wanted) scopes
-            JOIN activity USING (scope)
-            WHERE activity.kind='tool' AND json_valid(activity.payload) AND (
-              (activity.scope, json_extract(activity.payload,'$.turnId'), json_extract(activity.payload,'$.toolId'))
-                IN (SELECT scope, turn_id, tool_id FROM wanted)
-              OR (json_type(activity.payload,'$.event.message.content')='array' AND EXISTS (
+            SELECT activity.* FROM wanted
+            JOIN activity ON activity.scope=wanted.scope
+              AND json_extract(activity.payload,'$.turnId')=wanted.turn_id
+              AND json_extract(activity.payload,'$.toolId')=wanted.tool_id
+            WHERE activity.kind='tool' AND json_valid(activity.payload)
+            UNION
+            SELECT activity.* FROM (SELECT DISTINCT scope, turn_id FROM wanted) calls
+            CROSS JOIN activity INDEXED BY activity_tool_blocks
+              ON activity.scope=calls.scope AND json_extract(activity.payload,'$.turnId')=calls.turn_id
+            WHERE activity.kind='tool' AND CASE WHEN json_valid(activity.payload)
+              THEN json_type(activity.payload,'$.event.message.content')='array' ELSE 0 END
+              AND EXISTS (
                 SELECT 1 FROM json_each(activity.payload,'$.event.message.content') AS block
                 WHERE CASE WHEN block.type='object' THEN
-                  (activity.scope, json_extract(activity.payload,'$.turnId'),
+                  (calls.scope, calls.turn_id,
                     coalesce(json_extract(block.value,'$.tool_use_id'), json_extract(block.value,'$.id'))
                   ) IN (SELECT scope, turn_id, tool_id FROM wanted)
                 END
-              ))
-            )`)
+              )`)
             .all(JSON.stringify(callKeys)),
         ).filter((event) => !pageIds.has(event.id))
       : []
@@ -447,9 +475,11 @@ export class Activity {
                 )
                 SELECT DISTINCT activity.scope, json_extract(payload,'$.turnId') AS turnId,
                        json_extract(payload,'$.presentation.input') AS command
-                FROM (SELECT DISTINCT scope FROM wanted) scopes JOIN activity USING (scope)
-                WHERE kind='tool' AND json_valid(payload) AND json_extract(payload,'$.terminalCommand')=1
-                  AND (activity.scope, turnId, command) IN (SELECT scope, turn_id, command FROM wanted)
+                FROM wanted JOIN activity ON activity.scope=wanted.scope
+                  AND json_extract(payload,'$.turnId')=wanted.turn_id
+                  AND json_extract(payload,'$.presentation.input')=wanted.command
+                WHERE kind='tool' AND CASE WHEN json_valid(payload)
+                  THEN json_extract(payload,'$.terminalCommand')=1 ELSE 0 END
               `)
               .all(JSON.stringify([...wrapperKeys.values()])),
           ).map((row) => JSON.stringify([row.scope, row.turnId, row.command]))

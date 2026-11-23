@@ -36,6 +36,11 @@ window.store={connected:true,request:async(path,input)=>{
  window.calls.push({path,input});
  if(window.hold)await new Promise(resolve=>{window.release=resolve});
  if(window.failNext){window.failNext=false;throw new Error('Checkout read failed')}
+ if(input.path){
+  const file=window.changes.find(file=>file.path===input.path);
+  return Object.fromEntries(['before','after'].map(side=>[side,{kind:'text',size:file[side].length,text:file[side],truncated:false}]));
+ }
+ if(input.metadataOnly)return {files:window.changes.map(file=>({...file,before:'',after:'',preview:{kind:'deferred'}}))};
  return {files:window.changes};
 }};
 window.terminal={id:'shell',profile:{id:'computer-a'},supported:true,project:{repositoryId:'project',git:true,main:true}};
@@ -388,6 +393,20 @@ try {
       project: { ...current.project, repositoryId: 'project' },
     })),
   )
+  await page.evaluate(() => {
+    window.calls.length = 0
+    window.store.snapshot = { selectedCheckoutDiffSupported: true }
+    window.setTerminal((current) => ({ ...current, id: 'deferred' }))
+  })
+  await changes.getByText('2 files', { exact: true }).waitFor()
+  await rendered('export const deep = 2')
+  assert.deepEqual(await page.evaluate(() => window.calls.map(({ input }) => input)), [
+    { id: 'deferred', metadataOnly: true },
+    { id: 'deferred', path: 'deep/nested/folder/' + long, full: false },
+  ])
+  await list.locator(`[data-path="${long}"]`).click()
+  await rendered('export const root = 2')
+  assert.equal(await page.evaluate(() => window.calls.at(-1).input.path), long)
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

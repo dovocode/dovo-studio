@@ -1,4 +1,4 @@
-import { studioExtensionCommandSchema } from '@dovo/protocol'
+import { studioExtensionCommandSchema, studioSourcePolicyRequestSchema } from '@dovo/protocol'
 import { checkCodeAccess } from '../agent-tools/code-access.js'
 import { visionTool } from '../vision/tool.js'
 import { attachmentOcr } from '../vision/attachment-ocr.js'
@@ -1053,11 +1053,32 @@ export function route(
         )
       if (method === 'POST' && path === '/api/mcp-apps/rpc') {
         const input = decode(mcpAppRpcSchema, yield* serviceResult(body(request, 256 * 1024)))
+        const extension =
+          input.method === 'tools/call' || input.method === 'ui/cancel'
+            ? input.extension
+            : undefined
+        if (extension && agentDeviceAccess)
+          throw new HttpError(403, 'Extension permissions require a paired human client.')
         return yield* serviceResult(
           s.mcpApps
-            .action(input.taskId, input.id, input.requestId, input.method, input.params, () => {
-              s.devices.authenticate(token)
-            })
+            .action(
+              input.taskId,
+              input.id,
+              input.requestId,
+              input.method,
+              input.params,
+              () => {
+                s.devices.authenticate(token)
+                if (extension && input.method === 'tools/call')
+                  s.studioExtensions.authorizeAppTools(
+                    extension.id,
+                    extension.contributionId,
+                    input.taskId,
+                    input.id,
+                  )
+              },
+              extension && JSON.stringify([extension.id, extension.contributionId]),
+            )
             .then((result) => ({ result })),
         )
       }
@@ -2165,6 +2186,20 @@ export function route(
               s.devices.authenticate(token)
             }),
           ),
+        )
+      }
+      if (method === 'POST' && path === '/api/studio/source-policy') {
+        if (agentDeviceAccess)
+          throw new HttpError(403, 'Source permissions require a paired human client.')
+        const input = decode(
+          studioSourcePolicyRequestSchema,
+          yield* serviceResult(body(request, 4096)),
+        )
+        const owner = input.owner === 'dashboard' ? s.dashboards : s.studioExtensions
+        return yield* runtimeOperation(() =>
+          owner.sourcePolicy(input, () => {
+            s.devices.authenticate(token)
+          }),
         )
       }
       if (path.startsWith('/api/dashboards/'))

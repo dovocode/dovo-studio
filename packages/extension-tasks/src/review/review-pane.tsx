@@ -9,6 +9,7 @@ import { useAppPreferences, whitespaceOnlyFile } from '@dovo/studio-core'
 import { LinkedReview } from './linked-review'
 import { ChoicePicker } from '@dovo/studio-ui'
 import { SavedFilePreview } from '../files/saved-file-preview'
+import { useWorkingChangePreview } from '@dovo/studio-core/working-change-preview'
 import { randomUUID, checkpointFiles } from '@dovo/protocol'
 import { fileStats } from '../files/presentation'
 import { useApplicationState } from '@dovo/studio-core/state'
@@ -147,6 +148,7 @@ function PrimaryReviewPane({
     files: ChangedFile[]
     omitted: string[]
     base: string
+    comparison?: string
   } | null>(null)
   const [branchLoading, setBranchLoading] = useApplicationState(false)
   const turns = task.turns ?? []
@@ -212,16 +214,17 @@ function PrimaryReviewPane({
     reviewVersion,
     source.kind !== 'review',
   )
-  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
+  const fileState = useMemo(() => {
+    const lookup = createReviewFileLookup(review.progress)
+    return (file: ChangedFile) =>
+      lookup(file.path, file.comparisonRevision ?? fingerprints.get(file.path) ?? '')
+  }, [review.progress?.files, fingerprints])
   const [related, setRelated] = useApplicationState(true)
   const files = useMemo(
     () =>
       orderReviewFiles(
         visibleFiles.map((file) => {
-          const state =
-            source.kind === 'working'
-              ? file
-              : fileState(file.path, fingerprints.get(file.path) ?? '')
+          const state = source.kind === 'working' ? file : fileState(file)
           return {
             ...file,
             viewed: state?.viewed ?? false,
@@ -234,6 +237,12 @@ function PrimaryReviewPane({
     [visibleFiles, fingerprints, review.progress, related, source.kind, fileState],
   )
   const file = files.find((item) => item.path === selected) ?? files[0]
+  const workingPreview = useWorkingChangePreview(
+    connected && !!snapshot?.selectedWorkingChangeSupported && source.kind === 'working',
+    task,
+    file,
+    request,
+  )
   displayedPath.current = file?.path ?? ''
   const pendingDraft =
     source.kind === 'working' &&
@@ -264,18 +273,24 @@ function PrimaryReviewPane({
         ? branchDiff.base.slice(0, 8)
         : branchDiff.base.replace(/^refs\/(heads|remotes)\//, '')
       : ''
+  const lazyCheckout = snapshot?.selectedCheckoutDiffSupported === true
   const refreshBranch = useCallback(async () => {
     try {
       const result = await request(
         '/api/scm/branch-changes',
-        { repositoryId: task.repositoryId, taskId: task.id, includeWorking: true },
+        {
+          repositoryId: task.repositoryId,
+          taskId: task.id,
+          includeWorking: true,
+          metadataOnly: lazyCheckout || undefined,
+        },
         responses.branchDiff,
       )
       setBranchDiff(result)
     } finally {
       setBranchLoading(false)
     }
-  }, [request, task.repositoryId, task.id, branchRefresh])
+  }, [request, task.repositoryId, task.id, branchRefresh, lazyCheckout])
   const branchError = useLiveRefresh(connected && source.kind === 'branch', refreshBranch)
   const chooseSource = (next: DiffSource) => {
     if (editing) return
@@ -437,10 +452,12 @@ function PrimaryReviewPane({
         <span className="text-[0.6875rem] tabular-nums text-muted-foreground">
           {files.length} {files.length === 1 ? 'file' : 'files'}
         </span>
-        <span className="hidden text-[0.6875rem] tabular-nums sm:inline">
-          <span className="text-status-success">+{additions}</span>{' '}
-          <span className="text-rose-400">−{deletions}</span>
-        </span>
+        {!files.some((file) => file.preview?.kind === 'deferred') && (
+          <span className="hidden text-[0.6875rem] tabular-nums sm:inline">
+            <span className="text-status-success">+{additions}</span>{' '}
+            <span className="text-rose-400">−{deletions}</span>
+          </span>
+        )}
         <IconButton
           label="Reload disk changes"
           className="ml-auto size-7"
@@ -535,15 +552,10 @@ function PrimaryReviewPane({
             selected={file?.path ?? ''}
             onSelect={chooseFile}
             onViewed={(viewed) => {
-              if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+              const mark = file && fileState(file)
+              if (file && mark) review.setViewed(file.path, mark.fingerprint, viewed)
             }}
-            disabled={
-              !review.ready ||
-              editing ||
-              !!task.example ||
-              !file ||
-              !fileState(file.path, fingerprints.get(file.path) ?? '')
-            }
+            disabled={!review.ready || editing || !!task.example || !file || !fileState(file)}
             busy={review.busy}
             navigationDisabled={editing}
             error={review.error}
@@ -572,9 +584,9 @@ function PrimaryReviewPane({
               </Button>
             </div>
           )}
-          {(reviewError || branchError) && (
+          {(reviewError || branchError || workingPreview.error) && (
             <p role="alert" className="border-b px-3 py-2 text-xs text-destructive">
-              {reviewError || branchError}
+              {reviewError || branchError || workingPreview.error}
             </p>
           )}
           {actionsOpen && source.kind === 'working' && (
@@ -605,13 +617,20 @@ function PrimaryReviewPane({
             <div className="flex min-h-0 min-w-0 flex-1">
               <div className="flex min-h-0 min-w-0 flex-1 flex-col">
                 <ErrorBoundary key={task.id + file.path}>
-                  {file.preview ? (
+                  {workingPreview.loading ? (
+                    <p role="status" className="p-4 text-xs text-muted-foreground">
+                      Loading compact preview…
+                    </p>
+                  ) : file.preview ? (
                     <SavedFilePreview
                       key={`${sourceLabel}:${file.path}`}
                       file={file}
                       taskId={task.id}
                       turnId={selectedTurn?.id}
                       commitSha={commitSha}
+                      branchComparison={
+                        source.kind === 'branch' ? branchDiff?.comparison : undefined
+                      }
                       working={source.kind === 'working'}
                     />
                   ) : (

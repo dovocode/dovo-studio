@@ -95,6 +95,11 @@ import {
 import { RegistryContext, useAtomValue } from '@effect/atom-react'
 import { Atom } from 'effect/reactivity'
 import { AppState } from 'react-native'
+import {
+  beginMobileResumeTiming,
+  cancelMobileResumeTiming,
+  markMobileResume,
+} from '../state/resume-timing'
 import * as Network from 'expo-network'
 import * as SecureStore from 'expo-secure-store'
 import { Data, Effect, Result, Schema, Semaphore } from 'effect'
@@ -225,6 +230,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
   const { computerRefresh } = useMobilePreferences()
   useEffect(() => {
     setPeerConnectionsAppState(AppState.currentState)
+    let backgrounded = AppState.currentState === 'background'
     let disposed = false
     let networkObserved = false
     const updateNetwork = (state: Network.NetworkState) => {
@@ -255,6 +261,13 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
       (error: unknown) => console.warn('Could not read the initial network state:', error),
     )
     const subscription = AppState.addEventListener('change', (state) => {
+      if (state === 'background') {
+        backgrounded = true
+        cancelMobileResumeTiming()
+      } else if (state === 'active' && backgrounded) {
+        backgrounded = false
+        beginMobileResumeTiming()
+      }
       setPeerConnectionsAppState(state)
       setAppActive(state === 'active')
       setAppForeground((previous) => nextAppForeground(previous, state))
@@ -593,6 +606,8 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
                         (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision
                       )
                     ) {
+                      if (current.current.activeId === profile.id)
+                        markMobileResume('fresh-snapshot', 'http')
                       mutations.workspaceRefreshed(
                         profile.connection,
                         workspaceCheckpoint,
@@ -1467,6 +1482,7 @@ export function RuntimeProvider({ children }: { children: ReactNode }) {
             (entryRef.current[profile.id]?.snapshot?.revision ?? -1) > snapshot.revision)
         )
           return
+        if (current.current.activeId === profile.id) markMobileResume('fresh-snapshot', 'websocket')
         sequence.current.set(profile.id, (sequence.current.get(profile.id) ?? 0) + 1)
         mutations.workspaceRefreshed(
           profile.connection,

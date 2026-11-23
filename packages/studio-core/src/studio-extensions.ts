@@ -236,10 +236,17 @@ export function readExtensionDataSource(
   request: WorkspaceRequest,
   extension: StudioExtensionEntry,
   contributionId: string,
+  automatic = false,
 ) {
   return request(
     '/api/studio-extensions',
-    { action: 'read-data', id: extension.id, expectedRevision: extension.revision, contributionId },
+    {
+      action: 'read-data',
+      id: extension.id,
+      expectedRevision: extension.revision,
+      contributionId,
+      ...(automatic ? { automatic } : {}),
+    },
     dashboardReadResultSchema,
   )
 }
@@ -248,6 +255,7 @@ export async function callStudioExtension(
   request: WorkspaceRequest,
   extension: StudioExtensionEntry,
   contributionId: string,
+  automatic = false,
 ) {
   return request(
     '/api/studio-extensions',
@@ -256,6 +264,7 @@ export async function callStudioExtension(
       id: extension.id,
       expectedRevision: extension.revision,
       contributionId,
+      ...(automatic ? { automatic } : {}),
     },
     studioExtensionCallResultSchema,
   )
@@ -265,6 +274,7 @@ export async function openStudioExtension(
   request: WorkspaceRequest,
   extension: StudioExtensionEntry,
   contributionId: string,
+  automatic = false,
 ) {
   return request(
     '/api/studio-extensions',
@@ -273,6 +283,7 @@ export async function openStudioExtension(
       id: extension.id,
       expectedRevision: extension.revision,
       contributionId,
+      ...(automatic ? { automatic } : {}),
     },
     studioExtensionOpenResultSchema,
   )

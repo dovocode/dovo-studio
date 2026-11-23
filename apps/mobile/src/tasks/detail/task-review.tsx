@@ -1,4 +1,5 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
+import { useWorkingChangePreview } from '@dovo/studio-core/working-change-preview'
 import { useTaskReview } from '../../scm/review/use-task-review'
 import { LocalCommitPicker } from './local-commit-picker'
 import { CodeReviewReport, type ReviewTab } from '../../scm/review/code-review-report'
@@ -117,7 +118,8 @@ export function TaskReview({
     !task.example,
   )
   const [scope, setScope] = useState<'working' | 'branch'>('working')
-  const [branchFiles, setBranchFiles] = useState<Task['files']>([])
+  const lazyCheckout = snapshot?.selectedCheckoutDiffSupported === true
+  const [branchDiff, setBranchDiff] = useState<typeof responses.branchDiff.Type>()
   const [branchError, setBranchError] = useState('')
   const [focusedFinding, setFocusedFinding] = useState<CodeFinding>()
   useEffect(() => {
@@ -126,11 +128,16 @@ export function TaskReview({
     setBranchError('')
     void call(
       '/api/scm/branch-changes',
-      { repositoryId: task.repositoryId, taskId: task.id, includeWorking: true },
+      {
+        repositoryId: task.repositoryId,
+        taskId: task.id,
+        includeWorking: true,
+        metadataOnly: lazyCheckout || undefined,
+      },
       responses.branchDiff,
     ).then(
       (result) => {
-        if (active) setBranchFiles(result.files)
+        if (active) setBranchDiff(result)
       },
       (error: unknown) => {
         if (active) setBranchError(error instanceof Error ? error.message : String(error))
@@ -139,7 +146,7 @@ export function TaskReview({
     return () => {
       active = false
     }
-  }, [scope, connected, call, task.id, task.repositoryId, task.files])
+  }, [scope, connected, call, task.id, task.repositoryId, task.files, lazyCheckout])
   const [since, setSince] = useState<{ id: string; files: Task['files'] } | null>(null)
   const [contextPreview, setContextPreview] = useState<{
     path: string
@@ -166,7 +173,11 @@ export function TaskReview({
   useEffect(() => {
     if (!checkoutId || checkpoint || commit) return
     let active = true
-    void call('/api/tasks/checkouts/changes', { id: task.id, checkoutId }, responses.files).then(
+    void call(
+      '/api/tasks/checkouts/changes',
+      { id: task.id, checkoutId, metadataOnly: lazyCheckout || undefined },
+      responses.files,
+    ).then(
       (result) => {
         if (active) setLinkedFiles({ key: loadKey, files: result.files, error: '' })
       },
@@ -182,7 +193,7 @@ export function TaskReview({
     return () => {
       active = false
     }
-  }, [call, task.id, checkoutId, checkpoint, commit, loadKey])
+  }, [call, task.id, checkoutId, checkpoint, commit, loadKey, lazyCheckout])
   const sourceFiles = useMemo(
     () =>
       commit
@@ -198,7 +209,7 @@ export function TaskReview({
                 ? linkedFiles.files
                 : []
               : scope === 'branch'
-                ? branchFiles
+                ? (branchDiff?.files ?? [])
                 : task.files,
     [
       commit,
@@ -211,7 +222,7 @@ export function TaskReview({
       loadKey,
       since,
       scope,
-      branchFiles,
+      branchDiff,
     ],
   )
   const fingerprints = useMemo(
@@ -231,7 +242,19 @@ export function TaskReview({
     reviewVersion,
     !since,
   )
-  const fileState = useMemo(() => createReviewFileLookup(review.progress), [review.progress?.files])
+  const fileState = useMemo(() => {
+    const lookup = createReviewFileLookup(review.progress)
+    return (file: Task['files'][number]) =>
+      lookup(
+        file.path,
+        file.comparisonRevision ??
+          (checkoutId && !checkpoint && !commit && lazyCheckout
+            ? file.workingRevision
+            : undefined) ??
+          fingerprints.get(file.path) ??
+          '',
+      )
+  }, [review.progress?.files, fingerprints, checkoutId, checkpoint, commit, lazyCheckout])
   const [related, setRelated] = useState(true),
     [toolsOpen, setToolsOpen] = useState(false),
     [wrapLines, setWrapLines] = useState(false)
@@ -240,9 +263,7 @@ export function TaskReview({
       orderReviewFiles(
         sourceFiles.map((file) => {
           const state =
-            !commit && !checkpoint && !checkoutId && scope === 'working'
-              ? file
-              : fileState(file.path, fingerprints.get(file.path) ?? '')
+            !commit && !checkpoint && !checkoutId && scope === 'working' ? file : fileState(file)
           return {
             ...file,
             viewed: state?.viewed ?? false,
@@ -270,6 +291,19 @@ export function TaskReview({
   )
   const [path, setPath] = useApplicationState(edit?.path ?? initialPath)
   const file = files.find((file) => file.path === path) ?? files[0]
+  const workingPreview = useWorkingChangePreview(
+    connected &&
+      !!snapshot?.selectedWorkingChangeSupported &&
+      !edit &&
+      !commit &&
+      !checkpoint &&
+      !checkoutId &&
+      !since &&
+      scope === 'working',
+    task,
+    file,
+    call,
+  )
   const patch = useMemo(
     () =>
       file && !file.preview
@@ -279,24 +313,33 @@ export function TaskReview({
         : '',
     [file?.path, file?.preview, file?.before, file?.after],
   )
-  const refresh = () => {
-    if (!checkoutId && scope === 'working')
-      return call(
+  const refresh = async () => {
+    if (checkoutId) {
+      const result = await call(
+        '/api/tasks/checkouts/changes',
+        { id: task.id, checkoutId, metadataOnly: lazyCheckout || undefined },
+        responses.files,
+      )
+      setLinkedFiles({ key: loadKey, files: result.files, error: '' })
+    } else if (scope === 'branch') {
+      const result = await call(
+        '/api/scm/branch-changes',
+        {
+          repositoryId: task.repositoryId,
+          taskId: task.id,
+          includeWorking: true,
+          metadataOnly: lazyCheckout || undefined,
+        },
+        responses.branchDiff,
+      )
+      setBranchDiff(result)
+    } else {
+      await call(
         '/api/scm/changes',
         { repositoryId: task.repositoryId, taskId: task.id, includeFiles: false },
         responses.changesRefresh,
-      ).then(() => null)
-    return call(
-      checkoutId
-        ? '/api/tasks/checkouts/changes'
-        : scope === 'branch'
-          ? '/api/scm/branch-changes'
-          : '/api/scm/changes',
-      checkoutId
-        ? { id: task.id, checkoutId }
-        : { repositoryId: task.repositoryId, taskId: task.id, includeWorking: scope === 'branch' },
-      responses.files,
-    )
+      )
+    }
   }
   const openFinding = (finding: CodeFinding) => {
     setCommit(null)
@@ -376,7 +419,7 @@ export function TaskReview({
           setPath('')
           setFocusedLine(undefined)
           setFocusedFinding(undefined)
-          setBranchFiles([])
+          setBranchDiff(undefined)
         }}
       />
       {!!branchError && (
@@ -468,10 +511,7 @@ export function TaskReview({
                     setSince({ ...since, files: result.files })
                     return
                   }
-                  const result = await refresh()
-                  if (result && checkoutId)
-                    setLinkedFiles({ key: loadKey, files: result.files, error: '' })
-                  else if (result && scope === 'branch') setBranchFiles(result.files)
+                  await refresh()
                   review.reload()
                 })
               }
@@ -675,15 +715,10 @@ export function TaskReview({
                 setFocusedLine(undefined)
               }}
               onViewed={(viewed) => {
-                if (file) review.setViewed(file.path, fingerprints.get(file.path) ?? '', viewed)
+                const mark = file && fileState(file)
+                if (file && mark) review.setViewed(file.path, mark.fingerprint, viewed)
               }}
-              disabled={
-                !review.ready ||
-                !!edit ||
-                !!task.example ||
-                !file ||
-                !fileState(file.path, fingerprints.get(file.path) ?? '')
-              }
+              disabled={!review.ready || !!edit || !!task.example || !file || !fileState(file)}
               busy={review.busy}
               navigationDisabled={!!edit}
               wrapLines={!file?.preview && !edit ? wrapLines : undefined}
@@ -755,6 +790,10 @@ export function TaskReview({
               </InterfaceText>
             </Text>
           </ScrollView>
+        ) : workingPreview.loading ? (
+          <Text accessibilityRole="progressbar" style={styles.muted}>
+            <InterfaceText>{'Loading compact preview…'}</InterfaceText>
+          </Text>
         ) : file?.preview ? (
           <SavedFilePreview
             key={`${checkpoint}:${checkoutId}:${file.path}`}
@@ -762,7 +801,12 @@ export function TaskReview({
             taskId={task.id}
             turnId={checkpoint || undefined}
             commitSha={commit?.sha}
-            working={!checkpoint && !commit}
+            branchComparison={
+              !checkpoint && !checkoutId && !commit && !since && scope === 'branch'
+                ? branchDiff?.comparison
+                : undefined
+            }
+            working={!checkpoint && !commit && (!!checkoutId || scope === 'working')}
             checkoutId={checkoutId || undefined}
           />
         ) : (
@@ -873,6 +917,11 @@ export function TaskReview({
         </Sheet>
       )}
       {!!contextError && <Text style={styles.error}>{contextError}</Text>}
+      {!!workingPreview.error && (
+        <Text accessibilityRole="alert" style={styles.error}>
+          {workingPreview.error}
+        </Text>
+      )}
       {!!error && (
         <Text
           style={[

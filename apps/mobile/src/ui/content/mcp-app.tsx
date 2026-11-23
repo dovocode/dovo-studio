@@ -29,9 +29,11 @@ const object = (value: unknown): Record<string, unknown> =>
 export const McpAppView = memo(function McpAppView({
   reference,
   visible,
+  extension,
 }: {
   reference: McpAppReference
   visible: boolean
+  extension?: { id: string; contributionId: string }
 }) {
   const uiText = useInterfaceText()
 
@@ -283,6 +285,7 @@ export const McpAppView = memo(function McpAppView({
                   id: reference.id,
                   requestId: `${key}_${requestId}`,
                   method: value.method,
+                  ...(extension ? { extension } : {}),
                   params:
                     value.method === 'ui/cancel'
                       ? { requestId: `${key}_${String(object(value.params).requestId)}` }

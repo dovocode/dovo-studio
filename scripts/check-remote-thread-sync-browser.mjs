@@ -252,22 +252,38 @@ try {
     }
   }
   commitSamples.sort((a, b) => a - b)
+  runtime.services.store.updateTask('a', (task) => ({ ...task, files: [] }))
   await writeFile(
     join(project.directory, 'hello.txt'),
     'Background refresh reached the live thread\n',
   )
-  const changesRefresh = await page.evaluate(
-    async ({ address, token }) => {
-      const response = await fetch(`${address}/api/scm/changes`, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ repositoryId: 'repo', taskId: 'a', includeFiles: false }),
-      })
-      return { status: response.status, body: await response.text() }
-    },
-    { address: `http://127.0.0.1:${runtime.port}`, token },
-  )
+  const refreshChanges = (options) =>
+    page.evaluate(
+      async ({ address, token, options }) => {
+        const response = await fetch(`${address}/api/scm/changes`, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            repositoryId: 'repo',
+            taskId: 'a',
+            includeFiles: false,
+            ...options,
+          }),
+        })
+        return { status: response.status, body: await response.text() }
+      },
+      { address: `http://127.0.0.1:${runtime.port}`, token, options },
+    )
+  const changesRefresh = await refreshChanges({ metadataOnly: true })
   assert.deepEqual(changesRefresh, { status: 200, body: '{"ok":true}' })
+  await page.waitForFunction(() =>
+    window.snapshot.workspace.tasks
+      .find((task) => task.id === 'a')
+      ?.files.some(
+        (file) => file.path === 'hello.txt' && file.preview?.kind === 'deferred' && !file.after,
+      ),
+  )
+  assert.deepEqual(await refreshChanges({ previewPath: 'hello.txt' }), changesRefresh)
   await page.waitForFunction(() =>
     window.snapshot.workspace.tasks
       .find((task) => task.id === 'a')

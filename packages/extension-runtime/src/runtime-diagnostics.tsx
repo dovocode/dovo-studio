@@ -19,6 +19,7 @@ export function RuntimeDiagnosticsPanel() {
   const [status, setStatus] = useState<RuntimeDiagnostics | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  const [backingUp, setBackingUp] = useState(false)
   const refresh = useCallback(async () => {
     const result = await request('/api/runtime/diagnostics', {}, runtimeDiagnosticsSchema)
     setStatus(result)
@@ -41,8 +42,33 @@ export function RuntimeDiagnosticsPanel() {
       active = false
     }
   }, [request, connected])
+  const backupActive = backingUp || !!status?.backups.active
+  useEffect(() => {
+    if (!connected || !backupActive) return
+    let active = true
+    let running = false
+    const timer = setInterval(() => {
+      if (running || document.visibilityState === 'hidden') return
+      running = true
+      void request('/api/runtime/diagnostics', {}, runtimeDiagnosticsSchema)
+        .then(
+          (result) => {
+            if (active) setStatus(result)
+          },
+          () => undefined,
+        )
+        .finally(() => {
+          running = false
+        })
+    }, 2000)
+    return () => {
+      active = false
+      clearInterval(timer)
+    }
+  }, [backupActive, connected, request])
   const run = async (backup: boolean) => {
     setBusy(true)
+    setBackingUp(backup)
     setError('')
     try {
       if (backup) await request('/api/runtime/backup', {}, runtimeBackupResponseSchema)
@@ -51,6 +77,7 @@ export function RuntimeDiagnosticsPanel() {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
       setBusy(false)
+      setBackingUp(false)
     }
   }
   return (
@@ -246,8 +273,9 @@ export function RuntimeDiagnosticsPanel() {
             disabled={busy || !connected || status.backups.active}
             onClick={() => void run(true)}
           >
-            {busy || status.backups.active ? 'Backing up…' : 'Create backup now'}
+            {backupActive ? 'Backing up…' : 'Create backup now'}
           </Button>
+          {status.backups.progress && <BackupProgress progress={status.backups.progress} />}
           {status.backups.entries.map((entry) => (
             <p key={entry.path} className="break-all">
               {new Date(entry.createdAt).toLocaleString()} · {(entry.size / 1024 / 1024).toFixed(1)}{' '}
@@ -264,6 +292,35 @@ export function RuntimeDiagnosticsPanel() {
         </>
       )}
     </article>
+  )
+}
+
+function BackupProgress({
+  progress,
+}: {
+  progress: NonNullable<RuntimeDiagnostics['backups']['progress']>
+}) {
+  const uiText = useInterfaceText()
+  const labels = {
+    preparing: uiText('Preparing backup'),
+    copying: uiText('Copying database pages'),
+    verifying: uiText('Verifying backup'),
+    publishing: uiText('Saving backup'),
+  }
+  return (
+    <div className="space-y-1 text-muted-foreground">
+      <p>
+        {labels[progress.phase]} · {new Date(progress.startedAt).toLocaleTimeString()}
+      </p>
+      {progress.phase === 'copying' && !!progress.totalPages && (
+        <progress
+          aria-label={labels.copying}
+          className="w-full"
+          value={progress.copiedPages}
+          max={progress.totalPages}
+        />
+      )}
+    </div>
   )
 }
 
