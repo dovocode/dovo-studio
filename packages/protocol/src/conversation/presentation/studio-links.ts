@@ -1,3 +1,5 @@
+import { parseStudioReference } from '../../runtime/studio-reference.js'
+
 /** Shared link destinations. Links only navigate; they never change a setting or start work. */
 export const settingsLinkPages = [
   ['general', '/settings/general', 'General'],
@@ -12,9 +14,17 @@ export const settingsLinkPages = [
 export type StudioLink =
   | { kind: 'settings'; viewId: string; mobilePath: string; label: string; field?: string }
   | { kind: 'thread'; runtimeId: string; threadId: string }
+
+function navigationUrl(value: string) {
+  const reference = parseStudioReference(value)
+  return new URL(
+    reference?.kind === 'thread' ? threadReferenceLink(reference.runtimeId, reference.id) : value,
+  )
+}
+
 export function parseStudioLink(value: string): StudioLink | undefined {
   try {
-    let url = new URL(value)
+    let url = navigationUrl(value)
     if (
       url.origin === 'https://dovo-navigation.invalid' &&
       url.pathname === '/' &&
@@ -22,7 +32,7 @@ export function parseStudioLink(value: string): StudioLink | undefined {
       !url.username &&
       !url.password
     )
-      url = new URL(url.searchParams.get('link') ?? '')
+      url = navigationUrl(url.searchParams.get('link') ?? '')
     if (url.protocol !== 'dovo:' || url.username || url.password || url.port || url.hash) return
     if (url.hostname === 'settings') {
       const page = settingsLinkPages.find(([id]) => url.pathname === `/${id}`)

@@ -1,6 +1,6 @@
 import { InterfaceText } from '@dovo/studio-core/interface-language'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { linkTargetHref } from './app-link-target'
+import { linkTargetHref, studioThreadHref } from './app-link-target'
 import {
   resolveLinkTargets,
   linkActions,
@@ -11,7 +11,6 @@ import {
 import * as Clipboard from 'expo-clipboard'
 import { parseStudioLink, previewUrl } from '@dovo/protocol'
 import { useLinkOrigin, type LinkOrigin } from './link-origin'
-import { taskHref } from '../../shell/task-route'
 import { router, usePathname } from 'expo-router'
 import { useRuntime } from '../../runtime/connection/provider'
 import { Sheet, useSheetNavigation, type SheetHandle } from '../layout/sheet'
@@ -25,7 +24,7 @@ import { useTheme } from '../theme'
 
 export type LinkAction = Omit<RouterAction, 'id' | 'kind'>
 const PipelinePreview = lazy(() => import('../../scm/work/pipeline-preview'))
-let openInternalLink: ((url: string) => void) | undefined
+let openInternalLink: ((url: string, origin?: LinkOrigin) => void) | undefined
 let showLink: ((url: string, origin?: LinkOrigin, actions?: LinkAction[]) => void) | undefined
 
 export async function openAppLink(
@@ -36,7 +35,7 @@ export async function openAppLink(
 ): Promise<void> {
   if (parseStudioLink(url)) {
     if (!openInternalLink) throw new Error('Studio navigation is unavailable')
-    openInternalLink(url)
+    openInternalLink(url, origin)
     return
   }
   if (!/^https?:\/\//i.test(url)) {
@@ -114,7 +113,7 @@ export function LinkBrowser() {
         ),
       })
     }
-    const internal = (value: string) => {
+    const internal = (value: string, origin?: LinkOrigin) => {
       const target = parseStudioLink(value)
       if (!target) return
       if (target.kind === 'settings') {
@@ -126,14 +125,9 @@ export function LinkBrowser() {
           },
         })
       } else {
-        const entry = owner.current.find(
-          (entry) =>
-            entry.profile.id === target.runtimeId ||
-            entry.snapshot?.runtimeId === target.runtimeId ||
-            entry.profile.connection.runtimeId === target.runtimeId,
-        )
-        if (!entry) throw new Error('This thread’s computer is no longer paired.')
-        router.push(taskHref(entry.profile.id, target.threadId))
+        const href = studioThreadHref(target, owner.current, origin?.runtimeId ?? activeId)
+        if (!href) throw new Error('This thread’s computer is no longer paired.')
+        router.push(href)
       }
     }
     openInternalLink = internal
@@ -142,7 +136,7 @@ export function LinkBrowser() {
       if (showLink === show) showLink = undefined
       if (openInternalLink === internal) openInternalLink = undefined
     }
-  }, [controller, pipeline])
+  }, [activeId, controller, pipeline])
   useEffect(() => {
     if (pending?.closing) picker.current?.dismiss()
   }, [pending])

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vite-plus/test'
-import { decode, snapshotSchema, type RuntimeOverview } from '@dovo/protocol'
-import { appLinkChoices } from './app-link-target'
+import { decode, parseStudioLink, snapshotSchema, type RuntimeOverview } from '@dovo/protocol'
+import { appLinkChoices, studioThreadHref } from './app-link-target'
 
 vi.mock('expo-router', () => ({ router: {} }))
 vi.mock('react-native', () => ({ Keyboard: { dismiss() {} } }))
@@ -48,6 +48,21 @@ function overview(id: string, identity = 'github.com/team/project'): RuntimeOver
     }),
   }
 }
+
+it('opens deployment threads on their saved computer, including offline pairings', () => {
+  const mac = overview('origin')
+  mac.profile.connection.runtimeId = 'mac-runtime'
+  const sources = [overview('global'), mac]
+  for (const id of ['mac-runtime', 'local']) {
+    const link = parseStudioLink(`studio:${id}:thread:deploy`)
+    if (link?.kind !== 'thread') throw new Error('Missing thread destination')
+    expect(studioThreadHref(link, sources, 'origin')?.params).toMatchObject({
+      runtimeId: 'origin',
+      taskId: 'deploy',
+    })
+    expect(studioThreadHref(link, sources.slice(0, 1), 'origin')).toBeUndefined()
+  }
+})
 
 it('prefers the originating source even offline and offers choices for unscoped ambiguity', () => {
   const sources = [overview('origin'), overview('global')]

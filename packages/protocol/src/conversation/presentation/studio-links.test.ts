@@ -1,5 +1,6 @@
 import { expect, it } from 'vite-plus/test'
 import { parseStudioLink, threadReferenceLink, studioNavigationURL } from './studio-links.js'
+import { resolveMarkdownLink } from './markdown-links.js'
 
 it('opens known settings and scoped thread destinations without mutation parameters', () => {
   expect(parseStudioLink('dovo://settings/speech?field=Voice%20pause')).toMatchObject({
@@ -23,4 +24,18 @@ it('opens known settings and scoped thread destinations without mutation paramet
     'javascript:alert(1)',
   ])
     expect(parseStudioLink(value)).toBeUndefined()
+})
+
+it('routes deployment thread references from chat through mobile Markdown link resolution', () => {
+  const reference = 'studio:mac-runtime:thread:dory-deployment'
+  const target = {
+    kind: 'thread',
+    runtimeId: 'mac-runtime',
+    threadId: 'dory-deployment',
+  }
+  expect(resolveMarkdownLink(reference)).toBe(reference)
+  expect(parseStudioLink(reference)).toEqual(target)
+  expect(parseStudioLink(studioNavigationURL(reference)!)).toEqual(target)
+  expect(resolveMarkdownLink('studio:local:browser:tab')).toBeUndefined()
+  expect(resolveMarkdownLink('studio:local:thread:\u0000')).toBeUndefined()
 })
