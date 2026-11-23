@@ -109,11 +109,12 @@ trigger, the server must use native HTTP with **MCP-over-ACP** enabled and adver
 delivery for the event. Try a dry run before enabling the trigger. Add a Review step where a person
 should inspect the input before work continues.
 
-The runtime polls while the trigger is enabled, even with the clients closed. Events wait while a
-run is active or awaiting review. The saved cursor and pending batch survive a runtime restart. Run
-receipts prevent repeated deliveries while the receipts are retained. Pausing or changing the
-trigger clears its pending events and starts a new observation window when enabled again. The run
-details show the event source. The first page of the run audit can load redacted event input.
+The runtime polls while the trigger is enabled, even with the clients closed. A server's polling
+interval starts after its response. Events wait while a run is active or awaiting review. The saved
+cursor and pending batch survive a runtime restart. Run receipts prevent repeated deliveries while
+the receipts are retained. Pausing or changing the trigger clears its pending events and starts a
+new observation window when enabled again. The run details show the event source. The first page of
+the run audit can load redacted event input.
 
 An agent can use `studio_automations` with `action: "eventStatus"` and the automation ID to inspect
 the pending count, next poll, replay support, and reported gaps. A replay gap means some upstream

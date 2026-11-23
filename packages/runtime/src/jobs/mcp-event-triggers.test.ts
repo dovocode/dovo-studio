@@ -1,7 +1,12 @@
 import Database from 'better-sqlite3'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import { automationSchema, decode } from '@dovo/protocol'
-import type { McpEventBatch, McpEventType, McpOccurrence } from '../mcp-events/client.js'
+import type {
+  McpEventBatch,
+  McpEventsClient,
+  McpEventType,
+  McpOccurrence,
+} from '../mcp-events/client.js'
 import type { McpAutomationInput } from '../mcp-events/subscriptions.js'
 import { HttpError } from '../errors.js'
 import { McpEventTriggers } from './mcp-event-triggers.js'
@@ -55,6 +60,10 @@ afterEach(() => {
 })
 
 function fixture() {
+  let time = 0
+  const clock = vi.spyOn(Date, 'now').mockImplementation(() => time)
+  cleanup.push(() => clock.mockRestore())
+
   const db = new Database(':memory:')
   cleanup.push(() => {
     db.close()
@@ -67,21 +76,19 @@ function fixture() {
   let blocked = false
   let failCommit = false
   let identity = 'source-a'
-  const poll = vi.fn(
-    async (_event: McpEventType, _params: Record<string, unknown>): Promise<McpEventBatch> => ({
-      events: [],
-      cursor: 'initial',
-      truncated: false,
-      hasMore: false,
-      nextPollMs: 1000,
-    }),
-  )
+  const poll = vi.fn<McpEventsClient['poll']>(async () => ({
+    events: [],
+    cursor: 'initial',
+    truncated: false,
+    hasMore: false,
+    nextPollMs: 1000,
+  }))
   const client = {
-    list: vi.fn(async () => [event]),
-    validateArguments: vi.fn(),
+    list: vi.fn<McpEventsClient['list']>(async () => [event]),
+    validateArguments: vi.fn<McpEventsClient['validateArguments']>(),
     poll,
   }
-  const report = vi.fn()
+  const report = vi.fn<(id: string, message: string) => void>()
   const create = () => {
     const triggers = new McpEventTriggers(
       db,
@@ -110,6 +117,13 @@ function fixture() {
     poll,
     report,
     create,
+    tick: (triggers: McpEventTriggers, at: number) => {
+      time = at
+      return triggers.tick()
+    },
+    setTime: (at: number) => {
+      time = at
+    },
     setBlocked: (value: boolean) => {
       blocked = value
     },
@@ -122,10 +136,25 @@ function fixture() {
   }
 }
 
+it('waits the server poll interval after a slow response', async () => {
+  const f = fixture()
+  const triggers = f.create()
+  f.poll.mockImplementationOnce(async () => {
+    f.setTime(5000)
+    return { events: [], cursor: 'initial', truncated: false, hasMore: false, nextPollMs: 1000 }
+  })
+  await f.tick(triggers, 1000)
+  expect(triggers.status('flow').nextPollAt).toBe(6000)
+  await f.tick(triggers, 5999)
+  expect(f.poll).toHaveBeenCalledTimes(1)
+  await f.tick(triggers, 6000)
+  expect(f.poll).toHaveBeenCalledTimes(2)
+})
+
 it('retains events behind review and across restart, then admits each delivery once', async () => {
   const f = fixture()
   const initial = f.create()
-  await initial.tick(1000)
+  await f.tick(initial, 1000)
   expect(f.poll.mock.calls[0]?.[1]).toMatchObject({ cursor: null })
   f.poll.mockResolvedValue({
     events: [incident],
@@ -135,7 +164,7 @@ it('retains events behind review and across restart, then admits each delivery o
     nextPollMs: 1000,
   })
   f.setBlocked(true)
-  await initial.tick(2000)
+  await f.tick(initial, 2000)
   expect(initial.status('flow')).toMatchObject({
     pending: 1,
     gapObserved: true,
@@ -146,9 +175,9 @@ it('retains events behind review and across restart, then admits each delivery o
   const restarted = f.create()
   expect(restarted.status('flow')).toMatchObject({ pending: 1, gapObserved: true })
   f.setBlocked(false)
-  await restarted.tick(3000)
+  await f.tick(restarted, 3000)
   expect(f.runs).toEqual([{ source: 'mcp-event', server: 'incidents', event: incident }])
-  await restarted.tick(4000)
+  await f.tick(restarted, 4000)
   expect(f.poll.mock.lastCall?.[1]).toMatchObject({ cursor: 'next' })
   expect(f.runs).toHaveLength(1)
   expect(restarted.status('flow').pending).toBe(0)
@@ -157,7 +186,7 @@ it('retains events behind review and across restart, then admits each delivery o
 it('does not consume a batch when its run transaction fails', async () => {
   const f = fixture()
   const triggers = f.create()
-  await triggers.tick(1000)
+  await f.tick(triggers, 1000)
   f.poll.mockResolvedValue({
     events: [incident],
     cursor: 'next',
@@ -166,11 +195,11 @@ it('does not consume a batch when its run transaction fails', async () => {
     nextPollMs: 1000,
   })
   f.fail(true)
-  await triggers.tick(2000)
+  await f.tick(triggers, 2000)
   expect(triggers.status('flow')).toMatchObject({ pending: 1, retrying: true })
   expect(f.runs).toHaveLength(0)
   f.fail(false)
-  await triggers.tick(32000)
+  await f.tick(triggers, 32000)
   expect(f.runs).toHaveLength(1)
   expect(triggers.status('flow')).toMatchObject({ pending: 0, retrying: false })
 })
@@ -178,16 +207,19 @@ it('does not consume a batch when its run transaction fails', async () => {
 it('ignores a reply received after disabling and re-enabling the trigger', async () => {
   const f = fixture()
   const triggers = f.create()
-  await triggers.tick(1000)
-  const reply = Promise.withResolvers<McpEventBatch>()
-  f.poll.mockReturnValueOnce(reply.promise)
-  const ticking = triggers.tick(2000)
+  await f.tick(triggers, 1000)
+  let resolveReply!: (batch: McpEventBatch) => void
+  const reply = new Promise<McpEventBatch>((resolve) => {
+    resolveReply = resolve
+  })
+  f.poll.mockReturnValueOnce(reply)
+  const ticking = f.tick(triggers, 2000)
   await vi.waitFor(() => expect(f.poll).toHaveBeenCalledTimes(2))
   f.flows[0].enabled = false
   triggers.reconcile()
   f.flows[0].enabled = true
   triggers.reconcile()
-  reply.resolve({
+  resolveReply({
     events: [incident],
     cursor: 'next',
     truncated: false,
@@ -196,14 +228,14 @@ it('ignores a reply received after disabling and re-enabling the trigger', async
   })
   await ticking
   expect(f.runs).toHaveLength(0)
-  await triggers.tick(3000)
+  await f.tick(triggers, 3000)
   expect(f.poll.mock.lastCall?.[1]).toMatchObject({ cursor: null })
 })
 
 it('discards input and cursor from an obsolete source after credential rotation', async () => {
   const f = fixture()
   const triggers = f.create()
-  await triggers.tick(1000)
+  await f.tick(triggers, 1000)
   f.setBlocked(true)
   f.poll.mockResolvedValueOnce({
     events: [incident],
@@ -212,11 +244,11 @@ it('discards input and cursor from an obsolete source after credential rotation'
     hasMore: false,
     nextPollMs: 1000,
   })
-  await triggers.tick(2000)
+  await f.tick(triggers, 2000)
   expect(triggers.status('flow').pending).toBe(1)
   f.rotate()
   f.setBlocked(false)
-  await triggers.tick(3000)
+  await f.tick(triggers, 3000)
   expect(f.poll.mock.lastCall?.[1]).toMatchObject({ cursor: null })
   expect(triggers.status('flow').pending).toBe(0)
   expect(f.runs).toHaveLength(0)

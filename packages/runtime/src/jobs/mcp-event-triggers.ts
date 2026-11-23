@@ -116,7 +116,8 @@ export class McpEventTriggers {
     }
   }
 
-  private async tickOne(id: string, binding: Binding, now: number) {
+  private async tickOne(id: string, binding: Binding) {
+    const now = Date.now()
     const state = this.load(id)
     if ((this.failures.get(id) ?? 0) > now) return
     if (state && !state.pending.length && state.nextPollAt > now) return
@@ -160,7 +161,7 @@ export class McpEventTriggers {
         gapObserved: current.gapObserved || batch.truncated,
         nextPollAt: batch.hasMore
           ? 0
-          : now + Math.max(1000, Math.min(batch.nextPollMs, 2 ** 31 - 1)),
+          : Date.now() + Math.max(1000, Math.min(batch.nextPollMs, 2 ** 31 - 1)),
       }
       this.save(id, current)
       if (batch.truncated) {
@@ -192,15 +193,15 @@ export class McpEventTriggers {
     }
   }
 
-  async tick(now = Date.now()) {
+  async tick() {
     if (this.busy || this.controller.signal.aborted) return
     this.busy = true
     try {
       this.reconcile()
       for (const [id, binding] of this.enabled) {
         try {
-          await this.tickOne(id, binding, now)
-          if ((this.failures.get(id) ?? 0) <= now) this.failures.delete(id)
+          await this.tickOne(id, binding)
+          if ((this.failures.get(id) ?? 0) <= Date.now()) this.failures.delete(id)
         } catch (error) {
           if (!this.current(id, binding)) continue
           if (!this.failures.has(id))
@@ -210,7 +211,7 @@ export class McpEventTriggers {
                 ? error.message
                 : 'MCP event polling failed. Check the Bot server and event settings.',
             )
-          this.failures.set(id, now + 30000)
+          this.failures.set(id, Date.now() + 30000)
         }
       }
     } finally {
