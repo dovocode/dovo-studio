@@ -75,7 +75,7 @@ export const useWorkspace = () => workspace;
 export const useWorkspaceSelector = select => select(workspace);
 export const sameWorkspaceFields = (a, b) => Object.keys(b).every(key => Object.is(a[key], b[key]));
 export const useResolvedTheme = () => 'dark';`
-            : `export {BotAvatar} from '../studio-ui/src/bot-avatar'; export {HarnessIcon} from '../studio-ui/src/harness-icon'; export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
+            : `export {BotAvatar} from '../studio-ui/src/bot-avatar'; export { cn } from '../studio-ui/src/lib/utils'; export { ComposerTextarea } from '../studio-ui/src/composer-surface';
 export const Button = ({ children, variant, ...props }) => <button {...props}>{children}</button>;
 export const IconButton = ({ label, children, ...props }) => <button aria-label={label} {...props}>{children}</button>;`,
           resolveDir: fileURLToPath(new URL('../packages/extension-tasks/', import.meta.url)),

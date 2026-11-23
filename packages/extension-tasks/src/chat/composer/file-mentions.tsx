@@ -32,7 +32,8 @@ import {
   resourceSuggestions,
   type ResourceSettings,
 } from '@dovo/protocol'
-import { BotAvatar, HarnessIcon, cn } from '@dovo/studio-ui'
+import { BotAvatar, cn } from '@dovo/studio-ui'
+import { HarnessIcon } from '@dovo/studio-ui/harness-icon'
 import {
   sameWorkspaceFields,
   useAppPreferences,

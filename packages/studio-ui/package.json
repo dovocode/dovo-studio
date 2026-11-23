@@ -16,6 +16,7 @@
     "./code-themes": "./src/code-themes.ts",
     "./styles.css": "./src/styles.css",
     "./runtime-icon": "./src/runtime-icon.tsx",
+    "./harness-icon": "./src/harness-icon.tsx",
     "./toggle-button": "./src/toggle-button.tsx",
     "./search-field": "./src/search-field.tsx",
     "./detail-transition": "./src/detail-transition.ts",
