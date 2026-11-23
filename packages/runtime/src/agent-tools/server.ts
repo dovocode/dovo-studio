@@ -432,7 +432,7 @@ const tools: Array<
   {
     name: 'dashboards',
     description:
-      'Build dashboards. To show a saved A2UI card, use an app tile with the taskId and appId returned by a2ui publish (appId is the returned id). Read before edits. Update/delete need id and expectedRevision.',
+      'Tiles: app taskId/appId from a2ui publish; API/iframe/browser url; CLI/command/TUI repositoryId, command (dovo:scratch for home); MCP taskId/server/tool/arguments. Read before edits; update/delete need expectedRevision.',
     inputSchema: {
       type: 'object' as const,
       properties: {
@@ -472,8 +472,6 @@ const tools: Array<
                       'threads',
                       'jobs',
                     ],
-                    description:
-                      'api/iframe/browser: url. cli/command/tui: repositoryId (dovo:scratch for home), command. mcp: taskId/server/tool/arguments.',
                   },
                   span: { type: 'integer' as const, minimum: 1, maximum: 4 },
                   height: { type: 'integer' as const, minimum: 1, maximum: 4 },

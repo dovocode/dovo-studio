@@ -4411,6 +4411,9 @@ export default {
   'Header bindings (JSON)': 'Header bindings (JSON)',
   'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.':
     'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing starts the server and lists its tools.',
+  'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing lists tools and any advertised MCP Events.':
+    'Bindings map names to environment variable names on the runtime host, for example {value0}. Testing lists tools and any advertised MCP Events.',
+  'Saved app or A2UI card': 'Saved app or A2UI card',
   'SKILL.md path on runtime': 'SKILL.md path on runtime',
   'Import SKILL.md': 'Import SKILL.md',
   'Skill name': 'Skill name',

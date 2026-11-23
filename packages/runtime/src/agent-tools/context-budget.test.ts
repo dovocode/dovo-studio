@@ -174,6 +174,12 @@ it.each([false, true])(
       const a2uiCharacters = JSON.stringify(a2ui).length + 1
       expect(a2uiCharacters).toBeLessThanOrEqual(2000)
       expect(a2ui?.description?.length ?? 0).toBeLessThanOrEqual(500)
+      const events = tools.find((tool) => tool.name === 'mcp_events')
+      if (!events) throw new Error('Missing mcp_events')
+      const eventCharacters = JSON.stringify(events).length + 1
+      const eventDescriptionCharacters = events.description?.length ?? 0
+      expect(eventCharacters).toBeLessThanOrEqual(1300)
+      expect(eventDescriptionCharacters).toBeLessThanOrEqual(450)
       // Dashboard authoring has its own budget, so it cannot hide growth in other tools.
       const dashboards = tools.find((tool) => tool.name === 'dashboards')
       if (!dashboards) throw new Error('Missing dashboards')
@@ -212,7 +218,7 @@ it.each([false, true])(
       const extensionDescription = extensions?.description?.length ?? 0
       expect(extensionCharacters).toBeLessThanOrEqual(950)
       expect(extensionDescription).toBeLessThanOrEqual(300)
-      expect(tools).toHaveLength(full ? 57 : 29)
+      expect(tools).toHaveLength(full ? 58 : 30)
       const pipelineCi = tools.find((tool) => tool.name === 'pipeline_ci')
       expect(!!pipelineCi).toBe(full)
       const pipelineCiCharacters = pipelineCi ? JSON.stringify(pipelineCi).length + 1 : 0
@@ -231,6 +237,7 @@ it.each([false, true])(
           (full ? dryRunText.length : 0) -
           pipelineCiDescriptionCharacters -
           dashboardDescriptionCharacters -
+          eventDescriptionCharacters -
           extensionDescription,
       ).toBeLessThanOrEqual(full ? 11000 : 6000)
       const terminalRename = tools.find((tool) => tool.name === 'terminal_rename')
@@ -411,6 +418,7 @@ it.each([false, true])(
           themeCharacters -
           pipelineCiCharacters -
           dashboardCharacters -
+          eventCharacters -
           extensionCharacters,
       ).toBeLessThanOrEqual(full ? 48500 : 10000)
       expect(
@@ -426,6 +434,7 @@ it.each([false, true])(
           (conversation?.description?.length ?? 0) -
           pipelineCiDescriptionCharacters -
           dashboardDescriptionCharacters -
+          eventDescriptionCharacters -
           extensionDescription -
           automationTools.reduce((total, tool) => total + (tool?.description?.length ?? 0), 0),
       ).toBeLessThanOrEqual(full ? 12900 : 3200)

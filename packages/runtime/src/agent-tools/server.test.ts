@@ -695,6 +695,7 @@ it('keeps read-only providers from sending task terminal or device input', async
     expect((await client.listTools()).tools.map((tool) => tool.name)).toEqual([
       'code',
       'vision',
+      'mcp_events',
       'conversation_read',
       'dovo_help',
       'ask_question',
