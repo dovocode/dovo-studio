@@ -39,9 +39,35 @@ function ConnectSettingsContent({
   const [confirm, setConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [failure, setFailure] = useState('')
+  const [mcpConfirm, setMcpConfirm] = useState(false)
+  const [copied, setCopied] = useState(false)
   const pending = useRef(false)
   if (!profile) return null
   const name = profile.name
+  const internet = snapshot?.internet
+  const mcp = internet?.remoteMcp
+  const lanOnly = snapshot?.relaySettings?.connectionMode === 'lan'
+  const setRemoteMcp = async (enabled: boolean) => {
+    if (pending.current) return
+    pending.current = true
+    setSaving(true)
+    setFailure('')
+    try {
+      await request(
+        '/api/runtime/internet/remote-mcp',
+        { enabled, consent: true },
+        responses.internetStatus,
+      )
+      setMcpConfirm(false)
+      setCopied(false)
+      await refreshRuntime(profile)
+    } catch (error) {
+      setFailure(error instanceof Error ? error.message : uiText('Could not update remote MCP'))
+    } finally {
+      pending.current = false
+      setSaving(false)
+    }
+  }
   const enable = async () => {
     if (pending.current || !snapshot?.runtimeId) return
     pending.current = true
@@ -135,6 +161,102 @@ function ConnectSettingsContent({
             )}
           </>
         )
+      )}
+      {snapshot && (
+        <div className="space-y-2 border-t pt-3">
+          <h3 className="text-sm font-medium">{uiText('Remote MCP')}</h3>
+          {!mcp ? (
+            <p className="text-xs text-muted-foreground">
+              {uiText('Update Dovo on this computer to configure remote MCP.')}
+            </p>
+          ) : (
+            <>
+              <p className="text-xs text-muted-foreground">
+                {!internet?.enabled
+                  ? uiText('Enable Dovo Connect first.')
+                  : lanOnly
+                    ? uiText('Remote MCP requires a connection mode that allows Dovo Connect.')
+                    : mcp.enabled
+                      ? uiText(
+                          'Remote MCP is enabled on this computer. The Connect server must also support remote MCP.',
+                        )
+                      : uiText(
+                          'Allow external AI apps to request access to this computer through Dovo Connect.',
+                        )}
+              </p>
+              {!snapshot.internetSetupSupported ? (
+                <p className="text-xs text-muted-foreground">
+                  {uiText('Use a separately paired device to change remote MCP access.')}
+                </p>
+              ) : (
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    disabled={
+                      !connected || saving || (!mcp.enabled && (!internet?.enabled || lanOnly))
+                    }
+                    onClick={() => {
+                      if (mcp.enabled || mcpConfirm) void setRemoteMcp(!mcp.enabled)
+                      else setMcpConfirm(true)
+                    }}
+                  >
+                    {mcp.enabled
+                      ? uiText('Disable remote MCP')
+                      : mcpConfirm
+                        ? uiText('Confirm remote MCP access')
+                        : uiText('Enable remote MCP')}
+                  </Button>
+                  {mcpConfirm && (
+                    <Button variant="ghost" disabled={saving} onClick={() => setMcpConfirm(false)}>
+                      {uiText('Cancel')}
+                    </Button>
+                  )}
+                </div>
+              )}
+              {mcpConfirm && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {uiText(
+                    'Each app signs in with OAuth. You choose whether it can read or also run agents on this computer.',
+                  )}
+                </p>
+              )}
+              {!!mcp.serverUrl && (
+                <p className="break-all select-text font-mono text-xs">{mcp.serverUrl}</p>
+              )}
+              <div className="flex flex-wrap items-center gap-2">
+                {!!mcp.serverUrl && (
+                  <Button
+                    variant="outline"
+                    onClick={async () => {
+                      setFailure('')
+                      try {
+                        await navigator.clipboard.writeText(mcp.serverUrl!)
+                        setCopied(true)
+                      } catch {
+                        setFailure(uiText('Could not copy the MCP server URL'))
+                      }
+                    }}
+                  >
+                    {copied ? uiText('Copied') : uiText('Copy MCP server URL')}
+                  </Button>
+                )}
+                {!!mcp.managementUrl && (
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void open(mcp.managementUrl!).catch((error: unknown) =>
+                        setFailure(
+                          error instanceof Error ? error.message : uiText('Could not open link'),
+                        ),
+                      )
+                    }
+                  >
+                    {uiText('Manage connected apps')}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
       )}
       {!!(failure || error || snapshot?.internet?.error) && (
         <p role="alert" className="text-xs text-destructive">

@@ -48,7 +48,7 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
     )
   })
   vi.stubEnv('DOVO_CONNECT_ORIGIN', origin)
-  vi.stubEnv('DOVO_REMOTE_MCP', '1')
+  vi.stubEnv('DOVO_REMOTE_MCP', undefined)
   const runtime = await startRuntime({
     databasePath: ':memory:',
     ownerToken: 'remote-mcp-local-test-owner-token',
@@ -69,6 +69,24 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   accounts.approve(account.login, { id: 'owner', name: 'Owner' })
   const runtimeId = s.runtimeId
   await s.peers.internet.enable(account.token, runtimeId, 'Fixture computer')
+  const paired = 'separately-paired-remote-mcp-test-token'
+  s.devices.add('Paired phone', paired)
+  const configure = (enabled: boolean) =>
+    fetch(`http://127.0.0.1:${runtime.port}/api/runtime/internet/remote-mcp`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer ' + paired, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enabled, consent: true }),
+    })
+  const enabled = await configure(true)
+  expect(enabled.status).toBe(200)
+  expect(await enabled.json()).toMatchObject({
+    enabled: true,
+    remoteMcp: {
+      enabled: true,
+      serverUrl: origin + '/mcp/' + runtimeId,
+      managementUrl: origin + '/mcp/manage',
+    },
+  })
 
   const request = (path: string, options?: RequestInit) =>
     fetch(new URL(path, origin), { redirect: 'manual', ...options })
@@ -89,6 +107,13 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
 
   const endpoint = '/mcp/' + runtimeId
   const resource = origin + endpoint
+  const management = await authorizeBrowser('/mcp/manage')
+  expect(management.complete.status).toBe(303)
+  await vi.waitFor(
+    async () =>
+      expect(await (await browser('/mcp/manage', management.cookie)).text()).toContain(resource),
+    { timeout: 5000 },
+  )
   const issuer = '/mcp-oauth/' + runtimeId
   const unauthenticated = await request(endpoint)
   expect(unauthenticated.status).toBe(401)
@@ -238,8 +263,6 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
     (await request(endpoint, { headers: { Authorization: 'Bearer ' + token.access_token } }))
       .status,
   ).toBe(401)
-  const management = await authorizeBrowser('/mcp/manage')
-  expect(management.complete.status).toBe(303)
   const page = await (await browser('/mcp/manage', management.cookie)).text()
   expect(page).toContain(resource)
   const field = /<input[^>]+name="grant"[^>]*>/.exec(page)?.[0] ?? ''
@@ -283,6 +306,13 @@ it('links an OAuth app to a Connect computer, starts one agent on retry and revo
   expect((await readClient.callTool({ name: 'dovo_threads', arguments: launch })).isError).toBe(
     true,
   )
+  const disabled = await configure(false)
+  expect(disabled.status).toBe(200)
+  expect(await disabled.json()).toMatchObject({
+    enabled: true,
+    remoteMcp: { enabled: false, managementUrl: origin + '/mcp/manage' },
+  })
+  expect(s.peers.internet.status().remoteMcp).not.toHaveProperty('serverUrl')
   await s.peers.internet.disable()
   expect(
     (await request(endpoint, { headers: { Authorization: 'Bearer ' + readToken.access_token } }))

@@ -2043,6 +2043,16 @@ export function route(
         )
         return s.peers.relay.set(input.config ?? undefined)
       }
+      if (method === 'POST' && path === '/api/runtime/internet/remote-mcp') {
+        if (agentDeviceAccess || s.peers.internet.contains(device.id))
+          throw new HttpError(403, 'A separately paired human client is required')
+        const input = decode(
+          mutableStruct({ consent: Schema.Literal(true), enabled: Schema.Boolean }),
+          yield* serviceResult(body(request, 4096)),
+        )
+        s.devices.authenticate(token)
+        return s.peers.internet.setRemoteMcp(input.enabled)
+      }
       if (method === 'POST' && path === '/api/runtime/internet') {
         owner()
         requireLocalStudioUI(remoteAddress)

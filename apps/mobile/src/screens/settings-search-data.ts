@@ -1,6 +1,6 @@
 /** Native labels differ from desktop; index only controls and groups available on these pages. */
 export const mobileSettingsFields: Readonly<Record<string, readonly string[]>> = {
-  '/settings/devices': ['Dovo Connect URL', 'Dovo Artifacts URL'],
+  '/settings/devices': ['Dovo Connect URL', 'Dovo Artifacts URL', 'Remote MCP'],
   '/settings/general': [
     'Open on launch',
     'Time format',

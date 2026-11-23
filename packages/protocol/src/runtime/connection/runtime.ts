@@ -301,6 +301,13 @@ export const internetStatusSchema = mutableStruct({
   enabled: Schema.Boolean,
   connected: Schema.Boolean,
   error: Schema.String,
+  remoteMcp: Schema.optional(
+    mutableStruct({
+      enabled: Schema.Boolean,
+      managementUrl: Schema.optional(Schema.String),
+      serverUrl: Schema.optional(Schema.String),
+    }),
+  ),
 })
 export const snapshotSchema = mutableStruct({
   managedPolicy: Schema.optional(managedPolicySummarySchema),

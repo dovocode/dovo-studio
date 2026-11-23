@@ -6,19 +6,23 @@ clients, and rotating refresh tokens.
 
 ## Enable and link
 
-1. Set `DOVO_CONNECT_REMOTE_MCP=1` on the HTTPS Connect service. Configure its existing Dovo Auth
-   identity provider.
-2. Set `DOVO_REMOTE_MCP=1` in the chosen runtime's environment and restart it. Enable Dovo Connect
-   on the computer and enable the Threads and Automations parts in Studio Tools. The runtime must be
-   online while it handles requests.
-3. Open `https://connect.dovo.studio/mcp/manage`, or the same path on your Connect service, and sign
-   in. Copy the computer's address into the AI app's custom MCP server settings.
+1. If you host Connect, set `DOVO_CONNECT_REMOTE_MCP=1` on the HTTPS Connect service and configure
+   its existing Dovo Auth identity provider.
+2. On desktop or a separately paired phone, go to **Settings → Devices & runtime**. Select the
+   computer that should run the tools, enable **Dovo Connect**, then choose **Enable remote MCP**.
+   Enable Threads and Automations in Studio Tools for the operations you want to use. The runtime
+   must be online and use a connection mode that allows Dovo Connect.
+3. Choose **Copy MCP server URL** and paste the address into the AI app's custom MCP server
+   settings. The app obtains its credentials when you sign in and approve access with OAuth.
 4. Review the selected computer and the app's callback domain. Choose **Allow read access** or
    **Allow reading and running agents**. The grant covers threads and automations on that computer
    across its projects.
-5. To remove an app's access, return to **Remote MCP connections** and revoke that app. Disabling
-   Dovo Connect or replacing the installation grant invalidates the old link. Removing
-   `DOVO_REMOTE_MCP` and restarting also stops the runtime from claiming work.
+5. Choose **Manage connected apps** to revoke an individual app. Choose **Disable remote MCP** to
+   pause access for every linked app on this computer. The grants remain saved until you revoke
+   them. Disabling Dovo Connect or replacing the installation grant invalidates the old links.
+
+For unattended runtimes, `DOVO_REMOTE_MCP=1` supplies the initial setting. A saved choice in
+Settings overrides it and takes effect without a restart.
 
 Connect sees the commands and responses it relays to the external app. It keeps these payloads in
 memory for the active request. The other app can retain data according to its settings. Ordinary

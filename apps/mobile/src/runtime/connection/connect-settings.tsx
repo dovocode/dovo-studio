@@ -1,7 +1,8 @@
 import { InterfaceText, useInterfaceText } from '@dovo/studio-core/interface-language'
-import { useEffect } from 'react'
-import { Alert, View } from 'react-native'
+import { useEffect, useState } from 'react'
+import { Alert, Linking, View } from 'react-native'
 import * as Crypto from 'expo-crypto'
+import * as Clipboard from 'expo-clipboard'
 import { responses, runtimeComputerName, ACCOUNT_DIRECTORY_URL } from '@dovo/protocol'
 import { useRuntime } from './provider'
 import { useMobileAccount } from './account-provider'
@@ -25,6 +26,7 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
     deletionPending,
   } = useMobileAccount()
   const { busy, error, act } = useAction()
+  const [copiedUrl, setCopiedUrl] = useState<string>()
   const { styles } = useTheme()
   useEffect(() => {
     onBusyChange?.(busy)
@@ -32,6 +34,18 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
   }, [busy, onBusyChange])
   if (!profile) return null
   const name = runtimeComputerName({ profile, snapshot })
+  const internet = snapshot?.internet
+  const mcp = internet?.remoteMcp
+  const lanOnly = snapshot?.relaySettings?.connectionMode === 'lan'
+  const setRemoteMcp = async (enabled: boolean) => {
+    await call(
+      '/api/runtime/internet/remote-mcp',
+      { enabled, consent: true },
+      responses.internetStatus,
+    )
+    setCopiedUrl(undefined)
+    await refresh()
+  }
   const accountServer = directory?.servers.find(
     (server) => server.id === snapshot?.runtimeId && server.internet,
   )
@@ -171,6 +185,89 @@ export function ConnectSettings({ onBusyChange }: { onBusyChange?: (busy: boolea
             onPress={() => act(connectAccount)}
           />
         )}
+      {snapshot && (
+        <View style={{ gap: 8 }}>
+          <Text style={styles.title}>{uiText('Remote MCP')}</Text>
+          {!mcp ? (
+            <Text style={styles.muted}>
+              {uiText('Update Dovo on this computer to configure remote MCP.')}
+            </Text>
+          ) : (
+            <>
+              <Text style={styles.muted}>
+                {!internet?.enabled
+                  ? uiText('Enable Dovo Connect first.')
+                  : lanOnly
+                    ? uiText('Remote MCP requires a connection mode that allows Dovo Connect.')
+                    : mcp.enabled
+                      ? uiText(
+                          'Remote MCP is enabled on this computer. The Connect server must also support remote MCP.',
+                        )
+                      : uiText(
+                          'Allow external AI apps to request access to this computer through Dovo Connect.',
+                        )}
+              </Text>
+              {!snapshot.internetSetupSupported ? (
+                <Text style={styles.muted}>
+                  {uiText('Use a separately paired device to change remote MCP access.')}
+                </Text>
+              ) : (
+                <Action
+                  label={mcp.enabled ? uiText('Disable remote MCP') : uiText('Enable remote MCP')}
+                  disabled={!connected || busy || (!mcp.enabled && (!internet?.enabled || lanOnly))}
+                  onPress={() => {
+                    if (mcp.enabled) {
+                      act(() => setRemoteMcp(false))
+                    } else {
+                      Alert.alert(
+                        uiText('Enable remote MCP'),
+                        uiText(
+                          'Each app signs in with OAuth. You choose whether it can read or also run agents on this computer.',
+                        ),
+                        [
+                          { text: uiText('Cancel'), style: 'cancel' },
+                          {
+                            text: uiText('Enable remote MCP'),
+                            onPress: () => act(() => setRemoteMcp(true)),
+                          },
+                        ],
+                      )
+                    }
+                  }}
+                />
+              )}
+              {!!mcp.serverUrl && (
+                <>
+                  <Text selectable style={styles.muted}>
+                    {mcp.serverUrl}
+                  </Text>
+                  <Action
+                    secondary
+                    label={
+                      copiedUrl === mcp.serverUrl ? uiText('Copied') : uiText('Copy MCP server URL')
+                    }
+                    onPress={() =>
+                      act(async () => {
+                        const url = mcp.serverUrl!
+                        if (!(await Clipboard.setStringAsync(url)))
+                          throw new Error(uiText('Could not copy the MCP server URL'))
+                        setCopiedUrl(url)
+                      })
+                    }
+                  />
+                </>
+              )}
+              {!!mcp.managementUrl && (
+                <Action
+                  secondary
+                  label={uiText('Manage connected apps')}
+                  onPress={() => act(() => Linking.openURL(mcp.managementUrl!))}
+                />
+              )}
+            </>
+          )}
+        </View>
+      )}
       {!!(error || accountError || snapshot?.internet?.error) && (
         <Text accessibilityRole="alert" style={styles.error}>
           {error || accountError || snapshot?.internet?.error}

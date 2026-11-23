@@ -167,6 +167,36 @@ async function fixture(
     },
   }
 }
+it('saves the paired device’s remote MCP choice across reconnects and runtime restarts', async () => {
+  vi.stubEnv('DOVO_REMOTE_MCP', undefined)
+  const f = await fixture(true)
+  const paired = 'paired-human-remote-mcp-settings-token'
+  f.runtime.services.devices.add('Paired phone', paired)
+  const path = '/api/runtime/internet/remote-mcp'
+  const setup = { consent: true, enabled: true }
+  const snapshot = () =>
+    fetch(`http://127.0.0.1:${f.runtime.port}/api/snapshot?scope=overview`, {
+      headers: { Authorization: 'Bearer ' + paired },
+    }).then((response) => response.json())
+  expect(await snapshot()).toMatchObject({ internet: { remoteMcp: { enabled: false } } })
+  expect((await f.call(path, setup, paired)).status).toBe(409)
+  expect((await f.request({ enabled: true, accountToken: f.owner })).status).toBe(200)
+  expect((await f.call(path, setup, paired, { 'x-dovo-agent-access': '1' })).status).toBe(403)
+  expect((await f.call(path, { enabled: true }, paired)).status).toBe(400)
+  expect((await f.call(path, setup, paired)).status).toBe(200)
+  await f.restart()
+  const serverUrl = f.origin + '/mcp/' + f.runtime.services.runtimeId
+  expect(await snapshot()).toMatchObject({
+    internet: { enabled: true, remoteMcp: { enabled: true, serverUrl } },
+  })
+  expect((await f.call(path, { ...setup, enabled: false }, paired)).status).toBe(200)
+  vi.stubEnv('DOVO_REMOTE_MCP', '1')
+  await f.restart()
+  const restored = await snapshot()
+  expect(restored).toMatchObject({ internet: { enabled: true, remoteMcp: { enabled: false } } })
+  expect(restored.internet.remoteMcp).not.toHaveProperty('serverUrl')
+})
+
 it('uses and persists the Connect URL chosen in Settings without an environment override', async () => {
   const f = await fixture(true, undefined, false, true)
   expect(f.runtime.services.peers.internet.origin).toBe('https://connect.dovo.studio')
@@ -710,6 +740,12 @@ it('enables account access and TURN from a confirmed separate pairing without se
     body: JSON.stringify({ session: 'a'.repeat(43), consent: true, relay: 'dovo' }),
   })
   expect(denied.status).toBe(403)
+  const deniedRemoteMcp = await fetch(peer.address + '/api/runtime/internet/remote-mcp', {
+    method: 'POST',
+    headers: { Authorization: 'Bearer ' + connection.token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ enabled: true, consent: true }),
+  })
+  expect(deniedRemoteMcp.status).toBe(403)
   await f.client.signOut()
   await vi.waitFor(() => expect(f.runtime.services.peers.internet.status().enabled).toBe(false), {
     timeout: 6000,

@@ -13,7 +13,7 @@ export const runtimeExtension = defineStudioExtension(
       navigationGroup: 'settings',
       settingsScope: 'computer',
       title: 'Devices & runtime',
-      settingsFields: ['Dovo Connect URL', 'Dovo Artifacts URL'],
+      settingsFields: ['Dovo Connect URL', 'Dovo Artifacts URL', 'Remote MCP'],
       icon: 'runtime',
       order: 4,
       settingsSection: 'computers',

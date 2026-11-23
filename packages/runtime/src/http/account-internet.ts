@@ -52,6 +52,8 @@ export class AccountInternet {
   private provisioning?: Promise<void>
   private mcpWork?: Promise<void>
   private mcp?: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>
+  private mcpEnabled: boolean
+  private mcpGeneration = 0
   private polling = new Set<Promise<void>>()
   private generation = 0
   private lease = 0
@@ -92,7 +94,12 @@ export class AccountInternet {
     db.exec(`CREATE TABLE IF NOT EXISTS account_internet(id INTEGER PRIMARY KEY CHECK(id=1),secret TEXT NOT NULL,state TEXT);
       CREATE TABLE IF NOT EXISTS account_service_settings(id INTEGER PRIMARY KEY CHECK(id=1),origin TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS account_internet_devices(request TEXT PRIMARY KEY,device TEXT NOT NULL,answer TEXT NOT NULL,session TEXT NOT NULL);
-      CREATE TABLE IF NOT EXISTS account_internet_blocks(session TEXT PRIMARY KEY);`)
+      CREATE TABLE IF NOT EXISTS account_internet_blocks(session TEXT PRIMARY KEY);
+      CREATE TABLE IF NOT EXISTS account_remote_mcp(id INTEGER PRIMARY KEY CHECK(id=1),enabled INTEGER NOT NULL CHECK(enabled IN (0,1)));`)
+    const mcpSetting = db.prepare('SELECT enabled FROM account_remote_mcp WHERE id=1').get()
+    this.mcpEnabled = mcpSetting
+      ? decode(Schema.Struct({ enabled: Schema.Literals([0, 1]) }), mcpSetting).enabled === 1
+      : process.env.DOVO_REMOTE_MCP === '1'
     db.prepare('INSERT OR IGNORE INTO account_service_settings VALUES(1,?)').run(
       process.env.DOVO_CONNECT_ORIGIN ?? ACCOUNT_DIRECTORY_URL,
     )
@@ -122,11 +129,20 @@ export class AccountInternet {
     if (saved.state) this.state = decode(stateSchema, JSON.parse(saved.state))
   }
   status() {
+    const origin = this.origin
+    const remoteMcp = this.mcp && {
+      enabled: this.mcpEnabled,
+      ...(this.state && {
+        managementUrl: origin + '/mcp/manage',
+        ...(this.canRunRemoteMcp() && { serverUrl: origin + '/mcp/' + this.state.runtimeId }),
+      }),
+    }
     return {
       enabled: !!this.state,
       connected: !!this.state && this.lease > Date.now(),
       error: this.error,
-      origin: this.origin,
+      origin,
+      ...(remoteMcp && { remoteMcp }),
     }
   }
   contains(deviceId: string) {
@@ -284,8 +300,11 @@ export class AccountInternet {
     this.stop()
     const generation = this.generation
     this.running = wasRunning
+    this.db.transaction(() => {
+      this.db.prepare('UPDATE account_internet SET state=NULL WHERE id=1').run()
+      this.persistRemoteMcp(false)
+    })()
     this.state = undefined
-    this.db.prepare('UPDATE account_internet SET state=NULL WHERE id=1').run()
     this.removeExcept(new Set())
     this.error = ''
     // Local revocation is immediate even if Connect cannot be reached. A stale broker entry
@@ -314,16 +333,44 @@ export class AccountInternet {
     this.polling.add(pending)
     return pending
   }
-  enableRemoteMcp(handler: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>) {
+  registerRemoteMcp(handler: (claim: RemoteMcpClaim, authorize: () => void) => Promise<unknown>) {
     this.mcp = handler
+  }
+  setRemoteMcp(enabled: boolean) {
+    if (enabled) {
+      this.policy?.require('connect')
+      if (!this.state) throw new HttpError(409, 'Enable Dovo Connect first.')
+      if (this.peers.relay.connectionMode() === 'lan')
+        throw new HttpError(409, 'Select a connection mode that allows Dovo Connect first.')
+    }
+    this.persistRemoteMcp(enabled)
+    return this.status()
+  }
+  private persistRemoteMcp(enabled: boolean) {
+    this.db
+      .prepare(
+        'INSERT INTO account_remote_mcp VALUES(1,?) ON CONFLICT(id) DO UPDATE SET enabled=excluded.enabled',
+      )
+      .run(Number(enabled))
+    if (this.mcpEnabled !== enabled) this.mcpGeneration++
+    this.mcpEnabled = enabled
+  }
+  private canRunRemoteMcp() {
+    return (
+      !!this.mcp &&
+      this.mcpEnabled &&
+      !this.policy?.summary?.disabledCapabilities.includes('connect') &&
+      this.peers.relay.connectionMode() !== 'lan'
+    )
   }
   private async refresh() {
     if (!this.running || !this.state) return
     if (this.timer) clearTimeout(this.timer)
     const generation = this.generation,
-      state = this.state
+      state = this.state,
+      mcpGeneration = this.mcpGeneration
     try {
-      const remoteMcp = !!this.mcp && this.peers.relay.connectionMode() !== 'lan'
+      const remoteMcp = this.canRunRemoteMcp()
       const inbox = decode(
         inboxSchema,
         await this.request(
@@ -347,7 +394,7 @@ export class AccountInternet {
       this.activeRequests = new Set(inbox.active)
       this.removeExcept(this.activeRequests)
       if (remoteMcp && inbox.mcp && !this.mcpWork) {
-        const pending = this.handleRemoteMcp(inbox.mcp.id, state.grant, generation)
+        const pending = this.handleRemoteMcp(inbox.mcp.id, state.grant, generation, mcpGeneration)
           .catch(() => {})
           .finally(() => {
             if (this.mcpWork === pending) this.mcpWork = undefined
@@ -374,14 +421,22 @@ export class AccountInternet {
       }
     }
   }
-  private async handleRemoteMcp(id: string, grant: string, generation: number) {
+  private async handleRemoteMcp(
+    id: string,
+    grant: string,
+    generation: number,
+    mcpGeneration: number,
+  ) {
     const deadline = Date.now() + 12000
+    const handler = this.mcp
+    if (!handler) return
     const authorize = () => {
       if (
         generation !== this.generation ||
+        mcpGeneration !== this.mcpGeneration ||
         !this.running ||
         Math.min(deadline, this.lease) <= Date.now() ||
-        this.peers.relay.connectionMode() === 'lan'
+        !this.canRunRemoteMcp()
       )
         throw new HttpError(403, 'Remote MCP is disabled on this computer.')
     }
@@ -394,7 +449,7 @@ export class AccountInternet {
     let reply: unknown
     try {
       authorize()
-      const result = await this.mcp!(claim, authorize)
+      const result = await handler(claim, authorize)
       reply = { id, ok: true, result: result ?? null }
       if (Buffer.byteLength(JSON.stringify(reply)) > 262144)
         throw new HttpError(413, 'MCP response exceeded its size limit.')
