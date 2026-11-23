@@ -218,7 +218,13 @@ it.each([false, true])(
       const extensionDescription = extensions?.description?.length ?? 0
       expect(extensionCharacters).toBeLessThanOrEqual(950)
       expect(extensionDescription).toBeLessThanOrEqual(300)
-      expect(tools).toHaveLength(full ? 58 : 30)
+      expect(tools).toHaveLength(full ? 59 : 30)
+      const deployment = tools.find((tool) => tool.name === 'device_deploy')
+      expect(!!deployment).toBe(full)
+      const deploymentCharacters = deployment ? JSON.stringify(deployment).length + 1 : 0
+      const deploymentDescription = deployment?.description?.length ?? 0
+      expect(deploymentCharacters).toBeLessThanOrEqual(900)
+      expect(deploymentDescription).toBeLessThanOrEqual(300)
       const pipelineCi = tools.find((tool) => tool.name === 'pipeline_ci')
       expect(!!pipelineCi).toBe(full)
       const pipelineCiCharacters = pipelineCi ? JSON.stringify(pipelineCi).length + 1 : 0
@@ -236,6 +242,7 @@ it.each([false, true])(
           (vision?.description?.length ?? 0) -
           (full ? dryRunText.length : 0) -
           pipelineCiDescriptionCharacters -
+          deploymentDescription -
           dashboardDescriptionCharacters -
           eventDescriptionCharacters -
           extensionDescription,
@@ -417,6 +424,7 @@ it.each([false, true])(
           conversationCharacters -
           themeCharacters -
           pipelineCiCharacters -
+          deploymentCharacters -
           dashboardCharacters -
           eventCharacters -
           extensionCharacters,
@@ -433,6 +441,7 @@ it.each([false, true])(
           (help?.description?.length ?? 0) -
           (conversation?.description?.length ?? 0) -
           pipelineCiDescriptionCharacters -
+          deploymentDescription -
           dashboardDescriptionCharacters -
           eventDescriptionCharacters -
           extensionDescription -
