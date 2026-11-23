@@ -129,8 +129,14 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           ? uiText('Could not check this approval.')
           : uiText('This approval has already been resolved or is no longer pending.'))
   const remoteInputs = !approvalId && task ? taskRemoteHumanInputs(task) : []
+  const pendingCount = approvals.length + remoteInputs.length
   return (
     <>
+      {pendingCount > 1 && (
+        <Text style={[styles.muted, { fontSize: 12 }]}>
+          {uiText('{value0} requests waiting', { value0: pendingCount })}
+        </Text>
+      )}
       {!!approvalId && !approvals.length && (
         <View style={styles.card}>
           <Text accessibilityLiveRegion="polite" style={styles.text}>
@@ -150,82 +156,95 @@ export function TaskApprovals({ taskId }: { taskId: string }) {
           />
         </View>
       )}
-      {approvals.map((item) => (
-        <NotificationInputView
-          key={item.id}
-          style={[styles.card, { gap: 10 }]}
-          input={
-            profile?.id
-              ? {
-                  runtimeId: profile.id,
-                  taskId: item.taskId,
-                  ownerTaskId: snapshot
-                    ? taskInputOwner(snapshot.workspace.tasks, item.taskId)
-                    : undefined,
-                  runtimeIdentity: snapshot?.runtimeId,
-                  inputId: item.id,
-                  inputType: 'approval',
-                }
-              : undefined
-          }
-          enabled={visible && connected && !busy}
-        >
-          <Text
-            style={[
-              styles.text,
-              {
-                fontWeight: '600',
-              },
-            ]}
+      {approvals.map((item) => {
+        const actions = approvalActions(item)
+        const immediate = actions.filter(
+          ({ decision }) => decision === 'approve' || decision === 'deny',
+        )
+        const scoped = actions.filter(
+          ({ decision }) => decision === 'session' || decision === 'always',
+        )
+        return (
+          <NotificationInputView
+            key={item.id}
+            style={[styles.card, { gap: 10 }]}
+            input={
+              profile?.id
+                ? {
+                    runtimeId: profile.id,
+                    taskId: item.taskId,
+                    ownerTaskId: snapshot
+                      ? taskInputOwner(snapshot.workspace.tasks, item.taskId)
+                      : undefined,
+                    runtimeIdentity: snapshot?.runtimeId,
+                    inputId: item.id,
+                    inputType: 'approval',
+                  }
+                : undefined
+            }
+            enabled={visible && connected && !busy}
           >
-            {item.title}
-          </Text>
-          <Text style={styles.muted}>
-            <InterfaceText
-              values={{
-                value0: runtimeComputerName({ profile, snapshot }),
-                value1:
-                  item.taskId !== taskId &&
-                  uiText(' · For child thread: {value0}', {
-                    value0:
-                      snapshot?.workspace.tasks.find((child) => child.id === item.taskId)?.title ??
-                      item.taskId,
-                  }),
-              }}
+            <Text
+              style={[
+                styles.text,
+                {
+                  fontWeight: '600',
+                },
+              ]}
             >
-              {'Permission request · {value0}{value1}'}
-            </InterfaceText>
-          </Text>
-          <ApprovalDetails key={item.id} detail={item.detail} />
-          <View
-            style={[styles.row, { borderTopWidth: 1, borderColor: colors.border, paddingTop: 8 }]}
-          >
-            {approvalActions(item).map((action) => (
-              <Action
-                key={action.decision}
-                label={action.label}
-                secondary={action.decision !== 'approve'}
-                disabled={busy || !connected}
-                onPress={() =>
-                  act(() =>
-                    current() && connected
-                      ? callEffect(
-                          '/api/approvals',
-                          {
-                            id: item.id,
-                            allow: action.decision !== 'deny',
-                            decision: action.decision,
-                          },
-                          responses.ok,
-                        )
-                      : Effect.void,
-                  )
-                }
-              />
-            ))}
-          </View>
-        </NotificationInputView>
-      ))}
+              {item.title}
+            </Text>
+            <Text style={styles.muted}>
+              <InterfaceText
+                values={{
+                  value0: runtimeComputerName({ profile, snapshot }),
+                  value1:
+                    item.taskId !== taskId &&
+                    uiText(' · For child thread: {value0}', {
+                      value0:
+                        snapshot?.workspace.tasks.find((child) => child.id === item.taskId)
+                          ?.title ?? item.taskId,
+                    }),
+                }}
+              >
+                {'Permission request · {value0}{value1}'}
+              </InterfaceText>
+            </Text>
+            <ApprovalDetails key={item.id} detail={item.detail} />
+            <View style={{ borderTopWidth: 1, borderColor: colors.border, paddingTop: 8, gap: 4 }}>
+              {[immediate, scoped]
+                .filter((group) => group.length)
+                .map((group) => (
+                  <View key={group[0].decision} style={styles.row}>
+                    {group.map((action) => (
+                      <Action
+                        key={action.decision}
+                        label={uiText(action.label)}
+                        variant={action.decision === 'approve' ? 'default' : 'outline'}
+                        disabled={busy || !connected}
+                        onPress={() =>
+                          act(() =>
+                            current() && connected
+                              ? callEffect(
+                                  '/api/approvals',
+                                  {
+                                    id: item.id,
+                                    allow: action.decision !== 'deny',
+                                    decision: action.decision,
+                                  },
+                                  responses.ok,
+                                )
+                              : Effect.void,
+                          )
+                        }
+                      />
+                    ))}
+                  </View>
+                ))}
+            </View>
+          </NotificationInputView>
+        )
+      })}
       {remoteInputs.map((input) => (
         <View key={JSON.stringify([input.runtimeIdentity, input.id])} style={styles.card}>
           <Text style={styles.muted}>

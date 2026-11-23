@@ -41,7 +41,7 @@ function tileIssue(tile: DashboardTile) {
   const empty = (value: string) => !value.trim()
   if (tile.kind === 'command' || tile.kind === 'tui')
     return empty(tile.repositoryId)
-      ? `${tile.title}: choose a project, or No Project to start in the home folder`
+      ? `${tile.title}: choose a project or the home folder`
       : undefined
   if (tile.kind === 'pipelines')
     return empty(tile.repositoryId) ? `${tile.title}: choose a project` : undefined

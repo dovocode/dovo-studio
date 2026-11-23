@@ -10,6 +10,7 @@ import {
   responses,
   type InputPreviewItem,
   type InputPreview,
+  type InputPreviewThreadTarget,
 } from '@dovo/protocol'
 import { app, BrowserWindow, ipcMain, nativeTheme, screen } from 'electron'
 import { requireTrustedRenderer, trustedRendererUrl } from './renderer-trust.js'
@@ -143,22 +144,31 @@ export function registerInputPreview(rendererPath: string, preload: string) {
     requirePopup(event)
     return payload()
   })
-  ipcMain.handle('input-preview:dismiss', (event) => {
-    requirePopup(event)
-    if (selected) dismissed.add(selected)
-    reconcile()
-  })
-  ipcMain.handle('input-preview:open', (event) => {
+  ipcMain.handle('input-preview:dismiss', (event, key: unknown) => {
     requirePopup(event)
     const item = current()
-    if (!item || !owner) return
+    if (!item || inputPreviewKey(item) !== key) return
+    dismissed.add(inputPreviewKey(item))
+    reconcile()
+  })
+  ipcMain.handle('input-preview:open', (event, key: unknown) => {
+    requirePopup(event)
+    const item = current()
+    if (!item || !owner || inputPreviewKey(item) !== key) return
     dismissed.add(inputPreviewKey(item))
     popup?.hide()
     if (owner.isMinimized()) owner.restore()
-    studioContents(owner).send('input-preview:open-thread', {
+    const entityId = item.parentTaskId ?? item.request.value.taskId
+    const target: InputPreviewThreadTarget = {
       runtimeId: item.runtimeId,
-      entityId: item.parentTaskId ?? item.request.value.taskId,
-    })
+      entityId,
+      threadRequest: {
+        id: entityId,
+        kind: item.request.kind === 'question' ? 'input' : 'approval',
+        requestId: item.request.value.id,
+      },
+    }
+    studioContents(owner).send('input-preview:open-thread', target)
     owner.show()
     owner.focus()
   })

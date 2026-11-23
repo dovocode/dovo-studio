@@ -15,8 +15,16 @@ import { useRef } from 'react'
 import { approvalShortcutKeys, useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { responses, useWorkspace, useStudioHost, type Task } from '@dovo/studio-core'
 import { Button } from '@dovo/studio-ui'
-import { ApprovalDetails } from './approval-details'
-export function RunControls({ task, showFailure = true }: { task: Task; showFailure?: boolean }) {
+import { ApprovalButtons, ApprovalDetails } from './approval-details'
+export function RunControls({
+  task,
+  showFailure = true,
+  approvalId,
+}: {
+  task: Task
+  showFailure?: boolean
+  approvalId?: string
+}) {
   const uiText = useInterfaceText()
 
   const host = useStudioHost()
@@ -83,6 +91,8 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
     snapshot?.approvals.filter((approval) =>
       taskInputVisible(snapshot.workspace.tasks, task.id, approval),
     ) ?? []
+  const pendingCount = approvals.length + remoteInputs.length
+  const missingApproval = approvalId && !approvals.some((approval) => approval.id === approvalId)
   const controls = useRef<HTMLDivElement>(null)
   useApprovalShortcuts({
     root: controls,
@@ -106,8 +116,8 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
     (showFailure && (task.status !== 'cancelled' || task.activeRunId) ? task.error : '')
   if (
     connected &&
-    !approvals.length &&
-    !remoteInputs.length &&
+    !pendingCount &&
+    !missingApproval &&
     !alert &&
     !task.restartRecovery &&
     !failed &&
@@ -153,111 +163,125 @@ export function RunControls({ task, showFailure = true }: { task: Task; showFail
           </Button>
         </div>
       )}
-      {remoteInputs.map((input) => (
-        <div
-          key={JSON.stringify([input.runtimeIdentity, input.id])}
-          className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
+      {missingApproval && (
+        <p
+          role="status"
+          tabIndex={-1}
+          data-request-kind="approval"
+          data-request-id={approvalId}
+          className="mx-auto max-w-[var(--chat-max)] rounded-lg border px-3 py-2 text-xs text-muted-foreground"
         >
-          <p className="text-xs text-muted-foreground">
-            {input.kind === 'approval' ? uiText('Permission request') : uiText('Input request')} ·
-            For child thread: {input.threadTitle} · {input.computerName}
-          </p>
-          <p className="py-1 text-xs font-medium">{input.title}</p>
-          <Button
-            size="sm"
-            disabled={!host.openThread}
-            onClick={() => {
-              const owner = resolveThreadRuntime(
-                { runtimeId: input.runtimeId, runtimeIdentity: input.ownerRuntimeIdentity },
-                runtimeRegistry.profiles,
-                runtimes,
-              )
-              host.openThread?.({
-                runtimeId: owner?.id ?? input.runtimeId,
-                runtimeIdentity: owner ? input.ownerRuntimeIdentity : input.runtimeIdentity,
-                threadId: owner ? input.ownerTaskId : input.taskId,
-                title: input.threadTitle,
-              })
-            }}
-          >
-            Review request
-          </Button>
-        </div>
-      ))}
-      {approvals.map((approval) => {
-        const actions = approvalActions(approval)
-        const response = approvalResponse?.id === approval.id ? approvalResponse : null
-        return (
+          {connected && snapshot
+            ? uiText('This approval is no longer pending.')
+            : uiText('Reconnect to check this approval.')}
+        </p>
+      )}
+      {pendingCount > 0 && (
+        <div className="mx-auto max-w-[var(--chat-max)]">
+          {pendingCount > 1 && (
+            <p className="pb-1.5 text-xs text-muted-foreground">
+              {uiText('{value0} requests waiting', { value0: pendingCount })}
+            </p>
+          )}
           <section
-            key={approval.id}
-            data-studio-human-only
-            data-approval-id={approval.id}
+            aria-label={uiText('Pending requests')}
             tabIndex={0}
-            aria-label={approval.title}
-            aria-keyshortcuts={approvalShortcutKeys(actions)}
-            aria-busy={busy && !!response}
-            className="mx-auto max-w-[var(--chat-max)] min-w-0 rounded-xl border bg-card shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
+            className="max-h-[min(52cqh,24rem)] space-y-2 overflow-y-auto overscroll-contain focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           >
-            <header className="flex min-w-0 items-start gap-2.5 border-b px-3 py-2.5">
-              <Shield
-                size={17}
-                className="mt-0.5 shrink-0 text-muted-foreground"
-                aria-hidden="true"
-              />
-              <div className="min-w-0">
-                <p
-                  data-request-kind="approval"
-                  data-request-id={approval.id}
-                  tabIndex={-1}
-                  className="break-words text-sm font-semibold"
+            {remoteInputs.map((input) => (
+              <div
+                key={JSON.stringify([input.runtimeIdentity, input.id])}
+                className="mx-auto max-w-[var(--chat-max)] rounded-lg border bg-card p-3"
+              >
+                <p className="text-xs text-muted-foreground">
+                  {input.kind === 'approval'
+                    ? uiText('Permission request')
+                    : uiText('Input request')}{' '}
+                  · For child thread: {input.threadTitle} · {input.computerName}
+                </p>
+                <p className="py-1 text-xs font-medium">{input.title}</p>
+                <Button
+                  size="sm"
+                  disabled={!host.openThread}
+                  onClick={() => {
+                    const owner = resolveThreadRuntime(
+                      { runtimeId: input.runtimeId, runtimeIdentity: input.ownerRuntimeIdentity },
+                      runtimeRegistry.profiles,
+                      runtimes,
+                    )
+                    host.openThread?.({
+                      runtimeId: owner?.id ?? input.runtimeId,
+                      runtimeIdentity: owner ? input.ownerRuntimeIdentity : input.runtimeIdentity,
+                      threadId: owner ? input.ownerTaskId : input.taskId,
+                      title: input.threadTitle,
+                    })
+                  }}
                 >
-                  {approval.title}
-                </p>
-                <p className="break-words text-xs text-muted-foreground">
-                  {uiText('Permission request')} · {executionHost}
-                  {approval.taskId !== task.id && (
-                    <>
-                      {' '}
-                      · For child thread:{' '}
-                      {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)
-                        ?.title ?? approval.taskId}
-                    </>
-                  )}
-                </p>
+                  Review request
+                </Button>
               </div>
-            </header>
-            <div className="px-3 py-2.5">
-              <ApprovalDetails key={approval.id} detail={approval.detail} />
-            </div>
-            <div className="space-y-2 rounded-b-xl border-t bg-muted/20 px-3 py-2.5">
-              {response?.error && (
-                <p role="alert" className="break-words text-xs text-destructive">
-                  {response.error}
-                </p>
-              )}
-              <div className="flex flex-wrap items-center gap-2">
-                {actions.map((action) => (
-                  <Button
-                    key={action.decision}
-                    size="sm"
-                    variant={action.decision === 'approve' ? 'default' : 'outline'}
-                    className={action.decision === 'deny' ? 'ml-auto' : undefined}
-                    disabled={busy || !connected}
-                    onClick={() => void answerApproval(approval.id, action.decision)}
-                  >
-                    {action.label}
-                    {action.decision === 'approve' || action.decision === 'deny' ? (
-                      <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                        {action.decision === 'approve' ? 'Y / Enter' : 'N'}
-                      </kbd>
-                    ) : null}
-                  </Button>
-                ))}
-              </div>
-            </div>
+            ))}
+            {approvals.map((approval) => {
+              const actions = approvalActions(approval)
+              const response = approvalResponse?.id === approval.id ? approvalResponse : null
+              return (
+                <section
+                  key={approval.id}
+                  data-studio-human-only
+                  data-approval-id={approval.id}
+                  tabIndex={0}
+                  aria-label={approval.title}
+                  aria-keyshortcuts={approvalShortcutKeys(actions)}
+                  aria-busy={busy && !!response}
+                  className="mx-auto max-w-[var(--chat-max)] min-w-0 rounded-xl border bg-card shadow-sm focus-visible:outline-2 focus-visible:outline-ring"
+                >
+                  <header className="flex min-w-0 items-start gap-2.5 border-b px-3 py-2.5">
+                    <Shield
+                      size={17}
+                      className="mt-0.5 shrink-0 text-muted-foreground"
+                      aria-hidden="true"
+                    />
+                    <div className="min-w-0">
+                      <p
+                        data-request-kind="approval"
+                        data-request-id={approval.id}
+                        tabIndex={-1}
+                        className="break-words text-sm font-semibold"
+                      >
+                        {approval.title}
+                      </p>
+                      <p className="break-words text-xs text-muted-foreground">
+                        {uiText('Permission request')} · {executionHost}
+                        {approval.taskId !== task.id && (
+                          <>
+                            {' '}
+                            · For child thread:{' '}
+                            {snapshot?.workspace.tasks.find((child) => child.id === approval.taskId)
+                              ?.title ?? approval.taskId}
+                          </>
+                        )}
+                      </p>
+                    </div>
+                  </header>
+                  <ApprovalDetails detail={approval.detail} />
+                  <div className="space-y-2 rounded-b-xl border-t bg-muted/20 px-3 py-2.5">
+                    {response?.error && (
+                      <p role="alert" className="break-words text-xs text-destructive">
+                        {response.error}
+                      </p>
+                    )}
+                    <ApprovalButtons
+                      actions={actions}
+                      disabled={busy || !connected}
+                      onDecision={(decision) => void answerApproval(approval.id, decision)}
+                    />
+                  </div>
+                </section>
+              )
+            })}
           </section>
-        )
-      })}
+        </div>
+      )}
       {(alert || failed) && (
         <div className="mx-auto max-w-[var(--chat-max)] space-y-2 rounded-xl border border-destructive/25 bg-destructive/5 px-3 py-2.5">
           {alert && (

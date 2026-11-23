@@ -176,8 +176,8 @@ contextBridge.exposeInMainWorld('dovo', {
     current: () => ipcRenderer.invoke('input-preview:current'),
     answer: (value: import('@dovo/protocol').InputPreviewAnswer) =>
       ipcRenderer.invoke('input-preview:answer', value),
-    dismiss: () => ipcRenderer.invoke('input-preview:dismiss'),
-    openThread: () => ipcRenderer.invoke('input-preview:open'),
+    dismiss: (key: string) => ipcRenderer.invoke('input-preview:dismiss', key),
+    openThread: (key: string) => ipcRenderer.invoke('input-preview:open', key),
     subscribe: (listener: (value: import('@dovo/protocol').InputPreview | null) => void) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
@@ -186,10 +186,12 @@ contextBridge.exposeInMainWorld('dovo', {
       ipcRenderer.on('input-preview:state', handler)
       return () => ipcRenderer.removeListener('input-preview:state', handler)
     },
-    onOpenThread: (listener: (value: { runtimeId: string; entityId: string }) => void) => {
+    onOpenThread: (
+      listener: (value: import('@dovo/protocol').InputPreviewThreadTarget) => void,
+    ) => {
       const handler = (
         _event: Electron.IpcRendererEvent,
-        value: { runtimeId: string; entityId: string },
+        value: import('@dovo/protocol').InputPreviewThreadTarget,
       ) => listener(value)
       ipcRenderer.on('input-preview:open-thread', handler)
       return () => ipcRenderer.removeListener('input-preview:open-thread', handler)

@@ -112,7 +112,7 @@ for (const [path, names] of [
 
 // The normal approval and question controls, reduced to what attention navigation focuses.
 mocks['../chat/actions/run-controls'] =
-  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const RunControls=({task})=>{const {snapshot,workspace}=useWorkspace();return snapshot.approvals.filter(a=>taskInputVisible(workspace.tasks,task.id,a)).map(a=><div key={a.id}><p data-request-kind="approval" data-request-id={a.id} tabIndex={-1}>Permission {a.id}</p><button>Approve in {task.id}</button></div>).reverse()};`
+  `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const RunControls=({task,approvalId})=>{const {snapshot,workspace}=useWorkspace();return <div data-target-approval={approvalId}>{snapshot.approvals.filter(a=>taskInputVisible(workspace.tasks,task.id,a)).map(a=><div key={a.id}><p data-request-kind="approval" data-request-id={a.id} tabIndex={-1}>Permission {a.id}</p><button>Approve in {task.id}</button></div>).reverse()}</div>};`
 mocks['../chat/thread/task-questions'] =
   `import {useWorkspace,taskInputVisible} from '@dovo/studio-core';export const TaskQuestions=({taskId,questionId})=>{const {snapshot,workspace}=useWorkspace();const target=snapshot.questions.find(q=>q.id===questionId&&taskInputVisible(workspace.tasks,taskId,q));return target?<div><p data-request-kind="input" data-request-id={target.id} tabIndex={-1}>Question {target.id}</p><textarea aria-label={'Answer in '+taskId}/></div>:null};`
 for (const name of ['ComposerHarnessControls', 'TurnModelControls'])
@@ -688,6 +688,7 @@ try {
   await page.waitForFunction(
     () => document.activeElement?.getAttribute('data-request-id') === 'remote-approval',
   )
+  assert.equal(await page.locator('[data-target-approval="remote-approval"]').count(), 1)
   assert.deepEqual(errors, [])
   console.log(
     'Desktop agent side chats: real TasksView lists and embeds full child threads beside the parent, keeps legacy questions reachable, notes committed-only provenance compactly, ignores inherited history, creates unsent drafts, gates Bring back and appends its exact handoff once through the parent composer, keeping unsaved edits across a lost response, retry and repeated receipt, returns from a standalone side chat, blocks nested side chats, opens a PR handoff task with the PR beside its full chat, replaces only untouched repeated PR context, restores a side chat only with its parent across selection and remount, surfaces and focuses side chat and delegated approvals and questions, explains unavailable Bring back and confirms its result, and discards never-started drafts only on request.',

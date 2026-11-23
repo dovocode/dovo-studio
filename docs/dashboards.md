@@ -32,11 +32,14 @@ available offline. Data and command actions need a connection to the owning comp
   JSON pointer selects the whole response. Use a pointer such as `/stats/durations` to select a
   field. A line graph accepts an array of numbers or objects with a numeric `value` field, in order.
   Return historical values from your API to plot a time series.
-- **Command** runs a saved command in the project's main checkout and displays the terminal output.
-  **TUI** opens an interactive terminal on that checkout and starts the configured program. Select
-  **Run command** and review the command before it starts. Use **Recover run** after a lost
-  response. It retries the same request ID. **Close session** ends the terminal. Leaving the
-  dashboard detaches the viewer.
+- **Command** runs a saved command and displays the terminal output. Choose the **Home folder** or a
+  project's main checkout.
+- **TUI** opens an interactive terminal on the dashboard's computer. Enter a **Startup command**
+  such as `top`. It starts in the **Home folder** by default. You can select a project to start in
+  its main checkout. Select **Start TUI** and review the computer, folder, and command. Use the live
+  terminal in the tile on desktop and web. Mobile opens it full screen.
+- Use **Recover run** after a lost response. It retries the same request ID. Leaving the dashboard
+  detaches the viewer. Open the dashboard again to reattach. **Close session** ends the terminal.
 - **Terminal** attaches to an existing terminal on the dashboard's computer. The terminal keeps its
   existing input and resize rules.
 - **Iframe** embeds an HTTP or HTTPS page after you select **Load iframe**. The page must allow
@@ -62,11 +65,18 @@ Agents can set `panels` on API, CLI, and MCP tiles with entries such as
 ## Timed refresh
 
 For HTTP and CLI data, set **Refresh interval in seconds** to a whole number between 30 and 86,400.
-Leave it blank for manual refresh. Save the dashboard and select **Start auto refresh** on the tile.
-Studio reads the source once, then at the selected interval while the tile is open and connected.
-Select **Stop auto refresh** to stop future reads. Timed refresh pauses while the computer is
-offline or the browser tab is hidden. It reads once when the tile becomes available again if a read
-is overdue. Leaving the dashboard or saving a new dashboard revision clears the current activation.
+Leave it blank to skip timed refresh. Save the dashboard and select **Start auto refresh** on the
+tile. Studio reads the source once, then at the selected interval while the tile is open and
+connected. Select **Stop auto refresh** to stop future reads. Timed refresh pauses while the
+computer is offline or the browser tab is hidden. CLI refresh reads once when an overdue tile
+becomes available again. Leaving the dashboard or saving a new dashboard revision stops the
+interval.
+
+Studio keeps recent results in the current app session. It labels the last result stale while
+offline, after a failed refresh, or when you reopen the tile. Once you have read an HTTP source,
+Studio refreshes it when the view or window becomes active again. It keeps the last result visible
+until the request succeeds. Reopening a view restores CLI and MCP results. Select **Run command**,
+**Start auto refresh**, or **Refresh data** to make a new CLI or MCP read.
 
 CLI data parses stdout as JSON when possible. Otherwise it displays stdout as text. The process has
 15 seconds to finish. A failed exit reports its exit code. Raw output can be at most 1 MB and the
@@ -145,6 +155,10 @@ For example, these arguments create a dashboard with an HTTP line graph and a th
 For CLI data, use `kind: "cli"`, `repositoryId`, and `command` instead of `kind: "api"` and `url`.
 CLI and HTTP data both accept optional `refreshSeconds`. Studio requires a paired user to start
 refresh.
+
+For a machine-only TUI, set `kind: "tui"`, `repositoryId: "dovo:scratch"`, and `command` to the
+startup command. The home folder choice carries over in dashboard exports. A paired user starts the
+TUI from the dashboard.
 
 The runtime assigns IDs. For an update, first read the dashboard. Send the ID and `expectedRevision`
 beside the replacement `dashboard` object. Keep the existing tile IDs and omit the ID for each new

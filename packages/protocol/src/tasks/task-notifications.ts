@@ -1,11 +1,13 @@
 import { hasUnviewedTaskCompletion } from '../workspace.js'
 import { taskInputOwner } from './delegation.js'
 import type { RuntimeOverview } from '../runtime/connection/runtime-fleet.js'
+import type { SideThreadRequest } from './side-thread-attention.js'
 
 export type NotificationTarget = {
   runtimeId: string
   viewId: 'tasks' | 'jobs'
   entityId: string
+  threadRequest?: SideThreadRequest
 }
 
 export type TaskState = {

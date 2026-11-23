@@ -449,7 +449,7 @@ const tools: Array<
                       'jobs',
                     ],
                     description:
-                      'api/iframe/browser: url. cli/command/tui: repositoryId, command. mcp: taskId, server, tool, arguments.',
+                      'api/iframe/browser: url. cli/command/tui: repositoryId, command. Use dovo:scratch to start in the home folder. mcp: taskId, server, tool, arguments.',
                   },
                   span: { type: 'integer' as const, minimum: 1, maximum: 4 },
                   height: { type: 'integer' as const, minimum: 1, maximum: 4 },

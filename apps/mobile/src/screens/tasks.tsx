@@ -1039,11 +1039,23 @@ export default function TasksScreen({ archived = false }: { archived?: boolean }
                 onOpen={(id, runtimeId) => navigate('tasks', id, runtimeId)}
               />
             )}
-            {!!(refreshError || historySearch.error) && (
+            {!!refreshError && (
               <Text accessibilityRole="alert" style={[styles.error, { paddingBottom: 10 }]}>
-                {refreshError || historySearch.error}
+                {refreshError}
               </Text>
             )}
+            {historySearch.failures.map(({ runtimeId, name, error }) => (
+              <View key={runtimeId} style={{ gap: 4 }}>
+                <Text accessibilityRole="alert" style={styles.error}>
+                  {error}
+                </Text>
+                <Action
+                  label={uiText('Retry search on {value0}', { value0: name })}
+                  secondary
+                  onPress={() => historySearch.retry(runtimeId)}
+                />
+              </View>
+            ))}
             {historySearch.loading && (
               <Text accessibilityRole="status" style={styles.muted}>
                 <InterfaceText>{'Searching conversation history…'}</InterfaceText>

@@ -6,7 +6,7 @@ import { createRoot } from 'react-dom/client'
 import './styles.css'
 import { ApplicationStateProvider } from '@dovo/studio-core/state'
 import { InputPreviewWindow } from './input-preview'
-import { Workbench, TaskLauncherWindow } from '@dovo/studio-shell'
+import { AppInterfaceLanguage, Workbench, TaskLauncherWindow } from '@dovo/studio-shell'
 import { tasksExtension } from '@dovo/extension-tasks'
 import { BrowserStartup } from '@dovo/extension-tasks/browser-startup'
 import { ThreadShare } from '@dovo/extension-tasks/thread-share'
@@ -41,7 +41,9 @@ createRoot(root).render(
   <StrictMode>
     {window.location.hash === '#input-preview' ? (
       <ApplicationStateProvider>
-        <InputPreviewWindow bridge={window.dovo.inputPreview} />
+        <AppInterfaceLanguage>
+          <InputPreviewWindow bridge={window.dovo.inputPreview} />
+        </AppInterfaceLanguage>
       </ApplicationStateProvider>
     ) : window.location.hash === '#task-launcher' ? (
       <TaskLauncherWindow bridge={window.dovo.taskLauncher} />

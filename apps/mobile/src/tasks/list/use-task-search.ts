@@ -75,6 +75,7 @@ export function useTaskSearch(
     : []
   const wantedKey = JSON.stringify(wanted)
   const [searches, setSearches] = useState<Readonly<Record<string, ComputerSearch>>>({})
+  const [retryVersion, setRetryVersion] = useState(0)
   const inFlight = useRef(new Map<string, { request: string; controller: AbortController }>())
   const read = useEffectEvent(readRuntimeEffect)
   const profile = useEffectEvent(
@@ -145,7 +146,7 @@ export function useTaskSearch(
       }
     }, 200)
     return () => clearTimeout(timer)
-  }, [wantedKey, active])
+  }, [wantedKey, active, retryVersion])
   useEffect(
     () => () => {
       for (const flight of inFlight.current.values()) flight.controller.abort()
@@ -160,6 +161,16 @@ export function useTaskSearch(
   const results = visible.flatMap(({ runtimeId, search }) =>
     search.result ? [{ runtimeId, result: search.result }] : [],
   )
+  function retry(runtimeId: string) {
+    const search = visible.find((item) => item.runtimeId === runtimeId)?.search
+    if (!active || !search?.error) return
+    setSearches((current) =>
+      current[runtimeId] === search
+        ? { ...current, [runtimeId]: { base: search.base, result: search.result } }
+        : current,
+    )
+    setRetryVersion((value) => value + 1)
+  }
   return {
     hits: results.flatMap(({ runtimeId, result }) =>
       result.hits.map((hit) => ({
@@ -174,7 +185,11 @@ export function useTaskSearch(
       ),
     ),
     loading: active && wanted.some(({ id, request }) => searches[id]?.request !== request),
-    error: visible.flatMap(({ search }) => (search.error ? [search.error] : [])).join(' · '),
+    failures: visible.flatMap(({ runtimeId, search }) => {
+      const name = entries.find((item) => item.profile.id === runtimeId)?.profile.name
+      return search.error && name ? [{ runtimeId, name, error: search.error }] : []
+    }),
+    retry,
     /** Computers that cannot apply `scopes` and returned a full page of hits. Filtering that
      * page locally can omit matching messages. */
     unscopedFull: results.flatMap(({ runtimeId, result }) => {

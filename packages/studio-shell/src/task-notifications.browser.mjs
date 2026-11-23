@@ -26,7 +26,7 @@ window.updateRuntimes=value=>{window.runtimes=value;for(const listener of window
 const nativeSetTimeout=window.setTimeout;
 window.setTimeout=(callback,delay,...args)=>delay===8000?(window.expireNotice=callback,123456789):nativeSetTimeout(callback,delay,...args);
 window.previewSyncs=[];
-const preview={sync:async value=>window.previewSyncs.push(value),onOpenThread:()=>()=>{}};
+const preview={sync:async value=>window.previewSyncs.push(value),onOpenThread:open=>{window.openFromPreview=open;return ()=>{}}};
 const open=target=>window.opens.push(target);
 function App(){
  const [active,setActive]=useState(undefined);
@@ -85,6 +85,16 @@ try {
   await page.waitForFunction(() => window.listeners?.size > 0)
   await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)
   await page.waitForFunction(() => window.previewSyncs.length >= 2)
+  const previewTarget = {
+    runtimeId: 'runtime',
+    entityId: 'one',
+    threadRequest: { id: 'one', kind: 'approval', requestId: 'second' },
+  }
+  await page.evaluate((target) => window.openFromPreview(target), previewTarget)
+  assert.deepEqual(await page.evaluate(() => window.opens.pop()), {
+    ...previewTarget,
+    viewId: 'tasks',
+  })
   assert.equal(await page.evaluate(() => document.hasFocus()), true)
   runtime.snapshot.approvals = [approval('first', 'one'), approval('second', 'two')]
   await page.evaluate((entry) => window.updateRuntimes([entry]), runtime)

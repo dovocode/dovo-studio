@@ -1546,6 +1546,13 @@ export default function TasksView({
                     data-conversation-boundary
                   >
                     <TaskConversation
+                      approvalId={
+                        primaryAttention?.kind === 'approval'
+                          ? primaryAttention.requestId
+                          : compact && attentionTarget?.kind === 'approval'
+                            ? attentionTarget.requestId
+                            : undefined
+                      }
                       questionId={
                         primaryAttention?.kind === 'input'
                           ? primaryAttention.requestId
@@ -2250,6 +2257,9 @@ export default function TasksView({
                   )}
                   <div ref={splitPane} className="min-h-0 flex-1">
                     <TaskConversation
+                      approvalId={
+                        attentionTarget?.kind === 'approval' ? attentionTarget.requestId : undefined
+                      }
                       questionId={
                         attentionTarget?.kind === 'input' ? attentionTarget.requestId : undefined
                       }

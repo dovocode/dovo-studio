@@ -13,7 +13,7 @@ import {useTaskSearch} from './apps/mobile/src/tasks/list/use-task-search';
 import {requestMessageReveal,useMessageReveal,consumeMessageReveal} from './apps/mobile/src/tasks/conversation/message-reveal';
 window.calls=[];window.aborts=[];
 window.read=(profile,path,input)=>Effect.callback(resume=>{const call={id:profile.id,token:profile.connection.token,query:input.query,reply:snippet=>resume(Effect.succeed({taskIds:['child'],hits:[{taskId:'child',messageId:'old-message',role:'assistant',snippet}]})),fail:()=>resume(Effect.fail(new Error('Host unavailable')))};window.calls.push(call);return Effect.sync(()=>window.aborts.push(call.id+':'+call.query));});
-function App(){const[cfg,setCfg]=useState({query:'needle',token:'first',online:true,source:'all',history:1,enabled:true});window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));const entries=['a','b'].filter(id=>cfg.source==='all'||cfg.source===id).map(id=>({profile:{id,name:'Computer '+id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}},connected:id==='a'||cfg.online,snapshot:{workspace:{tasks:[{id:'child',status:'running',historyRevision:cfg.history}]}}}));const search=useTaskSearch(entries,cfg.query,cfg.enabled);window.search=search;const reveal=useMessageReveal();window.reveal=reveal;return <><div role="status">{search.loading?'Searching':'Settled'}</div><div role="alert">{search.error}</div>{search.offline&&<div>Offline computers</div>}{search.hits.map(hit=><button key={hit.runtimeId+hit.messageId} onClick={()=>requestMessageReveal(entries.find(entry=>entry.profile.id===hit.runtimeId).profile.connection,hit.taskId,hit.messageId)}>{hit.runtimeId+':'+hit.snippet}</button>)}<button onClick={()=>reveal&&consumeMessageReveal(reveal)}>Consume</button></>};createRoot(document.getElementById('app')).render(<App/>);`,
+function App(){const[cfg,setCfg]=useState({query:'needle',token:'first',online:true,source:'all',history:1,enabled:true});window.change=patch=>flushSync(()=>setCfg(old=>({...old,...patch})));const entries=['a','b'].filter(id=>cfg.source==='all'||cfg.source===id).map(id=>({profile:{id,name:'Computer '+id,connection:{address:'http://'+id+'.lan',token:id==='b'?cfg.token:'first'}},connected:id==='a'||cfg.online,snapshot:{workspace:{tasks:[{id:'child',status:'running',historyRevision:cfg.history}]}}}));const search=useTaskSearch(entries,cfg.query,cfg.enabled);window.search=search;const reveal=useMessageReveal();window.reveal=reveal;return <><div role="status">{search.loading?'Searching':'Settled'}</div>{search.failures.map(failure=><div key={failure.runtimeId}><div role="alert">{failure.error}</div><button onClick={()=>search.retry(failure.runtimeId)}>Retry search on {failure.name}</button></div>)}{search.offline&&<div>Offline computers</div>}{search.hits.map(hit=><button key={hit.runtimeId+hit.messageId} onClick={()=>requestMessageReveal(entries.find(entry=>entry.profile.id===hit.runtimeId).profile.connection,hit.taskId,hit.messageId)}>{hit.runtimeId+':'+hit.snippet}</button>)}<button onClick={()=>reveal&&consumeMessageReveal(reveal)}>Consume</button></>};createRoot(document.getElementById('app')).render(<App/>);`,
     },
     bundle: true,
     write: false,
@@ -138,6 +138,29 @@ try {
   await page.getByRole('button', { name: 'b:recovered excerpt', exact: true }).waitFor()
   await retained.waitFor()
   assert.equal(await hostError.count(), 0)
+
+  const callsBeforeManualRetryTest = await page.evaluate(() => window.calls.length)
+  await page.evaluate(() => window.change({ query: 'manual retry' }))
+  await page.waitForFunction(
+    (count) => window.calls.length === count + 2,
+    callsBeforeManualRetryTest,
+  )
+  await page.evaluate(() => {
+    window.calls.at(-2).reply('keep this result')
+    window.calls.at(-1).fail()
+  })
+  const retainedDuringRetry = page.getByRole('button', { name: 'a:keep this result', exact: true })
+  await retainedDuringRetry.waitFor()
+  await page.getByRole('button', { name: 'Retry search on Computer b', exact: true }).click()
+  await retainedDuringRetry.waitFor()
+  await page.waitForFunction(
+    (count) => window.calls.length === count + 3,
+    callsBeforeManualRetryTest,
+  )
+  assert.equal(await page.evaluate(() => window.calls.at(-1).id), 'b')
+  await page.evaluate(() => window.calls.at(-1).reply('manual recovery'))
+  await page.getByRole('button', { name: 'b:manual recovery', exact: true }).waitFor()
+  assert.equal(await page.getByRole('alert').count(), 0)
   assert.deepEqual(errors, [])
   await page.close()
 } finally {

@@ -74,8 +74,8 @@ export function ExtensionComponents({
   save: SaveExtensionSettings
 }) {
   const uiText = useInterfaceText()
-  const { read, connected } = useRuntime()
-  const state = useExtensionView(contribution.view, entry, read, connected, save)
+  const { read, connected, connection } = useRuntime()
+  const state = useExtensionView(contribution.view, entry, read, connected, save, connection)
   useSettingsDraft(state.dirty, state.settingsSaving)
   return (
     <ExtensionComponentBoundary
@@ -116,7 +116,8 @@ function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
   if (!source) return null
   return (
     <MobileDataSource
-      key={JSON.stringify(source)}
+      key={state.resultScope}
+      owner={['extension', state.extensionId]}
       source={source}
       read={() => state.readSource(id)}
       onData={(value) => state.setResult(id, value)}

@@ -13,8 +13,8 @@ const built = await bundleBrowser(
 import {createRoot} from 'react-dom/client';
 import {InputPreviewWindow} from './src/input-preview';
 const initial={key:'request-1',runtimeId:'local',runtimeName:'This computer',taskTitle:'Review a command',connected:true,waiting:1,request:{kind:'approval',value:{id:'approval-1',taskId:'task',title:'Run project checks?',detail:JSON.stringify({command:'pnpm test',cwd:'/workspace/project',reason:'Verify the change',threadId:'internal-thread-id'})}}};
-window.answers=[];window.opens=0;window.dismissals=0;
-const bridge={current:async()=>initial,subscribe:listener=>{window.updatePreview=listener;return ()=>{}},answer:async value=>{window.answers.push(value);if(window.failAnswer)throw Error('Could not reach computer');if(window.holdAnswer)await new Promise(resolve=>window.finishAnswer=resolve)},dismiss:async()=>{window.dismissals++},openThread:async()=>{window.opens++}};
+window.answers=[];window.opens=[];window.dismissals=[];
+const bridge={current:()=>new Promise(resolve=>window.finishInitial=()=>resolve(initial)),subscribe:listener=>{window.updatePreview=listener;return ()=>{}},answer:async value=>{window.answers.push(value);if(window.failAnswer)throw Error('Could not reach computer');if(window.holdAnswer)await new Promise(resolve=>window.finishAnswer=resolve)},dismiss:async key=>{window.dismissals.push(key)},openThread:async key=>{window.opens.push(key)}};
 window.initialPreview=initial;
 createRoot(document.getElementById('app')).render(<InputPreviewWindow bridge={bridge}/>);
 `,
@@ -45,6 +45,18 @@ try {
       content: readFileSync(root + 'apps/desktop/dist/assets/' + file, 'utf8'),
     })
   await page.addScriptTag({ content: built.outputFiles[0].text })
+  await page.waitForFunction(() => typeof window.finishInitial === 'function')
+  await page.evaluate(() => {
+    const { request, ...initial } = window.initialPreview
+    window.updatePreview({
+      ...initial,
+      key: 'new-request',
+      request: { ...request, value: { ...request.value, title: 'Current request' } },
+    })
+    window.finishInitial()
+  })
+  await page.getByRole('heading', { name: 'Current request' }).waitFor()
+  await page.evaluate(() => window.updatePreview(window.initialPreview))
   await page.getByRole('heading', { name: 'Run project checks?' }).waitFor()
   await page.locator('dt').getByText('Working folder', { exact: true }).waitFor()
   assert.equal(
@@ -56,13 +68,18 @@ try {
     await page.locator('dd').getByText('Verify the change', { exact: true }).isVisible(),
     true,
   )
-  const raw = page.locator('details pre')
+  const raw = page.locator('[data-approval-json]')
+  const fullJson = page.getByRole('button', { name: 'Full JSON', exact: true })
   assert.equal(await raw.isVisible(), false, 'Raw JSON is collapsed by default')
-  await page.getByText('Full JSON', { exact: true }).click()
-  assert.match(await raw.textContent(), /internal-thread-id/)
-  await page.getByText('Full JSON', { exact: true }).click()
+  await fullJson.click()
+  assert.equal(
+    await raw.textContent(),
+    await page.evaluate(() => window.initialPreview.request.value.detail),
+  )
+  assert.equal(await page.getByRole('region', { name: 'Command', exact: true }).count(), 0)
+  await fullJson.click()
   await page.evaluate(() => window.updatePreview({ ...window.initialPreview, connected: false }))
-  await page.getByRole('status').waitFor()
+  await page.getByRole('status').getByText('Offline · Reconnecting…').waitFor()
   assert.equal(
     await page.getByRole('button', { name: 'Allow once', exact: true }).isDisabled(),
     true,
@@ -88,6 +105,7 @@ try {
   })
   await page.getByRole('button', { name: 'Deny', exact: true }).click()
   await page.waitForFunction(() => typeof window.finishAnswer === 'function')
+  await page.getByRole('status').getByText('Sending answer…').waitFor()
   assert.equal(
     await page.getByRole('button', { name: 'Allow once', exact: true }).isDisabled(),
     true,
@@ -124,11 +142,7 @@ try {
     .getByText('Please review <img src=x onerror=alert(1)> before continuing.', { exact: true })
     .waitFor()
   assert.equal(await page.locator('main img').count(), 0, 'Permission content renders as text')
-  assert.equal(
-    await page.getByText('Full JSON', { exact: true }).count(),
-    0,
-    'Plain text remains readable without a JSON disclosure',
-  )
+  assert.equal(await fullJson.count(), 0, 'Plain text remains readable without a JSON disclosure')
   await page.evaluate(() =>
     window.updatePreview({
       ...window.initialPreview,
@@ -150,14 +164,25 @@ try {
   await page.getByText('Tool input', { exact: true }).waitFor()
   const minimumHeight = 300
   await page.setViewportSize({ width: 360, height: minimumHeight })
-  for (const label of ['Allow once', 'Deny', 'Allow for session', 'Always allow', 'Open thread']) {
-    const button = page.getByRole('button', { name: label, exact: true })
-    const box = await button.boundingBox()
-    assert.ok(
-      box && box.y >= 0 && box.y + box.height <= minimumHeight,
-      `${label} fits without scrolling`,
-    )
+  for (const readingJson of [false, true]) {
+    if (readingJson) await fullJson.click()
+    for (const label of [
+      'Full JSON',
+      'Allow once',
+      'Deny',
+      'Allow for session',
+      'Always allow',
+      'Open thread',
+    ]) {
+      const button = page.getByRole('button', { name: label, exact: true })
+      const box = await button.boundingBox()
+      assert.ok(
+        box && box.y >= 0 && box.y + box.height <= minimumHeight,
+        `${label} fits without scrolling`,
+      )
+    }
   }
+  await fullJson.click()
   const command = page.getByRole('region', { name: 'Command', exact: true })
   assert.ok(
     await command.evaluate((element) => element.scrollHeight > element.clientHeight),
@@ -176,7 +201,7 @@ try {
       window.copied = text
     }
   })
-  await command.locator('..').getByRole('button', { name: 'Copy', exact: true }).click()
+  await page.getByRole('button', { name: 'Copy Command', exact: true }).click()
   await page.getByText('Copied', { exact: true }).waitFor()
   assert.equal(await page.evaluate(() => window.copied), 'x'.repeat(3000))
   await page.setViewportSize({ width: 480, height: 560 })
@@ -189,7 +214,10 @@ try {
   await page.screenshot({ path: root + 'work/input-preview/permission.png' })
   await page.getByRole('button', { name: 'Open thread', exact: true }).click()
   await page.getByRole('button', { name: 'Dismiss for now', exact: true }).click()
-  assert.deepEqual(await page.evaluate(() => [window.opens, window.dismissals]), [1, 1])
+  assert.deepEqual(await page.evaluate(() => [window.opens, window.dismissals]), [
+    ['request-3'],
+    ['request-3'],
+  ])
   await page.evaluate(() => {
     window.holdAnswer = false
     window.answers = []
@@ -216,6 +244,13 @@ try {
     await page.waitForFunction(() => !document.querySelector('button[disabled]'))
   }
   await page.getByRole('button', { name: 'Deny', exact: true }).focus()
+  await page.keyboard.press('y')
+  await page.keyboard.press('n')
+  assert.equal(
+    await page.evaluate(() => window.answers.length),
+    5,
+    'Focused buttons use their own activation keys',
+  )
   await page.keyboard.press('Enter')
   await page.waitForFunction(() => window.answers.length === 6)
   assert.equal(

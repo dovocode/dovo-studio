@@ -85,8 +85,8 @@ export function ExtensionComponents({
   contribution: Extract<ExtensionContribution, { kind: 'view' }>
   save: SaveExtensionSettings
 }) {
-  const { request, connected } = useWorkspace()
-  const state = useExtensionView(contribution.view, entry, request, connected, save)
+  const { request, connected, connection } = useWorkspace()
+  const state = useExtensionView(contribution.view, entry, request, connected, save, connection)
   useSettingsDraft(state.dirty, state.settingsSaving)
   return (
     <ExtensionComponentBoundary fallback={<p role="alert">This extension view could not load.</p>}>
@@ -139,7 +139,8 @@ function ViewSource({ id, state }: { id: string; state: ExtensionViewState }) {
   if (!source) return null
   return (
     <DataSource
-      key={JSON.stringify(source)}
+      key={state.resultScope}
+      owner={['extension', state.extensionId]}
       source={source}
       read={() => state.readSource(id)}
       onData={(value) => state.setResult(id, value)}

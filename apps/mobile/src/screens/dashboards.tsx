@@ -4,7 +4,6 @@ import {
 } from '../runtime/preferences/settings-target'
 import { MobileDataSource } from './studio-data-source'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
-import { DataView } from './dashboard-data-view'
 import { MobileExtensionTile } from './studio-extensions'
 import { useRef, useState } from 'react'
 import * as DocumentPicker from 'expo-document-picker'
@@ -18,7 +17,6 @@ import {
   needsStudioDataSources,
   studioDataPanelLimit,
   type StudioDataPanel,
-  SCRATCH_PROJECT_ID,
   type Dashboard,
   type DashboardTile,
 } from '@dovo/protocol'
@@ -29,6 +27,7 @@ import {
   maxDashboardTemplateBytes,
   importDashboardTemplate,
   dashboardTileFields,
+  dashboardProjectOptions,
   dashboardDisplayLabels,
   isDashboardDisplay,
   readDashboardDataSource,
@@ -586,14 +585,10 @@ function TileEditor({
         dashboardTileFields(tile).map(([key, label, value]) => {
           const items =
             key === 'repositoryId'
-              ? [
-                  ...(workspace?.repositories.map((item) => ({ id: item.id, name: item.name })) ??
-                    []),
-                  ...(tile.kind === 'cli' &&
-                  !workspace?.repositories.some((item) => item.id === SCRATCH_PROJECT_ID)
-                    ? [{ id: SCRATCH_PROJECT_ID, name: uiText('No Project') }]
-                    : []),
-                ]
+              ? dashboardProjectOptions(tile.kind, workspace?.repositories ?? []).map((item) => ({
+                  id: item.id,
+                  name: uiText(item.name),
+                }))
               : key === 'terminalId'
                 ? snapshot?.terminals.map((item) => ({
                     id: item.id,
@@ -780,23 +775,31 @@ function DisplayEditor({
 
 function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: DashboardTile }) {
   const uiText = useInterfaceText()
-  const { call, connected, snapshot, activeId } = useRuntime()
+  const { call, connected, snapshot, activeId, profile } = useRuntime()
   const { navigate, focused } = useNavigation()
   const workspace = snapshot?.workspace
   const { colors } = useTheme()
   const state = useDashboardTile(call, dashboard, tile, connected, focused)
-  const { data, terminalId, busy, error, pipelines } = state
+  const { terminalId, busy, error, pipelines } = state
   const [open, setOpen] = useState(false)
   const terminal = snapshot?.terminals.find((entry) => entry.id === terminalId)
   const project =
     tile.kind === 'command' || tile.kind === 'tui'
-      ? (workspace?.repositories.find((entry) => entry.id === tile.repositoryId)?.name ??
-        tile.repositoryId)
+      ? uiText(
+          dashboardProjectOptions(tile.kind, workspace?.repositories ?? []).find(
+            (entry) => entry.id === tile.repositoryId,
+          )?.name ?? tile.repositoryId,
+        )
       : undefined
+  const computer = runtimeComputerName({ profile, snapshot })
 
-  if (isStudioDataSource(tile))
+  if (isStudioDataSource(tile) || tile.kind === 'mcp')
     return (
-      <MobileDataSource source={tile} read={() => readDashboardDataSource(call, dashboard, tile)} />
+      <MobileDataSource
+        owner={['dashboard', dashboard.id]}
+        source={tile}
+        read={() => readDashboardDataSource(call, dashboard, tile)}
+      />
     )
   if (tile.kind === 'extension')
     return (
@@ -810,28 +813,9 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
   const sessionId = tile.kind === 'terminal' ? tile.terminalId : terminalId
   return (
     <>
-      {tile.kind === 'mcp' && (
-        <>
-          <Text selectable>{`${tile.server} · ${tile.tool}`}</Text>
-          <Action
-            label={busy ? uiText('Reading…') : uiText('Refresh data')}
-            secondary
-            disabled={!connected || busy}
-            onPress={() => void state.refresh()}
-          />
-          {data && (
-            <>
-              <Text>
-                {uiText('Updated {time}', { time: new Date(data.updatedAt).toLocaleTimeString() })}
-              </Text>
-              <DataView value={data.data} chart={tile.chart} panels={tile.panels} />
-            </>
-          )}
-        </>
-      )}
       {(tile.kind === 'command' || tile.kind === 'tui') && (
         <>
-          <Text>{project}</Text>
+          <Text>{tile.kind === 'tui' ? `${project} · ${computer}` : project}</Text>
           <Text selectable>{tile.command}</Text>
           <View style={row}>
             <Action
@@ -840,7 +824,9 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
                   ? uiText('Working…')
                   : state.recovering
                     ? uiText('Recover run')
-                    : uiText('Run command')
+                    : tile.kind === 'tui'
+                      ? uiText('Start TUI')
+                      : uiText('Run command')
               }
               secondary
               disabled={
@@ -853,10 +839,19 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
                 const run = () => void state.run(() => setOpen(true))
                 if (state.recovering) run()
                 else
-                  Alert.alert(uiText('Run this command in {project}?', { project }), tile.command, [
-                    { text: uiText('Cancel'), style: 'cancel' },
-                    { text: uiText('Run'), onPress: run },
-                  ])
+                  Alert.alert(
+                    tile.kind === 'tui'
+                      ? uiText('Start this TUI in {folder} on {computer}?', {
+                          folder: project,
+                          computer,
+                        })
+                      : uiText('Run this command in {project}?', { project }),
+                    tile.command,
+                    [
+                      { text: uiText('Cancel'), style: 'cancel' },
+                      { text: uiText('Run'), onPress: run },
+                    ],
+                  )
               }}
             />
             {terminalId && (

@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
 import {
@@ -7,6 +8,7 @@ import {
   dashboardSaveResultSchema,
   dashboardSessionResultSchema,
   decode,
+  SCRATCH_PROJECT_ID,
   snapshotSchema,
   type Dashboard,
 } from '@dovo/protocol'
@@ -212,6 +214,46 @@ it.skipIf(process.platform === 'win32')(
 )
 
 it.skipIf(process.platform === 'win32')(
+  'runs an interactive TUI in the computer home folder without a project binding',
+  async () => {
+    const { runtime, post, definition } = await setup()
+    vi.stubEnv('SHELL', '/bin/sh')
+    runtime.services.store.update((workspace) => ({ ...workspace, repositories: [] }))
+    const dashboard = definition('true')
+    dashboard.tiles = dashboard.tiles.map((tile) =>
+      tile.kind === 'tui'
+        ? {
+            ...tile,
+            repositoryId: SCRATCH_PROJECT_ID,
+            command: `printf '\\033[?1049h\\033[HTUI ready\\n'; read line; printf '\\nTUI input: %s\\n' "$line"; printf '\\033[?1049l'`,
+          }
+        : tile,
+    )
+    expect((await post('dashboards/save', { dashboard, expectedRevision: 0 })).status).toBe(200)
+    expect(runtime.services.terminals.list()).toEqual([])
+    const input = {
+      id,
+      tileId: tuiTile,
+      expectedRevision: 1,
+      requestId: '10000000-0000-4000-8000-0000000000b2',
+    }
+    const started = await post('dashboards/run', input)
+    expect(started.status).toBe(200)
+    const { terminalId } = decode(dashboardRunResultSchema, await started.json())
+    const session = runtime.services.terminals.get(terminalId)
+    expect(session.info.repositoryId).toBeUndefined()
+    expect(await realpath(session.directory)).toBe(await realpath(homedir()))
+    await waitForRuntime(() => expect(session.buffer).toContain('\x1b[?1049h\x1b[HTUI ready'))
+    runtime.services.terminals.input(terminalId, 'Studio keyboard\r')
+    await waitForRuntime(() => expect(session.buffer).toContain('TUI input: Studio keyboard'))
+    expect(session.info.exited).toBeFalsy()
+    const { requestId: _requestId, ...lookup } = input
+    const restored = await post('dashboards/session', lookup)
+    expect(decode(dashboardSessionResultSchema, await restored.json()).terminalId).toBe(terminalId)
+  },
+)
+
+it.skipIf(process.platform === 'win32')(
   'reattaches the latest session for the same command and refuses stale reads and sessions',
   async () => {
     const { runtime, post, definition } = await setup()
@@ -290,7 +332,7 @@ it('rejects a command without a project at save and at launch, and never starts 
   )
   const saved = await post('dashboards/save', { dashboard: unbound, expectedRevision: 0 })
   expect(saved.status).toBe(400)
-  expect(await saved.text()).toContain('choose a project, or No Project')
+  expect(await saved.text()).toContain('choose a project or the home folder')
 
   // A row saved before this check still cannot launch.
   runtime.services.db

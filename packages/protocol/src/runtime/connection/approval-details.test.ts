@@ -49,6 +49,13 @@ it('keeps plain text and malformed JSON readable without losing characters', () 
     })
 })
 
+it('preserves the exact JSON and command text for copying', () => {
+  const detail = '{"command":"", "count":9007199254740993, "path":"a\\/b"}\n'
+  const result = approvalDetails(detail)
+  expect(result.raw).toBe(detail)
+  expect(result.fields[0]).toEqual({ label: 'Command', text: '', code: true })
+})
+
 it('bounds large and deeply nested presentations without dropping the original data', () => {
   const input = Object.fromEntries(
     Array.from({ length: 1000 }, (_, index) => ['field' + index, index]),
@@ -57,8 +64,8 @@ it('bounds large and deeply nested presentations without dropping the original d
   expect(result.fields.length).toBeLessThanOrEqual(121)
   expect(result.fields.at(-1)?.text).toContain('Full JSON')
   expect(JSON.parse(result.raw)).toEqual(input)
-  const deep = '{"nested":'.repeat(100) + 'true' + '}'.repeat(100)
-  expect(approvalDetails(deep).json).toBe(true)
+  const deep = '{"nested":'.repeat(20_000) + 'true' + '}'.repeat(20_000)
+  expect(approvalDetails(deep)).toMatchObject({ json: true, raw: deep })
   expect(approvalDetails('[]').json).toBe(true)
   expect(approvalDetails('false').fields[0].text).toBe('No')
 })

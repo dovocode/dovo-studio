@@ -29,6 +29,7 @@ import { DeferredPullFile } from './deferred-file'
 import { PullComments } from './comments'
 import { createPullStateCache, useRetainedPullState, usePullStateKey } from '../retained-state'
 const lineDraftCache = createPullStateCache<ReadonlyMap<string, PullLineDraft>>(30)
+const selectedFileCache = createPullStateCache<string>(30)
 export function PullChanges({
   detail,
   active = true,
@@ -130,8 +131,7 @@ export function PullChanges({
     () => pullCommentsByFile(detail.files, detail.comments),
     [detail.files, detail.comments],
   )
-  const [selected, setSelected] = useApplicationState(files[0]?.path ?? ''),
-    [split, setSplit] = useApplicationState(
+  const [split, setSplit] = useApplicationState(
       !embedded && readAppPreferences().diffLayout === 'split',
     ),
     [summaryExpanded, setSummaryExpanded] = useState(false)
@@ -143,6 +143,7 @@ export function PullChanges({
     detail.pull.connectionId,
     detail.pull.url,
   )
+  const [selected, setSelected] = useRetainedPullState(selectedFileCache, draftKey, '')
   // Full drafts outlive disconnects, detail navigation, and the render window.
   const [drafts, setDrafts] = useRetainedPullState(lineDraftCache, draftKey, new Map())
   const updateDraft = (path: string, update: (draft: PullLineDraft) => PullLineDraft) =>
@@ -178,8 +179,9 @@ export function PullChanges({
         comment.kind === 'inline' &&
         (comment.url.endsWith(initialFragment) || `#${comment.id}` === initialFragment),
     )
+    if (!comment?.path) return
     const file = visibleFiles.find(
-      (file) => file.path === comment?.path || file.previousPath === comment?.path,
+      (file) => file.path === comment.path || file.previousPath === comment.path,
     )
     if (file && kind && pullFileKind(file) !== kind) {
       setKind(undefined)
@@ -190,7 +192,10 @@ export function PullChanges({
       selectFile(file.path)
     }
   }, [initialFragment, detail.comments, files, visibleFiles, kind, active])
-  const selectedFile = files.find((file) => file.path === selected) ?? files[0]
+  const selectedFile =
+    files.find((file) => file.path === selected) ??
+    (selected ? files.find((file) => file.previousPath === selected) : undefined) ??
+    files[0]
   if (!detail.files.length)
     return <p className="p-4 text-xs text-muted-foreground">No changed files returned.</p>
   return (
@@ -325,7 +330,7 @@ export function PullChanges({
                 <DeferredPullFile
                   file={file}
                   heights={heights}
-                  pinned={selected === file.path || !!drafts.get(file.path)?.selection}
+                  pinned={selectedFile?.path === file.path || !!drafts.get(file.path)?.selection}
                 >
                   {file.patchOmitted && (
                     <div className="space-y-2 py-2 text-xs">

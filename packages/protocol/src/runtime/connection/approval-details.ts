@@ -36,6 +36,7 @@ const priority = [
   'host',
 ]
 const technical = new Set(['threadid', 'turnid', 'itemid', 'toolcallid', 'sessionid'])
+const moreDetails = 'More details are available in Full JSON.'
 const code = new Set([
   'command',
   'commands',
@@ -72,10 +73,8 @@ export function approvalDetails(detail: string): {
   json: boolean
 } {
   let value: unknown
-  let raw: string
   try {
     value = JSON.parse(detail)
-    raw = JSON.stringify(value, null, 2)
   } catch {
     return { fields: [{ label: '', text: detail }], raw: detail, json: false }
   }
@@ -96,7 +95,7 @@ export function approvalDetails(detail: string): {
     for (const [key, item] of entries) {
       if (depth === 0 && technical.has(normalize(key))) continue
       if (remaining-- <= 0) {
-        result.push({ label: '', text: 'More details are available in Full JSON.' })
+        result.push({ label: '', text: moreDetails })
         break
       }
       const field: ApprovalDetailField = { label: label(key) }
@@ -108,19 +107,18 @@ export function approvalDetails(detail: string): {
         field.code = true
       } else if (item !== null && typeof item === 'object') {
         if (depth >= 4) {
-          field.text = JSON.stringify(item, null, 2)
-          field.code = true
+          field.text = moreDetails
         } else {
           field.children = fields(item, depth + 1)
           if (!field.children.length) field.text = Array.isArray(item) ? 'No items' : 'No fields'
         }
       } else {
-        field.text = scalar(item)
         field.code = code.has(normalize(key))
+        field.text = field.code && typeof item === 'string' ? item : scalar(item)
       }
       result.push(field)
     }
     return result
   }
-  return { fields: fields(value, 0), raw, json: true }
+  return { fields: fields(value, 0), raw: detail, json: true }
 }

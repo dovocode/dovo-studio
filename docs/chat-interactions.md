@@ -151,6 +151,23 @@ completion; answers steer an active turn or become a follow-up when it finishes.
 explicit decline. Stop and runtime shutdown dismiss pending forms without sending a response.
 Blocking questions take precedence when multiple requests are pending.
 
+Permission requests show the command, working folder, and other details the agent supplied. Select
+**Full JSON** to switch between those fields and the original request. Use the copy button to copy
+the entire command or JSON, even if only part of it is visible. The desktop popup keeps the
+decisions and **Open thread** visible while you scroll the details. **Allow once** and **Deny** sit
+together. Session and project choices appear when the runtime offers them.
+
+When several requests are waiting, the thread shows their count. On desktop and web, the list
+scrolls above the composer. **Open thread** in the desktop popup focuses the matching approval or
+question in its thread. If an approval has closed, the thread says it is no longer pending.
+
+On desktop and web, focus the approval card to use `Y` or `Enter` for **Allow once** and `N` for
+**Deny**. The details and buttons have their own keyboard controls. An offline popup disables
+decisions until the computer reconnects.
+
+Mobile search keeps results from reachable computers if a search fails on another computer. Select
+**Retry search on [computer]** to repeat the search on that computer.
+
 The regular `dovo_task ask_question` tool provides structured questions for providers without a
 usable native question interface, including normal Cursor sessions. It is independent of Studio
 Tools. Supply a stable `key`, `title`, and `questions` with unique IDs, choices and/or custom input.

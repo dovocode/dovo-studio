@@ -109,7 +109,8 @@ treated as a match.
 decisions, reviewers, assignees and labels alongside them on wide layouts. The title, branches and
 review/check summaries remain visible across sections. **Checks** shows check output, annotations
 and pipeline runs for the PR head commit. **Changes** shows stacked file cards, a searchable
-directory tree and local reviewed-file progress. Selecting a tree entry scrolls to its card. Review
+directory tree and local reviewed-file progress. Selecting a tree entry scrolls to its card. Studio
+restores the selected file and scroll position when you reopen the PR in the same session. Review
 decisions remain tied to the commit captured when the review form opens. Review/comment editors
 provide formatting insertion and a rendered preview; submissions still use Markdown and the existing
 forge capability and revision checks.

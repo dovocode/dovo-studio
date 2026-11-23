@@ -1,6 +1,12 @@
 import { tmpdir } from 'node:os'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { decode, inputPreviewItemSchema, inputPreviewKey, type InputPreview } from '@dovo/protocol'
+import {
+  decode,
+  inputPreviewItemSchema,
+  inputPreviewKey,
+  type InputPreview,
+  type InputPreviewThreadTarget,
+} from '@dovo/protocol'
 const f = vi.hoisted(() => ({
   handlers: new Map<string, (event: Electron.IpcMainInvokeEvent, value?: unknown) => unknown>(),
   windows: [] as Array<{
@@ -10,7 +16,11 @@ const f = vi.hoisted(() => ({
     visible: boolean
     callbacks: Map<string, () => void>
     webContents: {
-      send: ReturnType<typeof vi.fn<(channel: string, value: InputPreview | null) => void>>
+      send: ReturnType<
+        typeof vi.fn<
+          (channel: string, value: InputPreview | InputPreviewThreadTarget | null) => void
+        >
+      >
     }
   }>,
 }))
@@ -34,7 +44,9 @@ vi.mock('electron', () => ({
     visible = false
     callbacks = new Map<string, () => void>()
     webContents = {
-      send: vi.fn<(channel: string, value: InputPreview | null) => void>(),
+      send: vi.fn<
+        (channel: string, value: InputPreview | InputPreviewThreadTarget | null) => void
+      >(),
       setWindowOpenHandler: () => {},
       on: () => {},
       once: () => {},
@@ -204,12 +216,48 @@ it('answers in a non-activating macOS panel without opening the main window', as
   expect(f.windows[0].visible).toBe(false)
   expect(f.windows[0].focused).toBe(false)
 })
-it('opens the full window only through Open thread', async () => {
-  const { invoke } = await fixture()
-  await invoke('open')
+it.each(['question', 'approval'] as const)(
+  'opens the exact %s in its parent thread',
+  async (kind) => {
+    const { invoke, sync } = await fixture()
+    const request =
+      kind === 'question'
+        ? item.request
+        : {
+            kind,
+            value: { id: 'a1', taskId: 'task', title: 'Run tests', detail: '{}', createdAt: '' },
+          }
+    const target = decode(inputPreviewItemSchema, { ...item, parentTaskId: 'parent', request })
+    await sync([target])
+    await invoke('open', inputPreviewKey(target))
+    expect(f.windows[1].visible).toBe(false)
+    expect(f.windows[0].visible).toBe(true)
+    expect(f.windows[0].focused).toBe(true)
+    expect(f.windows[0].webContents.send).toHaveBeenCalledWith('input-preview:open-thread', {
+      runtimeId: item.runtimeId,
+      entityId: 'parent',
+      threadRequest: {
+        id: 'parent',
+        kind: kind === 'question' ? 'input' : 'approval',
+        requestId: request.value.id,
+      },
+    })
+  },
+)
+it('keeps the newly selected request when a click targets the previous request', async () => {
+  const { invoke, sync } = await fixture()
+  const next = decode(inputPreviewItemSchema, {
+    ...item,
+    request: { ...item.request, value: { ...item.request.value, id: 'q2' } },
+  })
+  await sync([next])
+  await invoke('dismiss', inputPreviewKey(item))
+  await invoke('open', inputPreviewKey(item))
+  expect(await invoke('current')).toMatchObject({ key: inputPreviewKey(next) })
+  expect(f.windows[1].visible).toBe(true)
+  expect(f.windows[0].visible).toBe(false)
+  await invoke('dismiss', inputPreviewKey(next))
   expect(f.windows[1].visible).toBe(false)
-  expect(f.windows[0].visible).toBe(true)
-  expect(f.windows[0].focused).toBe(true)
 })
 it('dismisses stale requests rejected by the originating runtime without a snapshot preflight', async () => {
   const fetcher = vi.fn<typeof fetch>(async () =>
@@ -229,7 +277,7 @@ it('disables disconnected answers and respects dismissal and the preference', as
   await expect(
     invoke('answer', { key: inputPreviewKey(item), answer: { choice: ['yes'] } }),
   ).rejects.toThrow('Reconnect')
-  await invoke('dismiss')
+  await invoke('dismiss', inputPreviewKey(item))
   await sync([item])
   expect(f.windows[1].visible).toBe(false)
   await sync([])

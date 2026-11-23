@@ -1,4 +1,5 @@
 import { Component, useMemo, useRef, useState, type ReactNode } from 'react'
+import { clientScopeKey } from '@dovo/client-runtime'
 import {
   extensionViewResultIds,
   isStudioDataSource,
@@ -120,9 +121,13 @@ export function useExtensionView(
   request: WorkspaceRequest,
   connected: boolean,
   save: SaveExtensionSettings,
+  connection: object | null | undefined,
 ) {
   const draft = useExtensionSettingsDraft(entry, save)
-  const manifest = useMemo(() => JSON.stringify(entry.installed), [entry.installed])
+  const manifest = useMemo(
+    () => JSON.stringify([clientScopeKey(connection), entry.installed]),
+    [connection, entry.installed],
+  )
   const [toolState, setToolState] = useState(() => ({
     manifest,
     results: new Map<string, unknown>(),
@@ -149,7 +154,7 @@ export function useExtensionView(
 
   function setResult(id: string, data: unknown) {
     setToolState((previous) =>
-      previous.manifest === manifest
+      previous.manifest === manifest && !Object.is(previous.results.get(id), data)
         ? { ...previous, results: new Map(previous.results).set(id, data) }
         : previous,
     )
@@ -165,6 +170,8 @@ export function useExtensionView(
   )
   const { dirty, values } = draft
   return {
+    extensionId: entry.id,
+    resultScope: manifest,
     sources,
     implicitSources: sources.filter((source) => !positioned.has(source.id)),
     readSource: (id: string) => readExtensionDataSource(request, entry, id),

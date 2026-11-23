@@ -1,32 +1,71 @@
 import { useCallback, useLayoutEffect, useRef, useState } from 'react'
+import { SCRATCH_PROJECT_ID, type dashboardReadResultSchema } from '@dovo/protocol'
 import {
-  SCRATCH_PROJECT_ID,
-  type StudioDataSource,
-  type dashboardReadResultSchema,
-} from '@dovo/protocol'
-import { useStudioDataSource, useWorkspace } from '@dovo/studio-core'
+  studioReadingKey,
+  useStudioDataSource,
+  useWorkspace,
+  type StudioReadingOwner,
+  type StudioReadingSource,
+} from '@dovo/studio-core'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { Button } from '@dovo/studio-ui'
 import { DataView } from './data-view'
 
-export function DataSource({
+type Props = {
+  source: StudioReadingSource
+  owner: StudioReadingOwner
+  read: () => Promise<typeof dashboardReadResultSchema.Type>
+  onData?: (value: unknown) => void
+}
+
+export function DataSource(props: Props) {
+  const { connection, activeRuntimeId, snapshot, workspace } = useWorkspace()
+  const { owner, source } = props
+  const project =
+    source.kind === 'cli'
+      ? workspace.repositories.find((entry) => entry.id === source.repositoryId)
+      : undefined
+  const identity = studioReadingKey(
+    connection,
+    snapshot?.runtimeId ?? activeRuntimeId,
+    owner,
+    source,
+    project?.path,
+  )
+  const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
+  return (
+    <DataSourceView
+      key={JSON.stringify([identity, seconds])}
+      {...props}
+      identity={identity}
+      projectName={project?.name}
+    />
+  )
+}
+
+function DataSourceView({
   source,
   read,
   onData,
-}: {
-  source: StudioDataSource & { title: string }
-  read: () => Promise<typeof dashboardReadResultSchema.Type>
-  onData?: (value: unknown) => void
-}) {
-  const { connected, workspace, snapshot } = useWorkspace()
+  identity,
+  projectName,
+}: Props & { identity: string; projectName?: string }) {
+  const uiText = useInterfaceText()
+  const { connected, snapshot } = useWorkspace()
+  const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
   // Existing HTTP tiles continue to work with runtimes that predate structured sources.
   const supported =
-    (source.kind === 'api' && source.refreshSeconds === undefined && !source.panels) ||
+    source.kind === 'mcp' ||
+    (source.kind === 'api' && seconds === undefined && !source.panels) ||
     snapshot?.studioDataSourcesSupported === true
   const host = useRef<HTMLDivElement>(null)
   const disclosures = useRef<HTMLDetailsElement[]>([])
   const canRead = useCallback(
-    () => !document.hidden && disclosures.current.every((node) => node.open),
-    [],
+    () =>
+      !document.hidden &&
+      (source.kind !== 'api' || document.hasFocus()) &&
+      disclosures.current.every((node) => node.open),
+    [source.kind],
   )
   const [visible, setVisible] = useState(false)
   useLayoutEffect(() => {
@@ -39,14 +78,19 @@ export function DataSource({
     for (const node of ancestors)
       observer.observe(node, { attributes: true, attributeFilter: ['open'] })
     document.addEventListener('visibilitychange', update)
+    window.addEventListener('focus', update)
+    window.addEventListener('blur', update)
     update()
     return () => {
       observer.disconnect()
       document.removeEventListener('visibilitychange', update)
+      window.removeEventListener('focus', update)
+      window.removeEventListener('blur', update)
     }
   }, [canRead])
   const state = useStudioDataSource(
-    source.refreshSeconds,
+    identity,
+    source,
     connected && supported && visible,
     read,
     onData,
@@ -54,10 +98,15 @@ export function DataSource({
   )
   const project =
     source.kind === 'cli'
-      ? (workspace.repositories.find((entry) => entry.id === source.repositoryId)?.name ??
+      ? (projectName ??
         (source.repositoryId === SCRATCH_PROJECT_ID ? 'No Project' : source.repositoryId))
       : undefined
-  const detail = source.kind === 'cli' ? source.command : source.url
+  const detail =
+    source.kind === 'cli'
+      ? source.command
+      : source.kind === 'api'
+        ? source.url
+        : `${source.server} · ${source.tool}`
   return (
     <div ref={host} className="min-w-0 space-y-2 text-sm">
       {onData && <p className="font-medium">{source.title}</p>}
@@ -74,7 +123,7 @@ export function DataSource({
           disabled={!supported || !connected || state.busy}
           onClick={() => {
             if (
-              source.kind === 'api' ||
+              source.kind !== 'cli' ||
               window.confirm(`Run this command in ${project}?\n\n${detail}`)
             )
               void state.refresh()
@@ -82,7 +131,7 @@ export function DataSource({
         >
           {state.busy ? 'Reading…' : source.kind === 'cli' ? 'Run command' : 'Refresh data'}
         </Button>
-        {source.refreshSeconds !== undefined && (
+        {seconds !== undefined && (
           <Button
             size="sm"
             variant="outline"
@@ -92,13 +141,13 @@ export function DataSource({
               else if (
                 source.kind === 'api' ||
                 window.confirm(
-                  `Run this command in ${project} every ${source.refreshSeconds} seconds while this tile is open?\n\n${detail}`,
+                  `Run this command in ${project} every ${seconds} seconds while this tile is open?\n\n${detail}`,
                 )
               )
                 state.start()
             }}
           >
-            {state.running ? 'Stop auto refresh' : `Start auto refresh (${source.refreshSeconds}s)`}
+            {state.running ? 'Stop auto refresh' : `Start auto refresh (${seconds}s)`}
           </Button>
         )}
         {state.data && (
@@ -106,7 +155,9 @@ export function DataSource({
             className="text-xs text-muted-foreground"
             dateTime={new Date(state.data.updatedAt).toISOString()}
           >
-            Updated {new Date(state.data.updatedAt).toLocaleTimeString()}
+            {uiText(state.stale ? 'Last result {time} · stale' : 'Updated {time}', {
+              time: new Date(state.data.updatedAt).toLocaleTimeString(),
+            })}
           </time>
         )}
         {!supported && <span>Update the paired computer to use these data displays.</span>}

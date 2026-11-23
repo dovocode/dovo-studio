@@ -28,8 +28,17 @@ function App(){const[mode,setMode]=useState('desktop'),[detail,setDetail]=useSta
     define: { 'process.env.NODE_ENV': '"production"' },
   },
   [
+    {
+      path: '@dovo/studio-ui',
+      contents: `export {Button} from '${root}packages/studio-ui/src/components/ui/button'`,
+    },
     { path: 'react-native', contents: native },
     { path: '../../ui/content/text', importer: mobile + 'tasks/detail/', contents: native },
+    {
+      path: '../../ui/content/clipboard',
+      importer: mobile + 'tasks/detail/',
+      contents: 'export const copyText=async text=>{window.copied=text;return "copied"};',
+    },
     { path: '../../ui/theme', importer: mobile + 'tasks/detail/', contents: native },
   ],
 )
@@ -52,53 +61,41 @@ try {
       tail: 'MCP-END',
     },
     { action: { kind: 'command', command: 'resolved form ' + 'field '.repeat(5000) + 'FORM-END' } },
+    '{ "command": "echo test", "count": 9007199254740993 }\n',
   ]
+  await page.evaluate(() => {
+    window.dovoCopyText = async (text) => {
+      window.copied = text
+    }
+  })
   for (const mode of ['desktop', 'mobile'])
     for (const payload of payloads) {
       await page.getByRole('textbox', { name: 'Draft', exact: true }).focus()
-      const detail = JSON.stringify(payload)
+      const detail = typeof payload === 'string' ? payload : JSON.stringify(payload)
       await page.evaluate(({ mode, detail }) => window.show(mode, detail), { mode, detail })
+      const toggle = page.getByRole('button', { name: 'Full JSON', exact: true })
+      await toggle.waitFor()
+      assert.equal(
+        await page
+          .getByRole('textbox', { name: 'Draft', exact: true })
+          .evaluate((el) => el === document.activeElement),
+        true,
+      )
       if (mode === 'desktop') {
-        await page.getByText('Full JSON', { exact: true }).waitFor()
-        assert.equal(
-          await page
-            .getByRole('textbox', { name: 'Draft', exact: true })
-            .evaluate((el) => el === document.activeElement),
-          true,
-        )
         if (payload.command) {
           const preview = page.getByRole('region', { name: 'Command', exact: true })
           assert.equal(await preview.textContent(), payload.command)
           await preview.focus()
           assert.equal(await preview.evaluate((el) => el === document.activeElement), true)
         }
-        await page.getByText('Full JSON', { exact: true }).click()
-        assert.deepEqual(
-          JSON.parse(await page.locator('[data-approval-json]').textContent()),
-          payload,
-        )
+        await toggle.click()
+        assert.equal(await page.locator('[data-approval-json]').textContent(), detail)
       } else {
-        const button = page.getByRole('button', { name: 'Show full JSON', exact: true })
-        await button.waitFor()
-        assert.equal(
-          await page
-            .getByRole('textbox', { name: 'Draft', exact: true })
-            .evaluate((el) => el === document.activeElement),
-          true,
-        )
-        await button.click()
-        const raw = await page.locator('section span').allTextContents()
-        assert.equal(
-          raw.some((text) => {
-            try {
-              return JSON.stringify(JSON.parse(text)) === detail
-            } catch {
-              return false
-            }
-          }),
-          true,
-        )
+        await toggle.click()
+        assert.equal((await page.locator('section span').allTextContents()).includes(detail), true)
       }
+      await page.getByRole('button', { name: 'Copy Full JSON', exact: true }).click()
+      await page.waitForFunction((detail) => window.copied === detail, detail)
       assert.equal(
         await page.getByRole('textbox', { name: 'Draft', exact: true }).inputValue(),
         'Keep my draft',

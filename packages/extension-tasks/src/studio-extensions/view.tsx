@@ -531,6 +531,7 @@ function ExtensionAction({
       <div className="space-y-2">
         <p className="text-sm font-medium">{contribution.title}</p>
         <DataSource
+          owner={['extension', entry.id]}
           source={contribution}
           read={() => readExtensionDataSource(request, entry, contribution.id)}
         />

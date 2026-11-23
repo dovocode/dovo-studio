@@ -10,7 +10,6 @@ import {
   Plus,
 } from 'lucide-react'
 import { DataSource } from './data-source'
-import { DataView } from './data-view'
 import { lazy, Suspense, useRef, useState, type CSSProperties } from 'react'
 import {
   STUDIO_BROWSER_SCOPE,
@@ -19,7 +18,6 @@ import {
   needsStudioDataSources,
   studioDataPanelLimit,
   type StudioDataPanel,
-  SCRATCH_PROJECT_ID,
   type Dashboard,
   type DashboardTile,
 } from '@dovo/protocol'
@@ -32,6 +30,7 @@ import {
   maxDashboardTemplateBytes,
   importDashboardTemplate,
   dashboardTileFields,
+  dashboardProjectOptions,
   dashboardDisplayLabels,
   isDashboardDisplay,
   readDashboardDataSource,
@@ -637,18 +636,20 @@ function TileEditor({
             {key === 'repositoryId' || key === 'terminalId' || key === 'taskId' ? (
               <select
                 className={field}
+                aria-label={label}
                 value={value}
                 onChange={(event) => change({ ...tile, [key]: event.target.value })}
               >
-                <option value="">Select {label.toLowerCase()}</option>
+                <option value="">
+                  {key === 'repositoryId' && tile.kind === 'tui'
+                    ? 'Choose a folder'
+                    : `Select ${label.toLowerCase()}`}
+                </option>
                 {(key === 'repositoryId'
-                  ? [
-                      ...workspace.repositories.map((item) => [item.id, item.name]),
-                      ...(tile.kind === 'cli' &&
-                      !workspace.repositories.some((item) => item.id === SCRATCH_PROJECT_ID)
-                        ? [[SCRATCH_PROJECT_ID, 'No Project']]
-                        : []),
-                    ]
+                  ? dashboardProjectOptions(tile.kind, workspace.repositories).map((item) => [
+                      item.id,
+                      item.name,
+                    ])
                   : key === 'taskId'
                     ? workspace.tasks.map((item) => [item.id, item.title])
                     : (snapshot?.terminals ?? []).map((item) => [
@@ -826,22 +827,31 @@ function DisplayEditor({
 }
 
 function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: DashboardTile }) {
-  const { request, connected, snapshot, workspace, activeRuntimeId } = useWorkspace()
+  const { request, connected, snapshot, workspace, activeRuntimeId, runtimes } = useWorkspace()
   const host = useStudioHost()
   const state = useDashboardTile(request, dashboard, tile, connected)
-  const { data, terminalId, busy, error, pipelines } = state
+  const { terminalId, busy, error, pipelines } = state
   const [embedded, setEmbedded] = useState(false)
   const commandSession = snapshot?.terminals.find((entry) => entry.id === terminalId)
   const project =
     tile.kind === 'command' || tile.kind === 'tui'
-      ? (workspace.repositories.find((entry) => entry.id === tile.repositoryId)?.name ??
-        tile.repositoryId)
+      ? (dashboardProjectOptions(tile.kind, workspace.repositories).find(
+          (entry) => entry.id === tile.repositoryId,
+        )?.name ?? tile.repositoryId)
       : undefined
+  const computer = runtimeComputerName({
+    profile: runtimes.find((item) => item.profile.id === activeRuntimeId)?.profile,
+    snapshot,
+  })
 
-  if (isStudioDataSource(tile))
+  if (isStudioDataSource(tile) || tile.kind === 'mcp')
     return (
       <div className="p-3">
-        <DataSource source={tile} read={() => readDashboardDataSource(request, dashboard, tile)} />
+        <DataSource
+          owner={['dashboard', dashboard.id]}
+          source={tile}
+          read={() => readDashboardDataSource(request, dashboard, tile)}
+        />
       </div>
     )
   if (tile.kind === 'extension')
@@ -906,35 +916,11 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
 
   return (
     <div className="flex h-full min-h-0 flex-col gap-2 p-3 text-sm">
-      {tile.kind === 'mcp' && (
-        <>
-          <p className="break-all text-xs text-muted-foreground">
-            {`${tile.server} · ${tile.tool}`}
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              className={button}
-              disabled={!connected || busy}
-              onClick={() => void state.refresh()}
-            >
-              {busy ? 'Reading…' : 'Refresh data'}
-            </button>
-            {data && (
-              <time
-                className="text-xs text-muted-foreground"
-                dateTime={new Date(data.updatedAt).toISOString()}
-              >
-                Updated {new Date(data.updatedAt).toLocaleTimeString()}
-              </time>
-            )}
-            {!connected && <span>Computer offline</span>}
-          </div>
-          {data && <DataView value={data.data} chart={tile.chart} panels={tile.panels} />}
-        </>
-      )}
       {(tile.kind === 'command' || tile.kind === 'tui') && (
         <>
-          <p className="text-xs text-muted-foreground">{project}</p>
+          <p className="text-xs text-muted-foreground">
+            {tile.kind === 'tui' ? `${project} · ${computer}` : project}
+          </p>
           <code className="whitespace-pre-wrap break-all">{tile.command}</code>
           <div className="flex flex-wrap items-center gap-2">
             <button
@@ -949,13 +935,21 @@ function TileContent({ dashboard, tile }: { dashboard: Dashboard; tile: Dashboar
                 if (
                   state.recovering ||
                   window.confirm(
-                    `Run this command in ${project} on the selected computer?\n\n${tile.command}`,
+                    tile.kind === 'tui'
+                      ? `Start this TUI in ${project} on ${computer}?\n\n${tile.command}`
+                      : `Run this command in ${project} on the selected computer?\n\n${tile.command}`,
                   )
                 )
                   void state.run()
               }}
             >
-              {busy ? 'Working…' : state.recovering ? 'Recover run' : 'Run command'}
+              {busy
+                ? 'Working…'
+                : state.recovering
+                  ? 'Recover run'
+                  : tile.kind === 'tui'
+                    ? 'Start TUI'
+                    : 'Run command'}
             </button>
             {terminalId && (
               <button

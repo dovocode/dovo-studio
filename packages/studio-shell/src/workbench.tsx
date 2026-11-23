@@ -537,7 +537,11 @@ function WorkbenchContent({
         if (destination.runtimeId !== currentRuntime.current)
           await switchRuntime(destination.runtimeId)
         if (!mounted.current || attempt !== navigationAttempt.current) return
-        commitNavigation({ viewId: destination.viewId, entityId: destination.entityId })
+        commitNavigation({
+          viewId: destination.viewId,
+          entityId: destination.entityId,
+          threadRequest: destination.threadRequest,
+        })
       })().catch((error: unknown) => {
         if (attempt === navigationAttempt.current)
           setSwitchError(error instanceof Error ? error.message : String(error))

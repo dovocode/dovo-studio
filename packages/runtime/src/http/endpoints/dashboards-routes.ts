@@ -4,6 +4,7 @@ import { Effect } from 'effect'
 import {
   decode,
   needsStudioDataSources,
+  SCRATCH_PROJECT_ID,
   dashboardDeleteRequestSchema,
   dashboardListRequestSchema,
   dashboardReadRequestSchema,
@@ -40,12 +41,13 @@ async function launchTile(
   // An empty ID would fall back to the home folder. No Project uses SCRATCH_PROJECT_ID instead.
   // Template drafts clear the project, and saves reject that, but older rows may still hold it.
   if (!tile.repositoryId.trim())
-    throw new HttpError(
-      400,
-      `${tile.title}: choose a project, or No Project to start in the home folder. Nothing ran.`,
-      { mutationRejected: true },
-    )
-  const repository = s.store.get().repositories.find((entry) => entry.id === tile.repositoryId)
+    throw new HttpError(400, `${tile.title}: choose a project or the home folder. Nothing ran.`, {
+      mutationRejected: true,
+    })
+  const repository =
+    tile.repositoryId === SCRATCH_PROJECT_ID
+      ? undefined
+      : s.store.get().repositories.find((entry) => entry.id === tile.repositoryId)
   const authorize = () => {
     s.devices.authenticate(token)
     if (s.dashboards.get(dashboard.id)?.revision !== dashboard.revision)

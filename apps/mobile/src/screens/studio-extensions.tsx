@@ -547,6 +547,7 @@ function ExtensionAction({
       <View style={{ gap: 8 }}>
         <Text accessibilityRole="header">{contribution.title}</Text>
         <MobileDataSource
+          owner={['extension', entry.id]}
           source={contribution}
           read={() => readExtensionDataSource(read, entry, contribution.id)}
         />

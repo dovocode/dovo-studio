@@ -1,11 +1,12 @@
 import { useContext } from 'react'
 import { Alert, View } from 'react-native'
+import { SCRATCH_PROJECT_ID, type dashboardReadResultSchema } from '@dovo/protocol'
 import {
-  SCRATCH_PROJECT_ID,
-  type StudioDataSource,
-  type dashboardReadResultSchema,
-} from '@dovo/protocol'
-import { useStudioDataSource } from '@dovo/studio-core'
+  studioReadingKey,
+  useStudioDataSource,
+  type StudioReadingOwner,
+  type StudioReadingSource,
+} from '@dovo/studio-core'
 import { useInterfaceText } from '@dovo/studio-core/interface-language'
 import { useRuntime } from '../runtime/connection/provider'
 import { useAppActive } from '../runtime/state/app-active'
@@ -14,32 +15,69 @@ import { Text } from '../ui/content/text'
 import { Action } from '../ui/controls/action'
 import { DataView } from './dashboard-data-view'
 
-export function MobileDataSource({
+type Props = {
+  source: StudioReadingSource
+  owner: StudioReadingOwner
+  read: () => Promise<typeof dashboardReadResultSchema.Type>
+  onData?: (value: unknown) => void
+}
+
+export function MobileDataSource(props: Props) {
+  const { connection, activeId, snapshot } = useRuntime()
+  const { owner, source } = props
+  const project =
+    source.kind === 'cli'
+      ? snapshot?.workspace.repositories.find((entry) => entry.id === source.repositoryId)
+      : undefined
+  const identity = studioReadingKey(
+    connection,
+    snapshot?.runtimeId ?? activeId,
+    owner,
+    source,
+    project?.path,
+  )
+  const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
+  return (
+    <MobileDataSourceView
+      key={JSON.stringify([identity, seconds])}
+      {...props}
+      identity={identity}
+      projectName={project?.name}
+    />
+  )
+}
+
+function MobileDataSourceView({
   source,
   read,
   onData,
-}: {
-  source: StudioDataSource & { title: string }
-  read: () => Promise<typeof dashboardReadResultSchema.Type>
-  onData?: (value: unknown) => void
-}) {
+  identity,
+  projectName,
+}: Props & { identity: string; projectName?: string }) {
   const uiText = useInterfaceText()
   const { connected, snapshot } = useRuntime()
   const focused = useContext(NavigationContext)?.focused ?? true
   const foreground = useAppActive()
+  const seconds = 'refreshSeconds' in source ? source.refreshSeconds : undefined
   const supported =
-    (source.kind === 'api' && source.refreshSeconds === undefined && !source.panels) ||
+    source.kind === 'mcp' ||
+    (source.kind === 'api' && seconds === undefined && !source.panels) ||
     snapshot?.studioDataSourcesSupported === true
   const active = connected && focused && foreground && supported
-  const state = useStudioDataSource(source.refreshSeconds, active, read, onData)
+  const state = useStudioDataSource(identity, source, active, read, onData)
   const project =
     source.kind === 'cli'
-      ? (snapshot?.workspace.repositories.find((entry) => entry.id === source.repositoryId)?.name ??
+      ? (projectName ??
         (source.repositoryId === SCRATCH_PROJECT_ID ? uiText('No Project') : source.repositoryId))
       : undefined
-  const detail = source.kind === 'cli' ? source.command : source.url
+  const detail =
+    source.kind === 'cli'
+      ? source.command
+      : source.kind === 'api'
+        ? source.url
+        : `${source.server} · ${source.tool}`
   const confirm = (title: string, run: () => void) => {
-    if (source.kind === 'api') run()
+    if (source.kind !== 'cli') run()
     else
       Alert.alert(title, source.command, [
         { text: uiText('Cancel'), style: 'cancel' },
@@ -69,12 +107,12 @@ export function MobileDataSource({
             )
           }
         />
-        {source.refreshSeconds !== undefined && (
+        {seconds !== undefined && (
           <Action
             label={
               state.running
                 ? uiText('Stop auto refresh')
-                : uiText('Start auto refresh ({seconds}s)', { seconds: source.refreshSeconds })
+                : uiText('Start auto refresh ({seconds}s)', { seconds })
             }
             secondary
             disabled={!state.running && (!active || state.busy)}
@@ -86,7 +124,7 @@ export function MobileDataSource({
                     'Run this command in {project} every {seconds} seconds while this tile is open?',
                     {
                       project,
-                      seconds: source.refreshSeconds,
+                      seconds,
                     },
                   ),
                   state.start,
@@ -102,7 +140,7 @@ export function MobileDataSource({
       {state.data && (
         <>
           <Text>
-            {uiText('Updated {time}', {
+            {uiText(state.stale ? 'Last result {time} · stale' : 'Updated {time}', {
               time: new Date(state.data.updatedAt).toLocaleTimeString(),
             })}
           </Text>

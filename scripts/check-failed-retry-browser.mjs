@@ -41,7 +41,7 @@ function App(){const [state,setState]=useState({connected:true,task:{id:'task',s
         {
           path: './approval-details',
           importer: root + 'packages/extension-tasks/src/chat/actions/',
-          contents: `export const ApprovalDetails=()=>null;`,
+          contents: `export const ApprovalDetails=()=>null;export const ApprovalButtons=()=>null;`,
         },
         {
           path: '../../../runtime/connection/provider',

@@ -120,12 +120,17 @@ controls for each source the view references. Use `result('build-count', 'field'
 when the selected result is an object. The contribution also appears on the extension page and can
 be selected directly for a dashboard tile.
 
-Leave `refreshSeconds` out for manual refresh. With an interval of 30 to 86,400 seconds, a paired
+Leave `refreshSeconds` out to skip timed refresh. With an interval of 30 to 86,400 seconds, a paired
 user can start or stop auto refresh. CLI sources show the exact command for confirmation. The
 schedule pauses when the view is closed or disconnected. It reads once when the view is available
 again if a read is overdue. Saving unrelated settings preserves the result and schedule. Install and
 agent authoring only store the source. Agents cannot run these contributions. The
 [dashboard data source limits](dashboards.md#timed-refresh) also apply to extensions.
+
+Studio keeps the last API or CLI result for each source in the current app session. It restores the
+result in cards and views that use the same source, including after a sidebar change. A previously
+read API source refreshes when its view becomes active again. Reopening a view restores a CLI
+result. The user can run the command again or start a new interval.
 
 Use a runtime that supports data sources to manage extensions that contain API or CLI definitions.
 Older runtimes can fail to load saved manifests that contain these contribution types.

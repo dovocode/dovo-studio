@@ -1,7 +1,12 @@
 import { createServer } from 'node:http'
 import { once } from 'node:events'
 import { afterEach, expect, it, vi } from 'vite-plus/test'
-import { dashboardListResultSchema, dashboardSaveResultSchema, decode } from '@dovo/protocol'
+import {
+  dashboardListResultSchema,
+  dashboardSaveResultSchema,
+  decode,
+  SCRATCH_PROJECT_ID,
+} from '@dovo/protocol'
 import { startRuntime } from '../../index'
 import { fixture } from '../../testing/fixture'
 
@@ -164,7 +169,14 @@ it('saves definitions without running commands, opening terminals or connecting 
           repositoryId: 'repo',
           command: 'touch ran',
         },
-        { title: 'TUI', kind: 'tui', span: 1, height: 1, repositoryId: 'repo', command: 'top' },
+        {
+          title: 'TUI',
+          kind: 'tui',
+          span: 1,
+          height: 1,
+          repositoryId: SCRATCH_PROJECT_ID,
+          command: 'top',
+        },
         { title: 'API', kind: 'api', span: 1, height: 1, url, pointer: '', chart: 'number' },
         { title: 'Page', kind: 'iframe', span: 1, height: 1, url },
       ],
@@ -184,6 +196,9 @@ it('saves definitions without running commands, opening terminals or connecting 
     requestId: crypto.randomUUID(),
   }
   expect((await request('dashboards/run', token, run)).status).toBe(403)
+  expect(
+    (await request('dashboards/run', token, { ...run, tileId: dashboard.tiles[1].id })).status,
+  ).toBe(403)
   expect(
     (
       await request('dashboards/read', token, {

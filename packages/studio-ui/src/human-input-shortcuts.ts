@@ -56,12 +56,10 @@ export function useApprovalShortcuts({
       if (disabled || pending.current) return
       const key = event.key.toLowerCase()
       if (key !== 'y' && key !== 'n' && key !== 'enter') return
-      if (event.target instanceof Element && event.target.closest('[data-approval-preview]')) return
+      if (event.key === 'Enter' && event.shiftKey) return
       if (
-        key === 'enter' &&
-        (event.shiftKey ||
-          (event.target instanceof Element &&
-            event.target.closest('button, a, summary, [role="button"]')))
+        event.target instanceof Element &&
+        event.target.closest('[data-approval-preview], button, a, summary, [role="button"]')
       )
         return
       const panel = humanInputShortcutTarget(event)

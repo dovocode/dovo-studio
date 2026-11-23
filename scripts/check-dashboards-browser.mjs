@@ -83,6 +83,7 @@ const bundle = await bundleBrowser(
         const marketplace = ${JSON.stringify(marketplace)}
         let allowAgentInstall = false
         const runs = new Map()
+        const sessions = new Map()
         let stored
         const readCache = {
           read: async () => stored ? { value: stored } : null,
@@ -139,7 +140,7 @@ const bundle = await bundleBrowser(
               if (input.action === 'open') {
                 return { contribution: extension.installed.contributions.find((item) => item.id === input.contributionId) }
               }
-              if (input.action === 'read-data') return { data: { count: 73, durations: [1, 4, 3] }, updatedAt: Date.now() }
+              if (input.action === 'read-data') return { data: { count: window.buildCount ?? 73, durations: [1, 4, 3] }, updatedAt: Date.now() }
               if (input.action === 'pin-page') {
                 const item = extension.installed.contributions.find(({ id }) => id === input.contributionId)
                 window.setExtensionPins(input.pinned
@@ -169,22 +170,28 @@ const bundle = await bundleBrowser(
             dashboards.splice(index < 0 ? dashboards.length : index, index < 0 ? 0 : 1, dashboard)
             return { dashboard }
           }
-          if (path.endsWith('/session')) return { terminalId: [...runs.values()].at(-1) ?? null }
+          if (path.endsWith('/session')) return { terminalId: sessions.get(input.tileId) ?? null }
           if (path.endsWith('/run')) {
             const terminalId = runs.get(input.requestId) ?? 'tty-' + (runs.size + 1)
             runs.set(input.requestId, terminalId)
+            sessions.set(input.tileId, terminalId)
             if (loseRunResponse) {
               loseRunResponse = false
               throw Error('Response lost')
             }
             return { terminalId }
           }
+          if (path === '/api/terminals/close') {
+            for (const [tileId, terminalId] of sessions) if (terminalId === input.id) sessions.delete(tileId)
+            return { ok: true }
+          }
           if (path.endsWith('/command-data')) return { data: { count: 42, durations: [2, 4, 3] }, updatedAt: Date.now() }
-          if (path.endsWith('/read')) return { data: [3, 5, 2], updatedAt: Date.now() }
+          if (path.endsWith('/read')) return { data: window.dashboardReading ?? [3, 5, 2], updatedAt: Date.now() }
           throw Error('Unexpected request ' + path)
         }
         export function Fixture({ children }) {
           const [connected, setConnected] = useState(true)
+          const [connection, setConnection] = useState(profile.connection)
           const [revision, remount] = useState(0)
           const [extensionRevision, setExtensionRevision] = useState(0)
           const [pins, setPins] = useState([])
@@ -211,11 +218,12 @@ const bundle = await bundleBrowser(
             }
             window.setExtensionPins = setPins
             window.setConnected = setConnected
+            window.replacePairing = () => setConnection({ ...profile.connection })
             window.reopen = () => remount((previous) => previous + 1)
           }, [])
           return <Workspace.Provider value={{
-            activeRuntimeId: profile.id, runtimes: [{ profile, snapshot: liveSnapshot, connected }],
-            request, snapshot: liveSnapshot, workspace, connected, readCache,
+            activeRuntimeId: profile.id, runtimes: [{ profile: { ...profile, connection }, snapshot: liveSnapshot, connected }],
+            connection, request, snapshot: liveSnapshot, workspace, connected, readCache,
           }}><React.Fragment key={revision}>{children}</React.Fragment></Workspace.Provider>
         }
         export const useWorkspace = () => useContext(Workspace)
@@ -225,7 +233,8 @@ const bundle = await bundleBrowser(
     {
       path: '../terminal/terminal-session',
       importer: fromView,
-      contents: 'export const TerminalSession = ({id}) => <p>Terminal {id}</p>',
+      contents:
+        'export const TerminalSession = ({id, readOnly}) => <p data-read-only={readOnly}>Terminal {id}</p>',
     },
     {
       path: '../browser/browser-pane',
@@ -249,13 +258,17 @@ const browser = await chromium.launch({ headless: true })
 try {
   const page = await browser.newPage({ viewport: { width: 1200, height: 900 } })
   const errors = []
+  const confirmations = []
   let embedRequests = 0
   await page.route('https://dashboard-embed.invalid/', (route) => {
     embedRequests++
     return route.fulfill({ contentType: 'text/html', body: '<p>Embedded status</p>' })
   })
   page.on('pageerror', (error) => errors.push(error.message))
-  page.on('dialog', (dialog) => dialog.accept())
+  page.on('dialog', (dialog) => {
+    confirmations.push(dialog.message())
+    return dialog.accept()
+  })
   await page.setContent('<div id="app" style="height:100dvh"></div>')
   await page.addStyleTag({ content: css })
   await page.addScriptTag({ content: bundle.outputFiles[0].text })
@@ -328,6 +341,41 @@ try {
 
   await page.getByRole('button', { name: 'Refresh data' }).click()
   await page.getByRole('img', { name: 'Line graph, range 2 to 5' }).waitFor()
+  await page.evaluate(() => {
+    window.setConnected(false)
+    window.dashboardReading = [4, 6, 3]
+  })
+  await page.getByText(/Last result .* stale/).waitFor()
+  await page.getByRole('img', { name: 'Line graph, range 2 to 5' }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter(({ path }) => path.endsWith('/read')).length),
+    1,
+  )
+  await page.evaluate(() => window.setConnected(true))
+  await page.getByRole('img', { name: 'Line graph, range 3 to 6' }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter(({ path }) => path.endsWith('/read')).length),
+    2,
+  )
+  await page.evaluate(() => {
+    document.hasFocus = () => false
+    window.dispatchEvent(new Event('blur'))
+    window.dashboardReading = [6, 8, 4]
+  })
+  await page.getByText(/Last result .* stale/).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter(({ path }) => path.endsWith('/read')).length),
+    2,
+  )
+  await page.evaluate(() => {
+    delete document.hasFocus
+    window.dispatchEvent(new Event('focus'))
+  })
+  await page.getByRole('img', { name: 'Line graph, range 4 to 8' }).waitFor()
+  assert.equal(
+    await page.evaluate(() => window.calls.filter(({ path }) => path.endsWith('/read')).length),
+    3,
+  )
   await page.getByRole('button', { name: 'Run command' }).click()
   await page.getByRole('alert').getByText('Response lost').waitFor()
   await page.getByRole('button', { name: 'Recover run' }).click()
@@ -343,6 +391,8 @@ try {
   })
   await page.getByRole('status').getByText('Computer offline.', { exact: false }).waitFor()
   await page.getByRole('heading', { name: 'HTTP data' }).waitFor()
+  await page.getByRole('img', { name: 'Line graph, range 4 to 8' }).waitFor()
+  await page.getByText(/Last result .* stale/).waitFor()
   assert.equal((await page.evaluate(() => window.calls)).length, calls.length)
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -569,9 +619,16 @@ try {
   await page.getByRole('button', { name: 'Pin to sidebar' }).click()
   const sidebar = page.getByRole('navigation', { name: 'Main navigation' })
   await sidebar.getByRole('button', { name: 'Build report' }).waitFor()
-  await page.evaluate(() => window.showExtensions(false))
+  await page.evaluate(() => {
+    window.showExtensions(false)
+    window.buildCount = 74
+  })
   await sidebar.getByRole('button', { name: 'Build report' }).click()
   await report.waitFor()
+  await page.getByRole('region', { name: 'Build count' }).getByText('74', { exact: true }).waitFor()
+  await page.evaluate(() => {
+    delete window.buildCount
+  })
   assert.equal(
     await sidebar.getByRole('button', { name: 'Build report' }).getAttribute('aria-current'),
     'page',
@@ -627,6 +684,10 @@ try {
   await addTile('Studio extension')
   await page.getByLabel('Extension contribution').selectOption('example.ci/delivery-view')
   await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await page.getByText('73', { exact: true }).waitFor()
+  const readCountBeforeTool = await page.evaluate(
+    () => window.calls.filter(({ input }) => input.action === 'read-data').length,
+  )
   await page.getByRole('button', { name: 'Read delivery' }).click()
   await page.getByText('stable', { exact: true }).waitFor()
   await page.getByRole('img', { name: 'Line graph, range 1 to 3' }).waitFor()
@@ -634,7 +695,7 @@ try {
     await page.evaluate(
       () => window.calls.filter(({ input }) => input.action === 'read-data').length,
     ),
-    1,
+    readCountBeforeTool,
   )
   await page.getByRole('button', { name: 'Start auto refresh (30s)' }).click()
   await page.getByText('73', { exact: true }).waitFor()
@@ -811,6 +872,57 @@ try {
   await page.getByRole('button', { name: 'Stop auto refresh' }).click()
   await page.clock.fastForward(30_000)
   assert.equal(await readCount(), 3)
+  await page.evaluate(() => window.showExtensions(true))
+  await page.getByRole('button', { name: 'Browse extension marketplace' }).waitFor()
+  await page.evaluate(() => window.showExtensions(false))
+  await page.getByLabel('Dashboard', { exact: true }).selectOption({ label: 'Local metrics' })
+  await page
+    .getByRole('region', { name: 'Total builds' })
+    .getByText('42', { exact: true })
+    .waitFor()
+  await page.getByText(/Last result .* stale/).waitFor()
+  await cliTile.getByRole('button', { name: 'Start auto refresh (30s)' }).waitFor()
+  await page.clock.fastForward(30_000)
+  assert.equal(
+    await readCount(),
+    3,
+    'Reopening a CLI view restores its result without running the command',
+  )
+  await page.evaluate(() => window.replacePairing())
+  await cliTile.getByRole('region', { name: 'Total builds' }).waitFor({ state: 'detached' })
+  assert.equal(
+    await readCount(),
+    3,
+    'A new pairing does not inherit the old result or run the CLI command',
+  )
+  const runCount = () =>
+    page.evaluate(() => window.calls.filter(({ path }) => path === '/api/dashboards/run').length)
+  const beforeTui = await runCount()
+  await page.getByRole('button', { name: 'New dashboard' }).click()
+  await page.getByLabel('Dashboard title').fill('Machine console')
+  await addTile('TUI')
+  assert.equal(await page.getByLabel('Start in', { exact: true }).inputValue(), 'dovo:scratch')
+  await page.getByLabel('Startup command', { exact: true }).fill('top')
+  await page.getByRole('button', { name: 'Save dashboard' }).click()
+  await page.getByText('Home folder · Test runtime', { exact: true }).waitFor()
+  assert.equal(await runCount(), beforeTui)
+  await page.getByRole('button', { name: 'Start TUI', exact: true }).click()
+  assert.equal(confirmations.at(-1), 'Start this TUI in Home folder on Test runtime?\n\ntop')
+  const tui = page.getByText('Terminal tty-2', { exact: true })
+  await tui.waitFor()
+  assert.equal(await tui.getAttribute('data-read-only'), 'false')
+  await page.evaluate(() => window.showExtensions(true))
+  await page.getByRole('button', { name: 'Browse extension marketplace' }).waitFor()
+  await page.evaluate(() => window.showExtensions(false))
+  await page.getByLabel('Dashboard', { exact: true }).selectOption({ label: 'Machine console' })
+  await tui.waitFor()
+  assert.equal(
+    await runCount(),
+    beforeTui + 1,
+    'Returning to the dashboard reattaches the live TUI',
+  )
+  await page.getByRole('button', { name: 'Close session' }).click()
+  await tui.waitFor({ state: 'detached' })
   assert.deepEqual(errors, [])
   console.log(
     'Dashboard editor, offline draft, chart, run recovery, template export, timed CLI data and reconnect, compound data cards, and Studio extension pages and sidebar pins passed.',

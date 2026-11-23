@@ -12,8 +12,10 @@ import {
   decode,
   artifactFeedSelect,
   randomUUID,
+  SCRATCH_PROJECT_ID,
   type Dashboard,
   type DashboardTile,
+  type Repository,
   type RuntimeReadCache,
 } from '@dovo/protocol'
 import type { WorkspaceRequest } from './workspace/context'
@@ -64,8 +66,9 @@ export function newDashboardTile(kind: DashboardTile['kind']): DashboardTile {
         chart: 'table',
       }
     case 'command':
-    case 'tui':
       return { ...base, kind, repositoryId: '', command: '' }
+    case 'tui':
+      return { ...base, kind, span: 4, height: 3, repositoryId: SCRATCH_PROJECT_ID, command: '' }
     case 'iframe':
     case 'browser':
       return { ...base, kind, url: '' }
@@ -106,10 +109,14 @@ export function dashboardTileFields(
         ['pointer', 'JSON pointer', tile.pointer],
       ]
     case 'command':
-    case 'tui':
       return [
         ['repositoryId', 'Project', tile.repositoryId],
         ['command', 'Command', tile.command],
+      ]
+    case 'tui':
+      return [
+        ['repositoryId', 'Start in', tile.repositoryId],
+        ['command', 'Startup command', tile.command],
       ]
     case 'pipelines':
       return [['repositoryId', 'Project', tile.repositoryId]]
@@ -131,6 +138,20 @@ export function dashboardTileFields(
     default:
       return []
   }
+}
+
+export function dashboardProjectOptions(
+  kind: DashboardTile['kind'],
+  projects: readonly Pick<Repository, 'id' | 'name'>[],
+) {
+  if (kind === 'tui' || kind === 'command')
+    return [
+      { id: SCRATCH_PROJECT_ID, name: 'Home folder' },
+      ...projects.filter((project) => project.id !== SCRATCH_PROJECT_ID),
+    ]
+  if (kind === 'cli' && !projects.some((project) => project.id === SCRATCH_PROJECT_ID))
+    return [...projects, { id: SCRATCH_PROJECT_ID, name: 'No Project' }]
+  return projects
 }
 
 export function moveDashboardTile(tiles: DashboardTile[], index: number, offset: number) {
@@ -350,7 +371,13 @@ function portableDashboard(dashboard: Dashboard): Dashboard {
         tile.kind === 'pipelines' ||
         tile.kind === 'cli'
       )
-        return { ...tile, repositoryId: '' }
+        return {
+          ...tile,
+          repositoryId:
+            tile.kind !== 'pipelines' && tile.repositoryId === SCRATCH_PROJECT_ID
+              ? SCRATCH_PROJECT_ID
+              : '',
+        }
       if (tile.kind === 'mcp') return { ...tile, taskId: '' }
       if (tile.kind === 'app') return { ...tile, taskId: '', appId: '' }
       return tile
@@ -418,7 +445,7 @@ export function dashboardLinePlot(data: unknown) {
 export function readDashboardDataSource(
   request: WorkspaceRequest,
   dashboard: Dashboard,
-  tile: Extract<DashboardTile, { kind: 'api' | 'cli' }>,
+  tile: Extract<DashboardTile, { kind: 'api' | 'cli' | 'mcp' }>,
 ) {
   return request(
     tile.kind === 'cli' ? '/api/dashboards/command-data' : '/api/dashboards/read',
@@ -434,7 +461,6 @@ export function useDashboardTile(
   connected: boolean,
   visible = true,
 ) {
-  const [data, setData] = useState<typeof dashboardReadResultSchema.Type>()
   const [pipelines, setPipelines] = useState<typeof forgePipelinePageSchema.Type>()
   const [terminalId, setTerminalId] = useState('')
   const [busy, setBusy] = useState(false)
@@ -491,23 +517,12 @@ export function useDashboardTile(
   }, [request, id, tileId, expectedRevision, runnable, connected, visible])
 
   return {
-    data,
     pipelines,
     terminalId,
     busy,
     sessionLoading,
     error: error || sessionError,
     recovering: !!retryId.current,
-    refresh: () =>
-      perform(async () => {
-        setData(
-          await request(
-            '/api/dashboards/read',
-            { id, tileId, expectedRevision },
-            dashboardReadResultSchema,
-          ),
-        )
-      }),
     refreshPipelines: () =>
       perform(async () => {
         if (tile.kind !== 'pipelines') return

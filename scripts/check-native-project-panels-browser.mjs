@@ -35,6 +35,7 @@ const mocks = {
   '../../../ui/controls/action': action,
   '../../screens/settings-controls': action,
   '../../ui/content/text': `export {Text} from 'react-native';`,
+  '../../ui/content/clipboard': 'export const copyText=async()=>"copied";',
   '../../../ui/content/text': `export {Text} from 'react-native';`,
   '../../ui/theme': theme,
   '../../../ui/theme': theme,

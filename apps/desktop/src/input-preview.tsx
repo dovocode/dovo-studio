@@ -1,9 +1,18 @@
 import { useEffect, useRef, useState } from 'react'
-import { ArrowUpRight, MessageCircleQuestion, ShieldCheck, X, Wifi, WifiOff } from 'lucide-react'
+import {
+  ArrowUpRight,
+  LoaderCircle,
+  MessageCircleQuestion,
+  ShieldCheck,
+  X,
+  Wifi,
+  WifiOff,
+} from 'lucide-react'
 import { useAppearance } from '@dovo/studio-shell'
 import { approvalShortcutKeys, useApprovalShortcuts } from '@dovo/studio-ui/human-input-shortcuts'
 import { Button, QuestionForm } from '@dovo/studio-ui'
-import { ApprovalDetails } from '@dovo/extension-tasks/approval-details'
+import { useInterfaceText } from '@dovo/studio-core/interface-language'
+import { ApprovalButtons, ApprovalDetails } from '@dovo/extension-tasks/approval-details'
 import {
   approvalActions,
   type ApprovalDecision,
@@ -13,6 +22,7 @@ import {
 } from '@dovo/protocol'
 export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   useAppearance()
+  const uiText = useInterfaceText()
   const [state, setState] = useState<InputPreview | null>(null)
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
@@ -20,12 +30,24 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   const currentKey = useRef(state?.key)
   currentKey.current = state?.key
   useEffect(() => {
-    const unsubscribe = bridge.subscribe(setState)
+    let active = true
+    let updated = false
+    const unsubscribe = bridge.subscribe((next) => {
+      updated = true
+      setState(next)
+    })
     void bridge
       .current()
-      .then(setState)
-      .catch((cause: unknown) => setError(String(cause)))
-    return unsubscribe
+      .then((initial) => {
+        if (active && !updated) setState(initial)
+      })
+      .catch((cause: unknown) => {
+        if (active && !updated) setError(String(cause))
+      })
+    return () => {
+      active = false
+      unsubscribe()
+    }
   }, [bridge])
   useEffect(() => {
     setError('')
@@ -50,6 +72,13 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   }
   const approval = useRef<HTMLElement>(null)
   const actions = state?.request.kind === 'approval' ? approvalActions(state.request.value) : []
+  const navigation = (action: 'dismiss' | 'openThread') => {
+    if (!state) return
+    void bridge[action](state.key).catch((cause: unknown) => {
+      if (currentKey.current === state.key)
+        setError(cause instanceof Error ? cause.message : String(cause))
+    })
+  }
   useApprovalShortcuts({
     root: approval,
     disabled: !state?.connected || busy || state.request.kind !== 'approval',
@@ -62,8 +91,11 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
   })
   return (
     <main className="flex h-screen flex-col overflow-hidden rounded-xl border bg-background text-foreground">
-      <header className="input-preview-drag flex shrink-0 items-center gap-3 border-b bg-card px-5 py-4">
-        <span className="flex size-9 items-center justify-center rounded-xl bg-primary/10 text-primary">
+      <header className="input-preview-drag flex shrink-0 items-center gap-2.5 border-b bg-card px-4 py-2.5">
+        <span
+          className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary"
+          aria-hidden="true"
+        >
           {state?.request.kind === 'approval' ? (
             <ShieldCheck size={18} />
           ) : (
@@ -73,18 +105,24 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold">
             {state?.request.kind === 'approval'
-              ? 'Permission requested'
-              : 'Your agent needs an answer'}
+              ? uiText('Permission requested')
+              : uiText('Your agent needs an answer')}
           </p>
-          <p className="text-xs text-muted-foreground">
-            Dovo Studio{state && state.waiting > 1 ? ` · ${state.waiting} waiting` : ''}
+          <p className="truncate text-xs text-muted-foreground" title={state?.taskTitle}>
+            {state?.taskTitle ?? 'Dovo Studio'}
           </p>
         </div>
+        {state && state.waiting > 1 && (
+          <span className="shrink-0 text-xs text-muted-foreground">
+            {uiText('{value0} waiting', { value0: state.waiting })}
+          </span>
+        )}
         <Button
-          aria-label="Dismiss for now"
+          aria-label={uiText('Dismiss for now')}
           size="icon"
           variant="ghost"
-          onClick={() => void bridge.dismiss()}
+          disabled={!state}
+          onClick={() => navigation('dismiss')}
         >
           <X size={16} />
         </Button>
@@ -98,82 +136,77 @@ export function InputPreviewWindow({ bridge }: { bridge: InputPreviewBridge }) {
               state.request.kind === 'approval' ? state.request.value.id : undefined
             }
             tabIndex={state.request.kind === 'approval' ? 0 : undefined}
+            aria-label={state.request.kind === 'approval' ? state.request.value.title : undefined}
             aria-keyshortcuts={approvalShortcutKeys(actions) || undefined}
+            aria-busy={busy}
             className="flex min-h-0 flex-1 flex-col focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-ring"
           >
-            <div className="min-h-0 flex-1 space-y-3 overflow-y-auto px-5 py-4">
-              <div className="space-y-1">
-                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                  Thread
-                </p>
-                <p className="break-words text-sm font-medium leading-relaxed">{state.taskTitle}</p>
-              </div>
-              {!state.connected && (
-                <p
-                  role="status"
-                  className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-muted-foreground"
-                >
-                  Reconnecting to server… Answers are disabled until connected.
-                </p>
-              )}
-              {state.request.kind === 'question' ? (
+            {state.request.kind === 'question' ? (
+              <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
                 <QuestionForm
                   key={state.key}
                   request={state.request.value}
                   connected={state.connected}
                   onAnswer={(answers) => answer(answers)}
                 />
-              ) : (
-                <div className="space-y-3 rounded-xl border bg-card p-3">
-                  <h2 className="break-words text-sm font-semibold">{state.request.value.title}</h2>
-                  <ApprovalDetails detail={state.request.value.detail} bounded={false} />
-                </div>
-              )}
-            </div>
-            {state.request.kind === 'approval' && (
-              <div className="shrink-0 space-y-2 border-t bg-background px-5 py-3">
-                {error && (
-                  <p
-                    role="alert"
-                    className="max-h-16 overflow-y-auto break-words text-xs text-destructive"
-                  >
-                    {error}
-                  </p>
-                )}
-                <div className="grid grid-cols-2 gap-2">
-                  {actions.map((action) => (
-                    <Button
-                      key={action.decision}
-                      className="h-auto min-h-8 min-w-0 whitespace-normal text-center"
-                      variant={action.decision === 'approve' ? 'default' : 'outline'}
-                      disabled={!state.connected || busy}
-                      onClick={() =>
-                        void answer(action.decision !== 'deny', action.decision).catch(() => {})
-                      }
-                    >
-                      {action.label}
-                      {(action.decision === 'approve' || action.decision === 'deny') && (
-                        <kbd aria-hidden="true" className="ml-1 text-[0.625rem]">
-                          {action.decision === 'approve' ? 'Y / Enter' : 'N'}
-                        </kbd>
-                      )}
-                    </Button>
-                  ))}
-                </div>
               </div>
+            ) : (
+              <>
+                <h2
+                  className="mx-4 mt-2.5 shrink-0 truncate text-sm font-semibold"
+                  title={state.request.value.title}
+                >
+                  {state.request.value.title}
+                </h2>
+                <ApprovalDetails detail={state.request.value.detail} fill />
+                <div className="shrink-0 space-y-1.5 border-t bg-muted/20 px-4 py-2">
+                  {error && (
+                    <p
+                      role="alert"
+                      className="max-h-10 overflow-y-auto break-words text-xs text-destructive"
+                    >
+                      {error}
+                    </p>
+                  )}
+                  <ApprovalButtons
+                    actions={actions}
+                    disabled={!state.connected || busy}
+                    onDecision={(decision) =>
+                      void answer(decision !== 'deny', decision).catch(() => {})
+                    }
+                    compact
+                  />
+                </div>
+              </>
             )}
           </section>
-          <footer className="flex shrink-0 items-center justify-between gap-3 border-t bg-card px-5 py-3">
-            <span className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground">
-              {state.connected ? (
+          <footer className="flex shrink-0 items-center justify-between gap-2 border-t bg-card px-4 py-1.5">
+            <span
+              role="status"
+              className="flex min-w-0 items-center gap-1.5 text-xs text-muted-foreground"
+            >
+              {busy ? (
+                <LoaderCircle size={13} className="shrink-0 animate-spin" />
+              ) : state.connected ? (
                 <Wifi size={13} className="shrink-0 text-emerald-500" />
               ) : (
                 <WifiOff size={13} className="shrink-0" />
               )}
-              <span className="truncate">{state.runtimeName}</span>
+              <span className="truncate" title={state.runtimeName}>
+                {busy
+                  ? uiText('Sending answer…')
+                  : state.connected
+                    ? state.runtimeName
+                    : uiText('Offline · Reconnecting…')}
+              </span>
             </span>
-            <Button size="sm" variant="ghost" onClick={() => void bridge.openThread()}>
-              Open thread
+            <Button
+              size="sm"
+              variant="ghost"
+              className="shrink-0"
+              onClick={() => navigation('openThread')}
+            >
+              {uiText('Open thread')}
               <ArrowUpRight size={14} />
             </Button>
           </footer>

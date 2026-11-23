@@ -62,6 +62,7 @@ export function TaskConversation({
   onPullLink,
   onArtifact,
   revealMessage,
+  approvalId,
   questionId,
   questionNavigation,
   onRevealHandled,
@@ -92,6 +93,7 @@ export function TaskConversation({
   onPullLink?: (url: string) => boolean
   onArtifact?: (reference: ArtifactReference) => void
   revealMessage?: string
+  approvalId?: string
   questionId?: string
   /** Changes with each explicit navigation to `questionId`, including a repeat of the same one. */
   questionNavigation?: string
@@ -302,7 +304,7 @@ export function TaskConversation({
           data-task-conversation={task.id}
           data-startup-draft={welcome ? '' : undefined}
           data-conversation-pane
-          className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : ''}`}
+          className={`flex h-full min-h-0 flex-col ${welcome ? 'startup-draft overflow-y-auto' : '[container-type:size]'}`}
         >
           {temporary ? (
             <TaskEmptyState
@@ -447,7 +449,7 @@ export function TaskConversation({
             }}
           />
           {visible && <TaskSecureInputs taskId={task.id} />}
-          <RunControls task={task} showFailure={!preparation?.failed} />
+          <RunControls task={task} showFailure={!preparation?.failed} approvalId={approvalId} />
           <PlanApproval task={task} />
           {onCodeReview && <CodeReviewCard task={task} onOpen={onCodeReview} visible={visible} />}
           <ReviewFindings task={task} className="px-5 pb-2" onOpen={onReview} />

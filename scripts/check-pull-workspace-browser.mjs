@@ -737,6 +737,20 @@ try {
   await page.waitForFunction(
     () => document.querySelector('#pr-tab-changes')?.getAttribute('aria-selected') === 'true',
   )
+  const nextFile = page.getByRole('button', { name: 'Next file', exact: true })
+  const fileReview = page.getByLabel('Pinned file review controls')
+  const selectedPath = fileReview.locator('[title="src/second.ts"]')
+  await page.getByRole('button', { name: /^2 files ·/ }).click()
+  await page
+    .getByRole('navigation', { name: 'Changed files' })
+    .getByRole('button', { name: /second.ts/ })
+    .click()
+  await selectedPath.waitFor()
+  await page.evaluate(() => window.showDestination('overview', 'away-from-changes'))
+  await nextFile.waitFor({ state: 'hidden' })
+  await page.evaluate(() => window.showDestination('changes', ''))
+  await nextFile.waitFor()
+  await selectedPath.waitFor()
   await page.evaluate(() => {
     window.detail.comments.push({
       id: 'inline-1',

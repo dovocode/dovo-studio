@@ -36,6 +36,8 @@ const built = await bundleBrowser(
         const [childRequests,setChildRequests]=useState(false);window.childRequests=setChildRequests;const [mode,setMode]=useState('projects'),[globalWeb,setGlobalWeb]=useState(false),[supported,setSupported]=useState(true);window.webRulesSupported=setSupported;
         window.showSystem=setMode;
         const [extra,setExtra]=useState(false),[approvalDialog,setApprovalDialog]=useState(false);window.extraApprovals=setExtra;window.approvalDialog=setApprovalDialog;
+        const [paneHeight,setPaneHeight]=useState(0);window.setApprovalPaneHeight=setPaneHeight;
+        const [approvalId,setApprovalId]=useState();window.openApproval=setApprovalId;
         const [approval,setApproval]=useState(initial),[online,setOnline]=useState(true),[project,setProject]=useState({id:'repo',name:'Project',approvedWebRequests:true});
         window.approval=value=>setApproval({...initial,...value});window.online=setOnline;
         const snapshot={allowWebRequests:supported?globalWeb:undefined,workspace:{repositories:[project],tasks:childRequests?[task,{...task,id:'child',title:'Focused worker',delegation:{parentTaskId:task.id,parentRunId:'run',key:'child'}}]:[task],agents:[]},approvals:[childRequests?{...approval,taskId:'child'}:approval,...(extra?[{...approval,id:'approval-extra',title:'Second permission'}]:[])],runs:[]};
@@ -52,7 +54,7 @@ const built = await bundleBrowser(
         window.project=project;
         if(mode==='mobile-system')return <RuntimePreferences/>;
         if(mode==='desktop-system')return <RunningTaskPreferences/>;
-        return <><section id="mobile"><TaskApprovals taskId="task"/><ProjectApprovalRules repositoryId="repo" onClose={()=>window.ruleCloses++}/></section><section id="desktop"><div role={approvalDialog?'dialog':undefined}><RunControls task={task}/></div><TaskProjectActions task={task} onTerminal={()=>{}}/></section></>;
+        return <><section id="mobile"><TaskApprovals taskId="task"/><ProjectApprovalRules repositoryId="repo" onClose={()=>window.ruleCloses++}/></section><section id="desktop"><div role={approvalDialog?'dialog':undefined} style={paneHeight?{height:paneHeight,containerType:'size',display:'flex',flexDirection:'column'}:undefined}><RunControls task={task} approvalId={approvalId}/>{paneHeight>0&&<textarea aria-label="Prompt draft" defaultValue="Keep my draft"/>}</div><TaskProjectActions task={task} onTerminal={()=>{}}/></section></>;
       }
       createRoot(document.getElementById('app')).render(<App/>);
     `,
@@ -90,7 +92,7 @@ const built = await bundleBrowser(
       const css=style=>Object.assign({},...(Array.isArray(style)?style:[style]).flat().filter(Boolean));
       export const View=({children,style})=><div style={{display:'flex',flexDirection:'column',minWidth:0,flexShrink:0,...css(style)}}>{children}</div>;
       export const ScrollView=({children,style,contentContainerStyle})=><div style={{...css(style),overflowY:'auto'}}><div style={css(contentContainerStyle)}>{children}</div></div>;
-      export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style})=><button role={accessibilityRole} aria-label={accessibilityLabel} aria-expanded={accessibilityState?.expanded} onClick={onPress} style={css(style)}>{children}</button>;
+      export const Pressable=({children,onPress,accessibilityRole,accessibilityLabel,accessibilityState,style})=><button role={accessibilityRole==='togglebutton'?'button':accessibilityRole} aria-label={accessibilityLabel} aria-pressed={accessibilityState?.checked} onClick={onPress} style={css(style)}>{children}</button>;
     `,
     },
     {
@@ -114,6 +116,11 @@ const built = await bundleBrowser(
       importer: native,
       contents:
         'export const Text=({children,style})=>{const flat=Object.assign({},...(Array.isArray(style)?style:[style]).filter(Boolean));return <span style={{...flat,...(typeof flat.lineHeight==="number"?{lineHeight:flat.lineHeight+"px"}:{})}}>{children}</span>};',
+    },
+    {
+      path: '../../ui/content/clipboard',
+      importer: `${native}tasks/detail/approval-details.tsx`,
+      contents: 'export const copyText=async text=>{window.copied=text;return "copied"};',
     },
     {
       path: '../../ui/layout/sheet',
@@ -244,10 +251,30 @@ try {
   }
   await page.evaluate(() => {
     window.extraApprovals(true)
+    window.setApprovalPaneHeight(280)
+    window.approval({ detail: JSON.stringify({ command: 'echo test\n'.repeat(120) }) })
     document.activeElement?.blur()
   })
   await desktop.getByText('Second permission', { exact: true }).waitFor()
+  await desktop.getByText('2 requests waiting', { exact: true }).waitFor()
+  await page.locator('#mobile').getByText('2 requests waiting', { exact: true }).waitFor()
+  const scroll = desktop.getByRole('region', { name: 'Pending requests', exact: true })
+  assert.ok(
+    await scroll.evaluate(
+      (element) => element.scrollHeight > element.clientHeight && element.clientHeight <= 146,
+    ),
+  )
+  const prompt = desktop.getByRole('textbox', { name: 'Prompt draft' })
+  assert.equal(await prompt.inputValue(), 'Keep my draft')
+  assert.ok(
+    await prompt.evaluate(
+      (element) =>
+        element.getBoundingClientRect().bottom <=
+        element.parentElement.getBoundingClientRect().bottom,
+    ),
+  )
   const ambiguous = await page.evaluate(() => window.writes.length)
+  await scroll.focus()
   await page.keyboard.press('y')
   await page.keyboard.press('Enter')
   assert.equal(
@@ -264,7 +291,16 @@ try {
     decision: 'approve',
   })
   await page.evaluate(() => {
+    window.setApprovalPaneHeight(0)
     window.extraApprovals(false)
+    window.openApproval('approval-extra')
+  })
+  const resolved = desktop.getByText('This approval is no longer pending.', { exact: true })
+  await resolved.waitFor()
+  assert.equal(await resolved.getAttribute('data-request-id'), 'approval-extra')
+  await desktop.getByRole('button', { name: 'Allow once', exact: true }).waitFor()
+  await page.evaluate(() => {
+    window.openApproval(undefined)
     window.approvalDialog(true)
   })
   await desktop.locator('[role="dialog"] [data-approval-id]').focus()
@@ -400,17 +436,39 @@ try {
       false,
       'Provider metadata stays in the full payload',
     )
-    const toggle =
-      id === 'mobile'
-        ? ui.getByRole('button', { name: 'Show full JSON' })
-        : ui.locator('summary').filter({ hasText: 'Full JSON' })
+    const toggle = ui.getByRole('button', { name: 'Full JSON', exact: true })
     await toggle.click()
-    const raw = ui.getByText(/"threadId": "provider-thread-id"/)
+    const raw = ui.getByText(/"threadId":"provider-thread-id"/)
     await raw.waitFor()
     assert.deepEqual(JSON.parse(await raw.textContent()), requestDetail)
-    await (id === 'mobile' ? ui.getByRole('button', { name: 'Hide full JSON' }) : toggle).click()
+    await toggle.click()
     assert.equal(await raw.isVisible(), false)
   }
+  await page.evaluate(() =>
+    window.approval({ detail: JSON.stringify({ command: 'echo test\n'.repeat(300) }) }),
+  )
+  const card = desktop.locator('[data-approval-id="approval"]')
+  const formattedHeight = (await card.boundingBox()).height
+  const fullJson = card.getByRole('button', { name: 'Full JSON', exact: true })
+  await fullJson.click()
+  assert.equal(await fullJson.getAttribute('aria-pressed'), 'true')
+  const raw = card.locator('[data-approval-json]')
+  assert.equal(
+    await raw.evaluate((element) => {
+      const scrollArea = element.closest('[data-approval-preview]').firstElementChild
+      return (
+        scrollArea.scrollHeight > scrollArea.clientHeight &&
+        getComputedStyle(scrollArea).overflowY === 'auto'
+      )
+    }),
+    true,
+    'Long JSON scrolls inside the thread card',
+  )
+  assert.ok(
+    (await card.boundingBox()).height <= formattedHeight + 100,
+    'Opening full JSON keeps the card bounded',
+  )
+  await fullJson.click()
   for (const detail of [
     'https://example.com/docs\nhttps://example.com/api',
     '{"command":',

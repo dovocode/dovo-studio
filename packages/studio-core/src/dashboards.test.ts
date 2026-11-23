@@ -1,5 +1,5 @@
 import { expect, it } from 'vite-plus/test'
-import { randomUUID } from '@dovo/protocol'
+import { randomUUID, SCRATCH_PROJECT_ID } from '@dovo/protocol'
 import {
   dashboardDataRows,
   dashboardLinePlot,
@@ -35,6 +35,23 @@ it('keeps dashboard templates portable and gives copied tiles new identities', (
     'terminal',
     'command',
   ])
+})
+
+it('defaults TUI tiles to a machine home folder and keeps that choice in templates', () => {
+  const tile = newDashboardTile('tui')
+  if (tile.kind !== 'tui') throw new Error('Expected a TUI tile')
+  expect(tile.repositoryId).toBe(SCRATCH_PROJECT_ID)
+  const dashboard = {
+    id: randomUUID(),
+    title: 'Ops',
+    revision: 1,
+    tiles: [{ ...tile, command: 'top' }],
+  }
+  expect(importDashboardTemplate(dashboardTemplate(dashboard)).tiles[0]).toMatchObject({
+    kind: 'tui',
+    repositoryId: SCRATCH_PROJECT_ID,
+    command: 'top',
+  })
 })
 
 it('keeps source fields in a stable order and renders finite chart coordinates', () => {
