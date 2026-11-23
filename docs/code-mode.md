@@ -9,9 +9,7 @@ shell tools remain allowed when the provider offers them. Code mode is a choice 
 does not change access or approval rules.
 
 ```js
-const catalog = await tools.search({ source: 'harness', query: 'file' })
-print(catalog)
-const file = await tools.harness.read_file({ path: 'src/app.ts' })
+const file = await tools.read({ path: 'src/app.ts', startLine: 1, maxLines: 80 })
 return file.contents
 ```
 
@@ -53,12 +51,31 @@ return await tools.dovo.vision({
 
 ## Files and commands
 
-File tools are `read_file`, `write_file`, `list_files` and `search`. Paths are relative to the run
-checkout. Pass `checkoutId` for an inherited linked checkout. New links need a new provider turn.
+The harness catalog lists the available built-ins. Read-only runs omit `edit` and `bash`. Native
+sandbox restrictions can also disable `bash`. If an older runtime omits a built-in, check the
+catalog for the corresponding harness tool before calling it.
 
-Text reads and writes accept UTF-8 files up to 1 MiB. To update a file, pass its exact previous
-contents as `expectedContents`. Pass `null` to create a new file. A conflict stops the write. Parent
-directories must exist. Paths cannot leave the checkout or enter `.git`.
+| Built-in                                                      | Behavior                                                                                                                                                         |
+| ------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tools.read({path, startLine?, maxLines?, checkoutId?})`      | Read UTF-8 text with an optional line range. Also available as `tools.harness.read_file`.                                                                        |
+| `tools.edit({path, oldText, newText, checkoutId?})`           | Replace one exact occurrence in an existing file. Use an empty `newText` to delete the match. If `oldText` is missing or appears more than once, the edit fails. |
+| `tools.grep({query, checkoutId?})`                            | Search file contents using `tools.harness.search`.                                                                                                               |
+| `tools.ls({directory?, cursor?, checkoutId?})`                | List a page of directory entries using `tools.harness.list_files`.                                                                                               |
+| `tools.bash({command, waitMs?, checkoutId?, title?, check?})` | Run a command in a Studio terminal through the runtime's platform shell. Check mode is on by default.                                                            |
+
+Paths are relative to the run checkout. Pass `checkoutId` for an inherited linked checkout. New
+links need a new provider turn.
+
+Text reads and writes accept UTF-8 files up to 1 MiB. Exact-text edits check the current text while
+holding the file write lock. For a whole-file replacement with `tools.harness.write_file`, pass the
+exact previous contents as `expectedContents`. Pass `null` to create a file. A conflict stops the
+write. Parent directories must exist. Paths cannot leave the checkout or enter `.git`.
+
+```js
+await tools.edit({ path: 'src/app.ts', oldText: 'return oldValue', newText: 'return newValue' })
+const check = data(await tools.bash({ command: 'pnpm test' }))
+print({ id: check.id, running: check.running, exitCode: check.exitCode })
+```
 
 Terminal tools reuse Studio's visible, persistent terminal sessions. Use `terminal_run`,
 `terminal_read`, `terminal_input` and `terminal_close`. Read-only runs cannot start commands. Studio
@@ -109,7 +126,8 @@ destructive hint. These hints are server claims, not an operating-system sandbox
 
 Calls are not a transaction. An error or cancellation does not undo completed calls. Inspect the
 current state before retrying a mutation. Await calls whose results matter. Failed MCP calls reject
-with an error. Code mode shortens long error messages.
+with an error. Code mode shortens long error messages. If a script throws after calling `print()`,
+the MCP error includes the output already printed, or a result reference if that output is large.
 
 ## Verification
 

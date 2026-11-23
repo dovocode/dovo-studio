@@ -37,7 +37,7 @@ export async function codeToolCommand(
         tools: [...codeFileTools, codeResultTool].filter(
           (tool) =>
             !(grant.readOnly || effectivePermissionPolicy(grant.permissions).readOnly) ||
-            tool.name !== 'write_file',
+            (tool.name !== 'write_file' && tool.name !== 'edit'),
         ),
       }
     if (call.name === 'read_tool_result') return retained.read(grant.taskId, call.arguments)

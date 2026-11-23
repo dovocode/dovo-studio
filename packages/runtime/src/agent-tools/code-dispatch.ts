@@ -7,9 +7,14 @@ import {
   type Tool,
   type CallToolResult,
 } from '@modelcontextprotocol/sdk/types.js'
-import { runToolCode } from './code-runtime.js'
+import { CodeExecutionError, runToolCode } from './code-runtime.js'
 import { checkCodeToolResult, codeResponseTextLimit, type CodeResults } from './code-results.js'
-import { codeCatalog, codeCatalogQuery, matchesCodeCatalogQuery } from './code-catalog.js'
+import {
+  codeCatalog,
+  codeCatalogQuery,
+  codeFileAliases,
+  matchesCodeCatalogQuery,
+} from './code-catalog.js'
 
 type CodeTool = Omit<Tool, 'inputSchema'> & {
   inputSchema: JSONSchema.JSONSchema & { type: 'object' }
@@ -17,7 +22,7 @@ type CodeTool = Omit<Tool, 'inputSchema'> & {
 export const codeToolDefinition: CodeTool = {
   name: 'code',
   description:
-    'Run isolated async JavaScript to compose tools. Discover schemas with await tools.search({source:"dovo"|"harness"|"mcp",server?,query?}). Call tools.dovo.NAME(args), tools.harness.NAME(args), tools.mcp[SERVER][NAME](args). Harness tools are Studio file/search/terminal equivalents. No host globals, imports or network. Use data(result) for text/structured data; print(value) or return a value to show output. Return or print a full tool result to keep images/audio. Calls retain access, approval and cancellation rules. Never retry side effects blindly.',
+    'Run isolated async JavaScript. Built-ins: tools.read, tools.edit, tools.bash, tools.grep and tools.ls. Discover enabled schemas with await tools.search({source:"dovo"|"harness"|"mcp",server?,query?}). Call tools.dovo.NAME(args), tools.harness.NAME(args), tools.mcp[SERVER][NAME](args). No host globals, imports or network. Use data(result) for text/structured data. Return or print a full tool result to keep images/audio. Calls retain access, approval and cancellation rules. Inspect state before retrying side effects.',
   inputSchema: {
     type: 'object',
     properties: { code: { type: 'string', minLength: 1, maxLength: 100000 } },
@@ -63,6 +68,14 @@ export async function executeCodeTool(options: {
   ) => Promise<unknown>
 }): Promise<CallToolResult> {
   const tools = options.tools.filter((tool) => tool.name !== 'code')
+  const terminalRun = tools.find((tool) => tool.name === 'terminal_run')
+  const bash = terminalRun && {
+    ...terminalRun,
+    name: 'bash',
+    description:
+      'Run a command in a Studio terminal using the platform shell. Returns exit status and a bounded tail by default.',
+    inputSchema: { ...terminalRun.inputSchema, additionalProperties: false },
+  }
   const validator = new AjvJsonSchemaValidator()
   const retention = options.results
   const execution = await runToolCode({
@@ -84,6 +97,11 @@ export async function executeCodeTool(options: {
           const files = codeCatalog.parse(
             await options.remote({ source: 'harness', name: '__catalog' }, signal),
           )
+          for (const [name, target] of codeFileAliases) {
+            const tool = files.tools.find((tool) => tool.name === target)
+            if (tool) found.push({ ...tool, name })
+          }
+          if (bash) found.push({ ...bash, source: 'harness', origin: 'studio-equivalent' })
           found.push(
             ...files.tools,
             ...tools
@@ -129,21 +147,30 @@ export async function executeCodeTool(options: {
       }
       if (
         call.source === 'dovo' ||
-        (call.source === 'harness' && call.name.startsWith('terminal_'))
+        (call.source === 'harness' && (call.name === 'bash' || call.name.startsWith('terminal_')))
       ) {
-        const tool = tools.find((tool) => tool.name === call.name)
+        const isBash = call.source === 'harness' && call.name === 'bash'
+        const tool = isBash ? bash : tools.find((tool) => tool.name === call.name)
         if (!tool) throw new Error('Tool is disabled or unavailable in this run')
-        if (!validator.getValidator(ToolSchema.parse(tool).inputSchema)(call.arguments ?? {}).valid)
+        const args = isBash ? { check: true, ...call.arguments } : (call.arguments ?? {})
+        if (!validator.getValidator(ToolSchema.parse(tool).inputSchema)(args).valid)
           throw new Error(`Arguments do not match the ${tool.name} input schema`)
-        return checkCodeToolResult(await options.dovo(tool.name, call.arguments ?? {}, signal))
+        return checkCodeToolResult(
+          await options.dovo(isBash ? 'terminal_run' : tool.name, args, signal),
+        )
       }
+      const name =
+        call.source === 'harness' ? (codeFileAliases.get(call.name) ?? call.name) : call.name
       return checkCodeToolResult(
         await options.remote(
-          { source: call.source, name: call.name, server: call.server, arguments: call.arguments },
+          { source: call.source, name, server: call.server, arguments: call.arguments },
           signal,
         ),
       )
     },
+  }).catch((error: unknown) => {
+    if (error instanceof CodeExecutionError) return error
+    throw error
   })
   const content: CallToolResult['content'] = []
   const selected = (value: unknown) => {
@@ -159,15 +186,19 @@ export async function executeCodeTool(options: {
       ),
     }
   }
+  const failed = execution instanceof CodeExecutionError
   const summary = {
-    ...execution,
-    result: selected(execution.result),
+    result: failed ? undefined : selected(execution.result),
     output: execution.output.map((values) =>
       Array.isArray(values) ? values.map(selected) : selected(values),
     ),
+    calls: execution.calls,
   }
   const inline = retention
-    ? retention.store.retain(retention.scope, summary, Date.now(), codeResponseTextLimit)
+    ? retention.store.retain(retention.scope, summary, Date.now(), codeResponseTextLimit, !failed)
     : summary
-  return { content: [{ type: 'text', text: JSON.stringify(inline) }, ...content] }
+  content.unshift({ type: 'text', text: JSON.stringify(inline) })
+  if (!failed) return { content }
+  content.unshift({ type: 'text', text: execution.message })
+  return { isError: true, content }
 }

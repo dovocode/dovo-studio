@@ -1,5 +1,11 @@
 import { z } from 'zod'
 
+export const codeFileAliases = new Map([
+  ['read', 'read_file'],
+  ['grep', 'search'],
+  ['ls', 'list_files'],
+])
+
 export const codeCatalogQuery = z.string().max(256).optional()
 const codeCatalogTool = z
   .object({ name: z.string(), description: z.string().optional() })

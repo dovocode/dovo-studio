@@ -1,8 +1,19 @@
 import { getQuickJS, type QuickJSDeferredPromise, type QuickJSHandle } from 'quickjs-emscripten'
+import { codeFileAliases } from './code-catalog.js'
 
 const MAX_BYTES = 4 * 1024 * 1024
 export type CodeCall = { source: string; name: string; server?: string; arguments?: unknown }
 export type CodeExecution = { result: unknown; output: unknown[]; calls: number }
+
+export class CodeExecutionError extends Error {
+  constructor(
+    cause: Error,
+    readonly output: unknown[],
+    readonly calls: number,
+  ) {
+    super(cause.message, { cause })
+  }
+}
 
 /** Fresh JavaScript heap. The only capabilities are the checked tool dispatcher and output. */
 export async function runToolCode(options: {
@@ -54,7 +65,11 @@ export async function runToolCode(options: {
     if (closed) return
     closed = true
     controller.abort(error)
-    rejectExecution(error)
+    rejectExecution(
+      !options.signal.aborted && output.length
+        ? new CodeExecutionError(error, output, calls)
+        : error,
+    )
   }
   const abort = () => stop(new Error('Tool code cancelled. Earlier tool calls may have completed.'))
   options.signal.addEventListener('abort', abort, { once: true })
@@ -72,6 +87,12 @@ export async function runToolCode(options: {
       cpuMs += Date.now() - start
     }
   }
+  const guestError = (handle: QuickJSHandle) => {
+    const details = JSON.stringify(context.dump(handle)) ?? 'undefined'
+    return new Error(
+      `Tool code failed: ${details.length > 4096 ? details.slice(0, 4096) + '…' : details}`,
+    )
+  }
   function pump() {
     scheduled = false
     if (closed || !script) return
@@ -83,7 +104,7 @@ export async function runToolCode(options: {
       const result = run(() => runtime.executePendingJobs(100))
       if (result.error) {
         try {
-          throw new Error(`Tool code failed: ${JSON.stringify(context.dump(result.error))}`)
+          throw guestError(result.error)
         } finally {
           result.dispose()
         }
@@ -106,7 +127,7 @@ export async function runToolCode(options: {
         }
       } else if (state.type === 'rejected') {
         try {
-          failure ??= new Error(`Tool code failed: ${JSON.stringify(context.dump(state.error))}`)
+          failure ??= guestError(state.error)
         } finally {
           state.error.dispose()
         }
@@ -209,7 +230,9 @@ export async function runToolCode(options: {
     const source = `
 const invoke = async (source,name,args,server) => await __call(JSON.stringify({source,name,arguments:args,server}));
 const namespace = (source,server) => new Proxy(Object.create(null), {get:(_,name)=>name==='then'?undefined:args=>invoke(source,String(name),args,server)});
-globalThis.tools = Object.freeze({dovo:namespace('dovo'),harness:namespace('harness'),mcp:new Proxy(Object.create(null),{get:(_,server)=>namespace('mcp',String(server))}),search:args=>invoke('catalog','search',args)});
+const harness = namespace('harness');
+const defaults = Object.fromEntries(${JSON.stringify([...codeFileAliases.keys(), 'edit', 'bash'])}.map(name => [name, harness[name]]));
+globalThis.tools = Object.freeze({...defaults,dovo:namespace('dovo'),harness,mcp:new Proxy(Object.create(null),{get:(_,server)=>namespace('mcp',String(server))}),search:args=>invoke('catalog','search',args)});
 globalThis.print = (...values) => __print(JSON.stringify(values));
 globalThis.data = result => {
   if (result?.structuredContent !== undefined) return result.structuredContent;

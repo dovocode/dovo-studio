@@ -140,6 +140,90 @@ return {names:catalog.tools.map(tool=>tool.name),contents:(await tools.harness.r
   expect(s.store.task(task.id).nativeTodos).toMatchObject([{ id: 'verify', status: 'completed' }])
 })
 
+it('discovers and composes the default read, edit and bash tools', async () => {
+  const { code, f, s, task } = await setup()
+  const result = execution(
+    await code(`
+const {tools: catalog} = await tools.search({source:'harness'});
+const before = await tools.read({path:'hello.txt'});
+const edit = await tools.edit({path:'hello.txt', oldText:'original', newText:'updated'});
+const [matches, files] = await Promise.all([tools.grep({query:'updated'}), tools.ls({})]);
+const shell = data(await tools.bash({command:'node --version', waitMs:5000}));
+return {names:catalog.map(tool=>tool.name), before, edit, matches, files, shell};
+`),
+  )
+  expect(result.result).toMatchObject({
+    names: expect.arrayContaining(['read', 'edit', 'bash', 'grep', 'ls']),
+    before: { contents: 'original\n' },
+    edit: { path: 'hello.txt' },
+    matches: {
+      matches: expect.arrayContaining([expect.objectContaining({ path: 'hello.txt', line: 1 })]),
+    },
+    files: { entries: expect.arrayContaining([expect.objectContaining({ path: 'hello.txt' })]) },
+    shell: { running: false, exitCode: 0, outputTail: expect.stringMatching(/v\d+\./) },
+  })
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('updated\n')
+  expect(s.terminals.list().filter((terminal) => terminal.taskId === task.id)).toHaveLength(1)
+})
+
+it('rejects absent, ambiguous and concurrent exact-text edits without losing unrelated content', async () => {
+  const { code, f } = await setup()
+  const file = join(f.directory, 'hello.txt')
+  await writeFile(file, 'original\nbanana\n')
+  for (const oldText of ['missing', 'ana']) {
+    const result = await code(
+      `await tools.edit({path:'hello.txt', oldText:${JSON.stringify(oldText)}, newText:'other'})`,
+    )
+    expect(result).toMatchObject({
+      isError: true,
+      content: [expect.objectContaining({ text: expect.stringMatching(/exactly once/) })],
+    })
+  }
+  expect(await readFile(file, 'utf8')).toBe('original\nbanana\n')
+  const result = execution(
+    await code(`
+  const edits = await Promise.allSettled(
+    ['first', 'second'].map(newText => tools.edit({path:'hello.txt', oldText:'original', newText}))
+  );
+  return edits.map(edit => edit.status).sort();
+  `),
+  )
+  expect(result.result).toEqual(['fulfilled', 'rejected'])
+  expect(await readFile(file, 'utf8')).toMatch(/^(first|second)\nbanana\n$/)
+})
+
+it('returns already printed results with the error when a later step fails', async () => {
+  const { code, s, task } = await setup()
+  const result = await code(`
+    const terminal = data(await tools.harness.terminal_run({command:'node --version', check:true}));
+    print({terminalId:terminal.id});
+    throw new Error('later step failed');
+  `)
+  const [terminal] = s.terminals.list().filter((terminal) => terminal.taskId === task.id)
+  expect(s.terminals.list()).toHaveLength(1)
+  expect(result.isError).toBe(true)
+  expect(result.content[0]).toMatchObject({ text: expect.stringContaining('later step failed') })
+  const partial = result.content[1]
+  expect(partial?.type === 'text' && JSON.parse(partial.text)).toEqual({
+    calls: 1,
+    output: [[{ terminalId: terminal?.id }]],
+  })
+
+  const large = await code(`print('x'.repeat(70000)); throw new Error('large output failure');`)
+  expect(large.isError).toBe(true)
+  expect(large.content[0]).toMatchObject({ text: expect.stringContaining('large output failure') })
+  const retained = large.content[1]
+  if (retained?.type !== 'text') throw new Error('Missing printed output reference')
+  const reference = JSON.parse(retained.text)
+  expect(reference).toMatchObject({ toolCompleted: false, retained: true })
+  const page = execution(
+    await code(
+      `return await tools.harness.read_tool_result({resultId:${JSON.stringify(reference.resultId)}})`,
+    ),
+  )
+  expect(page.result).toMatchObject({ text: expect.stringContaining('x'.repeat(100)) })
+})
+
 it('rejects stale writes, escaping paths, external symlinks and newly linked scopes', async () => {
   const { code, f } = await setup()
   for (const source of [
@@ -173,10 +257,15 @@ it('keeps read-only and sandbox restrictions inside code and validates nested to
     await code(`return (await tools.search({source:'harness'})).tools.map(tool=>tool.name)`),
   )
   expect(result.result).toContain('read_file')
+  expect(result.result).toEqual(expect.arrayContaining(['read', 'grep', 'ls']))
   expect(result.result).not.toContain('write_file')
+  expect(result.result).not.toContain('edit')
+  expect(result.result).not.toContain('bash')
   expect(result.result).not.toContain('terminal_run')
   for (const source of [
     `await tools.harness.write_file({path:'hello.txt',expectedContents:'original\\n',contents:'bad'})`,
+    `await tools.edit({path:'hello.txt',oldText:'original',newText:'bad'})`,
+    `await tools.bash({command:'echo bad'})`,
     `await tools.harness.terminal_run({command:'echo bad'})`,
     `await tools.dovo.code({code:'return 1'})`,
     `await tools.dovo.studio_threads({action:'list'})`,
@@ -194,12 +283,12 @@ it('requests approval for edits and rechecks live access before a delayed operat
   s.approvals.respond(s.approvals.list()[0].id, false)
   expect((await pending).isError).toBe(true)
   const pending2 = code(
-    `await tools.harness.write_file({path:'hello.txt',expectedContents:'original\\n',contents:'approved'})`,
+    `await tools.edit({path:'hello.txt',oldText:'original',newText:'approved'})`,
   )
   await vi.waitFor(() => expect(s.approvals.list()).toHaveLength(1))
   s.approvals.respond(s.approvals.list()[0].id, true)
   execution(await pending2)
-  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('approved')
+  expect(await readFile(join(f.directory, 'hello.txt'), 'utf8')).toBe('approved\n')
   s.store.update((workspace) => ({
     ...workspace,
     agents: workspace.agents.map((agent) => ({ ...agent, permission: 'read-only' })),
@@ -264,9 +353,7 @@ it('uses the existing terminal session with command approval and sandbox limits'
     { provider: 'codex', permission: 'workspace-write', sandboxMode: 'workspace-write' },
     'workspace-write',
   )
-  expect(
-    (await restricted.code(`await tools.harness.terminal_run({command:'echo bad'})`)).isError,
-  ).toBe(true)
+  expect((await restricted.code(`await tools.bash({command:'echo bad'})`)).isError).toBe(true)
 })
 
 it('runs a check once and returns its exit code, failure names and a bounded tail', async () => {

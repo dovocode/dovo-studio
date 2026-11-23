@@ -34,6 +34,17 @@ const schemas = {
         .nullable(),
     })
     .strict(),
+  edit: z
+    .object({
+      ...scope,
+      path,
+      oldText: z
+        .string()
+        .min(1)
+        .max(1024 * 1024),
+      newText: z.string().max(1024 * 1024),
+    })
+    .strict(),
   list_files: z
     .object({
       ...scope,
@@ -53,19 +64,19 @@ const descriptions = {
   read_file: 'Read a contained text file. Optional line range. Maximum 1 MB.',
   write_file:
     'Create or replace a contained text file. Pass its exact prior contents, or null to create. Uses edit permissions and conflict checks.',
+  edit: 'Replace one exact occurrence of oldText in a contained text file. Empty newText deletes it. Missing or repeated text stops the edit.',
   list_files:
     'List one directory in the run checkout or a linked checkout. Returns a bounded page and cursor.',
   search: 'Search file content or paths in the run checkout or an inherited linked checkout.',
 }
-export const codeFileTools = (['read_file', 'write_file', 'list_files', 'search'] as const).map(
-  (name) => ({
-    source: 'harness',
-    origin: 'studio-equivalent',
-    name,
-    description: descriptions[name],
-    inputSchema: z.toJSONSchema(schemas[name]),
-  }),
-)
+const fileToolName = z.enum(['read_file', 'write_file', 'edit', 'list_files', 'search'])
+export const codeFileTools = fileToolName.options.map((name) => ({
+  source: 'harness',
+  origin: 'studio-equivalent',
+  name,
+  description: descriptions[name],
+  inputSchema: z.toJSONSchema(schemas[name]),
+}))
 export async function codeFileCall(
   s: Services,
   grant: RunPolicy,
@@ -75,7 +86,7 @@ export async function codeFileCall(
   authorize: () => void,
 ) {
   if (!Object.hasOwn(schemas, name)) throw new HttpError(404, 'Unknown harness file tool')
-  const key = z.enum(['read_file', 'write_file', 'list_files', 'search']).parse(name)
+  const key = fileToolName.parse(name)
   const args = schemas[key].parse(input ?? {})
   const captured = grant.codeDirectories
   if (!captured)
@@ -150,20 +161,26 @@ export async function codeFileCall(
       await handle.close()
     }
   }
-  const argsWrite = schemas.write_file.parse(input)
+  const change =
+    key === 'edit'
+      ? { kind: 'edit' as const, args: schemas.edit.parse(input) }
+      : { kind: 'write' as const, args: schemas.write_file.parse(input) }
   const policy = effectivePermissionPolicy(grant.permissions)
   if (grant.readOnly || policy.readOnly || link?.access === 'read-only')
     throw new HttpError(403, 'File edits are disabled in this scope')
-  if (argsWrite.contents.includes('\0') || Buffer.byteLength(argsWrite.contents) > 1024 * 1024)
-    throw new HttpError(413, 'Choose a text file up to 1 MB')
-  const filename = await safeFile(root, argsWrite.path)
+  const checkContents = (text: string) => {
+    if (text.includes('\0') || Buffer.byteLength(text) > 1024 * 1024)
+      throw new HttpError(413, 'Choose a text file up to 1 MB')
+  }
+  checkContents(change.kind === 'edit' ? change.args.newText : change.args.contents)
+  const filename = await safeFile(root, change.args.path)
   if (
     policy.approvalPolicy !== 'never' &&
     !policy.autoAcceptEdits &&
     (await s.approvals.request(
       grant.taskId,
-      'Code mode write file',
-      JSON.stringify(argsWrite),
+      change.kind === 'edit' ? 'Code mode edit file' : 'Code mode write file',
+      JSON.stringify(change.args),
       signal,
     )) === 'deny'
   )
@@ -175,15 +192,17 @@ export async function codeFileCall(
       runtimeOperation(() =>
         withFileWrite(filename, async () => {
           check()
-          const target = await safeFile(root, argsWrite.path)
-          if (argsWrite.expectedContents === null) {
+          const target = await safeFile(root, change.args.path)
+          let contents: string
+          if (change.kind === 'write' && change.args.expectedContents === null) {
+            contents = change.args.contents
             const handle = await open(
               target,
               constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
               0o644,
             )
             try {
-              await handle.writeFile(argsWrite.contents, 'utf8')
+              await handle.writeFile(contents, 'utf8')
             } finally {
               await handle.close()
             }
@@ -197,7 +216,7 @@ export async function codeFileCall(
             )
             try {
               const opened = await handle.stat(),
-                currentPath = await safeFile(root, argsWrite.path),
+                currentPath = await safeFile(root, change.args.path),
                 after = await lstat(currentPath)
               if (
                 !opened.isFile() ||
@@ -211,10 +230,23 @@ export async function codeFileCall(
               if (!isUtf8(bytesBefore)) throw new HttpError(415, 'Choose a UTF-8 text file')
               const current = bytesBefore.toString('utf8')
               if (current.includes('\0')) throw new HttpError(415, 'Choose a text file')
-              if (current !== argsWrite.expectedContents)
-                throw new HttpError(409, 'File changed. Read it before editing again.')
+              if (change.kind === 'edit') {
+                const { oldText, newText } = change.args
+                const match = current.indexOf(oldText)
+                if (match < 0 || current.includes(oldText, match + 1))
+                  throw new HttpError(
+                    409,
+                    'oldText must occur exactly once. Read the file and use more context.',
+                  )
+                contents = current.slice(0, match) + newText + current.slice(match + oldText.length)
+                checkContents(contents)
+              } else {
+                if (current !== change.args.expectedContents)
+                  throw new HttpError(409, 'File changed. Read it before editing again.')
+                contents = change.args.contents
+              }
               check()
-              const bytes = Buffer.from(argsWrite.contents)
+              const bytes = Buffer.from(contents)
               let offset = 0
               while (offset < bytes.length) {
                 const { bytesWritten } = await handle.write(
@@ -231,7 +263,7 @@ export async function codeFileCall(
               await handle.close()
             }
           }
-          return { path: argsWrite.path, bytes: Buffer.byteLength(argsWrite.contents) }
+          return { path: change.args.path, bytes: Buffer.byteLength(contents) }
         }),
       ),
     ),
