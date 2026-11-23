@@ -161,6 +161,11 @@ export const ChoicePicker=({onValueChange,icons,...props})=><select {...props} o
       contents: 'export const CheckpointDiff=()=>null;',
     },
     {
+      path: './saved-file-diff',
+      importer: root + '/packages/extension-tasks/src/files/saved-file-preview.tsx',
+      contents: 'export const CheckpointDiff=()=>null;',
+    },
+    {
       path: '../view',
       importer: root + '/packages/extension-tasks/src/unified/',
       contents: `import {useState,useEffect} from 'react';import {useWorkspace,useStudioHost} from '@dovo/studio-core';export default function Thread({entityId}){const [draft,setDraft]=useState('');const store=useWorkspace();const host=useStudioHost();if(window.threadHosts){window.threadHosts.add(host);window.threadPaneRenders++};useEffect(()=>{window.effects.push('show-thread:'+entityId);return()=>window.effects.push('hide-thread:'+entityId)},[entityId]);return <div data-thread={entityId} data-owner={store.activeRuntimeId}><input aria-label="Thread draft" value={draft} onChange={event=>setDraft(event.target.value)}/></div>}`,
